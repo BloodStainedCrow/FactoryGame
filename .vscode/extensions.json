@@ -1,0 +1,7 @@
+{
+    "recommendations": [
+        "gruntfuggly.todo-tree",
+        "eamodio.gitlens",
+        "spencerwmiles.vscode-task-buttons"
+    ]
+}

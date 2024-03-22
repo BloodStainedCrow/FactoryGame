@@ -1,0 +1,19 @@
+[package]
+name = "template_name"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+proptest = "1.4.0"
+
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+enum_glob_use = { level = "deny", priority = -1 }
+pedantic = "deny"
+nursery = "deny"
+unwrap_used = { level = "deny", priority = -1 }
+wildcard_enum_match_arm = { level = "deny", priority = -1 }
+match_same_arms = { level = "deny", priority = -1 }
