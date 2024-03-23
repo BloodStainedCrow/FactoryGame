@@ -1,10 +1,11 @@
 [package]
-name = "template_name"
+name = "factory"
 version = "0.0.0"
 edition = "2021"
 
 [dependencies]
 proptest = "1.4.0"
+threadpool = "1.8.1"
 
 
 [lints.rust]

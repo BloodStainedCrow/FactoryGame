@@ -12,15 +12,21 @@
 		},
 		{
 			"type": "cargo",
-			"command": "xwin",
-			"args": [
-				"test",
-			],
+			"command": "test",
 			"problemMatcher": [
 				"$rustc"
 			],
 			"group": "test",
 			"label": "test_all"
+		},
+		{
+			"type": "cargo",
+			"command": "bench",
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "test",
+			"label": "bench_all"
 		},
 	]
 }

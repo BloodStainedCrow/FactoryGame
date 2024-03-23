@@ -25,6 +25,10 @@
         {
             "label": "Test",
             "task": "test_all",
+        },
+        {
+            "label": "Bench",
+            "task": "bench_all",
         }
     ],
     "[rust]": {
