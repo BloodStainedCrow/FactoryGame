@@ -1,12 +1,12 @@
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 
-use crate::belt::Item;
+use crate::item::Item;
 
 #[must_use]
 pub const fn get_time_to_produce(item: Item) -> u16 {
     match item {
-        Item::Iron => 13,
+        Item::Iron => 2,
     }
 }
 
@@ -51,7 +51,7 @@ impl Producer<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::belt::my_enum_strategy;
+    use crate::item::my_enum_strategy;
 
     use super::*;
     extern crate test;

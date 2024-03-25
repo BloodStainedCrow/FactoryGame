@@ -3,8 +3,9 @@
 use std::sync::atomic::AtomicU64;
 
 use factory::{
-    belt::{Belt, Inserter, Item},
-    producer::{get_time_to_produce, Producer},
+    belt::{inserter::Inserter, optimized::OptimizedBelt},
+    item::Item,
+    producer::Producer,
 };
 
 use scoped_threadpool::Pool;
@@ -17,31 +18,31 @@ fn main() {
     let mut producers = [
         Producer {
             item: Item::Iron,
-            timer: get_time_to_produce(Item::Iron),
+            timer: 0,
             count: &atomic1,
         },
         Producer {
             item: Item::Iron,
-            timer: get_time_to_produce(Item::Iron) - 3,
+            timer: 0,
             count: &atomic2,
         },
     ];
 
-    let mut belt: Belt<'_> = Belt::new(100);
+    let mut belt = OptimizedBelt::new(80);
 
     belt.add_inserter(Inserter {
         connected_producer_count: producers[0].count,
-        belt_pos: 70,
+        belt_pos: 79,
     });
 
     belt.add_inserter(Inserter {
         connected_producer_count: producers[1].count,
-        belt_pos: 40,
+        belt_pos: 77,
     });
 
     let mut pool = Pool::new(12);
 
-    for _ in 0..400 {
+    for _ in 0..4 {
         pool.scoped(|scoped| {
             for producer in &mut producers {
                 scoped.execute(|| producer.update());
@@ -53,5 +54,5 @@ fn main() {
         println!("{belt}");
     }
 
-    // println!("{producers:?}");
+    println!("{producers:?}");
 }
