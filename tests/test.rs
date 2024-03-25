@@ -1,4 +1,3 @@
-use factory::belt::{Belt, OptimizedBelt};
 use proptest::prelude::*;
 
 proptest! {}
