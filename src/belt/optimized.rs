@@ -2,19 +2,20 @@ use std::fmt::Display;
 
 use crate::item::Item;
 
-use super::inserter::Inserter;
+use super::{in_inserter::InInserter, out_inserter::OutInserter};
 
 // This type of Belt is used when it only holds one kind of item
 #[derive(Debug)]
 #[allow(clippy::module_name_repetitions)]
 pub struct OptimizedBelt<'a> {
     belt_storage: OptimizedBeltStorage,
-    connected_inserters: Vec<Inserter<'a>>,
+    connected_out_inserters: Vec<OutInserter<'a>>,
+    connected_in_inserters: Vec<InInserter<'a>>,
 }
 
 #[derive(Debug)]
 pub(super) struct OptimizedBeltStorage {
-    item: Option<Item>,
+    item: Item,
     first_spot_has_item: bool,
     data: Vec<u32>,
 }
@@ -45,32 +46,64 @@ impl<'b> OptimizedBelt<'b> {
     #[must_use]
     pub fn new(len: u32) -> Self {
         Self {
-            belt_storage: OptimizedBeltStorage::new(len),
-            connected_inserters: vec![],
+            belt_storage: OptimizedBeltStorage::new(len, Item::Iron),
+            connected_out_inserters: vec![],
+            connected_in_inserters: vec![],
         }
     }
 
     pub fn update(&mut self) {
         self.belt_storage.update();
 
-        for inserter in &mut self.connected_inserters {
+        for inserter in &mut self.connected_out_inserters {
+            inserter.update_optimized_belt(&mut self.belt_storage);
+        }
+
+        for inserter in &mut self.connected_in_inserters {
             inserter.update_optimized_belt(&mut self.belt_storage);
         }
     }
 
-    pub fn add_inserter<'a>(&mut self, inserter: Inserter<'a>)
+    pub fn add_out_inserter<'a>(&mut self, inserter: OutInserter<'a>)
     where
         'a: 'b,
     {
-        self.connected_inserters.push(inserter);
+        self.connected_out_inserters.push(inserter);
+    }
+
+    pub fn add_in_inserter<'a>(&mut self, inserter: InInserter<'a>)
+    where
+        'a: 'b,
+    {
+        self.connected_in_inserters.push(inserter);
+    }
+
+    #[must_use]
+    pub fn get_item_at(&self, pos: u32) -> Option<Item> {
+        let mut current = self.belt_storage.first_spot_has_item;
+        let mut count = 0;
+
+        for section_len in &self.belt_storage.data {
+            count += section_len;
+            if count > pos {
+                break;
+            }
+            current = !current;
+        }
+
+        if current {
+            Some(self.belt_storage.item)
+        } else {
+            None
+        }
     }
 }
 
 impl OptimizedBeltStorage {
     #[must_use]
-    pub fn new(len: u32) -> Self {
+    pub fn new(len: u32, item: Item) -> Self {
         Self {
-            item: None,
+            item,
             first_spot_has_item: false,
             data: vec![len],
         }
@@ -194,10 +227,76 @@ impl OptimizedBeltStorage {
 
         !spot_full
     }
+
+    pub fn try_take_item_from_pos(&mut self, pos: u32) -> bool {
+        let mut old_count = 0;
+        let mut count = 0;
+        let mut i = 0;
+
+        while count <= pos {
+            old_count = count;
+            count += self.data[i];
+            i += 1;
+        }
+
+        // i now stores the index into the data array of the chunk AFTER the one that contains the pos
+
+        let spot_full: bool = (i % 2 == 0) ^ self.first_spot_has_item;
+
+        if spot_full {
+            // data[i] is a section containing items
+
+            // Three possibilities:
+            // pos is at the start, middle or end of the section
+            if self.data[i - 1] == 1 {
+                // We are at the start and end of the section of length 1
+
+                // FIXME: Check bounds
+                if i < self.data.len() {
+                    self.data[i - 2] += self.data[i] + 1;
+                    self.data.remove(i);
+                } else {
+                    self.data[i - 2] += 1;
+                }
+
+                self.data.remove(i - 1);
+            } else if old_count == pos {
+                // We are at the start of the section
+                self.data[i - 1] -= 1;
+
+                // If i is not in bounds, we are at the start of the belt
+                if i > 1 {
+                    self.data[i - 2] += 1;
+                } else {
+                    self.data.insert(0, 1);
+                    self.first_spot_has_item = false;
+                }
+            } else if pos == count - 1 {
+                // We are at the end of the section
+                self.data[i - 1] -= 1;
+
+                // If i is not in bounds, this is the end of the belt
+                if i < self.data.len() {
+                    self.data[i] += 1;
+                } else {
+                    self.data.push(1);
+                }
+            } else {
+                // TODO: Check for off by one errors
+                self.data[i - 1] = pos - old_count;
+                self.data.insert(i, 1);
+                self.data.insert(i + 1, count - pos - 1);
+            }
+        }
+
+        spot_full
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use crate::producer::Producer;
 
     use super::*;
@@ -219,27 +318,28 @@ mod tests {
         let producer3 = Producer::new(Item::Iron);
 
         let inserters = vec![
-            Inserter {
-                connected_producer_count: producer1.count,
+            OutInserter {
+                connected_count: producer1.count,
                 belt_pos: 3,
             },
-            Inserter {
-                connected_producer_count: producer2.count,
+            OutInserter {
+                connected_count: producer2.count,
                 belt_pos: 12,
             },
-            Inserter {
-                connected_producer_count: producer3.count,
+            OutInserter {
+                connected_count: producer3.count,
                 belt_pos: 127,
             },
         ];
 
         let mut belt = OptimizedBelt {
             belt_storage: OptimizedBeltStorage {
-                item: Some(Item::Iron),
+                item: Item::Iron,
                 first_spot_has_item: true,
                 data: vec![2, 10, 3, 4_294_967_295, 23],
             },
-            connected_inserters: inserters,
+            connected_out_inserters: inserters,
+            connected_in_inserters: vec![],
         };
 
         let mut i: i64 = 0;

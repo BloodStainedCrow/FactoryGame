@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::item::Item;
 
-use super::inserter::Inserter;
+use super::{in_inserter::InInserter, out_inserter::OutInserter};
 
 #[derive(Debug, Clone, Copy)]
 struct ItemLocation {
@@ -14,7 +14,8 @@ struct ItemLocation {
 #[allow(clippy::module_name_repetitions)]
 pub struct SimpleBelt<'a> {
     belt_storage: BeltStorage,
-    connected_inserters: Vec<Inserter<'a>>,
+    connected_out_inserters: Vec<OutInserter<'a>>,
+    connected_in_inserters: Vec<InInserter<'a>>,
 }
 
 impl Display for SimpleBelt<'_> {
@@ -91,6 +92,20 @@ impl BeltStorage {
             false
         }
     }
+
+    pub fn try_take_item_from_pos(&mut self, item: Item, pos: u32) -> bool {
+        if Some(item) == self.locs[pos as usize].item {
+            self.locs[pos as usize].item = None;
+
+            if self.first_free_index > pos as usize {
+                self.first_free_index = pos as usize;
+            }
+
+            true
+        } else {
+            false
+        }
+    }
 }
 
 impl<'b> SimpleBelt<'b> {
@@ -98,23 +113,40 @@ impl<'b> SimpleBelt<'b> {
     pub fn new(len: u32) -> Self {
         Self {
             belt_storage: BeltStorage::new(len),
-            connected_inserters: vec![],
+            connected_out_inserters: vec![],
+            connected_in_inserters: vec![],
         }
     }
 
     pub fn update(&mut self) {
         self.belt_storage.update();
 
-        for inserter in &mut self.connected_inserters {
+        for inserter in &mut self.connected_out_inserters {
+            inserter.update_belt(&mut self.belt_storage);
+        }
+
+        for inserter in &mut self.connected_in_inserters {
             inserter.update_belt(&mut self.belt_storage);
         }
     }
 
-    pub fn add_inserter<'a>(&mut self, inserter: Inserter<'a>)
+    pub fn add_out_inserter<'a>(&mut self, inserter: OutInserter<'a>)
     where
         'a: 'b,
     {
-        self.connected_inserters.push(inserter);
+        self.connected_out_inserters.push(inserter);
+    }
+
+    pub fn add_in_inserter<'a>(&mut self, inserter: InInserter<'a>)
+    where
+        'a: 'b,
+    {
+        self.connected_in_inserters.push(inserter);
+    }
+
+    #[must_use]
+    pub fn get_item_at(&self, pos: u32) -> Option<Item> {
+        self.belt_storage.locs[pos as usize].item
     }
 }
 
@@ -142,16 +174,16 @@ mod tests {
         let producer3 = Producer::new(Item::Iron);
 
         let inserters = vec![
-            Inserter {
-                connected_producer_count: producer1.count,
+            OutInserter {
+                connected_count: producer1.count,
                 belt_pos: 3,
             },
-            Inserter {
-                connected_producer_count: producer2.count,
+            OutInserter {
+                connected_count: producer2.count,
                 belt_pos: 12,
             },
-            Inserter {
-                connected_producer_count: producer3.count,
+            OutInserter {
+                connected_count: producer3.count,
                 belt_pos: 127,
             },
         ];
@@ -166,7 +198,8 @@ mod tests {
                 first_free_index: 0,
                 locs: items,
             },
-            connected_inserters: inserters,
+            connected_out_inserters: inserters,
+            connected_in_inserters: vec![],
         };
 
         let mut i = 0;

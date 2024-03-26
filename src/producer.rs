@@ -1,21 +1,9 @@
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 
+use crate::item::get_max_stack_size;
+use crate::item::get_time_to_generate;
 use crate::item::Item;
-
-#[must_use]
-pub const fn get_time_to_produce(item: Item) -> u16 {
-    match item {
-        Item::Iron => 2,
-    }
-}
-
-#[must_use]
-pub const fn get_max_stack_size(item: Item) -> u64 {
-    match item {
-        Item::Iron => 2_000_000_000_000,
-    }
-}
 
 #[derive(Debug)]
 pub struct Producer<'a> {
@@ -30,7 +18,7 @@ impl Producer<'_> {
     pub fn new(item_to_produce: Item) -> Self {
         Self {
             item: item_to_produce,
-            timer: get_time_to_produce(item_to_produce),
+            timer: get_time_to_generate(item_to_produce),
             count: Box::leak(Box::new(AtomicU64::new(0))),
             // count: AtomicU64::new(0),
         }
@@ -41,7 +29,7 @@ impl Producer<'_> {
             if self.count.load(Ordering::Acquire) < get_max_stack_size(self.item) {
                 self.count.fetch_add(1, Ordering::Release);
 
-                self.timer = get_time_to_produce(self.item) - 1;
+                self.timer = get_time_to_generate(self.item) - 1;
             }
         } else {
             self.timer -= 1;
@@ -51,7 +39,7 @@ impl Producer<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::item::my_enum_strategy;
+    use crate::item::all_items;
 
     use super::*;
     extern crate test;
@@ -60,7 +48,7 @@ mod tests {
 
     proptest! {
         #[test]
-        fn test_constructing_producer_does_not_panic(item in my_enum_strategy()) {
+        fn test_constructing_producer_does_not_panic(item in all_items()) {
             let _ = Producer::new(item);
         }
     }
