@@ -1,23 +1,26 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 
 use crate::item::{get_max_stack_size, Recipe};
 
 #[derive(Debug)]
-pub struct Assembler<'a> {
+pub struct Assembler {
     pub recipe: Recipe,
     pub timer: u16,
-    pub ingredient_count: &'a AtomicU64,
-    pub result_count: &'a AtomicU64,
+    pub ingredient_count: Arc<AtomicU64>,
+    pub result_count: Arc<AtomicU64>,
 }
 
-impl Assembler<'_> {
+impl Assembler {
     #[must_use]
     pub fn new(recipe: Recipe) -> Self {
         Self {
             recipe,
             timer: recipe.time,
-            ingredient_count: Box::leak(Box::new(AtomicU64::new(20_000_000_000))),
-            result_count: Box::leak(Box::new(AtomicU64::new(0))),
+            ingredient_count: Arc::new(AtomicU64::new(1)),
+            result_count: Arc::new(AtomicU64::new(0)),
         }
     }
 

@@ -4,6 +4,7 @@ version = "0.0.0"
 edition = "2021"
 
 [dependencies]
+atomic_enum = "0.3.0"
 proptest = "1.4.0"
 scoped_threadpool = { version = "0.1.9" }
 

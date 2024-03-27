@@ -2,7 +2,11 @@ use std::fmt::Display;
 
 use crate::item::Item;
 
-use super::{in_inserter::InInserter, out_inserter::OutInserter};
+use super::{
+    in_inserter::InInserter,
+    out_inserter::OutInserter,
+    splitter::{SplitterInserterIn, SplitterInserterOut},
+};
 
 #[derive(Debug, Clone, Copy)]
 struct ItemLocation {
@@ -12,13 +16,15 @@ struct ItemLocation {
 // TODO: Maybe add a first_full_index aswell?
 #[derive(Debug)]
 #[allow(clippy::module_name_repetitions)]
-pub struct SimpleBelt<'a> {
+pub struct SimpleBelt {
     belt_storage: BeltStorage,
-    connected_out_inserters: Vec<OutInserter<'a>>,
-    connected_in_inserters: Vec<InInserter<'a>>,
+    connected_out_inserters: Vec<OutInserter>,
+    connected_in_inserters: Vec<InInserter>,
+    splitter_inserter_in: Option<SplitterInserterIn>,
+    splitter_inserter_out: Option<SplitterInserterOut>,
 }
 
-impl Display for SimpleBelt<'_> {
+impl Display for SimpleBelt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut s = String::new();
 
@@ -106,20 +112,57 @@ impl BeltStorage {
             false
         }
     }
+
+    pub fn get_item_from_pos(&mut self, pos: u32) -> Option<Item> {
+        self.locs[pos as usize].item
+    }
+
+    pub fn get_item_from_pos_and_remove(&mut self, pos: u32) -> Option<Item> {
+        if let Some(item) = self.locs[pos as usize].item {
+            self.locs[pos as usize].item = None;
+
+            if self.first_free_index > pos as usize {
+                self.first_free_index = pos as usize;
+            }
+
+            Some(item)
+        } else {
+            None
+        }
+    }
+
+    pub fn check_for_space(&self, pos: u32) -> bool {
+        self.locs[pos as usize].item.is_none()
+    }
+
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn get_belt_len(&self) -> u32 {
+        self.locs.len() as u32
+    }
 }
 
-impl<'b> SimpleBelt<'b> {
+impl SimpleBelt {
     #[must_use]
     pub fn new(len: u32) -> Self {
         Self {
             belt_storage: BeltStorage::new(len),
             connected_out_inserters: vec![],
             connected_in_inserters: vec![],
+            splitter_inserter_in: None,
+            splitter_inserter_out: None,
         }
     }
 
     pub fn update(&mut self) {
+        if let Some(inserter) = &mut self.splitter_inserter_in {
+            inserter.update_simple(&mut self.belt_storage);
+        }
+
         self.belt_storage.update();
+
+        if let Some(inserter) = &mut self.splitter_inserter_out {
+            inserter.update_simple(&mut self.belt_storage);
+        }
 
         for inserter in &mut self.connected_out_inserters {
             inserter.update_belt(&mut self.belt_storage);
@@ -130,18 +173,20 @@ impl<'b> SimpleBelt<'b> {
         }
     }
 
-    pub fn add_out_inserter<'a>(&mut self, inserter: OutInserter<'a>)
-    where
-        'a: 'b,
-    {
+    pub fn add_out_inserter(&mut self, inserter: OutInserter) {
         self.connected_out_inserters.push(inserter);
     }
 
-    pub fn add_in_inserter<'a>(&mut self, inserter: InInserter<'a>)
-    where
-        'a: 'b,
-    {
+    pub fn add_in_inserter(&mut self, inserter: InInserter) {
         self.connected_in_inserters.push(inserter);
+    }
+
+    pub(super) fn add_splitter_inserter_in(&mut self, inserter: SplitterInserterIn) {
+        self.splitter_inserter_in = Some(inserter);
+    }
+
+    pub(super) fn add_splitter_inserter_out(&mut self, inserter: SplitterInserterOut) {
+        self.splitter_inserter_out = Some(inserter);
     }
 
     #[must_use]

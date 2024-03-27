@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicU64;
+use std::sync::{atomic::AtomicU64, Arc};
 
 use factory::{
     belt::{optimized::OptimizedBelt, out_inserter::OutInserter},
@@ -32,24 +32,24 @@ fn test_case_simple_optimized_belt_with_inserters() {
         Producer {
             item: Item::Iron,
             timer: 0,
-            count: &atomic1,
+            count: Arc::new(atomic1),
         },
         Producer {
             item: Item::Iron,
             timer: 0,
-            count: &atomic2,
+            count: Arc::new(atomic2),
         },
     ];
 
     let mut belt = OptimizedBelt::new(10);
 
     belt.add_out_inserter(OutInserter {
-        connected_count: producers[0].count,
+        connected_count: Arc::downgrade(&producers[0].count),
         belt_pos: 9,
     });
 
     belt.add_out_inserter(OutInserter {
-        connected_count: producers[1].count,
+        connected_count: Arc::downgrade(&producers[1].count),
         belt_pos: 7,
     });
 

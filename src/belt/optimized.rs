@@ -7,10 +7,10 @@ use super::{in_inserter::InInserter, out_inserter::OutInserter};
 // This type of Belt is used when it only holds one kind of item
 #[derive(Debug)]
 #[allow(clippy::module_name_repetitions)]
-pub struct OptimizedBelt<'a> {
+pub struct OptimizedBelt {
     belt_storage: OptimizedBeltStorage,
-    connected_out_inserters: Vec<OutInserter<'a>>,
-    connected_in_inserters: Vec<InInserter<'a>>,
+    connected_out_inserters: Vec<OutInserter>,
+    connected_in_inserters: Vec<InInserter>,
 }
 
 #[derive(Debug)]
@@ -20,7 +20,7 @@ pub(super) struct OptimizedBeltStorage {
     data: Vec<u32>,
 }
 
-impl Display for OptimizedBelt<'_> {
+impl Display for OptimizedBelt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut s = String::new();
 
@@ -42,7 +42,7 @@ impl Display for OptimizedBelt<'_> {
     }
 }
 
-impl<'b> OptimizedBelt<'b> {
+impl OptimizedBelt {
     #[must_use]
     pub fn new(len: u32) -> Self {
         Self {
@@ -64,17 +64,11 @@ impl<'b> OptimizedBelt<'b> {
         }
     }
 
-    pub fn add_out_inserter<'a>(&mut self, inserter: OutInserter<'a>)
-    where
-        'a: 'b,
-    {
+    pub fn add_out_inserter(&mut self, inserter: OutInserter) {
         self.connected_out_inserters.push(inserter);
     }
 
-    pub fn add_in_inserter<'a>(&mut self, inserter: InInserter<'a>)
-    where
-        'a: 'b,
-    {
+    pub fn add_in_inserter(&mut self, inserter: InInserter) {
         self.connected_in_inserters.push(inserter);
     }
 
@@ -228,6 +222,7 @@ impl OptimizedBeltStorage {
         !spot_full
     }
 
+    // FIXME: This is buggy
     pub fn try_take_item_from_pos(&mut self, pos: u32) -> bool {
         let mut old_count = 0;
         let mut count = 0;

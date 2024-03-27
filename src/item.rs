@@ -1,10 +1,14 @@
+use atomic_enum::atomic_enum;
 use proptest::{
     prop_oneof,
     strategy::{Just, Strategy},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// TODO: Do I want to have a None value in here
+#[atomic_enum]
+#[derive(PartialEq, Eq)]
 pub enum Item {
+    None,
     Iron,
 }
 
@@ -18,6 +22,7 @@ pub fn all_items() -> impl Strategy<Value = Item> {
 #[must_use]
 pub const fn get_time_to_generate(item: Item) -> u16 {
     match item {
+        Item::None => 0,
         Item::Iron => 2,
     }
 }
@@ -25,6 +30,7 @@ pub const fn get_time_to_generate(item: Item) -> u16 {
 #[must_use]
 pub const fn get_max_stack_size(item: Item) -> u64 {
     match item {
+        Item::None => 0,
         Item::Iron => 20,
     }
 }
