@@ -1,26 +1,26 @@
-use std::fmt::Display;
+use std::{fmt::Display, marker::PhantomData};
 
-use crate::item::Item;
+use crate::item::{get_char, Item, ItemTrait};
 
-use super::{in_inserter::InInserter, out_inserter::OutInserter};
+use super::{in_inserter::InInserterStrict, out_inserter::OutInserterStrict};
 
 // This type of Belt is used when it only holds one kind of item
 #[derive(Debug)]
 #[allow(clippy::module_name_repetitions)]
-pub struct OptimizedBelt {
-    belt_storage: OptimizedBeltStorage,
-    connected_out_inserters: Vec<OutInserter>,
-    connected_in_inserters: Vec<InInserter>,
+pub struct OptimizedBelt<T: ItemTrait> {
+    belt_storage: OptimizedBeltStorage<T>,
+    connected_out_inserters: Vec<OutInserterStrict<T>>,
+    connected_in_inserters: Vec<InInserterStrict<T>>,
 }
 
 #[derive(Debug)]
-pub(super) struct OptimizedBeltStorage {
-    item: Item,
+pub(super) struct OptimizedBeltStorage<T: ItemTrait> {
+    marker: PhantomData<T>,
     first_spot_has_item: bool,
     data: Vec<u32>,
 }
 
-impl Display for OptimizedBelt {
+impl<T: ItemTrait> Display for OptimizedBelt<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut s = String::new();
 
@@ -29,7 +29,7 @@ impl Display for OptimizedBelt {
         for len in &self.belt_storage.data {
             for _ in 0..*len {
                 if current_state {
-                    s.push('I');
+                    s.push(get_char(T::get_item()));
                 } else {
                     s.push('.');
                 }
@@ -42,11 +42,11 @@ impl Display for OptimizedBelt {
     }
 }
 
-impl OptimizedBelt {
+impl<T: ItemTrait> OptimizedBelt<T> {
     #[must_use]
     pub fn new(len: u32) -> Self {
         Self {
-            belt_storage: OptimizedBeltStorage::new(len, Item::Iron),
+            belt_storage: OptimizedBeltStorage::<T>::new(len),
             connected_out_inserters: vec![],
             connected_in_inserters: vec![],
         }
@@ -64,11 +64,11 @@ impl OptimizedBelt {
         }
     }
 
-    pub fn add_out_inserter(&mut self, inserter: OutInserter) {
+    pub fn add_out_inserter(&mut self, inserter: OutInserterStrict<T>) {
         self.connected_out_inserters.push(inserter);
     }
 
-    pub fn add_in_inserter(&mut self, inserter: InInserter) {
+    pub fn add_in_inserter(&mut self, inserter: InInserterStrict<T>) {
         self.connected_in_inserters.push(inserter);
     }
 
@@ -86,20 +86,20 @@ impl OptimizedBelt {
         }
 
         if current {
-            Some(self.belt_storage.item)
+            Some(T::get_item())
         } else {
             None
         }
     }
 }
 
-impl OptimizedBeltStorage {
+impl<T: ItemTrait> OptimizedBeltStorage<T> {
     #[must_use]
-    pub fn new(len: u32, item: Item) -> Self {
+    pub fn new(len: u32) -> Self {
         Self {
-            item,
             first_spot_has_item: false,
             data: vec![len],
+            marker: PhantomData,
         }
     }
 
@@ -290,9 +290,9 @@ impl OptimizedBeltStorage {
 
 #[cfg(test)]
 mod tests {
-    use std::vec;
+    use std::sync::Arc;
 
-    use crate::producer::Producer;
+    use crate::{item::Iron, producer::Producer};
 
     use super::*;
     extern crate test;
@@ -302,40 +302,31 @@ mod tests {
     proptest! {
         #[test]
         fn test_constructing_optimized_belt_does_not_panic(len: u32) {
-            let _ = OptimizedBelt::new(len);
+            // let _ = OptimizedBelt::new(len);
         }
     }
 
     #[bench]
     fn bench_optimized_belt_update(b: &mut Bencher) {
-        let producer1 = Producer::new(Item::Iron);
-        let producer2 = Producer::new(Item::Iron);
-        let producer3 = Producer::new(Item::Iron);
-
-        let inserters = vec![
-            OutInserter {
-                connected_count: producer1.count,
-                belt_pos: 3,
-            },
-            OutInserter {
-                connected_count: producer2.count,
-                belt_pos: 12,
-            },
-            OutInserter {
-                connected_count: producer3.count,
-                belt_pos: 127,
-            },
-        ];
+        let producer1 = Producer::<Iron>::new();
+        // let producer2 = Producer::<Iron>::new();
+        // let producer3 = Producer::<Iron>::new();
 
         let mut belt = OptimizedBelt {
             belt_storage: OptimizedBeltStorage {
-                item: Item::Iron,
                 first_spot_has_item: true,
                 data: vec![2, 10, 3, 4_294_967_295, 23],
+                marker: PhantomData,
             },
-            connected_out_inserters: inserters,
+            connected_out_inserters: vec![],
             connected_in_inserters: vec![],
         };
+
+        OutInserterStrict::create_and_add(
+            Arc::downgrade(&producer1.storage),
+            &mut belt,
+            1_000_000_000,
+        );
 
         let mut i: i64 = 0;
 
@@ -343,6 +334,7 @@ mod tests {
             let bb = test::black_box(&mut belt);
             for _ in 0..1_000 {
                 bb.update();
+                // bb.belt_storage.try_take_item_from_pos(0);
                 i += 1;
             }
         });

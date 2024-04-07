@@ -90,8 +90,6 @@ impl Splitter {
 
                 self.items_in_len.fetch_sub(1, Ordering::Relaxed);
                 self.items_out_len[usize::from(!self.next_out)].fetch_add(1, Ordering::Relaxed);
-            } else {
-                println!("Stuck but good!");
             }
         }
     }
@@ -116,8 +114,6 @@ impl SplitterInserterIn {
 
                 in_count.fetch_add(1, Ordering::Relaxed);
             }
-        } else {
-            println!("Splitter full");
         }
     }
 }
@@ -133,21 +129,18 @@ impl SplitterInserterOut {
     pub(super) fn update_simple(&mut self, belt_storage: &mut BeltStorage) {
         let out_count = self.items_out_count.upgrade().expect("Splitter dropped");
 
-        if out_count.load(Ordering::Relaxed) > 0 {
-            if belt_storage.check_for_space(belt_storage.get_belt_len() - 1) {
-                if let Ok(item) = self.items_out_of_splitter.try_recv() {
-                    let res =
-                        belt_storage.try_put_item_in_pos(item, belt_storage.get_belt_len() - 1);
+        if out_count.load(Ordering::Relaxed) > 0
+            && belt_storage.check_for_space(belt_storage.get_belt_len() - 1)
+        {
+            if let Ok(item) = self.items_out_of_splitter.try_recv() {
+                let res = belt_storage.try_put_item_in_pos(item, belt_storage.get_belt_len() - 1);
 
-                    out_count.fetch_sub(1, Ordering::Relaxed);
+                out_count.fetch_sub(1, Ordering::Relaxed);
 
-                    assert!(res);
-                } else {
-                    unreachable!()
-                }
+                assert!(res);
+            } else {
+                unreachable!()
             }
-        } else {
-            println!("Nothing to spit out");
         }
     }
 }

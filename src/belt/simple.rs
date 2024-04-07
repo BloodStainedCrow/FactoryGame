@@ -14,10 +14,9 @@ struct ItemLocation {
 }
 
 // TODO: Maybe add a first_full_index aswell?
-#[derive(Debug)]
 #[allow(clippy::module_name_repetitions)]
 pub struct SimpleBelt {
-    belt_storage: BeltStorage,
+    pub(super) belt_storage: BeltStorage,
     connected_out_inserters: Vec<OutInserter>,
     connected_in_inserters: Vec<InInserter>,
     splitter_inserter_in: Option<SplitterInserterIn>,
@@ -28,8 +27,12 @@ impl Display for SimpleBelt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut s = String::new();
 
-        for item_loc in &self.belt_storage.locs {
-            if item_loc.item.is_some() {
+        for i in 0..self.belt_storage.locs.len() {
+            if self
+                .belt_storage
+                .get_item_from_pos(i.try_into().expect("Expect usize to fit into u32"))
+                .is_some()
+            {
                 s.push('I');
             } else {
                 s.push('.');
@@ -113,7 +116,7 @@ impl BeltStorage {
         }
     }
 
-    pub fn get_item_from_pos(&mut self, pos: u32) -> Option<Item> {
+    pub fn get_item_from_pos(&self, pos: u32) -> Option<Item> {
         self.locs[pos as usize].item
     }
 
@@ -197,11 +200,9 @@ impl SimpleBelt {
 
 #[cfg(test)]
 mod tests {
-    use crate::producer::Producer;
-
     use super::*;
-    extern crate test;
     use proptest::proptest;
+    extern crate test;
     use test::Bencher;
 
     proptest! {
@@ -213,39 +214,8 @@ mod tests {
     }
 
     #[bench]
-    fn bench_belt_update(b: &mut Bencher) {
-        let producer1 = Producer::new(Item::Iron);
-        let producer2 = Producer::new(Item::Iron);
-        let producer3 = Producer::new(Item::Iron);
-
-        let inserters = vec![
-            OutInserter {
-                connected_count: producer1.count,
-                belt_pos: 3,
-            },
-            OutInserter {
-                connected_count: producer2.count,
-                belt_pos: 12,
-            },
-            OutInserter {
-                connected_count: producer3.count,
-                belt_pos: 127,
-            },
-        ];
-
-        let mut items: Vec<ItemLocation> = vec![ItemLocation { item: None }; 5_00];
-        items.push(ItemLocation {
-            item: Some(Item::Iron),
-        });
-
-        let mut belt = SimpleBelt {
-            belt_storage: BeltStorage {
-                first_free_index: 0,
-                locs: items,
-            },
-            connected_out_inserters: inserters,
-            connected_in_inserters: vec![],
-        };
+    fn bench_empty_belt_update(b: &mut Bencher) {
+        let mut belt = SimpleBelt::new(10_000);
 
         let mut i = 0;
 
@@ -256,9 +226,46 @@ mod tests {
                 i += 1;
             }
         });
+    }
 
-        println!("Item at front: {:?}", belt.belt_storage.locs);
+    #[bench]
+    fn bench_belt_update(b: &mut Bencher) {
+        let mut belt = SimpleBelt::new(10_000);
+        belt.belt_storage.try_put_item_in_pos(Item::Iron, 9999);
 
-        println!("{i} updates done.");
+        let mut i = 0;
+
+        b.iter(|| {
+            belt = SimpleBelt::new(10_000);
+            belt.belt_storage.try_put_item_in_pos(Item::Iron, 9999);
+
+            let bb = test::black_box(&mut belt);
+            for _ in 0..1_000 {
+                bb.update();
+                i += 1;
+                // println!("{bb}");
+            }
+        });
+
+        println!("{belt}");
+    }
+
+    #[bench]
+    fn bench_belt_update_minimum(b: &mut Bencher) {
+        let mut belt = SimpleBelt::new(1);
+
+        let mut i = 0;
+
+        b.iter(|| {
+            let bb = test::black_box(&mut belt);
+            for _ in 0..1_000 {
+                bb.update();
+                bb.belt_storage.get_item_from_pos_and_remove(0);
+                i += 1;
+                // println!("{bb}");
+            }
+        });
+
+        println!("{belt}");
     }
 }

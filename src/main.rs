@@ -7,16 +7,17 @@ use factory::{
     belt::{
         in_inserter::InInserter, out_inserter::OutInserter, simple::SimpleBelt, splitter::Splitter,
     },
-    item::{Item, RECIPES},
-    producer::Producer,
+    item::{Iron, RECIPES},
 };
 
 use scoped_threadpool::Pool;
 
 fn main() {
-    let mut assembler = Assembler::new(RECIPES[0]);
-
-    let mut producers = [Producer::new(Item::Iron), Producer::new(Item::Iron)];
+    let mut assembler = Assembler::<Iron, Iron>::new(RECIPES[0]);
+    assembler
+        .ingredient_storage
+        .count
+        .store(10, std::sync::atomic::Ordering::Relaxed);
 
     let mut belt = SimpleBelt::new(50);
 
@@ -25,33 +26,16 @@ fn main() {
 
     let mut splitter = Splitter::new(&mut belt, &mut [&mut belt2, &mut belt3]);
 
-    // belt.add_out_inserter(OutInserter {
-    //     connected_count: Arc::downgrade(&producers[0].count),
-    //     belt_pos: 19,
-    // });
-
-    // belt.add_out_inserter(OutInserter {
-    //     connected_count: Arc::downgrade(&producers[1].count),
-    //     belt_pos: 37,
-    // });
-
-    belt2.add_in_inserter(InInserter {
-        connected_count: Arc::downgrade(&assembler.ingredient_count),
-        belt_pos: 0,
-    });
-
-    belt.add_out_inserter(OutInserter {
-        connected_count: Arc::downgrade(&assembler.result_count),
-        belt_pos: 49,
-    });
+    OutInserter::create_and_add_strict(Arc::downgrade(&assembler.result_storage), &mut belt, 49);
+    InInserter::create_and_add_strict(Arc::downgrade(&assembler.ingredient_storage), &mut belt2, 0);
 
     let mut pool = Pool::new(12);
 
     for _ in 0..240 {
         pool.scoped(|scoped| {
-            for producer in &mut producers {
-                scoped.execute(|| producer.update());
-            }
+            // for producer in &mut producers {
+            //     scoped.execute(|| producer.update());
+            // }
 
             scoped.execute(|| assembler.update());
 
