@@ -1,6 +1,7 @@
 #![feature(test)]
 #![feature(const_trait_impl)]
 #![feature(effects)]
+#![feature(portable_simd)]
 
 pub mod assembler;
 pub mod belt;
