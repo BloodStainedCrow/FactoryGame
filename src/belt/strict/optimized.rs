@@ -292,17 +292,45 @@ impl<T: ItemTrait> OptimizedBeltStorage<T> {
 mod tests {
     use std::sync::Arc;
 
-    use crate::{item::Iron, producer::Producer};
+    use crate::{
+        belt::do_update_test,
+        item::{option, Iron},
+        producer::Producer,
+    };
 
     use super::*;
     extern crate test;
-    use proptest::proptest;
+    use proptest::{prelude::prop, prop_assert_eq, proptest};
     use test::Bencher;
 
     proptest! {
         #[test]
         fn test_constructing_optimized_belt_does_not_panic(len: u32) {
-            // let _ = OptimizedBelt::new(len);
+            let _ = OptimizedBelt::<Iron>::new(len);
+        }
+
+        #[test]
+        fn test_optimized_belt_agrees_with_functional(mut items in prop::collection::vec(option(), 1..1_000)) {
+            let mut belt = OptimizedBelt::<Iron>::new(items.len().try_into().expect("Size does not fit into usize"));
+
+            for (i, item_opt) in items.iter().enumerate() {
+                match item_opt {
+                    Some(_) => {
+                        belt.belt_storage.try_put_item_in_pos(i.try_into().expect("Size does not fit into usize"));
+                    },
+                    None => {
+                        belt.belt_storage.try_take_item_from_pos(i.try_into().expect("Size does not fit into usize"));
+                    },
+                };
+            }
+
+            belt.update();
+
+            do_update_test(&mut items);
+
+            for (i, item) in items.iter().enumerate() {
+                prop_assert_eq!(belt.get_item_at(i.try_into().expect("Size does not fit into usize")), *item);
+            }
         }
     }
 

@@ -2,6 +2,7 @@ use std::{marker::PhantomData, sync::atomic::AtomicU64};
 
 use enum_map::Enum;
 use proptest::{
+    prelude::prop,
     prop_oneof,
     strategy::{Just, Strategy},
 };
@@ -16,6 +17,13 @@ pub fn all_items() -> impl Strategy<Value = Item> {
         // For cases without data, `Just` is all you need
         Just(Item::Iron),
     ]
+}
+
+pub fn option() -> impl Strategy<Value = Option<Item>> {
+    all_items()
+        .prop_flat_map(|item| Just(Some(item)))
+        .boxed()
+        .prop_union(Just(None).boxed())
 }
 
 #[must_use]

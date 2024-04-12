@@ -200,8 +200,10 @@ impl SimpleBelt {
 
 #[cfg(test)]
 mod tests {
+    use crate::{belt::do_update_test, item::option};
+
     use super::*;
-    use proptest::proptest;
+    use proptest::{prelude::prop, prop_assert_eq, proptest};
     extern crate test;
     use test::Bencher;
 
@@ -210,6 +212,32 @@ mod tests {
         fn test_constructing_belt_does_not_panic(len in 0..10_000u32) {
             // TODO: This only checks a reasonable range since Belt is so inefficient with memory
             let _ = SimpleBelt::new(len);
+        }
+
+        #[test]
+        fn test_simple_belt_agrees_with_functional(mut items in prop::collection::vec(option(), 1..1_000)) {
+            let mut belt = SimpleBelt::new(items.len().try_into().expect("Size does not fit into usize"));
+
+            for (i, item_opt) in items.iter().enumerate() {
+                match item_opt {
+                    Some(item) => {
+                        belt.belt_storage.try_put_item_in_pos(*item, i.try_into().expect("Size does not fit into usize"));
+                    },
+                    None => {
+                        belt.belt_storage.get_item_from_pos_and_remove(i.try_into().expect("Size does not fit into usize"));
+                    },
+                };
+            }
+
+            for _ in 0..items.len() {
+                belt.update();
+
+                do_update_test(&mut items);
+
+                for (i, item) in items.iter().enumerate() {
+                    prop_assert_eq!(belt.belt_storage.get_item_from_pos(i.try_into().expect("Size does not fit into usize")), *item);
+                }
+            }
         }
     }
 
@@ -230,21 +258,17 @@ mod tests {
 
     #[bench]
     fn bench_belt_update(b: &mut Bencher) {
-        let mut belt = SimpleBelt::new(10_000);
-        belt.belt_storage.try_put_item_in_pos(Item::Iron, 9999);
+        let mut belt = SimpleBelt::new(10_000_000);
+        belt.belt_storage
+            .try_put_item_in_pos(Item::Iron, 10_000_000 - 1);
 
         let mut i = 0;
 
         b.iter(|| {
-            belt = SimpleBelt::new(10_000);
-            belt.belt_storage.try_put_item_in_pos(Item::Iron, 9999);
-
             let bb = test::black_box(&mut belt);
-            for _ in 0..1_000 {
-                bb.update();
-                i += 1;
-                // println!("{bb}");
-            }
+            bb.update();
+            i += 1;
+            // println!("{bb}");
         });
 
         println!("{belt}");

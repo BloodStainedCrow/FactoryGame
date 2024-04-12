@@ -6,3 +6,6 @@
 # everyone who runs the test benefits from these saved cases.
 cc 72f5ccf757653cf943e715d700e459bfd03ef9a9693c26213dfef126bcb6640a # shrinks to item_pos = 0
 cc 4160c7afe06ef670297a31235e185eb34f21e1d47a434be3e8b0b2793514a7ed # shrinks to item_pos = 1
+cc 3b11ef0b3d000dd4512e8af49caefe51d0fe92022537c2cf9234590f21842fb7 # shrinks to mut items = []
+cc 9241d512bd3a57a4bd8b2efec43a22fefde6970fffed8713b586bf5805eeaed5 # shrinks to mut items = [None, Some(Iron), Some(Iron)]
+cc 0c86ffdcb2b4643958f27757129ec336d89d5e5fa6013c176af8bdd891c6a5ca # shrinks to mut items = [None, None, None, Some(Iron)]
