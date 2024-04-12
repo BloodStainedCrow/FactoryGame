@@ -34,38 +34,22 @@ impl DequeBelt {
 
         if self.has_free_spot_at_front && !self.compressed.is_empty() {
             self.has_free_spot_at_front = false;
-            self.moving.push_back(None);
+            self.moving.push_front(None);
         } else {
             // We are stuck.
 
             if !self.moving.is_empty() {
                 // The first item in self.moving is a None, by definition
                 // Otherwise the following items would be in self.compressed
-                let removed_none = self.moving.pop_front();
+                let removed_none = self.moving.pop_back();
                 debug_assert_eq!(removed_none, Some(None));
 
-                // Complexity: This is amortized constant IFF , since every item will only pass through this loop ONCE
-                // And we only output a constant amount of items each tick.
-                let to_remove = self.moving.drain(
-                    ..self
-                        .moving
-                        .iter()
-                        .position(Option::is_none)
-                        .unwrap_or(self.moving.len()),
-                );
+                if !self.moving.is_empty() && self.get_moving(0).is_some() {
+                    self.rebuild_invariant();
+                }
 
-                self.compressed
-                    .extend(to_remove.map(|item| item.unwrap_or_else(|| unreachable!())));
-
-                // Either we stopped because self.moving is now empty
-                // OR we stopped because we found a None value.
-
-                // In any case, we now either have a None value at the front of self.moving
-                // Or it is empty
-                self.moving.push_back(None);
-
-                // So we readd the None value we removed at the start
-                // Recreating our invariants.
+                self.moving.push_front(None);
+                // So we readd the None value we removed at the start to ensure our belt does not shrink
             }
         }
     }
@@ -81,7 +65,7 @@ impl DequeBelt {
         if pos < starting_free_spot + self.compressed.len() {
             Some(self.compressed[pos - starting_free_spot])
         } else if pos < starting_free_spot + self.compressed.len() + self.moving.len() {
-            self.moving[pos - starting_free_spot - self.compressed.len()]
+            *self.get_moving(pos - starting_free_spot - self.compressed.len())
         } else {
             unreachable!("pos was out of range for the belt")
         }
@@ -114,14 +98,12 @@ impl DequeBelt {
 
             let items_to_remove = self.compressed.drain(pos..);
 
-            for item in items_to_remove {
-                self.moving.push_front(Some(item));
-            }
+            self.moving.extend(items_to_remove.map(Some));
 
             // Since we pushed at least one element, we know self.moving is not empty and we will never panic here
-            self.moving[0] = None;
+            *self.get_moving_mut(0) = None;
         } else if pos < starting_free_spot + self.compressed.len() + self.moving.len() {
-            self.moving[pos - starting_free_spot - self.compressed.len()] = None;
+            *self.get_moving_mut(pos - starting_free_spot - self.compressed.len()) = None;
         } else {
             unreachable!("pos was out of range for the belt");
         }
@@ -139,28 +121,20 @@ impl DequeBelt {
         if pos < starting_free_spot + self.compressed.len() {
             false
         } else if pos < starting_free_spot + self.compressed.len() + self.moving.len() {
-            let ret = self.moving[pos - starting_free_spot - self.compressed.len()].is_none();
+            let ret = self
+                .get_moving_mut(pos - starting_free_spot - self.compressed.len())
+                .is_none();
 
             if ret {
                 if pos - starting_free_spot - self.compressed.len() == 0 {
-                    self.moving[0] = Some(item);
-                    // Rebuild the invariant since now self.moving[0] != None
+                    *self.get_moving_mut(0) = Some(item);
 
-                    let to_remove = self.moving.drain(
-                        ..self
-                            .moving
-                            .iter()
-                            .position(Option::is_none)
-                            .unwrap_or(self.moving.len()),
-                    );
-
-                    self.compressed
-                        .extend(to_remove.map(|item| item.unwrap_or_else(|| unreachable!())));
-
-                    // Either we stopped because self.moving is now empty
-                    // OR we stopped because we found a None value.
+                    if !self.moving.is_empty() && self.get_moving(0).is_some() {
+                        self.rebuild_invariant();
+                    }
                 } else {
-                    self.moving[pos - starting_free_spot - self.compressed.len()] = Some(item);
+                    *self.get_moving_mut(pos - starting_free_spot - self.compressed.len()) =
+                        Some(item);
                 }
             }
 
@@ -168,6 +142,36 @@ impl DequeBelt {
         } else {
             unreachable!("pos was out of range for the belt");
         }
+    }
+
+    fn get_moving_mut(&mut self, pos: usize) -> &mut Option<Item> {
+        let len = self.moving.len();
+        &mut self.moving[len - pos - 1]
+    }
+
+    fn get_moving(&self, pos: usize) -> &Option<Item> {
+        &self.moving[self.moving.len() - pos - 1]
+    }
+
+    fn rebuild_invariant(&mut self) {
+        if self.moving.is_empty() {
+            return;
+        }
+
+        debug_assert!(self.get_moving(0).is_some());
+
+        // Rebuild the invariant since self.moving[0] != None
+
+        let to_remove = self.moving.drain(
+            self.moving
+                .iter()
+                .rev()
+                .position(Option::is_none)
+                .map_or(0, |pos| self.moving.len() - pos)..,
+        );
+
+        self.compressed
+            .extend(to_remove.map(|item| item.unwrap_or_else(|| unreachable!())));
     }
 }
 
