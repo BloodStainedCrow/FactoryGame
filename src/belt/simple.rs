@@ -258,9 +258,9 @@ mod tests {
 
     #[bench]
     fn bench_belt_update(b: &mut Bencher) {
-        let mut belt = SimpleBelt::new(10_000_000);
+        let mut belt = SimpleBelt::new(10_000);
         belt.belt_storage
-            .try_put_item_in_pos(Item::Iron, 10_000_000 - 1);
+            .try_put_item_in_pos(Item::Iron, 10_000 - 1);
 
         let mut i = 0;
 

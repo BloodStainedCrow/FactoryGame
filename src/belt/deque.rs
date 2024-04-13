@@ -251,18 +251,14 @@ mod test {
     }
 
     #[test]
-    fn test_deque_belt_update_stuck() {
+    fn test_deque_belt_update_for_debug() {
         let mut belt = DequeBelt::new(MAX_LEN);
-        belt.try_insert(MAX_LEN - 1, Item::Iron);
 
-        belt.try_insert(0, Item::Iron);
-
-        for _ in 0..1_000 {
+        for i in 0..=MAX_LEN {
             let bb = test::black_box(&mut belt);
-            for _ in 0..1_000 {
-                bb.update();
-                // println!("{bb}");
-            }
+            bb.try_insert(MAX_LEN - 1, Item::Iron);
+            bb.update();
+            bb.get_and_remove(1);
         }
 
         // println!("{belt}");

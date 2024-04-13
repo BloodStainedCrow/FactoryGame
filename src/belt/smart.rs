@@ -398,7 +398,7 @@ mod tests {
 
     use super::*;
 
-    const MAX_LEN: u32 = 10_000;
+    const MAX_LEN: u32 = 1_000_000;
     proptest! {
 
         #[test]
@@ -534,12 +534,10 @@ mod tests {
         }
 
         b.iter(|| {
-            for _ in 0..1_000 {
-                let bb = test::black_box(&mut belt);
-                bb.update();
-            }
+            let bb = test::black_box(&mut belt);
+            bb.update();
         });
 
-        println!("{belt:?}");
+        // println!("{belt:?}");
     }
 }
