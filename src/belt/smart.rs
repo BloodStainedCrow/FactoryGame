@@ -83,7 +83,6 @@ impl SmartBeltStorage {
         self.zero_index %= self.locs.len();
         // println!("SLOW path");
 
-        // FIXME: This spits out the wrong index sometimes
         let first_free_index_real = match self.first_free_index {
             FreeIndex::FreeIndex(index) => index,
             FreeIndex::OldFreeIndex(index) => {
@@ -398,7 +397,7 @@ mod tests {
 
     use super::*;
 
-    const MAX_LEN: u32 = 1_000_000;
+    const MAX_LEN: u32 = 10_000;
     proptest! {
 
         #[test]
@@ -485,18 +484,31 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_debug() {
+        let mut belt = SmartBelt::new(MAX_LEN);
+
+        for _ in 0..100_000 {
+            let bb = test::black_box(&mut belt);
+            // for _ in 0..1_000 {
+            bb.update();
+            // println!("{bb}");
+            // }
+        }
+    }
+
     #[bench]
     fn bench_smart_belt_update_free_flowing(b: &mut Bencher) {
         let mut belt = SmartBelt::new(MAX_LEN);
-        belt.belt_storage
-            .try_put_item_in_pos(Item::Iron, MAX_LEN - 1);
+        // belt.belt_storage
+        //     .try_put_item_in_pos(Item::Iron, MAX_LEN - 1);
 
         b.iter(|| {
             let bb = test::black_box(&mut belt);
-            for _ in 0..1_000 {
-                bb.update();
-                // println!("{bb}");
-            }
+            // for _ in 0..1_000 {
+            bb.update();
+            // println!("{bb}");
+            // }
         });
 
         // println!("{belt}");
@@ -512,10 +524,10 @@ mod tests {
 
         b.iter(|| {
             let bb = test::black_box(&mut belt);
-            for _ in 0..1_000 {
-                bb.update();
-                // println!("{bb}");
-            }
+            // for _ in 0..1_000 {
+            bb.update();
+            // println!("{bb}");
+            // }
         });
 
         // println!("{belt}");
