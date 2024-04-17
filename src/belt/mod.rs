@@ -1,3 +1,4 @@
+pub mod belt;
 pub mod deque;
 pub mod in_inserter;
 pub mod out_inserter;
