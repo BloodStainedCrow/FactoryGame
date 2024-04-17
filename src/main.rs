@@ -31,7 +31,7 @@ fn main() {
 
     let mut pool = Pool::new(12);
 
-    for _ in 0..240 {
+    for _ in 0..240_000 {
         pool.scoped(|scoped| {
             // for producer in &mut producers {
             //     scoped.execute(|| producer.update());
@@ -46,10 +46,10 @@ fn main() {
             scoped.execute(|| splitter.update());
         });
 
-        println!("{belt}");
-        println!("{belt2}");
-        println!("{belt3}");
-        println!();
+        // println!("{belt}");
+        // println!("{belt2}");
+        // println!("{belt3}");
+        // println!();
     }
 
     println!("{assembler:?}");

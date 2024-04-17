@@ -19,3 +19,7 @@ nursery = "deny"
 unwrap_used = { level = "deny", priority = -1 }
 wildcard_enum_match_arm = { level = "deny", priority = -1 }
 match_same_arms = { level = "deny", priority = -1 }
+
+[profile.release-with-debug]
+inherits = "release"
+debug = true

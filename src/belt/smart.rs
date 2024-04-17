@@ -505,10 +505,10 @@ mod tests {
 
         b.iter(|| {
             let bb = test::black_box(&mut belt);
-            // for _ in 0..1_000 {
-            bb.update();
-            // println!("{bb}");
-            // }
+            for _ in 0..1_000_000 {
+                bb.update();
+                // println!("{bb}");
+            }
         });
 
         // println!("{belt}");
@@ -546,8 +546,10 @@ mod tests {
         }
 
         b.iter(|| {
-            let bb = test::black_box(&mut belt);
-            bb.update();
+            for _ in 0..1_000 {
+                let bb = test::black_box(&mut belt);
+                bb.update();
+            }
         });
 
         // println!("{belt:?}");
