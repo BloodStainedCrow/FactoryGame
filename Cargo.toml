@@ -4,6 +4,7 @@ version = "0.0.0"
 edition = "2021"
 
 [dependencies]
+bitvec = "1.0.1"
 enum-map = "2.7.3"
 proptest = "1.4.0"
 scoped_threadpool = { version = "0.1.9" }

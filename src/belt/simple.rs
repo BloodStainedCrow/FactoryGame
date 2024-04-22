@@ -3,6 +3,7 @@ use std::fmt::Display;
 use crate::item::Item;
 
 use super::{
+    belt::{Belt, NoSpaceError},
     in_inserter::InInserter,
     out_inserter::OutInserter,
     splitter::{SplitterInserterIn, SplitterInserterOut},
@@ -80,7 +81,7 @@ impl BeltStorage {
         }
     }
 
-    pub fn try_put_item_in_pos(&mut self, item: Item, pos: u32) -> bool {
+    pub fn try_put_item_in_pos(&mut self, item: Item, pos: usize) -> bool {
         if self.locs[pos as usize].item.is_none() {
             self.locs[pos as usize].item = Some(item);
 
@@ -102,7 +103,7 @@ impl BeltStorage {
         }
     }
 
-    pub fn try_take_item_from_pos(&mut self, item: Item, pos: u32) -> bool {
+    pub fn try_take_item_from_pos(&mut self, item: Item, pos: usize) -> bool {
         if Some(item) == self.locs[pos as usize].item {
             self.locs[pos as usize].item = None;
 
@@ -116,11 +117,11 @@ impl BeltStorage {
         }
     }
 
-    pub fn get_item_from_pos(&self, pos: u32) -> Option<Item> {
+    pub fn get_item_from_pos(&self, pos: usize) -> Option<Item> {
         self.locs[pos as usize].item
     }
 
-    pub fn get_item_from_pos_and_remove(&mut self, pos: u32) -> Option<Item> {
+    pub fn get_item_from_pos_and_remove(&mut self, pos: usize) -> Option<Item> {
         if let Some(item) = self.locs[pos as usize].item {
             self.locs[pos as usize].item = None;
 
@@ -134,13 +135,12 @@ impl BeltStorage {
         }
     }
 
-    pub fn check_for_space(&self, pos: u32) -> bool {
-        self.locs[pos as usize].item.is_none()
+    pub fn check_for_space(&self, pos: usize) -> bool {
+        self.locs[pos].item.is_none()
     }
 
-    #[allow(clippy::cast_possible_truncation)]
-    pub fn get_belt_len(&self) -> u32 {
-        self.locs.len() as u32
+    pub fn get_belt_len(&self) -> usize {
+        self.locs.len()
     }
 }
 
@@ -155,46 +155,47 @@ impl SimpleBelt {
             splitter_inserter_out: None,
         }
     }
+}
 
-    pub fn update(&mut self) {
-        if let Some(inserter) = &mut self.splitter_inserter_in {
-            inserter.update_simple(&mut self.belt_storage);
+impl Belt for SimpleBelt {
+    fn query_item(&self, pos: usize) -> Option<Item> {
+        self.belt_storage.locs[pos].item
+    }
+
+    fn remove_item(&mut self, pos: usize) -> Option<Item> {
+        self.belt_storage.get_item_from_pos_and_remove(pos)
+    }
+
+    fn try_insert_item(&mut self, pos: usize, item: Item) -> Result<(), super::belt::NoSpaceError> {
+        if self.belt_storage.try_put_item_in_pos(item, pos) {
+            Ok(())
+        } else {
+            Err(NoSpaceError {})
         }
+    }
 
+    fn add_in_inserter(&mut self, in_inserter: InInserter) {
+        self.connected_in_inserters.push(in_inserter);
+    }
+
+    fn add_out_inserter(&mut self, out_inserter: OutInserter) {
+        self.connected_out_inserters.push(out_inserter);
+    }
+
+    fn get_len(&self) -> usize {
+        self.belt_storage.get_belt_len()
+    }
+
+    fn update(&mut self) {
         self.belt_storage.update();
 
-        if let Some(inserter) = &mut self.splitter_inserter_out {
-            inserter.update_simple(&mut self.belt_storage);
-        }
-
-        for inserter in &mut self.connected_out_inserters {
-            inserter.update_belt(&mut self.belt_storage);
-        }
+        // for inserter in &self.connected_out_inserters {
+        //     inserter.update_belt(self);
+        // }
 
         for inserter in &mut self.connected_in_inserters {
             inserter.update_belt(&mut self.belt_storage);
         }
-    }
-
-    pub fn add_out_inserter(&mut self, inserter: OutInserter) {
-        self.connected_out_inserters.push(inserter);
-    }
-
-    pub fn add_in_inserter(&mut self, inserter: InInserter) {
-        self.connected_in_inserters.push(inserter);
-    }
-
-    pub(super) fn add_splitter_inserter_in(&mut self, inserter: SplitterInserterIn) {
-        self.splitter_inserter_in = Some(inserter);
-    }
-
-    pub(super) fn add_splitter_inserter_out(&mut self, inserter: SplitterInserterOut) {
-        self.splitter_inserter_out = Some(inserter);
-    }
-
-    #[must_use]
-    pub fn get_item_at(&self, pos: u32) -> Option<Item> {
-        self.belt_storage.locs[pos as usize].item
     }
 }
 

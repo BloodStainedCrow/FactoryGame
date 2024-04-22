@@ -2,14 +2,16 @@ use std::{marker::PhantomData, sync::atomic::AtomicU64};
 
 use enum_map::Enum;
 use proptest::{
-    prelude::prop,
     prop_oneof,
     strategy::{Just, Strategy},
 };
 
+use crate::item;
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Enum)]
 pub enum Item {
     Iron,
+    Copper,
 }
 
 pub fn all_items() -> impl Strategy<Value = Item> {
@@ -30,13 +32,16 @@ pub fn option() -> impl Strategy<Value = Option<Item>> {
 pub const fn get_char(item: Item) -> char {
     match item {
         Item::Iron => 'I',
+        Item::Copper => 'C',
     }
 }
 
+#[allow(clippy::match_same_arms)]
 #[must_use]
 pub const fn get_time_to_generate(item: Item) -> u16 {
     match item {
         Item::Iron => 2,
+        Item::Copper => 2,
     }
 }
 
@@ -44,6 +49,7 @@ pub const fn get_time_to_generate(item: Item) -> u16 {
 pub const fn get_max_stack_size(item: Item) -> u64 {
     match item {
         Item::Iron => 2_000_000_000_000,
+        Item::Copper => 100,
     }
 }
 
@@ -98,22 +104,20 @@ pub trait ItemTrait {
     fn get_item() -> Item;
 }
 
-#[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
-pub struct Iron;
-// #[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
-// pub struct Copper;
-
-impl const ItemTrait for Iron {
-    fn get_item() -> Item {
-        Item::Iron
-    }
+macro_rules! item {
+    ( $x:ident ) => {
+        #[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
+        pub struct $x;
+        impl const ItemTrait for $x {
+            fn get_item() -> Item {
+                Item::$x
+            }
+        }
+    };
 }
 
-// impl ItemTrait for Copper {
-//     fn get_item() -> Item {
-//         Item::Copper
-//     }
-// }
+item!(Iron);
+item!(Copper);
 
 #[derive(Debug)]
 #[allow(clippy::module_name_repetitions)]
@@ -150,7 +154,6 @@ impl<T: ItemTrait> ItemStorer for ItemStorageStrict<T> {
         &self.count
     }
 }
-
 #[derive(Debug)]
 #[allow(clippy::module_name_repetitions)]
 pub struct ItemStorage {

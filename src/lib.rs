@@ -1,7 +1,7 @@
 #![feature(test)]
 #![feature(const_trait_impl)]
 #![feature(effects)]
-#![feature(portable_simd)]
+// #![feature(portable_simd)]
 #![feature(let_chains)]
 
 pub mod assembler;

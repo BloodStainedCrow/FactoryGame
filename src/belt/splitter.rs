@@ -18,44 +18,44 @@ pub struct Splitter {
 }
 
 impl Splitter {
-    pub fn new(belt_in: &mut SimpleBelt, belts_out: &mut [&mut SimpleBelt; 2]) -> Self {
-        let (tx, rx) = sync_channel(2);
-        let items_in = rx;
-        let items_in_len = Arc::new(AtomicU8::new(0));
+    // pub fn new(belt_in: &mut SimpleBelt, belts_out: &mut [&mut SimpleBelt; 2]) -> Self {
+    //     let (tx, rx) = sync_channel(2);
+    //     let items_in = rx;
+    //     let items_in_len = Arc::new(AtomicU8::new(0));
 
-        let inserter_in = SplitterInserterIn {
-            items_in_of_splitter: tx,
-            items_in_count: Arc::downgrade(&items_in_len),
-        };
+    //     let inserter_in = SplitterInserterIn {
+    //         items_in_of_splitter: tx,
+    //         items_in_count: Arc::downgrade(&items_in_len),
+    //     };
 
-        let (tx1, rx1) = sync_channel(2);
-        let (tx2, rx2) = sync_channel(2);
-        let items_out = [tx1, tx2];
-        let items_out_len = [Arc::new(AtomicU8::new(0)), Arc::new(AtomicU8::new(0))];
+    //     let (tx1, rx1) = sync_channel(2);
+    //     let (tx2, rx2) = sync_channel(2);
+    //     let items_out = [tx1, tx2];
+    //     let items_out_len = [Arc::new(AtomicU8::new(0)), Arc::new(AtomicU8::new(0))];
 
-        let inserter_out_0 = SplitterInserterOut {
-            items_out_of_splitter: rx1,
-            items_out_count: Arc::downgrade(&items_out_len[0]),
-        };
+    //     let inserter_out_0 = SplitterInserterOut {
+    //         items_out_of_splitter: rx1,
+    //         items_out_count: Arc::downgrade(&items_out_len[0]),
+    //     };
 
-        let inserter_out_1 = SplitterInserterOut {
-            items_out_of_splitter: rx2,
-            items_out_count: Arc::downgrade(&items_out_len[1]),
-        };
+    //     let inserter_out_1 = SplitterInserterOut {
+    //         items_out_of_splitter: rx2,
+    //         items_out_count: Arc::downgrade(&items_out_len[1]),
+    //     };
 
-        belt_in.add_splitter_inserter_in(inserter_in);
+    //     belt_in.add_splitter_inserter_in(inserter_in);
 
-        belts_out[0].add_splitter_inserter_out(inserter_out_0);
-        belts_out[1].add_splitter_inserter_out(inserter_out_1);
+    //     belts_out[0].add_splitter_inserter_out(inserter_out_0);
+    //     belts_out[1].add_splitter_inserter_out(inserter_out_1);
 
-        Self {
-            items_in,
-            items_in_len,
-            items_out,
-            items_out_len,
-            next_out: false,
-        }
-    }
+    //     Self {
+    //         items_in,
+    //         items_in_len,
+    //         items_out,
+    //         items_out_len,
+    //         next_out: false,
+    //     }
+    // }
 
     ///
     /// # Panics
