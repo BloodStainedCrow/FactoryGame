@@ -65,15 +65,17 @@ impl SmartBeltStorage {
             self.zero_index += 1;
             match self.first_free_index {
                 FreeIndex::FreeIndex(0) => self.first_free_index = FreeIndex::OldFreeIndex(None),
-                FreeIndex::FreeIndex(index) => {
-                    self.first_free_index = FreeIndex::FreeIndex(index - 1);
+                FreeIndex::FreeIndex(_) => {
+                    unreachable!("FreeIndex should always point at the earliest known zero")
                 },
-                FreeIndex::OldFreeIndex(Some(index)) => {
-                    self.first_free_index = FreeIndex::OldFreeIndex(Some(index - 1));
+                FreeIndex::OldFreeIndex(Some(0)) => {
+                    self.first_free_index = FreeIndex::OldFreeIndex(None);
+                },
+                FreeIndex::OldFreeIndex(Some(_)) => {
+                    unreachable!("OldFreeIndex should always point at the earliest potential zero")
                 },
                 FreeIndex::OldFreeIndex(None) => {},
             }
-            // println!("Fast path");
             return;
         }
 
