@@ -1,38 +1,31 @@
-use crate::item::{Item, ItemTrait};
+use crate::item::{get_char, Item, ItemTrait};
 use std::{error::Error, fmt::Display};
 
-use super::{
-    in_inserter::InInserter,
-    out_inserter::OutInserter,
-    strict::{in_inserter::InInserterStrict, out_inserter::OutInserterStrict},
-};
-
-pub(super) trait Belt {
-    fn query_item(&self, pos: usize) -> Option<Item>;
-    fn remove_item(&mut self, pos: usize) -> Option<Item>;
-    /// # Errors
-    /// When there is no space at `pos`
-    fn try_insert_item(&mut self, pos: usize, item: Item) -> Result<(), NoSpaceError>;
-
-    fn add_in_inserter(&mut self, in_inserter: InInserter);
-    fn add_out_inserter(&mut self, out_inserter: OutInserter);
-
-    fn get_len(&self) -> usize;
-
-    fn update(&mut self);
-}
-
-pub(super) trait StrictBelt<T: ItemTrait> {
+pub trait Belt<T: ItemTrait> {
     fn query_item(&self, pos: usize) -> Option<Item>;
     fn remove_item(&mut self, pos: usize) -> Option<Item>;
     /// # Errors
     /// When there is no space at `pos`
     fn try_insert_item(&mut self, pos: usize) -> Result<(), NoSpaceError>;
 
-    fn add_in_inserter(&mut self, in_inserter: InInserterStrict<T>);
-    fn add_out_inserter(&mut self, in_inserter: OutInserterStrict<T>);
+    fn get_len(&self) -> usize;
 
     fn update(&mut self);
+}
+
+impl<T: ItemTrait> Display for dyn Belt<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut s = String::new();
+
+        for i in 0..self.get_len() {
+            match self.query_item(i) {
+                Some(item) => s.push(get_char(item)),
+                None => s.push(' '),
+            }
+        }
+
+        write!(f, "{s}")
+    }
 }
 
 #[derive(Debug)]

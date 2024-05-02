@@ -1,94 +1,97 @@
-use std::{fmt::Display, mem};
+use std::{marker::PhantomData, mem};
 
-use crate::item::Item;
-
-use super::{
-    belt::{Belt, NoSpaceError},
-    in_inserter::InInserter,
-    out_inserter::OutInserter,
-    splitter::{SplitterInserterIn, SplitterInserterOut},
+use crate::{
+    inserter::Inserter,
+    item::{Iron, Item, ItemStorage, ItemTrait},
 };
+
+use super::belt::{Belt, NoSpaceError};
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
-pub struct SmartBelt {
-    belt_storage: SmartBeltStorage,
-    connected_out_inserters: Vec<OutInserter>,
-    connected_in_inserters: Vec<InInserter>,
-    splitter_inserter_in: Option<SplitterInserterIn>,
-    splitter_inserter_out: Option<SplitterInserterOut>,
-}
-
-impl Display for SmartBelt {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut s = String::new();
-
-        for i in 0..self.belt_storage.locs.len() {
-            if self.query_item(i).is_some() {
-                s.push('I');
-            } else {
-                s.push('.');
-            }
-        }
-
-        write!(f, "{s}")
-    }
-}
-
-#[derive(Debug)]
-pub(super) struct SmartBeltStorage {
+pub struct SmartBelt<T: ItemTrait> {
+    marker: PhantomData<T>,
     first_free_index: FreeIndex,
     zero_index: usize,
-    locs: Vec<Option<Item>>,
+    locs: Vec<bool>,
+    inserters: Vec<Option<Inserter<T>>>,
 }
+
+type Test = (u16, Option<Inserter<Iron>>);
 
 #[derive(Debug, PartialEq)]
 enum FreeIndex {
     FreeIndex(usize),
-    OldFreeIndex(Option<usize>),
+    OldFreeIndex(usize),
 }
 
-impl SmartBeltStorage {
+impl<T: ItemTrait> SmartBelt<T> {
     #[must_use]
     pub fn new(len: usize) -> Self {
         Self {
+            marker: PhantomData {},
             first_free_index: FreeIndex::FreeIndex(0),
             zero_index: 0,
-            locs: vec![None; len],
+            locs: vec![false; len],
+            inserters: vec![None; len],
         }
     }
 
-    pub fn update(&mut self) {
-        if self.query_item(0).is_none() {
-            // Correctness: Since we always % len whenever we access using self.zero_index, we do not need to % len here
-            // TODO: This could overflow after usize::MAX ticks which is 9749040289 Years. Should be fine!
-            self.zero_index += 1;
-            match self.first_free_index {
-                FreeIndex::FreeIndex(0) => self.first_free_index = FreeIndex::OldFreeIndex(None),
-                FreeIndex::FreeIndex(_) => {
-                    unreachable!("FreeIndex should always point at the earliest known zero")
+    #[inline(never)]
+    pub fn update_inserters(&mut self, storages: &mut [ItemStorage<T>]) {
+        let mut new_first_free_pos = self.get_len();
+
+        for (index, (ins_opt, loc)) in self
+            .inserters
+            .iter_mut()
+            .zip(self.locs.iter_mut())
+            .enumerate()
+            .rev()
+        {
+            match ins_opt {
+                Some(ins) => {
+                    if *loc {
+                        *loc = !ins.update(storages);
+
+                        if !*loc {
+                            dbg!("Item taken!");
+                            new_first_free_pos = index;
+                        }
+                    }
                 },
-                FreeIndex::OldFreeIndex(Some(0)) => {
-                    self.first_free_index = FreeIndex::OldFreeIndex(None);
-                },
-                FreeIndex::OldFreeIndex(Some(_)) => {
-                    unreachable!("OldFreeIndex should always point at the earliest potential zero")
-                },
-                FreeIndex::OldFreeIndex(None) => {},
+                None => {},
             }
-            return;
         }
 
-        self.zero_index %= self.locs.len();
-        // println!("SLOW path");
+        self.update_first_free_pos(new_first_free_pos);
+    }
 
-        let first_free_index_real = match self.first_free_index {
+    fn update_first_free_pos(&mut self, now_empty_pos: usize) {
+        match self.first_free_index {
+            FreeIndex::FreeIndex(index) =>
+            {
+                #[allow(clippy::cast_possible_truncation)]
+                if now_empty_pos <= index {
+                    self.first_free_index = FreeIndex::FreeIndex(now_empty_pos);
+                }
+            },
+            FreeIndex::OldFreeIndex(index) => {
+                if now_empty_pos <= index {
+                    self.first_free_index = FreeIndex::FreeIndex(now_empty_pos);
+                }
+            },
+        }
+    }
+
+    #[inline(never)]
+    fn find_and_update_real_first_free_index(&mut self) -> usize {
+        let new_free_index = match self.first_free_index {
             FreeIndex::FreeIndex(index) => index,
             FreeIndex::OldFreeIndex(index) => {
                 #[cfg(debug)]
                 println!("HAD TO SEARCH FOR FIRST FREE INDEX!");
 
-                let search_start_index = index.unwrap_or(0);
+                let search_start_index = index;
 
                 let mut iter = self
                     .locs
@@ -102,11 +105,86 @@ impl SmartBeltStorage {
                 // We now have an iterator which is effectively the belt in the correct order,
                 // starting at search_start_index
 
-                iter.position(Option::is_none)
+                iter.position(|x| !(*x))
                     .unwrap_or(self.locs.len() - search_start_index)
                     + search_start_index
             },
         };
+
+        self.first_free_index = FreeIndex::FreeIndex(new_free_index);
+
+        new_free_index
+    }
+}
+
+impl<T: ItemTrait> Belt<T> for SmartBelt<T> {
+    #[inline(never)]
+    fn query_item(&self, pos: usize) -> Option<Item> {
+        if self.locs[(self.zero_index + pos) % self.locs.len()] {
+            Some(T::get_item())
+        } else {
+            None
+        }
+    }
+
+    fn remove_item(&mut self, pos: usize) -> Option<Item> {
+        self.update_first_free_pos(pos);
+        self.query_item(pos).map(|item| {
+            let len = self.locs.len();
+            self.locs[(self.zero_index + pos) % len] = false;
+
+            item
+        })
+    }
+
+    fn try_insert_item(&mut self, pos: usize) -> Result<(), super::belt::NoSpaceError> {
+        if self.query_item(pos).is_none() {
+            let len = self.locs.len();
+            self.locs[(self.zero_index + pos) % len] = true;
+
+            // TODO: Check that the compiler realizes these are the same
+            // Update first_free_index to show that it is old
+            match self.first_free_index {
+                FreeIndex::OldFreeIndex(free_index) | FreeIndex::FreeIndex(free_index) => {
+                    if free_index == pos {
+                        self.first_free_index = FreeIndex::OldFreeIndex(free_index);
+                    }
+                },
+            }
+
+            Ok(())
+        } else {
+            Err(NoSpaceError {})
+        }
+    }
+
+    fn update(&mut self) {
+        if self.query_item(0).is_none() {
+            // Correctness: Since we always % len whenever we access using self.zero_index, we do not need to % len here
+            // TODO: This could overflow after usize::MAX ticks which is 9749040289 Years. Should be fine!
+            self.zero_index += 1;
+            match self.first_free_index {
+                FreeIndex::FreeIndex(0) | FreeIndex::OldFreeIndex(0) => {
+                    if self.query_item(0).is_none() {
+                        self.first_free_index = FreeIndex::FreeIndex(0);
+                    } else {
+                        self.first_free_index = FreeIndex::OldFreeIndex(0);
+                    }
+                },
+                FreeIndex::FreeIndex(_) => {
+                    unreachable!("FreeIndex should always point at the earliest known empty spot and we know that index 0 WAS an empty spot")
+                },
+                FreeIndex::OldFreeIndex(_) => {
+                    unreachable!("OldFreeIndex should always point at the earliest potential empty spot and we know that index 0 WAS an empty spot")
+                },
+            }
+            return;
+        }
+
+        self.zero_index %= self.locs.len();
+        // println!("SLOW path");
+
+        let first_free_index_real = self.find_and_update_real_first_free_index();
 
         let len = self.locs.len();
 
@@ -140,7 +218,7 @@ impl SmartBeltStorage {
                     // Step 2: Rotate the middle_stuck_slice to the right moving the empty spot to the start
                     middle_stuck_slice.rotate_right(1);
 
-                    debug_assert!(middle_stuck_slice[0].is_none());
+                    debug_assert!(!middle_stuck_slice[0]);
 
                     // Step 3: Copy the empty spot into the stuck start_slice
                     mem::swap(
@@ -215,144 +293,11 @@ impl SmartBeltStorage {
 
         // Instead of finding the real first_free_index after the update, we just use OldFreeIndex since most likely an inserter
         // Will update it for us before the next update
-        self.first_free_index = FreeIndex::OldFreeIndex(Some(first_free_index_real));
-    }
-
-    fn query_item(&self, pos: usize) -> Option<Item> {
-        self.locs[(self.zero_index + pos) % self.locs.len()]
-    }
-
-    fn set_item(&mut self, pos: usize, item: Option<Item>) {
-        let len = self.locs.len();
-        self.locs[(self.zero_index + pos) % len] = item;
-    }
-
-    pub fn try_put_item_in_pos(&mut self, item: Item, pos: usize) -> bool {
-        if self.query_item(pos).is_none() {
-            self.set_item(pos, Some(item));
-
-            // Update first_free_index to show that it is old
-            match self.first_free_index {
-                FreeIndex::FreeIndex(free_index) => {
-                    if free_index == pos {
-                        self.first_free_index = FreeIndex::OldFreeIndex(Some(free_index));
-                    }
-                },
-                FreeIndex::OldFreeIndex(Some(old_free_index)) => {
-                    if old_free_index == pos {
-                        unreachable!("If some spot is free, it should always be FreeIndex(index) and never OldFreeIndex(index)")
-                    }
-                },
-                FreeIndex::OldFreeIndex(None) => {},
-            }
-
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn try_take_item_from_pos(&mut self, item: Item, pos: usize) -> bool {
-        if Some(item) == self.query_item(pos) {
-            self.set_item(pos, None);
-
-            self.update_first_free_pos(pos);
-
-            true
-        } else {
-            false
-        }
-    }
-
-    fn update_first_free_pos(&mut self, now_empty_pos: usize) {
-        match self.first_free_index {
-            FreeIndex::FreeIndex(index) =>
-            {
-                #[allow(clippy::cast_possible_truncation)]
-                if now_empty_pos <= index {
-                    self.first_free_index = FreeIndex::FreeIndex(now_empty_pos);
-                }
-            },
-            FreeIndex::OldFreeIndex(Some(index)) => {
-                if now_empty_pos <= index {
-                    self.first_free_index = FreeIndex::FreeIndex(now_empty_pos);
-                }
-            },
-            FreeIndex::OldFreeIndex(None) => {
-                if now_empty_pos == 0 {
-                    self.first_free_index = FreeIndex::FreeIndex(0);
-                }
-            },
-        }
-    }
-
-    pub fn get_item_from_pos_and_remove(&mut self, pos: usize) -> Option<Item> {
-        self.update_first_free_pos(pos);
-        self.query_item(pos).map(|item| {
-            self.set_item(pos, None);
-
-            item
-        })
-    }
-
-    #[allow(clippy::cast_possible_truncation)]
-    pub fn get_belt_len(&self) -> usize {
-        self.locs.len()
-    }
-}
-
-impl SmartBelt {
-    #[must_use]
-    pub fn new(len: usize) -> Self {
-        Self {
-            belt_storage: SmartBeltStorage::new(len),
-            connected_out_inserters: vec![],
-            connected_in_inserters: vec![],
-            splitter_inserter_in: None,
-            splitter_inserter_out: None,
-        }
-    }
-}
-
-impl Belt for SmartBelt {
-    fn query_item(&self, pos: usize) -> Option<Item> {
-        self.belt_storage.query_item(pos)
-    }
-
-    fn remove_item(&mut self, pos: usize) -> Option<Item> {
-        self.belt_storage.get_item_from_pos_and_remove(pos)
-    }
-
-    fn try_insert_item(&mut self, pos: usize, item: Item) -> Result<(), super::belt::NoSpaceError> {
-        if self.belt_storage.try_put_item_in_pos(item, pos) {
-            Ok(())
-        } else {
-            Err(NoSpaceError {})
-        }
-    }
-
-    fn add_in_inserter(&mut self, in_inserter: InInserter) {
-        self.connected_in_inserters.push(in_inserter);
-    }
-
-    fn add_out_inserter(&mut self, out_inserter: OutInserter) {
-        self.connected_out_inserters.push(out_inserter);
-    }
-
-    fn update(&mut self) {
-        self.belt_storage.update();
-
-        // for inserter in &mut self.connected_out_inserters {
-        //     inserter.update_belt_smart(&mut self.belt_storage);
-        // }
-
-        // for inserter in &mut self.connected_in_inserters {
-        //     inserter.update_belt(&mut self.belt_storage);
-        // }
+        self.first_free_index = FreeIndex::OldFreeIndex(first_free_index_real);
     }
 
     fn get_len(&self) -> usize {
-        self.belt_storage.get_belt_len()
+        self.locs.len()
     }
 }
 
@@ -360,33 +305,27 @@ impl Belt for SmartBelt {
 mod tests {
 
     extern crate test;
-    use std::{array, sync::Arc};
+
+    use std::num::NonZeroU16;
 
     use proptest::{prelude::prop, prop_assert_eq, proptest};
     use test::Bencher;
 
-    use crate::{
-        belt::do_update_test,
-        item::{option, Iron},
-        specialized_storage::SpecializedStorage,
-    };
-
-    use bitvec::bitvec;
-    use bitvec::prelude::*;
+    use crate::{belt::do_update_test_bools, item::Iron};
 
     use super::*;
 
-    const MAX_LEN: usize = 10_000;
+    const MAX_LEN: usize = 5_000_000;
     proptest! {
 
         #[test]
         fn test_belt_moves_item_forward(item_pos in 0..MAX_LEN) {
-            let mut belt = SmartBelt::new(MAX_LEN);
+            let mut belt = SmartBelt::<Iron>::new(MAX_LEN);
 
-            let ret = belt.belt_storage.try_put_item_in_pos(Item::Iron, item_pos);
+            let ret = belt.try_insert_item(item_pos);
 
             // Since the whole belt is empty, it should not fail to put an item in
-            assert!(ret);
+            assert!(ret.is_ok());
 
             belt.update();
 
@@ -412,27 +351,30 @@ mod tests {
         }
 
         #[test]
-        fn test_smart_belt_agrees_with_functional(mut items in prop::collection::vec(option(), 1..100)) {
-            let mut belt = SmartBelt::new(items.len());
+        fn test_smart_belt_agrees_with_functional(mut items in prop::collection::vec(prop::bool::ANY, 1..100)) {
+            let mut belt = SmartBelt::<Iron>::new(items.len());
 
             for (i, item_opt) in items.iter().enumerate() {
-                match item_opt {
-                    Some(item) => {
-                        belt.belt_storage.try_put_item_in_pos(*item, i);
-                    },
-                    None => {
-                        belt.belt_storage.get_item_from_pos_and_remove(i);
-                    },
-                };
+
+                if *item_opt {
+                    belt.try_insert_item(i).expect("Since the belt starts empty this should never fail");
+                } else {
+                    belt.remove_item(i);
+                }
             }
 
             for _update_count in 0..items.len() * 2 {
                 belt.update();
 
-                do_update_test(&mut items);
+                do_update_test_bools(&mut items);
 
-                for (i, item) in items.iter().enumerate() {
-                    prop_assert_eq!(belt.query_item(i), *item);
+                for (i, should_be_filled) in items.iter().enumerate() {
+                    let correct = if *should_be_filled {
+                        Some(Item::Iron)
+                    } else {
+                        None
+                    };
+                    prop_assert_eq!(belt.query_item(i), correct);
                 }
             }
         }
@@ -440,50 +382,63 @@ mod tests {
 
     #[test]
     fn test_smart_belt_does_not_set_free_index_wrong() {
-        let mut belt = SmartBelt::new(MAX_LEN);
-
-        let storage = SpecializedStorage::<Iron>::new();
-
-        storage
-            .storage
-            .count
-            .store(1_000_000_000, std::sync::atomic::Ordering::Relaxed);
+        let mut belt = SmartBelt::<Iron>::new(MAX_LEN);
 
         // OutInserter::create_and_add(Arc::downgrade(&storage.storage), &mut belt, MAX_LEN - 1);
 
-        belt.belt_storage.try_put_item_in_pos(Item::Iron, 0);
+        belt.try_insert_item(0).expect("Expected insert to work");
 
         for _ in 0..1_000 {
             belt.update();
-            belt.belt_storage.get_item_from_pos_and_remove(1);
+            belt.remove_item(1);
+        }
+    }
+
+    #[test]
+    fn test_smart_belt_with_inserters() {
+        let mut belt = SmartBelt::<Iron>::new(10);
+
+        let storage_unused = ItemStorage::<Iron>::default();
+
+        let storage_source = ItemStorage::<Iron>::new(30);
+        let storage_dest = ItemStorage::<Iron>::default();
+
+        belt.inserters[5] = Some(Inserter::<Iron>::new(
+            NonZeroU16::new(2).expect("Hardcoded"),
+        ));
+
+        let mut storages = [storage_unused, storage_source, storage_dest];
+
+        for _ in 0..20 {
+            belt.update();
+            belt.update_inserters(&mut storages);
+            // let _ = belt.remove_item(5);
+
+            let _ = belt.try_insert_item(9);
+
+            println!("{belt:?},  {:?}", storages[2]);
         }
     }
 
     #[test]
     fn test_debug() {
-        let mut belt = SmartBelt::new(MAX_LEN);
+        let mut belt = SmartBelt::<Iron>::new(MAX_LEN);
 
         for _ in 0..100_000 {
             let bb = test::black_box(&mut belt);
-            // for _ in 0..1_000 {
             bb.update();
-            // println!("{bb}");
-            // }
         }
     }
 
     #[bench]
     fn bench_smart_belt_update_free_flowing(b: &mut Bencher) {
-        let mut belt = SmartBelt::new(MAX_LEN);
+        let mut belt = SmartBelt::<Iron>::new(MAX_LEN);
         // belt.belt_storage
         //     .try_put_item_in_pos(Item::Iron, MAX_LEN - 1);
 
         b.iter(|| {
             let bb = test::black_box(&mut belt);
-            for _ in 0..1_000_000 {
-                bb.update();
-                // println!("{bb}");
-            }
+            bb.update();
         });
 
         // println!("{belt}");
@@ -491,18 +446,15 @@ mod tests {
 
     #[bench]
     fn bench_smart_belt_update_stuck(b: &mut Bencher) {
-        let mut belt = SmartBelt::new(MAX_LEN);
-        belt.belt_storage
-            .try_put_item_in_pos(Item::Iron, MAX_LEN - 1);
+        let mut belt = SmartBelt::<Iron>::new(MAX_LEN);
+        belt.try_insert_item(MAX_LEN - 1)
+            .expect("Expected insert to work");
 
-        belt.belt_storage.try_put_item_in_pos(Item::Iron, 0);
+        belt.try_insert_item(0).expect("Expected insert to work");
 
         b.iter(|| {
             let bb = test::black_box(&mut belt);
-            // for _ in 0..1_000 {
             bb.update();
-            // println!("{bb}");
-            // }
         });
 
         // println!("{belt}");
@@ -510,79 +462,21 @@ mod tests {
 
     #[bench]
     fn bench_smart_belt_worst_case(b: &mut Bencher) {
-        let mut belt = SmartBelt::new(MAX_LEN);
+        let mut belt = SmartBelt::<Iron>::new(MAX_LEN);
 
         for i in 0..MAX_LEN / 2 {
-            assert!(belt.belt_storage.try_put_item_in_pos(Item::Iron, i));
+            assert!(belt.try_insert_item(i).is_ok());
         }
 
-        for _ in MAX_LEN / 2..MAX_LEN {
+        for _ in (MAX_LEN / 2)..MAX_LEN {
             // This spot is empty
         }
 
         b.iter(|| {
-            for _ in 0..1_000 {
-                let bb = test::black_box(&mut belt);
-                bb.update();
-            }
+            let bb = test::black_box(&mut belt);
+            bb.update();
         });
 
         // println!("{belt:?}");
-    }
-
-    #[bench]
-    fn bench_bool_vec_rotate(b: &mut Bencher) {
-        let mut vec = vec![true; 1_000];
-
-        assert!(vec.get(999).is_some());
-        assert!(vec.get(1_000).is_none());
-
-        b.iter(|| {
-            test::black_box(&mut vec).rotate_left(1);
-        });
-    }
-
-    #[bench]
-    fn bench_bool_bitvec_rotate(b: &mut Bencher) {
-        let mut vec = bitvec![usize, Lsb0; 0; 1_000];
-
-        assert!(vec.get(999).is_some());
-        assert!(vec.get(1_000).is_none());
-
-        b.iter(|| {
-            test::black_box(&mut vec).rotate_left(1);
-        });
-    }
-
-    #[bench]
-    fn bench_bool_vec_get(b: &mut Bencher) {
-        let vec = vec![true; 1_000_000];
-
-        assert!(vec.get(999_999).is_some());
-        assert!(vec.get(1_000_000).is_none());
-
-        let mut i = 0;
-        b.iter(|| {
-            for _ in 0..1_000_000 {
-                test::black_box(&mut vec.get(i));
-                i += 1;
-            }
-        });
-    }
-
-    #[bench]
-    fn bench_bool_bitvec_get(b: &mut Bencher) {
-        let vec = bitvec![usize, Lsb0; 0; 1_000_000];
-
-        assert!(vec.get(999_999).is_some());
-        assert!(vec.get(1_000_000).is_none());
-
-        let mut i = 0;
-        b.iter(|| {
-            for _ in 0..1_000_000 {
-                test::black_box(&mut vec.get(i));
-                i += 1;
-            }
-        });
     }
 }

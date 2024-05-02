@@ -1,12 +1,14 @@
-use std::{marker::PhantomData, sync::atomic::AtomicU64};
+use std::{
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+};
 
+use bytemuck::TransparentWrapper;
 use enum_map::Enum;
 use proptest::{
     prop_oneof,
     strategy::{Just, Strategy},
 };
-
-use crate::item;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Enum)]
 pub enum Item {
@@ -46,9 +48,9 @@ pub const fn get_time_to_generate(item: Item) -> u16 {
 }
 
 #[must_use]
-pub const fn get_max_stack_size(item: Item) -> u64 {
+pub const fn get_max_stack_size(item: Item) -> u16 {
     match item {
-        Item::Iron => 2_000_000_000_000,
+        Item::Iron => 2_000,
         Item::Copper => 100,
     }
 }
@@ -102,67 +104,37 @@ pub fn all_recipes() -> impl Strategy<Value = Recipe> {
 #[const_trait]
 pub trait ItemTrait {
     fn get_item() -> Item;
+    fn get_time_to_generate() -> u16;
 }
 
 macro_rules! item {
-    ( $x:ident ) => {
+    ( $x:ident, $y:expr) => {
         #[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
         pub struct $x;
         impl const ItemTrait for $x {
             fn get_item() -> Item {
                 Item::$x
             }
+
+            fn get_time_to_generate() -> u16 {
+                $y
+            }
         }
     };
 }
 
-item!(Iron);
-item!(Copper);
+item!(Iron, 2);
+item!(Copper, 2);
 
-#[derive(Debug)]
 #[allow(clippy::module_name_repetitions)]
 #[repr(transparent)]
-pub struct ItemStorageStrict<T: ItemTrait> {
-    pub count: AtomicU64,
-    marker: PhantomData<T>,
-}
+#[derive(Debug, TransparentWrapper, Default)]
+#[transparent(u16)]
+pub struct ItemStorage<T: ItemTrait>(u16, PhantomData<T>);
 
-impl<T: ItemTrait> Default for ItemStorageStrict<T> {
-    fn default() -> Self {
-        Self {
-            count: AtomicU64::default(),
-            marker: PhantomData,
-        }
+impl<T: ItemTrait> ItemStorage<T> {
+    #[must_use]
+    pub const fn new(val: u16) -> Self {
+        Self(val, PhantomData {})
     }
-}
-
-impl<T: ItemTrait> From<ItemStorageStrict<T>> for ItemStorage {
-    fn from(val: ItemStorageStrict<T>) -> Self {
-        Self {
-            count: val.count,
-            item: T::get_item(),
-        }
-    }
-}
-
-impl<T: ItemTrait> ItemStorer for ItemStorageStrict<T> {
-    fn get_item(&self) -> Item {
-        T::get_item()
-    }
-
-    fn get_count(&self) -> &AtomicU64 {
-        &self.count
-    }
-}
-#[derive(Debug)]
-#[allow(clippy::module_name_repetitions)]
-pub struct ItemStorage {
-    pub count: AtomicU64,
-    pub item: Item,
-}
-
-#[allow(clippy::module_name_repetitions)]
-pub trait ItemStorer {
-    fn get_item(&self) -> Item;
-    fn get_count(&self) -> &AtomicU64;
 }

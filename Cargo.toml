@@ -1,10 +1,11 @@
+cargo-features = ["codegen-backend"]
 [package]
 name = "factory"
 version = "0.0.0"
 edition = "2021"
 
 [dependencies]
-bitvec = "1.0.1"
+bytemuck = { version = "1.15.0", features = ["derive"] }
 enum-map = "2.7.3"
 proptest = "1.4.0"
 scoped_threadpool = { version = "0.1.9" }
@@ -24,3 +25,17 @@ match_same_arms = { level = "deny", priority = -1 }
 [profile.release-with-debug]
 inherits = "release"
 debug = true
+
+[profile.fast-compile]
+inherits = "dev"
+opt-level = 0
+debug = 0
+strip = "none"
+lto = false
+codegen-units = 256
+incremental = true
+codegen-backend = "cranelift"
+
+[profile.release]
+lto = true
+codegen-units = 1

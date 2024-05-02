@@ -1,682 +1,233 @@
-use std::{
-    ops::{Add, Sub},
-    // simd::{
-    // cmp::{SimdPartialEq, SimdPartialOrd},
-    // Simd,
-    // },
-    sync::{atomic::Ordering, Arc},
+use std::simd::cmp::SimdPartialOrd;
+
+use bytemuck::TransparentWrapper;
+
+use crate::{
+    item::{Copper, Iron, ItemStorage, ItemTrait},
+    producer::Simdtype,
 };
 
-use crate::item::{get_max_stack_size, ItemStorageStrict, ItemTrait, Recipe};
+struct NoItem;
 
-#[derive(Debug)]
-pub struct Assembler<IngredientItem: ItemTrait, ResultItem: ItemTrait> {
-    pub recipe: Recipe,
-    pub timer: i32,
-    pub ingredient_storage: Arc<ItemStorageStrict<IngredientItem>>,
-    pub result_storage: Arc<ItemStorageStrict<ResultItem>>,
-}
+struct MultiItemStorage<T: ItemTrait, R>(Vec<ItemStorage<T>>, R);
 
-impl<IngredientItem: ItemTrait, ResultItem: ItemTrait> Assembler<IngredientItem, ResultItem> {
-    #[must_use]
-    pub fn new(recipe: Recipe) -> Self {
-        Self {
-            recipe,
-            timer: i32::from(recipe.time),
-            ingredient_storage: Arc::new(ItemStorageStrict::<IngredientItem>::default()),
-            result_storage: Arc::new(ItemStorageStrict::<ResultItem>::default()),
-        }
-    }
+const NUM_RECIPED_WITH_1: usize = 1;
+const NUM_RECIPED_WITH_2: usize = 0;
+const NUM_RECIPED_WITH_3: usize = 1;
+const NUM_RECIPED_WITH_4: usize = 1;
+const NUM_RECIPED_WITH_5: usize = 0;
 
-    pub fn update(&mut self) {
-        if self.timer <= 0
-            && self.ingredient_storage.count.load(Ordering::Relaxed)
-                >= self.recipe.ingredient_amount
-            && self.result_storage.count.load(Ordering::Relaxed)
-                <= get_max_stack_size(self.recipe.result) - self.recipe.result_amount
-        {
-            self.ingredient_storage
-                .count
-                .fetch_sub(self.recipe.ingredient_amount, Ordering::Relaxed);
-            self.result_storage
-                .count
-                .fetch_add(self.recipe.result_amount, Ordering::Relaxed);
+const NUM_RECIPES: usize = NUM_RECIPED_WITH_1
+    + NUM_RECIPED_WITH_2
+    + NUM_RECIPED_WITH_3
+    + NUM_RECIPED_WITH_4
+    + NUM_RECIPED_WITH_5;
 
-            self.timer = i32::from(self.recipe.time);
-        }
-        self.timer -= 1;
-    }
-}
+const INPUT_COUNTS_1: [u8; NUM_RECIPES] = [1, 3, 10];
+const INPUT_COUNTS_2: [u8; NUM_RECIPES - NUM_RECIPED_WITH_1] = [2, 1];
+const INPUT_COUNTS_3: [u8; NUM_RECIPES - NUM_RECIPED_WITH_2 - NUM_RECIPED_WITH_1] = [10, 10];
+const INPUT_COUNTS_4: [u8; NUM_RECIPES
+    - NUM_RECIPED_WITH_3
+    - NUM_RECIPED_WITH_2
+    - NUM_RECIPED_WITH_1] = [1];
+const INPUT_COUNTS_5: [u8; NUM_RECIPES
+    - NUM_RECIPED_WITH_4
+    - NUM_RECIPED_WITH_3
+    - NUM_RECIPED_WITH_2
+    - NUM_RECIPED_WITH_1] = [];
 
-struct MultiAssemblerStorage {
+#[derive(Debug, Default)]
+pub struct MultiAssemblerStoreOne<Ing1: ItemTrait, Res: ItemTrait> {
     timers: Vec<u16>,
-    ingredient_counts: Vec<u16>,
-    result_counts: Vec<u16>,
-    recipe_timers: Vec<u16>,
-    recipe_ingredient_counts: Vec<u16>,
-    recipe_result_counts: Vec<u16>,
-    result_stack_sizes: Vec<u16>,
+    input1: Vec<ItemStorage<Ing1>>,
+    outputs: Vec<ItemStorage<Res>>,
+    len: usize,
 }
 
-struct MultiAssemblerStorageStatic<const LEN: usize> {
-    timers: Box<[u16; LEN]>,
-    ingredient_counts: Box<[u16; LEN]>,
-    result_counts: Box<[u16; LEN]>,
-    recipe_timers: Box<[u16; LEN]>,
-    recipe_ingredient_counts: Box<[u16; LEN]>,
-    recipe_result_counts: Box<[u16; LEN]>,
-    result_stack_sizes: Box<[u16; LEN]>,
+impl<Ing1: ItemTrait, Res: ItemTrait> MultiAssemblerStoreOne<Ing1, Res> {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            timers: vec![],
+            input1: vec![],
+            outputs: vec![],
+            len: 0,
+        }
+    }
+
+    pub fn update(&mut self, power_mult: u8) {
+        const TICKS_PER_CREATE: u16 = 64;
+        if power_mult == 0 {
+            return;
+        }
+
+        debug_assert!(power_mult <= 64);
+
+        assert_eq!(self.outputs.len(), self.timers.len());
+        assert_eq!(self.input1.len(), self.timers.len());
+        assert!(self.outputs.len() % Simdtype::LEN == 0);
+
+        // TODO: Make these dependent on the recipe
+        let ing1_amount: Simdtype = Simdtype::splat(2);
+        let res_amount: Simdtype = Simdtype::splat(1);
+        let timer_increase: Simdtype =
+            Simdtype::splat(u16::from(power_mult) * 512 / TICKS_PER_CREATE * 2);
+        let max_stack_size: Simdtype = Simdtype::splat(10);
+
+        for i in (0..self
+            .outputs
+            .len()
+            .min(self.len - (self.len % Simdtype::LEN)))
+            .step_by(Simdtype::LEN)
+        {
+            let input =
+                Simdtype::from_slice(ItemStorage::<Ing1>::peel_slice(self.input1.split_at(i).1));
+
+            let output =
+                Simdtype::from_slice(ItemStorage::<Res>::peel_slice(self.outputs.split_at(i).1));
+
+            let timer = Simdtype::from_slice(self.timers.split_at(i).1);
+
+            let enough_items_mask = input.simd_ge(ing1_amount);
+
+            let new_timer = enough_items_mask.select(timer + timer_increase, timer);
+
+            // We had a wrap, so we produce
+            // Since the timer only changes whenever we have enough items this masks is both for enough time and input items
+            let produce_mask = new_timer.simd_lt(timer);
+
+            let space_mask = output.simd_lt(max_stack_size);
+
+            let space_time_mask = produce_mask & space_mask;
+
+            // This can never wrap, since we check we have enough items before
+            let new_ing1_amount = space_time_mask.select(input - ing1_amount, input);
+            let new_output = space_time_mask.select(output + res_amount, output);
+
+            Simdtype::copy_to_slice(
+                new_output,
+                ItemStorage::<Res>::peel_slice_mut(self.outputs.split_at_mut(i).1),
+            );
+
+            Simdtype::copy_to_slice(
+                new_ing1_amount,
+                ItemStorage::<Ing1>::peel_slice_mut(self.input1.split_at_mut(i).1),
+            );
+
+            Simdtype::copy_to_slice(new_timer, self.timers.split_at_mut(i).1);
+        }
+    }
+
+    pub fn get_output(&mut self, index: usize) -> Option<&mut ItemStorage<Res>> {
+        if index < self.len {
+            Some(&mut self.outputs[index])
+        } else {
+            None
+        }
+    }
+
+    pub fn get_input_1(&mut self, index: usize) -> Option<&mut ItemStorage<Ing1>> {
+        if index < self.len {
+            Some(&mut self.input1[index])
+        } else {
+            None
+        }
+    }
+
+    pub fn remove_assembler(&mut self, index: usize) {
+        // TODO: This would change all indices. Is that what I want?
+
+        self.input1.swap(index, self.len - 1);
+        self.outputs.swap(index, self.len - 1);
+        self.timers.swap(index, self.len - 1);
+
+        self.len -= 1;
+    }
+
+    pub fn add_assembler(&mut self) {
+        assert_eq!(self.outputs.len(), self.timers.len());
+        assert_eq!(self.input1.len(), self.timers.len());
+        assert!(self.outputs.len() % Simdtype::LEN == 0);
+
+        if self.len == self.outputs.len() {
+            // We need to grow
+            self.outputs
+                .resize_with(self.len + Simdtype::LEN, || ItemStorage::<Res>::new(0));
+            self.input1
+                .resize_with(self.len + Simdtype::LEN, || ItemStorage::<Ing1>::new(0));
+            self.timers
+                .resize(self.len + Simdtype::LEN, Res::get_time_to_generate());
+        } else {
+            self.outputs[self.len] = ItemStorage::<Res>::new(0);
+            self.timers[self.len] = 0;
+        }
+
+        self.len += 1;
+    }
 }
 
-// #[inline(never)]
-// pub fn bench_1_000_000_assembler_update_packed_storage() {
-//     type AssemblerSimd = Simd<u16, 16>;
-
-//     let mut assemblers = MultiAssemblerStorage {
-//         timers: vec![],
-//         ingredient_counts: vec![],
-//         result_counts: vec![],
-//         recipe_timers: vec![],
-//         recipe_ingredient_counts: vec![],
-//         recipe_result_counts: vec![],
-//         result_stack_sizes: vec![],
-//     };
-
-//     for _ in 0..1_000_000 {
-//         assemblers.timers.push(1);
-
-//         assemblers.recipe_timers.push(1);
-//         assemblers.recipe_ingredient_counts.push(1);
-//         assemblers.recipe_result_counts.push(1);
-
-//         assemblers.ingredient_counts.push(65535);
-//         assemblers.result_counts.push(0);
-
-//         assemblers.result_stack_sizes.push(100);
-//     }
-
-//     let zero = AssemblerSimd::splat(0);
-//     let one = AssemblerSimd::splat(1);
-//     for _ in 0..1_000 {
-//         let bb = &mut assemblers;
-
-//         for i in (0..1_000_000).step_by(AssemblerSimd::LEN) {
-//             let timer = AssemblerSimd::from_slice(bb.timers.split_at_mut(i).1);
-//             let ingredient_counts =
-//                 AssemblerSimd::from_slice(bb.ingredient_counts.split_at_mut(i).1);
-//             let product_counts = AssemblerSimd::from_slice(bb.result_counts.split_at_mut(i).1);
-
-//             let recipe_ingredient_counts =
-//                 AssemblerSimd::from_slice(bb.recipe_ingredient_counts.split_at_mut(i).1);
-//             let recipe_product_counts =
-//                 AssemblerSimd::from_slice(bb.recipe_result_counts.split_at_mut(i).1);
-//             let stack_sizes = AssemblerSimd::from_slice(bb.result_stack_sizes.split_at_mut(i).1);
-
-//             let recipe_timer = AssemblerSimd::from_slice(bb.recipe_timers.split_at_mut(i).1);
-
-//             let timer_mask = timer.simd_eq(zero);
-//             let enough_ingredients_mask = ingredient_counts.simd_ge(recipe_ingredient_counts);
-//             let enough_space_mask = product_counts
-//                 .add(recipe_product_counts)
-//                 .simd_le(stack_sizes);
-
-//             let final_mask = timer_mask & enough_ingredients_mask & enough_space_mask;
-
-//             // Update the counts if all conditions pass
-//             final_mask
-//                 .select(
-//                     ingredient_counts.sub(recipe_ingredient_counts),
-//                     ingredient_counts,
-//                 )
-//                 .copy_to_slice(bb.ingredient_counts.split_at_mut(i).1);
-
-//             final_mask
-//                 .select(product_counts.add(recipe_product_counts), product_counts)
-//                 .copy_to_slice(bb.result_counts.split_at_mut(i).1);
-
-//             // Set the timer back up if all conditions passed and we created an item
-//             final_mask
-//                 .select(recipe_timer, timer)
-//                 .copy_to_slice(bb.timers.split_at_mut(i).1);
-
-//             let timer = AssemblerSimd::from_slice(bb.timers.split_at_mut(i).1);
-
-//             // Decrease timer by one if it is larger than 0
-//             timer_mask
-//                 .select(timer, timer.sub(one))
-//                 .copy_to_slice(bb.timers.split_at_mut(i).1);
-//         }
-//     }
-//     println!("{}", assemblers.ingredient_counts[0]);
-// }
+pub struct MultiAssemblerStoreLenient {
+    timers: Vec<u16>,
+    crafting_speed: Vec<u16>,
+    inputs: [Vec<ItemStorage<Iron>>; 5],
+    input_counts: [Vec<u16>; 5],
+    outputs: Vec<ItemStorage<Copper>>,
+    output_counts: Vec<u16>,
+    len: usize,
+}
 
 #[cfg(test)]
 mod tests {
-    use std::mem;
+    use std::hint::black_box;
 
-    use crate::item::{Iron, Item};
+    use crate::item::Iron;
 
     use super::*;
     extern crate test;
-    use proptest::proptest;
     use test::Bencher;
 
-    proptest! {}
-
     #[bench]
-    fn bench_single_assembler_update(b: &mut Bencher) {
-        let mut assembler = Assembler::<Iron, Iron>::new(Recipe {
-            ingredient: Item::Iron,
-            ingredient_amount: 1,
-            result: Item::Iron,
-            result_amount: 1,
-            time: 1,
-        });
+    fn bench_1_000_000_assembler_update(b: &mut Bencher) {
+        let mut multi_store = MultiAssemblerStoreOne::<Iron, Copper>::new();
 
-        assembler
-            .ingredient_storage
-            .count
-            .store(1_000_000_000, Ordering::Relaxed);
+        for _ in 0..1_000_000 {
+            multi_store.add_assembler();
+        }
 
         b.iter(|| {
-            let bb = test::black_box(&mut assembler);
-
-            for _ in 0..1_000 {
-                bb.update();
+            for _ in 0..Simdtype::LEN {
+                black_box(&mut multi_store).update(64);
             }
-            // bb.result_count.store(0, Ordering::Relaxed);
         });
-
-        println!("{assembler:?}");
     }
 
-    // #[bench]
-    // fn bench_1_024_assembler_update_packed_storage(b: &mut Bencher) {
-    //     type AssemblerSimd = Simd<u16, 16>;
-
-    //     let zero = AssemblerSimd::splat(0);
-    //     let one = AssemblerSimd::splat(1);
-
-    //     let mut assemblers = MultiAssemblerStorage {
-    //         timers: vec![],
-    //         ingredient_counts: vec![],
-    //         result_counts: vec![],
-    //         recipe_timers: vec![],
-    //         recipe_ingredient_counts: vec![],
-    //         recipe_result_counts: vec![],
-    //         result_stack_sizes: vec![],
-    //     };
-
-    //     for _ in 0..1_024 {
-    //         assemblers.timers.push(0);
-
-    //         assemblers.recipe_timers.push(599);
-    //         assemblers.recipe_ingredient_counts.push(1);
-    //         assemblers.recipe_result_counts.push(1);
-
-    //         assemblers.ingredient_counts.push(65535);
-    //         assemblers.result_counts.push(0);
-
-    //         assemblers.result_stack_sizes.push(2000);
-    //     }
-
-    //     let mut i = 0;
-
-    //     b.iter(|| {
-    //         let bb = test::black_box(&mut assemblers);
-
-    //         i += 1;
-    //         for i in (0..1_024).step_by(AssemblerSimd::LEN) {
-    //             let timer = AssemblerSimd::from_slice(bb.timers.split_at_mut(i).1);
-    //             let ingredient_counts =
-    //                 AssemblerSimd::from_slice(bb.ingredient_counts.split_at_mut(i).1);
-    //             let product_counts = AssemblerSimd::from_slice(bb.result_counts.split_at_mut(i).1);
-
-    //             let recipe_ingredient_counts =
-    //                 AssemblerSimd::from_slice(bb.recipe_ingredient_counts.split_at_mut(i).1);
-    //             let recipe_product_counts =
-    //                 AssemblerSimd::from_slice(bb.recipe_result_counts.split_at_mut(i).1);
-    //             let stack_sizes =
-    //                 AssemblerSimd::from_slice(bb.result_stack_sizes.split_at_mut(i).1);
-
-    //             let recipe_timer = AssemblerSimd::from_slice(bb.recipe_timers.split_at_mut(i).1);
-
-    //             let timer_mask = timer.simd_eq(zero);
-    //             let enough_ingredients_mask = ingredient_counts.simd_ge(recipe_ingredient_counts);
-    //             let enough_space_mask = product_counts
-    //                 .add(recipe_product_counts)
-    //                 .simd_le(stack_sizes);
-
-    //             let final_mask = timer_mask & enough_ingredients_mask & enough_space_mask;
-
-    //             // Update the counts if all conditions pass
-    //             final_mask
-    //                 .select(
-    //                     ingredient_counts.sub(recipe_ingredient_counts),
-    //                     ingredient_counts,
-    //                 )
-    //                 .copy_to_slice(bb.ingredient_counts.split_at_mut(i).1);
-
-    //             final_mask
-    //                 .select(product_counts.add(recipe_product_counts), product_counts)
-    //                 .copy_to_slice(bb.result_counts.split_at_mut(i).1);
-
-    //             // Set the timer back up if all conditions passed and we created an item
-    //             final_mask
-    //                 .select(recipe_timer, timer)
-    //                 .copy_to_slice(bb.timers.split_at_mut(i).1);
-
-    //             let timer = AssemblerSimd::from_slice(bb.timers.split_at_mut(i).1);
-
-    //             // Decrease timer by one if it is larger than 0
-    //             timer_mask
-    //                 .select(timer, timer.sub(one))
-    //                 .copy_to_slice(bb.timers.split_at_mut(i).1);
-    //         }
-    //     });
-
-    //     println!("Did {i} updates");
-    //     println!(
-    //         "First assembler now has {} items produced",
-    //         assemblers.result_counts[0]
-    //     );
-    // }
-
-    // #[bench]
-    // fn bench_102_400_assembler_update_packed_storage(b: &mut Bencher) {
-    //     type AssemblerSimd = Simd<u16, 16>;
-
-    //     let zero = AssemblerSimd::splat(0);
-    //     let one = AssemblerSimd::splat(1);
-
-    //     let mut assemblers = MultiAssemblerStorage {
-    //         timers: vec![],
-    //         ingredient_counts: vec![],
-    //         result_counts: vec![],
-    //         recipe_timers: vec![],
-    //         recipe_ingredient_counts: vec![],
-    //         recipe_result_counts: vec![],
-    //         result_stack_sizes: vec![],
-    //     };
-
-    //     for _ in 0..102_400 {
-    //         assemblers.timers.push(0);
-
-    //         assemblers.recipe_timers.push(599);
-    //         assemblers.recipe_ingredient_counts.push(1);
-    //         assemblers.recipe_result_counts.push(1);
-
-    //         assemblers.ingredient_counts.push(65535);
-    //         assemblers.result_counts.push(0);
-
-    //         assemblers.result_stack_sizes.push(2000);
-    //     }
-
-    //     let mut i = 0;
-
-    //     b.iter(|| {
-    //         let bb = test::black_box(&mut assemblers);
-
-    //         i += 1;
-    //         for i in (0..102_400).step_by(AssemblerSimd::LEN) {
-    //             let timer = AssemblerSimd::from_slice(bb.timers.split_at_mut(i).1);
-    //             let ingredient_counts =
-    //                 AssemblerSimd::from_slice(bb.ingredient_counts.split_at_mut(i).1);
-    //             let product_counts = AssemblerSimd::from_slice(bb.result_counts.split_at_mut(i).1);
-
-    //             let recipe_ingredient_counts =
-    //                 AssemblerSimd::from_slice(bb.recipe_ingredient_counts.split_at_mut(i).1);
-    //             let recipe_product_counts =
-    //                 AssemblerSimd::from_slice(bb.recipe_result_counts.split_at_mut(i).1);
-    //             let stack_sizes =
-    //                 AssemblerSimd::from_slice(bb.result_stack_sizes.split_at_mut(i).1);
-
-    //             let recipe_timer = AssemblerSimd::from_slice(bb.recipe_timers.split_at_mut(i).1);
-
-    //             let timer_mask = timer.simd_eq(zero);
-    //             let enough_ingredients_mask = ingredient_counts.simd_ge(recipe_ingredient_counts);
-    //             let enough_space_mask = product_counts
-    //                 .add(recipe_product_counts)
-    //                 .simd_le(stack_sizes);
-
-    //             let final_mask = timer_mask & enough_ingredients_mask & enough_space_mask;
-
-    //             // Update the counts if all conditions pass
-    //             final_mask
-    //                 .select(
-    //                     ingredient_counts.sub(recipe_ingredient_counts),
-    //                     ingredient_counts,
-    //                 )
-    //                 .copy_to_slice(bb.ingredient_counts.split_at_mut(i).1);
-
-    //             final_mask
-    //                 .select(product_counts.add(recipe_product_counts), product_counts)
-    //                 .copy_to_slice(bb.result_counts.split_at_mut(i).1);
-
-    //             // Set the timer back up if all conditions passed and we created an item
-    //             final_mask
-    //                 .select(recipe_timer, timer)
-    //                 .copy_to_slice(bb.timers.split_at_mut(i).1);
-
-    //             let timer = AssemblerSimd::from_slice(bb.timers.split_at_mut(i).1);
-
-    //             // Decrease timer by one if it is larger than 0
-    //             timer_mask
-    //                 .select(timer, timer.sub(one))
-    //                 .copy_to_slice(bb.timers.split_at_mut(i).1);
-    //         }
-    //     });
-
-    //     println!("Did {i} updates");
-    //     println!(
-    //         "First assembler now has {} items produced",
-    //         assemblers.result_counts[0]
-    //     );
-    // }
-
-    // #[bench]
-    // fn bench_1_499_136_assembler_update_packed_storage(b: &mut Bencher) {
-    //     type AssemblerSimd = Simd<u16, 16>;
-
-    //     let zero = AssemblerSimd::splat(0);
-    //     let one = AssemblerSimd::splat(1);
-
-    //     let mut assemblers = MultiAssemblerStorage {
-    //         timers: vec![],
-    //         ingredient_counts: vec![],
-    //         result_counts: vec![],
-    //         recipe_timers: vec![],
-    //         recipe_ingredient_counts: vec![],
-    //         recipe_result_counts: vec![],
-    //         result_stack_sizes: vec![],
-    //     };
-
-    //     for _ in 0..1_499_136 {
-    //         assemblers.timers.push(0);
-
-    //         assemblers.recipe_timers.push(599);
-    //         assemblers.recipe_ingredient_counts.push(1);
-    //         assemblers.recipe_result_counts.push(1);
-
-    //         assemblers.ingredient_counts.push(65535);
-    //         assemblers.result_counts.push(0);
-
-    //         assemblers.result_stack_sizes.push(2000);
-    //     }
-
-    //     let mut i = 0;
-
-    //     b.iter(|| {
-    //         let bb = test::black_box(&mut assemblers);
-
-    //         i += 1;
-    //         for i in (0..1_499_136).step_by(AssemblerSimd::LEN) {
-    //             let timer = AssemblerSimd::from_slice(bb.timers.split_at_mut(i).1);
-    //             let ingredient_counts =
-    //                 AssemblerSimd::from_slice(bb.ingredient_counts.split_at_mut(i).1);
-    //             let product_counts = AssemblerSimd::from_slice(bb.result_counts.split_at_mut(i).1);
-
-    //             let recipe_ingredient_counts =
-    //                 AssemblerSimd::from_slice(bb.recipe_ingredient_counts.split_at_mut(i).1);
-    //             let recipe_product_counts =
-    //                 AssemblerSimd::from_slice(bb.recipe_result_counts.split_at_mut(i).1);
-    //             let stack_sizes =
-    //                 AssemblerSimd::from_slice(bb.result_stack_sizes.split_at_mut(i).1);
-
-    //             let recipe_timer = AssemblerSimd::from_slice(bb.recipe_timers.split_at_mut(i).1);
-
-    //             let timer_mask = timer.simd_eq(zero);
-    //             let enough_ingredients_mask = ingredient_counts.simd_ge(recipe_ingredient_counts);
-    //             let enough_space_mask = product_counts
-    //                 .add(recipe_product_counts)
-    //                 .simd_le(stack_sizes);
-
-    //             let final_mask = timer_mask & enough_ingredients_mask & enough_space_mask;
-
-    //             // Update the counts if all conditions pass
-    //             final_mask
-    //                 .select(
-    //                     ingredient_counts.sub(recipe_ingredient_counts),
-    //                     ingredient_counts,
-    //                 )
-    //                 .copy_to_slice(bb.ingredient_counts.split_at_mut(i).1);
-
-    //             final_mask
-    //                 .select(product_counts.add(recipe_product_counts), product_counts)
-    //                 .copy_to_slice(bb.result_counts.split_at_mut(i).1);
-
-    //             // Set the timer back up if all conditions passed and we created an item
-    //             final_mask
-    //                 .select(recipe_timer, timer)
-    //                 .copy_to_slice(bb.timers.split_at_mut(i).1);
-
-    //             let timer = AssemblerSimd::from_slice(bb.timers.split_at_mut(i).1);
-
-    //             // Decrease timer by one if it is larger than 0
-    //             timer_mask
-    //                 .select(timer, timer.sub(one))
-    //                 .copy_to_slice(bb.timers.split_at_mut(i).1);
-    //         }
-    //     });
-
-    //     println!("Did {i} updates");
-    //     println!(
-    //         "First assembler now has {} items produced",
-    //         assemblers.result_counts[0]
-    //     );
-    // }
-    // #[bench]
-    // fn bench_67_108_864_assembler_update_packed_storage(b: &mut Bencher) {
-    //     type AssemblerSimd = Simd<u16, 16>;
-
-    //     let zero = AssemblerSimd::splat(0);
-    //     let one = AssemblerSimd::splat(1);
-
-    //     let mut assemblers = MultiAssemblerStorage {
-    //         timers: vec![],
-    //         ingredient_counts: vec![],
-    //         result_counts: vec![],
-    //         recipe_timers: vec![],
-    //         recipe_ingredient_counts: vec![],
-    //         recipe_result_counts: vec![],
-    //         result_stack_sizes: vec![],
-    //     };
-
-    //     for _ in 0..67_108_864 {
-    //         assemblers.timers.push(0);
-
-    //         assemblers.recipe_timers.push(599);
-    //         assemblers.recipe_ingredient_counts.push(1);
-    //         assemblers.recipe_result_counts.push(1);
-
-    //         assemblers.ingredient_counts.push(65535);
-    //         assemblers.result_counts.push(0);
-
-    //         assemblers.result_stack_sizes.push(2000);
-    //     }
-
-    //     let mut i = 0;
-
-    //     b.iter(|| {
-    //         let bb = test::black_box(&mut assemblers);
-
-    //         i += 1;
-    //         for i in (0..67_108_864).step_by(AssemblerSimd::LEN) {
-    //             let timer = AssemblerSimd::from_slice(bb.timers.split_at_mut(i).1);
-    //             let ingredient_counts =
-    //                 AssemblerSimd::from_slice(bb.ingredient_counts.split_at_mut(i).1);
-    //             let product_counts = AssemblerSimd::from_slice(bb.result_counts.split_at_mut(i).1);
-
-    //             let recipe_ingredient_counts =
-    //                 AssemblerSimd::from_slice(bb.recipe_ingredient_counts.split_at_mut(i).1);
-    //             let recipe_product_counts =
-    //                 AssemblerSimd::from_slice(bb.recipe_result_counts.split_at_mut(i).1);
-    //             let stack_sizes =
-    //                 AssemblerSimd::from_slice(bb.result_stack_sizes.split_at_mut(i).1);
-
-    //             let recipe_timer = AssemblerSimd::from_slice(bb.recipe_timers.split_at_mut(i).1);
-
-    //             let timer_mask = timer.simd_eq(zero);
-    //             let enough_ingredients_mask = ingredient_counts.simd_ge(recipe_ingredient_counts);
-    //             let enough_space_mask = product_counts
-    //                 .add(recipe_product_counts)
-    //                 .simd_le(stack_sizes);
-
-    //             let final_mask = timer_mask & enough_ingredients_mask & enough_space_mask;
-
-    //             // Update the counts if all conditions pass
-    //             final_mask
-    //                 .select(
-    //                     ingredient_counts.sub(recipe_ingredient_counts),
-    //                     ingredient_counts,
-    //                 )
-    //                 .copy_to_slice(bb.ingredient_counts.split_at_mut(i).1);
-
-    //             final_mask
-    //                 .select(product_counts.add(recipe_product_counts), product_counts)
-    //                 .copy_to_slice(bb.result_counts.split_at_mut(i).1);
-
-    //             // Set the timer back up if all conditions passed and we created an item
-    //             final_mask
-    //                 .select(recipe_timer, timer)
-    //                 .copy_to_slice(bb.timers.split_at_mut(i).1);
-
-    //             let timer = AssemblerSimd::from_slice(bb.timers.split_at_mut(i).1);
-
-    //             // Decrease timer by one if it is larger than 0
-    //             timer_mask
-    //                 .select(timer, timer.sub(one))
-    //                 .copy_to_slice(bb.timers.split_at_mut(i).1);
-    //         }
-    //     });
-
-    //     println!("Did {i} updates");
-    //     println!(
-    //         "First assembler now has {} items produced",
-    //         assemblers.result_counts[0]
-    //     );
-    // }
-
-    // #[allow(clippy::large_stack_frames)]
-    // #[bench]
-    // fn bench_1_024_assembler_update_packed_storage_static(b: &mut Bencher) {
-    //     const LEN: usize = 1_024;
-    //     type AssemblerSimd = Simd<u16, 16>;
-
-    //     let zero = AssemblerSimd::splat(0);
-    //     let one = AssemblerSimd::splat(1);
-
-    //     let mut assemblers = MultiAssemblerStorageStatic::<LEN> {
-    //         timers: Box::new([0; LEN]),
-    //         ingredient_counts: Box::new([65535; LEN]),
-    //         result_counts: Box::new([0; LEN]),
-    //         recipe_timers: Box::new([9; LEN]),
-    //         recipe_ingredient_counts: Box::new([1; LEN]),
-    //         recipe_result_counts: Box::new([1; LEN]),
-    //         result_stack_sizes: Box::new([2000; LEN]),
-    //     };
-
-    //     let mut i = 0;
-
-    //     b.iter(|| {
-    //         let bb = test::black_box(&mut assemblers);
-
-    //         i += 1;
-    //         for i in (0..LEN).step_by(AssemblerSimd::LEN) {
-    //             let timer = AssemblerSimd::from_slice(bb.timers.split_at_mut(i).1);
-    //             let ingredient_counts =
-    //                 AssemblerSimd::from_slice(bb.ingredient_counts.split_at_mut(i).1);
-    //             let product_counts = AssemblerSimd::from_slice(bb.result_counts.split_at_mut(i).1);
-
-    //             let recipe_ingredient_counts =
-    //                 AssemblerSimd::from_slice(bb.recipe_ingredient_counts.split_at_mut(i).1);
-    //             let recipe_product_counts =
-    //                 AssemblerSimd::from_slice(bb.recipe_result_counts.split_at_mut(i).1);
-    //             let stack_sizes =
-    //                 AssemblerSimd::from_slice(bb.result_stack_sizes.split_at_mut(i).1);
-
-    //             let recipe_timer = AssemblerSimd::from_slice(bb.recipe_timers.split_at_mut(i).1);
-
-    //             let timer_mask = timer.simd_eq(zero);
-    //             let enough_ingredients_mask = ingredient_counts.simd_ge(recipe_ingredient_counts);
-    //             let enough_space_mask = product_counts
-    //                 .add(recipe_product_counts)
-    //                 .simd_le(stack_sizes);
-
-    //             let final_mask = timer_mask & enough_ingredients_mask & enough_space_mask;
-
-    //             // Update the counts if all conditions pass
-    //             final_mask
-    //                 .select(
-    //                     ingredient_counts.sub(recipe_ingredient_counts),
-    //                     ingredient_counts,
-    //                 )
-    //                 .copy_to_slice(bb.ingredient_counts.split_at_mut(i).1);
-
-    //             final_mask
-    //                 .select(product_counts.add(recipe_product_counts), product_counts)
-    //                 .copy_to_slice(bb.result_counts.split_at_mut(i).1);
-
-    //             // Set the timer back up if all conditions passed and we created an item
-    //             final_mask
-    //                 .select(recipe_timer, timer)
-    //                 .copy_to_slice(bb.timers.split_at_mut(i).1);
-
-    //             let timer = AssemblerSimd::from_slice(bb.timers.split_at_mut(i).1);
-
-    //             // Decrease timer by one if it is larger than 0
-    //             timer_mask
-    //                 .select(timer, timer.sub(one))
-    //                 .copy_to_slice(bb.timers.split_at_mut(i).1);
-    //         }
-    //     });
-
-    //     println!("Did {i} updates");
-    //     println!(
-    //         "First assembler now has {} items produced",
-    //         assemblers.result_counts[0]
-    //     );
-    // }
-
     #[bench]
-    fn bench_1_024_assembler_update(b: &mut Bencher) {
-        const LEN: usize = 2048;
+    fn bench_250_000_assembler_update(b: &mut Bencher) {
+        let mut multi_store = MultiAssemblerStoreOne::<Iron, Copper>::new();
 
-        println!("Size of 1: {}", mem::size_of::<Assembler::<Iron, Iron>>());
-        println!(
-            "Size of whole dataset: {}",
-            mem::size_of::<Assembler::<Iron, Iron>>() * LEN
-        );
-
-        let mut assemblers = vec![];
-
-        for _ in 0..LEN {
-            assemblers.push(Assembler::<Iron, Iron>::new(Recipe {
-                ingredient: Item::Iron,
-                ingredient_amount: 1,
-                result: Item::Iron,
-                result_amount: 1,
-                time: 600,
-            }));
-        }
-
-        for assembler in &assemblers {
-            assembler
-                .ingredient_storage
-                .count
-                .store(1_000_000_000, Ordering::Relaxed);
+        for _ in 0..250_000 {
+            multi_store.add_assembler();
         }
 
         b.iter(|| {
-            let bb = test::black_box(&mut assemblers);
-
-            for _ in 0..(10240 / LEN) {
-                for assembler in &mut assemblers {
-                    assembler.update();
-                }
+            for _ in 0..Simdtype::LEN {
+                black_box(&mut multi_store).update(64);
             }
         });
+    }
 
-        println!("{:?}", assemblers[0]);
+    #[bench]
+    fn bench_8_000_assembler_update(b: &mut Bencher) {
+        let mut multi_store = MultiAssemblerStoreOne::<Iron, Copper>::new();
+
+        for _ in 0..8_000 {
+            multi_store.add_assembler();
+        }
+
+        b.iter(|| {
+            for _ in 0..Simdtype::LEN {
+                black_box(&mut multi_store).update(64);
+            }
+        });
     }
 }

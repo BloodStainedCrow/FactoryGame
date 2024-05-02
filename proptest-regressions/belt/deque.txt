@@ -1,9 +1,0 @@
-# Seeds for failure cases proptest has generated in the past. It is
-# automatically read and these particular cases re-run before any
-# novel cases are generated.
-#
-# It is recommended to check this file in to source control so that
-# everyone who runs the test benefits from these saved cases.
-cc 5f2774e6418f00a82ce93a0399c141973e5038986040fffbbdf8259d26885f13 # shrinks to mut items = [Some(Iron), Some(Iron)]
-cc 5c05cb7c70d46f1ea93727ca7f7f6e41c9e1da1a67598793d23b767a3c7e427c # shrinks to mut items = [Some(Iron), None]
-cc 083e69cb237eec3333066615a7c86b0dcaa07a22e195e2f526aa6a77144550b5 # shrinks to mut items = [Some(Iron), Some(Iron)]
