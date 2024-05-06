@@ -2,7 +2,7 @@ use std::{marker::PhantomData, mem};
 
 use crate::{
     inserter::Inserter,
-    item::{Iron, Item, ItemStorage, ItemTrait},
+    item::{Item, ItemStorage, ItemTrait},
 };
 
 use super::belt::{Belt, NoSpaceError};
@@ -14,10 +14,8 @@ pub struct SmartBelt<T: ItemTrait> {
     first_free_index: FreeIndex,
     zero_index: usize,
     locs: Vec<bool>,
-    inserters: Vec<Option<Inserter<T>>>,
+    inserters: Vec<(u16, Inserter<T>)>,
 }
-
-type Test = (u16, Option<Inserter<Iron>>);
 
 #[derive(Debug, PartialEq)]
 enum FreeIndex {
@@ -39,43 +37,29 @@ impl<T: ItemTrait> SmartBelt<T> {
 
     #[inline(never)]
     pub fn update_inserters(&mut self, storages: &mut [ItemStorage<T>]) {
-        // let mut new_first_free_pos = None;
+        // TODO: Update first_free_index
 
-        for (index, (ins_opt, loc)) in self
-            .inserters
-            .iter()
-            .zip(Self::items_mut(&mut self.locs, self.zero_index))
-            .enumerate()
-        {
-            match ins_opt {
-                Some(ins) => {
+        let mut items_mut_iter = Self::items_mut(&mut self.locs, self.zero_index).into_iter();
+
+        for (index, inserter) in &self.inserters {
+            let loc = items_mut_iter.nth(usize::from(*index));
+
+            match loc {
+                Some(loc) => {
                     if *loc {
-                        *loc = !ins.update(storages);
-
-                        // if !*loc && new_first_free_pos.is_none() {
-                        //     new_first_free_pos = Some(index);
-                        // }
+                        *loc = inserter.update(storages);
                     }
                 },
-                None => {},
+                None => unreachable!(),
             }
         }
 
-        // if let Some(index) = new_first_free_pos {
-        //     self.update_first_free_pos(index);
-        // }
+        coz::progress!("Inserter");
     }
 
     fn update_first_free_pos(&mut self, now_empty_pos: usize) {
         match self.first_free_index {
-            FreeIndex::FreeIndex(index) =>
-            {
-                #[allow(clippy::cast_possible_truncation)]
-                if now_empty_pos <= index {
-                    self.first_free_index = FreeIndex::FreeIndex(now_empty_pos);
-                }
-            },
-            FreeIndex::OldFreeIndex(index) => {
+            FreeIndex::OldFreeIndex(index) | FreeIndex::FreeIndex(index) => {
                 if now_empty_pos <= index {
                     self.first_free_index = FreeIndex::FreeIndex(now_empty_pos);
                 }
@@ -410,8 +394,9 @@ mod tests {
         let storage_source = ItemStorage::<Iron>::new(30);
         let storage_dest = ItemStorage::<Iron>::default();
 
-        belt.inserters[5] = Some(Inserter::<Iron>::new(
-            NonZeroU16::new(2).expect("Hardcoded"),
+        belt.inserters.push((
+            5,
+            Inserter::<Iron>::new(NonZeroU16::new(2).expect("Hardcoded")),
         ));
 
         let mut storages = [storage_unused, storage_source, storage_dest];
@@ -437,8 +422,9 @@ mod tests {
         let storage_source = ItemStorage::<Iron>::new(30);
         let storage_dest = ItemStorage::<Iron>::default();
 
-        belt.inserters[5] = Some(Inserter::<Iron>::new(
-            NonZeroU16::new(2).expect("Hardcoded"),
+        belt.inserters.push((
+            5,
+            Inserter::<Iron>::new(NonZeroU16::new(2).expect("Hardcoded")),
         ));
 
         let mut storages = [storage_unused, storage_source, storage_dest];
@@ -461,18 +447,21 @@ mod tests {
         let storage_dest = ItemStorage::<Iron>::default();
 
         for i in 0..MAX_LEN {
-            belt.inserters[i] = Some(Inserter::<Iron>::new(
-                NonZeroU16::new(2).expect("Hardcoded"),
+            belt.inserters.push((
+                0,
+                Inserter::<Iron>::new(NonZeroU16::new(2).expect("Hardcoded")),
             ));
         }
 
         let mut storages = [storage_unused, storage_source, storage_dest];
 
         b.iter(|| {
-            belt.update();
-            belt.update_inserters(&mut storages);
+            for _ in 0..100 {
+                belt.update();
+                belt.update_inserters(&mut storages);
 
-            let _ = belt.try_insert_item(9);
+                let _ = belt.try_insert_item(9);
+            }
         });
     }
 
