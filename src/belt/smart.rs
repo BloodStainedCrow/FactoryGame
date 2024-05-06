@@ -33,37 +33,37 @@ impl<T: ItemTrait> SmartBelt<T> {
             first_free_index: FreeIndex::FreeIndex(0),
             zero_index: 0,
             locs: vec![false; len],
-            inserters: vec![None; len],
+            inserters: vec![],
         }
     }
 
     #[inline(never)]
     pub fn update_inserters(&mut self, storages: &mut [ItemStorage<T>]) {
-        let mut new_first_free_pos = self.get_len();
+        // let mut new_first_free_pos = None;
 
         for (index, (ins_opt, loc)) in self
             .inserters
-            .iter_mut()
-            .zip(self.locs.iter_mut())
+            .iter()
+            .zip(Self::items_mut(&mut self.locs, self.zero_index))
             .enumerate()
-            .rev()
         {
             match ins_opt {
                 Some(ins) => {
                     if *loc {
                         *loc = !ins.update(storages);
 
-                        if !*loc {
-                            dbg!("Item taken!");
-                            new_first_free_pos = index;
-                        }
+                        // if !*loc && new_first_free_pos.is_none() {
+                        //     new_first_free_pos = Some(index);
+                        // }
                     }
                 },
                 None => {},
             }
         }
 
-        self.update_first_free_pos(new_first_free_pos);
+        // if let Some(index) = new_first_free_pos {
+        //     self.update_first_free_pos(index);
+        // }
     }
 
     fn update_first_free_pos(&mut self, now_empty_pos: usize) {
@@ -114,6 +114,13 @@ impl<T: ItemTrait> SmartBelt<T> {
         self.first_free_index = FreeIndex::FreeIndex(new_free_index);
 
         new_free_index
+    }
+
+    fn items_mut(locs: &mut [bool], zero_index: usize) -> impl IntoIterator<Item = &mut bool> {
+        let len = locs.len();
+        let (start, end) = locs.split_at_mut(zero_index % locs.len());
+
+        end.iter_mut().chain(start.iter_mut()).take(len)
     }
 }
 
@@ -416,8 +423,57 @@ mod tests {
 
             let _ = belt.try_insert_item(9);
 
-            println!("{belt:?},  {:?}", storages[2]);
+            println!("{}", &belt as &dyn Belt<Iron>);
+            println!("{:?}", storages[2]);
         }
+    }
+
+    #[bench]
+    fn bench_smart_belt_with_inserters(b: &mut Bencher) {
+        let mut belt = SmartBelt::<Iron>::new(MAX_LEN);
+
+        let storage_unused = ItemStorage::<Iron>::default();
+
+        let storage_source = ItemStorage::<Iron>::new(30);
+        let storage_dest = ItemStorage::<Iron>::default();
+
+        belt.inserters[5] = Some(Inserter::<Iron>::new(
+            NonZeroU16::new(2).expect("Hardcoded"),
+        ));
+
+        let mut storages = [storage_unused, storage_source, storage_dest];
+
+        b.iter(|| {
+            belt.update();
+            belt.update_inserters(&mut storages);
+
+            let _ = belt.try_insert_item(9);
+        });
+    }
+
+    #[bench]
+    fn bench_smart_belt_with_10000_inserters(b: &mut Bencher) {
+        let mut belt = SmartBelt::<Iron>::new(MAX_LEN);
+
+        let storage_unused = ItemStorage::<Iron>::default();
+
+        let storage_source = ItemStorage::<Iron>::new(30);
+        let storage_dest = ItemStorage::<Iron>::default();
+
+        for i in 0..MAX_LEN {
+            belt.inserters[i] = Some(Inserter::<Iron>::new(
+                NonZeroU16::new(2).expect("Hardcoded"),
+            ));
+        }
+
+        let mut storages = [storage_unused, storage_source, storage_dest];
+
+        b.iter(|| {
+            belt.update();
+            belt.update_inserters(&mut storages);
+
+            let _ = belt.try_insert_item(9);
+        });
     }
 
     #[test]
