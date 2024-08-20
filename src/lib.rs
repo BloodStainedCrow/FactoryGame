@@ -1,6 +1,7 @@
 #![feature(test)]
 #![feature(const_trait_impl)]
 #![feature(portable_simd)]
+#![feature(generic_nonzero)]
 
 use belt::smart::SmartBelt;
 use item::{Iron, ItemStorage};

@@ -12,6 +12,8 @@ use proptest::{
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Enum)]
 pub enum Item {
+    IronOre,
+    CopperOre,
     Iron,
     Copper,
 }
@@ -33,89 +35,58 @@ pub fn option() -> impl Strategy<Value = Option<Item>> {
 #[must_use]
 pub const fn get_char(item: Item) -> char {
     match item {
+        Item::CopperOre => 'c',
+        Item::IronOre => 'i',
         Item::Iron => 'I',
         Item::Copper => 'C',
     }
 }
 
-#[allow(clippy::match_same_arms)]
-#[must_use]
-pub const fn get_time_to_generate(item: Item) -> u16 {
-    match item {
-        Item::Iron => 2,
-        Item::Copper => 2,
-    }
-}
-
-#[must_use]
-pub const fn get_max_stack_size(item: Item) -> u16 {
-    match item {
-        Item::Iron => 2_000,
-        Item::Copper => 100,
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Recipe {
-    pub ingredient: Item,
-    pub ingredient_amount: u64,
-    pub result: Item,
-    pub result_amount: u64,
-    pub time: u16,
-}
-
-pub const RECIPES: [Recipe; 2] = [
-    Recipe {
-        ingredient: Item::Iron,
-        ingredient_amount: 1,
-        result: Item::Iron,
-        result_amount: 1,
-        time: 20,
-    },
-    Recipe {
-        ingredient: Item::Iron,
-        ingredient_amount: 1,
-        result: Item::Iron,
-        result_amount: 2,
-        time: 5,
-    },
-];
-
-pub fn all_recipes() -> impl Strategy<Value = Recipe> {
-    prop_oneof![
-        Just(Recipe {
-            ingredient: Item::Iron,
-            ingredient_amount: 1,
-            result: Item::Iron,
-            result_amount: 2,
-            time: 5,
-        }),
-        Just(Recipe {
-            ingredient: Item::Iron,
-            ingredient_amount: 1,
-            result: Item::Iron,
-            result_amount: 2,
-            time: 5,
-        }),
-    ]
+#[allow(clippy::module_name_repetitions)]
+// #[const_trait]
+pub trait ItemTrait {
+    fn get_item() -> Item;
+    fn max_stack_size() -> u16;
 }
 
 #[allow(clippy::module_name_repetitions)]
-#[const_trait]
-pub trait ItemTrait {
-    fn get_item() -> Item;
+// #[const_trait]
+pub trait GeneratableItem: ItemTrait {
     fn get_time_to_generate() -> u16;
 }
 
+#[allow(clippy::module_name_repetitions)]
+// #[const_trait]
+pub trait CraftableItem<Ing: IngList<NUM_ING>, const NUM_ING: usize>: ItemTrait {
+    fn get_time_to_craft() -> u16;
+}
+
+#[const_trait]
+pub trait IngList<const N: usize> {}
+
+impl<A: ItemTrait> IngList<1> for A {}
+
+impl<A: ItemTrait, B: ItemTrait> IngList<2> for (A, B) {}
+
 macro_rules! item {
-    ( $x:ident, $y:expr) => {
+    ( $x:ident, $max_stack: literal) => {
         #[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
         pub struct $x;
-        impl const ItemTrait for $x {
+        impl ItemTrait for $x {
             fn get_item() -> Item {
                 Item::$x
             }
 
+            fn max_stack_size() -> u16 {
+                $max_stack
+            }
+        }
+    };
+}
+
+macro_rules! generatable {
+    ( $x:ty, $y: literal) => {
+        impl GeneratableItem for $x {
             fn get_time_to_generate() -> u16 {
                 $y
             }
@@ -123,8 +94,24 @@ macro_rules! item {
     };
 }
 
-item!(Iron, 2);
-item!(Copper, 2);
+macro_rules! craftable {
+    ( $x:ty, $y: expr, $num_ing: literal, $ing: ty ) => {
+        impl CraftableItem<$ing, $num_ing> for $x {
+            fn get_time_to_craft() -> u16 {
+                $y
+            }
+        }
+    };
+}
+
+item!(IronOre, 200);
+generatable!(IronOre, 20);
+item!(CopperOre, 200);
+generatable!(CopperOre, 20);
+item!(Iron, 100);
+craftable!(Iron, 10, 1, IronOre);
+item!(Copper, 100);
+craftable!(Copper, 5, 1, CopperOre);
 
 #[allow(clippy::module_name_repetitions)]
 #[repr(transparent)]
@@ -135,6 +122,6 @@ pub struct ItemStorage<T: ItemTrait>(u16, PhantomData<T>);
 impl<T: ItemTrait> ItemStorage<T> {
     #[must_use]
     pub const fn new(val: u16) -> Self {
-        Self(val, PhantomData {})
+        Self(val, PhantomData)
     }
 }

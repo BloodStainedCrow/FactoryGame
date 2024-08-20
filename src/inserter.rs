@@ -29,11 +29,9 @@ impl<T: ItemTrait> Inserter<T> {
     }
 
     pub fn update(&self, storages: &mut [ItemStorage<T>]) -> bool {
-        return false;
-
         let ret = *TransparentWrapper::peel_ref(
             &storages[usize::from(Into::<u16>::into(self.storage_id))],
-        ) < 10000;
+        ) < T::max_stack_size();
 
         *TransparentWrapper::peel_mut(
             &mut storages[usize::from(Into::<u16>::into(self.storage_id))],

@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, mem};
+use std::{cmp::min, marker::PhantomData, mem, usize};
 
 use crate::{
     inserter::Inserter,
@@ -13,11 +13,11 @@ pub struct SmartBelt<T: ItemTrait> {
     marker: PhantomData<T>,
     first_free_index: FreeIndex,
     zero_index: usize,
-    locs: Vec<bool>,
+    locs: Box<[bool]>,
     inserters: Vec<(u16, Inserter<T>)>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 enum FreeIndex {
     FreeIndex(usize),
     OldFreeIndex(usize),
@@ -30,31 +30,46 @@ impl<T: ItemTrait> SmartBelt<T> {
             marker: PhantomData {},
             first_free_index: FreeIndex::FreeIndex(0),
             zero_index: 0,
-            locs: vec![false; len],
+            locs: vec![false; len].into_boxed_slice(),
             inserters: vec![],
         }
     }
 
     #[inline(never)]
     pub fn update_inserters(&mut self, storages: &mut [ItemStorage<T>]) {
-        // TODO: Update first_free_index
-
+        let len = self.get_len();
         let mut items_mut_iter = Self::items_mut(&mut self.locs, self.zero_index).into_iter();
+
+        // TODO: SENTINEL VALUE
+        let mut new_empty_pos = usize::MAX;
+        let mut i = 0;
 
         for (index, inserter) in &self.inserters {
             let loc = items_mut_iter.nth(usize::from(*index));
+            i += usize::from(*index);
+            i %= len;
 
             match loc {
                 Some(loc) => {
                     if *loc {
                         *loc = inserter.update(storages);
+                        if !*loc {
+                            new_empty_pos = min(new_empty_pos, i);
+                        }
                     }
                 },
                 None => unreachable!(),
             }
+
+            i += 1;
         }
 
-        coz::progress!("Inserter");
+        // Needed for the borrowchecker to not complain
+        mem::drop(items_mut_iter);
+
+        if new_empty_pos < usize::MAX {
+            self.update_first_free_pos(new_empty_pos);
+        }
     }
 
     fn update_first_free_pos(&mut self, now_empty_pos: usize) {
@@ -179,7 +194,7 @@ impl<T: ItemTrait> Belt<T> for SmartBelt<T> {
 
         let len = self.locs.len();
 
-        let slice = self.locs.as_mut_slice();
+        let slice = &mut self.locs;
 
         let (end_slice, start_slice) = slice.split_at_mut(self.zero_index);
 
@@ -446,7 +461,7 @@ mod tests {
         let storage_source = ItemStorage::<Iron>::new(30);
         let storage_dest = ItemStorage::<Iron>::default();
 
-        for i in 0..MAX_LEN {
+        for i in 0..10_000 {
             belt.inserters.push((
                 0,
                 Inserter::<Iron>::new(NonZeroU16::new(2).expect("Hardcoded")),
@@ -456,12 +471,10 @@ mod tests {
         let mut storages = [storage_unused, storage_source, storage_dest];
 
         b.iter(|| {
-            for _ in 0..100 {
-                belt.update();
-                belt.update_inserters(&mut storages);
+            belt.update();
+            belt.update_inserters(&mut storages);
 
-                let _ = belt.try_insert_item(9);
-            }
+            let _ = belt.try_insert_item(9);
         });
     }
 

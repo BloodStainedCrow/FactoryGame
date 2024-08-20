@@ -1,23 +1,36 @@
 use std::simd::cmp::SimdPartialEq;
+use std::simd::cmp::SimdPartialOrd;
 use std::simd::Simd;
 
 use bytemuck::TransparentWrapper;
+use soa_rs::Soars;
 
+use crate::item::GeneratableItem;
 use crate::item::ItemStorage;
-use crate::item::ItemTrait;
 
 pub type Simdtype = Simd<u16, 16>;
 
 #[derive(Debug, Default)]
-pub struct MultiProducerStore<T: ItemTrait> {
+pub struct MultiProducerStore<T: GeneratableItem> {
     timers: Vec<u16>,
     outputs: Vec<ItemStorage<T>>,
     len: usize,
 }
 
-impl<T: ItemTrait> MultiProducerStore<T> {
+// #[derive(Debug, Soars)]
+// pub struct Test {
+//     a: i32,
+// }
+
+#[derive(Debug)]
+pub struct Producer<T: GeneratableItem> {
+    timer: u16,
+    output: ItemStorage<T>,
+}
+
+impl<T: GeneratableItem> MultiProducerStore<T> {
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             timers: vec![],
             outputs: vec![],
@@ -25,9 +38,19 @@ impl<T: ItemTrait> MultiProducerStore<T> {
         }
     }
 
-    pub fn update(&mut self) {
+    /// # Panics
+    /// If `power_mult` > 64
+    pub fn update(&mut self, power_mult: u8) {
+        const TICKS_PER_CREATE: u16 = 64;
+        if power_mult == 0 {
+            return;
+        }
+
         assert_eq!(self.outputs.len(), self.timers.len());
         assert!(self.outputs.len() % Simdtype::LEN == 0);
+
+        let timer_increase: Simdtype =
+            Simdtype::splat((u16::from(power_mult) * 512) / TICKS_PER_CREATE * 2);
 
         for i in (0..self
             .outputs
@@ -42,9 +65,9 @@ impl<T: ItemTrait> MultiProducerStore<T> {
                 Simdtype::from_slice(ItemStorage::<T>::peel_slice(self.outputs.split_at(i).1));
 
             let timer = Simdtype::from_slice(self.timers.split_at(i).1);
-            let timer_reset: Simdtype = Simdtype::splat(T::get_time_to_generate());
+            let timer_new = timer + timer_increase;
 
-            let timer_mask = timer.simd_eq(timer_reset);
+            let timer_mask = timer_new.simd_lt(timer);
 
             let new_outputs = output + ONE;
 
@@ -57,6 +80,28 @@ impl<T: ItemTrait> MultiProducerStore<T> {
                 timer_mask.select(ZERO, timer + ONE),
                 self.timers.split_at_mut(i).1,
             );
+        }
+    }
+
+    /// # Panics
+    /// If `power_mult` > 64
+    pub fn update_branchless(&mut self, power_mult: u8) {
+        const TICKS_PER_CREATE: u16 = 64;
+        if power_mult == 0 {
+            return;
+        }
+
+        assert_eq!(self.outputs.len(), self.timers.len());
+        assert!(self.outputs.len() % Simdtype::LEN == 0);
+
+        let increase = (u16::from(power_mult) * 512) / TICKS_PER_CREATE * 2;
+
+        for (output, timer) in self.outputs.iter_mut().zip(self.timers.iter_mut()) {
+            let new_timer = timer.wrapping_add(increase);
+            let timer_mul = u16::from(*timer < new_timer);
+            let space_mul = u16::from(*ItemStorage::<T>::peel_mut(output) < T::max_stack_size());
+
+            *ItemStorage::<T>::peel_mut(output) += timer_mul * space_mul;
         }
     }
 
@@ -80,8 +125,8 @@ impl<T: ItemTrait> MultiProducerStore<T> {
     }
 
     pub fn add_producer(&mut self) {
-        assert_eq!(self.outputs.len(), self.timers.len());
-        assert!(self.outputs.len() % Simdtype::LEN == 0);
+        debug_assert_eq!(self.outputs.len(), self.timers.len());
+        debug_assert!(self.outputs.len() % Simdtype::LEN == 0);
 
         if self.len == self.outputs.len() {
             // We need to grow
@@ -101,54 +146,61 @@ impl<T: ItemTrait> MultiProducerStore<T> {
 mod tests {
     use std::hint::black_box;
 
-    use crate::item::Iron;
+    use crate::item::{Iron, IronOre};
 
     use super::*;
     extern crate test;
     use test::Bencher;
 
     #[bench]
-    fn bench_1_000_000_producer_update(b: &mut Bencher) {
-        let mut multi_store = MultiProducerStore::<Iron>::new();
+    fn bench_1_000_000_producer_update_hard_simd(b: &mut Bencher) {
+        let mut multi_store = MultiProducerStore::<IronOre>::new();
 
         for _ in 0..1_000_000 {
             multi_store.add_producer();
         }
 
         b.iter(|| {
-            for _ in 0..Simdtype::LEN {
-                black_box(&mut multi_store).update();
-            }
+            black_box(&mut multi_store).update(64);
+        });
+    }
+
+    #[bench]
+    fn bench_1_000_000_producer_update(b: &mut Bencher) {
+        let mut multi_store = MultiProducerStore::<IronOre>::new();
+
+        for _ in 0..1_000_000 {
+            multi_store.add_producer();
+        }
+
+        b.iter(|| {
+            black_box(&mut multi_store).update_branchless(64);
         });
     }
 
     #[bench]
     fn bench_250_000_producer_update(b: &mut Bencher) {
-        let mut multi_store = MultiProducerStore::<Iron>::new();
+        let mut multi_store = MultiProducerStore::<IronOre>::new();
 
         for _ in 0..250_000 {
             multi_store.add_producer();
         }
 
         b.iter(|| {
-            for _ in 0..Simdtype::LEN {
-                black_box(&mut multi_store).update();
-            }
+            black_box(&mut multi_store).update_branchless(64);
         });
     }
 
     #[bench]
     fn bench_8_000_producer_update(b: &mut Bencher) {
-        let mut multi_store = MultiProducerStore::<Iron>::new();
+        let mut multi_store = MultiProducerStore::<IronOre>::new();
 
         for _ in 0..8_000 {
             multi_store.add_producer();
         }
 
         b.iter(|| {
-            for _ in 0..Simdtype::LEN {
-                black_box(&mut multi_store).update();
-            }
+            black_box(&mut multi_store).update_branchless(64);
         });
     }
 }
