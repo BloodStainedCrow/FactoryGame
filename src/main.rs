@@ -41,13 +41,13 @@ fn main() {
 
         for _ in 0..NUM_INSERTERS_PER_BELT {
             // TODO: Use add_inserter
-            let mut rand = random();
+            let mut rand: u16 = random();
             while rand == 0u16 {
                 rand = random();
             }
-            belt.inserters.push((
-                0,
-                Inserter::<Iron>::new(NonZeroU16::new(rand).expect("Hardcoded")),
+            belt.inserters.offsets.push(0);
+            belt.inserters.inserters.push(Inserter::<Iron>::new(
+                NonZeroU16::new(rand.into()).expect("Hardcoded"),
             ));
         }
 

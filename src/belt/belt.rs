@@ -31,7 +31,7 @@ impl<T: ItemTrait> Display for dyn Belt<T> {
 }
 
 #[derive(Debug)]
-pub struct NoSpaceError {}
+pub struct NoSpaceError;
 
 impl Display for NoSpaceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

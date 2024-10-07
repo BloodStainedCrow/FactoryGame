@@ -70,9 +70,9 @@ mod tests {
                 while rand == 0u8 {
                     rand = random();
                 }
-                belt.inserters.push((
-                    0,
-                    Inserter::<Iron>::new(NonZeroU16::new(rand.into()).expect("Hardcoded")),
+                belt.inserters.offsets.push(0);
+                belt.inserters.inserters.push(Inserter::<Iron>::new(
+                    NonZeroU16::new(rand.into()).expect("Hardcoded"),
                 ));
             }
 
@@ -122,9 +122,9 @@ mod tests {
                 while rand == 0u8 {
                     rand = random();
                 }
-                belt.inserters.push((
-                    0,
-                    Inserter::<Iron>::new(NonZeroU16::new(rand.into()).expect("Hardcoded")),
+                belt.inserters.offsets.push(0);
+                belt.inserters.inserters.push(Inserter::<Iron>::new(
+                    NonZeroU16::new(rand.into()).expect("Hardcoded"),
                 ));
             }
 
@@ -166,9 +166,9 @@ mod tests {
                 while rand == 0u8 {
                     rand = random();
                 }
-                belt.inserters.push((
-                    0,
-                    Inserter::<Iron>::new(NonZeroU16::new(rand.into()).expect("Hardcoded")),
+                belt.inserters.offsets.push(0);
+                belt.inserters.inserters.push(Inserter::<Iron>::new(
+                    NonZeroU16::new(rand.into()).expect("Hardcoded"),
                 ));
             }
 
@@ -211,9 +211,9 @@ mod tests {
                 while rand == 0u8 {
                     rand = random();
                 }
-                belt.inserters.push((
-                    0,
-                    Inserter::<Iron>::new(NonZeroU16::new(rand.into()).expect("Hardcoded")),
+                belt.inserters.offsets.push(0);
+                belt.inserters.inserters.push(Inserter::<Iron>::new(
+                    NonZeroU16::new(rand.into()).expect("Hardcoded"),
                 ));
             }
 
