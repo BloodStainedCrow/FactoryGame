@@ -3,22 +3,20 @@
 name = "factory"
 version = "0.0.0"
 edition = "2021"
-rust-version = "1.79"
+rust-version = "1.81"
 
 [dependencies]
 bytemuck = { version = "1.15.0", features = ["derive"] }
 enum-map = "2.7.3"
 proptest = "1.4.0"
-scoped_threadpool = { version = "0.1.9" }
-soa-rs = "0.7.1"
-soa-rs-derive = "0.6.0"
+# scoped_threadpool = { version = "0.1.9" }
+rand = "0.8.5"
 
 [dev-dependencies]
 rand = "0.8.5"
 
 [lints.rust]
-# FIXME:
-# unsafe_code = "forbid"
+unsafe_code = "forbid"
 
 [lints.clippy]
 enum_glob_use = { level = "deny", priority = -1 }
@@ -27,6 +25,8 @@ nursery = "deny"
 unwrap_used = { level = "deny", priority = -1 }
 wildcard_enum_match_arm = { level = "deny", priority = -1 }
 match_same_arms = { level = "deny", priority = -1 }
+
+module_name_repetitions = { level = "allow", priority = 1 }
 
 [profile.release-with-debug]
 inherits = "release"

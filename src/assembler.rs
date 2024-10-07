@@ -1,9 +1,9 @@
-use std::{hint::assert_unchecked, simd::cmp::SimdPartialOrd};
+use std::simd::cmp::SimdPartialOrd;
 
 use bytemuck::TransparentWrapper;
 
 use crate::{
-    item::{Copper, CraftableItem, Iron, ItemStorage, ItemTrait},
+    item::{Copper, Iron, ItemStorage, ItemTrait, SingleIngCraft},
     producer::Simdtype,
 };
 
@@ -37,14 +37,14 @@ const INPUT_COUNTS_5: [u8; NUM_RECIPES
     - NUM_RECIPED_WITH_1] = [];
 
 #[derive(Debug, Default)]
-pub struct MultiAssemblerStoreOne<Ing1: ItemTrait, Res: CraftableItem<Ing1, 1>> {
+pub struct MultiAssemblerStoreOne<Res: SingleIngCraft> {
     timers: Vec<u16>,
-    input1: Vec<ItemStorage<Ing1>>,
+    input1: Vec<ItemStorage<Res::ING1>>,
     outputs: Vec<ItemStorage<Res>>,
     len: usize,
 }
 
-impl<Ing1: ItemTrait, Res: CraftableItem<Ing1, 1>> MultiAssemblerStoreOne<Ing1, Res> {
+impl<Res: SingleIngCraft> MultiAssemblerStoreOne<Res> {
     #[must_use]
     pub const fn new() -> Self {
         Self {
@@ -75,7 +75,7 @@ impl<Ing1: ItemTrait, Res: CraftableItem<Ing1, 1>> MultiAssemblerStoreOne<Ing1, 
         let res_amount: Simdtype = Simdtype::splat(1);
         let timer_increase: Simdtype =
             Simdtype::splat((u16::from(power_mult) * 512) / TICKS_PER_CREATE * 2);
-        let max_stack_size: Simdtype = Simdtype::splat(Res::max_stack_size());
+        let max_stack_size: Simdtype = Simdtype::splat(Res::MAX_STACK_SIZE);
 
         for i in (0..self
             .outputs
@@ -83,8 +83,9 @@ impl<Ing1: ItemTrait, Res: CraftableItem<Ing1, 1>> MultiAssemblerStoreOne<Ing1, 
             .min(self.len - (self.len % Simdtype::LEN)))
             .step_by(Simdtype::LEN)
         {
-            let input =
-                Simdtype::from_slice(ItemStorage::<Ing1>::peel_slice(self.input1.split_at(i).1));
+            let input = Simdtype::from_slice(ItemStorage::<Res::ING1>::peel_slice(
+                self.input1.split_at(i).1,
+            ));
 
             let output =
                 Simdtype::from_slice(ItemStorage::<Res>::peel_slice(self.outputs.split_at(i).1));
@@ -114,7 +115,7 @@ impl<Ing1: ItemTrait, Res: CraftableItem<Ing1, 1>> MultiAssemblerStoreOne<Ing1, 
 
             Simdtype::copy_to_slice(
                 new_ing1_amount,
-                ItemStorage::<Ing1>::peel_slice_mut(self.input1.split_at_mut(i).1),
+                ItemStorage::<Res::ING1>::peel_slice_mut(self.input1.split_at_mut(i).1),
             );
 
             Simdtype::copy_to_slice(new_timer, self.timers.split_at_mut(i).1);
@@ -125,7 +126,6 @@ impl<Ing1: ItemTrait, Res: CraftableItem<Ing1, 1>> MultiAssemblerStoreOne<Ing1, 
     /// If `power_mult` > 64
     #[inline(never)]
     pub fn update_simple(&mut self, power_mult: u8) {
-        const TICKS_PER_CREATE: u16 = 64;
         if power_mult == 0 {
             return;
         }
@@ -136,21 +136,22 @@ impl<Ing1: ItemTrait, Res: CraftableItem<Ing1, 1>> MultiAssemblerStoreOne<Ing1, 
         assert_eq!(self.input1.len(), self.timers.len());
         assert!(self.outputs.len() % Simdtype::LEN == 0);
 
-        let increase = (u16::from(power_mult) * 512) / TICKS_PER_CREATE * 2;
-        let ing1_amount = 2u16;
+        let increase = (u16::from(power_mult) * 512) / Res::TIME_TO_CRAFT * 2;
 
         for (output, (input1, timer)) in self
             .outputs
             .iter_mut()
             .zip(self.input1.iter_mut().zip(self.timers.iter_mut()))
         {
-            if *ItemStorage::<Ing1>::peel_mut(input1) >= ing1_amount {
+            if *ItemStorage::<Res::ING1>::peel_mut(input1) >= Res::AMOUNT1 {
                 let new_timer = timer.wrapping_add(increase);
                 if *timer < new_timer {
                     // We should produce
-                    if *ItemStorage::<Res>::peel_mut(output) < Res::max_stack_size() {
-                        *ItemStorage::<Res>::peel_mut(output) += 1;
-                        *ItemStorage::<Ing1>::peel_mut(input1) -= ing1_amount;
+                    if *ItemStorage::<Res>::peel_mut(output) + Res::OUTPUT_AMOUNT
+                        <= Res::MAX_STACK_SIZE
+                    {
+                        *ItemStorage::<Res>::peel_mut(output) += Res::OUTPUT_AMOUNT;
+                        *ItemStorage::<Res::ING1>::peel_mut(input1) -= Res::AMOUNT1;
                     }
                 }
             }
@@ -161,37 +162,40 @@ impl<Ing1: ItemTrait, Res: CraftableItem<Ing1, 1>> MultiAssemblerStoreOne<Ing1, 
     /// If `power_mult` > 64
     #[inline(never)]
     pub fn update_branchless(&mut self, power_mult: u8) {
-        const TICKS_PER_CREATE: u16 = 64;
         if power_mult == 0 {
             return;
         }
 
-        assert!(power_mult <= 64);
+        debug_assert!(power_mult <= 64);
 
         assert_eq!(self.outputs.len(), self.timers.len());
         assert_eq!(self.input1.len(), self.timers.len());
         assert!(self.outputs.len() % Simdtype::LEN == 0);
 
-        let increase = (u16::from(power_mult) * 512) / TICKS_PER_CREATE * 2;
-        let ing1_amount = 2u16;
+        let increase = (u16::from(power_mult) * 512) / Res::TIME_TO_CRAFT * 2;
 
         for (output, (input1, timer)) in self
             .outputs
             .iter_mut()
             .zip(self.input1.iter_mut().zip(self.timers.iter_mut()))
         {
-            let ing_mul = u16::from(*ItemStorage::<Ing1>::peel_mut(input1) >= ing1_amount);
-            let new_timer = timer.wrapping_add(increase * ing_mul);
+            let ing1_mul = u16::from(*ItemStorage::<Res::ING1>::peel_mut(input1) >= Res::AMOUNT1);
+            let new_timer = timer.wrapping_add(increase * ing1_mul);
             let timer_mul = u16::from(*timer < new_timer);
-            let space_mul =
-                u16::from(*ItemStorage::<Res>::peel_mut(output) < Res::max_stack_size());
+            let space_mul = u16::from(
+                *ItemStorage::<Res>::peel_mut(output) + Res::OUTPUT_AMOUNT <= Res::MAX_STACK_SIZE,
+            );
 
-            *ItemStorage::<Res>::peel_mut(output) += timer_mul * space_mul;
-            *ItemStorage::<Ing1>::peel_mut(input1) -= ing1_amount * timer_mul * space_mul;
+            *ItemStorage::<Res>::peel_mut(output) += timer_mul * space_mul * Res::OUTPUT_AMOUNT;
+            *ItemStorage::<Res::ING1>::peel_mut(input1) -= Res::AMOUNT1 * timer_mul * space_mul;
         }
     }
 
-    pub fn get_output(&mut self, index: usize) -> Option<&mut ItemStorage<Res>> {
+    pub fn get_outputs_mut(&mut self) -> &mut [ItemStorage<Res>] {
+        &mut self.outputs
+    }
+
+    pub fn get_output_mut(&mut self, index: usize) -> Option<&mut ItemStorage<Res>> {
         if index < self.len {
             Some(&mut self.outputs[index])
         } else {
@@ -199,7 +203,7 @@ impl<Ing1: ItemTrait, Res: CraftableItem<Ing1, 1>> MultiAssemblerStoreOne<Ing1, 
         }
     }
 
-    pub fn get_input_1(&mut self, index: usize) -> Option<&mut ItemStorage<Ing1>> {
+    pub fn get_input_1_mut(&mut self, index: usize) -> Option<&mut ItemStorage<Res::ING1>> {
         if index < self.len {
             Some(&mut self.input1[index])
         } else {
@@ -226,10 +230,11 @@ impl<Ing1: ItemTrait, Res: CraftableItem<Ing1, 1>> MultiAssemblerStoreOne<Ing1, 
             // We need to grow
             self.outputs
                 .resize_with(self.len + Simdtype::LEN, || ItemStorage::<Res>::new(0));
-            self.input1
-                .resize_with(self.len + Simdtype::LEN, || ItemStorage::<Ing1>::new(0));
+            self.input1.resize_with(self.len + Simdtype::LEN, || {
+                ItemStorage::<Res::ING1>::new(0)
+            });
             self.timers
-                .resize(self.len + Simdtype::LEN, Res::get_time_to_craft());
+                .resize(self.len + Simdtype::LEN, Res::TIME_TO_CRAFT);
         } else {
             self.outputs[self.len] = ItemStorage::<Res>::new(0);
             self.timers[self.len] = 0;
@@ -251,7 +256,7 @@ pub struct MultiAssemblerStoreLenient {
 
 #[cfg(test)]
 mod tests {
-    use std::{hint::black_box, u16};
+    use std::hint::black_box;
 
     use crate::item::{Iron, IronOre};
 
@@ -262,11 +267,12 @@ mod tests {
 
     #[bench]
     fn bench_1_000_000_assembler_update_hard_simd(b: &mut Bencher) {
-        let mut multi_store = MultiAssemblerStoreOne::<IronOre, Iron>::new();
+        let mut multi_store = MultiAssemblerStoreOne::<Iron>::new();
 
         for i in 0..1_000_000 {
             multi_store.add_assembler();
-            *multi_store.get_input_1(i).expect("Hardcoded") = ItemStorage::<IronOre>::new(random());
+            *multi_store.get_input_1_mut(i).expect("Hardcoded") =
+                ItemStorage::<IronOre>::new(random());
         }
 
         b.iter(|| {
@@ -276,11 +282,12 @@ mod tests {
 
     #[bench]
     fn bench_1_000_000_assembler_update_simple(b: &mut Bencher) {
-        let mut multi_store = MultiAssemblerStoreOne::<IronOre, Iron>::new();
+        let mut multi_store = MultiAssemblerStoreOne::<Iron>::new();
 
         for i in 0..1_000_000 {
             multi_store.add_assembler();
-            *multi_store.get_input_1(i).expect("Hardcoded") = ItemStorage::<IronOre>::new(random());
+            *multi_store.get_input_1_mut(i).expect("Hardcoded") =
+                ItemStorage::<IronOre>::new(random());
         }
 
         b.iter(|| {
@@ -290,11 +297,12 @@ mod tests {
 
     #[bench]
     fn bench_1_000_000_assembler_update_branchless(b: &mut Bencher) {
-        let mut multi_store = MultiAssemblerStoreOne::<IronOre, Iron>::new();
+        let mut multi_store = MultiAssemblerStoreOne::<Iron>::new();
 
         for i in 0..1_000_000 {
             multi_store.add_assembler();
-            *multi_store.get_input_1(i).expect("Hardcoded") = ItemStorage::<IronOre>::new(random());
+            *multi_store.get_input_1_mut(i).expect("Hardcoded") =
+                ItemStorage::<IronOre>::new(random());
         }
 
         b.iter(|| {
@@ -304,7 +312,7 @@ mod tests {
 
     #[bench]
     fn bench_250_000_assembler_update(b: &mut Bencher) {
-        let mut multi_store = MultiAssemblerStoreOne::<IronOre, Iron>::new();
+        let mut multi_store = MultiAssemblerStoreOne::<Iron>::new();
 
         for _ in 0..250_000 {
             multi_store.add_assembler();
@@ -317,7 +325,7 @@ mod tests {
 
     #[bench]
     fn bench_8_000_assembler_update(b: &mut Bencher) {
-        let mut multi_store = MultiAssemblerStoreOne::<IronOre, Iron>::new();
+        let mut multi_store = MultiAssemblerStoreOne::<Iron>::new();
 
         for _ in 0..8_000 {
             multi_store.add_assembler();
@@ -333,13 +341,14 @@ mod tests {
         let mut multi_stores = vec![];
 
         for _ in 0..800 {
-            multi_stores.push(MultiAssemblerStoreOne::<IronOre, Iron>::new());
+            multi_stores.push(MultiAssemblerStoreOne::<Iron>::new());
         }
 
         for store in &mut multi_stores {
             for i in 0..10 {
                 store.add_assembler();
-                *store.get_input_1(i).expect("Hardcoded") = ItemStorage::<IronOre>::new(random());
+                *store.get_input_1_mut(i).expect("Hardcoded") =
+                    ItemStorage::<IronOre>::new(random());
             }
         }
 
@@ -355,13 +364,37 @@ mod tests {
         let mut multi_stores = vec![];
 
         for _ in 0..1000 {
-            multi_stores.push(MultiAssemblerStoreOne::<IronOre, Iron>::new());
+            multi_stores.push(MultiAssemblerStoreOne::<Iron>::new());
         }
 
         for store in &mut multi_stores {
             for i in 0..1000 {
                 store.add_assembler();
-                *store.get_input_1(i).expect("Hardcoded") = ItemStorage::<IronOre>::new(random());
+                *store.get_input_1_mut(i).expect("Hardcoded") =
+                    ItemStorage::<IronOre>::new(random());
+            }
+        }
+
+        b.iter(|| {
+            for store in &mut multi_stores {
+                black_box(store).update_branchless(64);
+            }
+        });
+    }
+
+    #[bench]
+    fn bench_250_multi_assembler_with_100_000_each(b: &mut Bencher) {
+        let mut multi_stores = vec![];
+
+        for _ in 0..250 {
+            multi_stores.push(MultiAssemblerStoreOne::<Iron>::new());
+        }
+
+        for store in &mut multi_stores {
+            for i in 0..100_000 {
+                store.add_assembler();
+                *store.get_input_1_mut(i).expect("Hardcoded") =
+                    ItemStorage::<IronOre>::new(random());
             }
         }
 

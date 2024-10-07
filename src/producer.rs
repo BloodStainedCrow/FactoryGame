@@ -1,9 +1,7 @@
-use std::simd::cmp::SimdPartialEq;
 use std::simd::cmp::SimdPartialOrd;
 use std::simd::Simd;
 
 use bytemuck::TransparentWrapper;
-use soa_rs::Soars;
 
 use crate::item::GeneratableItem;
 use crate::item::ItemStorage;
@@ -15,17 +13,6 @@ pub struct MultiProducerStore<T: GeneratableItem> {
     timers: Vec<u16>,
     outputs: Vec<ItemStorage<T>>,
     len: usize,
-}
-
-// #[derive(Debug, Soars)]
-// pub struct Test {
-//     a: i32,
-// }
-
-#[derive(Debug)]
-pub struct Producer<T: GeneratableItem> {
-    timer: u16,
-    output: ItemStorage<T>,
 }
 
 impl<T: GeneratableItem> MultiProducerStore<T> {
@@ -99,7 +86,7 @@ impl<T: GeneratableItem> MultiProducerStore<T> {
         for (output, timer) in self.outputs.iter_mut().zip(self.timers.iter_mut()) {
             let new_timer = timer.wrapping_add(increase);
             let timer_mul = u16::from(*timer < new_timer);
-            let space_mul = u16::from(*ItemStorage::<T>::peel_mut(output) < T::max_stack_size());
+            let space_mul = u16::from(*ItemStorage::<T>::peel_mut(output) < T::MAX_STACK_SIZE);
 
             *ItemStorage::<T>::peel_mut(output) += timer_mul * space_mul;
         }
@@ -133,7 +120,7 @@ impl<T: GeneratableItem> MultiProducerStore<T> {
             self.outputs
                 .resize_with(self.len + Simdtype::LEN, || ItemStorage::<T>::new(0));
             self.timers
-                .resize(self.len + Simdtype::LEN, T::get_time_to_generate());
+                .resize(self.len + Simdtype::LEN, T::TIME_TO_GENERATE);
         } else {
             self.outputs[self.len] = ItemStorage::<T>::new(0);
             self.timers[self.len] = 0;

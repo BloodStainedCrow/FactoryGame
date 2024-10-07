@@ -2,7 +2,7 @@ use std::{cmp::min, marker::PhantomData, mem, usize};
 
 use crate::{
     inserter::Inserter,
-    item::{Item, ItemStorage, ItemTrait},
+    item::{Iron, Item, ItemStorage, ItemTrait},
 };
 
 use super::belt::{Belt, NoSpaceError};
@@ -14,7 +14,7 @@ pub struct SmartBelt<T: ItemTrait> {
     first_free_index: FreeIndex,
     zero_index: usize,
     locs: Box<[bool]>,
-    inserters: Vec<(u16, Inserter<T>)>,
+    pub inserters: Vec<(u16, Inserter<T>)>,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -22,6 +22,8 @@ enum FreeIndex {
     FreeIndex(usize),
     OldFreeIndex(usize),
 }
+
+const MIN_INSERTER_SPACING: usize = 8;
 
 impl<T: ItemTrait> SmartBelt<T> {
     #[must_use]
@@ -38,24 +40,27 @@ impl<T: ItemTrait> SmartBelt<T> {
     #[inline(never)]
     pub fn update_inserters(&mut self, storages: &mut [ItemStorage<T>]) {
         let len = self.get_len();
-        let mut items_mut_iter = Self::items_mut(&mut self.locs, self.zero_index).into_iter();
+        let mut items_mut_iter = Self::items_mut(&mut self.locs, self.zero_index).rev();
 
         // TODO: SENTINEL VALUE
-        let mut new_empty_pos = usize::MAX;
+        let mut new_empty_pos = len;
         let mut i = 0;
+        let mut has_changed = false;
 
         for (index, inserter) in &self.inserters {
             let loc = items_mut_iter.nth(usize::from(*index));
             i += usize::from(*index);
-            i %= len;
 
             match loc {
                 Some(loc) => {
                     if *loc {
-                        *loc = inserter.update(storages);
+                        let new_val = inserter.update(storages);
+                        *loc = new_val;
+
                         if !*loc {
-                            new_empty_pos = min(new_empty_pos, i);
+                            new_empty_pos = i;
                         }
+                        has_changed |= !new_val;
                     }
                 },
                 None => unreachable!(),
@@ -69,6 +74,9 @@ impl<T: ItemTrait> SmartBelt<T> {
 
         if new_empty_pos < usize::MAX {
             self.update_first_free_pos(new_empty_pos);
+        } else {
+            assert!(!has_changed);
+            debug_assert!(!has_changed);
         }
     }
 
@@ -87,8 +95,7 @@ impl<T: ItemTrait> SmartBelt<T> {
         let new_free_index = match self.first_free_index {
             FreeIndex::FreeIndex(index) => index,
             FreeIndex::OldFreeIndex(index) => {
-                #[cfg(debug)]
-                println!("HAD TO SEARCH FOR FIRST FREE INDEX!");
+                // println!("HAD TO SEARCH FOR FIRST FREE INDEX!");
 
                 let search_start_index = index;
 
@@ -115,11 +122,15 @@ impl<T: ItemTrait> SmartBelt<T> {
         new_free_index
     }
 
-    fn items_mut(locs: &mut [bool], zero_index: usize) -> impl IntoIterator<Item = &mut bool> {
+    fn items_mut(
+        locs: &mut [bool],
+        zero_index: usize,
+    ) -> impl DoubleEndedIterator<Item = &mut bool> {
         let len = locs.len();
         let (start, end) = locs.split_at_mut(zero_index % locs.len());
 
-        end.iter_mut().chain(start.iter_mut()).take(len)
+        debug_assert_eq!(end.iter().chain(start.iter()).count(), len);
+        end.iter_mut().chain(start.iter_mut())
     }
 }
 
@@ -127,7 +138,7 @@ impl<T: ItemTrait> Belt<T> for SmartBelt<T> {
     #[inline(never)]
     fn query_item(&self, pos: usize) -> Option<Item> {
         if self.locs[(self.zero_index + pos) % self.locs.len()] {
-            Some(T::get_item())
+            Some(T::ITEM_ENUM)
         } else {
             None
         }
@@ -135,11 +146,9 @@ impl<T: ItemTrait> Belt<T> for SmartBelt<T> {
 
     fn remove_item(&mut self, pos: usize) -> Option<Item> {
         self.update_first_free_pos(pos);
-        self.query_item(pos).map(|item| {
+        self.query_item(pos).inspect(|item| {
             let len = self.locs.len();
             self.locs[(self.zero_index + pos) % len] = false;
-
-            item
         })
     }
 
@@ -402,7 +411,7 @@ mod tests {
 
     #[test]
     fn test_smart_belt_with_inserters() {
-        let mut belt = SmartBelt::<Iron>::new(10);
+        let mut belt = SmartBelt::<Iron>::new(10_000);
 
         let storage_unused = ItemStorage::<Iron>::default();
 
@@ -461,20 +470,54 @@ mod tests {
         let storage_source = ItemStorage::<Iron>::new(30);
         let storage_dest = ItemStorage::<Iron>::default();
 
-        for i in 0..10_000 {
+        for _ in 0..10_000 {
             belt.inserters.push((
                 0,
                 Inserter::<Iron>::new(NonZeroU16::new(2).expect("Hardcoded")),
             ));
         }
 
-        let mut storages = [storage_unused, storage_source, storage_dest];
+        let mut storages: Vec<ItemStorage<Iron>> =
+            [storage_unused.clone(), storage_source, storage_dest].into();
+
+        for _ in 0..100_000 {
+            storages.push(storage_unused.clone());
+        }
 
         b.iter(|| {
             belt.update();
             belt.update_inserters(&mut storages);
 
             let _ = belt.try_insert_item(9);
+        });
+    }
+
+    #[bench]
+    fn bench_smart_belt_with_10000_inserters_belt_empty(b: &mut Bencher) {
+        let mut belt = SmartBelt::<Iron>::new(MAX_LEN);
+
+        let storage_unused = ItemStorage::<Iron>::default();
+
+        let storage_source = ItemStorage::<Iron>::new(0);
+        let storage_dest = ItemStorage::<Iron>::default();
+
+        for _ in 0..10_000 {
+            belt.inserters.push((
+                0,
+                Inserter::<Iron>::new(NonZeroU16::new(2).expect("Hardcoded")),
+            ));
+        }
+
+        let mut storages: Vec<ItemStorage<Iron>> =
+            [storage_unused.clone(), storage_source, storage_dest].into();
+
+        for _ in 0..100_000 {
+            storages.push(storage_unused.clone());
+        }
+
+        b.iter(|| {
+            belt.update();
+            belt.update_inserters(&mut storages);
         });
     }
 

@@ -28,15 +28,34 @@ impl<T: ItemTrait> Inserter<T> {
         }
     }
 
+    /// This function assumes that it can remove an item from somewhere (a belt)
+    /// The caller is responsible for doing the removal and ensuring before calling this,
+    /// that there is an item to remove
     pub fn update(&self, storages: &mut [ItemStorage<T>]) -> bool {
         let ret = *TransparentWrapper::peel_ref(
             &storages[usize::from(Into::<u16>::into(self.storage_id))],
-        ) < T::max_stack_size();
+        ) < T::MAX_STACK_SIZE;
 
         *TransparentWrapper::peel_mut(
             &mut storages[usize::from(Into::<u16>::into(self.storage_id))],
         ) += u16::from(ret);
 
         ret
+    }
+
+    /// This function assumes that it can remove an item from somewhere (a belt)
+    /// The caller is responsible for doing the removal and ensuring before calling this,
+    /// that there is an item to remove
+    pub fn update_branched(&self, storages: &mut [ItemStorage<T>]) -> bool {
+        if *TransparentWrapper::peel_ref(&storages[usize::from(Into::<u16>::into(self.storage_id))])
+            < T::MAX_STACK_SIZE
+        {
+            *TransparentWrapper::peel_mut(
+                &mut storages[usize::from(Into::<u16>::into(self.storage_id))],
+            ) += 1;
+            true
+        } else {
+            false
+        }
     }
 }
