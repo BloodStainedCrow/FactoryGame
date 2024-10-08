@@ -643,7 +643,7 @@ mod tests {
 
                 if *inserter {
                     dbg!(i);
-                    assert!(back.add_inserter(i.into(), i).is_ok());
+                    assert!(back.add_out_inserter(i.into(), i).is_ok());
                 }
             }
 
@@ -654,7 +654,7 @@ mod tests {
                     continue;
                 };
 
-                match new_belt.get_inserter(i.try_into().expect("Hardcoded")) {
+                match new_belt.get_out_inserter(i.try_into().expect("Hardcoded")) {
                     Some(ins) => prop_assert_eq!(ins.storage_id, storage_i, "{:?}", new_belt),
                     None => prop_assert!(!*inserter, "{:?}", new_belt),
                 }
@@ -671,7 +671,7 @@ mod tests {
                 };
 
                 if *inserter {
-                    prop_assert!(belt.add_inserter(i.into(), i).is_ok());
+                    prop_assert!(belt.add_out_inserter(i.into(), i).is_ok());
                 }
             }
 
@@ -680,7 +680,7 @@ mod tests {
                     continue;
                 };
 
-                match belt.get_inserter(i.into()) {
+                match belt.get_out_inserter(i.into()) {
                     Some(ins) => prop_assert_eq!(ins.storage_id, i, "{:?}", belt),
                     None => prop_assert!(!*inserter, "{:?}", belt),
                 }
@@ -712,11 +712,11 @@ mod tests {
         let storage_dest = ItemStorage::<Iron>::default();
 
         belt.inserters.offsets.push(5);
-        belt.inserters
-            .out_inserters
-            .push(BeltStorageInserter::<Iron>::new(
+        belt.inserters.out_inserters.push(
+            BeltStorageInserter::<Iron, { Dir::BeltToStorage }>::new(
                 NonZeroU16::new(2).expect("Hardcoded"),
-            ));
+            ),
+        );
 
         let mut storages = [storage_unused, storage_source, storage_dest];
 
@@ -742,11 +742,11 @@ mod tests {
         let storage_dest = ItemStorage::<Iron>::default();
 
         belt.inserters.offsets.push(5);
-        belt.inserters
-            .out_inserters
-            .push(BeltStorageInserter::<Iron>::new(
+        belt.inserters.out_inserters.push(
+            BeltStorageInserter::<Iron, { Dir::BeltToStorage }>::new(
                 NonZeroU16::new(2).expect("Hardcoded"),
-            ));
+            ),
+        );
 
         let mut storages = [storage_unused, storage_source, storage_dest];
 
@@ -769,11 +769,11 @@ mod tests {
 
         for _ in 0..10_000 {
             belt.inserters.offsets.push(0);
-            belt.inserters
-                .out_inserters
-                .push(BeltStorageInserter::<Iron>::new(
+            belt.inserters.out_inserters.push(
+                BeltStorageInserter::<Iron, { Dir::BeltToStorage }>::new(
                     NonZeroU16::new(2).expect("Hardcoded"),
-                ));
+                ),
+            );
         }
 
         let mut storages: Vec<ItemStorage<Iron>> =
@@ -802,11 +802,11 @@ mod tests {
 
         for _ in 0..10_000 {
             belt.inserters.offsets.push(0);
-            belt.inserters
-                .out_inserters
-                .push(BeltStorageInserter::<Iron>::new(
+            belt.inserters.out_inserters.push(
+                BeltStorageInserter::<Iron, { Dir::BeltToStorage }>::new(
                     NonZeroU16::new(2).expect("Hardcoded"),
-                ));
+                ),
+            );
         }
 
         let mut storages: Vec<ItemStorage<Iron>> =

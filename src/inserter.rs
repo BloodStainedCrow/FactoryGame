@@ -41,11 +41,6 @@ impl<T: ItemTrait, const DIR: Dir> BeltStorageInserter<T, DIR> {
 }
 
 impl<T: ItemTrait> BeltStorageInserter<T, { Dir::BeltToStorage }> {
-    // #[inline(never)]
-    /// This function assumes that it can remove an item from somewhere (a belt)
-    /// The caller is responsible for doing the removal and ensuring before calling this,
-    /// that there is an item to remove
-    /// This Inserter removes Items from belts and adds them to a Machine
     pub fn update(&mut self, loc: &mut bool, storages: &mut [ItemStorage<T>]) {
         // TODO: I just added InserterStates and it is a lot slower (unsurprisingly),
         // Try and find a faster implementation of similar logic
@@ -75,7 +70,7 @@ impl<T: ItemTrait> BeltStorageInserter<T, { Dir::BeltToStorage }> {
                 if time > 0 {
                     self.state = InserterState::FullAndMovingOut(time - 1);
                 } else {
-                    // TODO: Do I want to try inserting immediately
+                    // TODO: Do I want to try inserting immediately?
                     self.state = InserterState::FullAndWaitingForSlot;
                 }
             },
@@ -83,7 +78,53 @@ impl<T: ItemTrait> BeltStorageInserter<T, { Dir::BeltToStorage }> {
                 if time > 0 {
                     self.state = InserterState::EmptyAndMovingBack(time - 1);
                 } else {
-                    // TODO: Do I want to try getting a new item immediately
+                    // TODO: Do I want to try getting a new item immediately?
+                    self.state = InserterState::Empty;
+                }
+            },
+        }
+    }
+}
+
+impl<T: ItemTrait> BeltStorageInserter<T, { Dir::StorageToBelt }> {
+    pub fn update(&mut self, loc: &mut bool, storages: &mut [ItemStorage<T>]) {
+        // TODO: I just added InserterStates and it is a lot slower (unsurprisingly),
+        // Try and find a faster implementation of similar logic
+        const MOVETIME: u8 = 10;
+
+        match self.state {
+            InserterState::Empty => {
+                if *TransparentWrapper::peel_ref(
+                    &storages[usize::from(Into::<u16>::into(self.storage_id))],
+                ) > 0
+                {
+                    // There is an item in the machine
+                    *TransparentWrapper::peel_mut(
+                        &mut storages[usize::from(Into::<u16>::into(self.storage_id))],
+                    ) -= 1;
+
+                    self.state = InserterState::FullAndMovingOut(MOVETIME);
+                }
+            },
+            InserterState::FullAndWaitingForSlot => {
+                if !*loc {
+                    *loc = true;
+                    self.state = InserterState::EmptyAndMovingBack(MOVETIME);
+                }
+            },
+            InserterState::FullAndMovingOut(time) => {
+                if time > 0 {
+                    self.state = InserterState::FullAndMovingOut(time - 1);
+                } else {
+                    // TODO: Do I want to try inserting immediately?
+                    self.state = InserterState::FullAndWaitingForSlot;
+                }
+            },
+            InserterState::EmptyAndMovingBack(time) => {
+                if time > 0 {
+                    self.state = InserterState::EmptyAndMovingBack(time - 1);
+                } else {
+                    // TODO: Do I want to try getting a new item immediately?
                     self.state = InserterState::Empty;
                 }
             },
