@@ -911,6 +911,7 @@ mod tests {
         println!("{last_spot_with_items:?}");
     }
 
+    // TODO: Check on these benchmarks, I saw the 1k belt one be slower than the 50k one?!?
     #[bench]
     fn bench_extend_belt_by_one_front_1_000(b: &mut Bencher) {
         let mut belt = Some(SmartBelt::<Iron>::new(1_000));

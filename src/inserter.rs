@@ -11,6 +11,8 @@ pub enum Dir {
     StorageToBelt,
 }
 
+// FIXME: the storage_id cannot properly represent an index into multiple slices (which I have here, since
+// there are multiple lists of storages in the different MultiAssemblerStores)
 #[derive(Debug, Clone, Copy)]
 pub struct BeltStorageInserter<T: ItemTrait, const DIR: Dir> {
     marker: PhantomData<T>,
