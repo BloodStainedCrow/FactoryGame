@@ -936,8 +936,8 @@ mod tests {
     }
 
     #[bench]
-    fn bench_extend_belt_by_one_front_1_000_000(b: &mut Bencher) {
-        let mut belt = Some(SmartBelt::<Iron>::new(1_000_000));
+    fn bench_extend_belt_by_one_front_50_000(b: &mut Bencher) {
+        let mut belt = Some(SmartBelt::<Iron>::new(50_000));
 
         b.iter(move || {
             let back = belt.take().expect("Hardcoded");
@@ -948,8 +948,8 @@ mod tests {
     }
 
     #[bench]
-    fn bench_extend_belt_by_one_back_1_000_000(b: &mut Bencher) {
-        let mut belt = Some(SmartBelt::<Iron>::new(1_000_000));
+    fn bench_extend_belt_by_one_back_50_000(b: &mut Bencher) {
+        let mut belt = Some(SmartBelt::<Iron>::new(50_000));
 
         b.iter(move || {
             let front = belt.take().expect("Hardcoded");
