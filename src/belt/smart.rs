@@ -496,7 +496,7 @@ mod tests {
 
     use super::*;
 
-    const MAX_LEN: usize = 5_000;
+    const MAX_LEN: usize = 10_000;
     proptest! {
 
         #[test]
