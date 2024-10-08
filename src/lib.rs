@@ -20,7 +20,7 @@ pub fn test() {
 
 #[cfg(test)]
 mod tests {
-    use std::{hint::black_box, num::NonZeroU16};
+    use std::num::NonZeroU16;
 
     use rand::random;
     use test::Bencher;

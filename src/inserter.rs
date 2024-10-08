@@ -7,7 +7,7 @@ use crate::item::{ItemStorage, ItemTrait};
 #[derive(Debug, Clone, Copy)]
 pub struct Inserter<T: ItemTrait> {
     marker: PhantomData<T>,
-    storage_id: NonZero<u16>,
+    pub storage_id: NonZero<u16>,
     state: InserterState,
 }
 

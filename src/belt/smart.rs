@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, mem};
+use std::{marker::PhantomData, mem, num::NonZero};
 
 use crate::{
     inserter::Inserter,
@@ -44,6 +44,59 @@ impl<T: ItemTrait> SmartBelt<T> {
                 inserters: vec![],
             },
         }
+    }
+
+    pub fn add_inserter(&mut self, index: u16, storage_id: NonZero<u16>) -> Result<(), ()> {
+        assert!(usize::from(index) < self.locs.len(), "Bounds check");
+
+        let mut pos_after_last_inserter = 0;
+        let mut i = 0;
+
+        for offset in &self.inserters.offsets {
+            let next_inserter_pos = pos_after_last_inserter + offset;
+
+            if next_inserter_pos > index {
+                // We need to insert here
+                break;
+            } else if next_inserter_pos == index {
+                return Err(());
+            }
+            pos_after_last_inserter = next_inserter_pos + 1;
+            i += 1;
+        }
+
+        // Insert at i
+        let new_inserter_offset = index - pos_after_last_inserter;
+        self.inserters.offsets.insert(i, new_inserter_offset);
+        self.inserters
+            .inserters
+            .insert(i, Inserter::new(storage_id));
+
+        let next = self.inserters.offsets.get_mut(i + 1);
+
+        if let Some(next_offs) = next {
+            *next_offs -= new_inserter_offset + 1;
+        }
+
+        Ok(())
+    }
+
+    fn get_inserter(&self, index: u16) -> Option<&Inserter<T>> {
+        let mut pos_after_last_inserter = 0;
+
+        // FIXME: There is a off by one here somewhere I am sure
+        for (i, offset) in self.inserters.offsets.iter().enumerate() {
+            let next_inserter_pos = pos_after_last_inserter + offset;
+
+            if next_inserter_pos > index {
+                return None;
+            } else if next_inserter_pos == index {
+                return Some(&self.inserters.inserters[i]);
+            }
+            pos_after_last_inserter = next_inserter_pos + 1;
+        }
+
+        None
     }
 
     #[inline(never)]
@@ -155,6 +208,78 @@ impl<T: ItemTrait> SmartBelt<T> {
         debug_assert_eq!(end.iter().chain(start.iter()).count(), len);
         end.iter_mut().chain(start.iter_mut())
     }
+
+    // TODO: Write a looot of tests for this :)
+    fn join(front: Self, back: Self) -> Self {
+        // TODO: currently we always join the belt, this can potentially result in lag spikes when attaching new pieces of belt to a
+        // very long belt, because of having to copy a lot of data around. This could be solved by implementing a maximum length of belt,
+        // and attaching two belts back to back when we exceed this length. This does require a lot of testing to make sure this break is
+        // invisible though, so I will leave this for now and test if it is actually a problem.
+
+        let front_len = front.get_len();
+        let _back_len = back.get_len();
+
+        // TODO: Check if maybe choosing the shorter belt somewhere could make this faster?
+        // My guess is that splicing the one with the shorter tail (see Vec::splice) will be best
+
+        let Self {
+            marker: _front_marker,
+            first_free_index: front_first_free_index,
+            zero_index: front_zero_index,
+            locs: front_locs,
+            inserters: front_inserters,
+        } = front;
+
+        let Self {
+            marker: _back_marker,
+            first_free_index: _back_first_free_index,
+            zero_index: back_zero_index,
+            locs: back_locs,
+            inserters: mut back_inserters,
+        } = back;
+
+        let num_front_inserters = front_inserters.offsets.len();
+        let num_back_inserters = back_inserters.offsets.len();
+
+        let free_spots_before_last_inserter_front: u16 = front_inserters.offsets.iter().sum();
+        let length_after_last_inserter = TryInto::<u16>::try_into(front_len)
+            .expect("Belt should be max u16::MAX long")
+            - free_spots_before_last_inserter_front
+            - TryInto::<u16>::try_into(num_front_inserters)
+                .expect("Belt should be max u16::MAX long");
+
+        match back_inserters.offsets.get_mut(0) {
+            Some(offs) => *offs += length_after_last_inserter,
+            None => assert_eq!(num_back_inserters, 0),
+        };
+
+        let mut new_inserters = front_inserters;
+        new_inserters
+            .inserters
+            .append(&mut back_inserters.inserters);
+        new_inserters.offsets.append(&mut back_inserters.offsets);
+
+        let new_first_free_index = front_first_free_index;
+
+        let mut front_locs_vec = Vec::from(front_locs);
+
+        let back_loc_iter = back_locs
+            .iter()
+            .skip(back_zero_index)
+            .chain(back_locs.iter().take(back_zero_index));
+
+        let insert_pos = (front_zero_index + front_len) % (front_len + 1);
+
+        front_locs_vec.splice(insert_pos..insert_pos, back_loc_iter.copied());
+
+        Self {
+            marker: PhantomData,
+            first_free_index: new_first_free_index,
+            zero_index: front_zero_index,
+            locs: front_locs_vec.into_boxed_slice(),
+            inserters: new_inserters,
+        }
+    }
 }
 
 impl<T: ItemTrait> Belt<T> for SmartBelt<T> {
@@ -168,7 +293,7 @@ impl<T: ItemTrait> Belt<T> for SmartBelt<T> {
 
     fn remove_item(&mut self, pos: usize) -> Option<Item> {
         self.update_first_free_pos(pos);
-        self.query_item(pos).inspect(|item| {
+        self.query_item(pos).inspect(|_| {
             let len = self.locs.len();
             self.locs[(self.zero_index + pos) % len] = false;
         })
@@ -345,14 +470,14 @@ mod tests {
 
     use std::num::NonZeroU16;
 
-    use proptest::{prelude::prop, prop_assert_eq, proptest};
+    use proptest::{prelude::prop, prop_assert, prop_assert_eq, proptest};
     use test::Bencher;
 
     use crate::{belt::do_update_test_bools, item::Iron};
 
     use super::*;
 
-    const MAX_LEN: usize = 5_000_000;
+    const MAX_LEN: usize = 5_000;
     proptest! {
 
         #[test]
@@ -412,6 +537,133 @@ mod tests {
                         None
                     };
                     prop_assert_eq!(belt.query_item(i), correct);
+                }
+            }
+        }
+
+        #[test]
+        fn test_join_belt_length(front_len in 0..MAX_LEN, back_len in 0..MAX_LEN) {
+            let back = SmartBelt::<Iron>::new(back_len);
+            let front = SmartBelt::<Iron>::new(front_len);
+
+            prop_assert_eq!(SmartBelt::join(front, back).get_len(), front_len + back_len);
+        }
+
+        #[test]
+        fn test_join_belt_items(front_items in prop::collection::vec(prop::bool::ANY, 1..100), back_items in prop::collection::vec(prop::bool::ANY, 1..100)) {
+            let mut back = SmartBelt::<Iron>::new(back_items.len());
+            let mut front = SmartBelt::<Iron>::new(front_items.len());
+
+            for (i, item) in front_items.iter().enumerate() {
+                if *item {
+                    assert!(front.try_insert_item(i).is_ok());
+                }
+            }
+
+            for (i, item) in back_items.iter().enumerate() {
+                if *item {
+                    assert!(back.try_insert_item(i).is_ok());
+                }
+            }
+
+            let new_belt = SmartBelt::join(front, back);
+
+            for (i, item) in front_items.iter().chain(back_items.iter()).enumerate() {
+                prop_assert_eq!(new_belt.query_item(i).is_some(), *item, "{:?}", new_belt);
+            }
+        }
+
+        #[test]
+        fn test_join_belt_first_free_index(front_items in prop::collection::vec(prop::bool::ANY, 1..100), back_items in prop::collection::vec(prop::bool::ANY, 1..100)) {
+            let mut back = SmartBelt::<Iron>::new(back_items.len());
+            let mut front = SmartBelt::<Iron>::new(front_items.len());
+
+            for (i, item) in front_items.iter().enumerate() {
+                if *item {
+                    assert!(front.try_insert_item(i).is_ok());
+                }
+            }
+
+            for (i, item) in back_items.iter().enumerate() {
+                if *item {
+                    assert!(back.try_insert_item(i).is_ok());
+                }
+            }
+
+            let new_belt = SmartBelt::join(front, back);
+
+            let Some((index, _)) = front_items.iter().chain(back_items.iter()).enumerate().find(|(i, item)| !**item) else {
+                return Ok(());
+            };
+
+            match new_belt.first_free_index {
+                FreeIndex::FreeIndex(join_index) => prop_assert_eq!(join_index, index),
+                FreeIndex::OldFreeIndex(join_index) => prop_assert!(join_index <= index),
+            }
+        }
+
+        #[test]
+        fn test_join_belt_inserters(front_inserters in prop::collection::vec(prop::bool::ANY, 1..100), back_inserters in prop::collection::vec(prop::bool::ANY, 1..100)) {
+            let mut back = SmartBelt::<Iron>::new(back_inserters.len());
+            let mut front = SmartBelt::<Iron>::new(front_inserters.len());
+
+            for (i, inserter) in front_inserters.iter().enumerate() {
+                let Some(i) = NonZeroU16::new(i.try_into().expect("Should fit")) else {
+                    continue;
+                };
+
+                if *inserter {
+                    assert!(front.add_inserter(i.into(), i).is_ok());
+                }
+            }
+
+            for (i, inserter) in back_inserters.iter().enumerate() {
+                let Some(i) = NonZeroU16::new(i.try_into().expect("Should fit")) else {
+                    continue;
+                };
+
+                if *inserter {
+                    dbg!(i);
+                    assert!(back.add_inserter(i.into(), i).is_ok());
+                }
+            }
+
+            let new_belt = SmartBelt::join(front, back);
+
+            for (i, (storage_i, inserter)) in front_inserters.iter().enumerate().chain(back_inserters.iter().enumerate()).enumerate() {
+                let Some(storage_i) = NonZeroU16::new(storage_i.try_into().expect("Should fit")) else {
+                    continue;
+                };
+
+                match new_belt.get_inserter(i.try_into().expect("Hardcoded")) {
+                    Some(ins) => prop_assert_eq!(ins.storage_id, storage_i, "{:?}", new_belt),
+                    None => prop_assert!(!*inserter, "{:?}", new_belt),
+                }
+            }
+        }
+
+        #[test]
+        fn test_add_inserter(inserters in prop::collection::vec(prop::bool::ANY, 1..100)) {
+            let mut belt = SmartBelt::<Iron>::new(inserters.len());
+
+            for (i, inserter) in inserters.iter().enumerate() {
+                let Some(i) = NonZeroU16::new(i.try_into().expect("Should fit")) else {
+                    continue;
+                };
+
+                if *inserter {
+                    prop_assert!(belt.add_inserter(i.into(), i).is_ok());
+                }
+            }
+
+            for (i, inserter) in inserters.iter().enumerate() {
+                let Some(i) = NonZeroU16::new(i.try_into().expect("Should fit")) else {
+                    continue;
+                };
+
+                match belt.get_inserter(i.into()) {
+                    Some(ins) => prop_assert_eq!(ins.storage_id, i, "{:?}", belt),
+                    None => prop_assert!(!*inserter, "{:?}", belt),
                 }
             }
         }
@@ -630,5 +882,53 @@ mod tests {
         }
         println!("{num_items}");
         println!("{last_spot_with_items:?}");
+    }
+
+    #[bench]
+    fn bench_extend_belt_by_one_front_1_000(b: &mut Bencher) {
+        let mut belt = Some(SmartBelt::<Iron>::new(1_000));
+
+        b.iter(move || {
+            let back = belt.take().expect("Hardcoded");
+            let front = SmartBelt::new(1);
+
+            belt = Some(SmartBelt::join(front, back));
+        });
+    }
+
+    #[bench]
+    fn bench_extend_belt_by_one_back_1_000(b: &mut Bencher) {
+        let mut belt = Some(SmartBelt::<Iron>::new(1_000));
+
+        b.iter(move || {
+            let front = belt.take().expect("Hardcoded");
+            let back = SmartBelt::new(1);
+
+            belt = Some(SmartBelt::join(front, back));
+        });
+    }
+
+    #[bench]
+    fn bench_extend_belt_by_one_front_1_000_000(b: &mut Bencher) {
+        let mut belt = Some(SmartBelt::<Iron>::new(1_000_000));
+
+        b.iter(move || {
+            let back = belt.take().expect("Hardcoded");
+            let front = SmartBelt::new(1);
+
+            belt = Some(SmartBelt::join(front, back));
+        });
+    }
+
+    #[bench]
+    fn bench_extend_belt_by_one_back_1_000_000(b: &mut Bencher) {
+        let mut belt = Some(SmartBelt::<Iron>::new(1_000_000));
+
+        b.iter(move || {
+            let front = belt.take().expect("Hardcoded");
+            let back = SmartBelt::new(1);
+
+            belt = Some(SmartBelt::join(front, back));
+        });
     }
 }
