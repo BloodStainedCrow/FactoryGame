@@ -133,7 +133,7 @@ impl<T: GeneratableItem> MultiProducerStore<T> {
 mod tests {
     use std::hint::black_box;
 
-    use crate::item::{Iron, IronOre};
+    use crate::item::IronOre;
 
     use super::*;
     extern crate test;

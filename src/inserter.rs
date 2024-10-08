@@ -3,9 +3,16 @@ use std::{marker::PhantomData, num::NonZero};
 use bytemuck::TransparentWrapper;
 
 use crate::item::{ItemStorage, ItemTrait};
+use std::marker::ConstParamTy;
+
+#[derive(ConstParamTy, PartialEq, Eq)]
+pub enum Dir {
+    BeltToStorage,
+    StorageToBelt,
+}
 
 #[derive(Debug, Clone, Copy)]
-pub struct Inserter<T: ItemTrait> {
+pub struct BeltStorageInserter<T: ItemTrait, const DIR: Dir> {
     marker: PhantomData<T>,
     pub storage_id: NonZero<u16>,
     state: InserterState,
@@ -22,7 +29,7 @@ enum InserterState {
     EmptyAndMovingBack(u8),
 }
 
-impl<T: ItemTrait> Inserter<T> {
+impl<T: ItemTrait, const DIR: Dir> BeltStorageInserter<T, DIR> {
     #[must_use]
     pub const fn new(id: NonZero<u16>) -> Self {
         Self {
@@ -31,7 +38,9 @@ impl<T: ItemTrait> Inserter<T> {
             state: InserterState::Empty,
         }
     }
+}
 
+impl<T: ItemTrait> BeltStorageInserter<T, { Dir::BeltToStorage }> {
     // #[inline(never)]
     /// This function assumes that it can remove an item from somewhere (a belt)
     /// The caller is responsible for doing the removal and ensuring before calling this,
@@ -78,22 +87,6 @@ impl<T: ItemTrait> Inserter<T> {
                     self.state = InserterState::Empty;
                 }
             },
-        }
-    }
-
-    /// This function assumes that it can remove an item from somewhere (a belt)
-    /// The caller is responsible for doing the removal and ensuring before calling this,
-    /// that there is an item to remove
-    pub fn update_branched(&self, storages: &mut [ItemStorage<T>]) -> bool {
-        if *TransparentWrapper::peel_ref(&storages[usize::from(Into::<u16>::into(self.storage_id))])
-            < T::MAX_STACK_SIZE
-        {
-            *TransparentWrapper::peel_mut(
-                &mut storages[usize::from(Into::<u16>::into(self.storage_id))],
-            ) += 1;
-            true
-        } else {
-            false
         }
     }
 }

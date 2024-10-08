@@ -1,11 +1,9 @@
 use std::num::NonZeroU16;
 
 use factory::assembler::MultiAssemblerStoreOne;
-use factory::inserter::Inserter;
+use factory::inserter::{BeltStorageInserter, Dir};
 use factory::item::IronOre;
-use factory::{
-    belt::smart::SmartBelt, item::Iron, item::ItemStorage, producer::MultiProducerStore,
-};
+use factory::{belt::smart::SmartBelt, item::Iron, item::ItemStorage};
 
 use factory::belt::belt::Belt;
 use rand::random;
@@ -46,9 +44,11 @@ fn main() {
                 rand = random();
             }
             belt.inserters.offsets.push(0);
-            belt.inserters.inserters.push(Inserter::<Iron>::new(
-                NonZeroU16::new(rand.into()).expect("Hardcoded"),
-            ));
+            belt.inserters.out_inserters.push(
+                BeltStorageInserter::<Iron, { Dir::BeltToStorage }>::new(
+                    NonZeroU16::new(rand).expect("Hardcoded"),
+                ),
+            );
         }
 
         belts.push(belt);

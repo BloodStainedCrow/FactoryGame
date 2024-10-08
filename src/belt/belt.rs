@@ -1,5 +1,5 @@
 use crate::item::{get_char, Item, ItemTrait};
-use std::{error::Error, fmt::Display, slice::IterMut};
+use std::{error::Error, fmt::Display};
 
 pub trait Belt<T: ItemTrait> {
     fn query_item(&self, pos: usize) -> Option<Item>;

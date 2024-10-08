@@ -3,38 +3,9 @@ use std::simd::cmp::SimdPartialOrd;
 use bytemuck::TransparentWrapper;
 
 use crate::{
-    item::{Copper, Iron, ItemStorage, ItemTrait, SingleIngCraft},
+    item::{ItemStorage, SingleIngCraft},
     producer::Simdtype,
 };
-
-struct NoItem;
-
-struct MultiItemStorage<T: ItemTrait, R>(Vec<ItemStorage<T>>, R);
-
-const NUM_RECIPED_WITH_1: usize = 1;
-const NUM_RECIPED_WITH_2: usize = 0;
-const NUM_RECIPED_WITH_3: usize = 1;
-const NUM_RECIPED_WITH_4: usize = 1;
-const NUM_RECIPED_WITH_5: usize = 0;
-
-const NUM_RECIPES: usize = NUM_RECIPED_WITH_1
-    + NUM_RECIPED_WITH_2
-    + NUM_RECIPED_WITH_3
-    + NUM_RECIPED_WITH_4
-    + NUM_RECIPED_WITH_5;
-
-const INPUT_COUNTS_1: [u8; NUM_RECIPES] = [1, 3, 10];
-const INPUT_COUNTS_2: [u8; NUM_RECIPES - NUM_RECIPED_WITH_1] = [2, 1];
-const INPUT_COUNTS_3: [u8; NUM_RECIPES - NUM_RECIPED_WITH_2 - NUM_RECIPED_WITH_1] = [10, 10];
-const INPUT_COUNTS_4: [u8; NUM_RECIPES
-    - NUM_RECIPED_WITH_3
-    - NUM_RECIPED_WITH_2
-    - NUM_RECIPED_WITH_1] = [1];
-const INPUT_COUNTS_5: [u8; NUM_RECIPES
-    - NUM_RECIPED_WITH_4
-    - NUM_RECIPED_WITH_3
-    - NUM_RECIPED_WITH_2
-    - NUM_RECIPED_WITH_1] = [];
 
 #[derive(Debug, Default)]
 pub struct MultiAssemblerStoreOne<Res: SingleIngCraft> {
@@ -242,16 +213,6 @@ impl<Res: SingleIngCraft> MultiAssemblerStoreOne<Res> {
 
         self.len += 1;
     }
-}
-
-pub struct MultiAssemblerStoreLenient {
-    timers: Vec<u16>,
-    crafting_speed: Vec<u16>,
-    inputs: [Vec<ItemStorage<Iron>>; 5],
-    input_counts: [Vec<u16>; 5],
-    outputs: Vec<ItemStorage<Copper>>,
-    output_counts: Vec<u16>,
-    len: usize,
 }
 
 #[cfg(test)]

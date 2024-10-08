@@ -68,11 +68,6 @@ macro_rules! generatable {
     };
 }
 
-macro_rules! count {
-    () => (0);
-    ( $x:tt $($xs:tt)* ) => (1 + count!($($xs)*));
-}
-
 macro_rules! craftable {
     ( $result:ty, $amount: expr, $time: expr, ($ing: ty, $num_ing: literal) ) => {
         impl CraftableItem for $result {

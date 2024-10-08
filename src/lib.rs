@@ -1,5 +1,6 @@
 #![feature(test)]
 #![feature(portable_simd)]
+#![feature(adt_const_params)]
 
 use belt::smart::SmartBelt;
 use item::{Iron, ItemStorage};
@@ -28,7 +29,7 @@ mod tests {
     use crate::{
         assembler::MultiAssemblerStoreOne,
         belt::{belt::Belt, smart::SmartBelt},
-        inserter::Inserter,
+        inserter::{BeltStorageInserter, Dir},
         item::{Iron, IronOre, ItemStorage},
     };
     extern crate test;
@@ -71,7 +72,10 @@ mod tests {
                     rand = random();
                 }
                 belt.inserters.offsets.push(0);
-                belt.inserters.inserters.push(Inserter::<Iron>::new(
+                belt.inserters.out_inserters.push(BeltStorageInserter::<
+                    Iron,
+                    { Dir::BeltToStorage },
+                >::new(
                     NonZeroU16::new(rand.into()).expect("Hardcoded"),
                 ));
             }
@@ -85,7 +89,7 @@ mod tests {
             }
 
             for belt in &mut belts {
-                belt.try_insert_item(belt.get_len() - 1);
+                assert!(belt.try_insert_item(belt.get_len() - 1).is_ok());
 
                 belt.update_inserters(multi_stores[0].get_outputs_mut());
 
@@ -111,6 +115,7 @@ mod tests {
             }
         }
 
+        #[allow(clippy::collection_is_never_read)]
         let mut belts: Vec<SmartBelt<Iron>> = vec![];
 
         for _ in 0..NUM_BELTS {
@@ -123,7 +128,10 @@ mod tests {
                     rand = random();
                 }
                 belt.inserters.offsets.push(0);
-                belt.inserters.inserters.push(Inserter::<Iron>::new(
+                belt.inserters.out_inserters.push(BeltStorageInserter::<
+                    Iron,
+                    { Dir::BeltToStorage },
+                >::new(
                     NonZeroU16::new(rand.into()).expect("Hardcoded"),
                 ));
             }
@@ -167,7 +175,10 @@ mod tests {
                     rand = random();
                 }
                 belt.inserters.offsets.push(0);
-                belt.inserters.inserters.push(Inserter::<Iron>::new(
+                belt.inserters.out_inserters.push(BeltStorageInserter::<
+                    Iron,
+                    { Dir::BeltToStorage },
+                >::new(
                     NonZeroU16::new(rand.into()).expect("Hardcoded"),
                 ));
             }
@@ -177,7 +188,7 @@ mod tests {
 
         b.iter(|| {
             for belt in &mut belts {
-                belt.try_insert_item(belt.get_len() - 1);
+                assert!(belt.try_insert_item(belt.get_len() - 1).is_ok());
                 belt.update();
             }
         });
@@ -212,7 +223,10 @@ mod tests {
                     rand = random();
                 }
                 belt.inserters.offsets.push(0);
-                belt.inserters.inserters.push(Inserter::<Iron>::new(
+                belt.inserters.out_inserters.push(BeltStorageInserter::<
+                    Iron,
+                    { Dir::BeltToStorage },
+                >::new(
                     NonZeroU16::new(rand.into()).expect("Hardcoded"),
                 ));
             }
@@ -222,7 +236,7 @@ mod tests {
 
         b.iter(|| {
             for belt in &mut belts {
-                belt.try_insert_item(belt.get_len() - 1);
+                assert!(belt.try_insert_item(belt.get_len() - 1).is_ok());
                 belt.update_inserters(multi_stores[0].get_outputs_mut());
             }
         });
