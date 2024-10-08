@@ -4,3 +4,5 @@
 #
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
+cc 3c75367f54b31de040f0a0a2e2ef89945f03eec358acd1718a939c2ff553ccb3 # shrinks to item_pos = 0
+cc 47382ebb60fa3831e71cf40838e72a6a9e648e67a3990051bedf82c636da392d # shrinks to mut items = [true]

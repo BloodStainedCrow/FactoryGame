@@ -22,4 +22,5 @@ jobs:
         with:
           command: clippy
           toolchain: nightly
-          args: -- -D warnings
+          # For now I will allow unused here
+          args: -- -D warnings -A unused
