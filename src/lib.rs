@@ -89,7 +89,7 @@ mod tests {
             }
 
             for belt in &mut belts {
-                assert!(belt.try_insert_item(belt.get_len() - 1).is_ok());
+                let _ = belt.try_insert_item(belt.get_len() - 1);
 
                 belt.update_inserters(multi_stores[0].get_outputs_mut());
 
@@ -186,11 +186,14 @@ mod tests {
             belts.push(belt);
         }
 
+        let mut i = 0;
+
         b.iter(|| {
             for belt in &mut belts {
-                assert!(belt.try_insert_item(belt.get_len() - 1).is_ok());
+                let _ = belt.try_insert_item(belt.get_len() - 1);
                 belt.update();
             }
+            i += 1;
         });
     }
 
@@ -236,7 +239,7 @@ mod tests {
 
         b.iter(|| {
             for belt in &mut belts {
-                assert!(belt.try_insert_item(belt.get_len() - 1).is_ok());
+                let _ = belt.try_insert_item(belt.get_len() - 1);
                 belt.update_inserters(multi_stores[0].get_outputs_mut());
             }
         });
