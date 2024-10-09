@@ -17,12 +17,12 @@ pub fn test() {
 
     let mut storages: Vec<ItemStorage<Iron>> = vec![];
 
-    belt.update_out_inserters(&mut storages);
+    belt.update_inserters(&mut storages);
 }
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU16;
+    use std::num::{NonZero, NonZeroU16};
 
     use rand::random;
     use test::Bencher;
@@ -40,9 +40,8 @@ mod tests {
     const NUM_RECIPES: usize = 250;
     const NUM_ASSEMBLERS_PER_RECIPE: usize = 10_000;
 
-    const NUM_BELTS: usize = NUM_RECIPES * 2;
-    const BELT_LEN: usize = NUM_ASSEMBLERS_PER_RECIPE;
-    // Worst Case: Every step is used by an inserter
+    const NUM_BELTS: usize = NUM_RECIPES * 4;
+    const BELT_LEN: usize = NUM_ASSEMBLERS_PER_RECIPE * 4;
     const NUM_INSERTERS_PER_BELT: usize = NUM_ASSEMBLERS_PER_RECIPE;
 
     #[bench]
@@ -68,19 +67,16 @@ mod tests {
         for _ in 0..NUM_BELTS {
             let mut belt = SmartBelt::<Iron>::new(BELT_LEN);
 
-            for _ in 0..NUM_INSERTERS_PER_BELT {
+            for i in 0..NUM_INSERTERS_PER_BELT {
                 // TODO: Use add_inserter
                 let mut rand: u8 = random();
                 while rand == 0u8 {
                     rand = random();
                 }
-                belt.inserters.offsets.push(0);
-                belt.inserters.out_inserters.push(BeltStorageInserter::<
-                    Iron,
-                    { Dir::BeltToStorage },
-                >::new(
-                    NonZeroU16::new(rand.into()).expect("Hardcoded"),
-                ));
+                belt.add_out_inserter(
+                    i.try_into().unwrap(),
+                    NonZero::try_from(rand).expect("Hardcoded").into(),
+                );
             }
 
             belts.push(belt);
@@ -96,7 +92,7 @@ mod tests {
                 let _ = belt.try_insert_item(belt.get_len() / 2);
                 let _ = belt.try_insert_item(belt.get_len() / 4);
 
-                belt.update_out_inserters(multi_stores[0].get_outputs_mut());
+                belt.update_inserters(multi_stores[0].get_outputs_mut());
 
                 belt.update();
             }
@@ -127,19 +123,16 @@ mod tests {
         for _ in 0..NUM_BELTS {
             let mut belt = SmartBelt::<Iron>::new(BELT_LEN);
 
-            for _ in 0..NUM_INSERTERS_PER_BELT {
+            for i in 0..NUM_INSERTERS_PER_BELT {
                 // TODO: Use add_inserter
                 let mut rand: u8 = random();
                 while rand == 0u8 {
                     rand = random();
                 }
-                belt.inserters.offsets.push(0);
-                belt.inserters.out_inserters.push(BeltStorageInserter::<
-                    Iron,
-                    { Dir::BeltToStorage },
-                >::new(
-                    NonZeroU16::new(rand.into()).expect("Hardcoded"),
-                ));
+                belt.add_out_inserter(
+                    i.try_into().unwrap(),
+                    NonZero::try_from(rand).expect("Hardcoded").into(),
+                );
             }
 
             belts.push(belt);
@@ -175,19 +168,16 @@ mod tests {
         for _ in 0..NUM_BELTS {
             let mut belt = SmartBelt::<Iron>::new(BELT_LEN);
 
-            for _ in 0..NUM_INSERTERS_PER_BELT {
+            for i in 0..NUM_INSERTERS_PER_BELT {
                 // TODO: Use add_inserter
                 let mut rand: u8 = random();
                 while rand == 0u8 {
                     rand = random();
                 }
-                belt.inserters.offsets.push(0);
-                belt.inserters.out_inserters.push(BeltStorageInserter::<
-                    Iron,
-                    { Dir::BeltToStorage },
-                >::new(
-                    NonZeroU16::new(rand.into()).expect("Hardcoded"),
-                ));
+                belt.add_out_inserter(
+                    i.try_into().unwrap(),
+                    NonZero::try_from(rand).expect("Hardcoded").into(),
+                );
             }
 
             belts.push(belt);
@@ -229,19 +219,16 @@ mod tests {
         for _ in 0..NUM_BELTS {
             let mut belt = SmartBelt::<Iron>::new(BELT_LEN);
 
-            for _ in 0..NUM_INSERTERS_PER_BELT {
+            for i in 0..NUM_INSERTERS_PER_BELT {
                 // TODO: Use add_inserter
                 let mut rand: u8 = random();
                 while rand == 0u8 {
                     rand = random();
                 }
-                belt.inserters.offsets.push(0);
-                belt.inserters.out_inserters.push(BeltStorageInserter::<
-                    Iron,
-                    { Dir::BeltToStorage },
-                >::new(
-                    NonZeroU16::new(rand.into()).expect("Hardcoded"),
-                ));
+                belt.add_out_inserter(
+                    i.try_into().unwrap(),
+                    NonZero::try_from(rand).expect("Hardcoded").into(),
+                );
             }
 
             belts.push(belt);
@@ -252,7 +239,7 @@ mod tests {
                 let _ = belt.try_insert_item(belt.get_len() - 1);
                 let _ = belt.try_insert_item(belt.get_len() / 2);
                 let _ = belt.try_insert_item(belt.get_len() / 4);
-                belt.update_out_inserters(multi_stores[0].get_outputs_mut());
+                belt.update_inserters(multi_stores[0].get_outputs_mut());
             }
         });
     }

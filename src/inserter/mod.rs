@@ -2,7 +2,7 @@ pub mod belt_belt_inserter;
 pub mod belt_storage_inserter;
 pub mod storage_storage_inserter;
 
-const MOVETIME: u8 = 120;
+const MOVETIME: u8 = 60;
 
 // TODO: This could be minified using a union or similar,
 // But since Inserters are the same sice, whether this is 2 or 1 byte (atleast in a Vec of Structs)
