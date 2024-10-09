@@ -5,32 +5,31 @@ use bytemuck::TransparentWrapper;
 use crate::item::{ItemStorage, ItemTrait};
 use std::marker::ConstParamTy;
 
+use super::{InserterState, MOVETIME};
+
 #[derive(ConstParamTy, PartialEq, Eq)]
 pub enum Dir {
-    BeltToStorage,
-    StorageToBelt,
+    BeltToStorage = 0,
+    StorageToBelt = 1,
 }
 
 // FIXME: the storage_id cannot properly represent an index into multiple slices (which I have here, since
-// there are multiple lists of storages in the different MultiAssemblerStores)
-#[derive(Debug, Clone, Copy)]
+// there are multiple lists of storages in the different MultiAssemblerStores (since multiple different recipes take for example Iron Plates))
+#[derive(Debug, Clone)]
 pub struct BeltStorageInserter<T: ItemTrait, const DIR: Dir> {
     marker: PhantomData<T>,
     pub storage_id: NonZero<u16>,
     state: InserterState,
 }
 
-// TODO: This could be minified using a union or similar,
-// But since Inserters are the same sice, whether this is 2 or 1 byte (atleast in a Vec of Structs)
-// I will leave this be for now.
-#[derive(Debug, Clone, Copy)]
-enum InserterState {
-    Empty,
-    FullAndWaitingForSlot,
-    FullAndMovingOut(u8),
-    EmptyAndMovingBack(u8),
-}
-
+// TODO: This is the main issue to be solved.
+//       The current implementation is very likely to have VERY poor cache utilization since it might load a whole
+//       cache line, just to increase/decrease the value in a storage by one.
+//       This problem could be somewhat reduces by just having stack inserters (since they write less often), but ensuring successive accesses
+//       hit the same cache line is EXTREMELY important.
+//       Luckily since inserter only have limited range (3 tiles or whatever) there is inherent locality in the accesses, if the MultiStores are somewhat spacially aligned.
+//       Though this could also lead to particularly poor access patterns if the belt/line of inserters is perpendicular to the stride pattern of the Multistore
+//       (maybe some weird quadtree weirdness could help?)
 impl<T: ItemTrait, const DIR: Dir> BeltStorageInserter<T, DIR> {
     #[must_use]
     pub const fn new(id: NonZero<u16>) -> Self {
@@ -46,7 +45,6 @@ impl<T: ItemTrait> BeltStorageInserter<T, { Dir::BeltToStorage }> {
     pub fn update(&mut self, loc: &mut bool, storages: &mut [ItemStorage<T>]) {
         // TODO: I just added InserterStates and it is a lot slower (unsurprisingly),
         // Try and find a faster implementation of similar logic
-        const MOVETIME: u8 = 10;
 
         match self.state {
             InserterState::Empty => {
@@ -91,7 +89,8 @@ impl<T: ItemTrait> BeltStorageInserter<T, { Dir::BeltToStorage }> {
 impl<T: ItemTrait> BeltStorageInserter<T, { Dir::StorageToBelt }> {
     pub fn update(&mut self, loc: &mut bool, storages: &mut [ItemStorage<T>]) {
         // TODO: I just added InserterStates and it is a lot slower (unsurprisingly),
-        // Try and find a faster implementation of similar logic
+        // Try and find a faster implementation of similar logic,
+        // Ideally reduce branch mispredictions as much as possible, while also reducing random loads from storages
         const MOVETIME: u8 = 10;
 
         match self.state {

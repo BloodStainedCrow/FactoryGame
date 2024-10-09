@@ -1,68 +1,55 @@
-use std::num::NonZeroU16;
+use std::num::{NonZero, NonZeroU16};
 
-use factory::assembler::MultiAssemblerStoreOne;
-use factory::inserter::{BeltStorageInserter, Dir};
-use factory::item::IronOre;
-use factory::{belt::smart::SmartBelt, item::Iron, item::ItemStorage};
-
-use factory::belt::belt::Belt;
-use rand::random;
+use factory::{
+    assembler::MultiAssemblerStoreOne,
+    belt::{belt::Belt, smart::SmartBelt},
+    item::{Iron, ItemStorage},
+    power::PowerGridIdentifier,
+};
 
 fn main() {
-    // multi_stores is a placeholder for assemblers for all recipes
-    const NUM_RECIPES: usize = 250;
-    const NUM_ASSEMBLERS_PER_RECIPE: usize = 1_000;
+    let mut store = MultiAssemblerStoreOne::<Iron>::new();
+    let mut grids = [0; PowerGridIdentifier::MAX as usize + 1];
 
-    const NUM_BELTS: usize = NUM_RECIPES * 2;
-    const BELT_LEN: usize = NUM_ASSEMBLERS_PER_RECIPE;
-    // Worst Case: Every step is used by an inserter
-    const NUM_INSERTERS_PER_BELT: usize = NUM_ASSEMBLERS_PER_RECIPE;
-
-    // Do a single update "step"
-    let mut multi_stores = vec![];
-
-    for _ in 0..NUM_RECIPES {
-        multi_stores.push(MultiAssemblerStoreOne::<Iron>::new());
-    }
-
-    for store in &mut multi_stores {
-        for i in 0..NUM_ASSEMBLERS_PER_RECIPE {
-            store.add_assembler();
-            *store.get_input_1_mut(i).expect("Hardcoded") = ItemStorage::<IronOre>::new(random());
-        }
-    }
-
-    let mut belts: Vec<SmartBelt<Iron>> = vec![];
-
-    for _ in 0..NUM_BELTS {
-        let mut belt = SmartBelt::<Iron>::new(BELT_LEN);
-
-        for _ in 0..NUM_INSERTERS_PER_BELT {
-            // TODO: Use add_inserter
-            let mut rand: u16 = random();
-            while rand == 0u16 {
-                rand = random();
-            }
-            belt.inserters.offsets.push(0);
-            belt.inserters.out_inserters.push(
-                BeltStorageInserter::<Iron, { Dir::BeltToStorage }>::new(
-                    NonZeroU16::new(rand).expect("Hardcoded"),
-                ),
-            );
-        }
-
-        belts.push(belt);
+    for _ in 0..1_000 {
+        store.add_assembler();
     }
 
     loop {
-        for store in &mut multi_stores {
-            store.update_branchless(64);
-        }
-
-        for belt in &mut belts {
-            belt.update_inserters(multi_stores[0].get_outputs_mut());
-
-            belt.update();
-        }
+        store.update_branchless(64, &mut grids);
     }
+}
+
+fn loop_me() {
+    const BELT_LEN: usize = 10;
+    let mut store = [ItemStorage::<Iron>::default()];
+
+    let mut belt: SmartBelt<Iron> = SmartBelt::new(BELT_LEN);
+
+    belt.add_out_inserter(0, NonZero::new(1).expect("Hardcoded"))
+        .expect("Should work");
+
+    belt.add_in_inserter(
+        (BELT_LEN - 1).try_into().expect("Hardcoded"),
+        NonZero::new(1).expect("Hardcoded"),
+    )
+    .expect("Should work");
+
+    belt.try_insert_item(0).expect("Should work!");
+
+    loop {
+        belt.update();
+        belt.update_out_inserters(&mut store);
+        // belt.update_in_inserters(&mut store);
+
+        println!("{}", &belt as &dyn Belt<Iron>);
+    }
+}
+
+fn test() {
+    let power = [12; 1000];
+    let mut grids = [0; 256];
+    let indices = [2; 1000];
+
+    let iter = power.iter().zip(indices.iter());
 }

@@ -131,11 +131,11 @@ generatable!(IronOre, 20);
 item!(CopperOre, 200);
 generatable!(CopperOre, 20);
 item!(Iron, 100);
-craftable!(Iron, 1, 10, (IronOre, 1));
+craftable!(Iron, 1, 192, (IronOre, 1));
 item!(Copper, 100);
-craftable!(Copper, 1, 5, (CopperOre, 1));
+craftable!(Copper, 1, 192, (CopperOre, 1));
 item!(Circuit, 200);
-craftable!(Circuit, 1, 32, (Copper, 3), (Iron, 1));
+craftable!(Circuit, 1, 30, (Copper, 3), (Iron, 1));
 
 #[must_use]
 pub const fn get_char(item: Item) -> char {

@@ -1,12 +1,11 @@
 use std::{marker::PhantomData, mem, num::NonZero};
 
 use crate::{
-    inserter::BeltStorageInserter,
+    inserter::belt_storage_inserter::{BeltStorageInserter, Dir},
     item::{Item, ItemStorage, ItemTrait},
 };
 
 use super::belt::{Belt, NoSpaceError};
-use crate::inserter::Dir;
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
@@ -24,6 +23,11 @@ pub struct InserterStore<T: ItemTrait> {
     pub out_inserters: Vec<BeltStorageInserter<T, { Dir::BeltToStorage }>>,
 }
 
+enum Inserter<T: ItemTrait> {
+    Out(BeltStorageInserter<T, { Dir::BeltToStorage }>),
+    In(BeltStorageInserter<T, { Dir::StorageToBelt }>),
+}
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 enum FreeIndex {
     FreeIndex(usize),
@@ -32,6 +36,7 @@ enum FreeIndex {
 
 const MIN_INSERTER_SPACING: usize = 8;
 
+#[derive(Debug)]
 pub struct SpaceOccupiedError;
 
 impl<T: ItemTrait> SmartBelt<T> {
@@ -93,13 +98,58 @@ impl<T: ItemTrait> SmartBelt<T> {
         Ok(())
     }
 
+    /// # Errors
+    /// If the index is already used by another inserter
+    /// # Panics
+    /// If the index is greater or equal to the length of the belt
+    pub fn add_in_inserter(
+        &mut self,
+        index: u16,
+        storage_id: NonZero<u16>,
+    ) -> Result<(), SpaceOccupiedError> {
+        todo!();
+
+        assert!(usize::from(index) < self.locs.len(), "Bounds check");
+
+        let mut pos_after_last_inserter = 0;
+        let mut i = 0;
+
+        for offset in &self.inserters.offsets {
+            let next_inserter_pos = pos_after_last_inserter + offset;
+
+            match next_inserter_pos.cmp(&index) {
+                std::cmp::Ordering::Greater => break, // This is the index to insert at
+                std::cmp::Ordering::Equal => return Err(SpaceOccupiedError),
+
+                std::cmp::Ordering::Less => {
+                    pos_after_last_inserter = next_inserter_pos + 1;
+                    i += 1;
+                },
+            }
+        }
+
+        // Insert at i
+        let new_inserter_offset = index - pos_after_last_inserter;
+        self.inserters.offsets.insert(i, new_inserter_offset);
+        self.inserters
+            .out_inserters
+            .insert(i, BeltStorageInserter::new(storage_id));
+
+        let next = self.inserters.offsets.get_mut(i + 1);
+
+        if let Some(next_offs) = next {
+            *next_offs -= new_inserter_offset + 1;
+        }
+
+        Ok(())
+    }
+
     fn get_out_inserter(
         &self,
         index: u16,
     ) -> Option<&BeltStorageInserter<T, { Dir::BeltToStorage }>> {
         let mut pos_after_last_inserter = 0;
 
-        // FIXME: There is a off by one here somewhere I am sure
         for (i, offset) in self.inserters.offsets.iter().enumerate() {
             let next_inserter_pos = pos_after_last_inserter + offset;
 
@@ -115,7 +165,7 @@ impl<T: ItemTrait> SmartBelt<T> {
     }
 
     #[inline(never)]
-    pub fn update_inserters(&mut self, storages: &mut [ItemStorage<T>]) {
+    pub fn update_out_inserters(&mut self, storages: &mut [ItemStorage<T>]) {
         // FIXME: This has a critical bug. FreeIndex does not get set correctly,
         // which could result in parts of the belt not working correctly
         debug_assert_eq!(
@@ -722,7 +772,7 @@ mod tests {
 
         for _ in 0..20 {
             belt.update();
-            belt.update_inserters(&mut storages);
+            belt.update_out_inserters(&mut storages);
             // let _ = belt.remove_item(5);
 
             let _ = belt.try_insert_item(9);
@@ -752,7 +802,7 @@ mod tests {
 
         b.iter(|| {
             belt.update();
-            belt.update_inserters(&mut storages);
+            belt.update_out_inserters(&mut storages);
 
             let _ = belt.try_insert_item(9);
         });
@@ -785,7 +835,7 @@ mod tests {
 
         b.iter(|| {
             belt.update();
-            belt.update_inserters(&mut storages);
+            belt.update_out_inserters(&mut storages);
 
             let _ = belt.try_insert_item(9);
         });
@@ -818,7 +868,7 @@ mod tests {
 
         b.iter(|| {
             belt.update();
-            belt.update_inserters(&mut storages);
+            belt.update_out_inserters(&mut storages);
         });
     }
 

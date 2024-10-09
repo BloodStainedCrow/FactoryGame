@@ -9,6 +9,7 @@ pub mod assembler;
 pub mod belt;
 pub mod inserter;
 pub mod item;
+pub mod power;
 pub mod producer;
 
 pub fn test() {
@@ -16,7 +17,7 @@ pub fn test() {
 
     let mut storages: Vec<ItemStorage<Iron>> = vec![];
 
-    belt.update_inserters(&mut storages);
+    belt.update_out_inserters(&mut storages);
 }
 
 #[cfg(test)]
@@ -29,8 +30,9 @@ mod tests {
     use crate::{
         assembler::MultiAssemblerStoreOne,
         belt::{belt::Belt, smart::SmartBelt},
-        inserter::{BeltStorageInserter, Dir},
+        inserter::belt_storage_inserter::{BeltStorageInserter, Dir},
         item::{Iron, IronOre, ItemStorage},
+        power::PowerGridIdentifier,
     };
     extern crate test;
 
@@ -47,6 +49,7 @@ mod tests {
     fn bench_factory_single_threaded(b: &mut Bencher) {
         // Do a single update "step"
         let mut multi_stores = vec![];
+        let mut power = [0; PowerGridIdentifier::MAX as usize + 1];
 
         for _ in 0..NUM_RECIPES {
             multi_stores.push(MultiAssemblerStoreOne::<Iron>::new());
@@ -85,13 +88,15 @@ mod tests {
 
         b.iter(|| {
             for store in &mut multi_stores {
-                store.update_branchless(64);
+                store.update_branchless(64, &mut power);
             }
 
             for belt in &mut belts {
                 let _ = belt.try_insert_item(belt.get_len() - 1);
+                let _ = belt.try_insert_item(belt.get_len() / 2);
+                let _ = belt.try_insert_item(belt.get_len() / 4);
 
-                belt.update_inserters(multi_stores[0].get_outputs_mut());
+                belt.update_out_inserters(multi_stores[0].get_outputs_mut());
 
                 belt.update();
             }
@@ -102,6 +107,7 @@ mod tests {
     fn bench_factory_single_threaded_assembler(b: &mut Bencher) {
         // Do a single update "step"
         let mut multi_stores = vec![];
+        let mut power = [0; PowerGridIdentifier::MAX as usize + 1];
 
         for _ in 0..NUM_RECIPES {
             multi_stores.push(MultiAssemblerStoreOne::<Iron>::new());
@@ -141,7 +147,7 @@ mod tests {
 
         b.iter(|| {
             for store in &mut multi_stores {
-                store.update_branchless(64);
+                store.update_branchless(64, &mut power);
             }
         });
     }
@@ -150,6 +156,7 @@ mod tests {
     fn bench_factory_single_threaded_belt(b: &mut Bencher) {
         // Do a single update "step"
         let mut multi_stores = vec![];
+        let mut power = [0; PowerGridIdentifier::MAX as usize + 1];
 
         for _ in 0..NUM_RECIPES {
             multi_stores.push(MultiAssemblerStoreOne::<Iron>::new());
@@ -191,6 +198,8 @@ mod tests {
         b.iter(|| {
             for belt in &mut belts {
                 let _ = belt.try_insert_item(belt.get_len() - 1);
+                let _ = belt.try_insert_item(belt.get_len() / 2);
+                let _ = belt.try_insert_item(belt.get_len() / 4);
                 belt.update();
             }
             i += 1;
@@ -201,6 +210,7 @@ mod tests {
     fn bench_factory_single_threaded_inserter(b: &mut Bencher) {
         // Do a single update "step"
         let mut multi_stores = vec![];
+        let mut power = [0; PowerGridIdentifier::MAX as usize + 1];
 
         for _ in 0..NUM_RECIPES {
             multi_stores.push(MultiAssemblerStoreOne::<Iron>::new());
@@ -240,7 +250,9 @@ mod tests {
         b.iter(|| {
             for belt in &mut belts {
                 let _ = belt.try_insert_item(belt.get_len() - 1);
-                belt.update_inserters(multi_stores[0].get_outputs_mut());
+                let _ = belt.try_insert_item(belt.get_len() / 2);
+                let _ = belt.try_insert_item(belt.get_len() / 4);
+                belt.update_out_inserters(multi_stores[0].get_outputs_mut());
             }
         });
     }
