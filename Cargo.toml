@@ -6,7 +6,7 @@ edition = "2021"
 rust-version = "1.81"
 
 [dependencies]
-bytemuck = { version = "1.15.0", features = ["derive"] }
+bytemuck = { version = "1.19.0", features = ["derive"] }
 enum-map = "2.7.3"
 proptest = "1.4.0"
 # scoped_threadpool = { version = "0.1.9" }
