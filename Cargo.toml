@@ -6,14 +6,14 @@ edition = "2021"
 rust-version = "1.81"
 
 [dependencies]
-bytemuck = { version = "1.20.0", features = ["derive"] }
+bytemuck = { version = "1.21.0", features = ["derive"] }
 enum-map = "2.7.3"
-proptest = "1.4.0"
+proptest = "1.6.0"
 # scoped_threadpool = { version = "0.1.9" }
-rand = "0.8.5"
+rand = "0.9.0"
 
 [dev-dependencies]
-rand = "0.8.5"
+rand = "0.9.0"
 
 [lints.rust]
 unsafe_code = "forbid"
