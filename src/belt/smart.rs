@@ -1,35 +1,42 @@
-use std::{marker::PhantomData, mem, num::NonZero};
+use std::{iter::repeat, mem};
 
 use crate::{
-    inserter::belt_storage_inserter::{BeltStorageInserter, Dir},
-    item::{Item, ItemStorage, ItemTrait},
+    inserter::{
+        belt_storage_inserter::{BeltStorageInserter, Dir},
+        StorageID, Storages,
+    },
+    item::{Item, ItemTrait},
 };
 
 use super::belt::{Belt, NoSpaceError};
 
 #[allow(clippy::module_name_repetitions)]
-#[derive(Debug)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct SmartBelt<T: ItemTrait> {
-    marker: PhantomData<T>,
     first_free_index: FreeIndex,
     zero_index: usize,
     locs: Box<[bool]>,
-    pub inserters: InserterStore<T>,
+    inserters: InserterStore<T>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct EmptyBelt {
+    pub len: u16,
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct InserterStore<T: ItemTrait> {
-    pub offsets: Vec<u16>,
-    pub inserters: Vec<Inserter<T>>,
+    offsets: Vec<u16>,
+    inserters: Vec<Inserter<T>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 enum Inserter<T: ItemTrait> {
     Out(BeltStorageInserter<T, { Dir::BeltToStorage }>),
     In(BeltStorageInserter<T, { Dir::StorageToBelt }>),
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, serde::Deserialize, serde::Serialize)]
 enum FreeIndex {
     FreeIndex(usize),
     OldFreeIndex(usize),
@@ -44,7 +51,6 @@ impl<T: ItemTrait> SmartBelt<T> {
     #[must_use]
     pub fn new(len: usize) -> Self {
         Self {
-            marker: PhantomData {},
             first_free_index: FreeIndex::FreeIndex(0),
             zero_index: 0,
             locs: vec![false; len].into_boxed_slice(),
@@ -55,6 +61,8 @@ impl<T: ItemTrait> SmartBelt<T> {
         }
     }
 
+    // FIXME: This is horrendously slow. it breaks my tests since they are compiled without optimizations!!!
+    // FIXME: This is super slow on belts with lots of inserters
     /// # Errors
     /// If the index is already used by another inserter
     /// # Panics
@@ -62,9 +70,13 @@ impl<T: ItemTrait> SmartBelt<T> {
     pub fn add_out_inserter(
         &mut self,
         index: u16,
-        storage_id: NonZero<u16>,
+        storage_id: StorageID,
     ) -> Result<(), SpaceOccupiedError> {
-        assert!(usize::from(index) < self.locs.len(), "Bounds check");
+        assert!(
+            usize::from(index) < self.locs.len(),
+            "Bounds check {index} >= {}",
+            self.locs.len()
+        );
 
         let mut pos_after_last_inserter = 0;
         let mut i = 0;
@@ -106,9 +118,13 @@ impl<T: ItemTrait> SmartBelt<T> {
     pub fn add_in_inserter(
         &mut self,
         index: u16,
-        storage_id: NonZero<u16>,
+        storage_id: StorageID,
     ) -> Result<(), SpaceOccupiedError> {
-        assert!(usize::from(index) < self.locs.len(), "Bounds check");
+        assert!(
+            usize::from(index) < self.locs.len(),
+            "Bounds check {index} >= {}",
+            self.locs.len()
+        );
 
         let mut pos_after_last_inserter = 0;
         let mut i = 0;
@@ -161,7 +177,7 @@ impl<T: ItemTrait> SmartBelt<T> {
     }
 
     #[inline(never)]
-    pub fn update_inserters(&mut self, storages: &mut [ItemStorage<T>]) {
+    pub fn update_inserters(&mut self, storages: &mut Storages<T>) {
         // FIXME: This has a critical bug. FreeIndex does not get set correctly,
         // which could result in parts of the belt not working correctly
         debug_assert_eq!(self.inserters.inserters.len(), self.inserters.offsets.len());
@@ -255,6 +271,22 @@ impl<T: ItemTrait> SmartBelt<T> {
         new_free_index
     }
 
+    #[must_use]
+    pub fn items(&self) -> impl DoubleEndedIterator<Item = &bool> {
+        // TODO: I have another implementation of this:
+        // TODO: Check which is faster (or simpler)
+        // let mut iter = self
+        //     .locs
+        //     .iter()
+        //     .skip(self.zero_index)
+        //     .chain(self.locs.iter().take(self.zero_index));
+        let len = self.locs.len();
+        let (start, end) = self.locs.split_at(self.zero_index % self.locs.len());
+
+        debug_assert_eq!(end.iter().chain(start.iter()).count(), len);
+        end.iter().chain(start.iter())
+    }
+
     fn items_mut(
         locs: &mut [bool],
         zero_index: usize,
@@ -289,7 +321,6 @@ impl<T: ItemTrait> SmartBelt<T> {
         // My guess is that splicing the one with the shorter tail (see Vec::splice) will be best
 
         let Self {
-            marker: _front_marker,
             first_free_index: front_first_free_index,
             zero_index: front_zero_index,
             locs: front_locs,
@@ -297,7 +328,6 @@ impl<T: ItemTrait> SmartBelt<T> {
         } = front;
 
         let Self {
-            marker: _back_marker,
             first_free_index: _back_first_free_index,
             zero_index: back_zero_index,
             locs: back_locs,
@@ -338,13 +368,81 @@ impl<T: ItemTrait> SmartBelt<T> {
         front_locs_vec.splice(insert_pos..insert_pos, back_loc_iter.copied());
 
         Self {
-            marker: PhantomData,
             first_free_index: new_first_free_index,
             zero_index: front_zero_index,
             locs: front_locs_vec.into_boxed_slice(),
             inserters: new_inserters,
         }
     }
+
+    #[allow(clippy::needless_pass_by_value)]
+    #[must_use]
+    pub fn join_with_empty(self, empty: EmptyBelt, side: Side) -> Self {
+        let Self {
+            first_free_index,
+            zero_index,
+            locs,
+            mut inserters,
+        } = self;
+
+        let mut locs = locs.into_vec();
+
+        let old_len = locs.len();
+
+        match side {
+            Side::FRONT => {
+                locs.splice(zero_index..zero_index, repeat(false).take(empty.len.into()))
+            },
+            Side::BACK => locs.splice(
+                ((zero_index - 1) % old_len)..((zero_index - 1) % old_len),
+                repeat(false).take(empty.len.into()),
+            ),
+        };
+
+        let first_free_index = match first_free_index {
+            FreeIndex::FreeIndex(idx) => FreeIndex::FreeIndex(idx + usize::from(empty.len)),
+            FreeIndex::OldFreeIndex(idx) => FreeIndex::OldFreeIndex(idx + usize::from(empty.len)),
+        };
+
+        if side == Side::FRONT {
+            inserters.offsets[0] = inserters.offsets[0]
+                .checked_add(empty.len)
+                .expect("Max length of belt (u16::MAX) reached");
+        }
+
+        Self {
+            first_free_index,
+            zero_index,
+            locs: locs.into_boxed_slice(),
+            inserters,
+        }
+    }
+}
+
+impl EmptyBelt {
+    #[must_use]
+    pub const fn new(len: u16) -> Self {
+        Self { len }
+    }
+
+    #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
+    pub const fn join(front: Self, back: Self) -> Self {
+        Self {
+            len: front.len + back.len,
+        }
+    }
+
+    #[must_use]
+    pub fn instantiate<T: ItemTrait>(self) -> SmartBelt<T> {
+        SmartBelt::new(self.len.into())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    FRONT,
+    BACK,
 }
 
 impl<T: ItemTrait> Belt<T> for SmartBelt<T> {
@@ -434,8 +532,6 @@ impl<T: ItemTrait> Belt<T> for SmartBelt<T> {
                 // TODO: Zero length checking!
 
                 if !start_slice.is_empty() && !middle_stuck_slice.is_empty() {
-                    // TODO: Do I need to check if moving_slice.len() > 0?
-
                     // Step 1: Copy the empty spot into the stuck start_slice
                     mem::swap(
                         &mut middle_stuck_slice[middle_stuck_slice.len() - 1],
@@ -533,12 +629,16 @@ mod tests {
 
     extern crate test;
 
-    use std::num::NonZeroU16;
+    use std::cmp::min;
 
     use proptest::{prelude::prop, prop_assert, prop_assert_eq, proptest};
+    use rand::random;
     use test::Bencher;
 
-    use crate::{belt::do_update_test_bools, item::Iron};
+    use crate::{
+        belt::do_update_test_bools,
+        item::{Iron, ItemStorage},
+    };
 
     use super::*;
 
@@ -673,35 +773,25 @@ mod tests {
             let mut front = SmartBelt::<Iron>::new(front_inserters.len());
 
             for (i, inserter) in front_inserters.iter().enumerate() {
-                let Some(i) = NonZeroU16::new(i.try_into().expect("Should fit")) else {
-                    continue;
-                };
-
                 if *inserter {
-                    assert!(front.add_out_inserter(i.into(), i).is_ok());
+                    assert!(front.add_out_inserter(i.try_into().expect("Hardcoded"), StorageID { recipe: 0, grid: 0, storage: i.try_into().expect("Hardcoded") }).is_ok());
                 }
             }
 
             for (i, inserter) in back_inserters.iter().enumerate() {
-                let Some(i) = NonZeroU16::new(i.try_into().expect("Should fit")) else {
-                    continue;
-                };
-
                 if *inserter {
                     dbg!(i);
-                    assert!(back.add_out_inserter(i.into(), i).is_ok());
+                    assert!(back.add_out_inserter(i.try_into().expect("Hardcoded"), StorageID { recipe: 0, grid: 0, storage: i.try_into().expect("Hardcoded") }).is_ok());
                 }
             }
 
             let new_belt = SmartBelt::join(front, back);
 
             for (i, (storage_i, inserter)) in front_inserters.iter().enumerate().chain(back_inserters.iter().enumerate()).enumerate() {
-                let Some(storage_i) = NonZeroU16::new(storage_i.try_into().expect("Should fit")) else {
-                    continue;
-                };
+                let expected_id = StorageID { recipe: 0, grid: 0, storage: storage_i.try_into().expect("Hardcoded") };
 
                 match new_belt.get_inserter(i.try_into().expect("Hardcoded")) {
-                    Some(Inserter::Out(ins)) => prop_assert_eq!(ins.storage_id, storage_i, "{:?}", new_belt),
+                    Some(Inserter::Out(ins)) => prop_assert_eq!(ins.storage_id.clone(), expected_id, "{:?}", new_belt),
                     None => prop_assert!(!*inserter, "{:?}", new_belt),
                     _ => prop_assert!(false, "Out inserter became In ?!?"),
                 }
@@ -713,22 +803,17 @@ mod tests {
             let mut belt = SmartBelt::<Iron>::new(inserters.len());
 
             for (i, inserter) in inserters.iter().enumerate() {
-                let Some(i) = NonZeroU16::new(i.try_into().expect("Should fit")) else {
-                    continue;
-                };
-
                 if *inserter {
-                    prop_assert!(belt.add_out_inserter(i.into(), i).is_ok());
+                    let id = StorageID { recipe: 0, grid: 0, storage: i.try_into().expect("Hardcoded") };
+                    prop_assert!(belt.add_out_inserter(i.try_into().expect("Hardcoded"), id).is_ok());
                 }
             }
 
             for (i, inserter) in inserters.iter().enumerate() {
-                let Some(i) = NonZeroU16::new(i.try_into().expect("Should fit")) else {
-                    continue;
-                };
+                let expected_id = StorageID { recipe: 0, grid: 0, storage: i.try_into().expect("Hardcoded") };
 
-                match belt.get_inserter(i.into()) {
-                    Some(Inserter::Out(ins)) => prop_assert_eq!(ins.storage_id, i, "{:?}", belt),
+                match belt.get_inserter(i.try_into().expect("Hardcoded")) {
+                    Some(Inserter::Out(ins)) => prop_assert_eq!(ins.storage_id.clone(), expected_id, "{:?}", belt),
                     None => prop_assert!(!*inserter, "{:?}", belt),
                     _ => prop_assert!(false, "Out inserter became In ?!?"),
                 }
@@ -759,19 +844,24 @@ mod tests {
         let storage_source = ItemStorage::<Iron>::new(30);
         let storage_dest = ItemStorage::<Iron>::default();
 
-        belt.add_out_inserter(5, NonZero::try_from(2).expect("Hardcoded"));
+        let id = StorageID {
+            recipe: 0,
+            grid: 0,
+            storage: 2,
+        };
+        belt.add_out_inserter(5, id);
 
-        let mut storages = [storage_unused, storage_source, storage_dest];
+        let mut steel_producer_storages = [storage_unused, storage_source, storage_dest];
 
         for _ in 0..20 {
             belt.update();
-            belt.update_inserters(&mut storages);
+            belt.update_inserters(&mut [&mut [&mut steel_producer_storages]]);
             // let _ = belt.remove_item(5);
 
             let _ = belt.try_insert_item(9);
 
             println!("{}", &belt as &dyn Belt<Iron>);
-            println!("{:?}", storages[2]);
+            println!("{:?}", steel_producer_storages[2]);
         }
     }
 
@@ -784,13 +874,18 @@ mod tests {
         let storage_source = ItemStorage::<Iron>::new(30);
         let storage_dest = ItemStorage::<Iron>::default();
 
-        belt.add_out_inserter(5, NonZero::try_from(2).expect("Hardcoded"));
+        let id = StorageID {
+            recipe: 0,
+            grid: 0,
+            storage: 2,
+        };
+        belt.add_out_inserter(5, id);
 
-        let mut storages = [storage_unused, storage_source, storage_dest];
+        let mut steel_producer_storages = [storage_unused, storage_source, storage_dest];
 
         b.iter(|| {
             belt.update();
-            belt.update_inserters(&mut storages);
+            belt.update_inserters(&mut [&mut [&mut steel_producer_storages]]);
 
             let _ = belt.try_insert_item(9);
         });
@@ -806,7 +901,12 @@ mod tests {
         let storage_dest = ItemStorage::<Iron>::default();
 
         for i in 0..10_000 {
-            belt.add_out_inserter(i, NonZero::try_from(2).expect("Hardcoded"));
+            let id = StorageID {
+                recipe: 0,
+                grid: 0,
+                storage: random(),
+            };
+            belt.add_out_inserter(i, id);
         }
 
         let mut storages: Vec<ItemStorage<Iron>> =
@@ -818,7 +918,7 @@ mod tests {
 
         b.iter(|| {
             belt.update();
-            belt.update_inserters(&mut storages);
+            belt.update_inserters(&mut [&mut [&mut storages]]);
 
             let _ = belt.try_insert_item(9);
         });
@@ -834,7 +934,12 @@ mod tests {
         let storage_dest = ItemStorage::<Iron>::default();
 
         for i in 0..10_000 {
-            belt.add_out_inserter(i, NonZero::try_from(2).expect("Hardcoded"));
+            let id = StorageID {
+                recipe: 0,
+                grid: 0,
+                storage: random(),
+            };
+            belt.add_out_inserter(i, id);
         }
 
         let mut storages: Vec<ItemStorage<Iron>> =
@@ -846,7 +951,7 @@ mod tests {
 
         b.iter(|| {
             belt.update();
-            belt.update_inserters(&mut storages);
+            belt.update_inserters(&mut [&mut [&mut storages]]);
         });
     }
 
@@ -985,6 +1090,27 @@ mod tests {
             let back = SmartBelt::new(1);
 
             belt = Some(SmartBelt::join(front, back));
+        });
+    }
+
+    #[bench]
+    fn bench_add_inserter(b: &mut Bencher) {
+        let mut belt = SmartBelt::<Iron>::new(MAX_LEN);
+        let mut i = 0;
+
+        b.iter(|| {
+            let _ = belt.add_in_inserter(
+                min(
+                    (MAX_LEN - 1).try_into().expect("MAX_LEN too large for u16"),
+                    i,
+                ),
+                StorageID {
+                    recipe: 0,
+                    grid: 0,
+                    storage: 1,
+                },
+            );
+            i += 1;
         });
     }
 }

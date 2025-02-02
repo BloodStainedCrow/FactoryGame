@@ -1,11 +1,11 @@
-use std::{marker::PhantomData, num::NonZero};
+use std::marker::PhantomData;
 
 use bytemuck::TransparentWrapper;
 
-use crate::item::{ItemStorage, ItemTrait};
+use crate::item::ItemTrait;
 use std::marker::ConstParamTy;
 
-use super::{InserterState, MOVETIME};
+use super::{InserterState, StorageID, Storages, MOVETIME};
 
 #[derive(ConstParamTy, PartialEq, Eq)]
 pub enum Dir {
@@ -13,12 +13,10 @@ pub enum Dir {
     StorageToBelt = 1,
 }
 
-// FIXME: the storage_id cannot properly represent an index into multiple slices (which I have here, since
-// there are multiple lists of storages in the different MultiAssemblerStores (since multiple different recipes take for example Iron Plates))
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BeltStorageInserter<T: ItemTrait, const DIR: Dir> {
     marker: PhantomData<T>,
-    pub storage_id: NonZero<u16>,
+    pub storage_id: StorageID,
     state: InserterState,
 }
 
@@ -32,7 +30,7 @@ pub struct BeltStorageInserter<T: ItemTrait, const DIR: Dir> {
 //       (maybe some weird quadtree weirdness could help?)
 impl<T: ItemTrait, const DIR: Dir> BeltStorageInserter<T, DIR> {
     #[must_use]
-    pub const fn new(id: NonZero<u16>) -> Self {
+    pub const fn new(id: StorageID) -> Self {
         Self {
             marker: PhantomData,
             storage_id: id,
@@ -42,7 +40,7 @@ impl<T: ItemTrait, const DIR: Dir> BeltStorageInserter<T, DIR> {
 }
 
 impl<T: ItemTrait> BeltStorageInserter<T, { Dir::BeltToStorage }> {
-    pub fn update(&mut self, loc: &mut bool, storages: &mut [ItemStorage<T>]) {
+    pub fn update(&mut self, loc: &mut bool, storages: &mut Storages<T>) {
         // TODO: I just added InserterStates and it is a lot slower (unsurprisingly),
         // Try and find a faster implementation of similar logic
 
@@ -55,12 +53,15 @@ impl<T: ItemTrait> BeltStorageInserter<T, { Dir::BeltToStorage }> {
             },
             InserterState::FullAndWaitingForSlot => {
                 if *TransparentWrapper::peel_ref(
-                    &storages[usize::from(Into::<u16>::into(self.storage_id))],
+                    &storages[self.storage_id.recipe as usize][self.storage_id.grid as usize]
+                        [self.storage_id.storage as usize],
                 ) < T::MAX_STACK_SIZE
                 {
                     // There is space in the machine
                     *TransparentWrapper::peel_mut(
-                        &mut storages[usize::from(Into::<u16>::into(self.storage_id))],
+                        &mut storages[self.storage_id.recipe as usize]
+                            [self.storage_id.grid as usize]
+                            [self.storage_id.storage as usize],
                     ) += 1;
 
                     self.state = InserterState::EmptyAndMovingBack(MOVETIME);
@@ -87,21 +88,23 @@ impl<T: ItemTrait> BeltStorageInserter<T, { Dir::BeltToStorage }> {
 }
 
 impl<T: ItemTrait> BeltStorageInserter<T, { Dir::StorageToBelt }> {
-    pub fn update(&mut self, loc: &mut bool, storages: &mut [ItemStorage<T>]) {
+    pub fn update(&mut self, loc: &mut bool, storages: &mut Storages<T>) {
         // TODO: I just added InserterStates and it is a lot slower (unsurprisingly),
         // Try and find a faster implementation of similar logic,
         // Ideally reduce branch mispredictions as much as possible, while also reducing random loads from storages
-        const MOVETIME: u8 = 10;
 
         match self.state {
             InserterState::Empty => {
                 if *TransparentWrapper::peel_ref(
-                    &storages[usize::from(Into::<u16>::into(self.storage_id))],
+                    &storages[self.storage_id.recipe as usize][self.storage_id.grid as usize]
+                        [self.storage_id.storage as usize],
                 ) > 0
                 {
                     // There is an item in the machine
                     *TransparentWrapper::peel_mut(
-                        &mut storages[usize::from(Into::<u16>::into(self.storage_id))],
+                        &mut storages[self.storage_id.recipe as usize]
+                            [self.storage_id.grid as usize]
+                            [self.storage_id.storage as usize],
                     ) -= 1;
 
                     self.state = InserterState::FullAndMovingOut(MOVETIME);

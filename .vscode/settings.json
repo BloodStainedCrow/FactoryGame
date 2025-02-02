@@ -10,7 +10,7 @@
         "todo!()",
         "unsafe {",
         "unsafe fn",
-        "#[inline(never)]" // #[inline(never)] is bad for performance, so I treat is as a TODO
+        "#[inline(never)]" // #[inline(never)] is bad, so I treat is as a TODO
     ],
     "todo-tree.filtering.excludeGlobs": [
         "**/.vscode/settings.json"
