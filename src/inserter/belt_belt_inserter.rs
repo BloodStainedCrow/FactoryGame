@@ -1,26 +1,20 @@
-use std::marker::PhantomData;
-
-use crate::item::ItemTrait;
-
 use super::{InserterState, MOVETIME};
 
 #[derive(Debug, Clone)]
-pub struct BeltBeltInserter<T: ItemTrait> {
-    marker: PhantomData<T>,
+pub struct BeltBeltInserter {
     state: InserterState,
 }
 
-impl<T: ItemTrait> Default for BeltBeltInserter<T> {
+impl Default for BeltBeltInserter {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: ItemTrait> BeltBeltInserter<T> {
+impl BeltBeltInserter {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            marker: PhantomData,
             state: InserterState::Empty,
         }
     }

@@ -6,32 +6,27 @@ edition = "2021"
 rust-version = "1.81"
 
 [dependencies]
-anyhow = "1.0.95"
-bytemuck = { version = "1.15.0", features = ["derive"] }
 enum-map = { version = "2.7.3", features = ["serde"] }
-pollster = "0.4.0"
 proptest = "1.4.0"
-# scoped_threadpool = { version = "0.1.9" }
-rand = "0.8.5"
 winit = "0.30.8"
-
 tilelib = { path = "../tilelib" }
 spin_sleep_util = "0.1.1"
 image = "0.25.5"
 log = "0.4.25"
 simple_logger = "5.0.0"
-random = "0.14.0"
 rayon = "1.10.0"
 serde = { version = "1.0.217", features = ["derive"] }
 directories = "6.0.0"
 ron = "0.8.1"
 take_mut = "0.2.2"
 static_assertions = "1.1.0"
+itertools = "0.14.0"
 
 [dev-dependencies]
 rand = "0.8.5"
 
 [lints.rust]
+# TODO:
 # unsafe_code = "forbid"
 
 [lints.clippy]

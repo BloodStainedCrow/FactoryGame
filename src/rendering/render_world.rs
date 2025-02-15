@@ -1,8 +1,15 @@
 use std::time::Instant;
 
-use crate::frontend::{
-    action::action_state_machine::{ActionStateMachine, WIDTH_PER_LEVEL},
-    world::{tile::BELT_LEN_PER_TILE, Position},
+use crate::{
+    data::DataStore,
+    frontend::{
+        action::action_state_machine::{ActionStateMachine, WIDTH_PER_LEVEL},
+        world::{
+            tile::{BeltId, BeltTileId, Entity, BELT_LEN_PER_TILE},
+            Position,
+        },
+    },
+    item::IdxTrait,
 };
 use tilelib::types::{DrawInstance, Layer, Renderer};
 
@@ -13,15 +20,15 @@ use super::{app_state::GameState, TextureAtlas};
 //       => This seems to happen at 992 -> 993 width, i.e. when the for loop range jumps from 31 to 32, very suspicous
 
 #[allow(clippy::too_many_lines)]
-pub fn render_world(
+pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     renderer: &mut Renderer,
-    game_state: &GameState,
+    game_state: &GameState<ItemIdxType, RecipeIdxType>,
     texture_atlas: &TextureAtlas,
     player_pos: (f32, f32),
-    state_machine: &ActionStateMachine,
+    state_machine: &ActionStateMachine<ItemIdxType>,
+    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
     let num_tiles_across_screen = WIDTH_PER_LEVEL as f32 * state_machine.zoom_level;
-    dbg!(num_tiles_across_screen);
     let tilesize: f32 = 1.0 / num_tiles_across_screen;
 
     let mut tile_layer = Layer::square_tile_grid(tilesize);
@@ -85,15 +92,18 @@ pub fn render_world(
                         }
                     }
 
-                    for entity in &chunk.entities {
+                    for entity in chunk.get_entities() {
                         match entity {
-                            crate::frontend::world::tile::Entity::Assembler { pos, .. } => {
+                            crate::frontend::world::tile::Entity::Assembler { pos, .. }
+                            | crate::frontend::world::tile::Entity::AssemblerWithoutRecipe {
+                                pos,
+                            } => {
                                 entity_layer.draw_sprite(
                                     &texture_atlas.assembler,
                                     DrawInstance {
                                         position: [
-                                            chunk_draw_offs.0 + pos.x as f32,
-                                            chunk_draw_offs.1 + pos.y as f32,
+                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
                                         ],
                                         size: [3.0, 3.0],
                                         animation_frame: 0,
@@ -108,42 +118,56 @@ pub fn render_world(
                                 belt_pos,
                             } => {
                                 entity_layer.draw_sprite(
-                                    &texture_atlas.belt_north,
+                                    &texture_atlas.belt[*direction],
                                     DrawInstance {
                                         position: [
-                                            chunk_draw_offs.0 + pos.x as f32,
-                                            chunk_draw_offs.1 + pos.y as f32,
+                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
                                         ],
                                         size: [1.0, 1.0],
                                         animation_frame: 0,
                                     },
                                 );
 
-                                if id.item != 0 {
-                                    // TODO: match on item type
+                                // Draw Items
+                                if let BeltTileId::BeltId(id) = id {
                                     // TODO: Do more than one item at once
-                                    let items_iter = match id.item {
-                                        0 => unreachable!(),
-                                        1 => {
-                                            game_state.simulation_state.factory.belts.iron_ore_belts
-                                                [id.index]
-                                                .items()
-                                                .skip(*belt_pos)
-                                                .take(BELT_LEN_PER_TILE.into())
-                                        },
-                                        _ => todo!(),
-                                    };
-
-                                    // TODO:
-                                    let mut item_render_pos: (f32, f32) = (
-                                        chunk_draw_offs.0 + pos.x as f32,
-                                        chunk_draw_offs.1 + pos.y as f32,
-                                    );
+                                    let item_id: usize = id.item.id.into();
+                                    let items_iter =
+                                        game_state.simulation_state.factory.belts.belts[item_id]
+                                            .belts[id.index]
+                                            .items()
+                                            .skip(
+                                                (belt_pos
+                                                    .checked_sub(BELT_LEN_PER_TILE)
+                                                    .expect("Belt idx wrapped?!?"))
+                                                .into(),
+                                            )
+                                            .take(BELT_LEN_PER_TILE.into());
 
                                     let offs = direction.into_offset();
                                     let item_render_offs = (
-                                        f32::from(offs.0) / f32::from(BELT_LEN_PER_TILE),
-                                        f32::from(offs.1) / f32::from(BELT_LEN_PER_TILE),
+                                        -f32::from(offs.0) / f32::from(BELT_LEN_PER_TILE),
+                                        -f32::from(offs.1) / f32::from(BELT_LEN_PER_TILE),
+                                    );
+
+                                    let centered_on_tile = (
+                                        chunk_draw_offs.0 + (pos.x % 16) as f32 + 0.5
+                                            - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
+                                        chunk_draw_offs.1 + (pos.y % 16) as f32 + 0.5
+                                            - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
+                                    );
+
+                                    // TODO: This needs to be positions correctly and take rotation into account
+                                    let mut item_render_base_pos: (f32, f32) = (
+                                        centered_on_tile.0 + f32::from(offs.0) * 0.5
+                                            - 0.5
+                                                * (f32::from(offs.0)
+                                                    / f32::from(BELT_LEN_PER_TILE)),
+                                        centered_on_tile.1 + f32::from(offs.1) * 0.5
+                                            - 0.5
+                                                * (f32::from(offs.1)
+                                                    / f32::from(BELT_LEN_PER_TILE)),
                                     );
 
                                     for item in items_iter {
@@ -154,18 +178,43 @@ pub fn render_world(
                                         item_layer.draw_sprite(
                                             &texture_atlas.plate,
                                             DrawInstance {
-                                                position: [item_render_pos.0, item_render_pos.1],
-                                                size: [0.2, 0.2],
+                                                position: [
+                                                    item_render_base_pos.0,
+                                                    item_render_base_pos.1,
+                                                ],
+                                                size: [
+                                                    1.0 / f32::from(BELT_LEN_PER_TILE),
+                                                    1.0 / f32::from(BELT_LEN_PER_TILE),
+                                                ],
                                                 animation_frame: 0,
                                             },
                                         );
 
-                                        item_render_pos = (
-                                            item_render_pos.0 + item_render_offs.0,
-                                            item_render_pos.1 + item_render_offs.1,
+                                        item_render_base_pos = (
+                                            item_render_base_pos.0 + item_render_offs.0,
+                                            item_render_base_pos.1 + item_render_offs.1,
                                         );
                                     }
                                 }
+                            },
+
+                            Entity::Inserter {
+                                pos,
+                                direction,
+                                id,
+                                belt_pos,
+                            } => {
+                                entity_layer.draw_sprite(
+                                    &texture_atlas.inserter[*direction],
+                                    DrawInstance {
+                                        position: [
+                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                        ],
+                                        size: [1.0, 1.0],
+                                        animation_frame: 0,
+                                    },
+                                );
                             },
 
                             _ => todo!(),
@@ -198,27 +247,22 @@ pub fn render_world(
         crate::frontend::action::action_state_machine::ActionStateMachineState::Holding(..) => {
             // TODO:
         },
-        crate::frontend::action::action_state_machine::ActionStateMachineState::Viewing((x, y)) => {
-            let x = *x;
-            let y = *y;
-
+        crate::frontend::action::action_state_machine::ActionStateMachineState::Viewing(pos) => {
             // TODO:
             let chunk = game_state
                 .world
-                .get_chunk_for_tile(Position { x, y })
+                .get_chunk_for_tile(*pos)
                 .expect("Cannot find chunk for viewing");
-            let entity = chunk.get_entity_at(Position { x, y });
+            let entity = chunk.get_entity_at(*pos);
 
             if let Some(entity) = entity {
                 dbg!(entity);
                 match entity {
                     crate::frontend::world::tile::Entity::Assembler { pos, id } => {
-                        // TODO: Match on the recipe
                         let assembler = game_state.simulation_state.factory.power_grids
                             [id.grid as usize]
                             .stores
-                            .gears
-                            .get_output(id.assembler_index.into());
+                            .get_info(*id, data_store);
 
                         dbg!(assembler);
                     },
@@ -233,12 +277,54 @@ pub fn render_world(
                         direction,
                         id,
                         belt_pos,
-                    } => {
-                        // TODO match on item id
-                        let belt = &game_state.simulation_state.factory.belts.empty_belts[id.index];
+                    } => match id {
+                        crate::frontend::world::tile::BeltTileId::EmptyBeltId(idx) => {
+                            let belt = &game_state.simulation_state.factory.belts.empty_belts[*idx];
 
-                        dbg!(belt);
+                            dbg!(belt);
+                        },
+                        crate::frontend::world::tile::BeltTileId::BeltId(BeltId {
+                            item,
+                            index,
+                        }) => {
+                            let item_id: usize = item.id.into();
+                            let belt = &game_state.simulation_state.factory.belts.belts[item_id]
+                                .belts[*index];
+
+                            dbg!(belt);
+                        },
                     },
+                    crate::frontend::world::tile::Entity::AssemblerWithoutRecipe { pos } => {
+                        println!("Viewing AssemblerWithoutRecipe {pos:?}");
+                    },
+                    crate::frontend::world::tile::Entity::Inserter {
+                        pos,
+                        direction,
+                        id,
+                        belt_pos,
+                    } => {
+                        let crate::frontend::world::tile::BeltTileId::BeltId(BeltId {
+                            item,
+                            index,
+                        }) = id
+                        else {
+                            unreachable!("Inserter attached to EmptyBelt, is currently impossible");
+                        };
+
+                        let item_id: usize = item.id.into();
+                        let belt =
+                            &game_state.simulation_state.factory.belts.belts[item_id].belts[*index];
+
+                        let inserter_info = belt
+                            .get_inserter_info_at(*belt_pos)
+                            .expect("Did not find inserter where an entity points to!");
+
+                        dbg!(inserter_info);
+                    },
+                    crate::frontend::world::tile::Entity::UnconnectedInserter {
+                        pos,
+                        direction,
+                    } => todo!(),
                 }
             }
         },

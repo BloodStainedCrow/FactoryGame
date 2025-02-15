@@ -1,6 +1,8 @@
 #![feature(test)]
 #![feature(portable_simd)]
 #![feature(adt_const_params)]
+#![feature(array_try_map)]
+#![feature(never_type)]
 
 use std::{
     array,
@@ -16,11 +18,13 @@ use std::{
     time::{Duration, Instant},
 };
 
+use data::{get_raw_data_test, DataStore};
 use directories::ProjectDirs;
 use frontend::{
     action::{action_state_machine::ActionStateMachine, ActionType},
     input::Input,
 };
+use item::IdxTrait;
 use log::{error, info};
 use rendering::{
     app_state::{AppState, GameState},
@@ -37,55 +41,73 @@ pub mod inserter;
 pub mod item;
 pub mod lab;
 pub mod power;
-pub mod producer;
 pub mod research;
+
+pub mod data;
+pub mod mod_manager;
 
 pub mod frontend;
 
 mod rendering;
 
+impl IdxTrait for u8 {}
+impl IdxTrait for u16 {}
+
 pub fn main() {
     SimpleLogger::new()
-        .with_level(log::LevelFilter::Info)
+        .with_level(log::LevelFilter::Warn)
         .init()
         .unwrap();
 
     let (send, recv) = channel();
 
-    let mut app = App::new(send);
+    let raw_data = get_raw_data_test();
+    let data_store = raw_data.process();
 
-    let tick = app.current_tick.clone();
-    let state = app.state.clone();
-    let state_machine = app.state_machine.clone();
-    thread::spawn(|| {
-        main_loop(tick, recv, state, state_machine);
-    });
+    match data_store {
+        data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
+            let data_store = Arc::new(data_store);
+            let mut app = App::new(send, data_store.clone());
 
-    let event_loop = EventLoop::new().unwrap();
+            let tick = app.current_tick.clone();
+            let state = app.state.clone();
+            let state_machine = app.state_machine.clone();
 
-    event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+            thread::spawn(|| {
+                main_loop(tick, recv, state, state_machine, data_store);
+            });
 
-    let _ = event_loop.run_app(&mut app);
+            let event_loop = EventLoop::new().unwrap();
+
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+
+            let _ = event_loop.run_app(&mut app);
+        },
+        data::DataStoreOptions::ItemU8RecipeU16(data_store) => todo!(),
+        data::DataStoreOptions::ItemU16RecipeU8(data_store) => todo!(),
+        data::DataStoreOptions::ItemU16RecipeU16(data_store) => todo!(),
+    }
 }
 
-fn main_loop(
+#[allow(clippy::needless_pass_by_value)]
+fn main_loop<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     current_tick: Arc<AtomicU64>,
     input_reciever: Receiver<Input>,
-    app_state: Arc<Mutex<AppState>>,
-    state_machine: Arc<Mutex<ActionStateMachine>>,
+    app_state: Arc<Mutex<AppState<ItemIdxType, RecipeIdxType>>>,
+    state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType>>>,
+    data_store: Arc<DataStore<ItemIdxType, RecipeIdxType>>,
 ) -> ! {
     let mut update_interval = spin_sleep_util::interval(Duration::from_secs(1) / 60);
 
     loop {
         update_interval.tick();
-        let mut state = app_state.lock().unwrap();
-        match &mut *state {
+        match &mut *app_state.lock().unwrap() {
             AppState::Ingame(game_state) => {
                 // TODO: For now I collect the actions here.
 
-                let actions: Vec<ActionType> = {
+                let actions: Vec<ActionType<ItemIdxType, RecipeIdxType>> = {
                     let mut state_machine = state_machine.lock().unwrap();
-                    let mut ret: Vec<ActionType> = input_reciever
+                    let mut ret: Vec<ActionType<ItemIdxType, RecipeIdxType>> = input_reciever
                         .try_iter()
                         .flat_map(|input| state_machine.handle_input(input, &game_state.world))
                         .collect();
@@ -95,15 +117,13 @@ fn main_loop(
                     ret
                 };
 
-                dbg!(actions.len());
-
                 let start = Instant::now();
-                game_state.apply_actions(actions);
+                game_state.apply_actions(actions, &data_store);
 
                 info!("Apply Actions Time: {:?}", start.elapsed());
                 let start = Instant::now();
 
-                game_state.update();
+                game_state.update(&data_store);
                 info!("Update Time: {:?}", start.elapsed());
             },
         }
@@ -113,7 +133,9 @@ fn main_loop(
 
 /// # Panics
 /// If File system stuff fails
-pub fn save(game_state: &GameState) {
+pub fn save<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    game_state: &GameState<ItemIdxType, RecipeIdxType>,
+) {
     let dir = ProjectDirs::from("de", "aschhoff", "factory_game").expect("No Home path found");
 
     create_dir_all(dir.data_dir()).expect("Could not create data dir");
@@ -133,7 +155,10 @@ pub fn save(game_state: &GameState) {
 /// # Panics
 /// If File system stuff fails
 #[must_use]
-pub fn load() -> Option<GameState> {
+pub fn load<
+    ItemIdxType: IdxTrait + for<'a> serde::Deserialize<'a>,
+    RecipeIdxType: IdxTrait + for<'a> serde::Deserialize<'a>,
+>() -> Option<GameState<ItemIdxType, RecipeIdxType>> {
     let dir = ProjectDirs::from("de", "aschhoff", "factory_game").expect("No Home path found");
 
     let save_file_dir = dir.data_dir().join("save.save");
@@ -150,219 +175,6 @@ pub fn load() -> Option<GameState> {
 }
 
 // #[cfg(not(debug_assertions))]
-#[cfg(test)]
-mod tests {
-    use rand::random;
-    use test::Bencher;
-
-    use crate::{
-        assembler::MultiAssemblerStoreOne,
-        belt::{belt::Belt, smart::SmartBelt},
-        inserter::StorageID,
-        item::{Iron, IronOre, ItemStorage},
-    };
-    extern crate test;
-
-    // multi_stores is a placeholder for assemblers for all recipes
-    const NUM_RECIPES: usize = 250;
-    const NUM_ASSEMBLERS_PER_RECIPE: usize = 10_000;
-
-    const NUM_BELTS: usize = NUM_RECIPES * 40;
-    const BELT_LEN: usize = NUM_ASSEMBLERS_PER_RECIPE * 4;
-    const NUM_INSERTERS_PER_BELT: usize = NUM_ASSEMBLERS_PER_RECIPE / 10;
-
-    #[bench]
-    fn bench_factory_single_threaded(b: &mut Bencher) {
-        // Do a single update "step"
-        let mut multi_stores = vec![];
-
-        for _ in 0..NUM_RECIPES {
-            multi_stores.push(MultiAssemblerStoreOne::<Iron>::new());
-        }
-
-        for store in &mut multi_stores {
-            for i in 0..NUM_ASSEMBLERS_PER_RECIPE {
-                store.add_assembler();
-                *store.get_input_1_mut(i).expect("Hardcoded") =
-                    ItemStorage::<IronOre>::new(random());
-            }
-        }
-
-        let mut belts: Vec<SmartBelt<Iron>> = vec![];
-
-        for _ in 0..NUM_BELTS {
-            let mut belt = SmartBelt::<Iron>::new(BELT_LEN);
-
-            for i in 0..NUM_INSERTERS_PER_BELT {
-                belt.add_out_inserter(
-                    i.try_into().unwrap(),
-                    StorageID {
-                        recipe: 0,
-                        grid: 0,
-                        storage: random::<u8>() as u16,
-                    },
-                );
-            }
-
-            belts.push(belt);
-        }
-
-        b.iter(|| {
-            for store in &mut multi_stores {
-                store.update_branchless(64);
-            }
-
-            for belt in &mut belts {
-                let _ = belt.try_insert_item(belt.get_len() - 1);
-                let _ = belt.try_insert_item(belt.get_len() / 2);
-                let _ = belt.try_insert_item(belt.get_len() / 4);
-
-                belt.update_inserters(&mut [&mut [multi_stores[0].get_outputs_mut()]]);
-
-                belt.update();
-            }
-        });
-    }
-
-    #[bench]
-    fn bench_factory_single_threaded_assembler(b: &mut Bencher) {
-        // Do a single update "step"
-        let mut multi_stores = vec![];
-
-        for _ in 0..NUM_RECIPES {
-            multi_stores.push(MultiAssemblerStoreOne::<Iron>::new());
-        }
-
-        for store in &mut multi_stores {
-            for i in 0..NUM_ASSEMBLERS_PER_RECIPE {
-                store.add_assembler();
-                *store.get_input_1_mut(i).expect("Hardcoded") =
-                    ItemStorage::<IronOre>::new(random());
-            }
-        }
-
-        #[allow(clippy::collection_is_never_read)]
-        let mut belts: Vec<SmartBelt<Iron>> = vec![];
-
-        for _ in 0..NUM_BELTS {
-            let mut belt = SmartBelt::<Iron>::new(BELT_LEN);
-
-            for i in 0..NUM_INSERTERS_PER_BELT {
-                belt.add_out_inserter(
-                    i.try_into().unwrap(),
-                    StorageID {
-                        recipe: 0,
-                        grid: 0,
-                        storage: random::<u8>() as u16,
-                    },
-                );
-            }
-
-            belts.push(belt);
-        }
-
-        b.iter(|| {
-            for store in &mut multi_stores {
-                store.update_branchless(64);
-            }
-        });
-    }
-
-    #[bench]
-    fn bench_factory_single_threaded_belt(b: &mut Bencher) {
-        // Do a single update "step"
-        let mut multi_stores = vec![];
-
-        for _ in 0..NUM_RECIPES {
-            multi_stores.push(MultiAssemblerStoreOne::<Iron>::new());
-        }
-
-        for store in &mut multi_stores {
-            for i in 0..NUM_ASSEMBLERS_PER_RECIPE {
-                store.add_assembler();
-                *store.get_input_1_mut(i).expect("Hardcoded") =
-                    ItemStorage::<IronOre>::new(random());
-            }
-        }
-
-        let mut belts: Vec<SmartBelt<Iron>> = vec![];
-
-        for _ in 0..NUM_BELTS {
-            let mut belt = SmartBelt::<Iron>::new(BELT_LEN);
-
-            for i in 0..NUM_INSERTERS_PER_BELT {
-                belt.add_out_inserter(
-                    i.try_into().unwrap(),
-                    StorageID {
-                        recipe: 0,
-                        grid: 0,
-                        storage: random::<u8>() as u16,
-                    },
-                );
-            }
-
-            belts.push(belt);
-        }
-
-        let mut i = 0;
-
-        b.iter(|| {
-            for belt in &mut belts {
-                let _ = belt.try_insert_item(belt.get_len() - 1);
-                let _ = belt.try_insert_item(belt.get_len() / 2);
-                let _ = belt.try_insert_item(belt.get_len() / 4);
-                belt.update();
-            }
-            i += 1;
-        });
-    }
-
-    #[bench]
-    fn bench_factory_single_threaded_inserter(b: &mut Bencher) {
-        // Do a single update "step"
-        let mut multi_stores = vec![];
-
-        for _ in 0..NUM_RECIPES {
-            multi_stores.push(MultiAssemblerStoreOne::<Iron>::new());
-        }
-
-        for store in &mut multi_stores {
-            for i in 0..NUM_ASSEMBLERS_PER_RECIPE {
-                store.add_assembler();
-                *store.get_input_1_mut(i).expect("Hardcoded") =
-                    ItemStorage::<IronOre>::new(random());
-            }
-        }
-
-        let mut belts: Vec<SmartBelt<Iron>> = vec![];
-
-        for _ in 0..NUM_BELTS {
-            let mut belt = SmartBelt::<Iron>::new(BELT_LEN);
-
-            for i in 0..NUM_INSERTERS_PER_BELT {
-                belt.add_out_inserter(
-                    i.try_into().unwrap(),
-                    StorageID {
-                        recipe: 0,
-                        grid: 0,
-                        storage: random::<u8>() as u16,
-                    },
-                );
-            }
-
-            belts.push(belt);
-        }
-
-        b.iter(|| {
-            for belt in &mut belts {
-                let _ = belt.try_insert_item(belt.get_len() - 1);
-                let _ = belt.try_insert_item(belt.get_len() / 2);
-                let _ = belt.try_insert_item(belt.get_len() / 4);
-                belt.update_inserters(&mut [&mut [multi_stores[0].get_outputs_mut()]]);
-            }
-        });
-    }
-}
 
 // Type your code here, or load an example.
 

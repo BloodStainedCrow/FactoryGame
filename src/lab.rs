@@ -1,108 +1,143 @@
-use bytemuck::TransparentWrapper;
-
 use crate::{
-    item::{Iron, ItemStorage},
-    power::{Joule, Watt, MAX_POWER_MULT},
+    assembler::TIMERTYPE,
+    data::DataStore,
+    item::{IdxTrait, Item, ITEMCOUNTTYPE},
+    power::{IndexUpdateInfo, Joule, Watt, MAX_POWER_MULT},
     research::Technology,
 };
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct MultiLabStore {
-    // red: ItemStorage<RedScience>,
-    // green: ItemStorage<GreenScience>,
-    // military: ItemStorage<MilitaryScience>,
-    // purple: ItemStorage<PurpleScience>,
-    // yellow: ItemStorage<YellowScience>,
-    // space: ItemStorage<SpaceScience>,
-    red: Vec<ItemStorage<Iron>>,
-    green: Vec<ItemStorage<Iron>>,
-    military: Vec<ItemStorage<Iron>>,
-    purple: Vec<ItemStorage<Iron>>,
-    yellow: Vec<ItemStorage<Iron>>,
-    space: Vec<ItemStorage<Iron>>,
-    timer: Vec<u16>,
+    pub sciences: Box<[Vec<ITEMCOUNTTYPE>]>,
+    timer: Vec<TIMERTYPE>,
+    holes: Vec<usize>,
 }
 
 impl MultiLabStore {
     #[must_use]
-    const fn new() -> Self {
+    pub fn new<ItemIdxType: IdxTrait>(science_bottle_items: &[Item<ItemIdxType>]) -> Self {
         Self {
-            red: vec![],
-            green: vec![],
-            military: vec![],
-            purple: vec![],
-            yellow: vec![],
-            space: vec![],
+            sciences: vec![Vec::new(); science_bottle_items.len()].into_boxed_slice(),
             timer: vec![],
+            holes: vec![],
         }
     }
 
-    #[inline(never)]
-    // TODO: The generated assembly is REALLY weird. Investigate
+    #[must_use]
+    pub fn join<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        mut self,
+        other: Self,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> (
+        Self,
+        impl IntoIterator<Item = IndexUpdateInfo<RecipeIdxType>>,
+    ) {
+        let mut updates = vec![];
+
+        for (new_idx_offs, (other_idx, _)) in other
+            .timer
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !other.holes.contains(i))
+            .enumerate()
+        {
+            assert_eq!(data_store.science_bottle_items.len(), other.sciences.len());
+
+            for science in &data_store.science_bottle_items {
+                updates.push(IndexUpdateInfo {
+                    old: data_store
+                        .get_storage_id_for_lab_science(*science, other_idx.try_into().unwrap()),
+                    new: data_store.get_storage_id_for_lab_science(
+                        *science,
+                        (self.timer.len() + new_idx_offs).try_into().unwrap(),
+                    ),
+                });
+            }
+        }
+
+        let new_sciences = self
+            .sciences
+            .into_vec()
+            .into_iter()
+            .zip(other.sciences)
+            .map(|(mut s, o)| {
+                s.extend(
+                    o.into_iter()
+                        .enumerate()
+                        .filter(|(i, _)| !other.holes.contains(i))
+                        .map(|(_, v)| v),
+                );
+                s
+            })
+            .collect();
+
+        self.timer.extend(other.timer);
+
+        let ret = Self {
+            sciences: new_sciences,
+            timer: self.timer,
+            holes: self.holes,
+        };
+
+        (ret, updates)
+    }
+
+    // TODO: Ensure good compilation results (i.e. vectorization)
     pub fn update(&mut self, power_mult: u8, current_research: &Technology) -> (Joule, u16) {
         const POWER_CONSUMPTION: Watt = Watt(600);
-        const TICKS_PER_SCIENCE: u16 = 1800;
+        const TICKS_PER_SCIENCE: TIMERTYPE = 1800;
 
-        assert_eq!(self.red.len(), self.green.len());
-        assert_eq!(self.red.len(), self.military.len());
-        assert_eq!(self.red.len(), self.purple.len());
-        assert_eq!(self.red.len(), self.yellow.len());
-        assert_eq!(self.red.len(), self.space.len());
-        assert_eq!(self.red.len(), self.timer.len());
+        // assert_eq!(self.red.len(), self.green.len());
+        // assert_eq!(self.red.len(), self.military.len());
+        // assert_eq!(self.red.len(), self.purple.len());
+        // assert_eq!(self.red.len(), self.yellow.len());
+        // assert_eq!(self.red.len(), self.space.len());
+        // assert_eq!(self.red.len(), self.timer.len());
 
         let mut running = 0;
-        let increase =
-            (u16::from(power_mult) * (u16::MAX / u16::from(MAX_POWER_MULT))) / TICKS_PER_SCIENCE;
+        let mut finished_cycle: u16 = 0;
+        let increase = (TIMERTYPE::from(power_mult)
+            * (TIMERTYPE::MAX / TIMERTYPE::from(MAX_POWER_MULT)))
+            / TICKS_PER_SCIENCE;
 
-        let r_min = u16::from(current_research.cost[0] > 0);
-        let g_min = u16::from(current_research.cost[1] > 0);
-        let m_min = u16::from(current_research.cost[2] > 0);
-        let p_min = u16::from(current_research.cost[3] > 0);
-        let y_min = u16::from(current_research.cost[4] > 0);
-        let s_min = u16::from(current_research.cost[5] > 0);
+        // TODO: Only use/check science packs needed by the current technology
+        let r_min = ITEMCOUNTTYPE::from(current_research.cost[0] > 0);
+        let g_min = ITEMCOUNTTYPE::from(current_research.cost[1] > 0);
+        let m_min = ITEMCOUNTTYPE::from(current_research.cost[2] > 0);
+        let p_min = ITEMCOUNTTYPE::from(current_research.cost[3] > 0);
+        let y_min = ITEMCOUNTTYPE::from(current_research.cost[4] > 0);
+        let s_min = ITEMCOUNTTYPE::from(current_research.cost[5] > 0);
 
-        for ((((((r, g), m), p), y), s), timer) in self
-            .red
-            .iter_mut()
-            .zip(self.green.iter_mut())
-            .zip(self.military.iter_mut())
-            .zip(self.purple.iter_mut())
-            .zip(self.yellow.iter_mut())
-            .zip(self.space.iter_mut())
-            .zip(self.timer.iter_mut())
-        {
-            let ing_mul = u16::from(*ItemStorage::<Iron>::peel_mut(r) >= r_min)
-                * u16::from(*ItemStorage::<Iron>::peel_mut(g) >= g_min)
-                * u16::from(*ItemStorage::<Iron>::peel_mut(m) >= m_min)
-                * u16::from(*ItemStorage::<Iron>::peel_mut(p) >= p_min)
-                * u16::from(*ItemStorage::<Iron>::peel_mut(y) >= y_min)
-                * u16::from(*ItemStorage::<Iron>::peel_mut(s) >= s_min);
-            let new_timer = timer.wrapping_add(increase * ing_mul);
+        // TODO: use iterators/check that this compiles well
+        for (i, timer) in self.timer.iter_mut().enumerate() {
+            let science_mul: u16 = self
+                .sciences
+                .iter()
+                .map(|science_list| u16::from(science_list[i] > 0))
+                .product();
 
-            let timer_mul = u16::from(*timer < new_timer);
-            let work_done_mul = u16::from(*timer != new_timer);
+            let new_timer = timer.wrapping_add(increase);
+
+            let new_timer = new_timer * science_mul;
+
+            let did_finish_work: u8 = (new_timer < *timer).into();
+
+            finished_cycle += u16::from(did_finish_work);
 
             // Power calculation
             // We use power if any work was done
-            running += work_done_mul;
+            // This is also used to run the tech progress?
+            running += u32::from(*timer != new_timer);
 
-            *ItemStorage::<Iron>::peel_mut(r) -= r_min * timer_mul;
-            *ItemStorage::<Iron>::peel_mut(g) -= g_min * timer_mul;
-            *ItemStorage::<Iron>::peel_mut(m) -= m_min * timer_mul;
-            *ItemStorage::<Iron>::peel_mut(p) -= p_min * timer_mul;
-            *ItemStorage::<Iron>::peel_mut(y) -= y_min * timer_mul;
-            *ItemStorage::<Iron>::peel_mut(s) -= s_min * timer_mul;
+            *timer = new_timer;
+            self.sciences
+                .iter_mut()
+                .for_each(|science_list| science_list[i] -= did_finish_work);
         }
 
         (
             POWER_CONSUMPTION.joules_per_tick() * running.into(),
-            running,
+            finished_cycle,
         )
-    }
-}
-
-impl Default for MultiLabStore {
-    fn default() -> Self {
-        Self::new()
     }
 }

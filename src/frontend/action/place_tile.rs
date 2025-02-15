@@ -1,6 +1,9 @@
-use crate::frontend::world::{
-    tile::{FloorTile, World},
-    Position,
+use crate::{
+    frontend::world::{
+        tile::{FloorTile, World},
+        Position,
+    },
+    item::IdxTrait,
 };
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -33,7 +36,10 @@ pub enum PositionInfo {
 }
 
 impl PlaceFloorTileByHandInfo {
-    pub(super) fn still_valid(&self, world: &World) -> bool {
+    pub(super) fn still_valid<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        &self,
+        world: &World<ItemIdxType, RecipeIdxType>,
+    ) -> bool {
         if !self.ghost_info.still_valid(world) {
             return false;
         }
@@ -50,7 +56,10 @@ impl PlaceFloorTileByHandInfo {
 }
 
 impl PlaceFloorTileGhostInfo {
-    fn still_valid(&self, world: &World) -> bool {
+    fn still_valid<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        &self,
+        world: &World<ItemIdxType, RecipeIdxType>,
+    ) -> bool {
         match self.tile {
             FloorTile::Empty => {
                 unreachable!("Invalid action, trying to place \"Empty Tile\": {:?}", self)

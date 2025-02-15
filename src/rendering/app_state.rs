@@ -1,24 +1,28 @@
-use std::mem;
+use std::{
+    collections::{BTreeSet, HashSet},
+    iter,
+    mem::{self},
+};
 
 use crate::{
     belt::{
         belt::Belt,
-        smart::{EmptyBelt, SmartBelt},
+        smart::{EmptyBelt, Side, SmartBelt},
     },
+    data::DataStore,
     frontend::{
-        action::{action_state_machine::ActionStateMachine, ActionType},
+        action::{action_state_machine::ActionStateMachine, set_recipe::SetRecipeInfo, ActionType},
         world::{
-            tile::{AssemblerID, BeltId, Entity, World, BELT_LEN_PER_TILE},
+            tile::{AssemblerID, BeltId, BeltTileId, Entity, World, BELT_LEN_PER_TILE},
             Position,
         },
     },
-    inserter::{StorageID, Storages, NUM_RECIPES},
-    item::{CopperOre, IronOre, Item, ItemStorage},
+    item::IdxTrait,
     power::{PowerGrid, Watt},
     research::TechState,
 };
 use log::warn;
-use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use tilelib::types::Renderer;
 
 use super::{render_world::render_world, TextureAtlas};
@@ -26,56 +30,82 @@ use super::{render_world::render_world, TextureAtlas};
 use crate::frontend::action::place_tile::PositionInfo;
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub struct GameState {
-    pub world: World,
-    pub simulation_state: SimulationState,
-}
-
-#[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
-pub struct SimulationState {
-    tech_state: TechState,
-    pub factory: Factory,
-    // TODO:
+pub struct GameState<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+    pub world: World<ItemIdxType, RecipeIdxType>,
+    pub simulation_state: SimulationState<RecipeIdxType>,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub struct Factory {
-    pub power_grids: Vec<PowerGrid>,
-    pub belts: BeltStore,
+pub struct SimulationState<RecipeIdxType: IdxTrait> {
+    tech_state: TechState,
+    pub factory: Factory<RecipeIdxType>,
+    // TODO:
 }
 
-impl Default for Factory {
-    fn default() -> Self {
+impl<RecipeIdxType: IdxTrait> SimulationState<RecipeIdxType> {
+    pub fn new<ItemIdxType: IdxTrait>(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         Self {
-            power_grids: vec![PowerGrid::default()],
-            belts: BeltStore::default(),
+            tech_state: TechState::default(),
+            factory: Factory::new(data_store),
         }
     }
 }
 
-#[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
-pub struct BeltStore {
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct Factory<RecipeIdxType: IdxTrait> {
+    pub power_grids: Vec<PowerGrid<RecipeIdxType>>,
+    pub belts: BeltStore<RecipeIdxType>,
+}
+
+impl<RecipeIdxType: IdxTrait> Factory<RecipeIdxType> {
+    fn new<ItemIdxType: IdxTrait>(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+        Self {
+            power_grids: vec![PowerGrid::new(data_store)],
+            belts: BeltStore {
+                empty_belts: vec![],
+                empty_belt_holes: vec![],
+                belts: vec![MultiBeltStore::default(); data_store.recipe_timers.len()]
+                    .into_boxed_slice(),
+            },
+        }
+    }
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct BeltStore<RecipeIdxType: IdxTrait> {
     pub empty_belts: Vec<EmptyBelt>,
+    pub empty_belt_holes: Vec<usize>,
 
-    pub iron_ore_belts: Vec<SmartBelt<IronOre>>,
-    pub copper_ore_belt: Vec<SmartBelt<CopperOre>>,
+    pub belts: Box<[MultiBeltStore<RecipeIdxType>]>,
 }
 
-struct StorageStore<'a, 'b> {
-    iron_ore: Storages<'a, 'b, IronOre>,
-    copper_ore: Storages<'a, 'b, CopperOre>,
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct MultiBeltStore<RecipeIdxType: IdxTrait> {
+    pub belts: Vec<SmartBelt<RecipeIdxType>>,
+
+    pub holes: Vec<usize>,
 }
 
-pub enum AppState {
-    Ingame(GameState),
+impl<RecipeIdxType: IdxTrait> Default for MultiBeltStore<RecipeIdxType> {
+    fn default() -> Self {
+        Self {
+            belts: vec![],
+            holes: vec![],
+        }
+    }
 }
 
-impl AppState {
+pub enum AppState<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+    Ingame(GameState<ItemIdxType, RecipeIdxType>),
+}
+
+impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> AppState<ItemIdxType, RecipeIdxType> {
     pub fn render(
         &self,
         renderer: &mut Renderer,
         texture_atlas: &TextureAtlas,
-        state_machine: &ActionStateMachine,
+        state_machine: &ActionStateMachine<ItemIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         match self {
             Self::Ingame(game) => {
@@ -85,15 +115,20 @@ impl AppState {
                     texture_atlas,
                     game.world.player_pos,
                     state_machine,
+                    data_store,
                 );
             },
         }
     }
 }
 
-impl GameState {
+impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, RecipeIdxType> {
     #[allow(clippy::too_many_lines)]
-    pub fn apply_actions(&mut self, actions: impl IntoIterator<Item = ActionType>) {
+    pub fn apply_actions(
+        &mut self,
+        actions: impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
         for action in actions {
             match action {
                 ActionType::PlaceFloorTile(place_floor_tile_by_hand_info) => {
@@ -153,36 +188,24 @@ impl GameState {
                         place_entity_type,
                     ) => match place_entity_type {
                         crate::frontend::world::tile::PlaceEntityType::Assembler(position) => {
-                            // TODO: Do collision checks!
+                            // TODO: get size dynamically
+                            if !self.world.can_fit(position, (3, 3)) {
+                                warn!("Tried to place assembler where it does not fit");
+                                continue;
+                            }
+
                             let chunk = self.world.get_chunk_for_tile_mut(position);
 
                             if let Some(chunk) = chunk {
-                                // TODO: Get correct power_grid for this position
                                 let power_grid_idx = 0;
 
-                                // TODO: For now we just default to producing gears
-                                let assembler_id = self.simulation_state.factory.power_grids
-                                    [power_grid_idx]
-                                    .stores
-                                    .gears
-                                    .add_assembler();
+                                // We do NOT store assemblers without recipes in the simulation state!
 
-                                chunk
-                                    .entities
-                                    .push(crate::frontend::world::tile::Entity::Assembler {
-                                    pos: Position {
-                                        x: position.x % 16,
-                                        y: position.y % 16,
+                                chunk.add_entity(
+                                    crate::frontend::world::tile::Entity::AssemblerWithoutRecipe {
+                                        pos: position,
                                     },
-                                    // TODO:
-                                    id: AssemblerID {
-                                        recipe: 0,
-                                        grid: 0,
-                                        assembler_index: assembler_id.try_into().expect(
-                                            "Reached maximum of u16::MAX assemblers of this recipe",
-                                        ),
-                                    },
-                                });
+                                );
                             } else {
                                 warn!(
                                     "Tried to place assember outside world/in ungenerated chunk!"
@@ -190,14 +213,40 @@ impl GameState {
                             }
                         },
                         crate::frontend::world::tile::PlaceEntityType::Inserter {
-                            start_pos,
-                            end_pos,
+                            pos,
+                            dir,
                             filter,
                         } => {
-                            enum InserterStartInfo {
-                                Belt(BeltId, usize),
-                                Assembler(AssemblerID),
+                            enum InserterStartInfo<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+                                Belt(BeltTileId<ItemIdxType>, u16),
+                                Assembler(AssemblerID<RecipeIdxType>),
                             }
+
+                            if !self.world.can_fit(pos, (1, 1)) {
+                                warn!("Tried to place inserter where it does not fit");
+                                continue;
+                            }
+
+                            let start_pos = Position {
+                                x: pos
+                                    .x
+                                    .checked_add_signed(dir.reverse().into_offset().0.into())
+                                    .unwrap(),
+                                y: pos
+                                    .y
+                                    .checked_add_signed(dir.reverse().into_offset().1.into())
+                                    .unwrap(),
+                            };
+                            let end_pos = Position {
+                                x: pos
+                                    .x
+                                    .checked_add_signed(dir.into_offset().0.into())
+                                    .unwrap(),
+                                y: pos
+                                    .y
+                                    .checked_add_signed(dir.into_offset().1.into())
+                                    .unwrap(),
+                            };
 
                             let start_chunk = self.world.get_chunk_for_tile(start_pos);
 
@@ -209,15 +258,23 @@ impl GameState {
                                             Some(InserterStartInfo::Assembler(*id))
                                         },
                                         Entity::PowerPole { .. } => {
-                                            warn!("Tried to place assembler on PowerPole");
+                                            warn!(
+                                                "Tried to place inserter starting on on PowerPole"
+                                            );
                                             None
                                         },
                                         Entity::Belt { id, belt_pos, .. } => {
                                             Some(InserterStartInfo::Belt(*id, *belt_pos))
                                         },
+                                        Entity::AssemblerWithoutRecipe { pos } => todo!(),
+                                        Entity::Inserter { .. }
+                                        | Entity::UnconnectedInserter { .. } => {
+                                            warn!("Tried to place inserter starting on another Inserter");
+                                            None
+                                        },
                                     }
                                 } else {
-                                    warn!("Tried to place inserter on nothing!");
+                                    warn!("Tried to place inserter starting on nothing!");
                                     None
                                 }
                             } else {
@@ -228,7 +285,7 @@ impl GameState {
                             };
 
                             if let Some(start_info) = start_info {
-                                let end_chunk = self.world.get_chunk_for_tile(end_pos);
+                                let end_chunk = self.world.get_chunk_for_tile_mut(end_pos);
 
                                 if let Some(chunk) = end_chunk {
                                     let end_entity = chunk.get_entity_at(end_pos);
@@ -237,85 +294,189 @@ impl GameState {
                                         match end_entity {
                                             Entity::Assembler { id, .. } => {
                                                 match start_info {
-                                                    InserterStartInfo::Belt(belt_id, belt_pos) => {
-                                                        // TODO: match on item type
-                                                        // TODO: Instantiate EmptyBelt to SmartBelt, if necessary
-                                                        match filter {
-                                                            Item::IronOre => {
-                                                                if belt_id.item == 0 {
-                                                                    // This is an empty belt
-                                                                    let mut dummy_belt =
-                                                                        EmptyBelt::new(0);
+                                                    InserterStartInfo::Belt(
+                                                        belt_tile_id,
+                                                        belt_pos,
+                                                    ) => {
+                                                        match belt_tile_id {
+                                                            BeltTileId::EmptyBeltId(idx) => {
+                                                                // We are inserting something on an empty belt!
+                                                                // It should no longer be empty!
 
+                                                                // Ensure that the assembler can take this item
+                                                                let Ok(storage) = data_store
+                                                                    .get_storage_id_for_assembler(
+                                                                    crate::data::ItemRecipeDir::Ing,
+                                                                    filter,
+                                                                    id,
+                                                                ) else {
+                                                                    warn!("This assembler does not require {:?}", filter);
+                                                                    continue;
+                                                                };
+
+                                                                // Remove the old empty belt
+                                                                let mut empty_belt =
+                                                                    EmptyBelt::new(0);
+
+                                                                mem::swap(
+                                                                    &mut empty_belt,
+                                                                    &mut self
+                                                                        .simulation_state
+                                                                        .factory
+                                                                        .belts
+                                                                        .empty_belts[idx],
+                                                                );
+
+                                                                self.simulation_state
+                                                                    .factory
+                                                                    .belts
+                                                                    .empty_belt_holes
+                                                                    .push(idx);
+
+                                                                let mut instantiated_belt =
+                                                                    empty_belt.into_smart_belt();
+
+                                                                // Add the inserter to the belt
+                                                                instantiated_belt
+                                                                    .add_out_inserter(
+                                                                        belt_pos - 1,
+                                                                        storage,
+                                                                    )
+                                                                    .unwrap();
+
+                                                                let new_item_id: usize =
+                                                                    filter.id.into();
+
+                                                                let hole_to_use = self
+                                                                    .simulation_state
+                                                                    .factory
+                                                                    .belts
+                                                                    .belts[new_item_id]
+                                                                    .holes
+                                                                    .pop();
+
+                                                                let new_id = if let Some(idx) =
+                                                                    hole_to_use
+                                                                {
                                                                     mem::swap(
-                                                                        &mut dummy_belt,
+                                                                        &mut instantiated_belt,
                                                                         &mut self
                                                                             .simulation_state
                                                                             .factory
                                                                             .belts
-                                                                            .empty_belts
-                                                                            [belt_id.index],
+                                                                            .belts[new_item_id]
+                                                                            .belts[idx],
                                                                     );
-                                                                    let removed_belt = dummy_belt;
+                                                                    mem::drop(instantiated_belt);
 
-                                                                    let new_belt_id = self
-                                                                        .simulation_state
-                                                                        .factory
-                                                                        .belts
-                                                                        .iron_ore_belts
-                                                                        .len();
-
-                                                                    self.simulation_state
-                                                                        .factory
-                                                                        .belts
-                                                                        .iron_ore_belts
-                                                                        .push(
-                                                                            removed_belt
-                                                                                .instantiate(),
-                                                                        );
-
-                                                                    // TODO: update the belt tiles!!
-                                                                    // start_chunk.change_belt_id(
-                                                                    //     belt_id,
-                                                                    //     BeltId {
-                                                                    //         item: 1,
-                                                                    //         index: belt_id.index,
-                                                                    //     },
-                                                                    // );
-
-                                                                    self.simulation_state
-                                                                        .factory
-                                                                        .belts
-                                                                        .iron_ore_belts[new_belt_id]
-                                                                        .add_out_inserter(
-                                                                            belt_pos.try_into().unwrap(),
-                                                                            // FXIME: this conversion is likely not this simple!!!
-                                                                            StorageID {
-                                                                                recipe: id.recipe,
-                                                                                grid: id.grid,
-                                                                                storage: id.assembler_index,
-                                                                            },
-                                                                        )
-                                                                        .expect("Invalid inserter position in action");
+                                                                    BeltTileId::BeltId(BeltId {
+                                                                        item: filter,
+                                                                        index: idx,
+                                                                    })
                                                                 } else {
                                                                     self.simulation_state
                                                                         .factory
                                                                         .belts
-                                                                        .iron_ore_belts[belt_id.index]
-                                                                        .add_out_inserter(
-                                                                            belt_pos.try_into().unwrap(),
-                                                                            // FXIME: this conversion is likely not this simple!!!
-                                                                            StorageID {
-                                                                                recipe: id.recipe,
-                                                                                grid: id.grid,
-                                                                                storage: id.assembler_index,
-                                                                            },
+                                                                        .belts[new_item_id]
+                                                                        .belts
+                                                                        .push(instantiated_belt);
+
+                                                                    BeltTileId::BeltId(BeltId {
+                                                                        item: filter,
+                                                                        index: self
+                                                                            .simulation_state
+                                                                            .factory
+                                                                            .belts
+                                                                            .belts[new_item_id]
+                                                                            .belts
+                                                                            .len()
+                                                                            - 1,
+                                                                    })
+                                                                };
+
+                                                                // Add the inserter entity to the map
+                                                                chunk.add_entity(
+                                                                    Entity::Inserter {
+                                                                        pos,
+                                                                        direction: dir,
+                                                                        id: new_id,
+                                                                        belt_pos,
+                                                                    },
+                                                                );
+
+                                                                let mut visited = BTreeSet::new();
+                                                                let mut to_visit = BTreeSet::new();
+                                                                to_visit.insert((
+                                                                    pos.x / 16,
+                                                                    pos.y / 16,
+                                                                ));
+
+                                                                // recursively update all chunks with this belt
+                                                                while let Some(chunk_coord) =
+                                                                    to_visit.pop_first()
+                                                                {
+                                                                    dbg!(chunk_coord);
+                                                                    let chunk = self.world.get_chunk_mut(chunk_coord).expect("Ungenerated chunk pointed to by belt?!?");
+
+                                                                    let new_chunks = chunk
+                                                                        .change_belt_id(
+                                                                            belt_tile_id,
+                                                                            new_id,
                                                                         )
-                                                                        .expect("Invalid inserter position in action");
+                                                                        .map(|i| i.into_iter())
+                                                                        .into_iter()
+                                                                        .flatten();
+
+                                                                    visited.insert(chunk_coord);
+
+                                                                    to_visit.extend(
+                                                                        // Add all chunks, which were not previously visited, to the worklist
+                                                                        new_chunks
+                                                                            .into_iter()
+                                                                            .filter(|c| {
+                                                                                !visited.contains(c)
+                                                                            }),
+                                                                    );
                                                                 }
                                                             },
+                                                            BeltTileId::BeltId(belt_id) => {
+                                                                assert_eq!(belt_id.item, filter);
+                                                                let item_id: usize =
+                                                                    filter.id.into();
+                                                                let belt = &mut self
+                                                                    .simulation_state
+                                                                    .factory
+                                                                    .belts
+                                                                    .belts[item_id]
+                                                                    .belts[belt_id.index];
 
-                                                            _ => todo!(),
+                                                                let Ok(storage) = data_store
+                                                                    .get_storage_id_for_assembler(
+                                                                    crate::data::ItemRecipeDir::Ing,
+                                                                    filter,
+                                                                    id,
+                                                                ) else {
+                                                                    warn!("This assembler does not require {:?}", filter);
+                                                                    continue;
+                                                                };
+
+                                                                // Add the inserter to the belt
+                                                                belt.add_out_inserter(
+                                                                    belt_pos - 1,
+                                                                    storage,
+                                                                )
+                                                                .unwrap();
+
+                                                                // Add the inserter entity to the map
+                                                                chunk.add_entity(
+                                                                    Entity::Inserter {
+                                                                        pos,
+                                                                        direction: dir,
+                                                                        id: belt_tile_id,
+                                                                        belt_pos,
+                                                                    },
+                                                                );
+                                                            },
                                                         }
                                                     },
                                                     InserterStartInfo::Assembler(assembler_id) => {
@@ -326,17 +487,204 @@ impl GameState {
                                             Entity::PowerPole { .. } => {
                                                 warn!("Tried to place assembler on PowerPole");
                                             },
-                                            Entity::Belt { id, .. } => match start_info {
+                                            Entity::Belt {
+                                                id: belt_tile_id,
+                                                belt_pos,
+                                                ..
+                                            } => match start_info {
                                                 InserterStartInfo::Belt(belt_id, belt_pos) => {
                                                     todo!()
                                                 },
                                                 InserterStartInfo::Assembler(assembler_id) => {
-                                                    todo!()
+                                                    match belt_tile_id {
+                                                        BeltTileId::EmptyBeltId(idx) => {
+                                                            // We are removing something from an empty belt!
+                                                            // It should no longer be empty!
+
+                                                            let Ok(storage) = data_store
+                                                                .get_storage_id_for_assembler(
+                                                                    crate::data::ItemRecipeDir::Out,
+                                                                    filter,
+                                                                    assembler_id,
+                                                                )
+                                                            else {
+                                                                warn!("This assembler cannot output {:?}", filter);
+                                                                continue;
+                                                            };
+
+                                                            // Remove the old empty belt
+                                                            let mut empty_belt = EmptyBelt::new(0);
+
+                                                            mem::swap(
+                                                                &mut empty_belt,
+                                                                &mut self
+                                                                    .simulation_state
+                                                                    .factory
+                                                                    .belts
+                                                                    .empty_belts[idx],
+                                                            );
+
+                                                            self.simulation_state
+                                                                .factory
+                                                                .belts
+                                                                .empty_belt_holes
+                                                                .push(idx);
+
+                                                            let mut instantiated_belt =
+                                                                empty_belt.into_smart_belt();
+
+                                                            // Add the inserter to the belt
+                                                            instantiated_belt
+                                                                .add_in_inserter(
+                                                                    belt_pos - 1,
+                                                                    storage,
+                                                                )
+                                                                .unwrap();
+
+                                                            let new_item_id: usize =
+                                                                filter.id.into();
+
+                                                            let hole_to_use = self
+                                                                .simulation_state
+                                                                .factory
+                                                                .belts
+                                                                .belts[new_item_id]
+                                                                .holes
+                                                                .pop();
+
+                                                            let new_id =
+                                                                if let Some(idx) = hole_to_use {
+                                                                    mem::swap(
+                                                                        &mut instantiated_belt,
+                                                                        &mut self
+                                                                            .simulation_state
+                                                                            .factory
+                                                                            .belts
+                                                                            .belts[new_item_id]
+                                                                            .belts[idx],
+                                                                    );
+                                                                    mem::drop(instantiated_belt);
+
+                                                                    BeltTileId::BeltId(BeltId {
+                                                                        item: filter,
+                                                                        index: idx,
+                                                                    })
+                                                                } else {
+                                                                    self.simulation_state
+                                                                        .factory
+                                                                        .belts
+                                                                        .belts[new_item_id]
+                                                                        .belts
+                                                                        .push(instantiated_belt);
+
+                                                                    BeltTileId::BeltId(BeltId {
+                                                                        item: filter,
+                                                                        index: self
+                                                                            .simulation_state
+                                                                            .factory
+                                                                            .belts
+                                                                            .belts[new_item_id]
+                                                                            .belts
+                                                                            .len()
+                                                                            - 1,
+                                                                    })
+                                                                };
+
+                                                            // Add the inserter entity to the map
+                                                            chunk.add_entity(Entity::Inserter {
+                                                                pos,
+                                                                direction: dir,
+                                                                id: new_id,
+                                                                belt_pos: belt_pos - 1,
+                                                            });
+
+                                                            let mut visited = BTreeSet::new();
+                                                            let mut to_visit = BTreeSet::new();
+                                                            to_visit
+                                                                .insert((pos.x / 16, pos.y / 16));
+
+                                                            // recursively update all chunks with this belt
+                                                            while let Some(chunk_coord) =
+                                                                to_visit.pop_first()
+                                                            {
+                                                                dbg!(chunk_coord);
+                                                                let chunk = self.world.get_chunk_mut(chunk_coord).expect("Ungenerated chunk pointed to by belt?!?");
+
+                                                                let new_chunks = chunk
+                                                                    .change_belt_id(
+                                                                        belt_tile_id,
+                                                                        new_id,
+                                                                    )
+                                                                    .map(|i| i.into_iter())
+                                                                    .into_iter()
+                                                                    .flatten();
+
+                                                                visited.insert(chunk_coord);
+
+                                                                to_visit.extend(
+                                                                    // Add all chunks, which were not previously visited, to the worklist
+                                                                    new_chunks.into_iter().filter(
+                                                                        |c| !visited.contains(c),
+                                                                    ),
+                                                                );
+                                                            }
+                                                        },
+                                                        BeltTileId::BeltId(belt_id) => {
+                                                            if belt_id.item != filter {
+                                                                // TODO: Try to downgrade the belt if it is empty
+                                                                warn!("You cannot connect an inserter to a belt, which carries an item different from its filter");
+                                                                continue;
+                                                            }
+                                                            let item_id: usize = filter.id.into();
+                                                            let belt = &mut self
+                                                                .simulation_state
+                                                                .factory
+                                                                .belts
+                                                                .belts[item_id]
+                                                                .belts[belt_id.index];
+
+                                                            let Ok(storage) = data_store
+                                                                .get_storage_id_for_assembler(
+                                                                    crate::data::ItemRecipeDir::Out,
+                                                                    filter,
+                                                                    assembler_id,
+                                                                )
+                                                            else {
+                                                                warn!("This assembler cannot output {:?}", filter);
+                                                                continue;
+                                                            };
+
+                                                            // Add the inserter to the belt
+                                                            belt.add_in_inserter(
+                                                                belt_pos - 1,
+                                                                storage,
+                                                            )
+                                                            .unwrap();
+
+                                                            // Add the inserter entity to the map
+                                                            chunk.add_entity(Entity::Inserter {
+                                                                pos,
+                                                                direction: dir,
+                                                                id: belt_tile_id,
+                                                                belt_pos: belt_pos - 1,
+                                                            });
+                                                        },
+                                                    }
                                                 },
+                                            },
+                                            Entity::AssemblerWithoutRecipe { pos } => todo!(),
+                                            Entity::Inserter {
+                                                pos,
+                                                direction,
+                                                id,
+                                                belt_pos,
+                                            } => todo!(),
+                                            Entity::UnconnectedInserter { pos, direction } => {
+                                                todo!()
                                             },
                                         }
                                     } else {
-                                        warn!("Tried to place inserter on nothing!");
+                                        warn!("Tried to place inserter ending on nothing!");
                                     }
                                 } else {
                                     warn!(
@@ -347,6 +695,11 @@ impl GameState {
                         },
                         crate::frontend::world::tile::PlaceEntityType::Belt { pos, direction } => {
                             // TODO: Implement corners correctly
+
+                            if !self.world.can_fit(pos, (1, 1)) {
+                                warn!("Tried to place belt where it does not fit");
+                                continue;
+                            }
 
                             // Find neighboring belts if they exist
                             let front_pos = Position {
@@ -413,6 +766,8 @@ impl GameState {
 
                             match (front_internal_id, back_internal_id) {
                                 (None, None) => {
+                                    let chunk = self.world.get_chunk_for_tile_mut(pos).unwrap();
+
                                     let idx = self.simulation_state.factory.belts.empty_belts.len();
                                     self.simulation_state
                                         .factory
@@ -420,146 +775,334 @@ impl GameState {
                                         .empty_belts
                                         .push(new_belt);
 
-                                    let chunk = self.world.get_chunk_for_tile_mut(pos).unwrap();
-                                    chunk.entities.push(Entity::Belt {
-                                        pos: Position {
-                                            x: pos.x % 16,
-                                            y: pos.y % 16,
-                                        },
+                                    chunk.add_entity(Entity::Belt {
+                                        pos,
                                         direction,
-                                        id: BeltId {
-                                            item: 0,
-                                            index: idx,
-                                        },
-                                        belt_pos: 0,
+                                        id: BeltTileId::EmptyBeltId(idx),
+                                        belt_pos: BELT_LEN_PER_TILE,
                                     });
                                 },
                                 (None, Some(back_id)) => {
                                     let chunk = self.world.get_chunk_for_tile_mut(pos).unwrap();
 
                                     // Merge back with this, it will get back_id
-                                    // TODO: Match on recipe
-                                    let back_belt = self
-                                        .simulation_state
-                                        .factory
-                                        .belts
-                                        .empty_belts
-                                        .get_mut(back_id.index)
-                                        .expect("id from world not in simulation!!");
+                                    let new_len = match back_id {
+                                        BeltTileId::EmptyBeltId(idx) => {
+                                            take_mut::take(
+                                                &mut self
+                                                    .simulation_state
+                                                    .factory
+                                                    .belts
+                                                    .empty_belts[idx],
+                                                |back_belt| EmptyBelt::join(new_belt, back_belt),
+                                            );
 
-                                    take_mut::take_or_recover(
-                                        back_belt,
-                                        || EmptyBelt::new(0),
-                                        |back_belt| EmptyBelt::join(new_belt, back_belt),
-                                    );
-
-                                    chunk.entities.push(Entity::Belt {
-                                        pos: Position {
-                                            x: pos.x % 16,
-                                            y: pos.y % 16,
+                                            self.simulation_state.factory.belts.empty_belts[idx].len
                                         },
+                                        BeltTileId::BeltId(belt_id) => {
+                                            let belt_item_id: usize = belt_id.item.id.into();
+                                            let back_belt =
+                                                self.simulation_state.factory.belts.belts
+                                                    [belt_item_id]
+                                                    .belts
+                                                    .get_mut(belt_id.index)
+                                                    .expect("id from world not in simulation!!");
+
+                                            take_mut::take(back_belt, |back_belt| {
+                                                back_belt.join_with_empty(
+                                                    EmptyBelt::new(BELT_LEN_PER_TILE),
+                                                    Side::FRONT,
+                                                )
+                                            });
+
+                                            back_belt.get_len()
+                                        },
+                                    };
+
+                                    // Add the belt. Its belt_pos will be increased to the correct value of BELT_LEN_PER_TILE in the next step
+                                    chunk.add_entity(Entity::Belt {
+                                        pos,
                                         direction,
                                         id: back_id,
 
-                                        belt_pos: (back_belt.len - BELT_LEN_PER_TILE).into(),
+                                        belt_pos: 0,
                                     });
+
+                                    let mut visited = BTreeSet::new();
+                                    let mut to_visit = BTreeSet::new();
+                                    to_visit.insert((pos.x / 16, pos.y / 16));
+
+                                    // recursively update all chunks with this belt
+                                    while let Some(chunk_coord) = to_visit.pop_first() {
+                                        dbg!(chunk_coord);
+
+                                        let chunk = self
+                                            .world
+                                            .get_chunk_mut(chunk_coord)
+                                            .expect("Ungenerated chunk pointed to by belt?!?");
+
+                                        let new_chunks = chunk
+                                            .increase_all_belt_pos(back_id, BELT_LEN_PER_TILE)
+                                            .map(|i| i.into_iter())
+                                            .into_iter()
+                                            .flatten();
+
+                                        visited.insert(chunk_coord);
+
+                                        to_visit.extend(
+                                            // Add all chunks, which were not previously visited, to the worklist
+                                            new_chunks.into_iter().filter(|c| !visited.contains(c)),
+                                        );
+                                    }
                                 },
                                 (Some(front_id), None) => {
-                                    // Merge front with this, it will get front_id
-                                    // TODO: Match on recipe
-                                    let front_belt = self
-                                        .simulation_state
-                                        .factory
-                                        .belts
-                                        .empty_belts
-                                        .get_mut(front_id.index)
-                                        .expect("id from world not in simulation!!");
-
-                                    take_mut::take_or_recover(
-                                        front_belt,
-                                        || EmptyBelt::new(0),
-                                        |front_belt| EmptyBelt::join(front_belt, new_belt),
-                                    );
-
                                     let chunk = self.world.get_chunk_for_tile_mut(pos).unwrap();
 
-                                    // TODO: Also do this recursively!
-                                    chunk.increase_all_belt_pos(front_id, BELT_LEN_PER_TILE.into());
+                                    // Merge front with this, it will get front_id
+                                    let new_len = match front_id {
+                                        BeltTileId::EmptyBeltId(idx) => {
+                                            take_mut::take(
+                                                &mut self
+                                                    .simulation_state
+                                                    .factory
+                                                    .belts
+                                                    .empty_belts[idx],
+                                                |front_belt| EmptyBelt::join(front_belt, new_belt),
+                                            );
 
-                                    chunk.entities.push(Entity::Belt {
-                                        pos: Position {
-                                            x: pos.x % 16,
-                                            y: pos.y % 16,
+                                            self.simulation_state.factory.belts.empty_belts[idx].len
                                         },
+                                        BeltTileId::BeltId(belt_id) => {
+                                            let belt_item_id: usize = belt_id.item.id.into();
+                                            let front_belt =
+                                                self.simulation_state.factory.belts.belts
+                                                    [belt_item_id]
+                                                    .belts
+                                                    .get_mut(belt_id.index)
+                                                    .expect("id from world not in simulation!!");
+
+                                            take_mut::take(front_belt, |front_belt| {
+                                                front_belt.join_with_empty(
+                                                    EmptyBelt::new(BELT_LEN_PER_TILE),
+                                                    Side::BACK,
+                                                )
+                                            });
+
+                                            front_belt.get_len()
+                                        },
+                                    };
+
+                                    dbg!(new_len);
+
+                                    chunk.add_entity(dbg!(Entity::Belt {
+                                        pos,
                                         direction,
                                         id: front_id,
 
-                                        belt_pos: 0,
-                                    });
+                                        belt_pos: (new_len),
+                                    }));
                                 },
-                                (Some(front_id), Some(back_id)) => {
-                                    // TODO: We need a way to handle removing belts, just removing it will invalidate all indices!!!
-                                    // Or we can (for now) just leak the freed up spot (by not storing the holes, just not keeping any references to it)
-                                    // FIXME: This is a hack to make this work, even though we do not have support for holes in the list of belts yet
-                                    self.simulation_state
-                                        .factory
-                                        .belts
-                                        .empty_belts
-                                        .push(EmptyBelt::new(0));
-                                    let back_belt = self
-                                        .simulation_state
-                                        .factory
-                                        .belts
-                                        .empty_belts
-                                        .swap_remove(back_id.index);
-
-                                    let back_len = back_belt.len;
-
-                                    // Merge front with this, it will get front_id
-                                    // TODO: Match on recipe
-                                    let front_belt = self
-                                        .simulation_state
-                                        .factory
-                                        .belts
-                                        .empty_belts
-                                        .get_mut(front_id.index)
-                                        .expect("id from world not in simulation!!");
-
-                                    // TODO: join these three using a single call, instead of two
-                                    //       Currently this will reallocate TWICE for no reason!
-                                    // Join Front belt with the new empty spot created by placing the belt tile
-                                    // FIXME: This will abort the program if it fails
-                                    take_mut::take(front_belt, |front_belt| {
-                                        EmptyBelt::join(front_belt, new_belt)
-                                    });
-
-                                    // Join the (now elongated) front belt with the back belt it is now connected to
-                                    // FIXME: This will abort the program if it fails
-                                    take_mut::take(front_belt, |front_belt| {
-                                        EmptyBelt::join(front_belt, back_belt)
-                                    });
-
+                                (Some(front_tile_id), Some(back_tile_id)) => {
                                     let chunk = self.world.get_chunk_for_tile_mut(pos).unwrap();
+
+                                    let (front_len, removed_id, new_id) = match (
+                                        front_tile_id,
+                                        back_tile_id,
+                                    ) {
+                                        (
+                                            BeltTileId::EmptyBeltId(front_idx),
+                                            BeltTileId::EmptyBeltId(back_idx),
+                                        ) => {
+                                            // Remove back belt from simulation
+                                            let mut back_belt = EmptyBelt::new(0);
+
+                                            mem::swap(
+                                                &mut back_belt,
+                                                &mut self
+                                                    .simulation_state
+                                                    .factory
+                                                    .belts
+                                                    .empty_belts[back_idx],
+                                            );
+
+                                            let back_len = back_belt.len;
+
+                                            self.simulation_state
+                                                .factory
+                                                .belts
+                                                .empty_belt_holes
+                                                .push(back_idx);
+
+                                            // Get ref to front belt
+                                            let front_belt = self
+                                                .simulation_state
+                                                .factory
+                                                .belts
+                                                .empty_belts
+                                                .get_mut(front_idx)
+                                                .expect("id from world not in simulation!!");
+
+                                            let front_len = front_belt.len;
+
+                                            // Merge front and middle and back
+                                            take_mut::take(front_belt, |front_belt| {
+                                                EmptyBelt::join(
+                                                    EmptyBelt::join(front_belt, new_belt),
+                                                    back_belt,
+                                                )
+                                            });
+
+                                            (front_len, back_tile_id, front_tile_id)
+                                        },
+                                        (
+                                            BeltTileId::EmptyBeltId(front_idx),
+                                            BeltTileId::BeltId(back_id),
+                                        ) => {
+                                            // Remove front belt from simulation
+                                            let mut front_belt = EmptyBelt::new(0);
+
+                                            mem::swap(
+                                                &mut front_belt,
+                                                &mut self
+                                                    .simulation_state
+                                                    .factory
+                                                    .belts
+                                                    .empty_belts[front_idx],
+                                            );
+
+                                            let back_item_id: usize = back_id.item.id.into();
+
+                                            // Get ref to back belt
+                                            let back_belt =
+                                                self.simulation_state.factory.belts.belts
+                                                    [back_item_id]
+                                                    .belts
+                                                    .get_mut(back_id.index)
+                                                    .expect("id from world not in simulation!!");
+
+                                            let back_len = back_belt.get_len();
+
+                                            let front_len = front_belt.len;
+
+                                            // Merge front and middle and back
+                                            take_mut::take(back_belt, |back_belt| {
+                                                back_belt
+                                                    .join_with_empty(new_belt, Side::FRONT)
+                                                    .join_with_empty(front_belt, Side::FRONT)
+                                            });
+
+                                            (front_len, front_tile_id, back_tile_id)
+                                        },
+                                        (
+                                            BeltTileId::BeltId(front_id),
+                                            BeltTileId::EmptyBeltId(back_idx),
+                                        ) => {
+                                            // Remove back belt from simulation
+                                            let mut back_belt = EmptyBelt::new(0);
+
+                                            mem::swap(
+                                                &mut back_belt,
+                                                &mut self
+                                                    .simulation_state
+                                                    .factory
+                                                    .belts
+                                                    .empty_belts[back_idx],
+                                            );
+
+                                            let back_len = back_belt.len;
+
+                                            self.simulation_state
+                                                .factory
+                                                .belts
+                                                .empty_belt_holes
+                                                .push(back_idx);
+
+                                            let front_item_id: usize = front_id.item.id.into();
+
+                                            // Get ref to front belt
+                                            let front_belt =
+                                                self.simulation_state.factory.belts.belts
+                                                    [front_item_id]
+                                                    .belts
+                                                    .get_mut(front_id.index)
+                                                    .expect("id from world not in simulation!!");
+
+                                            let front_len = front_belt.get_len();
+
+                                            // Merge front and middle and back
+                                            take_mut::take(front_belt, |front_belt| {
+                                                front_belt
+                                                    .join_with_empty(new_belt, Side::BACK)
+                                                    .join_with_empty(back_belt, Side::BACK)
+                                            });
+
+                                            (front_len, back_tile_id, front_tile_id)
+                                        },
+                                        (
+                                            BeltTileId::BeltId(front_id),
+                                            BeltTileId::BeltId(back_id),
+                                        ) => {
+                                            // Remove back belt from simulation
+                                            let mut back_belt = SmartBelt::new(0);
+                                            let back_item_id: usize = back_id.item.id.into();
+                                            let front_item_id: usize = front_id.item.id.into();
+
+                                            if front_item_id != back_item_id {
+                                                // TODO: Try to downgrade the belt if it is empty
+                                                warn!("Two belts filled with different items cannot be connected");
+                                                continue;
+                                            }
+
+                                            mem::swap(
+                                                &mut back_belt,
+                                                &mut self.simulation_state.factory.belts.belts
+                                                    [back_item_id]
+                                                    .belts[back_id.index],
+                                            );
+
+                                            self.simulation_state.factory.belts.belts[back_item_id]
+                                                .holes
+                                                .push(back_id.index);
+
+                                            // Get ref to front belt
+                                            let front_belt =
+                                                self.simulation_state.factory.belts.belts
+                                                    [front_item_id]
+                                                    .belts
+                                                    .get_mut(front_id.index)
+                                                    .expect("id from world not in simulation!!");
+
+                                            let front_len = front_belt.get_len();
+
+                                            // Merge front and middle and back
+                                            take_mut::take(front_belt, |front_belt| {
+                                                SmartBelt::join(
+                                                    front_belt
+                                                        .join_with_empty(new_belt, Side::BACK),
+                                                    back_belt,
+                                                )
+                                            });
+
+                                            (front_len, back_tile_id, front_tile_id)
+                                        },
+                                    };
 
                                     // TODO: Also do this recursively!
                                     chunk.increase_all_belt_pos(
-                                        front_id,
-                                        (back_len + BELT_LEN_PER_TILE).into(),
+                                        back_tile_id,
+                                        front_len + BELT_LEN_PER_TILE,
                                     );
 
-                                    chunk.entities.push(Entity::Belt {
-                                        pos: Position {
-                                            x: pos.x % 16,
-                                            y: pos.y % 16,
-                                        },
+                                    chunk.add_entity(Entity::Belt {
+                                        pos,
                                         direction,
-                                        id: front_id,
+                                        id: new_id,
 
-                                        belt_pos: back_len.into(),
+                                        belt_pos: front_len + BELT_LEN_PER_TILE,
                                     });
 
                                     // TODO: Also do this recursively!
-                                    chunk.change_belt_id(back_id, front_id);
+                                    chunk.change_belt_id(removed_id, new_id);
                                 },
                             }
                         },
@@ -576,22 +1119,122 @@ impl GameState {
                     println!("Ping at {:?}", (x, y));
                     // TODO:
                 },
+                ActionType::SetRecipe(SetRecipeInfo { pos, recipe }) => {
+                    let chunk = self.world.get_chunk_for_tile_mut(pos);
+
+                    if let Some(chunk) = chunk {
+                        let assembler = chunk.get_entity_at_mut(pos);
+
+                        if let Some(entity) = assembler {
+                            if let Entity::Assembler { pos: _pos, id } = entity {
+                                let old_recipe_id = id.recipe.id.into();
+                                let new_recipe_id = recipe.id.into();
+                                match (
+                                    data_store.recipe_num_ing_lookup[old_recipe_id],
+                                    data_store.recipe_num_out_lookup[old_recipe_id],
+                                ) {
+                                    (0, 1) => {
+                                        let old_assembler =
+                                            self.simulation_state.factory.power_grids
+                                                [id.grid as usize]
+                                                .stores
+                                                .assemblers_0_1[data_store
+                                                .recipe_to_ing_out_combo_idx[old_recipe_id]]
+                                                .remove_assembler(id.assembler_index as usize);
+
+                                        // TODO: Add the old_assembler_items to a players inventory or something
+                                    },
+
+                                    _ => unreachable!(),
+                                };
+
+                                let new_id = match (
+                                    data_store.recipe_num_ing_lookup[new_recipe_id],
+                                    data_store.recipe_num_out_lookup[new_recipe_id],
+                                ) {
+                                    (0, 1) => {
+                                        let new_idx = self.simulation_state.factory.power_grids
+                                            [id.grid as usize]
+                                            .stores
+                                            .assemblers_0_1
+                                            [data_store.recipe_to_ing_out_combo_idx[new_recipe_id]]
+                                            .add_assembler();
+
+                                        AssemblerID {
+                                            recipe,
+                                            grid: id.grid,
+                                            assembler_index: new_idx
+                                                .try_into()
+                                                .expect("More than u16::MAX assemblers"),
+                                        }
+                                    },
+
+                                    _ => unreachable!(),
+                                };
+
+                                *id = new_id;
+                                // TODO: Update surrounding inserters!!!!
+                            } else if let Entity::AssemblerWithoutRecipe { pos } = entity {
+                                let new_recipe_id = recipe.id.into();
+
+                                // TODO: Evaluate PowerGrid surroundings!!
+                                let power_grid_id = 0;
+
+                                let new_id = match (
+                                    data_store.recipe_num_ing_lookup[new_recipe_id],
+                                    data_store.recipe_num_out_lookup[new_recipe_id],
+                                ) {
+                                    (0, 1) => {
+                                        let new_idx = self.simulation_state.factory.power_grids
+                                            [power_grid_id as usize]
+                                            .stores
+                                            .assemblers_0_1
+                                            [data_store.recipe_to_ing_out_combo_idx[new_recipe_id]]
+                                            .add_assembler();
+
+                                        AssemblerID {
+                                            recipe,
+                                            grid: power_grid_id,
+                                            assembler_index: new_idx
+                                                .try_into()
+                                                .expect("More than u16::MAX assemblers"),
+                                        }
+                                    },
+
+                                    _ => unreachable!(),
+                                };
+
+                                *entity = Entity::Assembler {
+                                    pos: *pos,
+                                    id: new_id,
+                                }
+                            } else {
+                                warn!("Tried to change recipe where there was no assembler!");
+                            }
+                        }
+                    } else {
+                        warn!("Tried to change assembler recipe outside world!");
+                    }
+                },
             }
         }
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) {
         self.world.player_pos.0 += self.world.player_move.0 / 60.0;
         self.world.player_pos.1 += self.world.player_move.1 / 60.0;
 
-        self.simulation_state.factory.belt_update();
+        self.simulation_state.factory.belts.belt_update(
+            &mut self.simulation_state.factory.power_grids[0],
+            data_store,
+        );
 
         let tech_progress = self
             .simulation_state
             .factory
             .power_grids
             .par_iter_mut()
-            .map(|grid| grid.update(Watt(1000), &self.simulation_state.tech_state))
+            .map(|grid| grid.update(Watt(1000), &self.simulation_state.tech_state, data_store))
             .sum();
 
         self.simulation_state
@@ -600,53 +1243,62 @@ impl GameState {
     }
 }
 
-impl Factory {
-    fn belt_update(&mut self) {
-        // let mut storage = Self::build_storage_store(&mut self.power_grids);
-
-        // TODO: Maybe this should be a SmallVec, to avoid allocating in the common case of very few PowerGrids
-        let mut stores: (
-            Vec<[&mut [ItemStorage<IronOre>]; NUM_RECIPES]>,
-            Vec<[&mut [ItemStorage<CopperOre>]; NUM_RECIPES]>,
-        ) = self
-            .power_grids
-            .iter_mut()
-            .map(|pg| {
-                (
-                    [pg.stores.iron_plates.get_inputs_1_mut()],
-                    [pg.stores.copper_plates.store.get_inputs_1_mut()],
-                )
-            })
-            .collect();
-
-        let mut storage = StorageStore {
-            iron_ore: stores.0.as_mut_slice(),
-            copper_ore: stores.1.as_mut_slice(),
-        };
-
-        self.belts.update(&mut storage);
-    }
-
-    fn build_storage_store(power_grids: &mut Vec<PowerGrid>) -> StorageStore {
-        todo!()
-    }
+impl<RecipeIdxType: IdxTrait> Factory<RecipeIdxType> {
+    // fn build_storage_store(power_grids: &mut Vec<PowerGrid>) -> StorageStore {
+    //     todo!()
+    // }
 }
 
-impl BeltStore {
-    fn update(&mut self, storages: &mut StorageStore) {
-        rayon::join(
-            || {
-                self.iron_ore_belts.iter_mut().for_each(|b| {
-                    b.update();
-                    b.update_inserters(&mut storages.iron_ore);
-                });
-            },
-            || {
-                self.copper_ore_belt.iter_mut().for_each(|b| {
-                    b.update();
-                    b.update_inserters(&mut storages.copper_ore);
-                    // Hm, at this point the storages will be in cache. By updating all belts first, we might flush it out of the cache :/
-                });
+impl<RecipeIdxType: IdxTrait> BeltStore<RecipeIdxType> {
+    fn belt_update<ItemIdxType: IdxTrait>(
+        &mut self,
+        grid: &mut PowerGrid<RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        // NOTE: This has to be assembled in the same way the lookup is generated in DataStore
+        //       Currently this means assemblers -> labs -> TODO
+        // TODO: This is very fragile :/
+        let all_storages = grid
+            .stores
+            .assemblers_0_1
+            .iter_mut()
+            .flat_map(|store| iter::once(store.get_outputs_mut(0)))
+            // TODO: Chain the other storages here
+            .chain(
+                grid.lab_stores
+                    .sciences
+                    .iter_mut()
+                    .map(std::vec::Vec::as_mut_slice),
+            );
+
+        // Sort the slices by item
+        let storages_by_item = all_storages
+            .zip(
+                data_store
+                    .recipe_item_store_to_item
+                    .iter()
+                    .chain(data_store.science_bottle_items.iter()),
+            )
+            .fold(Vec::new(), |mut acc, (storage, item)| {
+                let old = acc.get_mut(item.id.into());
+
+                match old {
+                    None => {
+                        acc.resize_with(item.id.into() + 1, Vec::new);
+                        acc.get_mut(item.id.into()).unwrap().push(storage);
+                    },
+                    Some(v) => v.push(storage),
+                }
+
+                acc
+            });
+
+        self.belts.par_iter_mut().zip(storages_by_item).for_each(
+            |(belt_store, mut assembler_item_storages)| {
+                for belt in &mut belt_store.belts {
+                    belt.update();
+                    belt.update_inserters(&mut assembler_item_storages);
+                }
             },
         );
     }

@@ -12,6 +12,9 @@ let
   ] ++ (with pkgs; [
     pkg-config
 
+    # perf for cargo-flamegraph
+    linuxPackages_latest.perf
+
     wayland
     xorg.libX11
     xorg.libXcursor

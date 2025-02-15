@@ -1,16 +1,13 @@
-use std::{marker::PhantomData, num::NonZero};
+use std::num::NonZero;
 
-use bytemuck::TransparentWrapper;
-
-use crate::item::{ItemStorage, ItemTrait};
+use crate::item::ITEMCOUNTTYPE;
 
 use super::{InserterState, MOVETIME};
 
 // FIXME: the storage_id cannot properly represent an index into multiple slices (which I have here, since
 // there are multiple lists of storages in the different MultiAssemblerStores (since multiple different recipes take for example Iron Plates))
 #[derive(Debug, Clone)]
-pub struct StorageStorageInserter<T: ItemTrait> {
-    marker: PhantomData<T>,
+pub struct StorageStorageInserter {
     storage_id_in: NonZero<u16>,
     storage_id_out: NonZero<u16>,
     state: InserterState,
@@ -25,44 +22,35 @@ pub struct StorageStorageInserter<T: ItemTrait> {
 //       Luckily since inserter only have limited range (3 tiles or whatever) there is inherent locality in the accesses, if the MultiStores are somewhat spacially aligned.
 //       Though this could also lead to particularly poor access patterns if the belt/line of inserters is perpendicular to the stride pattern of the Multistore
 //       (maybe some weird quadtree weirdness could help?)
-impl<T: ItemTrait> StorageStorageInserter<T> {
+impl StorageStorageInserter {
     #[must_use]
     pub const fn new(in_id: NonZero<u16>, out_id: NonZero<u16>) -> Self {
         Self {
-            marker: PhantomData,
             storage_id_in: in_id,
             storage_id_out: out_id,
             state: InserterState::Empty,
         }
     }
 
-    pub fn update(&mut self, storages: &mut [ItemStorage<T>]) {
+    pub fn update(&mut self, item_max_stack_size: ITEMCOUNTTYPE, storages: &mut [ITEMCOUNTTYPE]) {
         // TODO: I just added InserterStates and it is a lot slower (unsurprisingly),
         // Try and find a faster implementation of similar logic
 
         match self.state {
             InserterState::Empty => {
-                if *TransparentWrapper::peel_ref(
-                    &storages[usize::from(Into::<u16>::into(self.storage_id_in))],
-                ) > 0
-                {
+                if storages[usize::from(Into::<u16>::into(self.storage_id_in))] > 0 {
                     // There is an item in the machine
-                    *TransparentWrapper::peel_mut(
-                        &mut storages[usize::from(Into::<u16>::into(self.storage_id_in))],
-                    ) -= 1;
+                    storages[usize::from(Into::<u16>::into(self.storage_id_in))] -= 1;
 
                     self.state = InserterState::FullAndMovingOut(MOVETIME);
                 }
             },
             InserterState::FullAndWaitingForSlot => {
-                if *TransparentWrapper::peel_ref(
-                    &storages[usize::from(Into::<u16>::into(self.storage_id_out))],
-                ) < T::MAX_STACK_SIZE
+                if storages[usize::from(Into::<u16>::into(self.storage_id_out))]
+                    < item_max_stack_size
                 {
                     // There is space in the machine
-                    *TransparentWrapper::peel_mut(
-                        &mut storages[usize::from(Into::<u16>::into(self.storage_id_out))],
-                    ) += 1;
+                    storages[usize::from(Into::<u16>::into(self.storage_id_out))] += 1;
 
                     self.state = InserterState::EmptyAndMovingBack(MOVETIME);
                 }

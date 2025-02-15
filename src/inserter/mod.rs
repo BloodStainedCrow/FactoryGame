@@ -1,5 +1,7 @@
+use std::marker::PhantomData;
+
 use crate::{
-    item::{ItemStorage, ItemTrait},
+    item::{IdxTrait, Recipe},
     power::PowerGridIdentifier,
 };
 
@@ -17,7 +19,7 @@ const_assert!(MOVETIME < 64);
 // But since Inserters are the same size, whether this is 2 or 1 byte (atleast in a Vec of Structs)
 // I will leave this be for now.
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
-enum InserterState {
+pub enum InserterState {
     Empty,
     FullAndWaitingForSlot,
     FullAndMovingOut(u8),
@@ -31,15 +33,13 @@ enum InserterState {
 // IDEA: Maybe switch the bits dynamically from storage_id to grid_id when the number of grids increases.
 // That way we support both large single grid bases and bases with many grids (though maybe not megabases with independent outposts and zero beacons)
 // TODO: This is less efficient, but should be fine for now
+// TODO: maybe do this differently
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
-pub struct StorageID {
-    pub recipe: u8,
-    pub grid: PowerGridIdentifier,
-    pub storage: u16,
-}
+pub struct StorageID<RecipeIdxType: IdxTrait> {
+    // pub grid: u16,
+    pub storage_list_idx: u16,
+    pub machine_idx: u16,
 
-pub const NUM_RECIPES: usize = 1;
-// TODO: Use ItemTrait::NUM_RECIPES once #![feature(generic_const_exprs)] is usable
-// FIXME: I swapped power_grid and recipe here, change that when indexing!!!
-//                                        power_grid recipe     assembler
-pub type Storages<'a, 'b, T: ItemTrait> = &'a mut [[&'b mut [ItemStorage<T>]; NUM_RECIPES]];
+    // TODO: Do i want to make this generic?
+    pub phantom: PhantomData<RecipeIdxType>,
+}

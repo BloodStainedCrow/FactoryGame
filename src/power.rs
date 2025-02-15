@@ -1,15 +1,18 @@
 use std::{
     cmp::{max, min},
+    default,
     iter::Sum,
-    ops::{Add, Div, Mul, Sub},
+    ops::{Add, Deref, Div, Mul, Sub},
     rc::Weak,
 };
 
-use bytemuck::TransparentWrapper;
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
 use crate::{
-    assembler::{MultiAssemblerStoreOne, MultiElectricFurnaceStore},
-    item::{BurnableItem, Coal, Copper, Gear, Iron, ItemStorage, Water, Wood},
+    assembler::FullAssemblerStore,
+    data::DataStore,
+    inserter::StorageID,
+    item::{IdxTrait, ITEMCOUNTTYPE},
     lab::MultiLabStore,
     research::TechState,
     TICKS_PER_SECOND,
@@ -24,9 +27,9 @@ const MAX_ACCUMULATOR_DISCHARGE_RATE: Watt = Watt(300_000);
 
 const MAX_ACCUMULATOR_CHARGE: Joule = Joule(5_000_000);
 
-#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
-pub struct PowerGrid {
-    pub stores: AllRecipeStores,
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct PowerGrid<RecipeIdxType: IdxTrait> {
+    pub stores: FullAssemblerStore<RecipeIdxType>,
     pub lab_stores: MultiLabStore,
     // poles: Vec<Rc<PowerPole>>, // TODO: Do i need this?
     pub steam_power_producers: SteamPowerProducerStore,
@@ -34,26 +37,112 @@ pub struct PowerGrid {
     main_accumulator_count: u64,
     main_accumulator_charge: Joule,
     // unique_accumulators: Vec<UniqueAccumulator>,
-    use_burnable_fuel_to_charge_accumulators: bool,
+    use_burnable_fuel_to_charge_accumulators: Option<BurnableFuelForAccumulators>,
+
+    last_power_consumption: Watt,
 
     last_power_mult: u8,
 }
 
-impl PowerGrid {
-    #[must_use]
-    fn new() -> Self {
-        Self {
-            stores: todo!(),
-            lab_stores: todo!(),
-            // poles: todo!(),
-            steam_power_producers: todo!(),
-            num_solar_panels: todo!(),
-            main_accumulator_count: todo!(),
-            main_accumulator_charge: todo!(),
-            use_burnable_fuel_to_charge_accumulators: todo!(),
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize, serde::Serialize)]
+enum BurnableFuelForAccumulators {
+    Yes,
+    #[default]
+    No,
+}
 
-            last_power_mult: todo!(),
+impl From<BurnableFuelForAccumulators> for bool {
+    fn from(val: BurnableFuelForAccumulators) -> Self {
+        match val {
+            BurnableFuelForAccumulators::Yes => true,
+            BurnableFuelForAccumulators::No => false,
         }
+    }
+}
+
+pub struct IndexUpdateInfo<RecipeIdxType: IdxTrait> {
+    pub old: StorageID<RecipeIdxType>,
+    pub new: StorageID<RecipeIdxType>,
+}
+
+impl<RecipeIdxType: IdxTrait> PowerGrid<RecipeIdxType> {
+    #[must_use]
+    pub fn new<ItemIdxType: IdxTrait>(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+        Self {
+            stores: FullAssemblerStore::new(data_store),
+            lab_stores: MultiLabStore::new(&data_store.science_bottle_items),
+            // poles: todo!(),
+            steam_power_producers: SteamPowerProducerStore {
+                all_producers: vec![].into_boxed_slice(),
+            },
+            num_solar_panels: 0,
+            main_accumulator_count: 0,
+            main_accumulator_charge: Joule(0),
+            use_burnable_fuel_to_charge_accumulators: None,
+
+            last_power_consumption: Watt(0),
+
+            last_power_mult: MAX_POWER_MULT,
+        }
+    }
+
+    #[must_use]
+    pub fn join<ItemIdxType: IdxTrait>(
+        self,
+        other: Self,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        self_grid: PowerGridIdentifier,
+        other_grid: PowerGridIdentifier,
+    ) -> (
+        Self,
+        impl IntoIterator<Item = IndexUpdateInfo<RecipeIdxType>>,
+    ) {
+        let mut update_vec = vec![];
+
+        let (new_stores, updates) =
+            self.stores
+                .join(other.stores, data_store, self_grid, other_grid);
+        update_vec.extend(updates);
+
+        let (new_labs, updates) = self.lab_stores.join(other.lab_stores, data_store);
+        update_vec.extend(updates);
+
+        let ret = Self {
+            stores: new_stores,
+            lab_stores: new_labs,
+            steam_power_producers: todo!(),
+            num_solar_panels: self.num_solar_panels + other.num_solar_panels,
+            main_accumulator_count: self.main_accumulator_count + other.main_accumulator_count,
+            main_accumulator_charge: (self.main_accumulator_charge * self.main_accumulator_count
+                + other.main_accumulator_charge * other.main_accumulator_count)
+                / (self.main_accumulator_count + other.main_accumulator_count),
+            use_burnable_fuel_to_charge_accumulators: match (
+                self.use_burnable_fuel_to_charge_accumulators,
+                other.use_burnable_fuel_to_charge_accumulators,
+            ) {
+                (None, None) => None,
+                (None, Some(v)) | (Some(v), None) => Some(v),
+                (Some(s), Some(o)) => {
+                    if s == o {
+                        Some(s)
+                    } else {
+                        todo!("You specified using Fuel on one power network, and not using it on another, how do I want to handle this...")
+                    }
+                },
+            },
+
+            last_power_consumption: self.last_power_consumption + other.last_power_consumption,
+            last_power_mult: {
+                // TODO: Is this exploitable? Maybe? But even if it is, it is only exploitable in an annoying and relatively useless way I think
+                if self.last_power_consumption >= other.last_power_consumption {
+                    self.last_power_mult
+                } else {
+                    other.last_power_mult
+                }
+            },
+        };
+
+        (ret, update_vec)
     }
 
     // FIXME: This is a huge, high branching function.
@@ -83,7 +172,11 @@ impl PowerGrid {
             if remaining_solar >= max_charge_amount {
                 // We already have enough power, without using burnables.
                 self.charge_by(max_charge_amount);
-            } else if self.use_burnable_fuel_to_charge_accumulators {
+            } else if self
+                .use_burnable_fuel_to_charge_accumulators
+                .unwrap_or_default()
+                .into()
+            {
                 let still_needed = max_charge_amount - remaining_solar;
 
                 let actually_extracted = self
@@ -102,7 +195,11 @@ impl PowerGrid {
         } else {
             // Not enough solar
 
-            if self.use_burnable_fuel_to_charge_accumulators {
+            if self
+                .use_burnable_fuel_to_charge_accumulators
+                .unwrap_or_default()
+                .into()
+            {
                 let still_needed = goal_amount + max_charge_amount - solar_power;
 
                 let actually_extracted = self
@@ -187,6 +284,7 @@ impl PowerGrid {
             MAX_ACCUMULATOR_CHARGE,
         );
 
+        // This is an algorithm for (kindof) handling accumulators with different charge from the "main pack"
         // while amount > MegaJoule(0) {
         //     // FIXME: This is integer division, so we lose some power here.
         //     let amount_per_accumulator = amount
@@ -249,19 +347,42 @@ impl PowerGrid {
         min(old, to_extract)
     }
 
-    pub fn update(&mut self, solar_panel_production_amount: Watt, tech_state: &TechState) -> u16 {
+    pub fn update<ItemIdxType: IdxTrait>(
+        &mut self,
+        solar_panel_production_amount: Watt,
+        tech_state: &TechState,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> u16 {
         let (power_used, (lab_power_used, tech_progress)) = rayon::join(
-            || self.stores.gears.update_branchless(self.last_power_mult),
+            || {
+                self.stores
+                    .assemblers_0_1
+                    .par_iter_mut()
+                    .map(|s| {
+                        s.update_branchless::<RecipeIdxType>(
+                            self.last_power_mult,
+                            &data_store.recipe_index_lookups,
+                            &data_store.recipe_ings.ing0,
+                            &data_store.recipe_outputs.out1,
+                            &data_store.recipe_timers,
+                        )
+                    })
+                    .sum::<Joule>()
+            },
             || {
                 self.lab_stores
                     .update(self.last_power_mult, &tech_state.current_technology)
             },
         );
 
+        self.last_power_consumption = power_used.watt_from_tick();
+
         let next_power_mult =
             self.extract_power(power_used + lab_power_used, solar_panel_production_amount);
 
-        self.last_power_mult = next_power_mult;
+        // TODO:
+        // self.last_power_mult = next_power_mult;
+        self.last_power_mult = MAX_POWER_MULT;
 
         tech_progress
     }
@@ -273,10 +394,7 @@ struct UniqueAccumulator {
 
 #[derive(Debug, Default, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SteamPowerProducerStore {
-    // TODO: etc
-    wood: MultiSteamPowerProducer<Wood>,
-    coal: MultiSteamPowerProducer<Coal>,
-    // solid_fuel: SteamPowerProducer<SolidFuel>,
+    all_producers: Box<[MultiSteamPowerProducer]>,
 }
 
 impl SteamPowerProducerStore {
@@ -289,7 +407,11 @@ impl SteamPowerProducerStore {
 
         let mut to_extract = power_needed;
         // TODO: etc
-        let num_machines = self.wood.count() + self.coal.count();
+        let num_machines: usize = self
+            .all_producers
+            .iter()
+            .map(MultiSteamPowerProducer::count)
+            .sum();
 
         if num_machines == 0 {
             // Without machines, there is no power
@@ -333,37 +455,39 @@ impl SteamPowerProducerStore {
     }
 
     fn extract_from_all(&mut self, power_needed_per_machine: Joule) -> (usize, Joule) {
-        let mut successful_count = 0;
-        let mut extracted = Joule(0);
+        let (successful_count, power_cumulative) = self
+            .all_producers
+            .iter_mut()
+            .zip(std::iter::repeat(todo!()))
+            .map(|(prod, power_for_fuel)| prod.extract(power_for_fuel, power_needed_per_machine))
+            .fold((0, Joule(0)), |acc, v| (acc.0 + v.0, acc.1 + v.1));
 
-        // TODO: etc
-        let (count, power_cumulative) = self.wood.extract(power_needed_per_machine);
-        successful_count += count;
-        extracted = extracted + power_cumulative;
-
-        let (count, power_cumulative) = self.coal.extract(power_needed_per_machine);
-        successful_count += count;
-        extracted = extracted + power_cumulative;
-
-        (successful_count, extracted)
+        (successful_count, power_cumulative)
     }
 }
 
 #[derive(Debug, Default, Clone, serde::Deserialize, serde::Serialize)]
-struct MultiSteamPowerProducer<T: BurnableItem> {
-    fuel: Vec<ItemStorage<T>>,
-    water: Vec<ItemStorage<Water>>,
+struct MultiSteamPowerProducer {
+    fuel: Vec<ITEMCOUNTTYPE>,
+    water: Vec<ITEMCOUNTTYPE>,
     stored_power: Vec<Joule>,
+
+    holes: Vec<usize>,
+    len: usize,
 }
 
-impl<T: BurnableItem> MultiSteamPowerProducer<T> {
+impl MultiSteamPowerProducer {
     fn count(&self) -> usize {
         assert_eq!(self.fuel.len(), self.water.len());
         assert_eq!(self.fuel.len(), self.stored_power.len());
         self.fuel.len()
     }
 
-    fn extract(&mut self, power_needed_per_machine: Joule) -> (usize, Joule) {
+    fn extract(
+        &mut self,
+        power_per_fuel_item: Joule,
+        power_needed_per_machine: Joule,
+    ) -> (usize, Joule) {
         let mut successful_count = 0;
         let mut extracted = Joule(0);
 
@@ -380,11 +504,11 @@ impl<T: BurnableItem> MultiSteamPowerProducer<T> {
             }
 
             // Not enough stored power
-            if *TransparentWrapper::peel_mut(fuel) > 0 && *TransparentWrapper::peel_mut(water) > 0 {
+            if *fuel > 0 && *water > 0 {
                 // Create some more
-                *TransparentWrapper::peel_mut(fuel) -= 1;
-                *TransparentWrapper::peel_mut(water) -= 1;
-                *stored_power = *stored_power + T::OUTPUT_JOULES;
+                *fuel -= 1;
+                *water -= 1;
+                *stored_power = *stored_power + power_per_fuel_item;
 
                 extracted = extracted + power_needed_per_machine;
                 successful_count += 1;
@@ -402,15 +526,6 @@ impl<T: BurnableItem> MultiSteamPowerProducer<T> {
 
 struct PowerPole {
     other_connected_poles: Vec<Weak<PowerPole>>,
-}
-
-#[derive(Debug, Default, Clone, serde::Deserialize, serde::Serialize)]
-pub struct AllRecipeStores {
-    // TODO: etc
-    // FIXME: This will be AWFUL!
-    pub iron_plates: MultiAssemblerStoreOne<Iron>,
-    pub copper_plates: MultiElectricFurnaceStore<Copper>,
-    pub gears: MultiAssemblerStoreOne<Gear>,
 }
 
 pub type PowerGridIdentifier = u8;
@@ -482,6 +597,13 @@ impl Div<u64> for Joule {
     }
 }
 
+impl Joule {
+    #[must_use]
+    pub const fn watt_from_tick(self) -> Watt {
+        Watt(self.0 * TICKS_PER_SECOND)
+    }
+}
+
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize, serde::Serialize,
 )]
@@ -530,15 +652,16 @@ mod test {
         fn test_power_grid_solar_only(num_solar in 0..1_000u64) {
             const SOLAR_POWER: Watt = Watt(1_000);
 
-            let mut power_grid = PowerGrid {
-                stores: AllRecipeStores::default(),
-                lab_stores: MultiLabStore::default(),
+            let mut power_grid = PowerGrid::<u8> {
+                stores: FullAssemblerStore::default(),
+                lab_stores: MultiLabStore::new::<u8>(&[]),
                 // poles: Vec::default(),
                 steam_power_producers: SteamPowerProducerStore::default(),
                 num_solar_panels: num_solar,
                 main_accumulator_count: 0,
                 main_accumulator_charge: Joule(0),
-                use_burnable_fuel_to_charge_accumulators: false,
+                use_burnable_fuel_to_charge_accumulators: Some(BurnableFuelForAccumulators::No),
+                last_power_consumption: Watt(0),
 
                 last_power_mult: 64
             };
@@ -550,15 +673,16 @@ mod test {
         fn test_power_grid_always_satisfies_0(num_solar in 0..1_000u64, solar_power in 0..10_000u64) {
             let solar_power: Watt = Watt(solar_power);
 
-            let mut power_grid = PowerGrid {
-                stores: AllRecipeStores::default(),
-                lab_stores: MultiLabStore::default(),
+            let mut power_grid = PowerGrid::<u8>  {
+                stores: FullAssemblerStore::default(),
+                lab_stores: MultiLabStore::new::<u8>(&[]),
                 // poles: Vec::default(),
                 steam_power_producers: SteamPowerProducerStore::default(),
                 num_solar_panels: num_solar,
                 main_accumulator_count: 0,
                 main_accumulator_charge: Joule(0),
-                use_burnable_fuel_to_charge_accumulators: false,
+                use_burnable_fuel_to_charge_accumulators: Some(BurnableFuelForAccumulators::No),
+                last_power_consumption: Watt(0),
 
                 last_power_mult: 64
             };
@@ -572,15 +696,16 @@ mod test {
 
             let needed = Joule(power_needed);
 
-            let mut power_grid = PowerGrid {
-                stores: AllRecipeStores::default(),
-                lab_stores: MultiLabStore::default(),
+            let mut power_grid = PowerGrid::<u8>  {
+                stores: FullAssemblerStore::default(),
+                lab_stores: MultiLabStore::new::<u8>(&[]),
                 // poles: Vec::default(),
                 steam_power_producers: SteamPowerProducerStore::default(),
                 num_solar_panels: num_solar,
                 main_accumulator_count: 0,
                 main_accumulator_charge: Joule(0),
-                use_burnable_fuel_to_charge_accumulators: false,
+                use_burnable_fuel_to_charge_accumulators: Some(BurnableFuelForAccumulators::No),
+                last_power_consumption: Watt(0),
 
                 last_power_mult: 64
             };

@@ -1,156 +1,439 @@
-use std::simd::cmp::SimdPartialOrd;
+use std::{array, simd::Simd};
 
-use bytemuck::TransparentWrapper;
+use itertools::Itertools;
 
 use crate::{
-    item::{BurnableItem, ItemStorage, SingleIngCraft, SmeltableItem},
-    power::{Joule, Watt, MAX_POWER_MULT},
-    producer::Simdtype,
+    data::{DataStore, ItemRecipeDir},
+    frontend::world::tile::AssemblerID,
+    item::{recipe_item_idx, IdxTrait, Item, Recipe, ITEMCOUNTTYPE},
+    power::{IndexUpdateInfo, Joule, PowerGridIdentifier, Watt, MAX_POWER_MULT},
 };
 
-#[derive(Debug, Default, Clone, serde::Deserialize, serde::Serialize)]
-pub struct MultiAssemblerStoreOne<Res: SingleIngCraft> {
-    timers: Vec<u16>,
-    input1: Vec<ItemStorage<Res::ING1>>,
-    outputs: Vec<ItemStorage<Res>>,
+pub type Simdtype = Simd<u8, 32>;
 
-    // The indices in this vec are not actually used. This is to avoid changing the ids stored in the inserters
+// TODO: Is u8 bit enough?
+pub type TIMERTYPE = u16;
+
+// TODO: Do I want these generics or just get it at runtime?
+// FIXME: We store the same slice length n times!
+// TODO: Do I want to use SimdTypes for this?
+// TODO: Don´t clump update data and data for adding/removing assemblers together!
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MultiAssemblerStore<
+    RecipeIdxType: IdxTrait,
+    const NUM_INGS: usize,
+    const NUM_OUTPUTS: usize,
+> {
+    recipe: Recipe<RecipeIdxType>,
+
+    #[serde(with = "arrays")]
+    ings: [Box<[ITEMCOUNTTYPE]>; NUM_INGS],
+    #[serde(with = "arrays")]
+    outputs: [Box<[ITEMCOUNTTYPE]>; NUM_OUTPUTS],
+    timers: Box<[TIMERTYPE]>,
+
     holes: Vec<usize>,
     len: usize,
 }
 
-#[derive(Debug, Default, Clone, serde::Deserialize, serde::Serialize)]
-pub struct MultiElectricFurnaceStore<Res: SmeltableItem> {
-    pub store: MultiAssemblerStoreOne<Res>,
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct FullAssemblerStore<RecipeIdxType: IdxTrait> {
+    pub assemblers_0_1: Box<[MultiAssemblerStore<RecipeIdxType, 0, 1>]>,
 }
 
-#[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
-pub struct MultiFurnaceStore<Res: SmeltableItem, Fuel: BurnableItem> {
-    timers: Vec<u16>,
-    fuel: Vec<ItemStorage<Fuel>>,
-    input: Vec<ItemStorage<Res::ING1>>,
-    outputs: Vec<ItemStorage<Res>>,
+#[derive(Debug, Clone)]
+pub struct AssemblerOnclickInfo<ItemIdxType: IdxTrait> {
+    inputs: Vec<(Item<ItemIdxType>, ITEMCOUNTTYPE)>,
+    outputs: Vec<(Item<ItemIdxType>, ITEMCOUNTTYPE)>,
+    timer_percentage: f32,
+}
 
-    // The indices in this vec are not actually used. This is to avoid changing the ids stored in the inserters etc
-    holes: Vec<usize>,
-    len: usize,
+impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
+    #[must_use]
+    pub fn new<ItemIdxType: IdxTrait>(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+        let assemblers_0_1 = data_store
+            .ing_out_num_to_recipe
+            .get(&(0, 1))
+            .unwrap()
+            .iter()
+            .map(|r| MultiAssemblerStore::new(*r))
+            .collect();
+
+        Self { assemblers_0_1 }
+    }
+
+    #[must_use]
+    pub fn join<ItemIdxType: IdxTrait>(
+        self,
+        other: Self,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        self_grid: PowerGridIdentifier,
+        other_grid: PowerGridIdentifier,
+    ) -> (
+        Self,
+        impl IntoIterator<Item = IndexUpdateInfo<RecipeIdxType>>,
+    ) {
+        let mut idx_update = vec![];
+
+        let ret = Self {
+            // TODO: This just works with box::into_iter in edition 2024
+            assemblers_0_1: self
+                .assemblers_0_1
+                .into_vec()
+                .into_iter()
+                .zip(other.assemblers_0_1.into_vec())
+                .map(|(a, b)| a.join(b, data_store, self_grid, other_grid))
+                .map(|(store, updates)| {
+                    idx_update.extend(updates);
+                    store
+                })
+                .collect(),
+        };
+
+        (ret, idx_update)
+    }
+
+    pub fn get_info<ItemIdxType: IdxTrait>(
+        &self,
+        assembler_id: AssemblerID<RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> AssemblerOnclickInfo<ItemIdxType> {
+        let recipe_id = assembler_id.recipe.id.into();
+
+        match (
+            data_store.recipe_num_ing_lookup[recipe_id],
+            data_store.recipe_num_out_lookup[recipe_id],
+        ) {
+            (0, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_0_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]].recipe
+                );
+
+                self.assemblers_0_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .get_info(assembler_id.assembler_index, data_store)
+            },
+
+            _ => unreachable!(),
+        }
+    }
+}
+
+pub type SingleItemSlice<'a, 'b> = &'a mut [&'b mut [u8]];
+
+// FIXME:
+// fn get_slice_for_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+//     item: Item<ITEMCOUNTTYPE>,
+//     assemblers: &'a mut FullAssemblerStore<RecipeIdxType>,
+//     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+// ) -> SingleItemSlice<'a, 'a> {
+//     let res: Vec<&mut Vec<u8>> = assemblers
+//         .iter_mut()
+//         .flat_map(|store| {
+//             let idx = recipe_item_idx(recipe, item);
+//             idx.map(|idx| &mut store.ings[idx])
+//         })
+//         .collect();
+
+//     // lifetime!
+//     // We can´t return this out of a function
+//     &mut res
+// }
+
+// ALTERNATIVE
+// This has the alternative of having the lookup for inserters ready
+// struct AssemblerItemStores {
+//     stores: [(
+//         [Vec<ITEMCOUNTTYPE>; NUM_RECIPES_ITEM_INGS],
+//         [Vec<ITEMCOUNTTYPE>; NUM_RECIPES_ITEM_OUTPUT],
+//     ); NUM_ITEMS],
+// }
+
+// struct MultiAssemblerTest {
+//     recipe: (),
+//     timers: Vec<TIMERTYPE>,
+// }
+
+pub struct AssemblerRemovalInfo<const NUM_INGS: usize, const NUM_OUTPUTS: usize> {
+    ings: [ITEMCOUNTTYPE; NUM_INGS],
+    outputs: [ITEMCOUNTTYPE; NUM_OUTPUTS],
 }
 
 // TODO: Maybe also add a defragmentation routine to mend the ineffeciencies left by deconstruction large amounts of assemblers
-impl<Res: SingleIngCraft> MultiAssemblerStoreOne<Res> {
+impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
+    MultiAssemblerStore<RecipeIdxType, NUM_INGS, NUM_OUTPUTS>
+{
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new(recipe: Recipe<RecipeIdxType>) -> Self {
         Self {
-            timers: vec![],
-            input1: vec![],
-            outputs: vec![],
+            recipe,
+
+            ings: array::from_fn(|_| vec![].into_boxed_slice()),
+            outputs: array::from_fn(|_| vec![].into_boxed_slice()),
+            timers: vec![].into_boxed_slice(),
 
             holes: vec![],
             len: 0,
         }
     }
 
-    /// # Panics
-    /// If `power_mult` > 64
-    pub fn update(&mut self, power_mult: u8) {
-        const TICKS_PER_CREATE: u16 = 64;
-        if power_mult == 0 {
-            return;
-        }
+    // TODO: Properly test this!
+    pub fn join<ItemIdxType: IdxTrait>(
+        self,
+        other: Self,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        self_grid: PowerGridIdentifier,
+        other_grid: PowerGridIdentifier,
+    ) -> (
+        Self,
+        impl IntoIterator<Item = IndexUpdateInfo<RecipeIdxType>>,
+    ) {
+        assert_eq!(self.recipe, other.recipe);
+        let mut update_vec = vec![];
 
-        assert!(power_mult <= 64);
-
-        assert_eq!(self.outputs.len(), self.timers.len());
-        assert_eq!(self.input1.len(), self.timers.len());
-        assert!(self.outputs.len() % Simdtype::LEN == 0);
-
-        // TODO: Make these dependent on the recipe
-        let ing1_amount: Simdtype = Simdtype::splat(2);
-        let res_amount: Simdtype = Simdtype::splat(1);
-        let timer_increase: Simdtype =
-            Simdtype::splat((u16::from(power_mult) * 512) / TICKS_PER_CREATE * 2);
-        let max_stack_size: Simdtype = Simdtype::splat(Res::MAX_STACK_SIZE);
-
-        for i in (0..self
-            .outputs
-            .len()
-            .min(self.len - (self.len % Simdtype::LEN)))
-            .step_by(Simdtype::LEN)
+        for (new_offs, (idx, _)) in other
+            .timers
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !other.holes.contains(i))
+            .enumerate()
         {
-            let input = Simdtype::from_slice(ItemStorage::<Res::ING1>::peel_slice(
-                self.input1.split_at(i).1,
-            ));
+            for (dir, item) in data_store.recipe_to_items.get(&self.recipe).unwrap() {
+                let old_id = data_store
+                    .get_storage_id_for_assembler(
+                        *dir,
+                        *item,
+                        AssemblerID {
+                            recipe: other.recipe,
+                            grid: other_grid,
+                            assembler_index: idx.try_into().unwrap(),
+                        },
+                    )
+                    .unwrap();
 
-            let output =
-                Simdtype::from_slice(ItemStorage::<Res>::peel_slice(self.outputs.split_at(i).1));
+                let new_id = data_store
+                    .get_storage_id_for_assembler(
+                        *dir,
+                        *item,
+                        AssemblerID {
+                            recipe: other.recipe,
+                            grid: self_grid,
+                            assembler_index: (self.timers.len() + new_offs).try_into().unwrap(),
+                        },
+                    )
+                    .unwrap();
 
-            let timer = Simdtype::from_slice(self.timers.split_at(i).1);
-
-            let enough_items_mask = input.simd_ge(ing1_amount);
-
-            let new_timer = enough_items_mask.select(timer + timer_increase, timer);
-
-            // We had a wrap, so we produce
-            // Since the timer only changes whenever we have enough items this masks is both for enough time and input items
-            let produce_mask = new_timer.simd_lt(timer);
-
-            let space_mask = output.simd_lt(max_stack_size);
-
-            let space_time_mask = produce_mask & space_mask;
-
-            // This can never wrap, since we check we have enough items before
-            let new_ing1_amount = space_time_mask.select(input - ing1_amount, input);
-            let new_output = space_time_mask.select(output + res_amount, output);
-
-            Simdtype::copy_to_slice(
-                new_output,
-                ItemStorage::<Res>::peel_slice_mut(self.outputs.split_at_mut(i).1),
-            );
-
-            Simdtype::copy_to_slice(
-                new_ing1_amount,
-                ItemStorage::<Res::ING1>::peel_slice_mut(self.input1.split_at_mut(i).1),
-            );
-
-            Simdtype::copy_to_slice(new_timer, self.timers.split_at_mut(i).1);
-        }
-    }
-
-    // TODO: Currently this is the only routine with any kind of power calculations.
-    /// # Panics
-    /// If `power_mult` > 64
-    pub fn update_simple(&mut self, power_mult: u8) {
-        if power_mult == 0 {
-            return;
-        }
-
-        assert!(power_mult <= 64);
-
-        assert_eq!(self.outputs.len(), self.timers.len());
-        assert_eq!(self.input1.len(), self.timers.len());
-        assert!(self.outputs.len() % Simdtype::LEN == 0);
-
-        let increase = (u16::from(power_mult) * 512) / Res::TIME_TO_CRAFT * 2;
-
-        for (output, (input1, timer)) in self
-            .outputs
-            .iter_mut()
-            .zip(self.input1.iter_mut().zip(self.timers.iter_mut()))
-        {
-            if *ItemStorage::<Res::ING1>::peel_mut(input1) >= Res::AMOUNT1 {
-                let new_timer = timer.wrapping_add(increase);
-                if *timer < new_timer {
-                    // We should produce
-                    if *ItemStorage::<Res>::peel_mut(output) + Res::OUTPUT_AMOUNT
-                        <= Res::MAX_STACK_SIZE
-                    {
-                        *ItemStorage::<Res>::peel_mut(output) += Res::OUTPUT_AMOUNT;
-                        *ItemStorage::<Res::ING1>::peel_mut(input1) -= Res::AMOUNT1;
-                    }
-                }
+                update_vec.push(IndexUpdateInfo {
+                    old: old_id,
+                    new: new_id,
+                });
             }
         }
+
+        let new_ings = self
+            .ings
+            .into_iter()
+            .zip(other.ings)
+            .map(|(s, o)| {
+                let mut s = s.into_vec();
+                s.extend(
+                    o.into_vec()
+                        .into_iter()
+                        .enumerate()
+                        .filter(|(i, _)| !other.holes.contains(i))
+                        .map(|(_, v)| v),
+                );
+                s.into_boxed_slice()
+            })
+            .collect_array()
+            .unwrap();
+        let new_outputs = self
+            .outputs
+            .into_iter()
+            .zip(other.outputs)
+            .map(|(s, o)| {
+                let mut s = s.into_vec();
+                s.extend(
+                    o.into_vec()
+                        .into_iter()
+                        .enumerate()
+                        .filter(|(i, _)| !other.holes.contains(i))
+                        .map(|(_, v)| v),
+                );
+                s.into_boxed_slice()
+            })
+            .collect_array()
+            .unwrap();
+        let mut new_timers = self.timers.into_vec();
+        new_timers.extend(
+            other
+                .timers
+                .into_vec()
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        let ret = Self {
+            recipe: self.recipe,
+            ings: new_ings,
+            outputs: new_outputs,
+            timers: new_timers.into(),
+            holes: self.holes,
+            len: 0,
+        };
+
+        (ret, update_vec)
     }
+
+    fn get_info<ItemIdxType: IdxTrait>(
+        &self,
+        index: u16,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> AssemblerOnclickInfo<ItemIdxType> {
+        let items = data_store.recipe_to_items.get(&self.recipe).unwrap();
+
+        AssemblerOnclickInfo {
+            inputs: self
+                .ings
+                .iter()
+                .map(|ings| ings[index as usize])
+                .enumerate()
+                .map(|(item_idx, num_ings)| {
+                    (
+                        items
+                            .iter()
+                            .filter(|(dir, _)| *dir == ItemRecipeDir::Ing)
+                            .nth(item_idx)
+                            .unwrap()
+                            .1,
+                        num_ings,
+                    )
+                })
+                .collect(),
+            outputs: self
+                .outputs
+                .iter()
+                .map(|outputs| outputs[index as usize])
+                .enumerate()
+                .map(|(item_idx, num_outputs)| {
+                    (
+                        items
+                            .iter()
+                            .filter(|(dir, _)| *dir == ItemRecipeDir::Out)
+                            .nth(item_idx)
+                            .unwrap()
+                            .1,
+                        num_outputs,
+                    )
+                })
+                .collect(),
+            timer_percentage: f32::from(self.timers[index as usize]) / f32::from(TIMERTYPE::MAX),
+        }
+    }
+
+    /// # Panics
+    /// If `power_mult` > 64
+    // pub fn update(&mut self, power_mult: u8) {
+    //     const TICKS_PER_CREATE: u16 = 64;
+    //     if power_mult == 0 {
+    //         return;
+    //     }
+
+    //     assert!(power_mult <= 64);
+
+    //     assert_eq!(self.outputs.len(), self.timers.len());
+    //     assert_eq!(self.input1.len(), self.timers.len());
+    //     assert!(self.outputs.len() % Simdtype::LEN == 0);
+
+    //     // TODO: Make these dependent on the recipe
+    //     let ing1_amount: Simdtype = Simdtype::splat(2);
+    //     let res_amount: Simdtype = Simdtype::splat(1);
+    //     let timer_increase: Simdtype =
+    //         Simdtype::splat((u16::from(power_mult) * 512) / TICKS_PER_CREATE * 2);
+    //     let max_stack_size: Simdtype = Simdtype::splat(Res::MAX_STACK_SIZE);
+
+    //     for i in (0..self
+    //         .outputs
+    //         .len()
+    //         .min(self.len - (self.len % Simdtype::LEN)))
+    //         .step_by(Simdtype::LEN)
+    //     {
+    //         let input = Simdtype::from_slice(ItemStorage::<Res::ING1>::peel_slice(
+    //             self.input1.split_at(i).1,
+    //         ));
+
+    //         let output =
+    //             Simdtype::from_slice(ItemStorage::<Res>::peel_slice(self.outputs.split_at(i).1));
+
+    //         let timer = Simdtype::from_slice(self.timers.split_at(i).1);
+
+    //         let enough_items_mask = input.simd_ge(ing1_amount);
+
+    //         let new_timer = enough_items_mask.select(timer + timer_increase, timer);
+
+    //         // We had a wrap, so we produce
+    //         // Since the timer only changes whenever we have enough items this masks is both for enough time and input items
+    //         let produce_mask = new_timer.simd_lt(timer);
+
+    //         let space_mask = output.simd_lt(max_stack_size);
+
+    //         let space_time_mask = produce_mask & space_mask;
+
+    //         // This can never wrap, since we check we have enough items before
+    //         let new_ing1_amount = space_time_mask.select(input - ing1_amount, input);
+    //         let new_output = space_time_mask.select(output + res_amount, output);
+
+    //         Simdtype::copy_to_slice(
+    //             new_output,
+    //             ItemStorage::<Res>::peel_slice_mut(self.outputs.split_at_mut(i).1),
+    //         );
+
+    //         Simdtype::copy_to_slice(
+    //             new_ing1_amount,
+    //             ItemStorage::<Res::ING1>::peel_slice_mut(self.input1.split_at_mut(i).1),
+    //         );
+
+    //         Simdtype::copy_to_slice(new_timer, self.timers.split_at_mut(i).1);
+    //     }
+    // }
+
+    // // TODO: Currently this is the only routine with any kind of power calculations.
+    // /// # Panics
+    // /// If `power_mult` > 64
+    // pub fn update_simple(&mut self, power_mult: u8) {
+    //     if power_mult == 0 {
+    //         return;
+    //     }
+
+    //     assert!(power_mult <= 64);
+
+    //     assert_eq!(self.outputs.len(), self.timers.len());
+    //     assert_eq!(self.input1.len(), self.timers.len());
+    //     assert!(self.outputs.len() % Simdtype::LEN == 0);
+
+    //     let increase = (u16::from(power_mult) * 512) / Res::TIME_TO_CRAFT * 2;
+
+    //     for (output, (input1, timer)) in self
+    //         .outputs
+    //         .iter_mut()
+    //         .zip(self.input1.iter_mut().zip(self.timers.iter_mut()))
+    //     {
+    //         if *ItemStorage::<Res::ING1>::peel_mut(input1) >= Res::AMOUNT1 {
+    //             let new_timer = timer.wrapping_add(increase);
+    //             if *timer < new_timer {
+    //                 // We should produce
+    //                 if *ItemStorage::<Res>::peel_mut(output) + Res::OUTPUT_AMOUNT
+    //                     <= Res::MAX_STACK_SIZE
+    //                 {
+    //                     *ItemStorage::<Res>::peel_mut(output) += Res::OUTPUT_AMOUNT;
+    //                     *ItemStorage::<Res::ING1>::peel_mut(input1) -= Res::AMOUNT1;
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
 
     #[inline(never)]
     // TODO: Do i want this to also do the power calculation, or will that be done in another step?
@@ -158,9 +441,21 @@ impl<Res: SingleIngCraft> MultiAssemblerStoreOne<Res> {
     // TODO: Write tests to ensure this works as expected.
     /// # Panics
     /// If `power_mult` > `MAX_POWER_MULT` = 64
-    pub fn update_branchless(&mut self, power_mult: u8) -> Joule {
+    pub fn update_branchless<ItemIdxType: IdxTrait>(
+        &mut self,
+        power_mult: u8,
+        recipe_lookup: &[(usize, usize)],
+        recipe_ings: &[[ITEMCOUNTTYPE; NUM_INGS]],
+        recipe_outputs: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
+        times: &[TIMERTYPE],
+    ) -> Joule {
         const POWER_DRAIN: Watt = Watt(2_500);
         const POWER_CONSUMPTION: Watt = Watt(75_000);
+
+        let (ing_idx, out_idx) = recipe_lookup[self.recipe.id.into()];
+
+        let our_ings: &[ITEMCOUNTTYPE; NUM_INGS] = &recipe_ings[ing_idx];
+        let our_outputs: &[ITEMCOUNTTYPE; NUM_OUTPUTS] = &recipe_outputs[out_idx];
 
         // TODO: For SOME reason, this is actually faster if this is a u32.
         // It is also better, since it allows possibly having more than u16::max assembers of a single recipe
@@ -175,44 +470,65 @@ impl<Res: SingleIngCraft> MultiAssemblerStoreOne<Res> {
 
         debug_assert!(power_mult <= MAX_POWER_MULT);
 
-        assert_eq!(self.outputs.len(), self.timers.len());
-        assert_eq!(self.input1.len(), self.timers.len());
-        assert!(self.outputs.len() % Simdtype::LEN == 0);
+        // FIXME:
+        // assert_eq!(self.outputs.len(), self.timers.len());
+        // assert_eq!(self.input1.len(), self.timers.len());
+        // assert!(self.outputs.len() % Simdtype::LEN == 0);
 
         // TODO: This does not round correctly
-        let increase =
-            (u16::from(power_mult) * (u16::MAX / u16::from(MAX_POWER_MULT))) / Res::TIME_TO_CRAFT;
+        let increase: TIMERTYPE = (TIMERTYPE::from(power_mult)
+            * (TIMERTYPE::MAX / TIMERTYPE::from(MAX_POWER_MULT)))
+            / times[self.recipe.id.into()];
 
         // TODO: I don't think this holds anymore, now that we cannot bail early at 0 power_mult
         // debug_assert!(increase > 0);
 
-        for (output, (input1, timer)) in self
-            .outputs
-            .iter_mut()
-            .zip(self.input1.iter_mut().zip(self.timers.iter_mut()))
+        let ings_arr = ZipArray {
+            array: self.ings.each_mut().map(|r| r.iter_mut()),
+        };
+
+        let outputs_arr = ZipArray {
+            array: self.outputs.each_mut().map(|r| r.iter_mut()),
+        };
+
+        for (mut outputs, (mut ings, timer)) in
+            outputs_arr.zip(ings_arr.zip(self.timers.iter_mut()))
         {
-            let ing1_mul = u16::from(*ItemStorage::<Res::ING1>::peel_mut(input1) >= Res::AMOUNT1);
-            let new_timer_output_space = timer.wrapping_add(increase * ing1_mul);
-            let new_timer_output_full = timer.saturating_add(increase * ing1_mul);
+            let ing_mul = ings
+                .iter()
+                .zip(our_ings.iter())
+                .fold(1, |acc, (have, want)| acc * u16::from(**have >= *want));
+            let new_timer_output_space = timer.wrapping_add(increase * ing_mul);
+            let new_timer_output_full = timer.saturating_add(increase * ing_mul);
 
-            let space_mul = u16::from(
-                *ItemStorage::<Res>::peel_mut(output) + Res::OUTPUT_AMOUNT <= Res::MAX_STACK_SIZE,
-            );
+            let space_mul: u8 =
+                outputs
+                    .iter()
+                    .zip(our_outputs.iter())
+                    .fold(1, |acc, (have, new_from_recipe)| {
+                        // TODO: 100 output amount hardcoded!!!!
+                        acc * u8::from((**have + *new_from_recipe) <= 100)
+                    });
 
-            let new_timer =
-                new_timer_output_space * space_mul + new_timer_output_full * (1 - space_mul);
+            let new_timer = new_timer_output_space * u16::from(space_mul)
+                + new_timer_output_full * (1 - u16::from(space_mul));
 
-            let timer_mul = u16::from(*timer < new_timer);
+            let timer_mul: u8 = (new_timer < *timer).into();
 
-            let work_done_mul = u16::from(*timer != new_timer);
+            // let work_done_mul = (*timer != new_timer).into();
 
             // Power calculation
             // We use power if any work was done
-            running += u32::from(work_done_mul);
+            running += u32::from(*timer != new_timer);
 
             *timer = new_timer;
-            *ItemStorage::<Res>::peel_mut(output) += timer_mul * space_mul * Res::OUTPUT_AMOUNT;
-            *ItemStorage::<Res::ING1>::peel_mut(input1) -= Res::AMOUNT1 * timer_mul * space_mul;
+            outputs
+                .iter_mut()
+                .zip(our_outputs.iter())
+                .for_each(|(output, new)| **output += timer_mul * space_mul * new);
+            ings.iter_mut()
+                .zip(our_ings.iter())
+                .for_each(|(ing, used)| **ing -= timer_mul * space_mul * used);
         }
 
         POWER_DRAIN.joules_per_tick()
@@ -220,70 +536,136 @@ impl<Res: SingleIngCraft> MultiAssemblerStoreOne<Res> {
             + POWER_CONSUMPTION.joules_per_tick() * running.into()
     }
 
-    pub fn get_outputs_mut(&mut self) -> &mut [ItemStorage<Res>] {
-        &mut self.outputs
+    pub fn get_outputs_mut(&mut self, idx: usize) -> &mut [ITEMCOUNTTYPE] {
+        &mut self.outputs[idx]
     }
 
-    pub fn get_inputs_1_mut(&mut self) -> &mut [ItemStorage<Res::ING1>] {
-        &mut self.input1
+    pub fn get_ings_mut(&mut self, idx: usize) -> &mut [ITEMCOUNTTYPE] {
+        &mut self.ings[idx]
     }
 
-    pub fn get_output_mut(&mut self, index: usize) -> Option<&mut ItemStorage<Res>> {
+    pub fn get_output_mut(
+        &mut self,
+        output_idx: usize,
+        index: usize,
+    ) -> Option<&mut ITEMCOUNTTYPE> {
         if index < self.len {
-            Some(&mut self.outputs[index])
+            Some(&mut self.outputs[output_idx][index])
         } else {
             None
         }
     }
 
-    pub fn get_output(&self, index: usize) -> Option<&ItemStorage<Res>> {
+    pub fn get_output(&self, output_idx: usize, index: usize) -> Option<&ITEMCOUNTTYPE> {
         if index < self.len {
-            Some(&self.outputs[index])
+            Some(&self.outputs[output_idx][index])
         } else {
             None
         }
     }
 
-    pub fn get_input_1_mut(&mut self, index: usize) -> Option<&mut ItemStorage<Res::ING1>> {
+    pub fn get_ing_mut(&mut self, input_idx: usize, index: usize) -> Option<&mut ITEMCOUNTTYPE> {
         if index < self.len {
-            Some(&mut self.input1[index])
+            Some(&mut self.ings[input_idx][index])
         } else {
             None
         }
     }
 
     /// The caller must make sure, that this index is not used in any other machine, since it will either crash/work on a nonexistant Assembler or be reused for another machine!
-    pub fn remove_assembler(&mut self, index: usize) {
+    pub fn remove_assembler(
+        &mut self,
+        index: usize,
+    ) -> AssemblerRemovalInfo<NUM_INGS, NUM_OUTPUTS> {
         debug_assert!(!self.holes.contains(&index));
         self.holes.push(index);
+
+        AssemblerRemovalInfo {
+            ings: array::from_fn(|i| self.ings[i][index]),
+            outputs: array::from_fn(|i| self.outputs[i][index]),
+        }
     }
 
     pub fn add_assembler(&mut self) -> usize {
-        debug_assert_eq!(self.outputs.len(), self.timers.len());
-        debug_assert_eq!(self.input1.len(), self.timers.len());
-        debug_assert!(self.outputs.len() % Simdtype::LEN == 0);
+        // TODO: Is 0 the correct initial timer value?
+        self.add_assembler_with_data(array::from_fn(|i| 0), array::from_fn(|i| 0), 0)
+    }
+
+    fn add_assembler_with_data(
+        &mut self,
+        ings: [ITEMCOUNTTYPE; NUM_INGS],
+        out: [ITEMCOUNTTYPE; NUM_OUTPUTS],
+        timer: TIMERTYPE,
+    ) -> usize {
+        let len = self.timers.len();
+        debug_assert!(len % Simdtype::LEN == 0);
+
+        for output in &self.outputs {
+            debug_assert_eq!(output.len(), len);
+        }
+
+        for ing in &self.ings {
+            debug_assert_eq!(ing.len(), len);
+        }
 
         if let Some(hole_index) = self.holes.pop() {
             // TODO: This is scatter assemblers which are close around the vec which is bad for cache locality
-            self.outputs[hole_index] = ItemStorage::<Res>::new(0);
-            self.input1[hole_index] = ItemStorage::<Res::ING1>::new(0);
+            for (output, new_val) in self.outputs.iter_mut().zip(out) {
+                output[hole_index] = new_val;
+            }
+            for (ing, new_val) in self.ings.iter_mut().zip(ings) {
+                ing[hole_index] = new_val;
+            }
             self.timers[hole_index] = 0;
             return hole_index;
         }
 
-        if self.len == self.outputs.len() {
+        if self.len == self.outputs[0].len() {
             // We need to grow
-            self.outputs
-                .resize_with(self.len + Simdtype::LEN, || ItemStorage::<Res>::new(0));
-            self.input1.resize_with(self.len + Simdtype::LEN, || {
-                ItemStorage::<Res::ING1>::new(0)
+            // TODO: This works on the assumption that Vec::into_boxed_slice does not reallocate,
+            //       If it does, this code is still correct but horribly slow
+            let mut new_len = None;
+
+            take_mut::take(&mut self.outputs[0], |output| {
+                let mut output = output.into_vec();
+                output.reserve(Simdtype::LEN);
+                new_len = Some(output.capacity());
+                output.into_boxed_slice()
             });
-            self.timers
-                .resize(self.len + Simdtype::LEN, Res::TIME_TO_CRAFT);
+
+            let new_len = new_len.expect("closure did not run?!?!");
+
+            // Resize all to that size
+            // FIXME: take_mut means that if we panic inside, we will ABORT instead of unrolling!
+            for (output, new_val) in self.outputs.iter_mut().zip(out) {
+                take_mut::take(output, |output| {
+                    let mut output = output.into_vec();
+                    output.resize(new_len, new_val);
+                    output.into_boxed_slice()
+                });
+            }
+
+            for (ing, new_val) in self.ings.iter_mut().zip(ings) {
+                take_mut::take(ing, |ing| {
+                    let mut ing = ing.into_vec();
+                    ing.resize(new_len, new_val);
+                    ing.into_boxed_slice()
+                });
+            }
+
+            take_mut::take(&mut self.timers, |timers| {
+                let mut timers = timers.into_vec();
+                timers.resize(new_len, timer);
+                timers.into_boxed_slice()
+            });
         } else {
-            self.outputs[self.len] = ItemStorage::<Res>::new(0);
-            self.input1[self.len] = ItemStorage::<Res::ING1>::new(0);
-            self.timers[self.len] = 0;
+            for (output, new_val) in self.outputs.iter_mut().zip(out) {
+                output[self.len] = new_val;
+            }
+            for (ing, new_val) in self.ings.iter_mut().zip(ings) {
+                ing[self.len] = new_val;
+            }
+            self.timers[self.len] = timer;
         }
 
         self.len += 1;
@@ -291,154 +673,74 @@ impl<Res: SingleIngCraft> MultiAssemblerStoreOne<Res> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::hint::black_box;
+pub struct ZipArray<T, const N: usize> {
+    pub(crate) array: [T; N],
+}
 
-    use crate::item::{Iron, IronOre};
+pub fn zip_array<T: Iterator, const N: usize>(array: [T; N]) -> ZipArray<T, N> {
+    ZipArray { array }
+}
 
-    use super::*;
-    extern crate test;
-    use rand::random;
-    use test::Bencher;
+impl<T: Iterator, const N: usize> Iterator for ZipArray<T, N> {
+    type Item = [T::Item; N];
 
-    #[bench]
-    fn bench_1_000_000_assembler_update_hard_simd(b: &mut Bencher) {
-        let mut multi_store = MultiAssemblerStoreOne::<Iron>::new();
+    fn next(&mut self) -> Option<Self::Item> {
+        self.array.each_mut().try_map(std::iter::Iterator::next)
+    }
+}
 
-        for i in 0..1_000_000 {
-            multi_store.add_assembler();
-            *multi_store.get_input_1_mut(i).expect("Hardcoded") =
-                ItemStorage::<IronOre>::new(random());
+mod arrays {
+    use std::{convert::TryInto, marker::PhantomData};
+
+    use serde::{
+        de::{SeqAccess, Visitor},
+        ser::SerializeTuple,
+        Deserialize, Deserializer, Serialize, Serializer,
+    };
+    pub fn serialize<S: Serializer, T: Serialize, const N: usize>(
+        data: &[T; N],
+        ser: S,
+    ) -> Result<S::Ok, S::Error> {
+        let mut s = ser.serialize_tuple(N)?;
+        for item in data {
+            s.serialize_element(item)?;
         }
-
-        b.iter(|| {
-            black_box(&mut multi_store).update(64);
-        });
+        s.end()
     }
 
-    #[bench]
-    fn bench_1_000_000_assembler_update_simple(b: &mut Bencher) {
-        let mut multi_store = MultiAssemblerStoreOne::<Iron>::new();
+    struct ArrayVisitor<T, const N: usize>(PhantomData<T>);
 
-        for i in 0..1_000_000 {
-            multi_store.add_assembler();
-            *multi_store.get_input_1_mut(i).expect("Hardcoded") =
-                ItemStorage::<IronOre>::new(random());
+    impl<'de, T, const N: usize> Visitor<'de> for ArrayVisitor<T, N>
+    where
+        T: Deserialize<'de>,
+    {
+        type Value = [T; N];
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str(&format!("an array of length {N}"))
         }
 
-        b.iter(|| {
-            black_box(&mut multi_store).update_simple(64);
-        });
-    }
-
-    #[bench]
-    fn bench_1_000_000_assembler_update_branchless(b: &mut Bencher) {
-        let mut multi_store = MultiAssemblerStoreOne::<Iron>::new();
-
-        for i in 0..1_000_000 {
-            multi_store.add_assembler();
-            *multi_store.get_input_1_mut(i).expect("Hardcoded") =
-                ItemStorage::<IronOre>::new(random());
-        }
-
-        b.iter(|| {
-            black_box(&mut multi_store).update_branchless(64);
-        });
-    }
-
-    #[bench]
-    fn bench_250_000_assembler_update(b: &mut Bencher) {
-        let mut multi_store = MultiAssemblerStoreOne::<Iron>::new();
-
-        for _ in 0..250_000 {
-            multi_store.add_assembler();
-        }
-
-        b.iter(|| {
-            black_box(&mut multi_store).update_branchless(64);
-        });
-    }
-
-    #[bench]
-    fn bench_8_000_assembler_update(b: &mut Bencher) {
-        let mut multi_store = MultiAssemblerStoreOne::<Iron>::new();
-
-        for _ in 0..8_000 {
-            multi_store.add_assembler();
-        }
-
-        b.iter(|| {
-            black_box(&mut multi_store).update_branchless(64);
-        });
-    }
-
-    #[bench]
-    fn bench_800_multi_assembler_with_10_each(b: &mut Bencher) {
-        let mut multi_stores = vec![];
-
-        for _ in 0..800 {
-            multi_stores.push(MultiAssemblerStoreOne::<Iron>::new());
-        }
-
-        for store in &mut multi_stores {
-            for i in 0..10 {
-                store.add_assembler();
-                *store.get_input_1_mut(i).expect("Hardcoded") =
-                    ItemStorage::<IronOre>::new(random());
+        #[inline]
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: SeqAccess<'de>,
+        {
+            // can be optimized using MaybeUninit
+            let mut data = Vec::with_capacity(N);
+            for _ in 0..N {
+                match (seq.next_element())? {
+                    Some(val) => data.push(val),
+                    None => return Err(serde::de::Error::invalid_length(N, &self)),
+                }
             }
+            data.try_into().map_or_else(|_| unreachable!(), Ok)
         }
-
-        b.iter(|| {
-            for store in &mut multi_stores {
-                black_box(store).update_branchless(64);
-            }
-        });
     }
-
-    #[bench]
-    fn bench_1000_multi_assembler_with_1000_each(b: &mut Bencher) {
-        let mut multi_stores = vec![];
-
-        for _ in 0..1000 {
-            multi_stores.push(MultiAssemblerStoreOne::<Iron>::new());
-        }
-
-        for store in &mut multi_stores {
-            for i in 0..1000 {
-                store.add_assembler();
-                *store.get_input_1_mut(i).expect("Hardcoded") =
-                    ItemStorage::<IronOre>::new(random());
-            }
-        }
-
-        b.iter(|| {
-            for store in &mut multi_stores {
-                black_box(store).update_branchless(64);
-            }
-        });
-    }
-
-    #[bench]
-    fn bench_250_multi_assembler_with_100_000_each(b: &mut Bencher) {
-        let mut multi_stores = vec![];
-
-        for _ in 0..250 {
-            multi_stores.push(MultiAssemblerStoreOne::<Iron>::new());
-        }
-
-        for store in &mut multi_stores {
-            for i in 0..100_000 {
-                store.add_assembler();
-                *store.get_input_1_mut(i).expect("Hardcoded") =
-                    ItemStorage::<IronOre>::new(random());
-            }
-        }
-
-        b.iter(|| {
-            for store in &mut multi_stores {
-                black_box(store).update_branchless(64);
-            }
-        });
+    pub fn deserialize<'de, D, T, const N: usize>(deserializer: D) -> Result<[T; N], D::Error>
+    where
+        D: Deserializer<'de>,
+        T: Deserialize<'de>,
+    {
+        deserializer.deserialize_tuple(N, ArrayVisitor::<T, N>(PhantomData))
     }
 }

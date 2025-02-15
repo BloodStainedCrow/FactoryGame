@@ -3,16 +3,21 @@ use std::collections::HashSet;
 use log::warn;
 use winit::keyboard::KeyCode;
 
-use crate::frontend::{
-    action::{
-        place_entity::{EntityPlaceOptions, PlaceEntityInfo},
-        place_tile::{PlaceFloorTileByHandInfo, PlaceFloorTileGhostInfo},
+use crate::{
+    frontend::{
+        action::{
+            place_entity::{EntityPlaceOptions, PlaceEntityInfo},
+            place_tile::{PlaceFloorTileByHandInfo, PlaceFloorTileGhostInfo},
+            set_recipe::SetRecipeInfo,
+        },
+        input::Input,
+        world::{
+            self,
+            tile::{Dir, Entity, FloorTile, PlaceEntityType, World},
+            Position,
+        },
     },
-    input::Input,
-    world::{
-        tile::{Dir, FloorTile, PlaceEntityType, World},
-        Position,
-    },
+    item::{IdxTrait, Item, Recipe},
 };
 
 use super::{place_tile::PositionInfo, ActionType};
@@ -20,33 +25,33 @@ use super::{place_tile::PositionInfo, ActionType};
 const MIN_ZOOM_WIDTH: f32 = 1.0;
 pub const WIDTH_PER_LEVEL: usize = 16;
 
-pub struct ActionStateMachine {
+pub struct ActionStateMachine<ItemIdxType: IdxTrait> {
     current_mouse_pos: (f32, f32),
     current_held_keys: HashSet<winit::keyboard::KeyCode>,
-    pub state: ActionStateMachineState,
+    pub state: ActionStateMachineState<ItemIdxType>,
 
     pub zoom_level: f32,
 }
 
-pub enum ActionStateMachineState {
+pub enum ActionStateMachineState<ItemIdxType: IdxTrait> {
     Idle,
-    Holding(HeldObject),
-    Viewing((usize, usize)),
+    Holding(HeldObject<ItemIdxType>),
+    Viewing(Position),
 }
 
-pub enum HeldObject {
+pub enum HeldObject<ItemIdxType: IdxTrait> {
     Tile(FloorTile),
     // TODO: PlaceEntityType is not quite right for this case
-    Entity(PlaceEntityType),
+    Entity(PlaceEntityType<ItemIdxType>),
 }
 
-impl Default for ActionStateMachine {
+impl<ItemIdxType: IdxTrait> Default for ActionStateMachine<ItemIdxType> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ActionStateMachine {
+impl<ItemIdxType: IdxTrait> ActionStateMachine<ItemIdxType> {
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -59,11 +64,11 @@ impl ActionStateMachine {
     }
 
     #[allow(clippy::too_many_lines)]
-    pub fn handle_input(
+    pub fn handle_input<RecipeIdxType: IdxTrait>(
         &mut self,
         input: Input,
-        world: &World,
-    ) -> impl IntoIterator<Item = ActionType> {
+        world: &World<ItemIdxType, RecipeIdxType>,
+    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
         let mut actions = match input {
             Input::LeftClickPressed => {
                 match &self.state {
@@ -79,7 +84,7 @@ impl ActionStateMachine {
 
                         if let Some(chunk) = chunk {
                             if chunk.get_entity_at(pos).is_some() {
-                                self.state = ActionStateMachineState::Viewing((pos.x, pos.y));
+                                self.state = ActionStateMachineState::Viewing(pos);
                             }
                         }
 
@@ -111,7 +116,7 @@ impl ActionStateMachine {
                             },
                         }
                     },
-                    ActionStateMachineState::Viewing((x, y)) => {
+                    ActionStateMachineState::Viewing(Position { x, y }) => {
                         let pos = Self::player_mouse_to_tile(
                             self.zoom_level,
                             world.player_pos,
@@ -122,7 +127,7 @@ impl ActionStateMachine {
 
                         if let Some(chunk) = chunk {
                             if chunk.get_entity_at(pos).is_some() {
-                                self.state = ActionStateMachineState::Viewing((pos.x, pos.y));
+                                self.state = ActionStateMachineState::Viewing(pos);
                             }
                         }
 
@@ -156,11 +161,13 @@ impl ActionStateMachine {
                                     self.current_mouse_pos,
                                 );
                             },
-                            PlaceEntityType::Inserter {
-                                start_pos,
-                                end_pos,
-                                filter,
-                            } => todo!(),
+                            PlaceEntityType::Inserter { filter, pos, dir } => {
+                                *pos = Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    world.player_pos,
+                                    self.current_mouse_pos,
+                                );
+                            },
                             PlaceEntityType::Belt { pos, direction } => {
                                 *pos = Self::player_mouse_to_tile(
                                     self.zoom_level,
@@ -176,7 +183,9 @@ impl ActionStateMachine {
             },
             Input::KeyPress(code) => {
                 if self.current_held_keys.insert(code) {
-                    self.handle_start_pressing_key(code).into_iter().collect()
+                    self.handle_start_pressing_key(code, world)
+                        .into_iter()
+                        .collect()
                 } else {
                     // This is probably a KeyRepeat from the keyboard while holding a key
                     // warn!("Recieved Key press event for key {:?}, while already pressing the key! Did we miss events?", code);
@@ -220,10 +229,11 @@ impl ActionStateMachine {
         actions
     }
 
-    fn handle_start_pressing_key(
+    fn handle_start_pressing_key<RecipeIdxType: IdxTrait>(
         &mut self,
         key: winit::keyboard::KeyCode,
-    ) -> impl IntoIterator<Item = ActionType> {
+        world: &World<ItemIdxType, RecipeIdxType>,
+    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
         match (&self.state, key) {
             (
                 ActionStateMachineState::Idle | ActionStateMachineState::Holding(_),
@@ -267,15 +277,65 @@ impl ActionStateMachine {
                     }));
                 vec![]
             },
+            (
+                ActionStateMachineState::Idle | ActionStateMachineState::Holding(_),
+                KeyCode::Digit4,
+            ) => {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::Inserter {
+                        pos: Position { x: 0, y: 0 },
+                        dir: Dir::North,
+                        // TODO:
+                        filter: Item { id: 0.into() },
+                    },
+                ));
+                vec![]
+            },
+            (
+                ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Inserter {
+                    pos,
+                    dir,
+                    filter,
+                })),
+                KeyCode::KeyR,
+            ) => {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::Inserter {
+                        pos: *pos,
+                        dir: dir.turn_right(),
+                        filter: *filter,
+                    },
+                ));
+                vec![]
+            },
+
+            (ActionStateMachineState::Viewing(pos), KeyCode::Digit1) => {
+                let chunk = world
+                    .get_chunk_for_tile(*pos)
+                    .expect("Viewing position out of bounds");
+                if matches!(chunk.get_entity_at(*pos), Some(Entity::Assembler { .. }))
+                    || matches!(
+                        chunk.get_entity_at(*pos),
+                        Some(Entity::AssemblerWithoutRecipe { .. })
+                    )
+                {
+                    vec![ActionType::SetRecipe(SetRecipeInfo {
+                        pos: *pos,
+                        recipe: Recipe { id: 0.into() },
+                    })]
+                } else {
+                    vec![]
+                }
+            },
 
             (_, _) => vec![],
         }
     }
 
-    fn handle_stop_pressing_key(
+    fn handle_stop_pressing_key<RecipeIdxType: IdxTrait>(
         &mut self,
         key: winit::keyboard::KeyCode,
-    ) -> impl IntoIterator<Item = ActionType> {
+    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
         match (&self.state, key) {
             (_, _) => vec![],
         }
@@ -298,7 +358,9 @@ impl ActionStateMachine {
     }
 
     #[must_use]
-    pub fn once_per_update_actions(&self) -> impl IntoIterator<Item = ActionType> {
+    pub fn once_per_update_actions<RecipeIdxType: IdxTrait>(
+        &self,
+    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
         let mut actions = Vec::new();
 
         let mut move_dir = (0, 0);

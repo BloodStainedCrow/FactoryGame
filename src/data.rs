@@ -1,0 +1,499 @@
+use std::{array, collections::HashMap, marker::PhantomData};
+
+use rayon::iter::Either;
+
+use crate::{
+    assembler::TIMERTYPE,
+    frontend::world::tile::AssemblerID,
+    inserter::StorageID,
+    item::{IdxTrait, Item, Recipe, ITEMCOUNTTYPE},
+    power::Watt,
+};
+
+type ItemString = String;
+type AssemblingMachineString = String;
+type RecipeString = String;
+type InserterString = String;
+type EngineString = String;
+
+#[must_use]
+pub fn get_raw_data_test() -> RawDataStore {
+    RawDataStore {
+        recipes: vec![RawRecipeData {
+            name: "factory_game::iron_ore_generation".to_string(),
+            display_name: "Generate Iron Ore from nothing".to_string(),
+            possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
+            ings: vec![].into_boxed_slice(),
+            output: vec![RawItemStack {
+                item: "factory_game::iron_ore".to_string(),
+                amount: 1,
+            }]
+            .into_boxed_slice(),
+            // TODO: I think my assembler logic is broken (maybe not?)
+            time_to_craft: 600,
+        }],
+        items: vec![RawItem {
+            name: "factory_game::iron_ore".to_string(),
+            display_name: "Iron Ore".to_string(),
+            stack_size: 100,
+            placed_as: None,
+            burnable_in: vec![].into_boxed_slice(),
+            science_data: None,
+        }],
+        machines: vec![RawAssemblingMachine {
+            name: "factory_game::assembler".to_string(),
+            display_name: "Assembling Machine".to_string(),
+            tile_size: (3, 3),
+            idle_power_draw: Watt(2500),
+            working_power_draw: Watt(75000),
+        }],
+        miners: vec![],
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RawRecipeData {
+    /// The fully qualified name of the recipe
+    name: String,
+    display_name: String,
+    possible_machines: Box<[AssemblingMachineString]>,
+    ings: Box<[RawItemStack]>,
+    output: Box<[RawItemStack]>,
+    time_to_craft: TIMERTYPE,
+}
+
+#[derive(Debug, Clone)]
+struct RawItemStack {
+    item: ItemString,
+    amount: ITEMCOUNTTYPE,
+}
+
+#[derive(Debug, Clone)]
+struct RawAssemblingMachine {
+    name: String,
+    display_name: String,
+    tile_size: (u8, u8),
+    idle_power_draw: Watt,
+    working_power_draw: Watt,
+}
+
+#[derive(Debug, Clone)]
+struct RawEngine {
+    name: String,
+}
+
+#[derive(Debug, Clone)]
+struct RawInserter {
+    name: String,
+    display_name: String,
+    time_per_trip: TIMERTYPE,
+    handsize: ITEMCOUNTTYPE,
+    pickup_offs: (i8, i8),
+    dropoff_offs: (i8, i8),
+}
+
+#[derive(Debug, Clone)]
+pub struct RawDataStore {
+    recipes: Vec<RawRecipeData>,
+    items: Vec<RawItem>,
+    machines: Vec<RawAssemblingMachine>,
+    miners: Vec<RawMiner>,
+}
+
+#[derive(Debug, Clone)]
+struct RawMiner {
+    name: String,
+    display_name: String,
+    timer: TIMERTYPE,
+}
+
+#[derive(Debug, Clone)]
+struct RawItem {
+    name: String,
+    display_name: String,
+    stack_size: ITEMCOUNTTYPE,
+    placed_as: Option<RawEntity>,
+    burnable_in: Box<[EngineString]>,
+    science_data: Option<()>,
+}
+
+#[derive(Debug, Clone)]
+enum RawEntity {
+    AssemblingMachine(AssemblingMachineString),
+    Inserter(InserterString),
+    Belt(!),
+}
+
+#[derive(Debug)]
+pub struct DataStore<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+    pub recipe_num_ing_lookup: Vec<usize>,
+    pub recipe_num_out_lookup: Vec<usize>,
+    pub recipe_to_ing_out_combo_idx: Vec<usize>,
+    pub ing_out_num_to_recipe: HashMap<(usize, usize), Vec<Recipe<RecipeIdxType>>>,
+
+    pub recipe_item_store_to_item: Vec<Item<ItemIdxType>>,
+
+    recipe_item_to_storage_list_idx:
+        HashMap<(Recipe<RecipeIdxType>, Item<ItemIdxType>, ItemRecipeDir), u16>,
+
+    /// A lookup from recipe to its ing and out idxs
+    pub recipe_index_lookups: Vec<(usize, usize)>,
+    /// A lookup from recipe_ing_idx to its ingredient counts
+    pub recipe_ings: RecipeIngLookups,
+    /// A lookup from recipe_out_idx to its output counts
+    pub recipe_outputs: RecipeOutputLookups,
+
+    pub recipe_timers: Box<[TIMERTYPE]>,
+
+    pub recipe_to_items: HashMap<Recipe<RecipeIdxType>, Vec<(ItemRecipeDir, Item<ItemIdxType>)>>,
+
+    pub science_bottle_items: Vec<Item<ItemIdxType>>,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub enum ItemRecipeDir {
+    Ing,
+    Out,
+}
+
+#[derive(Debug)]
+pub enum DataStoreOptions {
+    ItemU8RecipeU8(DataStore<u8, u8>),
+    ItemU8RecipeU16(DataStore<u8, u16>),
+    ItemU16RecipeU8(DataStore<u16, u8>),
+    ItemU16RecipeU16(DataStore<u16, u16>),
+}
+
+struct RecipeIndexLookup {
+    ing: usize,
+    out: usize,
+}
+
+#[derive(Debug)]
+pub struct RecipeIngLookups {
+    pub ing0: Vec<[ITEMCOUNTTYPE; 0]>,
+    pub ing1: Vec<[ITEMCOUNTTYPE; 1]>,
+    pub ing2: Vec<[ITEMCOUNTTYPE; 2]>,
+    pub ing3: Vec<[ITEMCOUNTTYPE; 3]>,
+    pub ing4: Vec<[ITEMCOUNTTYPE; 4]>,
+}
+
+#[derive(Debug)]
+pub struct RecipeOutputLookups {
+    pub out1: Vec<[ITEMCOUNTTYPE; 1]>,
+    pub out2: Vec<[ITEMCOUNTTYPE; 2]>,
+    pub out3: Vec<[ITEMCOUNTTYPE; 3]>,
+    pub out4: Vec<[ITEMCOUNTTYPE; 4]>,
+}
+
+impl RawDataStore {
+    #[must_use]
+    pub fn process(self) -> DataStoreOptions {
+        match (self.items.len(), self.recipes.len()) {
+            (items, recipes) if items <= u8::MAX.into() && recipes <= u8::MAX.into() => {
+                DataStoreOptions::ItemU8RecipeU8(self.turn::<u8, u8>())
+            },
+            (items, recipes) if items <= u8::MAX.into() && recipes <= u16::MAX.into() => {
+                DataStoreOptions::ItemU8RecipeU16(self.turn::<u8, u16>())
+            },
+            (items, recipes) if items <= u16::MAX.into() && recipes <= u8::MAX.into() => {
+                DataStoreOptions::ItemU16RecipeU8(self.turn::<u16, u8>())
+            },
+            (items, recipes) if items <= u16::MAX.into() && recipes <= u16::MAX.into() => {
+                DataStoreOptions::ItemU16RecipeU16(self.turn::<u16, u16>())
+            },
+
+            _ => unimplemented!("Too many items or recipes, u16::MAX is the max allowed amount (currently) (Btw, are you joking? Who are you trying to torture with this many options? xD)"),
+        }
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn turn<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        self,
+    ) -> DataStore<ItemIdxType, RecipeIdxType> {
+        let mut ing_out_num_to_recipe: HashMap<(usize, usize), Vec<Recipe<RecipeIdxType>>> =
+            HashMap::new();
+        let mut recipe_to_ing_out_combo_idx = vec![];
+
+        let item_lookup: HashMap<&str, ItemIdxType> = self
+            .items
+            .iter()
+            .map(|i| i.name.as_str())
+            .enumerate()
+            .map(|(i, v)| {
+                (
+                    v,
+                    i.try_into()
+                        .unwrap_or_else(|_| panic!("item idx did not fit!!!")),
+                )
+            })
+            .collect();
+
+        let science_bottle_items = self
+            .items
+            .iter()
+            .filter(|i| i.science_data.is_some())
+            .map(|r| {
+                item_lookup
+                    .get(r.name.as_str())
+                    .expect("Science Item not in lookup?!?")
+            })
+            .map(|idx| Item { id: *idx })
+            .collect();
+
+        for (i, raw_recipe) in self.recipes.iter().enumerate() {
+            let recipe = Recipe {
+                id: RecipeIdxType::try_from(i)
+                    .unwrap_or_else(|_| panic!("recipe idx did not fit!!!")),
+            };
+
+            let prev_list =
+                ing_out_num_to_recipe.get_mut(&(raw_recipe.ings.len(), raw_recipe.output.len()));
+
+            if let Some(prev) = prev_list {
+                recipe_to_ing_out_combo_idx.push(prev.len());
+                prev.push(recipe);
+            } else {
+                recipe_to_ing_out_combo_idx.push(0);
+                ing_out_num_to_recipe.insert(
+                    (raw_recipe.ings.len(), raw_recipe.output.len()),
+                    vec![recipe],
+                );
+            }
+        }
+
+        let mut recipe_item_store_to_item = vec![];
+
+        let mut recipe_item_to_storage_list_idx = HashMap::new();
+
+        for num_ings in 0..10 {
+            for num_out in 1..10 {
+                if let Some(recipes) = ing_out_num_to_recipe.get(&(num_ings, num_out)) {
+                    for recipe in recipes {
+                        let recipe_id: usize = recipe.id.into();
+                        for ing in &self.recipes[recipe_id].ings {
+                            let item = *item_lookup.get(ing.item.as_str()).unwrap_or_else(|| {
+                                panic!("Item does not exist: {}", ing.item.as_str())
+                            });
+
+                            recipe_item_to_storage_list_idx.insert(
+                                (*recipe, Item { id: item }, ItemRecipeDir::Ing),
+                                recipe_item_store_to_item
+                                    .iter()
+                                    .filter(|i| **i == Item { id: item })
+                                    .count()
+                                    .try_into()
+                                    .unwrap_or_else(|_| panic!("Too many storage type with item")),
+                            );
+                            recipe_item_store_to_item.push(Item { id: item });
+                        }
+                        for output in &self.recipes[recipe_id].output {
+                            let item =
+                                *item_lookup.get(output.item.as_str()).unwrap_or_else(|| {
+                                    panic!("Item does not exist: {}", output.item.as_str())
+                                });
+
+                            recipe_item_to_storage_list_idx.insert(
+                                (*recipe, Item { id: item }, ItemRecipeDir::Out),
+                                recipe_item_store_to_item
+                                    .iter()
+                                    .filter(|i| **i == Item { id: item })
+                                    .count()
+                                    .try_into()
+                                    .unwrap_or_else(|_| panic!("Too many storage type with item")),
+                            );
+                            recipe_item_store_to_item.push(Item { id: item });
+                        }
+                    }
+                }
+            }
+        }
+
+        let recipe_num_ing_lookup = self.recipes.iter().map(|r| r.ings.len()).collect();
+        let recipe_num_out_lookup = self.recipes.iter().map(|r| r.output.len()).collect();
+
+        let mut recipe_index_lookups = vec![];
+
+        let mut recipe_ings = RecipeIngLookups {
+            ing0: vec![],
+            ing1: vec![],
+            ing2: vec![],
+            ing3: vec![],
+            ing4: vec![],
+        };
+
+        let mut recipe_outputs = RecipeOutputLookups {
+            out1: vec![],
+            out2: vec![],
+            out3: vec![],
+            out4: vec![],
+        };
+
+        for (i, recipe) in self.recipes.iter().enumerate() {
+            let ing_idx = match recipe.ings.len() {
+                0 => {
+                    recipe_ings
+                        .ing0
+                        .push(array::from_fn(|i| recipe.ings[i].amount));
+                    recipe_ings.ing0.len()
+                },
+                1 => {
+                    recipe_ings
+                        .ing1
+                        .push(array::from_fn(|i| recipe.ings[i].amount));
+                    recipe_ings.ing1.len()
+                },
+                2 => {
+                    recipe_ings
+                        .ing2
+                        .push(array::from_fn(|i| recipe.ings[i].amount));
+                    recipe_ings.ing2.len()
+                },
+                3 => {
+                    recipe_ings
+                        .ing3
+                        .push(array::from_fn(|i| recipe.ings[i].amount));
+                    recipe_ings.ing3.len()
+                },
+                4 => {
+                    recipe_ings
+                        .ing4
+                        .push(array::from_fn(|i| recipe.ings[i].amount));
+                    recipe_ings.ing4.len()
+                },
+                n => {
+                    unimplemented!("{n} ingredients in a single recipe are currently unsupported!!")
+                },
+            } - 1;
+
+            let out_idx = match recipe.output.len() {
+                0 => unimplemented!("Recipes without outputs are currently not supported!"),
+                1 => {
+                    recipe_outputs
+                        .out1
+                        .push(array::from_fn(|i| recipe.output[i].amount));
+                    recipe_outputs.out1.len()
+                },
+                2 => {
+                    recipe_outputs
+                        .out2
+                        .push(array::from_fn(|i| recipe.output[i].amount));
+                    recipe_outputs.out2.len()
+                },
+                3 => {
+                    recipe_outputs
+                        .out3
+                        .push(array::from_fn(|i| recipe.output[i].amount));
+                    recipe_outputs.out3.len()
+                },
+                4 => {
+                    recipe_outputs
+                        .out4
+                        .push(array::from_fn(|i| recipe.output[i].amount));
+                    recipe_outputs.out4.len()
+                },
+                n => {
+                    unimplemented!("{n} outputs in a single recipe are currently unsupported!!")
+                },
+            } - 1;
+
+            recipe_index_lookups.push((ing_idx, out_idx));
+        }
+
+        let recipe_timers = self.recipes.iter().map(|r| r.time_to_craft).collect();
+
+        let recipe_to_items = self
+            .recipes
+            .iter()
+            .enumerate()
+            .map(|(i, r)| {
+                let mut v = vec![];
+
+                for ing in &r.ings {
+                    v.push((
+                        ItemRecipeDir::Ing,
+                        Item::from(*item_lookup.get(ing.item.as_str()).unwrap()),
+                    ));
+                }
+
+                for out in &r.output {
+                    v.push((
+                        ItemRecipeDir::Out,
+                        Item::from(*item_lookup.get(out.item.as_str()).unwrap()),
+                    ));
+                }
+
+                (
+                    Recipe {
+                        id: RecipeIdxType::try_from(i).unwrap_or_else(|_| panic!()),
+                    },
+                    v,
+                )
+            })
+            .collect();
+
+        DataStore {
+            recipe_num_ing_lookup,
+            recipe_num_out_lookup,
+            recipe_to_ing_out_combo_idx,
+            ing_out_num_to_recipe,
+            recipe_item_store_to_item,
+            recipe_item_to_storage_list_idx,
+            recipe_index_lookups,
+            recipe_ings,
+
+            recipe_outputs,
+
+            recipe_timers,
+
+            recipe_to_items,
+
+            science_bottle_items,
+        }
+    }
+}
+
+impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> DataStore<ItemIdxType, RecipeIdxType> {
+    pub fn get_storage_id_for_assembler(
+        &self,
+        dir: ItemRecipeDir,
+        item: Item<ItemIdxType>,
+        assembler_id: AssemblerID<RecipeIdxType>,
+    ) -> Result<StorageID<RecipeIdxType>, ()> {
+        let Some(storage_list_idx) =
+            self.recipe_item_to_storage_list_idx
+                .get(&(assembler_id.recipe, item, dir))
+        else {
+            return Err(());
+        };
+
+        Ok(StorageID {
+            storage_list_idx: *storage_list_idx,
+            machine_idx: assembler_id.assembler_index,
+
+            phantom: PhantomData,
+        })
+    }
+
+    pub fn get_storage_id_for_lab_science(
+        &self,
+        item: Item<ItemIdxType>,
+        lab_idx: u16,
+    ) -> StorageID<RecipeIdxType> {
+        let num_entries_for_assemblers = self.recipe_item_to_storage_list_idx.len();
+        let science_idx = self
+            .science_bottle_items
+            .iter()
+            .position(|i| *i == item)
+            .expect("Science item for lab is not in science list");
+
+        StorageID {
+            storage_list_idx: (num_entries_for_assemblers + science_idx)
+                .try_into()
+                .expect("More than u16::MAX assemblers"),
+            machine_idx: lab_idx,
+
+            phantom: PhantomData,
+        }
+    }
+}
