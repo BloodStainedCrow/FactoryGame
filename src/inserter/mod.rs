@@ -1,9 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{
-    item::{IdxTrait, Recipe},
-    power::PowerGridIdentifier,
-};
+use crate::{item::IdxTrait, power::power_grid::PowerGridIdentifier};
 
 use static_assertions::const_assert;
 
@@ -34,9 +31,9 @@ pub enum InserterState {
 // That way we support both large single grid bases and bases with many grids (though maybe not megabases with independent outposts and zero beacons)
 // TODO: This is less efficient, but should be fine for now
 // TODO: maybe do this differently
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct StorageID<RecipeIdxType: IdxTrait> {
-    // pub grid: u16,
+    pub grid: PowerGridIdentifier,
     pub storage_list_idx: u16,
     pub machine_idx: u16,
 

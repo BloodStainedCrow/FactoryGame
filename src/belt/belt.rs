@@ -8,7 +8,7 @@ pub trait Belt {
     // fn remove_item(&mut self, pos: usize) -> Option<Item<ItemIdxType>>;
     /// # Errors
     /// When there is no space at `pos`
-    fn try_insert_item(&mut self, pos: usize) -> Result<(), NoSpaceError>;
+    fn try_insert_item(&mut self, pos: u16) -> Result<(), NoSpaceError>;
 
     // fn items_mut(&mut self) -> IterMut<bool>;
 

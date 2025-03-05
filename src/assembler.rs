@@ -6,7 +6,10 @@ use crate::{
     data::{DataStore, ItemRecipeDir},
     frontend::world::tile::AssemblerID,
     item::{recipe_item_idx, IdxTrait, Item, Recipe, ITEMCOUNTTYPE},
-    power::{IndexUpdateInfo, Joule, PowerGridIdentifier, Watt, MAX_POWER_MULT},
+    power::{
+        power_grid::{IndexUpdateInfo, PowerGridIdentifier, MAX_POWER_MULT},
+        Joule, Watt,
+    },
 };
 
 pub type Simdtype = Simd<u8, 32>;
@@ -39,6 +42,7 @@ pub struct MultiAssemblerStore<
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct FullAssemblerStore<RecipeIdxType: IdxTrait> {
     pub assemblers_0_1: Box<[MultiAssemblerStore<RecipeIdxType, 0, 1>]>,
+    pub assemblers_1_1: Box<[MultiAssemblerStore<RecipeIdxType, 1, 1>]>,
 }
 
 #[derive(Debug, Clone)]
@@ -58,8 +62,18 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
             .iter()
             .map(|r| MultiAssemblerStore::new(*r))
             .collect();
+        let assemblers_1_1 = data_store
+            .ing_out_num_to_recipe
+            .get(&(1, 1))
+            .unwrap()
+            .iter()
+            .map(|r| MultiAssemblerStore::new(*r))
+            .collect();
 
-        Self { assemblers_0_1 }
+        Self {
+            assemblers_0_1,
+            assemblers_1_1,
+        }
     }
 
     #[must_use]
@@ -82,6 +96,17 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
                 .into_vec()
                 .into_iter()
                 .zip(other.assemblers_0_1.into_vec())
+                .map(|(a, b)| a.join(b, data_store, self_grid, other_grid))
+                .map(|(store, updates)| {
+                    idx_update.extend(updates);
+                    store
+                })
+                .collect(),
+            assemblers_1_1: self
+                .assemblers_1_1
+                .into_vec()
+                .into_iter()
+                .zip(other.assemblers_1_1.into_vec())
                 .map(|(a, b)| a.join(b, data_store, self_grid, other_grid))
                 .map(|(store, updates)| {
                     idx_update.extend(updates);
@@ -119,7 +144,8 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
     }
 }
 
-pub type SingleItemSlice<'a, 'b> = &'a mut [&'b mut [u8]];
+///                                    ~~item~~ grid recipe idx
+pub type SingleItemSlice<'a, 'b, 'c> = &'a mut [Vec<&'c mut [u8]>];
 
 // FIXME:
 // fn get_slice_for_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
@@ -154,9 +180,9 @@ pub type SingleItemSlice<'a, 'b> = &'a mut [&'b mut [u8]];
 //     timers: Vec<TIMERTYPE>,
 // }
 
-pub struct AssemblerRemovalInfo<const NUM_INGS: usize, const NUM_OUTPUTS: usize> {
-    ings: [ITEMCOUNTTYPE; NUM_INGS],
-    outputs: [ITEMCOUNTTYPE; NUM_OUTPUTS],
+pub struct AssemblerRemovalInfo {
+    ings: Vec<ITEMCOUNTTYPE>,
+    outputs: Vec<ITEMCOUNTTYPE>,
 }
 
 // TODO: Maybe also add a defragmentation routine to mend the ineffeciencies left by deconstruction large amounts of assemblers
@@ -188,7 +214,6 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         Self,
         impl IntoIterator<Item = IndexUpdateInfo<RecipeIdxType>>,
     ) {
-        assert_eq!(self.recipe, other.recipe);
         let mut update_vec = vec![];
 
         for (new_offs, (idx, _)) in other
@@ -448,7 +473,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         recipe_ings: &[[ITEMCOUNTTYPE; NUM_INGS]],
         recipe_outputs: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
         times: &[TIMERTYPE],
-    ) -> Joule {
+    ) -> (Joule, u32, u32) {
         const POWER_DRAIN: Watt = Watt(2_500);
         const POWER_CONSUMPTION: Watt = Watt(75_000);
 
@@ -460,6 +485,9 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         // TODO: For SOME reason, this is actually faster if this is a u32.
         // It is also better, since it allows possibly having more than u16::max assembers of a single recipe
         let mut running: u32 = 0;
+
+        let mut times_ings_used = 0;
+        let mut num_finished_crafts = 0;
 
         // TODO: With power calculations being done on the fly, we cannot return early, since we then do not know the power demands of the base :(
         // It might be fine, since it only applies if the power is so low, NOTHING happens and as soon as any power is connected it will start running again.
@@ -507,7 +535,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                     .zip(our_outputs.iter())
                     .fold(1, |acc, (have, new_from_recipe)| {
                         // TODO: 100 output amount hardcoded!!!!
-                        acc * u8::from((**have + *new_from_recipe) <= 100)
+                        acc * u8::from((have.saturating_add(*new_from_recipe)) <= 100)
                     });
 
             let new_timer = new_timer_output_space * u16::from(space_mul)
@@ -519,7 +547,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
             // Power calculation
             // We use power if any work was done
-            running += u32::from(*timer != new_timer);
+            running += u32::from(ing_mul * u16::from(space_mul));
 
             *timer = new_timer;
             outputs
@@ -529,11 +557,18 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             ings.iter_mut()
                 .zip(our_ings.iter())
                 .for_each(|(ing, used)| **ing -= timer_mul * space_mul * used);
+            times_ings_used += u32::from(timer_mul * space_mul);
+            num_finished_crafts += u32::from(timer_mul * space_mul);
         }
 
-        POWER_DRAIN.joules_per_tick()
-            * u64::try_from(self.len - self.holes.len()).expect("more than u64::MAX assemblers")
-            + POWER_CONSUMPTION.joules_per_tick() * running.into()
+        (
+            POWER_DRAIN.joules_per_tick()
+                * u64::try_from(self.len - self.holes.len())
+                    .expect("more than u64::MAX assemblers")
+                + POWER_CONSUMPTION.joules_per_tick() * u64::from(running),
+            times_ings_used,
+            num_finished_crafts,
+        )
     }
 
     pub fn get_outputs_mut(&mut self, idx: usize) -> &mut [ITEMCOUNTTYPE] {
@@ -573,17 +608,22 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
     }
 
     /// The caller must make sure, that this index is not used in any other machine, since it will either crash/work on a nonexistant Assembler or be reused for another machine!
-    pub fn remove_assembler(
-        &mut self,
-        index: usize,
-    ) -> AssemblerRemovalInfo<NUM_INGS, NUM_OUTPUTS> {
+    pub fn remove_assembler(&mut self, index: usize) -> AssemblerRemovalInfo {
         debug_assert!(!self.holes.contains(&index));
         self.holes.push(index);
 
-        AssemblerRemovalInfo {
-            ings: array::from_fn(|i| self.ings[i][index]),
-            outputs: array::from_fn(|i| self.outputs[i][index]),
+        let ret = AssemblerRemovalInfo {
+            ings: (0..NUM_INGS).map(|i| self.ings[i][index]).collect(),
+            outputs: (0..NUM_OUTPUTS).map(|i| self.outputs[i][index]).collect(),
+        };
+        for ing in &mut self.ings {
+            ing[index] = 0;
         }
+        for out in &mut self.outputs {
+            out[index] = ITEMCOUNTTYPE::MAX;
+        }
+
+        ret
     }
 
     pub fn add_assembler(&mut self) -> usize {
@@ -637,36 +677,36 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
             // Resize all to that size
             // FIXME: take_mut means that if we panic inside, we will ABORT instead of unrolling!
-            for (output, new_val) in self.outputs.iter_mut().zip(out) {
+            for output in &mut self.outputs {
                 take_mut::take(output, |output| {
                     let mut output = output.into_vec();
-                    output.resize(new_len, new_val);
+                    output.resize(new_len, ITEMCOUNTTYPE::MAX);
                     output.into_boxed_slice()
                 });
             }
 
-            for (ing, new_val) in self.ings.iter_mut().zip(ings) {
+            for ing in &mut self.ings {
                 take_mut::take(ing, |ing| {
                     let mut ing = ing.into_vec();
-                    ing.resize(new_len, new_val);
+                    ing.resize(new_len, 0);
                     ing.into_boxed_slice()
                 });
             }
 
             take_mut::take(&mut self.timers, |timers| {
                 let mut timers = timers.into_vec();
-                timers.resize(new_len, timer);
+                timers.resize(new_len, 0);
                 timers.into_boxed_slice()
             });
-        } else {
-            for (output, new_val) in self.outputs.iter_mut().zip(out) {
-                output[self.len] = new_val;
-            }
-            for (ing, new_val) in self.ings.iter_mut().zip(ings) {
-                ing[self.len] = new_val;
-            }
-            self.timers[self.len] = timer;
         }
+
+        for (output, new_val) in self.outputs.iter_mut().zip(out) {
+            output[self.len] = new_val;
+        }
+        for (ing, new_val) in self.ings.iter_mut().zip(ings) {
+            ing[self.len] = new_val;
+        }
+        self.timers[self.len] = timer;
 
         self.len += 1;
         self.len - 1

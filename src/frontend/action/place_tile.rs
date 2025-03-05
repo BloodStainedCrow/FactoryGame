@@ -6,21 +6,21 @@ use crate::{
     item::IdxTrait,
 };
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PlaceFloorTileByHandInfo {
     pub ghost_info: PlaceFloorTileGhostInfo,
     // TODO:
     pub player: (),
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PlaceFloorTileGhostInfo {
     pub tile: FloorTile,
     pub position: PositionInfo,
 }
 
 // TODO: Do not use usize for anything that might go to another machine, where it could be different size!
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum PositionInfo {
     Rect {
         pos: Position,

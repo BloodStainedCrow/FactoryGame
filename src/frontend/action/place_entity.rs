@@ -3,12 +3,12 @@ use crate::{
     item::IdxTrait,
 };
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PlaceEntityInfo<ItemIdxType: IdxTrait> {
     pub entities: EntityPlaceOptions<ItemIdxType>,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum EntityPlaceOptions<ItemIdxType: IdxTrait> {
     Single(PlaceEntityType<ItemIdxType>),
     Multiple(Vec<PlaceEntityType<ItemIdxType>>),

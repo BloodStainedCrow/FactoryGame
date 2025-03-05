@@ -4,7 +4,9 @@ pub struct Technology {
     pub cost: [u16; 6],
 }
 
-#[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
+pub type ResearchProgress = u16;
+
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 pub struct TechState {
     pub current_technology: Technology,
 }

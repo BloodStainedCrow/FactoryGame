@@ -15,12 +15,14 @@ pub trait IdxTrait:
     + Send
     + Sync
     + From<u8>
-    + TryFrom<usize>
+    + TryFrom<usize, Error: Debug>
     + Debug
     + serde::Serialize
     + PartialEq
     + Eq
     + Hash
+    + Ord
+    + 'static
 {
 }
 
@@ -35,7 +37,9 @@ struct MachineDescriptor<ItemIdxType: IdxTrait> {
     item_to_place: Option<Item<ItemIdxType>>,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, PartialEq, Eq, Hash, Clone, Copy, serde::Serialize, serde::Deserialize, PartialOrd, Ord,
+)]
 pub struct Item<ItemIdxType: IdxTrait> {
     pub id: ItemIdxType,
 }
@@ -52,7 +56,9 @@ impl<ItemIdxType: IdxTrait> Item<ItemIdxType> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, PartialEq, Eq, Hash, Clone, Copy, serde::Serialize, serde::Deserialize, PartialOrd, Ord,
+)]
 pub struct Recipe<RecipeIdxType: IdxTrait> {
     pub id: RecipeIdxType,
 }

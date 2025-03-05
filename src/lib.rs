@@ -4,10 +4,10 @@
 #![feature(array_try_map)]
 #![feature(never_type)]
 
+extern crate test;
+
 use std::{
     array,
-    fs::{create_dir_all, File},
-    io::Write,
     simd::cmp::SimdPartialEq,
     sync::{
         atomic::AtomicU64,
@@ -19,17 +19,13 @@ use std::{
 };
 
 use data::{get_raw_data_test, DataStore};
-use directories::ProjectDirs;
 use frontend::{
     action::{action_state_machine::ActionStateMachine, ActionType},
     input::Input,
 };
 use item::IdxTrait;
-use log::{error, info};
-use rendering::{
-    app_state::{AppState, GameState},
-    window::App,
-};
+use log::info;
+use rendering::{app_state::AppState, window::App};
 use simple_logger::SimpleLogger;
 use winit::event_loop::EventLoop;
 
@@ -49,6 +45,14 @@ pub mod mod_manager;
 pub mod frontend;
 
 mod rendering;
+
+pub mod bot_system;
+
+mod statistics;
+
+mod replays;
+
+mod saving;
 
 impl IdxTrait for u8 {}
 impl IdxTrait for u16 {}
@@ -89,7 +93,6 @@ pub fn main() {
     }
 }
 
-#[allow(clippy::needless_pass_by_value)]
 fn main_loop<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     current_tick: Arc<AtomicU64>,
     input_reciever: Receiver<Input>,
@@ -97,7 +100,8 @@ fn main_loop<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType>>>,
     data_store: Arc<DataStore<ItemIdxType, RecipeIdxType>>,
 ) -> ! {
-    let mut update_interval = spin_sleep_util::interval(Duration::from_secs(1) / 60);
+    let mut update_interval =
+        spin_sleep_util::interval(Duration::from_secs(1) / TICKS_PER_SECOND as u32);
 
     loop {
         update_interval.tick();
@@ -109,7 +113,9 @@ fn main_loop<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     let mut state_machine = state_machine.lock().unwrap();
                     let mut ret: Vec<ActionType<ItemIdxType, RecipeIdxType>> = input_reciever
                         .try_iter()
-                        .flat_map(|input| state_machine.handle_input(input, &game_state.world))
+                        .flat_map(|input| {
+                            state_machine.handle_input(input, &game_state.world, &data_store)
+                        })
                         .collect();
 
                     ret.extend(state_machine.once_per_update_actions());
@@ -129,49 +135,6 @@ fn main_loop<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         }
         current_tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
-}
-
-/// # Panics
-/// If File system stuff fails
-pub fn save<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    game_state: &GameState<ItemIdxType, RecipeIdxType>,
-) {
-    let dir = ProjectDirs::from("de", "aschhoff", "factory_game").expect("No Home path found");
-
-    create_dir_all(dir.data_dir()).expect("Could not create data dir");
-
-    let save_file_dir = dir.data_dir().join("save.save");
-
-    let mut file = File::create(save_file_dir).expect("Could not open file");
-
-    file.write_all(
-        ron::ser::to_string_pretty(game_state, ron::ser::PrettyConfig::default())
-            .unwrap()
-            .as_bytes(),
-    )
-    .expect("Could not write to file");
-}
-
-/// # Panics
-/// If File system stuff fails
-#[must_use]
-pub fn load<
-    ItemIdxType: IdxTrait + for<'a> serde::Deserialize<'a>,
-    RecipeIdxType: IdxTrait + for<'a> serde::Deserialize<'a>,
->() -> Option<GameState<ItemIdxType, RecipeIdxType>> {
-    let dir = ProjectDirs::from("de", "aschhoff", "factory_game").expect("No Home path found");
-
-    let save_file_dir = dir.data_dir().join("save.save");
-
-    let file = File::open(save_file_dir);
-
-    file.map_or(None, |file| match ron::de::from_reader(file) {
-        Ok(val) => Some(val),
-        Err(err) => {
-            error!("Found save, but was unable to deserialize it!!!! \n{}", err);
-            None
-        },
-    })
 }
 
 // #[cfg(not(debug_assertions))]
@@ -268,5 +231,69 @@ pub fn simd(
     }
 }
 
-// If you use `main()`, declare it as `pub` to see it in the output:
-// pub fn main() { ... }
+#[cfg(test)]
+mod tests {
+    use std::{iter, rc::Rc};
+
+    use test::{black_box, Bencher};
+
+    use crate::{
+        data::get_raw_data_test,
+        frontend::{action::ActionType, world::tile::World},
+        rendering::app_state::{GameState, SimulationState},
+        replays::{run_till_finished, Replay},
+        TICKS_PER_SECOND,
+    };
+
+    #[bench]
+    fn clone_empty_simulation(b: &mut Bencher) {
+        let data_store = get_raw_data_test().process().assume_simple();
+
+        let game_state = GameState::new(&data_store);
+
+        let replay = Replay::new(game_state, Rc::new(data_store));
+
+        b.iter(|| replay.clone());
+    }
+
+    #[bench]
+    fn empty_simulation(b: &mut Bencher) {
+        // 1 hour
+        const NUM_TICKS: u64 = TICKS_PER_SECOND * 60 * 60;
+
+        let data_store = get_raw_data_test().process().assume_simple();
+
+        let game_state = GameState::new(&data_store);
+
+        let mut replay = Replay::new(game_state, Rc::new(data_store));
+
+        for _ in 0..NUM_TICKS {
+            replay.tick();
+        }
+
+        replay.finish();
+
+        b.iter(|| black_box(replay.clone().run().with(run_till_finished)));
+    }
+
+    #[bench]
+    fn noop_actions_simulation(b: &mut Bencher) {
+        // 1 hour
+        const NUM_TICKS: u64 = TICKS_PER_SECOND * 60 * 60;
+
+        let data_store = get_raw_data_test().process().assume_simple();
+
+        let game_state = GameState::new(&data_store);
+
+        let mut replay = Replay::new(game_state, Rc::new(data_store));
+
+        for _ in 0..NUM_TICKS {
+            replay.append_actions(iter::repeat(ActionType::Ping((100, 100))).take(5));
+            replay.tick();
+        }
+
+        replay.finish();
+
+        b.iter(|| replay.clone().run().with(run_till_finished));
+    }
+}

@@ -3,7 +3,7 @@ use crate::{
     item::{IdxTrait, Recipe},
 };
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SetRecipeInfo<RecipeIdxType: IdxTrait> {
     pub pos: Position,
     pub recipe: Recipe<RecipeIdxType>,

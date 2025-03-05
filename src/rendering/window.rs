@@ -1,4 +1,5 @@
 use std::{
+    marker::PhantomData,
     sync::{atomic::AtomicU64, mpsc::Sender, Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -9,6 +10,7 @@ use crate::{
         action::action_state_machine::ActionStateMachine, input::Input, world::tile::World,
     },
     item::IdxTrait,
+    saving::{load, save, SaveGame},
 };
 use log::{info, warn};
 use tilelib::types::{Display, Sprite, Texture};
@@ -16,8 +18,6 @@ use winit::{
     event::{ElementState, MouseButton, WindowEvent},
     window::WindowAttributes,
 };
-
-use crate::{load, save};
 
 use super::{
     app_state::{AppState, GameState, SimulationState},
@@ -51,7 +51,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> winit::application::Applica
     for App<ItemIdxType, RecipeIdxType>
 {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        dbg!("RESUMED");
         let window = Arc::new(
             event_loop
                 .create_window(WindowAttributes::default().with_title("FactoryGame"))
@@ -78,7 +77,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> winit::application::Applica
             WindowEvent::CloseRequested => {
                 info!("EXITING");
                 match &*self.state.lock().unwrap() {
-                    AppState::Ingame(game_state) => save(game_state),
+                    AppState::Ingame(game_state) => {
+                        save(game_state, self.data_store.checksum.clone())
+                    },
                 }
 
                 event_loop.exit();
@@ -134,7 +135,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> winit::application::Applica
                     (ElementState::Released, MouseButton::Left) => Input::LeftClickReleased,
                     (ElementState::Pressed, MouseButton::Right) => Input::RightClickPressed,
                     (ElementState::Released, MouseButton::Right) => Input::RightClickReleased,
-                    (_, _) => todo!(),
+                    (v) => todo!("{:?}", v),
                 };
 
                 self.input_sender.send(input).expect("Channel died");
@@ -279,13 +280,20 @@ impl<
         let plate_dimensions = plate.dimensions();
         let plate = plate.to_rgba8().into_vec();
 
-        let state = load().unwrap_or_else(|| GameState {
-            world: World::new(),
-            simulation_state: SimulationState::new(&data_store),
+        let save_game = load().unwrap_or_else(|| SaveGame {
+            game_state: GameState::new(&data_store),
+            checksum: data_store.checksum.clone(),
+            item: PhantomData,
+            recipe: PhantomData,
         });
 
+        assert_eq!(
+            save_game.checksum, data_store.checksum,
+            "Checksum does not match! Unable to load savegame"
+        );
+
         Self {
-            state: Arc::new(Mutex::new(AppState::Ingame(state))),
+            state: Arc::new(Mutex::new(AppState::Ingame(save_game.game_state))),
             state_machine: Arc::new(Mutex::new(ActionStateMachine::new())),
             window: Window::new(),
             last_rendered_update: 0,

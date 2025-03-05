@@ -2,7 +2,10 @@ use crate::{
     assembler::TIMERTYPE,
     data::DataStore,
     item::{IdxTrait, Item, ITEMCOUNTTYPE},
-    power::{IndexUpdateInfo, Joule, Watt, MAX_POWER_MULT},
+    power::{
+        power_grid::{IndexUpdateInfo, PowerGridIdentifier, MAX_POWER_MULT},
+        Joule, Watt,
+    },
     research::Technology,
 };
 
@@ -27,6 +30,8 @@ impl MultiLabStore {
     pub fn join<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         mut self,
         other: Self,
+        self_grid: PowerGridIdentifier,
+        other_grid: PowerGridIdentifier,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
         Self,
@@ -45,9 +50,13 @@ impl MultiLabStore {
 
             for science in &data_store.science_bottle_items {
                 updates.push(IndexUpdateInfo {
-                    old: data_store
-                        .get_storage_id_for_lab_science(*science, other_idx.try_into().unwrap()),
+                    old: data_store.get_storage_id_for_lab_science(
+                        self_grid,
+                        *science,
+                        other_idx.try_into().unwrap(),
+                    ),
                     new: data_store.get_storage_id_for_lab_science(
+                        other_grid,
                         *science,
                         (self.timer.len() + new_idx_offs).try_into().unwrap(),
                     ),
@@ -83,7 +92,7 @@ impl MultiLabStore {
     }
 
     // TODO: Ensure good compilation results (i.e. vectorization)
-    pub fn update(&mut self, power_mult: u8, current_research: &Technology) -> (Joule, u16) {
+    pub fn update(&mut self, power_mult: u8, current_research: &Technology) -> (Joule, u32, u16) {
         const POWER_CONSUMPTION: Watt = Watt(600);
         const TICKS_PER_SCIENCE: TIMERTYPE = 1800;
 
@@ -93,6 +102,8 @@ impl MultiLabStore {
         // assert_eq!(self.red.len(), self.yellow.len());
         // assert_eq!(self.red.len(), self.space.len());
         // assert_eq!(self.red.len(), self.timer.len());
+
+        let mut times_ings_used = 0;
 
         let mut running = 0;
         let mut finished_cycle: u16 = 0;
@@ -122,6 +133,8 @@ impl MultiLabStore {
 
             let did_finish_work: u8 = (new_timer < *timer).into();
 
+            times_ings_used += u32::from(did_finish_work);
+
             finished_cycle += u16::from(did_finish_work);
 
             // Power calculation
@@ -137,6 +150,7 @@ impl MultiLabStore {
 
         (
             POWER_CONSUMPTION.joules_per_tick() * running.into(),
+            times_ings_used,
             finished_cycle,
         )
     }

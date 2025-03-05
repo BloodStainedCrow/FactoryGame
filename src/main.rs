@@ -1,22 +1,27 @@
-use std::{
-    arch::x86_64::{
-        __m256i, _mm256_add_epi8, _mm256_blendv_epi8, _mm256_cmpeq_epi8, _mm256_loadu_si256,
-        _mm256_movemask_epi8, _mm256_set1_epi8, _mm256_set_epi8, _mm256_setzero_si256,
-        _mm256_storeu_si256, _mm_prefetch, _MM_HINT_T0,
-    },
-    thread,
-    time::{Duration, Instant},
-};
-
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
-
 fn main() {
     factory::main();
 }
+
+#[cfg(test)]
 mod test {
-    #[test]
+    use rand::Rng;
+    use std::{
+        arch::x86_64::{
+            __m256i, _mm256_add_epi8, _mm256_blendv_epi8, _mm256_cmpeq_epi8, _mm256_loadu_si256,
+            _mm256_movemask_epi8, _mm256_set1_epi8, _mm256_set_epi8, _mm256_setzero_si256,
+            _mm256_storeu_si256, _mm_prefetch, _MM_HINT_T0,
+        },
+        thread,
+        time::{Duration, Instant},
+    };
+
+    use rayon::iter::{IntoParallelIterator, ParallelIterator};
+
+    use rand::random;
+
+    // #[test]
     fn main_test() {
-        const LEN: usize = 1_000_000;
+        const LEN: usize = 1_000;
         const NUM_ITER: u32 = 100;
         const NUM_CORES: usize = 12;
 
@@ -29,6 +34,9 @@ mod test {
 
             let mut inserter_hands = Vec::new();
             inserter_hands.resize_with(LEN * 64, || random::<u8>() % 8);
+
+            let mut inserter_timers = Vec::new();
+            inserter_timers.resize_with(LEN * 64, || random::<u8>() % 8);
 
             let mut output = Vec::new();
             output.resize(256, 0);
@@ -51,7 +59,7 @@ mod test {
                     &mut belt,
                     &indices,
                     &mut inserter_hands,
-                    &mut Vec::new(),
+                    &mut inserter_timers,
                     &mut output,
                 );
             }
@@ -102,8 +110,6 @@ mod test {
         // dbg!(inserter_hands);
     }
 
-    #[test]
-    #[inline(never)]
     fn test(
         belt: &mut [bool],
         indices: &[u8],

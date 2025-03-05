@@ -1,11 +1,9 @@
-use std::time::Instant;
-
 use crate::{
     data::DataStore,
     frontend::{
         action::action_state_machine::{ActionStateMachine, WIDTH_PER_LEVEL},
         world::{
-            tile::{BeltId, BeltTileId, Entity, BELT_LEN_PER_TILE},
+            tile::{BeltId, BeltTileId, Entity, BELT_LEN_PER_TILE, CHUNK_SIZE_FLOAT},
             Position,
         },
     },
@@ -37,23 +35,25 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let mut item_layer = Layer::square_tile_grid(tilesize);
 
     let player_chunk = (
-        (player_pos.0 / 16.0) as usize,
-        (player_pos.1 / 16.0) as usize,
+        (player_pos.0 / CHUNK_SIZE_FLOAT) as usize,
+        (player_pos.1 / CHUNK_SIZE_FLOAT) as usize,
     );
 
-    for x_offs in -((num_tiles_across_screen / 16.0 / 2.0).ceil() as i32)
-        ..=((num_tiles_across_screen / 16.0 / 2.0).ceil() as i32)
+    for x_offs in -((num_tiles_across_screen / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
+        ..=((num_tiles_across_screen / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
     {
         // TODO: Use different height (aspect ratio!)
-        for y_offs in -((num_tiles_across_screen / 16.0 / 2.0).ceil() as i32)
-            ..=((num_tiles_across_screen / 16.0 / 2.0).ceil() as i32)
+        for y_offs in -((num_tiles_across_screen / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
+            ..=((num_tiles_across_screen / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
         {
             let chunk_draw_offs = (
-                x_offs as f32 * 16.0 - player_pos.0 % 16.0 + (0.5 * num_tiles_across_screen),
-                y_offs as f32 * 16.0 - player_pos.1 % 16.0 + (0.5 * num_tiles_across_screen),
+                x_offs as f32 * CHUNK_SIZE_FLOAT - player_pos.0 % CHUNK_SIZE_FLOAT
+                    + (0.5 * num_tiles_across_screen),
+                y_offs as f32 * CHUNK_SIZE_FLOAT - player_pos.1 % CHUNK_SIZE_FLOAT
+                    + (0.5 * num_tiles_across_screen),
             );
 
-            match game_state.world.chunks.get(
+            match game_state.world.get_chunk(
                 player_chunk
                     .0
                     .wrapping_add_signed(x_offs.try_into().unwrap()),
@@ -94,9 +94,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                     for entity in chunk.get_entities() {
                         match entity {
-                            crate::frontend::world::tile::Entity::Assembler { pos, .. }
-                            | crate::frontend::world::tile::Entity::AssemblerWithoutRecipe {
-                                pos,
+                            crate::frontend::world::tile::Entity::Assembler {
+                                pos, info, ..
                             } => {
                                 entity_layer.draw_sprite(
                                     &texture_atlas.assembler,
@@ -198,14 +197,30 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 }
                             },
 
-                            Entity::Inserter {
-                                pos,
-                                direction,
-                                id,
-                                belt_pos,
-                            } => {
+                            Entity::Inserter { pos, direction, .. } => {
                                 entity_layer.draw_sprite(
                                     &texture_atlas.inserter[*direction],
+                                    DrawInstance {
+                                        position: [
+                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                        ],
+                                        size: [1.0, 1.0],
+                                        animation_frame: 0,
+                                    },
+                                );
+                            },
+
+                            Entity::PowerPole {
+                                ty,
+                                pos,
+                                grid_id,
+                                connected_power_poles,
+                            } => {
+                                // TODO:
+                                // println!("Pole at {pos:?}, with grid: {grid_id}");
+                                entity_layer.draw_sprite(
+                                    &texture_atlas.assembler,
                                     DrawInstance {
                                         position: [
                                             chunk_draw_offs.0 + (pos.x % 16) as f32,
@@ -253,22 +268,40 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 .world
                 .get_chunk_for_tile(*pos)
                 .expect("Cannot find chunk for viewing");
-            let entity = chunk.get_entity_at(*pos);
+            let entity = chunk.get_entity_at(*pos, data_store);
 
             if let Some(entity) = entity {
                 dbg!(entity);
                 match entity {
-                    crate::frontend::world::tile::Entity::Assembler { pos, id } => {
-                        let assembler = game_state.simulation_state.factory.power_grids
-                            [id.grid as usize]
-                            .stores
-                            .get_info(*id, data_store);
+                    crate::frontend::world::tile::Entity::Assembler { pos, info } => match info {
+                        crate::frontend::world::tile::AssemblerInfo::UnpoweredNoRecipe => {
+                            println!("Viewing AssemblerWithoutRecipe {pos:?}");
+                        },
+                        crate::frontend::world::tile::AssemblerInfo::Unpowered(recipe) => {
+                            println!("Viewing Unpowered Assembler {pos:?}, {recipe:?}");
+                        },
+                        crate::frontend::world::tile::AssemblerInfo::PoweredNoRecipe(grid) => {
+                            println!("Viewing AssemblerWithoutRecipe {pos:?}, {grid:?}");
+                        },
+                        crate::frontend::world::tile::AssemblerInfo::Powered(assembler_id) => {
+                            let assembler = game_state
+                                .simulation_state
+                                .factory
+                                .power_grids
+                                .get_assembler_info(*assembler_id, data_store);
 
-                        dbg!(assembler);
+                            dbg!(assembler);
+                        },
                     },
-                    crate::frontend::world::tile::Entity::PowerPole { pos, id } => {
+                    crate::frontend::world::tile::Entity::PowerPole {
+                        ty,
+                        pos,
+                        grid_id,
+                        connected_power_poles,
+                    } => {
                         // TODO:
-                        let pg = &game_state.simulation_state.factory.power_grids[*id as usize];
+                        let pg = &game_state.simulation_state.factory.power_grids.power_grids
+                            [*grid_id as usize];
 
                         dbg!(pg);
                     },
@@ -294,37 +327,49 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             dbg!(belt);
                         },
                     },
-                    crate::frontend::world::tile::Entity::AssemblerWithoutRecipe { pos } => {
-                        println!("Viewing AssemblerWithoutRecipe {pos:?}");
-                    },
                     crate::frontend::world::tile::Entity::Inserter {
                         pos,
                         direction,
-                        id,
-                        belt_pos,
+                        info,
                     } => {
-                        let crate::frontend::world::tile::BeltTileId::BeltId(BeltId {
-                            item,
-                            index,
-                        }) = id
-                        else {
-                            unreachable!("Inserter attached to EmptyBelt, is currently impossible");
-                        };
+                        match info {
+                            crate::frontend::world::tile::InserterInfo::NotAttached {
+                                start_pos,
+                                end_pos,
+                            } => println!("Unattached inserter at {pos:?}"),
+                            crate::frontend::world::tile::InserterInfo::Attached(ins) => match ins {
+                                crate::frontend::world::tile::AttachedInserter::BeltStorage {
+                                    id,
+                                    belt_pos,
+                                } => {
+                                    let crate::frontend::world::tile::BeltTileId::BeltId(BeltId {
+                                        item,
+                                        index,
+                                    }) = id
+                                    else {
+                                        unreachable!("Inserter attached to EmptyBelt, is currently impossible");
+                                    };
 
-                        let item_id: usize = item.id.into();
-                        let belt =
-                            &game_state.simulation_state.factory.belts.belts[item_id].belts[*index];
+                                    let item_id: usize = item.id.into();
+                                    let belt = &game_state.simulation_state.factory.belts.belts
+                                        [item_id]
+                                        .belts[*index];
 
-                        let inserter_info = belt
-                            .get_inserter_info_at(*belt_pos)
-                            .expect("Did not find inserter where an entity points to!");
+                                    let inserter_info = belt
+                                        .get_inserter_info_at(*belt_pos)
+                                        .expect("Did not find inserter where an entity points to!");
 
-                        dbg!(inserter_info);
+                                    dbg!(inserter_info);
+                                },
+                                crate::frontend::world::tile::AttachedInserter::BeltBelt(_) => {
+                                    todo!()
+                                },
+                                crate::frontend::world::tile::AttachedInserter::StorageStorage(
+                                    _,
+                                ) => todo!(),
+                            },
+                        }
                     },
-                    crate::frontend::world::tile::Entity::UnconnectedInserter {
-                        pos,
-                        direction,
-                    } => todo!(),
                 }
             }
         },

@@ -23,7 +23,7 @@ pub struct BeltStorageInserter<RecipeIdxType: IdxTrait, const DIR: Dir> {
 //       hit the same cache line is EXTREMELY important.
 //       Luckily since inserter only have limited range (3 tiles or whatever) there is inherent locality in the accesses, if the MultiStores are somewhat spacially aligned.
 //       Though this could also lead to particularly poor access patterns if the belt/line of inserters is perpendicular to the stride pattern of the Multistore
-//       (maybe some weird quadtree weirdness could help?)
+//       (maybe some quadtree weirdness could help?)
 impl<RecipeIdxType: IdxTrait, const DIR: Dir> BeltStorageInserter<RecipeIdxType, DIR> {
     #[must_use]
     pub const fn new(id: StorageID<RecipeIdxType>) -> Self {
@@ -47,12 +47,15 @@ impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::BeltToSt
                 }
             },
             InserterState::FullAndWaitingForSlot => {
-                if storages[usize::from(self.storage_id.storage_list_idx)]
+                if storages[usize::from(self.storage_id.grid)]
+                    [usize::from(self.storage_id.storage_list_idx)]
                     [self.storage_id.machine_idx as usize]
-                    < 0
+                    // TODO:
+                    < 100
                 {
                     // There is space in the machine
-                    storages[usize::from(self.storage_id.storage_list_idx)]
+                    storages[usize::from(self.storage_id.grid)]
+                        [usize::from(self.storage_id.storage_list_idx)]
                         [self.storage_id.machine_idx as usize] += 1;
 
                     self.state = InserterState::EmptyAndMovingBack(MOVETIME);
@@ -86,12 +89,14 @@ impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::StorageT
 
         match self.state {
             InserterState::Empty => {
-                if storages[usize::from(self.storage_id.storage_list_idx)]
+                if storages[usize::from(self.storage_id.grid)]
+                    [usize::from(self.storage_id.storage_list_idx)]
                     [self.storage_id.machine_idx as usize]
                     > 0
                 {
                     // There is an item in the machine
-                    storages[usize::from(self.storage_id.storage_list_idx)]
+                    storages[usize::from(self.storage_id.grid)]
+                        [usize::from(self.storage_id.storage_list_idx)]
                         [self.storage_id.machine_idx as usize] -= 1;
 
                     self.state = InserterState::FullAndMovingOut(MOVETIME);

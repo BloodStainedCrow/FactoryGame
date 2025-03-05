@@ -4,6 +4,7 @@ use log::warn;
 use winit::keyboard::KeyCode;
 
 use crate::{
+    data::DataStore,
     frontend::{
         action::{
             place_entity::{EntityPlaceOptions, PlaceEntityInfo},
@@ -68,6 +69,7 @@ impl<ItemIdxType: IdxTrait> ActionStateMachine<ItemIdxType> {
         &mut self,
         input: Input,
         world: &World<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
         let mut actions = match input {
             Input::LeftClickPressed => {
@@ -83,7 +85,7 @@ impl<ItemIdxType: IdxTrait> ActionStateMachine<ItemIdxType> {
                         let chunk = world.get_chunk_for_tile(pos);
 
                         if let Some(chunk) = chunk {
-                            if chunk.get_entity_at(pos).is_some() {
+                            if chunk.get_entity_at(pos, data_store).is_some() {
                                 self.state = ActionStateMachineState::Viewing(pos);
                             }
                         }
@@ -126,7 +128,7 @@ impl<ItemIdxType: IdxTrait> ActionStateMachine<ItemIdxType> {
                         let chunk = world.get_chunk_for_tile(pos);
 
                         if let Some(chunk) = chunk {
-                            if chunk.get_entity_at(pos).is_some() {
+                            if chunk.get_entity_at(pos, data_store).is_some() {
                                 self.state = ActionStateMachineState::Viewing(pos);
                             }
                         }
@@ -175,6 +177,13 @@ impl<ItemIdxType: IdxTrait> ActionStateMachine<ItemIdxType> {
                                     self.current_mouse_pos,
                                 );
                             },
+                            PlaceEntityType::PowerPole { pos, ty } => {
+                                *pos = Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    world.player_pos,
+                                    self.current_mouse_pos,
+                                );
+                            },
                         },
                     },
                 }
@@ -183,7 +192,7 @@ impl<ItemIdxType: IdxTrait> ActionStateMachine<ItemIdxType> {
             },
             Input::KeyPress(code) => {
                 if self.current_held_keys.insert(code) {
-                    self.handle_start_pressing_key(code, world)
+                    self.handle_start_pressing_key(code, world, data_store)
                         .into_iter()
                         .collect()
                 } else {
@@ -233,6 +242,7 @@ impl<ItemIdxType: IdxTrait> ActionStateMachine<ItemIdxType> {
         &mut self,
         key: winit::keyboard::KeyCode,
         world: &World<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
         match (&self.state, key) {
             (
@@ -248,7 +258,11 @@ impl<ItemIdxType: IdxTrait> ActionStateMachine<ItemIdxType> {
                 KeyCode::Digit2,
             ) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::Assembler(Position { x: 0, y: 0 }),
+                    PlaceEntityType::Assembler(Self::player_mouse_to_tile(
+                        self.zoom_level,
+                        world.player_pos,
+                        self.current_mouse_pos,
+                    )),
                 ));
                 vec![]
             },
@@ -258,7 +272,11 @@ impl<ItemIdxType: IdxTrait> ActionStateMachine<ItemIdxType> {
             ) => {
                 self.state =
                     ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Belt {
-                        pos: Position { x: 0, y: 0 },
+                        pos: Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            world.player_pos,
+                            self.current_mouse_pos,
+                        ),
                         direction: Dir::North,
                     }));
                 vec![]
@@ -283,10 +301,30 @@ impl<ItemIdxType: IdxTrait> ActionStateMachine<ItemIdxType> {
             ) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::Inserter {
-                        pos: Position { x: 0, y: 0 },
+                        pos: Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            world.player_pos,
+                            self.current_mouse_pos,
+                        ),
                         dir: Dir::North,
                         // TODO:
                         filter: Item { id: 0.into() },
+                    },
+                ));
+                vec![]
+            },
+            (
+                ActionStateMachineState::Idle | ActionStateMachineState::Holding(_),
+                KeyCode::Digit5,
+            ) => {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::PowerPole {
+                        pos: Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            world.player_pos,
+                            self.current_mouse_pos,
+                        ),
+                        ty: 0,
                     },
                 ));
                 vec![]
@@ -313,12 +351,10 @@ impl<ItemIdxType: IdxTrait> ActionStateMachine<ItemIdxType> {
                 let chunk = world
                     .get_chunk_for_tile(*pos)
                     .expect("Viewing position out of bounds");
-                if matches!(chunk.get_entity_at(*pos), Some(Entity::Assembler { .. }))
-                    || matches!(
-                        chunk.get_entity_at(*pos),
-                        Some(Entity::AssemblerWithoutRecipe { .. })
-                    )
-                {
+                if matches!(
+                    chunk.get_entity_at(*pos, data_store),
+                    Some(Entity::Assembler { .. })
+                ) {
                     vec![ActionType::SetRecipe(SetRecipeInfo {
                         pos: *pos,
                         recipe: Recipe { id: 0.into() },

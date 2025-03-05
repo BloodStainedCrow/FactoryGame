@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SparseGrid<T> {
     width: usize,
     height: usize,
