@@ -243,7 +243,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     Entity::Inserter { info, .. } => match info {
                         InserterInfo::NotAttached { .. } => {},
                         InserterInfo::Attached(attached_inserter) => match attached_inserter {
-                            AttachedInserter::BeltStorage { id, belt_pos } => todo!(),
+                            AttachedInserter::BeltStorage { id, belt_pos } => { // TODO
+                            },
                             AttachedInserter::BeltBelt(_) => {},
                             AttachedInserter::StorageStorage(_) => todo!(),
                         },

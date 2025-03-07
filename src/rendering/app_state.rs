@@ -9,7 +9,7 @@ use crate::{
     },
     data::{DataStore, ItemRecipeDir},
     frontend::{
-        action::{action_state_machine::ActionStateMachine, set_recipe::SetRecipeInfo, ActionType},
+        action::{action_state_machine::ActionStateMachine, belt_placement::handle_belt_placement, set_recipe::SetRecipeInfo, ActionType},
         world::{
             tile::{
                 AssemblerID, AssemblerInfo, AttachedInserter, BeltId, BeltTileId, Dir, Entity,
@@ -20,7 +20,7 @@ use crate::{
     },
     item::{IdxTrait, Item, Recipe},
     power::{power_grid::{all_storages, PowerGrid, PowerGridIdentifier}, PowerGridStorage, Watt},
-    research::{ResearchProgress, TechState}, statistics::{production::ProductionInfo, recipe::RecipeTickInfo, research::ResearchInfo, Statistics},
+    research::{ResearchProgress, TechState}, statistics::{production::ProductionInfo, recipe::RecipeTickInfo, research::ResearchInfo, GenStatistics},
 };
 use log::{error, info, warn};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
@@ -32,18 +32,21 @@ use crate::frontend::action::place_tile::PositionInfo;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct GameState<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+    pub current_tick: u64,
+
     pub world: World<ItemIdxType, RecipeIdxType>,
     pub simulation_state: SimulationState<RecipeIdxType>,
 
-    statistics: Statistics,
+    statistics: GenStatistics,
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, RecipeIdxType> {
     pub fn new(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         Self {
+            current_tick: 0,
             world: World::new(),
             simulation_state: SimulationState::new(data_store),
-            statistics: Statistics::new(data_store),
+            statistics: GenStatistics::new(data_store),
         }
     }
 }
@@ -200,386 +203,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 continue;
                             }
 
-                            // Find neighboring belts if they exist
-                            let front_pos = Position {
-                                x: pos
-                                    .x
-                                    .checked_add_signed(direction.into_offset().0.into())
-                                    .expect("out of bounds"),
-                                y: pos
-                                    .y
-                                    .checked_add_signed(direction.into_offset().1.into())
-                                    .expect("out of bounds"),
-                            };
-                            let front_internal_id = self
-                                .world
-                                .get_chunk_for_tile(front_pos)
-                                .map(|chunk| chunk.get_entity_at(front_pos, data_store))
-                                .and_then(|e| {
-                                    if let Some(Entity::Belt {
-                                        direction: dir, id, ..
-                                    }) = e
-                                    {
-                                        if *dir == direction.reverse() {
-                                            None
-                                        } else {
-                                            Some(*id)
-                                        }
-                                    } else {
-                                        None
-                                    }
-                                });
+                            let (new_id, new_belt_pos) = handle_belt_placement(self, pos, direction, data_store);
 
-                            let back_pos = Position {
-                                x: pos
-                                    .x
-                                    .checked_add_signed(direction.reverse().into_offset().0.into())
-                                    .expect("out of bounds"),
-                                y: pos
-                                    .y
-                                    .checked_add_signed(direction.reverse().into_offset().1.into())
-                                    .expect("out of bounds"),
-                            };
-                            let back_internal_id = self
-                                .world
-                                .get_chunk_for_tile(back_pos)
-                                .map(|chunk| chunk.get_entity_at(back_pos, data_store))
-                                .and_then(|e| {
-                                    if let Some(Entity::Belt {
-                                        direction: dir, id, ..
-                                    }) = e
-                                    {
-                                        if *dir == direction {
-                                            Some(*id)
-                                        } else {
-                                            None
-                                        }
-                                    } else {
-                                        None
-                                    }
-                                });
+                            self.world.add_entity(Entity::Belt { pos, direction, id: new_id, belt_pos: new_belt_pos }, data_store);
 
-                            let new_belt = EmptyBelt {
-                                len: BELT_LEN_PER_TILE,
-                            };
+                            self.update_inserters(InserterUpdateInfo::NewBelt { pos }, data_store);
 
-                            match (front_internal_id, back_internal_id) {
-                                (None, None) => {
-                                    let idx = self.simulation_state.factory.belts.empty_belts.len();
-                                    self.simulation_state
-                                        .factory
-                                        .belts
-                                        .empty_belts
-                                        .push(new_belt);
-
-                                    self.world.add_entity(Entity::Belt {
-                                        pos,
-                                        direction,
-                                        id: BeltTileId::EmptyBeltId(idx),
-                                        belt_pos: BELT_LEN_PER_TILE,
-                                    }, data_store);
-
-                                    self.update_inserters(InserterUpdateInfo::NewBelt { pos }, data_store);
-                                },
-                                (None, Some(back_id)) => {
-                                    // Merge back with this, it will get back_id
-                                    let new_len = match back_id {
-                                        BeltTileId::EmptyBeltId(idx) => {
-                                            take_mut::take(
-                                                &mut self
-                                                    .simulation_state
-                                                    .factory
-                                                    .belts
-                                                    .empty_belts[idx],
-                                                |back_belt| EmptyBelt::join(new_belt, back_belt),
-                                            );
-
-                                            self.simulation_state.factory.belts.empty_belts[idx].len
-                                        },
-                                        BeltTileId::BeltId(belt_id) => {
-                                            let belt_item_id: usize = belt_id.item.id.into();
-                                            let back_belt =
-                                                self.simulation_state.factory.belts.belts
-                                                    [belt_item_id]
-                                                    .belts
-                                                    .get_mut(belt_id.index)
-                                                    .expect("id from world not in simulation!!");
-
-                                            take_mut::take(back_belt, |back_belt| {
-                                                back_belt.join_with_empty(
-                                                    EmptyBelt::new(BELT_LEN_PER_TILE),
-                                                    Side::FRONT,
-                                                )
-                                            });
-
-                                            back_belt.get_len()
-                                        },
-                                    };
-
-                                    // Add the belt. Its belt_pos will be increased to the correct value of BELT_LEN_PER_TILE in the next step
-                                    self.world.add_entity(Entity::Belt {
-                                        pos,
-                                        direction,
-                                        id: back_id,
-
-                                        belt_pos: 0,
-                                    }, data_store);
-
-                                    self.world
-                                        .modify_belt_pos(
-                                            back_id,
-                                            BELT_LEN_PER_TILE.try_into().unwrap()
-                                        );
-
-                                        self.update_inserters(InserterUpdateInfo::NewBelt { pos }, data_store);
-                                },
-                                (Some(front_id), None) => {
-                                    let chunk = self.world.get_chunk_for_tile_mut(pos).unwrap();
-
-                                    // Merge front with this, it will get front_id
-                                    let new_len = match front_id {
-                                        BeltTileId::EmptyBeltId(idx) => {
-                                            take_mut::take(
-                                                &mut self
-                                                    .simulation_state
-                                                    .factory
-                                                    .belts
-                                                    .empty_belts[idx],
-                                                |front_belt| EmptyBelt::join(front_belt, new_belt),
-                                            );
-
-                                            self.simulation_state.factory.belts.empty_belts[idx].len
-                                        },
-                                        BeltTileId::BeltId(belt_id) => {
-                                            let belt_item_id: usize = belt_id.item.id.into();
-                                            let front_belt =
-                                                self.simulation_state.factory.belts.belts
-                                                    [belt_item_id]
-                                                    .belts
-                                                    .get_mut(belt_id.index)
-                                                    .expect("id from world not in simulation!!");
-
-                                            take_mut::take(front_belt, |front_belt| {
-                                                front_belt.join_with_empty(
-                                                    EmptyBelt::new(BELT_LEN_PER_TILE),
-                                                    Side::BACK,
-                                                )
-                                            });
-
-                                            front_belt.get_len()
-                                        },
-                                    };
-
-                                    self.world.add_entity(Entity::Belt {
-                                        pos,
-                                        direction,
-                                        id: front_id,
-
-                                        belt_pos: (new_len),
-                                    }, data_store);
-
-                                    self.update_inserters(InserterUpdateInfo::NewBelt { pos }, data_store);
-                                },
-                                (Some(front_tile_id), Some(back_tile_id)) => {
-                                    let (front_len, removed_id, new_id) = match (
-                                        front_tile_id,
-                                        back_tile_id,
-                                    ) {
-                                        (
-                                            BeltTileId::EmptyBeltId(front_idx),
-                                            BeltTileId::EmptyBeltId(back_idx),
-                                        ) => {
-                                            // Remove back belt from simulation
-                                            let mut back_belt = EmptyBelt::new(0);
-
-                                            mem::swap(
-                                                &mut back_belt,
-                                                &mut self
-                                                    .simulation_state
-                                                    .factory
-                                                    .belts
-                                                    .empty_belts[back_idx],
-                                            );
-
-                                            let back_len = back_belt.len;
-
-                                            self.simulation_state
-                                                .factory
-                                                .belts
-                                                .empty_belt_holes
-                                                .push(back_idx);
-
-                                            // Get ref to front belt
-                                            let front_belt = self
-                                                .simulation_state
-                                                .factory
-                                                .belts
-                                                .empty_belts
-                                                .get_mut(front_idx)
-                                                .expect("id from world not in simulation!!");
-
-                                            let front_len = front_belt.len;
-
-                                            // Merge front and middle and back
-                                            take_mut::take(front_belt, |front_belt| {
-                                                EmptyBelt::join(
-                                                    EmptyBelt::join(front_belt, new_belt),
-                                                    back_belt,
-                                                )
-                                            });
-
-                                            (front_len, back_tile_id, front_tile_id)
-                                        },
-                                        (
-                                            BeltTileId::EmptyBeltId(front_idx),
-                                            BeltTileId::BeltId(back_id),
-                                        ) => {
-                                            // Remove front belt from simulation
-                                            let mut front_belt = EmptyBelt::new(0);
-
-                                            mem::swap(
-                                                &mut front_belt,
-                                                &mut self
-                                                    .simulation_state
-                                                    .factory
-                                                    .belts
-                                                    .empty_belts[front_idx],
-                                            );
-
-                                            let back_item_id: usize = back_id.item.id.into();
-
-                                            // Get ref to back belt
-                                            let back_belt =
-                                                self.simulation_state.factory.belts.belts
-                                                    [back_item_id]
-                                                    .belts
-                                                    .get_mut(back_id.index)
-                                                    .expect("id from world not in simulation!!");
-
-                                            let back_len = back_belt.get_len();
-
-                                            let front_len = front_belt.len;
-
-                                            // Merge front and middle and back
-                                            take_mut::take(back_belt, |back_belt| {
-                                                back_belt
-                                                    .join_with_empty(new_belt, Side::FRONT)
-                                                    .join_with_empty(front_belt, Side::FRONT)
-                                            });
-
-                                            (front_len, front_tile_id, back_tile_id)
-                                        },
-                                        (
-                                            BeltTileId::BeltId(front_id),
-                                            BeltTileId::EmptyBeltId(back_idx),
-                                        ) => {
-                                            // Remove back belt from simulation
-                                            let mut back_belt = EmptyBelt::new(0);
-
-                                            mem::swap(
-                                                &mut back_belt,
-                                                &mut self
-                                                    .simulation_state
-                                                    .factory
-                                                    .belts
-                                                    .empty_belts[back_idx],
-                                            );
-
-                                            let back_len = back_belt.len;
-
-                                            self.simulation_state
-                                                .factory
-                                                .belts
-                                                .empty_belt_holes
-                                                .push(back_idx);
-
-                                            let front_item_id: usize = front_id.item.id.into();
-
-                                            // Get ref to front belt
-                                            let front_belt =
-                                                self.simulation_state.factory.belts.belts
-                                                    [front_item_id]
-                                                    .belts
-                                                    .get_mut(front_id.index)
-                                                    .expect("id from world not in simulation!!");
-
-                                            let front_len = front_belt.get_len();
-
-                                            // Merge front and middle and back
-                                            take_mut::take(front_belt, |front_belt| {
-                                                front_belt
-                                                    .join_with_empty(new_belt, Side::BACK)
-                                                    .join_with_empty(back_belt, Side::BACK)
-                                            });
-
-                                            (front_len, back_tile_id, front_tile_id)
-                                        },
-                                        (
-                                            BeltTileId::BeltId(front_id),
-                                            BeltTileId::BeltId(back_id),
-                                        ) => {
-                                            // Remove back belt from simulation
-                                            let mut back_belt = SmartBelt::new(0);
-                                            let back_item_id: usize = back_id.item.id.into();
-                                            let front_item_id: usize = front_id.item.id.into();
-
-                                            if front_item_id != back_item_id {
-                                                // TODO: Try to downgrade the belt if it is empty
-                                                warn!("Two belts filled with different items cannot be connected");
-                                                continue;
-                                            }
-
-                                            mem::swap(
-                                                &mut back_belt,
-                                                &mut self.simulation_state.factory.belts.belts
-                                                    [back_item_id]
-                                                    .belts[back_id.index],
-                                            );
-
-                                            self.simulation_state.factory.belts.belts[back_item_id]
-                                                .holes
-                                                .push(back_id.index);
-
-                                            // Get ref to front belt
-                                            let front_belt =
-                                                self.simulation_state.factory.belts.belts
-                                                    [front_item_id]
-                                                    .belts
-                                                    .get_mut(front_id.index)
-                                                    .expect("id from world not in simulation!!");
-
-                                            let front_len = front_belt.get_len();
-
-                                            // Merge front and middle and back
-                                            take_mut::take(front_belt, |front_belt| {
-                                                SmartBelt::join(
-                                                    front_belt
-                                                        .join_with_empty(new_belt, Side::BACK),
-                                                    back_belt,
-                                                )
-                                            });
-
-                                            (front_len, back_tile_id, front_tile_id)
-                                        },
-                                    };
-
-                                    self.world.add_entity(Entity::Belt {
-                                        pos,
-                                        direction,
-                                        id: new_id,
-
-                                        belt_pos: front_len + BELT_LEN_PER_TILE,
-                                    }, data_store);
-
-                                    self.world
-                                        .modify_belt_pos(
-                                            back_tile_id,
-                                            (front_len + BELT_LEN_PER_TILE).try_into().expect("Belt too long!")
-                                        );
-
-                                    self.update_inserters(InserterUpdateInfo::NewBelt { pos }, data_store);
-                                },
-                            }
                         },
                         crate::frontend::world::tile::PlaceEntityType::PowerPole { pos, ty } => {
                             // Check if the powerpole fits
@@ -936,10 +565,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             .tech_state
             .apply_progress(tech_progress);
 
-        self.statistics.append_single_set_of_samples((ProductionInfo::from_recipe_info(&recipe_tick_info, data_store), ResearchInfo {}));
+        self.statistics.append_single_set_of_samples((ProductionInfo::from_recipe_info(&recipe_tick_info, data_store), tech_progress));
 
-        if self.statistics.num_samples_pushed % 60 == 0 {
-            File::create("./stats.svg").unwrap().write(self.statistics.get_chart(2, data_store, Some(|_| true)).svg().unwrap().as_bytes()).unwrap();
+        if self.statistics.production.num_samples_pushed % 60 == 0 {
+            File::create("./stats.svg").unwrap().write(self.statistics.get_chart(1, data_store, Some(|_| true)).svg().unwrap().as_bytes()).unwrap();
         }
     }
 
@@ -1012,6 +641,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         sim_state.factory.power_grids.power_grids[power_grid_id as usize].as_mut().unwrap().add_assembler(power_grid_id, recipe, data_store)
     }
 
+    // FIXME: This is bugged
     fn try_instantiate_inserter(&mut self, pos: Position, filter: Option<Item<ItemIdxType>>, data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Result<(), ()> {
         enum InserterStartInfo<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
             Belt(BeltTileId<ItemIdxType>, u16),

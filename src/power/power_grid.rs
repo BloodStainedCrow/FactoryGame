@@ -156,12 +156,15 @@ impl<RecipeIdxType: IdxTrait> PowerGrid<RecipeIdxType> {
             stores: new_stores,
             lab_stores: new_labs,
             grid_graph: new_grid_graph,
-            steam_power_producers: todo!(),
+            // TODO:
+            steam_power_producers: self.steam_power_producers,
             num_solar_panels: self.num_solar_panels + other.num_solar_panels,
             main_accumulator_count: self.main_accumulator_count + other.main_accumulator_count,
-            main_accumulator_charge: (self.main_accumulator_charge * self.main_accumulator_count
+            main_accumulator_charge: if self.main_accumulator_count + other.main_accumulator_count > 0 { (self.main_accumulator_charge * self.main_accumulator_count
                 + other.main_accumulator_charge * other.main_accumulator_count)
-                / (self.main_accumulator_count + other.main_accumulator_count),
+                / (self.main_accumulator_count + other.main_accumulator_count) } else {
+                    Joule(0)
+                },
             use_burnable_fuel_to_charge_accumulators: match (
                 self.use_burnable_fuel_to_charge_accumulators,
                 other.use_burnable_fuel_to_charge_accumulators,

@@ -31,6 +31,8 @@ pub enum InserterState {
 // That way we support both large single grid bases and bases with many grids (though maybe not megabases with independent outposts and zero beacons)
 // TODO: This is less efficient, but should be fine for now
 // TODO: maybe do this differently
+
+// TODO: Since I collect the "all storage" list anyway I should be able to flatten it?
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct StorageID<RecipeIdxType: IdxTrait> {
     pub grid: PowerGridIdentifier,

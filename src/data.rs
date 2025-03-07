@@ -1,7 +1,7 @@
 use std::{array, collections::HashMap, marker::PhantomData};
 
 use log::{info, warn};
-use sha2::{digest::generic_array::functional::FunctionalSequence, Digest, Sha256};
+use sha2::{Digest, Sha256};
 
 use crate::{
     assembler::TIMERTYPE,

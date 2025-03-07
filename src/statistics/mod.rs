@@ -1,14 +1,14 @@
-use std::array;
+use std::{array, ops::AddAssign};
 
 use charts_rs::{LineChart, Series};
-use itertools::Itertools;
 use log::error;
 use production::ProductionInfo;
-use research::ResearchInfo;
 
 use crate::{
     data::DataStore,
     item::{IdxTrait, Item},
+    research::ResearchProgress,
+    NewWithDataStore,
 };
 
 mod power;
@@ -24,34 +24,82 @@ const TIMESCALE_NAMES: [&'static str; NUM_DIFFERENT_TIMESCALES] =
     ["10 seconds", "1 minute", "1 hour"];
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct Statistics {
-    pub num_samples_pushed: usize,
-    production_samples: [Vec<ProductionInfo>; NUM_DIFFERENT_TIMESCALES],
-    production_total: ProductionInfo,
+pub struct GenStatistics {
+    pub production: Timeline<ProductionInfo>,
+    research: Timeline<ResearchProgress>,
 }
 
-impl Statistics {
+impl GenStatistics {
     pub fn new<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        Statistics {
-            num_samples_pushed: 0,
-            production_samples: array::from_fn(|i| {
-                vec![ProductionInfo::new(data_store); NUM_SAMPLES_AT_INTERVALS[i]]
-            }),
-            production_total: ProductionInfo::new(data_store),
+        GenStatistics {
+            production: Timeline::new(data_store),
+            research: Timeline::new(data_store),
         }
     }
 
-    pub fn append_single_set_of_samples(&mut self, samples: (ProductionInfo, ResearchInfo)) {
+    pub fn append_single_set_of_samples(&mut self, samples: (ProductionInfo, ResearchProgress)) {
         if samples.0.items_produced.iter().any(|v| *v > 0) {
             error!("PRODUCED SOMETHING");
         }
 
-        self.production_total += &samples.0;
+        self.production.append_single_set_of_samples(samples.0);
+        self.research.append_single_set_of_samples(samples.1);
+    }
+
+    pub fn get_chart<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        &self,
+        timescale: usize,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        filter: Option<impl Fn(Item<ItemIdxType>) -> bool>,
+    ) -> LineChart {
+        let prod_values: Vec<Series> = self
+            .production
+            .get_series(timescale, data_store, filter)
+            .into_iter()
+            .collect();
+
+        LineChart::new(
+            prod_values,
+            vec![".".to_string(); NUM_SAMPLES_AT_INTERVALS[timescale]],
+        )
+    }
+}
+
+trait IntoSeries<T, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>: Sized {
+    fn into_series(
+        values: &[Self],
+        filter: Option<impl Fn(T) -> bool>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl IntoIterator<Item = Series>;
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct Timeline<T> {
+    pub num_samples_pushed: usize,
+    production_samples: [Vec<T>; NUM_DIFFERENT_TIMESCALES],
+    production_total: T,
+}
+
+impl<T: NewWithDataStore + Clone + for<'a> AddAssign<&'a T>> Timeline<T> {
+    pub fn new<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
+        Self {
+            num_samples_pushed: 0,
+            production_samples: array::from_fn(|i| {
+                vec![T::new(data_store); NUM_SAMPLES_AT_INTERVALS[i]]
+            }),
+            production_total: T::new(data_store),
+        }
+    }
+
+    pub fn append_single_set_of_samples(&mut self, sample: T) {
+        self.production_total += &sample;
 
         self.production_samples[0].rotate_right(1);
-        self.production_samples[0][0] = samples.0;
+        self.production_samples[0][0] = sample;
 
         // Percolate up the different levels
         for current_level_idx in 1..NUM_DIFFERENT_TIMESCALES {
@@ -64,8 +112,6 @@ impl Statistics {
             if self.num_samples_pushed % scale_relative_to_base != 0 {
                 break;
             }
-
-            dbg!(scale_relative_to_base);
 
             let (level_to_read_from, current_level) =
                 // TODO: mid might be wrong here
@@ -80,10 +126,14 @@ impl Statistics {
 
             assert!(list_of_samples.len() == relative);
 
-            let new_sample: ProductionInfo = list_of_samples
-                .iter()
-                .skip(1)
-                .fold(list_of_samples[0].clone(), |acc, v| acc + v);
+            let new_sample =
+                list_of_samples
+                    .iter()
+                    .skip(1)
+                    .fold(list_of_samples[0].clone(), |mut acc, v| {
+                        acc += v;
+                        acc
+                    });
 
             current_level.rotate_right(1);
             current_level[0] = new_sample;
@@ -92,43 +142,22 @@ impl Statistics {
         self.num_samples_pushed += 1;
     }
 
-    pub fn get_chart<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-        &self,
+    pub fn get_series<
+        'a,
+        'b,
+        Item,
+        ItemIdxType: IdxTrait,
+        RecipeIdxType: IdxTrait,
+        Filter: Fn(Item) -> bool,
+    >(
+        &'a self,
         timescale: usize,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-        filter: Option<impl Fn(Item<ItemIdxType>) -> bool>,
-    ) -> LineChart {
-        let values: Vec<Series> = self.production_samples[timescale]
-            .iter()
-            .map(|info| {
-                info.items_produced
-                    .iter()
-                    .zip(data_store.item_names.iter())
-                    .enumerate()
-                    .filter_map(|(item_id, v)| {
-                        filter
-                            .as_ref()
-                            .map(|filter| {
-                                filter(Item {
-                                    id: ItemIdxType::try_from(item_id).unwrap(),
-                                })
-                            })
-                            .unwrap_or(true)
-                            .then_some(v)
-                    })
-            })
-            .flatten()
-            .map(|(v, k)| (k, v))
-            .into_group_map()
-            .into_iter()
-            .map(|a| (a.0.as_str(), a.1.into_iter().map(|v| *v as f32).collect()).into())
-            .collect();
-
-        dbg!(values.len());
-
-        LineChart::new(
-            values,
-            vec![".".to_string(); NUM_SAMPLES_AT_INTERVALS[timescale]],
-        )
+        data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
+        filter: Option<Filter>,
+    ) -> impl IntoIterator<Item = Series> + use<'a, 'b, T, Item, ItemIdxType, RecipeIdxType, Filter>
+    where
+        T: IntoSeries<Item, ItemIdxType, RecipeIdxType>,
+    {
+        T::into_series(&self.production_samples[timescale], filter, data_store)
     }
 }

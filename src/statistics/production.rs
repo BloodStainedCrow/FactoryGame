@@ -1,8 +1,18 @@
-use std::ops::{Add, AddAssign};
+use std::{
+    borrow::Borrow,
+    ops::{Add, AddAssign},
+};
 
-use crate::{data::DataStore, item::IdxTrait};
+use charts_rs::Series;
+use itertools::Itertools;
 
-use super::recipe::RecipeTickInfo;
+use crate::{
+    data::DataStore,
+    item::{IdxTrait, Item},
+    NewWithDataStore,
+};
+
+use super::{recipe::RecipeTickInfo, IntoSeries};
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ProductionInfo {
@@ -11,15 +21,6 @@ pub struct ProductionInfo {
 }
 
 impl ProductionInfo {
-    pub fn new<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Self {
-        Self {
-            items_produced: vec![0; data_store.item_names.len()],
-            items_used: vec![0; data_store.item_names.len()],
-        }
-    }
-
     pub fn from_recipe_info<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         info: &RecipeTickInfo,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -88,6 +89,52 @@ impl AddAssign<&ProductionInfo> for ProductionInfo {
 
         for (s, rhs) in self.items_used.iter_mut().zip(rhs.items_used.iter()) {
             *s += rhs;
+        }
+    }
+}
+
+impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
+    IntoSeries<Item<ItemIdxType>, ItemIdxType, RecipeIdxType> for ProductionInfo
+{
+    fn into_series(
+        values: &[Self],
+        filter: Option<impl Fn(Item<ItemIdxType>) -> bool>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl IntoIterator<Item = Series> {
+        values
+            .iter()
+            .map(|info| {
+                info.items_produced
+                    .iter()
+                    .zip(data_store.item_names.iter())
+                    .enumerate()
+                    .filter_map(|(item_id, v)| {
+                        filter
+                            .as_ref()
+                            .map(|filter| {
+                                filter(Item {
+                                    id: ItemIdxType::try_from(item_id).unwrap(),
+                                })
+                            })
+                            .unwrap_or(true)
+                            .then_some(v)
+                    })
+            })
+            .flatten()
+            .map(|(v, k)| (k, v))
+            .into_group_map()
+            .into_iter()
+            .map(|a| (a.0.as_str(), a.1.into_iter().map(|v| *v as f32).collect()).into())
+    }
+}
+
+impl NewWithDataStore for ProductionInfo {
+    fn new<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        data_store: impl Borrow<DataStore<ItemIdxType, RecipeIdxType>>,
+    ) -> Self {
+        Self {
+            items_produced: vec![0; data_store.borrow().item_names.len()],
+            items_used: vec![0; data_store.borrow().item_names.len()],
         }
     }
 }

@@ -44,7 +44,9 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     let front_current_state = front_belt_dir.map(|front_belt_dir| {
         expected_belt_state(front_belt_dir, |dir| {
-            game_state.world.get_belt_possible_inputs(new_belt_pos)[*dir]
+            game_state
+                .world
+                .get_belt_possible_inputs(new_belt_pos + new_belt_direction)[*dir]
         })
     });
 
@@ -53,7 +55,9 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             if *dir == new_belt_direction.reverse() {
                 true
             } else {
-                game_state.world.get_belt_possible_inputs(new_belt_pos)[*dir]
+                game_state
+                    .world
+                    .get_belt_possible_inputs(new_belt_pos + new_belt_direction)[*dir]
             }
         })
     });
@@ -63,14 +67,28 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         front_current_state.is_some()
     );
 
-    // If we get input from the back, extend it
-    let (new_belt_id, new_belt_len) =
-        if game_state.world.get_belt_possible_inputs(new_belt_pos)[new_belt_direction.reverse()] {
-            assert!(our_expected_state != BeltState::Curved);
+    dbg!(our_expected_state);
+    dbg!(front_expected_state);
 
+    let back_dir = match our_expected_state {
+        BeltState::Straight | BeltState::Sideloading | BeltState::DoubleSideloading => {
+            new_belt_direction.reverse()
+        },
+        BeltState::Curved => game_state
+            .world
+            .get_belt_possible_inputs(new_belt_pos)
+            .iter()
+            .filter_map(|v| v.1.then_some(v.0))
+            .find(|v| v.compare(new_belt_direction) == DirRelative::Turned)
+            .unwrap(),
+    };
+
+    // If we get input from the back, extend it
+    let (new_belt_id, new_belt_len, new_belt_belt_pos) =
+        if game_state.world.get_belt_possible_inputs(new_belt_pos)[back_dir] {
             let back_belt_entity = game_state
                 .world
-                .get_entities_colliding_with(new_belt_pos + new_belt_direction, (1, 1), data_store)
+                .get_entities_colliding_with(new_belt_pos + back_dir, (1, 1), data_store)
                 .into_iter()
                 .next();
 
@@ -128,9 +146,9 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 },
             };
 
-            (Some(new_belt_id), new_belt_len)
+            (Some(new_belt_id), new_belt_len, BELT_LEN_PER_TILE)
         } else {
-            (None, BELT_LEN_PER_TILE)
+            (None, BELT_LEN_PER_TILE, BELT_LEN_PER_TILE)
         };
 
     // Handle sideloading onto us
@@ -213,7 +231,7 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     };
 
     if let Some(final_belt_id) = final_belt_id {
-        (final_belt_id, new_belt_len)
+        (final_belt_id, new_belt_belt_pos)
     } else {
         // This belt is not in the simulation, add it
         let new_belt = EmptyBelt::new(final_belt_len);
@@ -226,7 +244,7 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             .empty_belts
             .push(new_belt);
 
-        (BeltTileId::EmptyBeltId(idx), final_belt_len)
+        (BeltTileId::EmptyBeltId(idx), new_belt_belt_pos)
     }
 }
 
@@ -306,6 +324,10 @@ fn merge_belts<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     back_tile_id: BeltTileId<ItemIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> (BeltTileId<ItemIdxType>, u16) {
+    if front_tile_id == back_tile_id {
+        todo!("Currently I do not handle loops correctly")
+    }
+
     let (final_len, final_id) = match (front_tile_id, back_tile_id) {
         (BeltTileId::EmptyBeltId(front_idx), BeltTileId::EmptyBeltId(back_idx)) => {
             // Remove back belt from simulation
@@ -466,6 +488,8 @@ fn expected_belt_state(belt_dir: Dir, gets_input_from: impl FnMut(&Dir) -> bool)
     let input_dirs: Vec<Dir> = Dir::iter().filter(gets_input_from).collect();
     // Output dirs are unused for determining this, interesting!
     // let output_dirs: Vec<Dir> = Dir::iter().filter(|dir| dir_info(*dir) == Some(BeltDir::Ouput)).collect();
+
+    dbg!(&input_dirs);
 
     match input_dirs.len() {
         0 => BeltState::Straight,

@@ -1,10 +1,10 @@
 use std::future::Future;
 use std::ops::ControlFlow;
 
-use genawaiter::rc::{gen, Gen};
-use genawaiter::yield_;
 use genawaiter::GeneratorState::Complete;
 use genawaiter::GeneratorState::Yielded;
+use genawaiter::rc::{Gen, r#gen};
+use genawaiter::yield_;
 
 use crate::{
     data::DataStore, frontend::action::ActionType, item::IdxTrait, rendering::app_state::GameState,
@@ -34,10 +34,10 @@ struct ReplayAction<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
 }
 
 impl<
-        ItemIdxType: IdxTrait,
-        RecipeIdxType: IdxTrait,
-        DataStor: AsRef<DataStore<ItemIdxType, RecipeIdxType>>,
-    > Replay<ItemIdxType, RecipeIdxType, DataStor>
+    ItemIdxType: IdxTrait,
+    RecipeIdxType: IdxTrait,
+    DataStor: AsRef<DataStore<ItemIdxType, RecipeIdxType>>,
+> Replay<ItemIdxType, RecipeIdxType, DataStor>
 {
     pub fn new(game_state: GameState<ItemIdxType, RecipeIdxType>, data_store: DataStor) -> Self {
         Self {
@@ -78,7 +78,7 @@ impl<
         impl Future<Output = GameState<ItemIdxType, RecipeIdxType>>,
     > {
         ReplayViewer {
-            generator: gen!({
+            generator: r#gen!({
                 let data_store = self.data_store;
 
                 let mut game_state: GameState<ItemIdxType, RecipeIdxType> = self.starting_state;

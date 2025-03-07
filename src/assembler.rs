@@ -145,7 +145,7 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
 }
 
 ///                                    ~~item~~ grid recipe idx
-pub type SingleItemSlice<'a, 'b, 'c> = &'a mut [Vec<&'c mut [u8]>];
+pub type SingleItemSlice<'a, 'b, 'c> = &'a mut [Vec<&'c mut [ITEMCOUNTTYPE]>];
 
 // FIXME:
 // fn get_slice_for_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(

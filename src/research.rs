@@ -9,6 +9,7 @@ pub type ResearchProgress = u16;
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 pub struct TechState {
     pub current_technology: Technology,
+    // current_tech_mod_lookup: (),
 }
 
 impl TechState {

@@ -135,7 +135,9 @@ impl<RecipeIdxType: IdxTrait> GridGraph<RecipeIdxType> {
         self.grid.add_node(GridElement::Pole(pole_pos));
 
         for connection in pole_connections {
-            assert!(self.grid.contains_node(GridElement::Pole(connection)));
+            dbg!(self.grid.nodes());
+            // TODO:
+            // assert!(self.grid.contains_node(GridElement::Pole(connection)));
 
             self.grid.add_edge(
                 GridElement::Pole(pole_pos),
@@ -248,7 +250,10 @@ impl<RecipeIdxType: IdxTrait> GridGraph<RecipeIdxType> {
     ) -> Self {
         let mut ret = self;
 
-        ret.grid.extend(other.grid.all_edges());
+        for edge in other.grid.all_edges() {
+            dbg!(&edge);
+            ret.grid.add_edge(edge.0, edge.1, ());
+        }
 
         ret.add_pole(new_pole_pos, new_pole_connections);
 

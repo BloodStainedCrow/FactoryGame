@@ -3,11 +3,13 @@
 #![feature(adt_const_params)]
 #![feature(array_try_map)]
 #![feature(never_type)]
+#![feature(precise_capturing_in_traits)]
 
 extern crate test;
 
 use std::{
     array,
+    borrow::Borrow,
     simd::cmp::SimdPartialEq,
     sync::{
         atomic::AtomicU64,
@@ -54,8 +56,16 @@ mod replays;
 
 mod saving;
 
+mod multiplayer;
+
 impl IdxTrait for u8 {}
 impl IdxTrait for u16 {}
+
+trait NewWithDataStore {
+    fn new<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        data_store: impl Borrow<DataStore<ItemIdxType, RecipeIdxType>>,
+    ) -> Self;
+}
 
 pub fn main() {
     SimpleLogger::new()
