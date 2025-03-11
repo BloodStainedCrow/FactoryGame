@@ -13,7 +13,7 @@ use crate::{
         tile::{AssemblerID, MachineID},
         Position,
     },
-    item::IdxTrait,
+    item::{IdxTrait, WeakIdxTrait},
     TICKS_PER_SECOND,
 };
 
@@ -124,7 +124,7 @@ impl Watt {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct PowerGridStorage<RecipeIdxType: IdxTrait> {
+pub struct PowerGridStorage<RecipeIdxType: WeakIdxTrait> {
     pub power_grids: Vec<Option<PowerGrid<RecipeIdxType>>>,
 }
 

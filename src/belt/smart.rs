@@ -8,14 +8,14 @@ use crate::{
         belt_storage_inserter::{BeltStorageInserter, Dir},
         InserterState, StorageID,
     },
-    item::IdxTrait,
+    item::{IdxTrait, WeakIdxTrait},
 };
 
 use super::belt::{Belt, NoSpaceError};
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct SmartBelt<RecipeIdxType: IdxTrait> {
+pub struct SmartBelt<RecipeIdxType: WeakIdxTrait> {
     /// Important, first_free_index must ALWAYS be used using mod len
     first_free_index: FreeIndex,
     zero_index: usize,
@@ -29,13 +29,13 @@ pub struct EmptyBelt {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct InserterStore<RecipeIdxType: IdxTrait> {
+pub struct InserterStore<RecipeIdxType: WeakIdxTrait> {
     inserters: Vec<Inserter<RecipeIdxType>>,
     offsets: Vec<u16>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-enum Inserter<RecipeIdxType: IdxTrait> {
+enum Inserter<RecipeIdxType: WeakIdxTrait> {
     Out(BeltStorageInserter<RecipeIdxType, { Dir::BeltToStorage }>),
     In(BeltStorageInserter<RecipeIdxType, { Dir::StorageToBelt }>),
 }

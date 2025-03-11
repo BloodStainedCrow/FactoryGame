@@ -1,6 +1,9 @@
 use std::marker::ConstParamTy;
 
-use crate::{assembler::SingleItemSlice, item::IdxTrait};
+use crate::{
+    assembler::SingleItemSlice,
+    item::{IdxTrait, WeakIdxTrait},
+};
 
 use super::{InserterState, StorageID, MOVETIME};
 
@@ -11,7 +14,7 @@ pub enum Dir {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct BeltStorageInserter<RecipeIdxType: IdxTrait, const DIR: Dir> {
+pub struct BeltStorageInserter<RecipeIdxType: WeakIdxTrait, const DIR: Dir> {
     pub storage_id: StorageID<RecipeIdxType>,
     pub state: InserterState,
 }

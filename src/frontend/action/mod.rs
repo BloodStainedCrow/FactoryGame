@@ -2,7 +2,7 @@ use place_entity::PlaceEntityInfo;
 use place_tile::PlaceFloorTileByHandInfo;
 use set_recipe::SetRecipeInfo;
 
-use crate::item::IdxTrait;
+use crate::item::{IdxTrait, WeakIdxTrait};
 
 use super::world::tile::World;
 
@@ -14,7 +14,7 @@ pub mod set_recipe;
 
 // TODO: Do I want actions to also encode the previous state in some capacity to make discarding nonsensical actions easier with network delays?
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub enum ActionType<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+pub enum ActionType<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     PlaceFloorTile(PlaceFloorTileByHandInfo),
     PlaceEntity(PlaceEntityInfo<ItemIdxType>),
 

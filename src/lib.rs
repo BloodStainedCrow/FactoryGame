@@ -25,7 +25,7 @@ use frontend::{
     action::{action_state_machine::ActionStateMachine, ActionType},
     input::Input,
 };
-use item::IdxTrait;
+use item::{IdxTrait, WeakIdxTrait};
 use log::info;
 use rendering::{app_state::AppState, window::App};
 use simple_logger::SimpleLogger;
@@ -58,6 +58,8 @@ mod saving;
 
 mod multiplayer;
 
+impl WeakIdxTrait for u8 {}
+impl WeakIdxTrait for u16 {}
 impl IdxTrait for u8 {}
 impl IdxTrait for u16 {}
 

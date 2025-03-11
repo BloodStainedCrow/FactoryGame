@@ -16,12 +16,12 @@ const OVERDRAW_RATIO: usize = MAX_BASE_SIZE / AVG_TRIP_LENGTH;
 
 use crate::{
     frontend::world::Position,
-    item::{IdxTrait, Item, ITEMCOUNTTYPE},
+    item::{IdxTrait, Item, WeakIdxTrait, ITEMCOUNTTYPE},
     power::{Joule, Watt},
     rendering::app_state::SimulationState,
 };
 
-struct BotNetwork<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+struct BotNetwork<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     // TODO: This might need another graph to handle removal of roboports
     current_tick: u32,
     roboports: Vec<Roboport>,
@@ -59,7 +59,7 @@ struct MultiRequesterInfo {}
 
 struct MultiStorageInfo {}
 
-enum BotUpdate<ItemIdxType: IdxTrait> {
+enum BotUpdate<ItemIdxType: WeakIdxTrait> {
     // TODO: Name the fields
     DepositItem(Joule, Item<ItemIdxType>, u16, ITEMCOUNTTYPE),
     TryRetrieveItem(Joule, Item<ItemIdxType>, u16, ITEMCOUNTTYPE),

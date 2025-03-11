@@ -7,7 +7,7 @@ use crate::{
             Position,
         },
     },
-    item::IdxTrait,
+    item::{IdxTrait, WeakIdxTrait},
 };
 use tilelib::types::{DrawInstance, Layer, Renderer};
 

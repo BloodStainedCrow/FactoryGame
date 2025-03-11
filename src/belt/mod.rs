@@ -4,7 +4,7 @@ pub mod smart;
 
 use smart::{EmptyBelt, SmartBelt};
 
-use crate::item::IdxTrait;
+use crate::item::{IdxTrait, WeakIdxTrait};
 #[cfg(test)]
 use crate::item::Item;
 
@@ -31,7 +31,7 @@ fn do_update_test_bools(items: &mut [bool]) {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct BeltStore<RecipeIdxType: IdxTrait> {
+pub struct BeltStore<RecipeIdxType: WeakIdxTrait> {
     pub empty_belts: Vec<EmptyBelt>,
     pub empty_belt_holes: Vec<usize>,
 
@@ -39,7 +39,7 @@ pub struct BeltStore<RecipeIdxType: IdxTrait> {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct MultiBeltStore<RecipeIdxType: IdxTrait> {
+pub struct MultiBeltStore<RecipeIdxType: WeakIdxTrait> {
     pub belts: Vec<SmartBelt<RecipeIdxType>>,
 
     pub holes: Vec<usize>,

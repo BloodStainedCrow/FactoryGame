@@ -10,15 +10,17 @@ type AllItems = Vec<ItemDescriptor>;
 type AllMachines<ItemIdxType: IdxTrait> = Vec<MachineDescriptor<ItemIdxType>>;
 
 pub trait IdxTrait:
+    Debug + serde::Serialize + for<'de> serde::Deserialize<'de> + WeakIdxTrait
+{
+}
+
+pub trait WeakIdxTrait:
     Into<usize>
     + Copy
     + Send
     + Sync
     + From<u8>
     + TryFrom<usize, Error: Debug>
-    + Debug
-    + serde::Serialize
-    + PartialEq
     + Eq
     + Hash
     + Ord
@@ -32,7 +34,7 @@ struct ItemDescriptor {
     // etc
 }
 
-struct MachineDescriptor<ItemIdxType: IdxTrait> {
+struct MachineDescriptor<ItemIdxType: WeakIdxTrait> {
     name: &'static str,
     item_to_place: Option<Item<ItemIdxType>>,
 }
@@ -40,7 +42,7 @@ struct MachineDescriptor<ItemIdxType: IdxTrait> {
 #[derive(
     Debug, PartialEq, Eq, Hash, Clone, Copy, serde::Serialize, serde::Deserialize, PartialOrd, Ord,
 )]
-pub struct Item<ItemIdxType: IdxTrait> {
+pub struct Item<ItemIdxType: WeakIdxTrait> {
     pub id: ItemIdxType,
 }
 
@@ -59,7 +61,7 @@ impl<ItemIdxType: IdxTrait> Item<ItemIdxType> {
 #[derive(
     Debug, PartialEq, Eq, Hash, Clone, Copy, serde::Serialize, serde::Deserialize, PartialOrd, Ord,
 )]
-pub struct Recipe<RecipeIdxType: IdxTrait> {
+pub struct Recipe<RecipeIdxType: WeakIdxTrait> {
     pub id: RecipeIdxType,
 }
 

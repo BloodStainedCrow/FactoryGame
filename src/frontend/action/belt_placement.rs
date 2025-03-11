@@ -13,7 +13,7 @@ use crate::{
         tile::{BeltTileId, Dir, DirRelative, Entity, World, BELT_LEN_PER_TILE},
         Position,
     },
-    item::IdxTrait,
+    item::{IdxTrait, WeakIdxTrait},
     rendering::app_state::{GameState, SimulationState},
 };
 

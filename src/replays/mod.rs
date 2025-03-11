@@ -1,13 +1,13 @@
 use std::future::Future;
 use std::ops::ControlFlow;
 
+use genawaiter::rc::{r#gen, Gen};
+use genawaiter::yield_;
 use genawaiter::GeneratorState::Complete;
 use genawaiter::GeneratorState::Yielded;
-use genawaiter::rc::{Gen, r#gen};
-use genawaiter::yield_;
 
 use crate::{
-    data::DataStore, frontend::action::ActionType, item::IdxTrait, rendering::app_state::GameState,
+    data::DataStore, frontend::action::ActionType, item::{IdxTrait, WeakIdxTrait}, rendering::app_state::GameState,
 };
 
 // TODO: Keyframe support
@@ -28,16 +28,16 @@ pub struct Replay<
 }
 
 #[derive(Debug, Clone)]
-struct ReplayAction<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+struct ReplayAction<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     timestamp: u64,
     action: ActionType<ItemIdxType, RecipeIdxType>,
 }
 
 impl<
-    ItemIdxType: IdxTrait,
-    RecipeIdxType: IdxTrait,
-    DataStor: AsRef<DataStore<ItemIdxType, RecipeIdxType>>,
-> Replay<ItemIdxType, RecipeIdxType, DataStor>
+        ItemIdxType: IdxTrait,
+        RecipeIdxType: IdxTrait,
+        DataStor: AsRef<DataStore<ItemIdxType, RecipeIdxType>>,
+    > Replay<ItemIdxType, RecipeIdxType, DataStor>
 {
     pub fn new(game_state: GameState<ItemIdxType, RecipeIdxType>, data_store: DataStor) -> Self {
         Self {

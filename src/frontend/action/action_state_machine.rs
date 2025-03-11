@@ -18,7 +18,7 @@ use crate::{
             Position,
         },
     },
-    item::{IdxTrait, Item, Recipe},
+    item::{IdxTrait, Item, Recipe, WeakIdxTrait},
 };
 
 use super::{place_tile::PositionInfo, ActionType};
@@ -26,7 +26,7 @@ use super::{place_tile::PositionInfo, ActionType};
 const MIN_ZOOM_WIDTH: f32 = 1.0;
 pub const WIDTH_PER_LEVEL: usize = 16;
 
-pub struct ActionStateMachine<ItemIdxType: IdxTrait> {
+pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait> {
     current_mouse_pos: (f32, f32),
     current_held_keys: HashSet<winit::keyboard::KeyCode>,
     pub state: ActionStateMachineState<ItemIdxType>,
@@ -34,13 +34,13 @@ pub struct ActionStateMachine<ItemIdxType: IdxTrait> {
     pub zoom_level: f32,
 }
 
-pub enum ActionStateMachineState<ItemIdxType: IdxTrait> {
+pub enum ActionStateMachineState<ItemIdxType: WeakIdxTrait> {
     Idle,
     Holding(HeldObject<ItemIdxType>),
     Viewing(Position),
 }
 
-pub enum HeldObject<ItemIdxType: IdxTrait> {
+pub enum HeldObject<ItemIdxType: WeakIdxTrait> {
     Tile(FloorTile),
     // TODO: PlaceEntityType is not quite right for this case
     Entity(PlaceEntityType<ItemIdxType>),

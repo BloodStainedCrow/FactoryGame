@@ -1,7 +1,10 @@
 use std::{borrow::BorrowMut, marker::PhantomData};
 
 use crate::{
-    data::DataStore, frontend::action::ActionType, item::IdxTrait, rendering::app_state::GameState,
+    data::DataStore,
+    frontend::action::ActionType,
+    item::{IdxTrait, WeakIdxTrait},
+    rendering::app_state::GameState,
 };
 
 trait ActionInterface<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>:
@@ -16,16 +19,16 @@ where
 {
 }
 
-pub(super) trait ActionSource<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+pub(super) trait ActionSource<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     fn get(
-        &mut self,
+        &self,
         current_tick: u64,
     ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>, IntoIter: Clone>
            + Clone
            + use<Self, ItemIdxType, RecipeIdxType>;
 }
 
-pub(super) trait HandledActionConsumer<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+pub(super) trait HandledActionConsumer<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     fn consume(
         &mut self,
         current_tick: u64,
@@ -50,6 +53,14 @@ impl<
         ActionInterfaceType: ActionInterface<ItemIdxType, RecipeIdxType>,
     > GameStateUpdateHandler<ItemIdxType, RecipeIdxType, ActionInterfaceType>
 {
+    pub fn new(actions: ActionInterfaceType) -> Self {
+        Self {
+            action_interface: actions,
+            item: PhantomData,
+            recipe: PhantomData,
+        }
+    }
+
     pub fn update(
         &mut self,
         game_state: &mut GameState<ItemIdxType, RecipeIdxType>,

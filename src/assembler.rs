@@ -5,7 +5,7 @@ use itertools::Itertools;
 use crate::{
     data::{DataStore, ItemRecipeDir},
     frontend::world::tile::AssemblerID,
-    item::{recipe_item_idx, IdxTrait, Item, Recipe, ITEMCOUNTTYPE},
+    item::{recipe_item_idx, IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
     power::{
         power_grid::{IndexUpdateInfo, PowerGridIdentifier, MAX_POWER_MULT},
         Joule, Watt,
@@ -23,7 +23,7 @@ pub type TIMERTYPE = u16;
 // TODO: Don´t clump update data and data for adding/removing assemblers together!
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MultiAssemblerStore<
-    RecipeIdxType: IdxTrait,
+    RecipeIdxType: WeakIdxTrait,
     const NUM_INGS: usize,
     const NUM_OUTPUTS: usize,
 > {
@@ -40,13 +40,13 @@ pub struct MultiAssemblerStore<
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct FullAssemblerStore<RecipeIdxType: IdxTrait> {
+pub struct FullAssemblerStore<RecipeIdxType: WeakIdxTrait> {
     pub assemblers_0_1: Box<[MultiAssemblerStore<RecipeIdxType, 0, 1>]>,
     pub assemblers_1_1: Box<[MultiAssemblerStore<RecipeIdxType, 1, 1>]>,
 }
 
 #[derive(Debug, Clone)]
-pub struct AssemblerOnclickInfo<ItemIdxType: IdxTrait> {
+pub struct AssemblerOnclickInfo<ItemIdxType: WeakIdxTrait> {
     inputs: Vec<(Item<ItemIdxType>, ITEMCOUNTTYPE)>,
     outputs: Vec<(Item<ItemIdxType>, ITEMCOUNTTYPE)>,
     timer_percentage: f32,

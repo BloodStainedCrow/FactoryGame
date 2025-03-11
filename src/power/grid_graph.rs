@@ -7,11 +7,11 @@ use crate::{
         tile::{AssemblerID, MachineID},
         Position,
     },
-    item::IdxTrait,
+    item::{IdxTrait, WeakIdxTrait},
 };
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub(super) struct GridGraph<RecipeIdxType: IdxTrait> {
+pub(super) struct GridGraph<RecipeIdxType: WeakIdxTrait> {
     /// The connections in this Graph denote how "electricity" and therefore the power grid connections flow.
     grid: DiGraphMap<GridElement<RecipeIdxType>, ()>,
 }
@@ -19,29 +19,29 @@ pub(super) struct GridGraph<RecipeIdxType: IdxTrait> {
 #[derive(
     Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, Hash, PartialOrd, Ord,
 )]
-enum GridElement<RecipeIdxType: IdxTrait> {
+enum GridElement<RecipeIdxType: WeakIdxTrait> {
     Pole(Position),
     Machine((Position, MachineID<RecipeIdxType>)),
 }
 
-pub(super) struct PoleRemovalInfo<RecipeIdxType: IdxTrait> {
+pub(super) struct PoleRemovalInfo<RecipeIdxType: WeakIdxTrait> {
     now_unpowered_machines: Vec<Position>,
     result: Option<SplitResultInfo<RecipeIdxType>>,
 }
 
-pub(super) struct SplitResultInfo<RecipeIdxType: IdxTrait> {
+pub(super) struct SplitResultInfo<RecipeIdxType: WeakIdxTrait> {
     other_graphs: Vec<GridGraph<RecipeIdxType>>,
     split: PowerGridSplittingInstructions<RecipeIdxType>,
 }
 
-pub(super) struct PowerGridSplittingInstructions<RecipeIdxType: IdxTrait> {
+pub(super) struct PowerGridSplittingInstructions<RecipeIdxType: WeakIdxTrait> {
     number_of_parts: u8,
     pole_map: HashMap<Position, u8>,
     machine_map_pos: HashMap<Position, u8>,
     machine_map_id: HashMap<MachineID<RecipeIdxType>, u8>,
 }
 
-struct SplitInfo<RecipeIdxType: IdxTrait> {
+struct SplitInfo<RecipeIdxType: WeakIdxTrait> {
     others: Vec<GridGraph<RecipeIdxType>>,
     now_unpowered: Vec<Position>,
 }

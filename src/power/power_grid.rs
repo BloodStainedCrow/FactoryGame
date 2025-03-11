@@ -10,7 +10,7 @@ use crate::{
     data::{DataStore, LazyPowerMachineInfo},
     frontend::world::{tile::AssemblerID, Position},
     inserter::StorageID,
-    item::{IdxTrait, Recipe, ITEMCOUNTTYPE},
+    item::{IdxTrait, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
     lab::MultiLabStore,
     power::Joule,
     research::{ResearchProgress, TechState},
@@ -32,7 +32,7 @@ const MAX_ACCUMULATOR_DISCHARGE_RATE: Watt = Watt(300_000);
 const MAX_ACCUMULATOR_CHARGE: Joule = Joule(5_000_000);
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct PowerGrid<RecipeIdxType: IdxTrait> {
+pub struct PowerGrid<RecipeIdxType: WeakIdxTrait> {
     stores: FullAssemblerStore<RecipeIdxType>,
     lab_stores: MultiLabStore,
     pub(super) grid_graph: GridGraph<RecipeIdxType>,
@@ -64,7 +64,7 @@ impl From<BurnableFuelForAccumulators> for bool {
     }
 }
 
-pub struct IndexUpdateInfo<RecipeIdxType: IdxTrait> {
+pub struct IndexUpdateInfo<RecipeIdxType: WeakIdxTrait> {
     pub old: StorageID<RecipeIdxType>,
     pub new: StorageID<RecipeIdxType>,
 }

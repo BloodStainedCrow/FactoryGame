@@ -8,7 +8,7 @@ use std::{
 use directories::ProjectDirs;
 use log::error;
 
-use crate::{item::IdxTrait, rendering::app_state::GameState};
+use crate::{item::{IdxTrait, WeakIdxTrait}, rendering::app_state::GameState};
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct SaveGame<

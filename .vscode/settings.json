@@ -7,7 +7,7 @@
         "XXX",
         "[ ]",
         "[x]",
-        "todo!()",
+        "todo!",
         "unsafe {",
         "unsafe fn",
         "#[inline(never)]" // #[inline(never)] is bad and normally left over from using cargo show-asm, so I treat is as a TODO

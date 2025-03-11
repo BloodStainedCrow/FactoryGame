@@ -7,7 +7,7 @@ use crate::{
     assembler::TIMERTYPE,
     frontend::world::tile::{AssemblerID, Dir},
     inserter::StorageID,
-    item::{IdxTrait, Item, Recipe, ITEMCOUNTTYPE},
+    item::{IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
     power::{power_grid::PowerGridIdentifier, Joule, Watt},
 };
 
@@ -206,7 +206,7 @@ enum RawEntity {
 }
 
 #[derive(Debug)]
-pub struct DataStore<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub checksum: String,
 
     pub recipe_num_ing_lookup: Vec<usize>,
@@ -249,7 +249,7 @@ pub struct DataStore<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
 }
 
 #[derive(Debug)]
-pub struct LazyPowerMachineInfo<ItemIdxType: IdxTrait> {
+pub struct LazyPowerMachineInfo<ItemIdxType: WeakIdxTrait> {
     pub ingredient: Item<ItemIdxType>,
     pub power_per_item: Joule,
     pub max_power_per_tick: Joule,

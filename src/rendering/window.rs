@@ -9,7 +9,7 @@ use crate::{
     frontend::{
         action::action_state_machine::ActionStateMachine, input::Input, world::tile::World,
     },
-    item::IdxTrait,
+    item::{IdxTrait, WeakIdxTrait},
     saving::{load, save, SaveGame},
 };
 use log::{info, warn};
@@ -25,7 +25,7 @@ use super::{
 };
 use image::GenericImageView;
 
-pub struct App<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+pub struct App<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub state: Arc<Mutex<AppState<ItemIdxType, RecipeIdxType>>>,
     pub state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType>>>,
     window: Window,

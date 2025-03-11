@@ -1,15 +1,15 @@
 use crate::{
     frontend::world::tile::{PlaceEntityType, World},
-    item::IdxTrait,
+    item::{IdxTrait, WeakIdxTrait},
 };
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct PlaceEntityInfo<ItemIdxType: IdxTrait> {
+pub struct PlaceEntityInfo<ItemIdxType: WeakIdxTrait> {
     pub entities: EntityPlaceOptions<ItemIdxType>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub enum EntityPlaceOptions<ItemIdxType: IdxTrait> {
+pub enum EntityPlaceOptions<ItemIdxType: WeakIdxTrait> {
     Single(PlaceEntityType<ItemIdxType>),
     Multiple(Vec<PlaceEntityType<ItemIdxType>>),
 }

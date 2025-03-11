@@ -11,7 +11,7 @@ use itertools::Itertools;
 
 use crate::{
     data::DataStore,
-    item::{IdxTrait, Item, Recipe},
+    item::{IdxTrait, Item, Recipe, WeakIdxTrait},
     power::power_grid::PowerGridIdentifier,
     rendering::app_state::SimulationState,
 };
@@ -31,13 +31,13 @@ pub enum FloorTile {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct Chunk<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+pub struct Chunk<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub floor_tiles: [[FloorTile; CHUNK_SIZE]; CHUNK_SIZE],
     entities: Vec<Entity<ItemIdxType, RecipeIdxType>>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct World<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     // TODO: I don´t think I want FP
     pub player_pos: (f32, f32),
     pub player_move: (f32, f32),
@@ -54,7 +54,7 @@ struct PowerGridConnectedDevicesLookup {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-struct BeltIdLookup<ItemIdxType: IdxTrait> {
+struct BeltIdLookup<ItemIdxType: WeakIdxTrait> {
     belt_id_to_chunks: BTreeMap<BeltTileId<ItemIdxType>, BTreeSet<(usize, usize)>>,
 }
 
@@ -635,7 +635,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
 }
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
-pub enum AssemblerInfo<RecipeIdxType: IdxTrait> {
+pub enum AssemblerInfo<RecipeIdxType: WeakIdxTrait> {
     UnpoweredNoRecipe,
     Unpowered(Recipe<RecipeIdxType>),
     PoweredNoRecipe(PowerGridIdentifier),
@@ -643,7 +643,7 @@ pub enum AssemblerInfo<RecipeIdxType: IdxTrait> {
 }
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
-pub enum InserterInfo<ItemIdxType: IdxTrait> {
+pub enum InserterInfo<ItemIdxType: WeakIdxTrait> {
     NotAttached {
         start_pos: Position,
         end_pos: Position,
@@ -652,7 +652,7 @@ pub enum InserterInfo<ItemIdxType: IdxTrait> {
 }
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
-pub enum AttachedInserter<ItemIdxType: IdxTrait> {
+pub enum AttachedInserter<ItemIdxType: WeakIdxTrait> {
     BeltStorage {
         id: BeltTileId<ItemIdxType>,
         belt_pos: u16,
@@ -662,7 +662,7 @@ pub enum AttachedInserter<ItemIdxType: IdxTrait> {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub enum Entity<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Assembler {
         pos: Position,
         info: AssemblerInfo<RecipeIdxType>,
@@ -714,7 +714,7 @@ const TEST: usize = const { size_of::<Entity<u8, u8>>() };
 #[derive(
     Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, Hash, PartialOrd, Ord,
 )]
-pub enum BeltTileId<ItemIdxType: IdxTrait> {
+pub enum BeltTileId<ItemIdxType: WeakIdxTrait> {
     EmptyBeltId(usize),
     BeltId(BeltId<ItemIdxType>),
 }
@@ -722,13 +722,13 @@ pub enum BeltTileId<ItemIdxType: IdxTrait> {
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize, PartialOrd, Ord,
 )]
-pub struct BeltId<ItemIdxType: IdxTrait> {
+pub struct BeltId<ItemIdxType: WeakIdxTrait> {
     pub item: Item<ItemIdxType>,
     pub index: usize,
 }
 
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
-pub enum PlaceEntityType<ItemIdxType: IdxTrait> {
+pub enum PlaceEntityType<ItemIdxType: WeakIdxTrait> {
     Assembler(Position),
     Inserter {
         pos: Position,
@@ -809,7 +809,7 @@ impl Dir {
 #[derive(
     Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]
-pub struct AssemblerID<RecipeIdxType: IdxTrait> {
+pub struct AssemblerID<RecipeIdxType: WeakIdxTrait> {
     pub recipe: Recipe<RecipeIdxType>,
     pub grid: PowerGridIdentifier,
     pub assembler_index: u16,
@@ -817,7 +817,7 @@ pub struct AssemblerID<RecipeIdxType: IdxTrait> {
 #[derive(
     Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]
-pub enum MachineID<RecipeIdxType: IdxTrait> {
+pub enum MachineID<RecipeIdxType: WeakIdxTrait> {
     Assembler(AssemblerID<RecipeIdxType>),
     SolarPanel { grid: PowerGridIdentifier },
 }

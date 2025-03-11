@@ -1,6 +1,9 @@
 use std::marker::PhantomData;
 
-use crate::{item::IdxTrait, power::power_grid::PowerGridIdentifier};
+use crate::{
+    item::{IdxTrait, WeakIdxTrait},
+    power::power_grid::PowerGridIdentifier,
+};
 
 use static_assertions::const_assert;
 
@@ -34,7 +37,7 @@ pub enum InserterState {
 
 // TODO: Since I collect the "all storage" list anyway I should be able to flatten it?
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
-pub struct StorageID<RecipeIdxType: IdxTrait> {
+pub struct StorageID<RecipeIdxType: WeakIdxTrait> {
     pub grid: PowerGridIdentifier,
     pub storage_list_idx: u16,
     pub machine_idx: u16,

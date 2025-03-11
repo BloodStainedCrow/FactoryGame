@@ -1,21 +1,25 @@
 use std::iter;
 
-use crate::{research::ResearchProgress, NewWithDataStore};
+use crate::{
+    item::{IdxTrait, WeakIdxTrait},
+    research::ResearchProgress,
+    NewWithDataStore,
+};
 
 use super::IntoSeries;
 
 pub struct ResearchInfo {}
 
 impl NewWithDataStore for ResearchProgress {
-    fn new<ItemIdxType: crate::item::IdxTrait, RecipeIdxType: crate::item::IdxTrait>(
+    fn new<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>(
         _data_store: impl std::borrow::Borrow<crate::data::DataStore<ItemIdxType, RecipeIdxType>>,
     ) -> Self {
         Self::default()
     }
 }
 
-impl<ItemIdxType: crate::item::IdxTrait, RecipeIdxType: crate::item::IdxTrait>
-    IntoSeries<(), ItemIdxType, RecipeIdxType> for ResearchProgress
+impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> IntoSeries<(), ItemIdxType, RecipeIdxType>
+    for ResearchProgress
 {
     fn into_series(
         values: &[Self],

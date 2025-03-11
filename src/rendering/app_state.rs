@@ -18,7 +18,7 @@ use crate::{
             Position,
         },
     },
-    item::{IdxTrait, Item, Recipe},
+    item::{IdxTrait, Item, Recipe, WeakIdxTrait},
     power::{power_grid::{all_storages, PowerGrid, PowerGridIdentifier}, PowerGridStorage, Watt},
     research::{ResearchProgress, TechState}, statistics::{production::ProductionInfo, recipe::RecipeTickInfo, research::ResearchInfo, GenStatistics},
 };
@@ -31,7 +31,7 @@ use super::{render_world::render_world, TextureAtlas};
 use crate::frontend::action::place_tile::PositionInfo;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct GameState<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+pub struct GameState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub current_tick: u64,
 
     pub world: World<ItemIdxType, RecipeIdxType>,
@@ -52,7 +52,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct SimulationState<RecipeIdxType: IdxTrait> {
+pub struct SimulationState<RecipeIdxType: WeakIdxTrait> {
     tech_state: TechState,
     pub factory: Factory<RecipeIdxType>,
     // TODO:
@@ -68,7 +68,7 @@ impl<RecipeIdxType: IdxTrait> SimulationState<RecipeIdxType> {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct Factory<RecipeIdxType: IdxTrait> {
+pub struct Factory<RecipeIdxType: WeakIdxTrait> {
     pub power_grids: PowerGridStorage<RecipeIdxType>,
     pub belts: BeltStore<RecipeIdxType>,
 }
@@ -86,7 +86,7 @@ impl<RecipeIdxType: IdxTrait> Factory<RecipeIdxType> {
         }
     }
 }
-pub enum AppState<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+pub enum AppState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Ingame(GameState<ItemIdxType, RecipeIdxType>),
 }
 
@@ -643,7 +643,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
     // FIXME: This is bugged
     fn try_instantiate_inserter(&mut self, pos: Position, filter: Option<Item<ItemIdxType>>, data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Result<(), ()> {
-        enum InserterStartInfo<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+        enum InserterStartInfo<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
             Belt(BeltTileId<ItemIdxType>, u16),
             Assembler(AssemblerInfo<RecipeIdxType>),
         }

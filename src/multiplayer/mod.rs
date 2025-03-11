@@ -1,24 +1,32 @@
-use std::sync::{mpsc::Receiver, Arc, Mutex};
+use std::{
+    net::{IpAddr, TcpStream},
+    sync::{mpsc::Receiver, Arc, Mutex},
+};
 
 use plumbing::{Client, IntegratedServer, Server};
 use server::{ActionSource, GameStateUpdateHandler, HandledActionConsumer};
 
 use crate::{
-    data::DataStore, frontend::action::ActionType, item::IdxTrait, rendering::app_state::GameState,
+    data::DataStore,
+    frontend::action::ActionType,
+    item::{IdxTrait, WeakIdxTrait},
+    rendering::app_state::GameState,
 };
 
 mod plumbing;
 mod protocol;
 mod server;
 
-enum Game<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+mod connection_reciever;
+
+pub enum Game<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
     Client(
         Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
-        GameStateUpdateHandler<ItemIdxType, RecipeIdxType, Client>,
+        GameStateUpdateHandler<ItemIdxType, RecipeIdxType, Client<ItemIdxType, RecipeIdxType>>,
     ),
     DedicatedServer(
         GameState<ItemIdxType, RecipeIdxType>,
-        GameStateUpdateHandler<ItemIdxType, RecipeIdxType, Server>,
+        GameStateUpdateHandler<ItemIdxType, RecipeIdxType, Server<ItemIdxType, RecipeIdxType>>,
     ),
     /// Integrated Server is also how Singleplayer works
     IntegratedServer(
@@ -31,21 +39,62 @@ enum Game<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
     ),
 }
 
-enum GameInitData<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+pub struct ClientConnectionInfo {
+    ip: IpAddr,
+    port: u16,
+}
+
+pub struct ServerInfo {
+    connections: Arc<Mutex<Vec<TcpStream>>>,
+}
+
+pub enum GameInitData<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Client {
         game_state: Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
         action_reciever: Receiver<ActionType<ItemIdxType, RecipeIdxType>>,
+        info: ClientConnectionInfo,
     },
-    DedicatedServer(GameState<ItemIdxType, RecipeIdxType>),
+    DedicatedServer(GameState<ItemIdxType, RecipeIdxType>, ServerInfo),
     IntegratedServer {
         game_state: Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
         action_reciever: Receiver<ActionType<ItemIdxType, RecipeIdxType>>,
+        info: ServerInfo,
     },
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdxType> {
-    pub fn new(init: GameInitData<ItemIdxType, RecipeIdxType>) -> Self {
-        todo!()
+    pub fn new(init: GameInitData<ItemIdxType, RecipeIdxType>) -> Result<Self, std::io::Error> {
+        match init {
+            GameInitData::Client {
+                game_state,
+                action_reciever,
+                info,
+            } => {
+                let stream = std::net::TcpStream::connect((info.ip, info.port))?;
+                Ok(Self::Client(
+                    game_state,
+                    GameStateUpdateHandler::new(Client {
+                        local_actions: action_reciever,
+                        server_connection: stream,
+                    }),
+                ))
+            },
+            GameInitData::DedicatedServer(game_state, info) => Ok(Self::DedicatedServer(
+                game_state,
+                GameStateUpdateHandler::new(Server::new(info)),
+            )),
+            GameInitData::IntegratedServer {
+                game_state,
+                action_reciever,
+                info,
+            } => Ok(Self::IntegratedServer(
+                game_state,
+                GameStateUpdateHandler::new(IntegratedServer {
+                    local_actions: action_reciever,
+                    server: Server::new(info),
+                }),
+            )),
+        }
     }
 
     pub fn run(&mut self) {
@@ -72,11 +121,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
     }
 }
 
-impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, RecipeIdxType>
-    for Receiver<ActionType<ItemIdxType, RecipeIdxType>>
+impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
+    ActionSource<ItemIdxType, RecipeIdxType> for Receiver<ActionType<ItemIdxType, RecipeIdxType>>
 {
     fn get(
-        &mut self,
+        &self,
         current_tick: u64,
     ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>, IntoIter: Clone>
            + Clone
@@ -85,7 +134,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
     }
 }
 
-impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
+impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
     HandledActionConsumer<ItemIdxType, RecipeIdxType> for ()
 {
     fn consume(
