@@ -5,7 +5,7 @@ use crate::{
     item::{IdxTrait, WeakIdxTrait},
 };
 
-use super::{InserterState, StorageID, MOVETIME};
+use super::{InserterState, StorageID};
 
 #[derive(ConstParamTy, PartialEq, Eq)]
 pub enum Dir {
@@ -38,7 +38,7 @@ impl<RecipeIdxType: IdxTrait, const DIR: Dir> BeltStorageInserter<RecipeIdxType,
 }
 
 impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::BeltToStorage }> {
-    pub fn update(&mut self, loc: &mut bool, storages: SingleItemSlice) {
+    pub fn update(&mut self, loc: &mut bool, storages: SingleItemSlice, movetime: u8) {
         // TODO: I just added InserterStates and it is a lot slower (unsurprisingly),
         // Try and find a faster implementation of similar logic
 
@@ -46,7 +46,7 @@ impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::BeltToSt
             InserterState::Empty => {
                 if *loc {
                     *loc = false;
-                    self.state = InserterState::FullAndMovingOut(MOVETIME);
+                    self.state = InserterState::FullAndMovingOut(movetime);
                 }
             },
             InserterState::FullAndWaitingForSlot => {
@@ -61,7 +61,7 @@ impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::BeltToSt
                         [usize::from(self.storage_id.storage_list_idx)]
                         [self.storage_id.machine_idx as usize] += 1;
 
-                    self.state = InserterState::EmptyAndMovingBack(MOVETIME);
+                    self.state = InserterState::EmptyAndMovingBack(movetime);
                 }
             },
             InserterState::FullAndMovingOut(time) => {
@@ -85,7 +85,7 @@ impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::BeltToSt
 }
 
 impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::StorageToBelt }> {
-    pub fn update(&mut self, loc: &mut bool, storages: SingleItemSlice) {
+    pub fn update(&mut self, loc: &mut bool, storages: SingleItemSlice, movetime: u8) {
         // TODO: I just added InserterStates and it is a lot slower (unsurprisingly),
         // Try and find a faster implementation of similar logic,
         // Ideally reduce branch mispredictions as much as possible, while also reducing random loads from storages
@@ -102,13 +102,13 @@ impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::StorageT
                         [usize::from(self.storage_id.storage_list_idx)]
                         [self.storage_id.machine_idx as usize] -= 1;
 
-                    self.state = InserterState::FullAndMovingOut(MOVETIME);
+                    self.state = InserterState::FullAndMovingOut(movetime);
                 }
             },
             InserterState::FullAndWaitingForSlot => {
                 if !*loc {
                     *loc = true;
-                    self.state = InserterState::EmptyAndMovingBack(MOVETIME);
+                    self.state = InserterState::EmptyAndMovingBack(movetime);
                 }
             },
             InserterState::FullAndMovingOut(time) => {

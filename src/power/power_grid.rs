@@ -45,7 +45,7 @@ pub struct PowerGrid<RecipeIdxType: WeakIdxTrait> {
 
     last_power_consumption: Watt,
 
-    last_power_mult: u8,
+    pub last_power_mult: u8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize, serde::Serialize)]

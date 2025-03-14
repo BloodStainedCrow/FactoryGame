@@ -11,6 +11,8 @@ pub struct TextureAtlas {
     blue: Sprite,
 
     assembler: Sprite,
+    no_power: Sprite,
+    not_connected: Sprite,
     belt: enum_map::EnumMap<Dir, Sprite>,
     inserter: enum_map::EnumMap<Dir, Sprite>,
 

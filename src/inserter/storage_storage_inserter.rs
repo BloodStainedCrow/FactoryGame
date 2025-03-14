@@ -2,7 +2,7 @@ use std::num::NonZero;
 
 use crate::item::ITEMCOUNTTYPE;
 
-use super::{InserterState, MOVETIME};
+use super::InserterState;
 
 // FIXME: the storage_id cannot properly represent an index into multiple slices (which I have here, since
 // there are multiple lists of storages in the different MultiAssemblerStores (since multiple different recipes take for example Iron Plates))
@@ -32,7 +32,12 @@ impl StorageStorageInserter {
         }
     }
 
-    pub fn update(&mut self, item_max_stack_size: ITEMCOUNTTYPE, storages: &mut [ITEMCOUNTTYPE]) {
+    pub fn update(
+        &mut self,
+        item_max_stack_size: ITEMCOUNTTYPE,
+        storages: &mut [ITEMCOUNTTYPE],
+        movetime: u8,
+    ) {
         // TODO: I just added InserterStates and it is a lot slower (unsurprisingly),
         // Try and find a faster implementation of similar logic
 
@@ -42,7 +47,7 @@ impl StorageStorageInserter {
                     // There is an item in the machine
                     storages[usize::from(Into::<u16>::into(self.storage_id_in))] -= 1;
 
-                    self.state = InserterState::FullAndMovingOut(MOVETIME);
+                    self.state = InserterState::FullAndMovingOut(movetime);
                 }
             },
             InserterState::FullAndWaitingForSlot => {
@@ -52,7 +57,7 @@ impl StorageStorageInserter {
                     // There is space in the machine
                     storages[usize::from(Into::<u16>::into(self.storage_id_out))] += 1;
 
-                    self.state = InserterState::EmptyAndMovingBack(MOVETIME);
+                    self.state = InserterState::EmptyAndMovingBack(movetime);
                 }
             },
             InserterState::FullAndMovingOut(time) => {

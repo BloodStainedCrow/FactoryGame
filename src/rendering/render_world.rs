@@ -3,7 +3,10 @@ use crate::{
     frontend::{
         action::action_state_machine::{ActionStateMachine, WIDTH_PER_LEVEL},
         world::{
-            tile::{BeltId, BeltTileId, Entity, BELT_LEN_PER_TILE, CHUNK_SIZE_FLOAT},
+            tile::{
+                AssemblerID, AssemblerInfo, BeltId, BeltTileId, Entity, BELT_LEN_PER_TILE,
+                CHUNK_SIZE_FLOAT,
+            },
             Position,
         },
     },
@@ -35,6 +38,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let mut item_layer = Layer::square_tile_grid(tilesize);
 
     let mut player_layer = Layer::square_tile_grid(tilesize);
+
+    let mut waring_layer = Layer::square_tile_grid(tilesize);
 
     let player_pos = state_machine.local_player_pos;
 
@@ -112,6 +117,52 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         animation_frame: 0,
                                     },
                                 );
+
+                                match info {
+                                    AssemblerInfo::UnpoweredNoRecipe
+                                    | AssemblerInfo::Unpowered(_) => {
+                                        waring_layer.draw_sprite(
+                                            &texture_atlas.not_connected,
+                                            DrawInstance {
+                                                position: [
+                                                    chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                    chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                ],
+                                                size: [3.0, 3.0],
+                                                animation_frame: 0,
+                                            },
+                                        );
+                                    },
+                                    AssemblerInfo::PoweredNoRecipe(grid)
+                                    | AssemblerInfo::Powered(AssemblerID {
+                                        recipe: _,
+                                        grid,
+                                        assembler_index: _,
+                                    }) => {
+                                        let last_power = game_state
+                                            .simulation_state
+                                            .factory
+                                            .power_grids
+                                            .power_grids[usize::from(*grid)]
+                                        .as_ref()
+                                        .unwrap()
+                                        .last_power_mult;
+
+                                        if last_power == 0 {
+                                            waring_layer.draw_sprite(
+                                                &texture_atlas.no_power,
+                                                DrawInstance {
+                                                    position: [
+                                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                    ],
+                                                    size: [3.0, 3.0],
+                                                    animation_frame: 0,
+                                                },
+                                            );
+                                        }
+                                    },
+                                }
                             },
 
                             crate::frontend::world::tile::Entity::Belt {
@@ -434,6 +485,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     renderer.draw(&entity_layer);
 
     renderer.draw(&item_layer);
+
+    renderer.draw(&waring_layer);
 
     renderer.draw(&player_layer);
 }

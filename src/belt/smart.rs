@@ -6,7 +6,7 @@ use crate::{
     assembler::{FullAssemblerStore, SingleItemSlice},
     inserter::{
         belt_storage_inserter::{BeltStorageInserter, Dir},
-        InserterState, StorageID,
+        InserterState, StorageID, MOVETIME,
     },
     item::{IdxTrait, WeakIdxTrait},
 };
@@ -286,8 +286,8 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
                 Some(loc) => {
                     let old = *loc;
                     match ins {
-                        Inserter::Out(inserter) => inserter.update(loc, storages),
-                        Inserter::In(inserter) => inserter.update(loc, storages),
+                        Inserter::Out(inserter) => inserter.update(loc, storages, MOVETIME),
+                        Inserter::In(inserter) => inserter.update(loc, storages, MOVETIME),
                     }
 
                     // TODO: Make sure this is actually correct

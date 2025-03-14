@@ -1,4 +1,4 @@
-use super::{InserterState, MOVETIME};
+use super::InserterState;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BeltBeltInserter {
@@ -19,7 +19,7 @@ impl BeltBeltInserter {
         }
     }
 
-    pub fn update(&mut self, loc_in: &mut bool, loc_out: &mut bool) {
+    pub fn update(&mut self, loc_in: &mut bool, loc_out: &mut bool, movetime: u8) {
         // TODO: I just added InserterStates and it is a lot slower (unsurprisingly),
         // Try and find a faster implementation of similar logic
 
@@ -28,7 +28,7 @@ impl BeltBeltInserter {
                 if *loc_in {
                     *loc_in = false;
 
-                    self.state = InserterState::FullAndMovingOut(MOVETIME);
+                    self.state = InserterState::FullAndMovingOut(movetime);
                 }
             },
             InserterState::FullAndWaitingForSlot => {
@@ -36,7 +36,7 @@ impl BeltBeltInserter {
                     // There is space in the machine
                     *loc_out = true;
 
-                    self.state = InserterState::EmptyAndMovingBack(MOVETIME);
+                    self.state = InserterState::EmptyAndMovingBack(movetime);
                 }
             },
             InserterState::FullAndMovingOut(time) => {

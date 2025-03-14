@@ -86,7 +86,7 @@ impl<ItemIdxType: IdxTrait> BeltBeltInserterStore<ItemIdxType> {
                     let [source_belt, dest_belt] = belts.belts.get_many_mut([ins.1.source.0, ins.1.dest.0]).expect("Index out of bounds");
                     [source_belt.get_mut(ins.1.source.1), dest_belt.get_mut(ins.1.dest.1)]
                 };
-                ins.0.update(source, dest);
+                ins.0.update(source, dest, todo!());
             }
         });
     }

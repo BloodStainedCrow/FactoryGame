@@ -333,6 +333,18 @@ impl App {
         let player_dimensions = player.dimensions();
         let player = player.to_rgba8().into_vec();
 
+        let not_connected = include_bytes!("temp_assets/not_connected.png");
+        let not_connected = image::load_from_memory(not_connected).unwrap();
+
+        let not_connected_dimensions = not_connected.dimensions();
+        let not_connected = not_connected.to_rgba8().into_vec();
+
+        let no_power = include_bytes!("temp_assets/no_power.png");
+        let no_power = image::load_from_memory(no_power).unwrap();
+
+        let no_power_dimensions = no_power.dimensions();
+        let no_power = no_power.to_rgba8().into_vec();
+
         Self {
             state: AppState::Loading,
             window: Window::new(),
@@ -344,6 +356,14 @@ impl App {
                 outside_world: Sprite::new(Texture::new(1, black, black_dimensions)),
                 assembler: Sprite::new(Texture::new(1, assembler, assembler_dimensions)),
                 blue: Sprite::new(Texture::new(1, blue, blue_dimensions)),
+
+                not_connected: Sprite::new(Texture::new(
+                    1,
+                    not_connected,
+                    not_connected_dimensions,
+                )),
+
+                no_power: Sprite::new(Texture::new(1, no_power, no_power_dimensions)),
 
                 plate: Sprite::new(Texture::new(1, plate, plate_dimensions)),
 
