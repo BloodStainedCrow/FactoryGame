@@ -82,6 +82,16 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
         }
     }
 
+    pub fn get_mut(&mut self, index: u16) -> &mut bool {
+        &mut self.locs[index as usize]
+    }
+
+    pub fn get_two(&mut self, indices: [usize; 2]) -> [&mut bool; 2] {
+        self.locs
+            .get_many_mut(indices)
+            .expect("Index out of bounds or same")
+    }
+
     pub fn change_inserter_storage_id(
         &mut self,
         old: StorageID<RecipeIdxType>,
@@ -377,6 +387,7 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
         end.iter_mut().chain(start.iter_mut())
     }
 
+    // TODO: When joining belts, we need to update the positions (and ids) of all attached BeltBeltInserters.
     #[must_use]
     /// # Panics
     /// If one of the belts is longer than `u16::MAX`

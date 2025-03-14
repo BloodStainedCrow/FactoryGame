@@ -12,6 +12,8 @@ pub mod place_entity;
 pub mod place_tile;
 pub mod set_recipe;
 
+pub type PLAYERID = u16;
+
 // TODO: Do I want actions to also encode the previous state in some capacity to make discarding nonsensical actions easier with network delays?
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum ActionType<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
@@ -20,7 +22,7 @@ pub enum ActionType<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     SetRecipe(SetRecipeInfo<RecipeIdxType>),
 
-    Moving((i8, i8)),
+    Position(PLAYERID, (f32, f32)),
 
     Ping((u64, u64)),
 }
@@ -34,7 +36,7 @@ pub fn still_valid<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     match action {
         ActionType::PlaceFloorTile(info) => todo!(),
         ActionType::PlaceEntity(info) => todo!(),
-        ActionType::Moving(_) => todo!(),
+        ActionType::Position(_, _) => todo!(),
         ActionType::SetRecipe(_) => todo!(),
         ActionType::Ping(_) => true,
     }

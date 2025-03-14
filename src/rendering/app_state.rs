@@ -1,14 +1,12 @@
 use std::{
-    collections::BTreeSet, fs::File, io::Write, mem::{self}, ops::ControlFlow
+    collections::BTreeSet, fs::File, io::Write, marker::PhantomData, mem::{self}, ops::ControlFlow
 };
 
 use crate::{
     belt::{
         belt::Belt,
         smart::{EmptyBelt, Side, SmartBelt}, BeltStore, MultiBeltStore,
-    },
-    data::{DataStore, ItemRecipeDir},
-    frontend::{
+    }, data::{DataStore, ItemRecipeDir}, frontend::{
         action::{action_state_machine::ActionStateMachine, belt_placement::handle_belt_placement, set_recipe::SetRecipeInfo, ActionType},
         world::{
             tile::{
@@ -17,10 +15,7 @@ use crate::{
             },
             Position,
         },
-    },
-    item::{IdxTrait, Item, Recipe, WeakIdxTrait},
-    power::{power_grid::{all_storages, PowerGrid, PowerGridIdentifier}, PowerGridStorage, Watt},
-    research::{ResearchProgress, TechState}, statistics::{production::ProductionInfo, recipe::RecipeTickInfo, research::ResearchInfo, GenStatistics},
+    }, inserter::belt_belt_inserter::BeltBeltInserter, item::{IdxTrait, Item, Recipe, WeakIdxTrait}, power::{power_grid::{all_storages, PowerGrid, PowerGridIdentifier}, PowerGridStorage, Watt}, research::{ResearchProgress, TechState}, statistics::{production::ProductionInfo, recipe::RecipeTickInfo, research::ResearchInfo, GenStatistics}
 };
 use log::{error, info, warn};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
@@ -35,7 +30,7 @@ pub struct GameState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub current_tick: u64,
 
     pub world: World<ItemIdxType, RecipeIdxType>,
-    pub simulation_state: SimulationState<RecipeIdxType>,
+    pub simulation_state: SimulationState<ItemIdxType, RecipeIdxType>,
 
     statistics: GenStatistics,
 }
@@ -52,14 +47,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct SimulationState<RecipeIdxType: WeakIdxTrait> {
+pub struct SimulationState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     tech_state: TechState,
-    pub factory: Factory<RecipeIdxType>,
+    pub factory: Factory<ItemIdxType, RecipeIdxType>,
     // TODO:
 }
 
-impl<RecipeIdxType: IdxTrait> SimulationState<RecipeIdxType> {
-    pub fn new<ItemIdxType: IdxTrait>(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SimulationState<ItemIdxType, RecipeIdxType> {
+    pub fn new(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         Self {
             tech_state: TechState::default(),
             factory: Factory::new(data_store),
@@ -68,13 +63,44 @@ impl<RecipeIdxType: IdxTrait> SimulationState<RecipeIdxType> {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct Factory<RecipeIdxType: WeakIdxTrait> {
+pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub power_grids: PowerGridStorage<RecipeIdxType>,
     pub belts: BeltStore<RecipeIdxType>,
+    pub belt_belt_inserters: BeltBeltInserterStore<ItemIdxType>
 }
 
-impl<RecipeIdxType: IdxTrait> Factory<RecipeIdxType> {
-    fn new<ItemIdxType: IdxTrait>(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct BeltBeltInserterStore<ItemIdxType: WeakIdxTrait> {
+    pub inserters: Box<[Vec<(BeltBeltInserter,BeltBeltInserterInfo<ItemIdxType>)>]>
+}
+
+impl<ItemIdxType: IdxTrait> BeltBeltInserterStore<ItemIdxType> {
+    pub fn update<RecipeIdxType: IdxTrait>(&mut self, belts: &mut BeltStore<RecipeIdxType>, data_store: &DataStore<ItemIdxType, RecipeIdxType>) {
+        self.inserters.par_iter_mut().zip(belts.belts.par_iter_mut()).for_each(|(inserters, belts)| {
+            for ins in inserters {
+                let [source, dest] = if ins.1.source.0 == ins.1.dest.0 {
+                    // We are taking and inserting from the same belt
+                    debug_assert!(ins.1.source.1 != ins.1.dest.1);
+                    belts.belts[ins.1.source.0].get_two([ins.1.source.1 as usize, ins.1.dest.1 as usize])
+                } else {
+                    let [source_belt, dest_belt] = belts.belts.get_many_mut([ins.1.source.0, ins.1.dest.0]).expect("Index out of bounds");
+                    [source_belt.get_mut(ins.1.source.1), dest_belt.get_mut(ins.1.dest.1)]
+                };
+                ins.0.update(source, dest);
+            }
+        });
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct BeltBeltInserterInfo<ItemIdxType: WeakIdxTrait> {
+    source: (usize, u16),
+    dest: (usize, u16),
+    item: PhantomData<ItemIdxType>,
+}
+
+impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, RecipeIdxType> {
+    fn new(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         Self {
             power_grids: PowerGridStorage::new(),
             belts: BeltStore {
@@ -83,34 +109,13 @@ impl<RecipeIdxType: IdxTrait> Factory<RecipeIdxType> {
                 belts: vec![MultiBeltStore::default(); data_store.recipe_timers.len()]
                     .into_boxed_slice(),
             },
+            belt_belt_inserters: BeltBeltInserterStore { inserters: vec![Vec::new(); data_store.item_names.len()].into_boxed_slice() }
         }
     }
 }
-pub enum AppState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    Ingame(GameState<ItemIdxType, RecipeIdxType>),
-}
-
-impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> AppState<ItemIdxType, RecipeIdxType> {
-    pub fn render(
-        &self,
-        renderer: &mut Renderer,
-        texture_atlas: &TextureAtlas,
-        state_machine: &ActionStateMachine<ItemIdxType>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) {
-        match self {
-            Self::Ingame(game) => {
-                render_world(
-                    renderer,
-                    game,
-                    texture_atlas,
-                    game.world.player_pos,
-                    state_machine,
-                    data_store,
-                );
-            },
-        }
-    }
+pub enum AppState {
+    Ingame,
+    Loading,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -451,8 +456,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         todo!()
                     },
                 },
-                ActionType::Moving((x, y)) => {
-                    self.world.player_move = (f32::from(x), f32::from(y));
+                ActionType::Position(id, pos) => {
+                    self.world.players[usize::from(id)].visible = true;
+                    self.world.players[usize::from(id)].pos = pos;
                 },
                 ActionType::Ping((x, y)) => {
                     // Do nothing for now
@@ -483,11 +489,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         needs_update = true;
                                     },
                                     AssemblerInfo::Powered(assembler_id) => {
-                                        let old_recipe_id = assembler_id.recipe.id.into();
+                                        let old_recipe_id = assembler_id.recipe;
+
+                                        if old_recipe_id == recipe {
+                                            continue;;
+                                        }
 
                                         match (
-                                            data_store.recipe_num_ing_lookup[old_recipe_id],
-                                            data_store.recipe_num_out_lookup[old_recipe_id],
+                                            data_store.recipe_num_ing_lookup[old_recipe_id.id.into()],
+                                            data_store.recipe_num_out_lookup[old_recipe_id.id.into()],
                                         ) {
                                             (0, 1) => {
                                                 let old_assembler = self
@@ -536,9 +546,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     }
 
     pub fn update(&mut self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) {
-        self.world.player_pos.0 += self.world.player_move.0 / 60.0;
-        self.world.player_pos.1 += self.world.player_move.1 / 60.0;
-
         self.simulation_state.factory.belts.belt_update(
             self.simulation_state
                 .factory
@@ -548,6 +555,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 .flatten(),
             data_store,
         );
+
+        self.simulation_state.factory.belt_belt_inserters.update(&mut self.simulation_state.factory.belts, data_store);
 
         let (tech_progress, recipe_tick_info): (ResearchProgress, RecipeTickInfo) = self
             .simulation_state
@@ -567,9 +576,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         self.statistics.append_single_set_of_samples((ProductionInfo::from_recipe_info(&recipe_tick_info, data_store), tech_progress));
 
-        if self.statistics.production.num_samples_pushed % 60 == 0 {
-            File::create("./stats.svg").unwrap().write(self.statistics.get_chart(1, data_store, Some(|_| true)).svg().unwrap().as_bytes()).unwrap();
-        }
+        // if self.statistics.production.num_samples_pushed % 60 == 0 {
+        //     File::create("./stats.svg").unwrap().write(self.statistics.get_chart(1, data_store, Some(|_| true)).svg().unwrap().as_bytes()).unwrap();
+        // }
     }
 
     fn update_inserters(&mut self, info: InserterUpdateInfo, data_store: &DataStore<ItemIdxType, RecipeIdxType>) {
@@ -633,7 +642,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     }
 
     fn add_assembler_to_sim(
-        sim_state: &mut SimulationState<RecipeIdxType>,
+        sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
         recipe: Recipe<RecipeIdxType>,
         power_grid_id: PowerGridIdentifier,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -1149,12 +1158,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         Ok(())
     }
-}
-
-impl<RecipeIdxType: IdxTrait> Factory<RecipeIdxType> {
-    // fn build_storage_store(power_grids: &mut Vec<PowerGrid>) -> StorageStore {
-    //     todo!()
-    // }
 }
 
 impl<RecipeIdxType: IdxTrait> BeltStore<RecipeIdxType> {

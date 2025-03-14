@@ -31,7 +31,7 @@
                 "args": [
                     "build",
                     "--bin=factory",
-                    "--package=factory"
+                    "--package=factory",
                 ],
                 "filter": {
                     "name": "factory",
@@ -39,6 +39,24 @@
                 }
             },
             "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug factory client",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=factory",
+                    "--package=factory",
+                ],
+                "filter": {
+                    "name": "factory",
+                    "kind": "bin"
+                }
+            },
+            "args": ["--client"],
             "cwd": "${workspaceFolder}"
         },
         {

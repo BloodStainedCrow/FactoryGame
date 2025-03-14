@@ -1,8 +1,21 @@
-use std::{borrow::BorrowMut, marker::PhantomData};
+use std::{
+    borrow::BorrowMut,
+    marker::PhantomData,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
+
+use log::error;
 
 use crate::{
     data::DataStore,
-    frontend::action::ActionType,
+    frontend::{
+        action::{
+            action_state_machine::{self, ActionStateMachine},
+            ActionType,
+        },
+        world::tile::World,
+    },
     item::{IdxTrait, WeakIdxTrait},
     rendering::app_state::GameState,
 };
@@ -20,12 +33,13 @@ where
 }
 
 pub(super) trait ActionSource<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    fn get(
-        &self,
+    fn get<'a, 'b, 'c>(
+        &'a self,
         current_tick: u64,
-    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>, IntoIter: Clone>
-           + Clone
-           + use<Self, ItemIdxType, RecipeIdxType>;
+        world: &'b World<ItemIdxType, RecipeIdxType>,
+        data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
+           + use<'a, 'b, 'c, Self, ItemIdxType, RecipeIdxType>;
 }
 
 pub(super) trait HandledActionConsumer<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
@@ -66,15 +80,34 @@ impl<
         game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        let actions = self.action_interface.get(game_state.current_tick);
+        let start = Instant::now();
+        let actions_iter =
+            self.action_interface
+                .get(game_state.current_tick, &game_state.world, data_store);
+        if start.elapsed() > Duration::from_millis(1) {
+            error!("Got action iter {:?}", start.elapsed());
+        }
+        let actions: Vec<_> = actions_iter.into_iter().collect();
+        if start.elapsed() > Duration::from_millis(1) {
+            error!("Got actions {:?}", start.elapsed());
+        }
 
         game_state
             .borrow_mut()
             .apply_actions(actions.clone(), data_store);
+        if start.elapsed() > Duration::from_millis(1) {
+            error!("Actions applied {:?}", start.elapsed());
+        }
 
         self.action_interface
             .consume(game_state.current_tick, actions);
+        if start.elapsed() > Duration::from_millis(1) {
+            error!("Actions sent {:?}", start.elapsed());
+        }
 
         game_state.borrow_mut().update(data_store);
+        if start.elapsed() > Duration::from_millis(1) {
+            error!("Update done {:?}", start.elapsed());
+        }
     }
 }

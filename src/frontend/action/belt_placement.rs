@@ -251,65 +251,65 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 fn attach_to_back_of_belt<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
     front_belt_id: BeltTileId<ItemIdxType>,
-    new_belt_id: Option<BeltTileId<ItemIdxType>>,
-    new_belt_len: u16,
+    back_belt_id: Option<BeltTileId<ItemIdxType>>,
+    back_belt_len: u16,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> (BeltTileId<ItemIdxType>, u16) {
-    game_state.world.modify_belt_pos(
-        front_belt_id,
-        new_belt_len
-            .try_into()
-            .expect("FIXME: This could fail without a belt being too long!"),
-    );
+    let (final_belt_id, final_belt_len) = match back_belt_id {
+        Some(back_belt_id_in_sim) => {
+            game_state.world.modify_belt_pos(
+                back_belt_id_in_sim,
+                back_belt_len
+                    .try_into()
+                    .expect("FIXME: This could fail without a belt being too long!"),
+            );
 
-    let (final_belt_id, final_belt_len) = match new_belt_id {
-        Some(new_belt_id_in_sim) => {
             let (final_belt_id, final_belt_len) = merge_belts(
                 &mut game_state.simulation_state,
                 front_belt_id,
-                new_belt_id_in_sim,
+                back_belt_id_in_sim,
                 data_store,
             );
 
             if final_belt_id == front_belt_id {
                 game_state
                     .world
-                    .update_belt_id(new_belt_id_in_sim, final_belt_id);
+                    .update_belt_id(back_belt_id_in_sim, final_belt_id);
             } else {
                 game_state
                     .world
-                    .update_belt_id(final_belt_id, new_belt_id_in_sim);
+                    .update_belt_id(final_belt_id, back_belt_id_in_sim);
             }
 
             (final_belt_id, final_belt_len)
         },
         None => {
             // We did not merge with a back belt (i.e. the new belt does not exist in the simulation), so we just add this to the front belt
-            let new_belt = EmptyBelt::new(new_belt_len);
+            let new_back_belt = EmptyBelt::new(back_belt_len);
             match front_belt_id {
-                BeltTileId::EmptyBeltId(idx) => {
+                BeltTileId::EmptyBeltId(front_idx) => {
                     take_mut::take(
-                        &mut game_state.simulation_state.factory.belts.empty_belts[idx],
-                        |back_belt| EmptyBelt::join(new_belt, back_belt),
+                        &mut game_state.simulation_state.factory.belts.empty_belts[front_idx],
+                        |front_belt| EmptyBelt::join(new_back_belt, front_belt),
                     );
 
                     (
-                        BeltTileId::EmptyBeltId(idx),
-                        game_state.simulation_state.factory.belts.empty_belts[idx].len,
+                        BeltTileId::EmptyBeltId(front_idx),
+                        game_state.simulation_state.factory.belts.empty_belts[front_idx].len,
                     )
                 },
-                BeltTileId::BeltId(belt_id) => {
-                    let belt_item_id: usize = belt_id.item.id.into();
-                    let back_belt = game_state.simulation_state.factory.belts.belts[belt_item_id]
+                BeltTileId::BeltId(front_belt_id) => {
+                    let front_item_id: usize = front_belt_id.item.id.into();
+                    let front_belt = game_state.simulation_state.factory.belts.belts[front_item_id]
                         .belts
-                        .get_mut(belt_id.index)
+                        .get_mut(front_belt_id.index)
                         .expect("id from world not in simulation!!");
 
-                    take_mut::take(back_belt, |back_belt| {
-                        back_belt.join_with_empty(new_belt, Side::BACK)
+                    take_mut::take(front_belt, |front_belt| {
+                        front_belt.join_with_empty(new_back_belt, Side::BACK)
                     });
 
-                    (BeltTileId::BeltId(belt_id), back_belt.get_len())
+                    (BeltTileId::BeltId(front_belt_id), front_belt.get_len())
                 },
             }
         },
@@ -319,7 +319,7 @@ fn attach_to_back_of_belt<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 }
 
 fn merge_belts<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    simulation_state: &mut SimulationState<RecipeIdxType>,
+    simulation_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
     front_tile_id: BeltTileId<ItemIdxType>,
     back_tile_id: BeltTileId<ItemIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,

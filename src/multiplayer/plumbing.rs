@@ -1,11 +1,20 @@
 use std::{
+    io::Read,
     marker::PhantomData,
     net::TcpStream,
     sync::{mpsc::Receiver, Arc, Mutex},
+    time::{Duration, Instant},
 };
 
+use log::{error, warn};
+
 use crate::{
-    frontend::action::ActionType,
+    data::DataStore,
+    frontend::{
+        action::{action_state_machine::ActionStateMachine, ActionType},
+        input::Input,
+        world::tile::World,
+    },
     item::{IdxTrait, WeakIdxTrait},
 };
 
@@ -16,7 +25,8 @@ use super::{
 };
 
 pub(super) struct Client<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    pub(super) local_actions: Receiver<ActionType<ItemIdxType, RecipeIdxType>>,
+    pub(super) local_input: Receiver<Input>,
+    pub(super) local_actions: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
     pub(super) server_connection: TcpStream,
 }
 
@@ -43,21 +53,25 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
     fn get(
         &self,
         current_tick: u64,
-    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>, IntoIter: Clone>
-           + Clone
-           + use<ItemIdxType, RecipeIdxType> {
+        world: &World<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
+    {
         // This will block (?) if we did not yet recieve the actions from the server for this tick
         // TODO: This could introduce hitches which might be noticeable.
         //       This could be solved either by introducing some fixed delay on all actions (i.e. just running the client a couple ticks in the past compared to the server)
         //       Or using a rollback feature, by (i.e.) assuming no actions are run
         // Get the actions from what the server sent us
-        let local_actions = self
-            .local_actions
-            .get(current_tick)
+        let mut state_machine = self.local_actions.lock().unwrap();
+
+        let mut local_actions: Vec<_> = state_machine
+            .handle_inputs(&self.local_input, world, data_store)
             .into_iter()
-            .collect::<Vec<_>>();
+            .collect();
+        local_actions.extend(state_machine.once_per_update_actions(world));
+
         postcard::to_io(&local_actions, &self.server_connection).expect("tcp send failed");
-        let mut buffer = Vec::with_capacity(100);
+        let mut buffer = vec![0; 1000];
         let (recieved_actions, v): (Vec<_>, _) =
             postcard::from_io((&self.server_connection, &mut buffer)).unwrap();
 
@@ -83,24 +97,51 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
     fn get(
         &self,
         current_tick: u64,
-    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>, IntoIter: Clone>
-           + Clone
-           + use<ItemIdxType, RecipeIdxType> {
+        world: &World<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
+    {
+        let start = Instant::now();
         // This is the Server, it will just keep on chugging along and never block
         // Get the actions from what the clients sent us
-
-        let mut buffer = Vec::with_capacity(100);
+        // FIXME: Puke this is awful
+        let mut buffer = vec![0; 10000];
+        if start.elapsed() > Duration::from_millis(1) {
+            error!("buffer {:?}", start.elapsed());
+        }
         let recieved_actions: Vec<ActionType<_, _>> = self
             .client_connections
             .lock()
             .unwrap()
             .iter()
-            .flat_map(|conn| {
-                postcard::from_io::<Vec<ActionType<_, _>>, _>((conn, &mut buffer))
-                    .unwrap()
-                    .0
+            .flat_map(|mut conn| {
+                let start = Instant::now();
+                let ret = if let Ok(len) = conn.peek(&mut buffer) {
+                    if len > 0 {
+                        if let Ok((v, rest)) = postcard::take_from_bytes(&buffer[0..len]) {
+                            let rest_len = rest.len();
+                            conn.read_exact(&mut buffer[0..(len - rest_len)])
+                                .expect("Read failed");
+                            v
+                        } else {
+                            vec![]
+                        }
+                    } else {
+                        warn!("No data recieved");
+                        vec![]
+                    }
+                } else {
+                    warn!("read failed");
+                    vec![]
+                };
+
+                dbg!(start.elapsed());
+                ret
             })
             .collect();
+        if start.elapsed() > Duration::from_millis(1) {
+            error!("recieved_actions {:?}", start.elapsed());
+        }
 
         recieved_actions
     }
@@ -123,23 +164,49 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 }
 
 pub(super) struct IntegratedServer<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    pub(super) local_actions: Receiver<ActionType<ItemIdxType, RecipeIdxType>>,
+    pub(super) local_actions: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
+    pub(super) local_input: Receiver<Input>,
     pub(super) server: Server<ItemIdxType, RecipeIdxType>,
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, RecipeIdxType>
     for IntegratedServer<ItemIdxType, RecipeIdxType>
 {
-    fn get(
-        &self,
+    fn get<'a, 'b, 'c>(
+        &'a self,
         current_tick: u64,
-    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>, IntoIter: Clone>
-           + Clone
-           + use<ItemIdxType, RecipeIdxType> {
-        self.local_actions
-            .get(current_tick)
+        world: &'b World<ItemIdxType, RecipeIdxType>,
+        data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
+           + use<'a, 'b, 'c, ItemIdxType, RecipeIdxType> {
+        let start = Instant::now();
+        let mut state_machine = self.local_actions.lock().unwrap();
+        if start.elapsed() > Duration::from_millis(1) {
+            error!("Post lock {:?}", start.elapsed());
+        }
+
+        let mut v: Vec<_> = state_machine
+            .handle_inputs(&self.local_input, world, data_store)
             .into_iter()
-            .chain(self.server.get(current_tick))
+            .collect();
+        if start.elapsed() > Duration::from_millis(1) {
+            error!("Handle inputs {:?}", start.elapsed());
+        }
+        v.extend(state_machine.once_per_update_actions(&world));
+
+        if start.elapsed() > Duration::from_millis(1) {
+            error!("once_per_update_actions {:?}", start.elapsed());
+        }
+
+        let ret = self
+            .server
+            .get(current_tick, world, data_store)
+            .into_iter()
+            .chain(v);
+        if start.elapsed() > Duration::from_millis(1) {
+            error!("server.get {:?}", start.elapsed());
+        }
+        ret
     }
 }
 

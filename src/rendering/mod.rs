@@ -14,6 +14,8 @@ pub struct TextureAtlas {
     belt: enum_map::EnumMap<Dir, Sprite>,
     inserter: enum_map::EnumMap<Dir, Sprite>,
 
+    player: Sprite,
+
     plate: Sprite,
 
     default: Sprite,

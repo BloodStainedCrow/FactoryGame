@@ -14,6 +14,7 @@ use crate::{
     item::{IdxTrait, Item, Recipe, WeakIdxTrait},
     power::power_grid::PowerGridIdentifier,
     rendering::app_state::SimulationState,
+    TICKS_PER_SECOND,
 };
 
 use super::{sparse_grid::SparseGrid, Position};
@@ -37,10 +38,29 @@ pub struct Chunk<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct PlayerInfo {
+    pub pos: (f32, f32),
+    pub visible: bool,
+    pub movement_speed: f32,
+
+    inventory: (),
+}
+
+impl Default for PlayerInfo {
+    fn default() -> Self {
+        Self {
+            pos: (100.0 * CHUNK_SIZE_FLOAT, 100.0 * CHUNK_SIZE_FLOAT),
+            visible: false,
+            movement_speed: 1.0 / (TICKS_PER_SECOND as f32),
+            inventory: Default::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     // TODO: I don´t think I want FP
-    pub player_pos: (f32, f32),
-    pub player_move: (f32, f32),
+    pub players: Vec<PlayerInfo>,
     chunks: SparseGrid<Chunk<ItemIdxType, RecipeIdxType>>,
 
     belt_lookup: BeltIdLookup<ItemIdxType>,
@@ -114,8 +134,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
         Self {
             chunks: grid,
-            player_pos: (1600.0, 1600.0),
-            player_move: (0.0, 0.0),
+            players: vec![PlayerInfo::default(), PlayerInfo::default()],
 
             belt_lookup: BeltIdLookup {
                 belt_id_to_chunks: BTreeMap::new(),
@@ -196,8 +215,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             .or_default()
                             .insert(chunk_pos);
                     },
-                    AttachedInserter::BeltBelt(_) => todo!(),
-                    AttachedInserter::StorageStorage(_) => {},
+                    AttachedInserter::BeltBelt { item, inserter } => {
+                        todo!("We need to store the position in the belt_id_lookup")
+                    },
+                    AttachedInserter::StorageStorage(_) => todo!(),
                 },
             },
         }
@@ -211,7 +232,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
     pub fn update_power_grid_id(
         &mut self,
-        sim_state: &mut SimulationState<RecipeIdxType>,
+        sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
         old_id: PowerGridIdentifier,
         new_id: PowerGridIdentifier,
     ) {
@@ -243,9 +264,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     Entity::Inserter { info, .. } => match info {
                         InserterInfo::NotAttached { .. } => {},
                         InserterInfo::Attached(attached_inserter) => match attached_inserter {
-                            AttachedInserter::BeltStorage { id, belt_pos } => { // TODO
+                            AttachedInserter::BeltStorage { id, belt_pos } => {
+                                // TODO
                             },
-                            AttachedInserter::BeltBelt(_) => {},
+                            AttachedInserter::BeltBelt { item, inserter } => {
+                                // TODO
+                            },
                             AttachedInserter::StorageStorage(_) => todo!(),
                         },
                     },
@@ -290,7 +314,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     *id = new_id;
                                 }
                             },
-                            AttachedInserter::BeltBelt(_) => todo!(),
+                            AttachedInserter::BeltBelt { item, inserter } => todo!(),
                             AttachedInserter::StorageStorage(_) => {},
                         },
                     },
@@ -335,7 +359,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                         .expect("belt_pos wrapped!");
                                 }
                             },
-                            AttachedInserter::BeltBelt(_) => todo!(),
+                            AttachedInserter::BeltBelt { item, inserter } => todo!(),
                             AttachedInserter::StorageStorage(_) => {},
                         },
                     },
@@ -657,7 +681,10 @@ pub enum AttachedInserter<ItemIdxType: WeakIdxTrait> {
         id: BeltTileId<ItemIdxType>,
         belt_pos: u16,
     },
-    BeltBelt(()),
+    BeltBelt {
+        item: Item<ItemIdxType>,
+        inserter: usize,
+    },
     StorageStorage(()),
 }
 

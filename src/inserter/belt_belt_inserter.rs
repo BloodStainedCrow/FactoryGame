@@ -1,6 +1,6 @@
 use super::{InserterState, MOVETIME};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BeltBeltInserter {
     state: InserterState,
 }

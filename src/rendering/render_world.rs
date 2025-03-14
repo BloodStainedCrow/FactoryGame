@@ -9,6 +9,7 @@ use crate::{
     },
     item::{IdxTrait, WeakIdxTrait},
 };
+use log::{info, warn};
 use tilelib::types::{DrawInstance, Layer, Renderer};
 
 use super::{app_state::GameState, TextureAtlas};
@@ -22,8 +23,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     renderer: &mut Renderer,
     game_state: &GameState<ItemIdxType, RecipeIdxType>,
     texture_atlas: &TextureAtlas,
-    player_pos: (f32, f32),
-    state_machine: &ActionStateMachine<ItemIdxType>,
+    state_machine: &ActionStateMachine<ItemIdxType, RecipeIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
     let num_tiles_across_screen = WIDTH_PER_LEVEL as f32 * state_machine.zoom_level;
@@ -33,6 +33,10 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let mut entity_layer = Layer::square_tile_grid(tilesize);
 
     let mut item_layer = Layer::square_tile_grid(tilesize);
+
+    let mut player_layer = Layer::square_tile_grid(tilesize);
+
+    let player_pos = state_machine.local_player_pos;
 
     let player_chunk = (
         (player_pos.0 / CHUNK_SIZE_FLOAT) as usize,
@@ -361,8 +365,18 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                                     dbg!(inserter_info);
                                 },
-                                crate::frontend::world::tile::AttachedInserter::BeltBelt(_) => {
-                                    todo!()
+                                crate::frontend::world::tile::AttachedInserter::BeltBelt {
+                                    item,
+                                    inserter,
+                                } => {
+                                    let item_id: usize = item.id.into();
+                                    let inserter = &game_state
+                                        .simulation_state
+                                        .factory
+                                        .belt_belt_inserters
+                                        .inserters[item_id][*inserter];
+
+                                    dbg!(&inserter.0);
                                 },
                                 crate::frontend::world::tile::AttachedInserter::StorageStorage(
                                     _,
@@ -375,8 +389,51 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         },
     }
 
+    for (player_id, player) in game_state
+        .world
+        .players
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.visible)
+        .filter(|(i, _)| *i != state_machine.my_player_id as usize)
+    {
+        player_layer.draw_sprite(
+            &texture_atlas.player,
+            DrawInstance {
+                position: [
+                    player.pos.0 - state_machine.local_player_pos.0 + num_tiles_across_screen / 2.0,
+                    player.pos.1 - state_machine.local_player_pos.1 + num_tiles_across_screen / 2.0,
+                ],
+                size: [1.0, 2.0],
+                animation_frame: 0,
+            },
+        );
+        info!(
+            "Rendering other player {} at {:?}",
+            player_id,
+            [
+                player.pos.0 - state_machine.local_player_pos.0,
+                player.pos.1 - state_machine.local_player_pos.1,
+            ]
+        );
+    }
+
+    player_layer.draw_sprite(
+        &texture_atlas.player,
+        DrawInstance {
+            // Always in the middle
+            position: [num_tiles_across_screen / 2.0, num_tiles_across_screen / 2.0],
+            size: [1.0, 2.0],
+            animation_frame: 0,
+        },
+    );
+
+    info!("Rendering self at {:?}", state_machine.local_player_pos);
+
     renderer.draw(&tile_layer);
     renderer.draw(&entity_layer);
 
     renderer.draw(&item_layer);
+
+    renderer.draw(&player_layer);
 }

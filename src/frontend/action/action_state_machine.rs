@@ -1,4 +1,8 @@
-use std::collections::HashSet;
+use std::{
+    collections::HashSet,
+    marker::PhantomData,
+    sync::mpsc::{Receiver, Sender},
+};
 
 use log::warn;
 use winit::keyboard::KeyCode;
@@ -21,17 +25,22 @@ use crate::{
     item::{IdxTrait, Item, Recipe, WeakIdxTrait},
 };
 
-use super::{place_tile::PositionInfo, ActionType};
+use super::{place_tile::PositionInfo, ActionType, PLAYERID};
 
 const MIN_ZOOM_WIDTH: f32 = 1.0;
 pub const WIDTH_PER_LEVEL: usize = 16;
 
-pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait> {
+pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+    pub local_player_pos: (f32, f32),
+    pub my_player_id: PLAYERID,
+
     current_mouse_pos: (f32, f32),
     current_held_keys: HashSet<winit::keyboard::KeyCode>,
     pub state: ActionStateMachineState<ItemIdxType>,
 
     pub zoom_level: f32,
+
+    recipe: PhantomData<RecipeIdxType>,
 }
 
 pub enum ActionStateMachineState<ItemIdxType: WeakIdxTrait> {
@@ -46,199 +55,204 @@ pub enum HeldObject<ItemIdxType: WeakIdxTrait> {
     Entity(PlaceEntityType<ItemIdxType>),
 }
 
-impl<ItemIdxType: IdxTrait> Default for ActionStateMachine<ItemIdxType> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<ItemIdxType: IdxTrait> ActionStateMachine<ItemIdxType> {
+impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
+    ActionStateMachine<ItemIdxType, RecipeIdxType>
+{
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(my_player_id: PLAYERID, local_player_pos: (f32, f32)) -> Self {
         Self {
+            my_player_id,
+            local_player_pos,
             current_mouse_pos: (0.0, 0.0),
             current_held_keys: HashSet::new(),
             state: ActionStateMachineState::Idle,
 
             zoom_level: 1.0,
+
+            recipe: PhantomData,
         }
     }
 
     #[allow(clippy::too_many_lines)]
-    pub fn handle_input<RecipeIdxType: IdxTrait>(
-        &mut self,
-        input: Input,
-        world: &World<ItemIdxType, RecipeIdxType>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
-        let mut actions = match input {
-            Input::LeftClickPressed => {
-                match &self.state {
-                    ActionStateMachineState::Idle => {
-                        // TODO: Check if we are hovering over something that can be opened
-                        let pos = Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            world.player_pos,
-                            self.current_mouse_pos,
-                        );
+    pub fn handle_inputs<'a, 'b, 'c, 'd>(
+        &'a mut self,
+        input: &'b Receiver<Input>,
+        world: &'c World<ItemIdxType, RecipeIdxType>,
+        data_store: &'d DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
+           + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType> {
+        input.try_iter().map(|input| {
 
-                        let chunk = world.get_chunk_for_tile(pos);
+            let mut actions = match input {
+                Input::LeftClickPressed => {
+                    match &self.state {
+                        ActionStateMachineState::Idle => {
+                            // TODO: Check if we are hovering over something that can be opened
+                            let pos = Self::player_mouse_to_tile(
+                                self.zoom_level,
+                                self.local_player_pos,
+                                self.current_mouse_pos,
+                            );
 
-                        if let Some(chunk) = chunk {
-                            if chunk.get_entity_at(pos, data_store).is_some() {
-                                self.state = ActionStateMachineState::Viewing(pos);
+                            let chunk = world.get_chunk_for_tile(pos);
+
+                            if let Some(chunk) = chunk {
+                                dbg!(pos);
+                                if chunk.get_entity_at(pos, data_store).is_some() {
+                                    self.state = ActionStateMachineState::Viewing(pos);
+                                }
                             }
-                        }
 
-                        vec![]
-                    },
-                    ActionStateMachineState::Holding(held_object) => {
-                        // TODO: Check if what we are trying to place would collide
+                            vec![]
+                        },
+                        ActionStateMachineState::Holding(held_object) => {
+                            // TODO: Check if what we are trying to place would collide
 
-                        match held_object {
-                            HeldObject::Tile(floor_tile) => {
-                                vec![ActionType::PlaceFloorTile(PlaceFloorTileByHandInfo {
-                                    ghost_info: PlaceFloorTileGhostInfo {
-                                        tile: *floor_tile,
-                                        position: PositionInfo::Single {
-                                            pos: Self::player_mouse_to_tile(
-                                                self.zoom_level,
-                                                world.player_pos,
-                                                self.current_mouse_pos,
-                                            ),
+                            match held_object {
+                                HeldObject::Tile(floor_tile) => {
+                                    vec![ActionType::PlaceFloorTile(PlaceFloorTileByHandInfo {
+                                        ghost_info: PlaceFloorTileGhostInfo {
+                                            tile: *floor_tile,
+                                            position: PositionInfo::Single {
+                                                pos: Self::player_mouse_to_tile(
+                                                    self.zoom_level,
+                                                    self.local_player_pos,
+                                                    self.current_mouse_pos,
+                                                ),
+                                            },
                                         },
-                                    },
-                                    player: (),
-                                })]
-                            },
-                            HeldObject::Entity(place_entity_type) => {
-                                vec![ActionType::PlaceEntity(PlaceEntityInfo {
-                                    entities: EntityPlaceOptions::Single(*place_entity_type),
-                                })]
-                            },
-                        }
-                    },
-                    ActionStateMachineState::Viewing(Position { x, y }) => {
-                        let pos = Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            world.player_pos,
-                            self.current_mouse_pos,
-                        );
-
-                        let chunk = world.get_chunk_for_tile(pos);
-
-                        if let Some(chunk) = chunk {
-                            if chunk.get_entity_at(pos, data_store).is_some() {
-                                self.state = ActionStateMachineState::Viewing(pos);
+                                        player: (),
+                                    })]
+                                },
+                                HeldObject::Entity(place_entity_type) => {
+                                    vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                                        entities: EntityPlaceOptions::Single(*place_entity_type),
+                                    })]
+                                },
                             }
-                        }
+                        },
+                        ActionStateMachineState::Viewing(Position { x, y }) => {
+                            let pos = Self::player_mouse_to_tile(
+                                self.zoom_level,
+                                self.local_player_pos,
+                                self.current_mouse_pos,
+                            );
 
+                            let chunk = world.get_chunk_for_tile(pos);
+
+                            if let Some(chunk) = chunk {
+                                if chunk.get_entity_at(pos, data_store).is_some() {
+                                    self.state = ActionStateMachineState::Viewing(pos);
+                                }
+                            }
+
+                            vec![]
+                        },
+                    }
+                },
+                Input::RightClickPressed => match &self.state {
+                    ActionStateMachineState::Idle => vec![],
+                    ActionStateMachineState::Holding(_held_object) => {
+                        self.state = ActionStateMachineState::Idle;
                         vec![]
                     },
-                }
-            },
-            Input::RightClickPressed => match &self.state {
-                ActionStateMachineState::Idle => vec![],
-                ActionStateMachineState::Holding(_held_object) => {
-                    self.state = ActionStateMachineState::Idle;
-                    vec![]
+                    ActionStateMachineState::Viewing(_) => {
+                        self.state = ActionStateMachineState::Idle;
+                        vec![]
+                    },
                 },
-                ActionStateMachineState::Viewing(_) => {
-                    self.state = ActionStateMachineState::Idle;
-                    vec![]
-                },
-            },
-            Input::MouseMove(x, y) => {
-                self.current_mouse_pos = (x, y);
+                Input::MouseMove(x, y) => {
+                    self.current_mouse_pos = (x, y);
 
-                match &mut self.state {
-                    ActionStateMachineState::Idle | ActionStateMachineState::Viewing(_) => {},
-                    ActionStateMachineState::Holding(held_object) => match held_object {
-                        HeldObject::Tile(floor_tile) => {},
-                        HeldObject::Entity(place_entity_type) => match place_entity_type {
-                            PlaceEntityType::Assembler(position) => {
-                                *position = Self::player_mouse_to_tile(
-                                    self.zoom_level,
-                                    world.player_pos,
-                                    self.current_mouse_pos,
-                                );
-                            },
-                            PlaceEntityType::Inserter { filter, pos, dir } => {
-                                *pos = Self::player_mouse_to_tile(
-                                    self.zoom_level,
-                                    world.player_pos,
-                                    self.current_mouse_pos,
-                                );
-                            },
-                            PlaceEntityType::Belt { pos, direction } => {
-                                *pos = Self::player_mouse_to_tile(
-                                    self.zoom_level,
-                                    world.player_pos,
-                                    self.current_mouse_pos,
-                                );
-                            },
-                            PlaceEntityType::PowerPole { pos, ty } => {
-                                *pos = Self::player_mouse_to_tile(
-                                    self.zoom_level,
-                                    world.player_pos,
-                                    self.current_mouse_pos,
-                                );
+                    match &mut self.state {
+                        ActionStateMachineState::Idle | ActionStateMachineState::Viewing(_) => {},
+                        ActionStateMachineState::Holding(held_object) => match held_object {
+                            HeldObject::Tile(floor_tile) => {},
+                            HeldObject::Entity(place_entity_type) => match place_entity_type {
+                                PlaceEntityType::Assembler(position) => {
+                                    *position = Self::player_mouse_to_tile(
+                                        self.zoom_level,
+                                        self.local_player_pos,
+                                        self.current_mouse_pos,
+                                    );
+                                },
+                                PlaceEntityType::Inserter { filter, pos, dir } => {
+                                    *pos = Self::player_mouse_to_tile(
+                                        self.zoom_level,
+                                        self.local_player_pos,
+                                        self.current_mouse_pos,
+                                    );
+                                },
+                                PlaceEntityType::Belt { pos, direction } => {
+                                    *pos = Self::player_mouse_to_tile(
+                                        self.zoom_level,
+                                        self.local_player_pos,
+                                        self.current_mouse_pos,
+                                    );
+                                },
+                                PlaceEntityType::PowerPole { pos, ty } => {
+                                    *pos = Self::player_mouse_to_tile(
+                                        self.zoom_level,
+                                        self.local_player_pos,
+                                        self.current_mouse_pos,
+                                    );
+                                },
                             },
                         },
-                    },
-                }
+                    }
 
-                vec![]
-            },
-            Input::KeyPress(code) => {
-                if self.current_held_keys.insert(code) {
-                    self.handle_start_pressing_key(code, world, data_store)
-                        .into_iter()
-                        .collect()
-                } else {
-                    // This is probably a KeyRepeat from the keyboard while holding a key
-                    // warn!("Recieved Key press event for key {:?}, while already pressing the key! Did we miss events?", code);
                     vec![]
-                }
-            },
-            Input::KeyRelease(code) => {
-                if self.current_held_keys.remove(&code) {
-                    self.handle_stop_pressing_key(code).into_iter().collect()
-                } else {
-                    warn!("Recieved Key release event for key {:?}, while NOT pressing the key! Did we miss events?", code);
+                },
+                Input::KeyPress(code) => {
+                    if self.current_held_keys.insert(code) {
+                        self.handle_start_pressing_key(code, world, data_store)
+                            .into_iter()
+                            .collect()
+                    } else {
+                        // This is probably a KeyRepeat from the keyboard while holding a key
+                        // warn!("Recieved Key press event for key {:?}, while already pressing the key! Did we miss events?", code);
+                        vec![]
+                    }
+                },
+                Input::KeyRelease(code) => {
+                    if self.current_held_keys.remove(&code) {
+                        self.handle_stop_pressing_key(code).into_iter().collect()
+                    } else {
+                        warn!("Recieved Key release event for key {:?}, while NOT pressing the key! Did we miss events?", code);
+                        vec![]
+                    }
+                },
+
+                Input::MouseScoll(delta) => {
+                    match delta {
+                        winit::event::MouseScrollDelta::LineDelta(_, y) => {
+                            self.zoom_level -= y / 10.0;
+                        },
+                        winit::event::MouseScrollDelta::PixelDelta(physical_position) => {
+                            self.zoom_level -= physical_position.y as f32 / 10.0;
+                        },
+                    }
+                    if self.zoom_level < MIN_ZOOM_WIDTH {
+                        self.zoom_level = MIN_ZOOM_WIDTH;
+                    }
                     vec![]
-                }
-            },
+                },
 
-            Input::MouseScoll(delta) => {
-                match delta {
-                    winit::event::MouseScrollDelta::LineDelta(_, y) => {
-                        self.zoom_level -= y / 10.0;
-                    },
-                    winit::event::MouseScrollDelta::PixelDelta(physical_position) => {
-                        self.zoom_level -= physical_position.y as f32 / 10.0;
-                    },
-                }
-                if self.zoom_level < MIN_ZOOM_WIDTH {
-                    self.zoom_level = MIN_ZOOM_WIDTH;
-                }
-                vec![]
-            },
+                Input::UnknownInput(..) => {
+                    vec![]
+                },
 
-            Input::UnknownInput(..) => {
-                vec![]
-            },
+                i @ (Input::LeftClickReleased | Input::RightClickReleased) => {
+                    dbg!(i);
+                    vec![]
+                },
+            };
 
-            i @ (Input::LeftClickReleased | Input::RightClickReleased) => {
-                dbg!(i);
-                vec![]
-            },
-        };
-
-        actions
+            actions
+        }).flatten()
     }
 
-    fn handle_start_pressing_key<RecipeIdxType: IdxTrait>(
+    fn handle_start_pressing_key(
         &mut self,
         key: winit::keyboard::KeyCode,
         world: &World<ItemIdxType, RecipeIdxType>,
@@ -260,7 +274,7 @@ impl<ItemIdxType: IdxTrait> ActionStateMachine<ItemIdxType> {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::Assembler(Self::player_mouse_to_tile(
                         self.zoom_level,
-                        world.player_pos,
+                        self.local_player_pos,
                         self.current_mouse_pos,
                     )),
                 ));
@@ -274,7 +288,7 @@ impl<ItemIdxType: IdxTrait> ActionStateMachine<ItemIdxType> {
                     ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Belt {
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
-                            world.player_pos,
+                            self.local_player_pos,
                             self.current_mouse_pos,
                         ),
                         direction: Dir::North,
@@ -303,7 +317,7 @@ impl<ItemIdxType: IdxTrait> ActionStateMachine<ItemIdxType> {
                     PlaceEntityType::Inserter {
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
-                            world.player_pos,
+                            self.local_player_pos,
                             self.current_mouse_pos,
                         ),
                         dir: Dir::North,
@@ -321,7 +335,7 @@ impl<ItemIdxType: IdxTrait> ActionStateMachine<ItemIdxType> {
                     PlaceEntityType::PowerPole {
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
-                            world.player_pos,
+                            self.local_player_pos,
                             self.current_mouse_pos,
                         ),
                         ty: 0,
@@ -368,7 +382,7 @@ impl<ItemIdxType: IdxTrait> ActionStateMachine<ItemIdxType> {
         }
     }
 
-    fn handle_stop_pressing_key<RecipeIdxType: IdxTrait>(
+    fn handle_stop_pressing_key(
         &mut self,
         key: winit::keyboard::KeyCode,
     ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
@@ -394,8 +408,9 @@ impl<ItemIdxType: IdxTrait> ActionStateMachine<ItemIdxType> {
     }
 
     #[must_use]
-    pub fn once_per_update_actions<RecipeIdxType: IdxTrait>(
-        &self,
+    pub fn once_per_update_actions(
+        &mut self,
+        world: &World<ItemIdxType, RecipeIdxType>,
     ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
         let mut actions = Vec::new();
 
@@ -414,8 +429,16 @@ impl<ItemIdxType: IdxTrait> ActionStateMachine<ItemIdxType> {
             move_dir.0 += 1;
         }
 
+        self.local_player_pos.0 +=
+            move_dir.0 as f32 * world.players[usize::from(self.my_player_id)].movement_speed;
+        self.local_player_pos.1 +=
+            move_dir.1 as f32 * world.players[usize::from(self.my_player_id)].movement_speed;
+
         // TODO: Maybe only send this event if it changed
-        actions.push(ActionType::Moving(move_dir));
+        actions.push(ActionType::Position(
+            self.my_player_id,
+            self.local_player_pos,
+        ));
 
         actions
     }

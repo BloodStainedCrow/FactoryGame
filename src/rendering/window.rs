@@ -6,13 +6,12 @@ use std::{
 
 use crate::{
     data::DataStore,
-    frontend::{
-        action::action_state_machine::ActionStateMachine, input::Input, world::tile::World,
-    },
+    frontend::{action::action_state_machine::ActionStateMachine, input::Input},
     item::{IdxTrait, WeakIdxTrait},
+    rendering::render_world::render_world,
     saving::{load, save, SaveGame},
 };
-use log::{info, warn};
+use log::{error, info, warn};
 use tilelib::types::{Display, Sprite, Texture};
 use winit::{
     event::{ElementState, MouseButton, WindowEvent},
@@ -20,24 +19,39 @@ use winit::{
 };
 
 use super::{
-    app_state::{AppState, GameState, SimulationState},
+    app_state::{AppState, GameState},
     TextureAtlas,
 };
 use image::GenericImageView;
 
-pub struct App<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    pub state: Arc<Mutex<AppState<ItemIdxType, RecipeIdxType>>>,
-    pub state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType>>>,
+pub struct App {
+    pub state: AppState,
     window: Window,
+    pub currently_loaded_game: Option<LoadedGameInfo>,
 
     last_rendered_update: u64,
-    pub current_tick: Arc<AtomicU64>,
 
     input_sender: Sender<Input>,
 
     texture_atlas: TextureAtlas,
+}
 
-    data_store: Arc<DataStore<ItemIdxType, RecipeIdxType>>,
+pub struct LoadedGameInfo {
+    pub state: LoadedGame,
+    pub tick: Arc<AtomicU64>,
+}
+
+pub enum LoadedGame {
+    ItemU8RecipeU8(LoadedGameSized<u8, u8>),
+    ItemU8RecipeU16(LoadedGameSized<u8, u16>),
+    ItemU16RecipeU8(LoadedGameSized<u16, u8>),
+    ItemU16RecipeU16(LoadedGameSized<u16, u16>),
+}
+
+pub struct LoadedGameSized<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+    pub state: Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
+    pub state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
+    pub data_store: Arc<DataStore<ItemIdxType, RecipeIdxType>>,
 }
 
 pub struct Window {
@@ -47,9 +61,7 @@ pub struct Window {
     last_frame_time: Instant,
 }
 
-impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> winit::application::ApplicationHandler
-    for App<ItemIdxType, RecipeIdxType>
-{
+impl winit::application::ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let window = Arc::new(
             event_loop
@@ -76,10 +88,25 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> winit::application::Applica
             // Exit the event loop when a close is requested (e.g. window's close button is pressed)
             WindowEvent::CloseRequested => {
                 info!("EXITING");
-                match &*self.state.lock().unwrap() {
-                    AppState::Ingame(game_state) => {
-                        save(game_state, self.data_store.checksum.clone())
-                    },
+                if let Some(state) = &self.currently_loaded_game {
+                    match &state.state {
+                        LoadedGame::ItemU8RecipeU8(state) => save(
+                            &state.state.lock().unwrap(),
+                            state.data_store.checksum.clone(),
+                        ),
+                        LoadedGame::ItemU8RecipeU16(state) => save(
+                            &state.state.lock().unwrap(),
+                            state.data_store.checksum.clone(),
+                        ),
+                        LoadedGame::ItemU16RecipeU8(state) => save(
+                            &state.state.lock().unwrap(),
+                            state.data_store.checksum.clone(),
+                        ),
+                        LoadedGame::ItemU16RecipeU16(state) => save(
+                            &state.state.lock().unwrap(),
+                            state.data_store.checksum.clone(),
+                        ),
+                    }
                 }
 
                 event_loop.exit();
@@ -100,7 +127,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> winit::application::Applica
                     warn!("Synthic event: {:?}", event);
                 } else {
                     let input: Input = event.clone().into();
-                    self.input_sender.send(input).expect("Channel died");
+                    self.input_sender.send(input);
                 }
             },
 
@@ -110,7 +137,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> winit::application::Applica
                 phase,
             } => {
                 let input = Input::MouseScoll(*delta);
-                self.input_sender.send(input).expect("Channel died");
+                self.input_sender.send(input);
             },
 
             WindowEvent::CursorMoved {
@@ -122,7 +149,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> winit::application::Applica
                     position.x as f32 / inner_size.width as f32,
                     position.y as f32 / inner_size.height as f32,
                 );
-                self.input_sender.send(input).expect("Channel died");
+                self.input_sender.send(input);
             },
 
             WindowEvent::MouseInput {
@@ -138,7 +165,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> winit::application::Applica
                     (v) => todo!("{:?}", v),
                 };
 
-                self.input_sender.send(input).expect("Channel died");
+                self.input_sender.send(input);
             },
 
             // This is where all the rendering happens
@@ -150,28 +177,55 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> winit::application::Applica
                 let fps =
                     Duration::from_secs(1).div_duration_f32(self.window.last_frame_time.elapsed());
 
-                let current_tick = self.current_tick.load(std::sync::atomic::Ordering::Relaxed);
+                match self.state {
+                    AppState::Ingame => {
+                        if let Some(loaded) = &self.currently_loaded_game {
+                            let current_tick =
+                                loaded.tick.load(std::sync::atomic::Ordering::Relaxed);
 
-                // TODO: This way we kind of spin in the render loop, only redrawing when there is another update.
-                // This is wrong according to the winit docs, which mention ALWAYS redrawing when recieving WindowEvent::RedrawRequested
-                if current_tick > self.last_rendered_update {
-                    self.window.last_frame_time = Instant::now();
+                            // TODO: This way we kind of spin in the render loop, only redrawing when there is another update.
+                            // This is wrong according to the winit docs, which mention ALWAYS redrawing when recieving WindowEvent::RedrawRequested
+                            if current_tick > self.last_rendered_update {
+                                self.window.last_frame_time = Instant::now();
+                                info!("fps: {}", fps);
 
-                    info!("fps: {}", fps);
+                                match &loaded.state {
+                                    LoadedGame::ItemU8RecipeU8(loaded_game_sized) => {
+                                        let game_state = loaded_game_sized.state.lock().unwrap();
+                                        let state_machine =
+                                            loaded_game_sized.state_machine.lock().unwrap();
+                                        render_world(
+                                            renderer,
+                                            &game_state,
+                                            &self.texture_atlas,
+                                            &state_machine,
+                                            &loaded_game_sized.data_store,
+                                        )
+                                    },
+                                    LoadedGame::ItemU8RecipeU16(loaded_game_sized) => todo!(),
+                                    LoadedGame::ItemU16RecipeU8(loaded_game_sized) => todo!(),
+                                    LoadedGame::ItemU16RecipeU16(loaded_game_sized) => todo!(),
+                                }
 
-                    self.state.lock().unwrap().render(
-                        self.window.display.as_mut().unwrap().get_renderer(),
-                        &self.texture_atlas,
-                        &self.state_machine.lock().unwrap(),
-                        &self.data_store,
-                    );
+                                // self.window_handle.as_ref().unwrap().pre_present_notify();
 
-                    // self.window_handle.as_ref().unwrap().pre_present_notify();
+                                self.window
+                                    .display
+                                    .as_mut()
+                                    .unwrap()
+                                    .finish_frame()
+                                    .expect("Could not finish frame");
 
-                    self.window.display.as_mut().unwrap().finish_frame();
-
-                    info!("render_cpu_time: {:?}", start_render_time.elapsed());
-                    self.last_rendered_update = current_tick;
+                                info!("render_cpu_time: {:?}", start_render_time.elapsed());
+                                self.last_rendered_update = current_tick;
+                            }
+                        } else {
+                            warn!("No Game loaded");
+                        }
+                    },
+                    AppState::Loading => {
+                        // TODO:
+                    },
                 }
 
                 self.window.winit_handle.as_ref().unwrap().request_redraw();
@@ -199,15 +253,8 @@ impl Window {
     }
 }
 
-impl<
-        ItemIdxType: IdxTrait + for<'a> serde::Deserialize<'a>,
-        RecipeIdxType: IdxTrait + for<'a> serde::Deserialize<'a>,
-    > App<ItemIdxType, RecipeIdxType>
-{
-    pub fn new(
-        input_sender: Sender<Input>,
-        data_store: Arc<DataStore<ItemIdxType, RecipeIdxType>>,
-    ) -> Self {
+impl App {
+    pub fn new(input_sender: Sender<Input>) -> Self {
         let black = include_bytes!("temp_assets/outside_world.png");
         let black = image::load_from_memory(black).unwrap();
 
@@ -280,24 +327,17 @@ impl<
         let plate_dimensions = plate.dimensions();
         let plate = plate.to_rgba8().into_vec();
 
-        let save_game = load().unwrap_or_else(|| SaveGame {
-            game_state: GameState::new(&data_store),
-            checksum: data_store.checksum.clone(),
-            item: PhantomData,
-            recipe: PhantomData,
-        });
+        let player = include_bytes!("temp_assets/player.png");
+        let player = image::load_from_memory(player).unwrap();
 
-        assert_eq!(
-            save_game.checksum, data_store.checksum,
-            "Checksum does not match! Unable to load savegame"
-        );
+        let player_dimensions = player.dimensions();
+        let player = player.to_rgba8().into_vec();
 
         Self {
-            state: Arc::new(Mutex::new(AppState::Ingame(save_game.game_state))),
-            state_machine: Arc::new(Mutex::new(ActionStateMachine::new())),
+            state: AppState::Loading,
             window: Window::new(),
             last_rendered_update: 0,
-            current_tick: Arc::new(AtomicU64::new(0)),
+            currently_loaded_game: None,
             input_sender,
 
             texture_atlas: TextureAtlas {
@@ -306,6 +346,8 @@ impl<
                 blue: Sprite::new(Texture::new(1, blue, blue_dimensions)),
 
                 plate: Sprite::new(Texture::new(1, plate, plate_dimensions)),
+
+                player: Sprite::new(Texture::new(1, player, player_dimensions)),
                 belt: enum_map::EnumMap::from_array([
                     Sprite::new(Texture::new(1, belt_north, belt_north_dimensions)),
                     Sprite::new(Texture::new(1, belt_east, belt_east_dimensions)),
@@ -322,7 +364,6 @@ impl<
 
                 default: Sprite::new(Texture::default()),
             },
-            data_store,
         }
     }
 }

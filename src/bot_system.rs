@@ -93,7 +93,7 @@ static BOT_RETRY_CHARGE_TIME: u32 =
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, RecipeIdxType> {
     fn update_logibots(
         &mut self,
-        sim_state: &mut SimulationState<RecipeIdxType>,
+        sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
     ) -> impl IntoIterator<Item = BotRenderInfo> {
         let mut render_infos = vec![];
 

@@ -4,16 +4,19 @@
 #![feature(array_try_map)]
 #![feature(never_type)]
 #![feature(precise_capturing_in_traits)]
+#![feature(get_many_mut)]
 
 extern crate test;
 
 use std::{
     array,
     borrow::Borrow,
+    clone, env,
+    net::{IpAddr, Ipv4Addr},
     simd::cmp::SimdPartialEq,
     sync::{
         atomic::AtomicU64,
-        mpsc::{channel, Receiver},
+        mpsc::{channel, Receiver, Sender},
         Arc, Mutex,
     },
     thread,
@@ -24,10 +27,18 @@ use data::{get_raw_data_test, DataStore};
 use frontend::{
     action::{action_state_machine::ActionStateMachine, ActionType},
     input::Input,
+    world::tile::CHUNK_SIZE_FLOAT,
 };
 use item::{IdxTrait, WeakIdxTrait};
 use log::info;
-use rendering::{app_state::AppState, window::App};
+use multiplayer::{
+    connection_reciever::accept_continously, ClientConnectionInfo, Game, GameInitData, ServerInfo,
+};
+use rendering::{
+    app_state::{AppState, GameState},
+    window::{App, LoadedGame, LoadedGameInfo, LoadedGameSized},
+};
+use saving::load;
 use simple_logger::SimpleLogger;
 use winit::event_loop::EventLoop;
 
@@ -75,29 +86,82 @@ pub fn main() {
         .init()
         .unwrap();
 
-    let (send, recv) = channel();
+    let mode = env::args().nth(1);
 
+    dbg!(&mode);
+
+    let (loaded, tick, sender) = if Some("--client") == mode.as_deref() {
+        run_client(StartGameInfo {})
+    } else {
+        run_integrated_server(StartGameInfo {})
+    };
+    let mut app = App::new(sender);
+
+    app.currently_loaded_game = Some(LoadedGameInfo {
+        state: loaded,
+        tick: tick,
+    });
+    app.state = AppState::Ingame;
+    let event_loop = EventLoop::new().unwrap();
+
+    event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+
+    let _ = event_loop.run_app(&mut app);
+}
+
+struct StartGameInfo {}
+
+fn run_integrated_server(
+    start_game_info: StartGameInfo,
+) -> (LoadedGame, Arc<AtomicU64>, Sender<Input>) {
+    // TODO: Do mod loading here
     let raw_data = get_raw_data_test();
     let data_store = raw_data.process();
+
+    let tick_counter: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+
+    let connections: Arc<Mutex<Vec<std::net::TcpStream>>> = Arc::default();
+
+    accept_continously(connections.clone()).unwrap();
 
     match data_store {
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
             let data_store = Arc::new(data_store);
-            let mut app = App::new(send, data_store.clone());
 
-            let tick = app.current_tick.clone();
-            let state = app.state.clone();
-            let state_machine = app.state_machine.clone();
+            let (send, recv) = channel();
+            let state_machine: Arc<Mutex<ActionStateMachine<_, _>>> = Arc::new(Mutex::new(
+                ActionStateMachine::new(0, (100.0 * CHUNK_SIZE_FLOAT, 100.0 * CHUNK_SIZE_FLOAT)),
+            ));
 
-            thread::spawn(|| {
-                main_loop(tick, recv, state, state_machine, data_store);
+            let game_state = Arc::new(Mutex::new(
+                load()
+                    .map(|save| save.game_state)
+                    .unwrap_or_else(|| GameState::new(&data_store)),
+            ));
+
+            let mut game = Game::new(GameInitData::IntegratedServer {
+                game_state: game_state.clone(),
+                tick_counter: tick_counter.clone(),
+                info: ServerInfo { connections },
+                action_state_machine: state_machine.clone(),
+                inputs: recv,
+            })
+            .unwrap();
+
+            let m_data_store = data_store.clone();
+            thread::spawn(move || {
+                game.run(&m_data_store);
             });
 
-            let event_loop = EventLoop::new().unwrap();
-
-            event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
-
-            let _ = event_loop.run_app(&mut app);
+            return (
+                LoadedGame::ItemU8RecipeU8(LoadedGameSized {
+                    state: game_state,
+                    state_machine,
+                    data_store,
+                }),
+                tick_counter,
+                send,
+            );
         },
         data::DataStoreOptions::ItemU8RecipeU16(data_store) => todo!(),
         data::DataStoreOptions::ItemU16RecipeU8(data_store) => todo!(),
@@ -105,49 +169,104 @@ pub fn main() {
     }
 }
 
-fn main_loop<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    current_tick: Arc<AtomicU64>,
-    input_reciever: Receiver<Input>,
-    app_state: Arc<Mutex<AppState<ItemIdxType, RecipeIdxType>>>,
-    state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType>>>,
-    data_store: Arc<DataStore<ItemIdxType, RecipeIdxType>>,
-) -> ! {
-    let mut update_interval =
-        spin_sleep_util::interval(Duration::from_secs(1) / TICKS_PER_SECOND as u32);
+fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Sender<Input>) {
+    // TODO: Do mod loading here
+    let raw_data = get_raw_data_test();
+    let data_store = raw_data.process();
 
-    loop {
-        update_interval.tick();
-        match &mut *app_state.lock().unwrap() {
-            AppState::Ingame(game_state) => {
-                // TODO: For now I collect the actions here.
+    let tick_counter: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
 
-                let actions: Vec<ActionType<ItemIdxType, RecipeIdxType>> = {
-                    let mut state_machine = state_machine.lock().unwrap();
-                    let mut ret: Vec<ActionType<ItemIdxType, RecipeIdxType>> = input_reciever
-                        .try_iter()
-                        .flat_map(|input| {
-                            state_machine.handle_input(input, &game_state.world, &data_store)
-                        })
-                        .collect();
+    match data_store {
+        data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
+            let data_store = Arc::new(data_store);
 
-                    ret.extend(state_machine.once_per_update_actions());
+            let (send, recv) = channel();
+            let state_machine: Arc<Mutex<ActionStateMachine<_, _>>> = Arc::new(Mutex::new(
+                ActionStateMachine::new(1, (100.0 * CHUNK_SIZE_FLOAT, 100.0 * CHUNK_SIZE_FLOAT)),
+            ));
 
-                    ret
-                };
+            let game_state = Arc::new(Mutex::new(
+                load()
+                    .map(|save| save.game_state)
+                    .unwrap_or_else(|| GameState::new(&data_store)),
+            ));
 
-                let start = Instant::now();
-                game_state.apply_actions(actions, &data_store);
+            let mut game = Game::new(GameInitData::Client {
+                game_state: game_state.clone(),
+                action_state_machine: state_machine.clone(),
+                inputs: recv,
+                tick_counter: tick_counter.clone(),
+                info: ClientConnectionInfo {
+                    ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
+                    port: 8080,
+                },
+            })
+            .unwrap();
 
-                info!("Apply Actions Time: {:?}", start.elapsed());
-                let start = Instant::now();
+            let m_data_store = data_store.clone();
+            thread::spawn(move || {
+                game.run(&m_data_store);
+            });
 
-                game_state.update(&data_store);
-                info!("Update Time: {:?}", start.elapsed());
-            },
-        }
-        current_tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            return (
+                LoadedGame::ItemU8RecipeU8(LoadedGameSized {
+                    state: game_state,
+                    state_machine,
+                    data_store,
+                }),
+                tick_counter,
+                send,
+            );
+        },
+        data::DataStoreOptions::ItemU8RecipeU16(data_store) => todo!(),
+        data::DataStoreOptions::ItemU16RecipeU8(data_store) => todo!(),
+        data::DataStoreOptions::ItemU16RecipeU16(data_store) => todo!(),
     }
 }
+
+// fn main_loop<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+//     current_tick: Arc<AtomicU64>,
+//     input_reciever: Receiver<Input>,
+//     app_state: Arc<Mutex<AppState<ItemIdxType, RecipeIdxType>>>,
+//     state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType>>>,
+//     data_store: Arc<DataStore<ItemIdxType, RecipeIdxType>>,
+// ) -> ! {
+//     let mut update_interval =
+//         spin_sleep_util::interval(Duration::from_secs(1) / TICKS_PER_SECOND as u32);
+
+//     loop {
+//         update_interval.tick();
+//         match &mut *app_state.lock().unwrap() {
+//             AppState::Ingame(game_state) => {
+//                 // TODO: For now I collect the actions here.
+
+//                 let actions: Vec<ActionType<ItemIdxType, RecipeIdxType>> = {
+//                     let mut state_machine = state_machine.lock().unwrap();
+//                     let mut ret: Vec<ActionType<ItemIdxType, RecipeIdxType>> = input_reciever
+//                         .try_iter()
+//                         .flat_map(|input| {
+//                             state_machine.handle_input(input, &game_state.world, &data_store)
+//                         })
+//                         .collect();
+
+//                     ret.extend(state_machine.once_per_update_actions());
+
+//                     ret
+//                 };
+
+//                 let start = Instant::now();
+//                 game_state.apply_actions(actions, &data_store);
+
+//                 info!("Apply Actions Time: {:?}", start.elapsed());
+//                 let start = Instant::now();
+
+//                 game_state.update(&data_store);
+//                 info!("Update Time: {:?}", start.elapsed());
+//             },
+//         }
+//         current_tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+//     }
+// }
 
 // #[cfg(not(debug_assertions))]
 
