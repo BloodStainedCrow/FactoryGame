@@ -197,6 +197,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                         self.current_mouse_pos,
                                     );
                                 },
+                                PlaceEntityType::Splitter { pos, direction, in_mode, out_mode } => {
+                                    *pos = Self::player_mouse_to_tile(
+                                        self.zoom_level,
+                                        self.local_player_pos,
+                                        self.current_mouse_pos,
+                                    );
+                                }
                             },
                         },
                     }
@@ -310,6 +317,25 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 vec![]
             },
             (
+                ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Splitter {
+                    pos,
+                    direction,
+                    in_mode,
+                    out_mode,
+                })),
+                KeyCode::KeyR,
+            ) => {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::Splitter {
+                        pos: *pos,
+                        direction: direction.turn_right(),
+                        in_mode: *in_mode,
+                        out_mode: *out_mode,
+                    },
+                ));
+                vec![]
+            },
+            (
                 ActionStateMachineState::Idle | ActionStateMachineState::Holding(_),
                 KeyCode::Digit4,
             ) => {
@@ -339,6 +365,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             self.current_mouse_pos,
                         ),
                         ty: 0,
+                    },
+                ));
+                vec![]
+            },
+            (
+                ActionStateMachineState::Idle | ActionStateMachineState::Holding(_),
+                KeyCode::Digit6,
+            ) => {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::Splitter {
+                        pos: Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.local_player_pos,
+                            self.current_mouse_pos,
+                        ),
+                        direction: Dir::North,
+                        in_mode: None,
+                        out_mode: None,
                     },
                 ));
                 vec![]

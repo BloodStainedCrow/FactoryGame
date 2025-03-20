@@ -165,7 +165,7 @@ impl winit::application::ApplicationHandler for App {
                     (v) => todo!("{:?}", v),
                 };
 
-                self.input_sender.send(input);
+                self.input_sender.send(input).unwrap();
             },
 
             // This is where all the rendering happens

@@ -10,11 +10,12 @@ use strum::EnumIter;
 use itertools::Itertools;
 
 use crate::{
+    belt::splitter::SplitterDistributionMode,
     data::DataStore,
     item::{IdxTrait, Item, Recipe, WeakIdxTrait},
     power::power_grid::PowerGridIdentifier,
     rendering::app_state::SimulationState,
-    TICKS_PER_SECOND,
+    TICKS_PER_SECOND_LOGIC,
 };
 
 use super::{sparse_grid::SparseGrid, Position};
@@ -51,7 +52,7 @@ impl Default for PlayerInfo {
         Self {
             pos: (100.0 * CHUNK_SIZE_FLOAT, 100.0 * CHUNK_SIZE_FLOAT),
             visible: false,
-            movement_speed: 1.0 / (TICKS_PER_SECOND as f32),
+            movement_speed: 1.0 / (TICKS_PER_SECOND_LOGIC as f32),
             inventory: Default::default(),
         }
     }
@@ -167,6 +168,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     pub fn add_entity(
         &mut self,
         entity: Entity<ItemIdxType, RecipeIdxType>,
+        sim_state: &SimulationState<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         debug_assert!(self.can_fit(entity.get_pos(), entity.get_size(data_store), data_store));
@@ -204,6 +206,55 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 self.belt_recieving_input_directions
                     .entry(pos + direction)
                     .or_default()[direction.reverse()] = true;
+            },
+            Entity::Underground {
+                pos,
+                direction,
+                id,
+                underground_dir,
+                ..
+            } => {
+                self.belt_lookup
+                    .belt_id_to_chunks
+                    .entry(id)
+                    .or_default()
+                    .insert(chunk_pos);
+
+                if underground_dir == UndergroundDir::Exit {
+                    self.belt_recieving_input_directions
+                        .entry(pos + direction)
+                        .or_default()[direction.reverse()] = true;
+                }
+            },
+            Entity::Splitter {
+                pos,
+                direction,
+                item,
+                id: splitter_id,
+            } => {
+                let ids = sim_state
+                    .factory
+                    .splitters
+                    .get_splitter_belt_ids(item, splitter_id)
+                    .into_iter()
+                    .flatten();
+
+                for id in ids {
+                    let chunk_pos_right = self.get_chunk_pos_for_tile(pos + direction.turn_right());
+
+                    self.belt_lookup
+                        .belt_id_to_chunks
+                        .entry(id)
+                        .or_default()
+                        .extend([chunk_pos, chunk_pos_right]);
+
+                    self.belt_recieving_input_directions
+                        .entry(pos + direction)
+                        .or_default()[direction.reverse()] = true;
+                    self.belt_recieving_input_directions
+                        .entry(pos + direction.turn_right() + direction)
+                        .or_default()[direction.reverse()] = true;
+                }
             },
             Entity::Inserter { info, .. } => match info {
                 InserterInfo::NotAttached { .. } => {},
@@ -260,7 +311,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             *grid_id = new_id;
                         }
                     },
-                    Entity::Belt { .. } => {},
                     Entity::Inserter { info, .. } => match info {
                         InserterInfo::NotAttached { .. } => {},
                         InserterInfo::Attached(attached_inserter) => match attached_inserter {
@@ -273,6 +323,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             AttachedInserter::StorageStorage(_) => todo!(),
                         },
                     },
+                    Entity::Belt { .. } | Entity::Underground { .. } | Entity::Splitter { .. } => {
+                    },
                 }
             }
         }
@@ -284,10 +336,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             .extend(old_chunks.into_iter().flatten());
     }
 
-    pub fn update_belt_id(
+    pub fn update_belt_id_after(
         &mut self,
         old_id: BeltTileId<ItemIdxType>,
         new_id: BeltTileId<ItemIdxType>,
+        belt_pos_which_has_to_be_less_or_equal: u16,
     ) {
         let old_chunks = self.belt_lookup.belt_id_to_chunks.remove(&old_id);
 
@@ -301,11 +354,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 match entity {
                     Entity::Assembler { .. } => {},
                     Entity::PowerPole { .. } => {},
-                    Entity::Belt { id, .. } => {
-                        if *id == old_id {
+                    Entity::Belt { id, belt_pos, .. }
+                    | Entity::Underground { id, belt_pos, .. } => {
+                        if *id == old_id && belt_pos_which_has_to_be_less_or_equal <= *belt_pos {
                             *id = new_id;
                         }
                     },
+                    Entity::Splitter { pos, direction, .. } => todo!(),
                     Entity::Inserter { info, .. } => match info {
                         InserterInfo::NotAttached { .. } => {},
                         InserterInfo::Attached(attached_inserter) => match attached_inserter {
@@ -329,6 +384,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             .extend(old_chunks.into_iter().flatten());
     }
 
+    pub fn update_belt_id(
+        &mut self,
+        old_id: BeltTileId<ItemIdxType>,
+        new_id: BeltTileId<ItemIdxType>,
+    ) {
+        // Do it for ALL belt_pos
+        self.update_belt_id_after(old_id, new_id, 0);
+    }
+
     pub fn modify_belt_pos(&mut self, id_to_change: BeltTileId<ItemIdxType>, offs: i16) {
         let chunks = self.belt_lookup.belt_id_to_chunks.get(&id_to_change);
 
@@ -342,13 +406,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 match entity {
                     Entity::Assembler { .. } => {},
                     Entity::PowerPole { .. } => {},
-                    Entity::Belt { id, belt_pos, .. } => {
+                    Entity::Belt { id, belt_pos, .. }
+                    | Entity::Underground { id, belt_pos, .. } => {
                         if *id == id_to_change {
                             *belt_pos = belt_pos
                                 .checked_add_signed(offs)
                                 .expect("belt_pos wrapped!");
                         }
                     },
+                    Entity::Splitter { pos, direction, .. } => todo!(),
                     Entity::Inserter { info, .. } => match info {
                         InserterInfo::NotAttached { .. } => {},
                         InserterInfo::Attached(attached_inserter) => match attached_inserter {
@@ -688,6 +754,12 @@ pub enum AttachedInserter<ItemIdxType: WeakIdxTrait> {
     StorageStorage(()),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub enum UndergroundDir {
+    Entrance,
+    Exit,
+}
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Assembler {
@@ -704,9 +776,22 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Belt {
         pos: Position,
         direction: Dir,
-        // TODO:
         id: BeltTileId<ItemIdxType>,
         belt_pos: u16,
+    },
+    Underground {
+        pos: Position,
+        underground_dir: UndergroundDir,
+        direction: Dir,
+        id: BeltTileId<ItemIdxType>,
+        belt_pos: u16,
+    },
+    Splitter {
+        pos: Position,
+        direction: Dir,
+        // TODO:
+        item: Option<Item<ItemIdxType>>,
+        id: usize,
     },
     Inserter {
         pos: Position,
@@ -723,6 +808,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::PowerPole { pos, .. } => *pos,
             Self::Belt { pos, .. } => *pos,
             Self::Inserter { pos, .. } => *pos,
+            Self::Underground { pos, .. } => *pos,
+            Self::Splitter { pos, .. } => *pos,
         }
     }
 
@@ -732,6 +819,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::PowerPole { ty, .. } => (1, 1),
             Self::Belt { .. } => (1, 1),
             Self::Inserter { .. } => (1, 1),
+            Self::Underground { .. } => (1, 1),
+            Self::Splitter { direction, .. } => match direction {
+                Dir::North => (2, 1),
+                Dir::East => (1, 2),
+                Dir::South => (2, 1),
+                Dir::West => (1, 2),
+            },
         }
     }
 }
@@ -770,6 +864,12 @@ pub enum PlaceEntityType<ItemIdxType: WeakIdxTrait> {
     PowerPole {
         pos: Position,
         ty: u8,
+    },
+    Splitter {
+        pos: Position,
+        direction: Dir,
+        in_mode: Option<SplitterDistributionMode>,
+        out_mode: Option<SplitterDistributionMode>,
     },
 }
 

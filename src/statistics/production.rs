@@ -41,7 +41,7 @@ impl ProductionInfo {
                 })
                 .collect(),
             items_used: data_store
-                .item_to_recipe_where_its_ingredient
+                .item_to_recipe_count_where_its_ingredient
                 .iter()
                 .map(|values| {
                     values

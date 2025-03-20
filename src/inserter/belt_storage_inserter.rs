@@ -1,11 +1,11 @@
 use std::marker::ConstParamTy;
 
 use crate::{
-    assembler::SingleItemSlice,
     item::{IdxTrait, WeakIdxTrait},
+    storage_list::{index, SingleItemStorages},
 };
 
-use super::{InserterState, StorageID};
+use super::{InserterState, Storage, StorageID};
 
 #[derive(ConstParamTy, PartialEq, Eq)]
 pub enum Dir {
@@ -15,7 +15,7 @@ pub enum Dir {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BeltStorageInserter<RecipeIdxType: WeakIdxTrait, const DIR: Dir> {
-    pub storage_id: StorageID<RecipeIdxType>,
+    pub storage_id: Storage<RecipeIdxType>,
     pub state: InserterState,
 }
 
@@ -29,7 +29,7 @@ pub struct BeltStorageInserter<RecipeIdxType: WeakIdxTrait, const DIR: Dir> {
 //       (maybe some quadtree weirdness could help?)
 impl<RecipeIdxType: IdxTrait, const DIR: Dir> BeltStorageInserter<RecipeIdxType, DIR> {
     #[must_use]
-    pub const fn new(id: StorageID<RecipeIdxType>) -> Self {
+    pub const fn new(id: Storage<RecipeIdxType>) -> Self {
         Self {
             storage_id: id,
             state: InserterState::Empty,
@@ -38,7 +38,15 @@ impl<RecipeIdxType: IdxTrait, const DIR: Dir> BeltStorageInserter<RecipeIdxType,
 }
 
 impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::BeltToStorage }> {
-    pub fn update(&mut self, loc: &mut bool, storages: SingleItemSlice, movetime: u8) {
+    pub fn update(
+        &mut self,
+        loc: &mut bool,
+        storages: SingleItemStorages,
+        movetime: u8,
+        num_grids_total: usize,
+        num_recipes: usize,
+        grid_size: usize,
+    ) {
         // TODO: I just added InserterStates and it is a lot slower (unsurprisingly),
         // Try and find a faster implementation of similar logic
 
@@ -50,16 +58,23 @@ impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::BeltToSt
                 }
             },
             InserterState::FullAndWaitingForSlot => {
-                if storages[usize::from(self.storage_id.grid)]
-                    [usize::from(self.storage_id.storage_list_idx)]
-                    [self.storage_id.machine_idx as usize]
-                    // TODO:
-                    < 100
-                {
+                let old = *index(
+                    storages,
+                    self.storage_id,
+                    num_grids_total,
+                    num_recipes,
+                    grid_size,
+                );
+                // TODO:
+                if old < 100 {
                     // There is space in the machine
-                    storages[usize::from(self.storage_id.grid)]
-                        [usize::from(self.storage_id.storage_list_idx)]
-                        [self.storage_id.machine_idx as usize] += 1;
+                    *index(
+                        storages,
+                        self.storage_id,
+                        num_grids_total,
+                        num_recipes,
+                        grid_size,
+                    ) += 1;
 
                     self.state = InserterState::EmptyAndMovingBack(movetime);
                 }
@@ -85,22 +100,37 @@ impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::BeltToSt
 }
 
 impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::StorageToBelt }> {
-    pub fn update(&mut self, loc: &mut bool, storages: SingleItemSlice, movetime: u8) {
+    pub fn update(
+        &mut self,
+        loc: &mut bool,
+        storages: SingleItemStorages,
+        movetime: u8,
+        num_grids_total: usize,
+        num_recipes: usize,
+        grid_size: usize,
+    ) {
         // TODO: I just added InserterStates and it is a lot slower (unsurprisingly),
         // Try and find a faster implementation of similar logic,
         // Ideally reduce branch mispredictions as much as possible, while also reducing random loads from storages
 
         match self.state {
             InserterState::Empty => {
-                if storages[usize::from(self.storage_id.grid)]
-                    [usize::from(self.storage_id.storage_list_idx)]
-                    [self.storage_id.machine_idx as usize]
-                    > 0
-                {
+                let old = *index(
+                    storages,
+                    self.storage_id,
+                    num_grids_total,
+                    num_recipes,
+                    grid_size,
+                );
+                if old > 0 {
                     // There is an item in the machine
-                    storages[usize::from(self.storage_id.grid)]
-                        [usize::from(self.storage_id.storage_list_idx)]
-                        [self.storage_id.machine_idx as usize] -= 1;
+                    *index(
+                        storages,
+                        self.storage_id,
+                        num_grids_total,
+                        num_recipes,
+                        grid_size,
+                    ) -= 1;
 
                     self.state = InserterState::FullAndMovingOut(movetime);
                 }

@@ -5,7 +5,7 @@ use itertools::Itertools;
 use crate::{
     data::{DataStore, ItemRecipeDir},
     frontend::world::tile::AssemblerID,
-    item::{recipe_item_idx, IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
+    item::{IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
     power::{
         power_grid::{IndexUpdateInfo, PowerGridIdentifier, MAX_POWER_MULT},
         Joule, Watt,
@@ -27,8 +27,20 @@ pub struct MultiAssemblerStore<
     const NUM_INGS: usize,
     const NUM_OUTPUTS: usize,
 > {
-    recipe: Recipe<RecipeIdxType>,
+    pub recipe: Recipe<RecipeIdxType>,
 
+    /// Crafting Speed in 10% increments
+    /// i.e. 18 => 180% Crafting speed
+    /// Maximum is 2550% Crafting Speed
+    speed: Box<[u8]>,
+    /// Bonus Productivity in %
+    bonus_productivity: Box<[u8]>,
+    /// Power Consumption in 10% increments
+    /// i.e. 18 => 180% Power Consumption
+    /// Maximum is 2550% x Base Power Consumption
+    power_consumption_modifier: Box<[u8]>,
+    // TODO: This can likely be smaller than full u64
+    base_power_consumption: Box<[Watt]>,
     #[serde(with = "arrays")]
     ings: [Box<[ITEMCOUNTTYPE]>; NUM_INGS],
     #[serde(with = "arrays")]
@@ -62,17 +74,17 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
             .iter()
             .map(|r| MultiAssemblerStore::new(*r))
             .collect();
-        let assemblers_1_1 = data_store
-            .ing_out_num_to_recipe
-            .get(&(1, 1))
-            .unwrap()
-            .iter()
-            .map(|r| MultiAssemblerStore::new(*r))
-            .collect();
+        // let assemblers_1_1 = data_store
+        //     .ing_out_num_to_recipe
+        //     .get(&(1, 1))
+        //     .unwrap()
+        //     .iter()
+        //     .map(|r| MultiAssemblerStore::new(*r))
+        //     .collect();
 
         Self {
             assemblers_0_1,
-            assemblers_1_1,
+            assemblers_1_1: vec![].into_boxed_slice(),
         }
     }
 
@@ -85,7 +97,7 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
         other_grid: PowerGridIdentifier,
     ) -> (
         Self,
-        impl IntoIterator<Item = IndexUpdateInfo<RecipeIdxType>>,
+        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
     ) {
         let mut idx_update = vec![];
 
@@ -144,9 +156,6 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
     }
 }
 
-///                                    ~~item~~ grid recipe idx
-pub type SingleItemSlice<'a, 'b, 'c> = &'a mut [Vec<&'c mut [ITEMCOUNTTYPE]>];
-
 // FIXME:
 // fn get_slice_for_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 //     item: Item<ITEMCOUNTTYPE>,
@@ -198,6 +207,12 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             outputs: array::from_fn(|_| vec![].into_boxed_slice()),
             timers: vec![].into_boxed_slice(),
 
+            bonus_productivity: vec![].into_boxed_slice(),
+            speed: vec![].into_boxed_slice(),
+            power_consumption_modifier: vec![].into_boxed_slice(),
+
+            base_power_consumption: vec![].into_boxed_slice(),
+
             holes: vec![],
             len: 0,
         }
@@ -212,7 +227,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         other_grid: PowerGridIdentifier,
     ) -> (
         Self,
-        impl IntoIterator<Item = IndexUpdateInfo<RecipeIdxType>>,
+        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
     ) {
         let mut update_vec = vec![];
 
@@ -249,13 +264,13 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                     .unwrap();
 
                 update_vec.push(IndexUpdateInfo {
-                    old: old_id,
-                    new: new_id,
+                    old: (*item, old_id),
+                    new: (*item, new_id),
                 });
             }
         }
 
-        let new_ings = self
+        let new_ings: [Box<[u8]>; NUM_INGS] = self
             .ings
             .into_iter()
             .zip(other.ings)
@@ -272,7 +287,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             })
             .collect_array()
             .unwrap();
-        let new_outputs = self
+        let new_outputs: [Box<[u8]>; NUM_OUTPUTS] = self
             .outputs
             .into_iter()
             .zip(other.outputs)
@@ -300,14 +315,15 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .map(|(_, v)| v),
         );
 
-        let ret = Self {
-            recipe: self.recipe,
-            ings: new_ings,
-            outputs: new_outputs,
-            timers: new_timers.into(),
-            holes: self.holes,
-            len: 0,
-        };
+        let ret = todo!();
+        //Self {
+        //    recipe: self.recipe,
+        //    ings: new_ings,
+        //    outputs: new_outputs,
+        //    timers: new_timers.into(),
+        //    holes: self.holes,
+        //    len: 0,
+        //};
 
         (ret, update_vec)
     }
@@ -474,6 +490,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         recipe_outputs: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
         times: &[TIMERTYPE],
     ) -> (Joule, u32, u32) {
+        // FIXME: These depend on which machine we are.
         const POWER_DRAIN: Watt = Watt(2_500);
         const POWER_CONSUMPTION: Watt = Watt(75_000);
 
@@ -491,7 +508,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
         // TODO: With power calculations being done on the fly, we cannot return early, since we then do not know the power demands of the base :(
         // It might be fine, since it only applies if the power is so low, NOTHING happens and as soon as any power is connected it will start running again.
-        // My guess is that returning 0 (or just the drain power) could lead to a lot of flickering.
+        // My guess is that returning 0 (or just the drain power) would lead to flickering.
         // if power_mult == 0 {
         //     return;
         // }

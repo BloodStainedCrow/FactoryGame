@@ -14,7 +14,7 @@ use crate::{
         Position,
     },
     item::{IdxTrait, WeakIdxTrait},
-    TICKS_PER_SECOND,
+    TICKS_PER_SECOND_LOGIC,
 };
 
 mod grid_graph;
@@ -83,7 +83,7 @@ impl Div<u64> for Joule {
 impl Joule {
     #[must_use]
     pub const fn watt_from_tick(self) -> Watt {
-        Watt(self.0 * TICKS_PER_SECOND)
+        Watt(self.0 * TICKS_PER_SECOND_LOGIC)
     }
 }
 
@@ -119,7 +119,7 @@ impl Mul<u64> for Watt {
 impl Watt {
     #[must_use]
     pub const fn joules_per_tick(self) -> Joule {
-        Joule(self.0 / TICKS_PER_SECOND)
+        Joule(self.0 / TICKS_PER_SECOND_LOGIC)
     }
 }
 
@@ -181,7 +181,7 @@ impl<RecipeIdxType: IdxTrait> PowerGridStorage<RecipeIdxType> {
         new_pole_pos: Position,
         new_pole_connections: impl IntoIterator<Item = Position>,
     ) -> Option<(
-        impl IntoIterator<Item = IndexUpdateInfo<RecipeIdxType>>,
+        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
         impl IntoIterator<Item = PowerPoleUpdateInfo>,
     )> {
         if kept_id == removed_id {

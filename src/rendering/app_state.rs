@@ -1,13 +1,28 @@
 use std::{
-    collections::BTreeSet, fs::File, io::Write, marker::PhantomData, mem::{self}, ops::ControlFlow
+    collections::BTreeSet,
+    fs::File,
+    io::Write,
+    marker::PhantomData,
+    mem::{self},
+    ops::ControlFlow,
 };
 
 use crate::{
+    assembler::TIMERTYPE,
     belt::{
         belt::Belt,
-        smart::{EmptyBelt, Side, SmartBelt}, BeltStore, MultiBeltStore,
-    }, data::{DataStore, ItemRecipeDir}, frontend::{
-        action::{action_state_machine::ActionStateMachine, belt_placement::handle_belt_placement, set_recipe::SetRecipeInfo, ActionType},
+        smart::{EmptyBelt, Side, SmartBelt},
+        splitter::Splitter,
+        BeltStore, MultiBeltStore,
+    },
+    data::{DataStore, ItemRecipeDir},
+    frontend::{
+        action::{
+            action_state_machine::ActionStateMachine,
+            belt_placement::{handle_belt_placement, handle_splitter_placement},
+            set_recipe::SetRecipeInfo,
+            ActionType,
+        },
         world::{
             tile::{
                 AssemblerID, AssemblerInfo, AttachedInserter, BeltId, BeltTileId, Dir, Entity,
@@ -15,9 +30,21 @@ use crate::{
             },
             Position,
         },
-    }, inserter::belt_belt_inserter::BeltBeltInserter, item::{IdxTrait, Item, Recipe, WeakIdxTrait}, power::{power_grid::{all_storages, PowerGrid, PowerGridIdentifier}, PowerGridStorage, Watt}, research::{ResearchProgress, TechState}, statistics::{production::ProductionInfo, recipe::RecipeTickInfo, research::ResearchInfo, GenStatistics}
+    },
+    inserter::belt_belt_inserter::BeltBeltInserter,
+    item::{IdxTrait, Item, Recipe, WeakIdxTrait},
+    power::{
+        power_grid::{all_storages, PowerGrid, PowerGridIdentifier},
+        PowerGridStorage, Watt,
+    },
+    research::{ResearchProgress, TechState},
+    statistics::{
+        production::ProductionInfo, recipe::RecipeTickInfo, research::ResearchInfo, GenStatistics,
+    },
+    storage_list::{full_to_by_item, grid_size, num_recipes, sizes, storages_by_item},
 };
 use log::{error, info, warn};
+use rayon::iter::ParallelBridge;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use tilelib::types::Renderer;
 
@@ -66,29 +93,93 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SimulationState<ItemIdxType
 pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub power_grids: PowerGridStorage<RecipeIdxType>,
     pub belts: BeltStore<RecipeIdxType>,
-    pub belt_belt_inserters: BeltBeltInserterStore<ItemIdxType>
+    pub belt_belt_inserters: BeltBeltInserterStore<ItemIdxType>,
+    pub splitters: SplitterStore<ItemIdxType>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct SplitterStore<ItemIdxType: WeakIdxTrait> {
+    pub empty_splitters: Vec<Splitter>,
+    // TODO: Holes
+    pub splitters: Box<[Vec<Splitter>]>,
+    item: PhantomData<ItemIdxType>,
+}
+
+impl<ItemIdxType: IdxTrait> SplitterStore<ItemIdxType> {
+    pub fn get_splitter_belt_ids<'a>(
+        &'a self,
+        item: Option<Item<ItemIdxType>>,
+        id: usize,
+    ) -> [impl IntoIterator<Item = BeltTileId<ItemIdxType>> + use<'a, ItemIdxType>; 2] {
+        let index_to_id = move |index| match item {
+            Some(item) => BeltTileId::BeltId(BeltId { item, index }),
+            None => BeltTileId::EmptyBeltId(index),
+        };
+
+        match item {
+            Some(item) => [
+                self.splitters[Into::<usize>::into(item.id)][id]
+                    .input_belts
+                    .iter()
+                    .copied()
+                    .map(index_to_id),
+                self.splitters[Into::<usize>::into(item.id)][id]
+                    .output_belts
+                    .iter()
+                    .copied()
+                    .map(index_to_id),
+            ],
+            None => [
+                self.empty_splitters[id]
+                    .input_belts
+                    .iter()
+                    .copied()
+                    .map(index_to_id),
+                self.empty_splitters[id]
+                    .output_belts
+                    .iter()
+                    .copied()
+                    .map(index_to_id),
+            ],
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BeltBeltInserterStore<ItemIdxType: WeakIdxTrait> {
-    pub inserters: Box<[Vec<(BeltBeltInserter,BeltBeltInserterInfo<ItemIdxType>)>]>
+    // TODO: Holes
+    pub inserters: Box<[Vec<(BeltBeltInserter, BeltBeltInserterInfo<ItemIdxType>)>]>,
 }
 
 impl<ItemIdxType: IdxTrait> BeltBeltInserterStore<ItemIdxType> {
-    pub fn update<RecipeIdxType: IdxTrait>(&mut self, belts: &mut BeltStore<RecipeIdxType>, data_store: &DataStore<ItemIdxType, RecipeIdxType>) {
-        self.inserters.par_iter_mut().zip(belts.belts.par_iter_mut()).for_each(|(inserters, belts)| {
-            for ins in inserters {
-                let [source, dest] = if ins.1.source.0 == ins.1.dest.0 {
-                    // We are taking and inserting from the same belt
-                    debug_assert!(ins.1.source.1 != ins.1.dest.1);
-                    belts.belts[ins.1.source.0].get_two([ins.1.source.1 as usize, ins.1.dest.1 as usize])
-                } else {
-                    let [source_belt, dest_belt] = belts.belts.get_many_mut([ins.1.source.0, ins.1.dest.0]).expect("Index out of bounds");
-                    [source_belt.get_mut(ins.1.source.1), dest_belt.get_mut(ins.1.dest.1)]
-                };
-                ins.0.update(source, dest, todo!());
-            }
-        });
+    pub fn update<RecipeIdxType: IdxTrait>(
+        &mut self,
+        belts: &mut BeltStore<RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        self.inserters
+            .par_iter_mut()
+            .zip(belts.belts.par_iter_mut())
+            .for_each(|(inserters, belts)| {
+                for ins in inserters {
+                    let [source, dest] = if ins.1.source.0 == ins.1.dest.0 {
+                        // We are taking and inserting from the same belt
+                        debug_assert!(ins.1.source.1 != ins.1.dest.1);
+                        belts.belts[ins.1.source.0]
+                            .get_two([ins.1.source.1 as usize, ins.1.dest.1 as usize])
+                    } else {
+                        let [source_belt, dest_belt] = belts
+                            .belts
+                            .get_many_mut([ins.1.source.0, ins.1.dest.0])
+                            .expect("Index out of bounds");
+                        [
+                            source_belt.get_mut(ins.1.source.1),
+                            dest_belt.get_mut(ins.1.dest.1),
+                        ]
+                    };
+                    ins.0.update(source, dest, todo!());
+                }
+            });
     }
 }
 
@@ -96,7 +187,12 @@ impl<ItemIdxType: IdxTrait> BeltBeltInserterStore<ItemIdxType> {
 pub struct BeltBeltInserterInfo<ItemIdxType: WeakIdxTrait> {
     source: (usize, u16),
     dest: (usize, u16),
+    cooldown: u8,
     item: PhantomData<ItemIdxType>,
+}
+
+pub struct BeltBeltInserterAdditionInfo {
+    pub cooldown: u8,
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, RecipeIdxType> {
@@ -109,10 +205,125 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                 belts: vec![MultiBeltStore::default(); data_store.recipe_timers.len()]
                     .into_boxed_slice(),
             },
-            belt_belt_inserters: BeltBeltInserterStore { inserters: vec![Vec::new(); data_store.item_names.len()].into_boxed_slice() }
+            belt_belt_inserters: BeltBeltInserterStore {
+                inserters: vec![Vec::new(); data_store.item_names.len()].into_boxed_slice(),
+            },
+            splitters: SplitterStore {
+                empty_splitters: vec![],
+                splitters: vec![Vec::new(); data_store.item_names.len()].into_boxed_slice(),
+                item: PhantomData,
+            },
         }
     }
+
+    fn belt_update<'a>(&mut self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) {
+        if self.power_grids.power_grids.len() > 1 {
+            warn!("Bug here");
+        }
+
+        let num_grids_total = self.power_grids.power_grids.iter().flatten().count();
+        let mut all_storages = storages_by_item(&mut self.power_grids, data_store);
+        let sizes: Vec<_> = sizes(data_store, num_grids_total).into_iter().collect();
+        // dbg!(&all_storages);
+        assert_eq!(sizes.len(), data_store.item_names.len());
+        let storages_by_item = full_to_by_item(&mut all_storages, &sizes);
+
+        self.belts
+            .belts
+            .par_iter_mut()
+            .zip(storages_by_item)
+            .zip(self.belt_belt_inserters.inserters.par_iter_mut())
+            .zip(self.splitters.splitters.par_iter_mut())
+            .enumerate()
+            .for_each(
+                |(item_id, (((belt_store, item_storages), belt_belt_inserters), splitters))| {
+                    let grid_size = grid_size(
+                        Item {
+                            id: item_id.try_into().unwrap(),
+                        },
+                        data_store,
+                    );
+                    let num_recipes = num_recipes(
+                        Item {
+                            id: item_id.try_into().unwrap(),
+                        },
+                        data_store,
+                    );
+
+                    for belt in &mut belt_store.belts {
+                        belt.update();
+                        belt.update_inserters(
+                            item_storages,
+                            num_grids_total,
+                            num_recipes,
+                            grid_size,
+                        );
+                    }
+
+                    for (ins, info) in belt_belt_inserters {
+                        let [source, dest] = if info.source.0 == info.dest.0 {
+                            assert_ne!(
+                                info.source.1, info.dest.1,
+                                "An inserter cannot take and drop off on the same tile"
+                            );
+                            // We are taking and placing onto the same belt
+                            let belt = &mut belt_store.belts[info.source.0];
+
+                            belt.get_two([info.source.1.into(), info.dest.1.into()])
+                        } else {
+                            let [inp, out] = belt_store
+                                .belts
+                                .get_many_mut([info.source.0, info.dest.0])
+                                .unwrap();
+
+                            [inp.get_mut(info.source.1), out.get_mut(info.dest.1)]
+                        };
+                        ins.update(source, dest, info.cooldown);
+                    }
+
+                    for splitter in splitters {
+                        splitter.update(belt_store);
+                    }
+                },
+            );
+    }
+
+    pub fn add_belt_belt_inserter(
+        &mut self,
+        from: (BeltId<ItemIdxType>, u16),
+        to: (BeltId<ItemIdxType>, u16),
+        info: BeltBeltInserterAdditionInfo,
+    ) {
+        assert_eq!(from.0.item, to.0.item);
+        self.belt_belt_inserters.inserters[Into::<usize>::into(from.0.item.id)].push((
+            BeltBeltInserter::new(),
+            BeltBeltInserterInfo {
+                source: (from.0.index, from.1),
+                dest: (to.0.index, to.1),
+                cooldown: info.cooldown,
+                item: PhantomData,
+            },
+        ))
+    }
+
+    pub fn add_splitter(&mut self, splitter: Splitter, item: Option<Item<ItemIdxType>>) -> usize {
+        match item {
+            Some(item) => {
+                self.splitters.splitters[Into::<usize>::into(item.id)].push(splitter);
+                self.splitters.splitters[Into::<usize>::into(item.id)].len() - 1
+            },
+            None => {
+                self.splitters.empty_splitters.push(splitter);
+                self.splitters.empty_splitters.len() - 1
+            },
+        }
+    }
+
+    pub fn remove_splitter(&mut self, item: Option<Item<ItemIdxType>>, index: usize) {
+        todo!()
+    }
 }
+
 pub enum AppState {
     Ingame,
     Loading,
@@ -120,13 +331,8 @@ pub enum AppState {
 
 #[derive(Debug, Clone, Copy)]
 enum InserterUpdateInfo {
-    NewAssembler {
-        pos: Position,
-        size: (u8, u8),
-    },
-    NewBelt {
-        pos: Position,
-    }
+    NewAssembler { pos: Position, size: (u8, u8) },
+    NewBelt { pos: Position },
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, RecipeIdxType> {
@@ -151,16 +357,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         PositionInfo::Rect { pos, width, height } => {
                             for x in pos.x..(pos.x + width) {
                                 for y in pos.y..(pos.y + height) {
-                                    self.world.set_floor_tile(Position { x, y }, place_floor_tile_by_hand_info.ghost_info.tile);
+                                    self.world.set_floor_tile(
+                                        Position { x, y },
+                                        place_floor_tile_by_hand_info.ghost_info.tile,
+                                    );
                                 }
                             }
                         },
                         PositionInfo::Single { pos } => {
-                            self.world.set_floor_tile(pos, place_floor_tile_by_hand_info.ghost_info.tile);
+                            self.world
+                                .set_floor_tile(pos, place_floor_tile_by_hand_info.ghost_info.tile);
                         },
                         PositionInfo::List { positions } => {
                             for pos in positions {
-                                self.world.set_floor_tile(pos, place_floor_tile_by_hand_info.ghost_info.tile);
+                                self.world.set_floor_tile(
+                                    pos,
+                                    place_floor_tile_by_hand_info.ghost_info.tile,
+                                );
                             }
                         },
                     }
@@ -180,16 +393,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             let powered_by = self.world.is_powered_by(position, (3, 3), data_store);
 
                             if let Some(grid_id) = powered_by {
-                                self.world.add_entity(crate::frontend::world::tile::Entity::Assembler {
-                                    pos: position,
-                                    info: AssemblerInfo::PoweredNoRecipe(grid_id),
-                                }, data_store);
+                                self.world.add_entity(
+                                    crate::frontend::world::tile::Entity::Assembler {
+                                        pos: position,
+                                        info: AssemblerInfo::PoweredNoRecipe(grid_id),
+                                    },
+                                    &self.simulation_state,
+                                    data_store,
+                                );
                             } else {
                                 self.world.add_entity(
                                     crate::frontend::world::tile::Entity::Assembler {
                                         pos: position,
                                         info: AssemblerInfo::UnpoweredNoRecipe,
-                                    }, data_store
+                                    },
+                                    &self.simulation_state,
+                                    data_store,
                                 );
                             }
                         },
@@ -201,19 +420,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             let _ = self.try_adding_inserter(pos, dir, Some(filter), data_store);
                         },
                         crate::frontend::world::tile::PlaceEntityType::Belt { pos, direction } => {
-                            // TODO: Implement corners correctly
-
                             if !self.world.can_fit(pos, (1, 1), data_store) {
                                 warn!("Tried to place belt where it does not fit");
                                 continue;
                             }
 
-                            let (new_id, new_belt_pos) = handle_belt_placement(self, pos, direction, data_store);
-
-                            self.world.add_entity(Entity::Belt { pos, direction, id: new_id, belt_pos: new_belt_pos }, data_store);
+                            handle_belt_placement(self, pos, direction, data_store);
 
                             self.update_inserters(InserterUpdateInfo::NewBelt { pos }, data_store);
-
                         },
                         crate::frontend::world::tile::PlaceEntityType::PowerPole { pos, ty } => {
                             // Check if the powerpole fits
@@ -253,17 +467,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         connection_candidates
                                             .clone()
                                             .map(|pole| match pole {
-                                                Entity::PowerPole {
-                                                    grid_id,
-                                                    ..
-                                                } => *grid_id,
+                                                Entity::PowerPole { grid_id, .. } => *grid_id,
                                                 _ => unreachable!(
                                                     "List of power poles returned non power pole?!"
                                                 ),
                                             })
                                             .collect();
 
-                                    let future_connected_power_poles: Vec<Position> = connection_candidates.map(|e| e.get_pos()).collect();
+                                    let future_connected_power_poles: Vec<Position> =
+                                        connection_candidates.map(|e| e.get_pos()).collect();
 
                                     // Merge all power_grids in the candidates
                                     for grid_id in grids_to_merge {
@@ -271,7 +483,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             .simulation_state
                                             .factory
                                             .power_grids
-                                            .merge_power_grids(final_id, grid_id, data_store, pos, future_connected_power_poles.iter().copied())
+                                            .merge_power_grids(
+                                                final_id,
+                                                grid_id,
+                                                data_store,
+                                                pos,
+                                                future_connected_power_poles.iter().copied(),
+                                            )
                                             .unzip();
 
                                         for pole_info in updates.1.into_iter().flatten() {
@@ -301,14 +519,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             {
                                                 for belt in belt_store.belts_mut() {
                                                     belt.change_inserter_storage_id(
-                                                        storage_update_info.old,
-                                                        storage_update_info.new,
+                                                        storage_update_info.old.1,
+                                                        storage_update_info.new.1,
                                                     );
                                                 }
                                             }
                                         }
 
-                                        self.world.update_power_grid_id(&mut self.simulation_state, grid_id, final_id);
+                                        self.world.update_power_grid_id(
+                                            &mut self.simulation_state,
+                                            grid_id,
+                                            final_id,
+                                        );
                                     }
 
                                     // Add this new connection to the connection candidates
@@ -353,7 +575,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                 AssemblerInfo::UnpoweredNoRecipe => *info = AssemblerInfo::PoweredNoRecipe(final_id),
                                                 AssemblerInfo::Unpowered(recipe) => {
                                                     let new_id = Self::add_assembler_to_sim(&mut self.simulation_state, *recipe, final_id, data_store);
-                                                
+
                                                     to_update_assemblers.push(*pos);
 
                                                     *info = AssemblerInfo::Powered(new_id);
@@ -367,10 +589,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         }
                                         ControlFlow::Continue(())
                                     });
-                                    
+
                                     // We might have instantiated an assembler, update surrounding inserters if necessary
                                     for pos in to_update_assemblers {
-                                        self.update_inserters(InserterUpdateInfo::NewAssembler { pos, size: (3, 3) }, data_store);
+                                        self.update_inserters(
+                                            InserterUpdateInfo::NewAssembler { pos, size: (3, 3) },
+                                            data_store,
+                                        );
                                     }
 
                                     // The new Power Pole entity
@@ -417,7 +642,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                 AssemblerInfo::UnpoweredNoRecipe => *info = AssemblerInfo::PoweredNoRecipe(new_grid_id),
                                                 AssemblerInfo::Unpowered(recipe) => {
                                                     let new_id = Self::add_assembler_to_sim(&mut self.simulation_state, *recipe, new_grid_id, data_store);
-                                                
+
                                                     to_update_assemblers.push(*pos);
 
                                                     *info = AssemblerInfo::Powered(new_id);
@@ -434,7 +659,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                                     // We might have instantiated an assembler, update surrounding inserters if necessary
                                     for pos in to_update_assemblers {
-                                        self.update_inserters(InserterUpdateInfo::NewAssembler { pos, size: (3, 3) }, data_store);
+                                        self.update_inserters(
+                                            InserterUpdateInfo::NewAssembler { pos, size: (3, 3) },
+                                            data_store,
+                                        );
                                     }
 
                                     Entity::PowerPole {
@@ -448,8 +676,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                             // Add the powerpole entity to the correct chunk
 
-                            self.world
-                                .add_entity(new_pole_entity, data_store);
+                            self.world.add_entity(
+                                new_pole_entity,
+                                &self.simulation_state,
+                                data_store,
+                            );
+                        },
+                        crate::frontend::world::tile::PlaceEntityType::Splitter {
+                            pos,
+                            direction,
+                            in_mode,
+                            out_mode,
+                        } => {
+                            let splitter = handle_splitter_placement(
+                                self, pos, direction, in_mode, out_mode, data_store,
+                            );
                         },
                     },
                     crate::frontend::action::place_entity::EntityPlaceOptions::Multiple(vec) => {
@@ -482,7 +723,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         *info = AssemblerInfo::Unpowered(recipe)
                                     },
                                     AssemblerInfo::PoweredNoRecipe(power_grid_id) => {
-                                        let new_id = Self::add_assembler_to_sim(&mut self.simulation_state, recipe, *power_grid_id, data_store);
+                                        let new_id = Self::add_assembler_to_sim(
+                                            &mut self.simulation_state,
+                                            recipe,
+                                            *power_grid_id,
+                                            data_store,
+                                        );
 
                                         *info = AssemblerInfo::Powered(new_id);
 
@@ -492,12 +738,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         let old_recipe_id = assembler_id.recipe;
 
                                         if old_recipe_id == recipe {
-                                            continue;;
+                                            continue;
                                         }
 
                                         match (
-                                            data_store.recipe_num_ing_lookup[old_recipe_id.id.into()],
-                                            data_store.recipe_num_out_lookup[old_recipe_id.id.into()],
+                                            data_store.recipe_num_ing_lookup
+                                                [old_recipe_id.id.into()],
+                                            data_store.recipe_num_out_lookup
+                                                [old_recipe_id.id.into()],
                                         ) {
                                             (0, 1) => {
                                                 let old_assembler = self
@@ -516,16 +764,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             _ => unreachable!(),
                                         };
 
-                                        let new_id = Self::add_assembler_to_sim(&mut self.simulation_state, recipe, assembler_id.grid, data_store);
+                                        let new_id = Self::add_assembler_to_sim(
+                                            &mut self.simulation_state,
+                                            recipe,
+                                            assembler_id.grid,
+                                            data_store,
+                                        );
 
                                         *assembler_id = new_id;
-                                        
+
                                         needs_update = true;
                                     },
                                 },
-                                Entity::PowerPole { .. }
-                                | Entity::Belt { .. }
-                                | Entity::Inserter { .. } => {
+                                _ => {
                                     warn!("Tried to change assembler recipe on non assembler!");
                                 },
                             }
@@ -538,7 +789,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                     if needs_update {
                         // FIXME: Size hardcoded!
-                        self.update_inserters(InserterUpdateInfo::NewAssembler { pos, size: (3,3) }, data_store);
+                        self.update_inserters(
+                            InserterUpdateInfo::NewAssembler { pos, size: (3, 3) },
+                            data_store,
+                        );
                     }
                 },
             }
@@ -546,17 +800,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     }
 
     pub fn update(&mut self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) {
-        self.simulation_state.factory.belts.belt_update(
-            self.simulation_state
-                .factory
-                .power_grids
-                .power_grids
-                .iter_mut()
-                .flatten(),
-            data_store,
-        );
+        self.simulation_state.factory.belt_update(data_store);
 
-        self.simulation_state.factory.belt_belt_inserters.update(&mut self.simulation_state.factory.belts, data_store);
+        // TODO: Do I want this, or just do it in the belt_update
+        //self.simulation_state
+        //    .factory
+        //    .belt_belt_inserters
+        //    .update(&mut self.simulation_state.factory.belts, data_store);
 
         let (tech_progress, recipe_tick_info): (ResearchProgress, RecipeTickInfo) = self
             .simulation_state
@@ -566,72 +816,99 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             .par_iter_mut()
             .flatten()
             .map(|grid| grid.update(Watt(1000), &self.simulation_state.tech_state, data_store))
-            .reduce(|| (0, RecipeTickInfo::new(data_store)), |(acc_progress, infos), (rhs_progress, info)| {
-                (acc_progress + rhs_progress, infos + &info)
-            });
+            .reduce(
+                || (0, RecipeTickInfo::new(data_store)),
+                |(acc_progress, infos), (rhs_progress, info)| {
+                    (acc_progress + rhs_progress, infos + &info)
+                },
+            );
 
         self.simulation_state
             .tech_state
             .apply_progress(tech_progress);
 
-        self.statistics.append_single_set_of_samples((ProductionInfo::from_recipe_info(&recipe_tick_info, data_store), tech_progress));
+        self.statistics.append_single_set_of_samples((
+            ProductionInfo::from_recipe_info(&recipe_tick_info, data_store),
+            tech_progress,
+        ));
 
         // if self.statistics.production.num_samples_pushed % 60 == 0 {
         //     File::create("./stats.svg").unwrap().write(self.statistics.get_chart(1, data_store, Some(|_| true)).svg().unwrap().as_bytes()).unwrap();
         // }
     }
 
-    fn update_inserters(&mut self, info: InserterUpdateInfo, data_store: &DataStore<ItemIdxType, RecipeIdxType>) {
+    fn update_inserters(
+        &mut self,
+        info: InserterUpdateInfo,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
         let inserter_range = data_store.max_inserter_search_range;
 
         let mut inserter_positions = vec![];
 
         match info {
-            InserterUpdateInfo::NewAssembler { pos: assembler_pos, size } => {
-                self.world.mutate_entities_colliding_with(Position {
-                    x: assembler_pos.x - usize::from(inserter_range),
-                    y: assembler_pos.y - usize::from(inserter_range),
-                },
-                (2 * inserter_range + size.0, 2 * inserter_range + size.1),
-                data_store, |e| {
-                    match e {
-                        Entity::Inserter { pos, direction, info } => {
-                            match info {
+            InserterUpdateInfo::NewAssembler {
+                pos: assembler_pos,
+                size,
+            } => {
+                self.world.mutate_entities_colliding_with(
+                    Position {
+                        x: assembler_pos.x - usize::from(inserter_range),
+                        y: assembler_pos.y - usize::from(inserter_range),
+                    },
+                    (2 * inserter_range + size.0, 2 * inserter_range + size.1),
+                    data_store,
+                    |e| {
+                        match e {
+                            Entity::Inserter {
+                                pos,
+                                direction,
+                                info,
+                            } => match info {
                                 InserterInfo::NotAttached { start_pos, end_pos } => {
-                                    if start_pos.contained_in(assembler_pos, size) || end_pos.contained_in(assembler_pos, size) {
+                                    if start_pos.contained_in(assembler_pos, size)
+                                        || end_pos.contained_in(assembler_pos, size)
+                                    {
                                         inserter_positions.push(*pos);
                                     }
                                 },
                                 InserterInfo::Attached(..) => {},
-                            }
-                        },
-                        _ => {}
-                    }
-                    ControlFlow::Continue(())
-                });
+                            },
+                            _ => {},
+                        }
+                        ControlFlow::Continue(())
+                    },
+                );
             },
             InserterUpdateInfo::NewBelt { pos: belt_pos } => {
-                self.world.mutate_entities_colliding_with(Position {
-                    x: belt_pos.x - usize::from(inserter_range),
-                    y: belt_pos.y - usize::from(inserter_range),
-                },
-                (2 * inserter_range + 1, 2 * inserter_range + 1),
-                data_store, |e| {
-                    match e {
-                        Entity::Inserter { pos, direction, info } => {
-                            match info {
+                self.world.mutate_entities_colliding_with(
+                    Position {
+                        x: belt_pos.x - usize::from(inserter_range),
+                        y: belt_pos.y - usize::from(inserter_range),
+                    },
+                    (2 * inserter_range + 1, 2 * inserter_range + 1),
+                    data_store,
+                    |e| {
+                        match e {
+                            Entity::Inserter {
+                                pos,
+                                direction,
+                                info,
+                            } => match info {
                                 InserterInfo::NotAttached { start_pos, end_pos } => {
-                                    if start_pos.contained_in(belt_pos, (1, 1)) || end_pos.contained_in(belt_pos, (1, 1)) {
+                                    if start_pos.contained_in(belt_pos, (1, 1))
+                                        || end_pos.contained_in(belt_pos, (1, 1))
+                                    {
                                         inserter_positions.push(*pos);
                                     }
                                 },
                                 InserterInfo::Attached(..) => {},
-                            }
-                        },
-                        _ => {}
-                    }
-                    ControlFlow::Continue(())
-                });
+                            },
+                            _ => {},
+                        }
+                        ControlFlow::Continue(())
+                    },
+                );
             },
         }
 
@@ -647,18 +924,34 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         power_grid_id: PowerGridIdentifier,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> AssemblerID<RecipeIdxType> {
-        sim_state.factory.power_grids.power_grids[power_grid_id as usize].as_mut().unwrap().add_assembler(power_grid_id, recipe, data_store)
+        sim_state.factory.power_grids.power_grids[power_grid_id as usize]
+            .as_mut()
+            .unwrap()
+            .add_assembler(power_grid_id, recipe, data_store)
     }
 
     // FIXME: This is bugged
-    fn try_instantiate_inserter(&mut self, pos: Position, filter: Option<Item<ItemIdxType>>, data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Result<(), ()> {
+    fn try_instantiate_inserter(
+        &mut self,
+        pos: Position,
+        filter: Option<Item<ItemIdxType>>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Result<(), ()> {
         enum InserterStartInfo<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
             Belt(BeltTileId<ItemIdxType>, u16),
             Assembler(AssemblerInfo<RecipeIdxType>),
         }
-        
-        let Some(Entity::Inserter { info: InserterInfo::NotAttached { start_pos, end_pos }, .. }) = self.world.get_chunk_for_tile(pos).unwrap().get_entity_at(pos, data_store) else {
-            return Err(())
+
+        let Some(Entity::Inserter {
+            info: InserterInfo::NotAttached { start_pos, end_pos },
+            ..
+        }) = self
+            .world
+            .get_chunk_for_tile(pos)
+            .unwrap()
+            .get_entity_at(pos, data_store)
+        else {
+            return Err(());
         };
 
         let start_pos = *start_pos;
@@ -677,6 +970,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     },
                     Entity::Belt { id, belt_pos, .. } => {
                         Some(InserterStartInfo::Belt(*id, *belt_pos))
+                    },
+                    Entity::Underground { id, belt_pos, .. } => {
+                        Some(InserterStartInfo::Belt(*id, *belt_pos))
+                    },
+                    Entity::Splitter { .. } => {
+                        todo!()
                     },
                     Entity::Inserter { .. } => {
                         warn!("Tried to place inserter starting on another Inserter");
@@ -835,16 +1134,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             };
 
                                             // Modify the inserter entity
-                                            let Some(Entity::Inserter { pos, direction, info }) = place_chunk.get_entity_at_mut(pos, data_store) else {
+                                            let Some(Entity::Inserter {
+                                                pos,
+                                                direction,
+                                                info,
+                                            }) = place_chunk.get_entity_at_mut(pos, data_store)
+                                            else {
                                                 unreachable!()
                                             };
-                                            *info = InserterInfo::Attached(AttachedInserter::BeltStorage { id: new_id, belt_pos: belt_pos - 1 });
+                                            *info = InserterInfo::Attached(
+                                                AttachedInserter::BeltStorage {
+                                                    id: new_id,
+                                                    belt_pos: belt_pos - 1,
+                                                },
+                                            );
 
-                                            self.world
-                                                .update_belt_id(
-                                                    belt_tile_id,
-                                                        new_id
-                                                );
+                                            self.world.update_belt_id(belt_tile_id, new_id);
                                         },
                                         BeltTileId::BeltId(belt_id) => {
                                             if belt_id.item != filter {
@@ -885,10 +1190,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             };
 
                                             // Modify the inserter entity
-                                            let Some(Entity::Inserter { pos, direction, info }) = place_chunk.get_entity_at_mut(pos, data_store) else {
+                                            let Some(Entity::Inserter {
+                                                pos,
+                                                direction,
+                                                info,
+                                            }) = place_chunk.get_entity_at_mut(pos, data_store)
+                                            else {
                                                 unreachable!()
                                             };
-                                            *info = InserterInfo::Attached(AttachedInserter::BeltStorage { id: belt_tile_id, belt_pos: belt_pos - 1 });
+                                            *info = InserterInfo::Attached(
+                                                AttachedInserter::BeltStorage {
+                                                    id: belt_tile_id,
+                                                    belt_pos: belt_pos - 1,
+                                                },
+                                            );
                                         },
                                     }
                                 },
@@ -901,7 +1216,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             warn!("Tried to place assembler on PowerPole");
                             return Err(());
                         },
+                        Entity::Splitter { .. } => todo!(),
                         Entity::Belt {
+                            id: belt_tile_id,
+                            belt_pos,
+                            ..
+                        }
+                        | Entity::Underground {
                             id: belt_tile_id,
                             belt_pos,
                             ..
@@ -1038,16 +1359,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         };
 
                                         // Modify the inserter entity
-                                        let Some(Entity::Inserter { pos, direction, info }) = place_chunk.get_entity_at_mut(pos, data_store) else {
+                                        let Some(Entity::Inserter {
+                                            pos,
+                                            direction,
+                                            info,
+                                        }) = place_chunk.get_entity_at_mut(pos, data_store)
+                                        else {
                                             unreachable!()
                                         };
-                                        *info = InserterInfo::Attached(AttachedInserter::BeltStorage { id: new_id, belt_pos: belt_pos - 1 });
+                                        *info =
+                                            InserterInfo::Attached(AttachedInserter::BeltStorage {
+                                                id: new_id,
+                                                belt_pos: belt_pos - 1,
+                                            });
 
-                                        self.world
-                                            .update_belt_id(
-                                                belt_tile_id,
-                                                    new_id
-                                            );
+                                        self.world.update_belt_id(belt_tile_id, new_id);
                                     },
                                     BeltTileId::BeltId(belt_id) => {
                                         if belt_id.item != filter {
@@ -1082,11 +1408,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         };
 
                                         // Modify the inserter entity
-                                        let Some(Entity::Inserter { pos, direction, info }) = place_chunk.get_entity_at_mut(pos, data_store) else {
+                                        let Some(Entity::Inserter {
+                                            pos,
+                                            direction,
+                                            info,
+                                        }) = place_chunk.get_entity_at_mut(pos, data_store)
+                                        else {
                                             unreachable!()
                                         };
                                         // TODO: Why -1 here?
-                                        *info = InserterInfo::Attached(AttachedInserter::BeltStorage { id: belt_tile_id, belt_pos: belt_pos - 1 });
+                                        *info =
+                                            InserterInfo::Attached(AttachedInserter::BeltStorage {
+                                                id: belt_tile_id,
+                                                belt_pos: belt_pos - 1,
+                                            });
                                     },
                                 }
                             },
@@ -1122,7 +1457,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         self.try_instantiate_inserter(pos, filter, data_store)
     }
 
-    fn add_unattached_inserter(&mut self, pos: Position, dir: Dir, data_store: &DataStore<ItemIdxType, RecipeIdxType>,) -> Result<(), ()> {
+    fn add_unattached_inserter(
+        &mut self,
+        pos: Position,
+        dir: Dir,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Result<(), ()> {
         if !self.world.can_fit(pos, (1, 1), data_store) {
             warn!("Tried to place inserter where it does not fit");
             return Err(());
@@ -1149,68 +1489,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 .unwrap(),
         };
 
-        self.world
-            .add_entity(Entity::Inserter {
+        self.world.add_entity(
+            Entity::Inserter {
                 pos,
                 direction: dir,
                 info: InserterInfo::NotAttached { start_pos, end_pos },
-            }, data_store);
+            },
+            &self.simulation_state,
+            data_store,
+        );
 
         Ok(())
-    }
-}
-
-impl<RecipeIdxType: IdxTrait> BeltStore<RecipeIdxType> {
-    fn belt_update<'a, ItemIdxType: IdxTrait>(
-        &mut self,
-        grids: impl IntoIterator<Item = &'a mut PowerGrid<RecipeIdxType>>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) {
-        let all_storages = all_storages(grids);
-
-        // Sort the slices by item
-        //                    item grid recipe idx
-        let storages_by_item: Vec<Vec<Vec<&mut [u8]>>> = all_storages.into_iter()
-            .zip(
-                data_store
-                    .recipe_item_store_to_item
-                    .iter()
-                    .chain(data_store.science_bottle_items.iter())
-                    .cycle(),
-            )
-            .fold(Vec::new(), |mut acc, ((grid_id, storages), item)| {
-                let old_grid = acc.get_mut(grid_id);
-
-                match old_grid {
-                    Some(_) => {},
-                    None => {
-                        acc.resize_with(grid_id + 1, Vec::new);
-                    },
-                }
-
-                let grid_vec = acc.get_mut(grid_id).unwrap();
-
-                for storage in storages {
-                    let old = grid_vec.get_mut(item.id.into());
-
-                    match old {
-                        None => {
-                            grid_vec.resize_with(item.id.into() + 1, Vec::new);
-                            grid_vec.get_mut(item.id.into()).unwrap().push(storage);
-                        },
-                        Some(v) => v.push(storage),
-                    }
-                }
-                acc
-            });
-
-        self.belts.par_iter_mut().zip(storages_by_item).for_each(
-            |(belt_store, mut assembler_item_storages)| {
-                for belt in &mut belt_store.belts {
-                    belt.update();
-                    belt.update_inserters(assembler_item_storages.as_mut_slice());
-                }
-            },
-        );
     }
 }

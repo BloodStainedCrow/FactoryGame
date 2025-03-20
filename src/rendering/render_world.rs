@@ -1,16 +1,19 @@
+use std::iter::successors;
+
 use crate::{
+    belt::{belt::Belt, smart::SmartBelt, splitter::SPLITTER_BELT_LEN},
     data::DataStore,
     frontend::{
         action::action_state_machine::{ActionStateMachine, WIDTH_PER_LEVEL},
         world::{
             tile::{
-                AssemblerID, AssemblerInfo, BeltId, BeltTileId, Entity, BELT_LEN_PER_TILE,
+                AssemblerID, AssemblerInfo, BeltId, BeltTileId, Dir, Entity, BELT_LEN_PER_TILE,
                 CHUNK_SIZE_FLOAT,
             },
             Position,
         },
     },
-    item::{IdxTrait, WeakIdxTrait},
+    item::{IdxTrait, Item, WeakIdxTrait},
 };
 use log::{info, warn};
 use tilelib::types::{DrawInstance, Layer, Renderer};
@@ -225,24 +228,22 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     );
 
                                     for item in items_iter {
-                                        if !*item {
-                                            continue;
+                                        if *item {
+                                            item_layer.draw_sprite(
+                                                &texture_atlas.plate,
+                                                DrawInstance {
+                                                    position: [
+                                                        item_render_base_pos.0,
+                                                        item_render_base_pos.1,
+                                                    ],
+                                                    size: [
+                                                        1.0 / f32::from(BELT_LEN_PER_TILE),
+                                                        1.0 / f32::from(BELT_LEN_PER_TILE),
+                                                    ],
+                                                    animation_frame: 0,
+                                                },
+                                            );
                                         }
-
-                                        item_layer.draw_sprite(
-                                            &texture_atlas.plate,
-                                            DrawInstance {
-                                                position: [
-                                                    item_render_base_pos.0,
-                                                    item_render_base_pos.1,
-                                                ],
-                                                size: [
-                                                    1.0 / f32::from(BELT_LEN_PER_TILE),
-                                                    1.0 / f32::from(BELT_LEN_PER_TILE),
-                                                ],
-                                                animation_frame: 0,
-                                            },
-                                        );
 
                                         item_render_base_pos = (
                                             item_render_base_pos.0 + item_render_offs.0,
@@ -287,7 +288,92 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 );
                             },
 
-                            _ => todo!(),
+                            Entity::Splitter {
+                                pos,
+                                direction,
+                                item,
+                                id,
+                            } => {
+                                let [inputs, outputs] = game_state
+                                    .simulation_state
+                                    .factory
+                                    .splitters
+                                    .get_splitter_belt_ids(*item, *id);
+
+                                let right_dir = direction.turn_right();
+
+                                for ((pos, input), output) in
+                                    successors(Some(*pos), |pos| Some(*pos + right_dir))
+                                        .zip(inputs)
+                                        .zip(outputs)
+                                {
+                                    entity_layer.draw_sprite(
+                                        &texture_atlas.belt[*direction],
+                                        DrawInstance {
+                                            position: [
+                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                            ],
+                                            size: [1.0, 1.0],
+                                            animation_frame: 0,
+                                        },
+                                    );
+
+                                    let centered_on_tile = (
+                                        chunk_draw_offs.0 + (pos.x % 16) as f32 + 0.5
+                                            - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
+                                        chunk_draw_offs.1 + (pos.y % 16) as f32 + 0.5
+                                            - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
+                                    );
+                                    if let BeltTileId::BeltId(belt_id) = input {
+                                        render_items_straight(
+                                            game_state
+                                                .simulation_state
+                                                .factory
+                                                .belts
+                                                .get_belt(belt_id),
+                                            *direction,
+                                            belt_id.item,
+                                            SPLITTER_BELT_LEN,
+                                            SPLITTER_BELT_LEN,
+                                            centered_on_tile,
+                                            &mut item_layer,
+                                            texture_atlas,
+                                        );
+                                    }
+                                    if let BeltTileId::BeltId(belt_id) = output {
+                                        let out_belt = game_state
+                                            .simulation_state
+                                            .factory
+                                            .belts
+                                            .get_belt(belt_id);
+                                        let offs = direction.into_offset();
+                                        let item_render_base_pos: (f32, f32) = (
+                                            centered_on_tile.0 + f32::from(offs.0) * 0.5
+                                                - 0.5
+                                                    * (f32::from(offs.0)
+                                                        / f32::from(BELT_LEN_PER_TILE)),
+                                            centered_on_tile.1 + f32::from(offs.1) * 0.5
+                                                - 0.5
+                                                    * (f32::from(offs.1)
+                                                        / f32::from(BELT_LEN_PER_TILE)),
+                                        );
+                                        render_items_straight(
+                                            out_belt,
+                                            *direction,
+                                            belt_id.item,
+                                            out_belt.get_len(),
+                                            SPLITTER_BELT_LEN,
+                                            item_render_base_pos,
+                                            &mut item_layer,
+                                            texture_atlas,
+                                        );
+                                    }
+                                }
+                                // todo!()
+                            },
+
+                            e => todo!("{:?}", e),
                         }
                     }
                 },
@@ -314,8 +400,46 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     match &state_machine.state {
         crate::frontend::action::action_state_machine::ActionStateMachineState::Idle => {},
-        crate::frontend::action::action_state_machine::ActionStateMachineState::Holding(..) => {
-            // TODO:
+        crate::frontend::action::action_state_machine::ActionStateMachineState::Holding(e) => {
+            match e {
+                crate::frontend::action::action_state_machine::HeldObject::Tile(floor_tile) => {
+                    // TODO
+                },
+                crate::frontend::action::action_state_machine::HeldObject::Entity(
+                    place_entity_type,
+                ) => match place_entity_type {
+                    // TODO:
+                    crate::frontend::world::tile::PlaceEntityType::Assembler(position) => {
+                        dbg!(position);
+                        entity_layer.draw_sprite(
+                            &texture_atlas.assembler,
+                            DrawInstance {
+                                position: [
+                                    position.x as f32 - state_machine.local_player_pos.0
+                                        + num_tiles_across_screen / 2.0,
+                                    position.y as f32 - state_machine.local_player_pos.1
+                                        + num_tiles_across_screen / 2.0,
+                                ],
+                                size: [3.0, 3.0],
+                                animation_frame: 0,
+                            },
+                        )
+                    },
+                    crate::frontend::world::tile::PlaceEntityType::Inserter {
+                        pos,
+                        dir,
+                        filter,
+                    } => {},
+                    crate::frontend::world::tile::PlaceEntityType::Belt { pos, direction } => {},
+                    crate::frontend::world::tile::PlaceEntityType::PowerPole { pos, ty } => {},
+                    crate::frontend::world::tile::PlaceEntityType::Splitter {
+                        pos,
+                        direction,
+                        in_mode,
+                        out_mode,
+                    } => {},
+                },
+            }
         },
         crate::frontend::action::action_state_machine::ActionStateMachineState::Viewing(pos) => {
             // TODO:
@@ -435,6 +559,10 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             },
                         }
                     },
+                    Entity::Splitter { .. } => {
+                        warn!("Viewing Splitter. This currently does nothing!");
+                    },
+                    _ => todo!(),
                 }
             }
         },
@@ -489,4 +617,49 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     renderer.draw(&waring_layer);
 
     renderer.draw(&player_layer);
+}
+
+fn render_items_straight<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    belt: &SmartBelt<RecipeIdxType>,
+    dir: Dir,
+    item: Item<ItemIdxType>,
+    start_pos: u16,
+    amount: u16,
+    draw_pos_start_pos: (f32, f32),
+    layer: &mut Layer,
+    atlas: &TextureAtlas,
+) {
+    let items_iter = belt
+        .items()
+        .skip((start_pos.checked_sub(amount).expect("Belt idx wrapped?!?")).into())
+        .take(amount.into());
+
+    let offs = dir.into_offset();
+    let item_render_offs = (
+        -f32::from(offs.0) / f32::from(BELT_LEN_PER_TILE),
+        -f32::from(offs.1) / f32::from(BELT_LEN_PER_TILE),
+    );
+
+    let mut item_render_base_pos: (f32, f32) = draw_pos_start_pos;
+
+    for item in items_iter {
+        if *item {
+            layer.draw_sprite(
+                &atlas.plate,
+                DrawInstance {
+                    position: [item_render_base_pos.0, item_render_base_pos.1],
+                    size: [
+                        1.0 / f32::from(BELT_LEN_PER_TILE),
+                        1.0 / f32::from(BELT_LEN_PER_TILE),
+                    ],
+                    animation_frame: 0,
+                },
+            );
+        }
+
+        item_render_base_pos = (
+            item_render_base_pos.0 + item_render_offs.0,
+            item_render_base_pos.1 + item_render_offs.1,
+        );
+    }
 }

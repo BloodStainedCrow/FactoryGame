@@ -17,7 +17,7 @@ use crate::{
     },
     item::{IdxTrait, WeakIdxTrait},
     rendering::app_state::GameState,
-    TICKS_PER_SECOND,
+    TICKS_PER_SECOND_LOGIC, TICKS_PER_SECOND_RUNSPEED,
 };
 
 mod plumbing;
@@ -125,7 +125,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
 
     pub fn run(&mut self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> ExitReason {
         let mut update_interval =
-            spin_sleep_util::interval(Duration::from_secs(1) / TICKS_PER_SECOND as u32);
+            spin_sleep_util::interval(Duration::from_secs(1) / TICKS_PER_SECOND_RUNSPEED as u32);
 
         loop {
             update_interval.tick();

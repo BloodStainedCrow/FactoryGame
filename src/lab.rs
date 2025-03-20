@@ -35,7 +35,7 @@ impl MultiLabStore {
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
         Self,
-        impl IntoIterator<Item = IndexUpdateInfo<RecipeIdxType>>,
+        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
     ) {
         let mut updates = vec![];
 
@@ -50,15 +50,21 @@ impl MultiLabStore {
 
             for science in &data_store.science_bottle_items {
                 updates.push(IndexUpdateInfo {
-                    old: data_store.get_storage_id_for_lab_science(
-                        self_grid,
+                    old: (
                         *science,
-                        other_idx.try_into().unwrap(),
+                        data_store.get_storage_id_for_lab_science(
+                            self_grid,
+                            todo!(),
+                            other_idx.try_into().unwrap(),
+                        ),
                     ),
-                    new: data_store.get_storage_id_for_lab_science(
-                        other_grid,
+                    new: (
                         *science,
-                        (self.timer.len() + new_idx_offs).try_into().unwrap(),
+                        data_store.get_storage_id_for_lab_science(
+                            other_grid,
+                            todo!(),
+                            (self.timer.len() + new_idx_offs).try_into().unwrap(),
+                        ),
                     ),
                 });
             }

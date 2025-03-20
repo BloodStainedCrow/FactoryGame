@@ -2,7 +2,7 @@ use std::{cmp::min, collections::BTreeMap, marker::PhantomData};
 
 // I will render bots as "particles" with a fixed size instanced gpu buffer
 // This is fine as long as we do not override bots, which are still flying
-const GOAL_ITEMS_PER_TICK: usize = 400;
+const GOAL_ITEMS_PER_TICK: usize = 40000;
 const BOT_HAND_SIZE: usize = 4;
 const BOT_SPEED: usize = 120 * 1000 / 60 / 60; // tiles / s
 const MAX_BASE_SIZE: usize = 3000;
@@ -12,10 +12,12 @@ const AVG_BOT_TRAVEL_TIME_TICKS: usize = AVG_TRIP_LENGTH * 60 / BOT_SPEED;
 const AVG_NEW_BOTS_PER_TICK: usize = GOAL_ITEMS_PER_TICK / (BOT_HAND_SIZE);
 const REQUIRED_BOTS: usize = GOAL_ITEMS_PER_TICK * AVG_BOT_TRAVEL_TIME_TICKS / BOT_HAND_SIZE;
 const REQUIRED_DRAW_SLOTS: usize = MAX_BOT_TRAVEL_TIME_TICKS * AVG_NEW_BOTS_PER_TICK;
+const REQUIRED_VRAM: usize = REQUIRED_DRAW_SLOTS * (2 * 3 * (2 + 1));
+const REQUIRED_VRAM_MB: usize = REQUIRED_VRAM / 1_000_000;
 const OVERDRAW_RATIO: usize = MAX_BASE_SIZE / AVG_TRIP_LENGTH;
 
 use crate::{
-    frontend::world::Position,
+    frontend::world::{tile::World, Position},
     item::{IdxTrait, Item, WeakIdxTrait, ITEMCOUNTTYPE},
     power::{Joule, Watt},
     rendering::app_state::SimulationState,
@@ -177,7 +179,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
         render_infos
     }
 
-    fn update_construction_bots(&mut self) -> impl IntoIterator<Item = ConstructionBotWorldUpdate> {
+    fn update_construction_bots(
+        &mut self,
+        sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
+        world: &mut World<ItemIdxType, RecipeIdxType>,
+    ) -> impl IntoIterator<Item = ConstructionBotWorldUpdate> {
         // self.bot_jobs.
         vec![todo!()]
     }

@@ -7,7 +7,10 @@ use genawaiter::GeneratorState::Complete;
 use genawaiter::GeneratorState::Yielded;
 
 use crate::{
-    data::DataStore, frontend::action::ActionType, item::{IdxTrait, WeakIdxTrait}, rendering::app_state::GameState,
+    data::DataStore,
+    frontend::action::ActionType,
+    item::{IdxTrait, WeakIdxTrait},
+    rendering::app_state::GameState,
 };
 
 // TODO: Keyframe support

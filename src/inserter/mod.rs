@@ -45,3 +45,22 @@ pub struct StorageID<RecipeIdxType: WeakIdxTrait> {
     // TODO: Do i want to make this generic?
     pub phantom: PhantomData<RecipeIdxType>,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub enum Storage<RecipeIdxType: WeakIdxTrait> {
+    Assembler {
+        grid: PowerGridIdentifier,
+        recipe_idx_with_this_item: RecipeIdxType,
+        // TODO:
+        index: u16,
+    },
+    Lab {
+        grid: PowerGridIdentifier,
+        lab_type: u8,
+        index: u16,
+    },
+    Static {
+        static_id: u16,
+        index: u16,
+    },
+}

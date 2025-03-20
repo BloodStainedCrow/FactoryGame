@@ -2,12 +2,7 @@ use std::fmt::Debug;
 
 use std::hash::Hash;
 
-use crate::assembler::TIMERTYPE;
-
 pub type ITEMCOUNTTYPE = u8;
-
-type AllItems = Vec<ItemDescriptor>;
-type AllMachines<ItemIdxType: IdxTrait> = Vec<MachineDescriptor<ItemIdxType>>;
 
 pub trait IdxTrait:
     Debug + serde::Serialize + for<'de> serde::Deserialize<'de> + WeakIdxTrait
@@ -28,16 +23,15 @@ pub trait WeakIdxTrait:
 {
 }
 
-struct ItemDescriptor {
-    name: &'static str,
-    stack_size: u8,
-    // etc
+pub fn usize_from<T: IdxTrait>(t: T) -> usize {
+    Into::<usize>::into(t)
 }
 
-struct MachineDescriptor<ItemIdxType: WeakIdxTrait> {
-    name: &'static str,
-    item_to_place: Option<Item<ItemIdxType>>,
-}
+//impl<T: WeakIdxTrait> From<T> for usize {
+//    fn from(value: T) -> Self {
+//        Into::<usize>::into(value)
+//    }
+//}
 
 #[derive(
     Debug, PartialEq, Eq, Hash, Clone, Copy, serde::Serialize, serde::Deserialize, PartialOrd, Ord,
@@ -69,18 +63,4 @@ impl<RecipeIdxType: IdxTrait> From<RecipeIdxType> for Recipe<RecipeIdxType> {
     fn from(value: RecipeIdxType) -> Self {
         Self { id: value }
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct Machine {
-    id: u8,
-}
-
-pub type ItemStack<ItemIdxType: IdxTrait> = (Item<ItemIdxType>, ITEMCOUNTTYPE);
-
-pub fn recipe_item_idx<RecipeIdxType: IdxTrait, ItemIdxType: IdxTrait>(
-    recipe: Recipe<RecipeIdxType>,
-    item: Item<ItemIdxType>,
-) -> Option<usize> {
-    todo!()
 }

@@ -1,6 +1,9 @@
 use std::{iter::Sum, ops::Add};
 
-use crate::{data::DataStore, item::{IdxTrait, WeakIdxTrait}};
+use crate::{
+    data::DataStore,
+    item::{IdxTrait, WeakIdxTrait},
+};
 
 #[derive(Debug, Clone)]
 pub struct RecipeTickInfo {
