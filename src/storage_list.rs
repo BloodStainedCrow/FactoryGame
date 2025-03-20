@@ -11,8 +11,6 @@ use crate::{
     split_arbitrary::{split_arbitrary_mut, split_arbitrary_mut_slice},
 };
 
-use arbitrary_chunks::{ArbitraryChunkMut, ArbitraryChunks};
-
 const NUM_ITEMS: usize = 0;
 static NUM_GRIDS: usize = 0;
 const NUM_RECIPES: usize = 0;
