@@ -1,4 +1,4 @@
-use std::mem;
+use std::{borrow::Borrow, cmp::min, mem};
 
 use rayon::iter::{
     plumbing::{bridge, Producer},
@@ -140,7 +140,7 @@ impl<'a, 'b, T: Send> Producer for SplitArbitraryMutSlice<'a, 'b, T> {
     fn split_at(self, index: usize) -> (Self, Self) {
         let (left_size, right_size) = self.sizes.split_at(index);
         let left_sum = left_size.iter().sum();
-        let (left, right) = self.slice.split_at_mut(left_sum);
+        let (left, right) = self.slice.split_at_mut(min(left_sum, self.slice.len()));
         (
             Self {
                 slice: left,
