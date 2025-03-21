@@ -24,7 +24,7 @@ pub struct SmartBelt<RecipeIdxType: WeakIdxTrait> {
     inserters: InserterStore<RecipeIdxType>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default)]
 pub struct EmptyBelt {
     is_circular: bool,
     pub len: u16,

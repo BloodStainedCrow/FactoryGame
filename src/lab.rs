@@ -54,7 +54,6 @@ impl MultiLabStore {
                         *science,
                         data_store.get_storage_id_for_lab_science(
                             self_grid,
-                            todo!(),
                             other_idx.try_into().unwrap(),
                         ),
                     ),
@@ -62,7 +61,6 @@ impl MultiLabStore {
                         *science,
                         data_store.get_storage_id_for_lab_science(
                             other_grid,
-                            todo!(),
                             (self.timer.len() + new_idx_offs).try_into().unwrap(),
                         ),
                     ),

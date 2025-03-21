@@ -13,9 +13,10 @@ use crate::{
             Position,
         },
     },
-    item::{IdxTrait, Item, WeakIdxTrait},
+    item::{usize_from, IdxTrait, Item, WeakIdxTrait},
 };
 use log::{info, warn};
+use petgraph::data;
 use tilelib::types::{DrawInstance, Layer, Renderer};
 
 use super::{app_state::GameState, TextureAtlas};
@@ -42,7 +43,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     let mut player_layer = Layer::square_tile_grid(tilesize);
 
-    let mut waring_layer = Layer::square_tile_grid(tilesize);
+    let mut warning_layer = Layer::square_tile_grid(tilesize);
+
+    let mut range_layer = Layer::square_tile_grid(tilesize);
 
     let player_pos = state_machine.local_player_pos;
 
@@ -124,7 +127,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 match info {
                                     AssemblerInfo::UnpoweredNoRecipe
                                     | AssemblerInfo::Unpowered(_) => {
-                                        waring_layer.draw_sprite(
+                                        warning_layer.draw_sprite(
                                             &texture_atlas.not_connected,
                                             DrawInstance {
                                                 position: [
@@ -152,7 +155,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         .last_power_mult;
 
                                         if last_power == 0 {
-                                            waring_layer.draw_sprite(
+                                            warning_layer.draw_sprite(
                                                 &texture_atlas.no_power,
                                                 DrawInstance {
                                                     position: [
@@ -372,6 +375,24 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 }
                                 // todo!()
                             },
+                            Entity::Chest {
+                                ty,
+                                pos,
+                                item,
+                                index,
+                            } => {
+                                entity_layer.draw_sprite(
+                                    &texture_atlas.default,
+                                    DrawInstance {
+                                        position: [
+                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                        ],
+                                        size: [1.0, 1.0],
+                                        animation_frame: 0,
+                                    },
+                                );
+                            },
 
                             e => todo!("{:?}", e),
                         }
@@ -438,6 +459,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         in_mode,
                         out_mode,
                     } => {},
+                    crate::frontend::world::tile::PlaceEntityType::Chest { pos } => {},
                 },
             }
         },
@@ -479,6 +501,28 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         connected_power_poles,
                     } => {
                         // TODO:
+                        let power_range = data_store.power_pole_data[usize::from(*ty)].power_range;
+                        let size = data_store.power_pole_data[usize::from(*ty)].size;
+
+                        entity_layer.draw_sprite(
+                            &texture_atlas.assembler,
+                            DrawInstance {
+                                position: [
+                                    (pos.x - power_range as usize) as f32
+                                        - state_machine.local_player_pos.0
+                                        + num_tiles_across_screen / 2.0,
+                                    (pos.y - power_range as usize) as f32
+                                        - state_machine.local_player_pos.1
+                                        + num_tiles_across_screen / 2.0,
+                                ],
+                                size: [
+                                    (power_range * 2 + size.0) as f32,
+                                    (power_range * 2 + size.1) as f32,
+                                ],
+                                animation_frame: 0,
+                            },
+                        );
+
                         let pg = &game_state.simulation_state.factory.power_grids.power_grids
                             [*grid_id as usize];
 
@@ -562,6 +606,22 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     Entity::Splitter { .. } => {
                         warn!("Viewing Splitter. This currently does nothing!");
                     },
+                    Entity::Chest {
+                        ty,
+                        pos,
+                        item,
+                        index,
+                    } => match item {
+                        Some(item) => {
+                            let chest = game_state.simulation_state.factory.chests.stores
+                                [usize_from(item.id)]
+                            .get_chest(*index);
+                            dbg!(chest);
+                        },
+                        None => {
+                            dbg!("Looking at empty chest");
+                        },
+                    },
                     _ => todo!(),
                 }
             }
@@ -610,11 +670,14 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     info!("Rendering self at {:?}", state_machine.local_player_pos);
 
     renderer.draw(&tile_layer);
+
+    renderer.draw(&range_layer);
+
     renderer.draw(&entity_layer);
 
     renderer.draw(&item_layer);
 
-    renderer.draw(&waring_layer);
+    renderer.draw(&warning_layer);
 
     renderer.draw(&player_layer);
 }

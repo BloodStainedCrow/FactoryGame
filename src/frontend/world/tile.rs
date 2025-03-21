@@ -272,6 +272,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     AttachedInserter::StorageStorage(_) => todo!(),
                 },
             },
+            Entity::Chest {
+                ty,
+                pos,
+                item,
+                index,
+            } => {},
         }
 
         let chunk = self
@@ -323,8 +329,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             AttachedInserter::StorageStorage(_) => todo!(),
                         },
                     },
-                    Entity::Belt { .. } | Entity::Underground { .. } | Entity::Splitter { .. } => {
-                    },
+                    Entity::Belt { .. }
+                    | Entity::Underground { .. }
+                    | Entity::Splitter { .. }
+                    | Entity::Chest { .. } => {},
                 }
             }
         }
@@ -354,6 +362,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 match entity {
                     Entity::Assembler { .. } => {},
                     Entity::PowerPole { .. } => {},
+                    Entity::Chest { .. } => {},
                     Entity::Belt { id, belt_pos, .. }
                     | Entity::Underground { id, belt_pos, .. } => {
                         if *id == old_id && belt_pos_which_has_to_be_less_or_equal <= *belt_pos {
@@ -406,6 +415,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 match entity {
                     Entity::Assembler { .. } => {},
                     Entity::PowerPole { .. } => {},
+                    Entity::Chest { .. } => {},
                     Entity::Belt { id, belt_pos, .. }
                     | Entity::Underground { id, belt_pos, .. } => {
                         if *id == id_to_change {
@@ -459,24 +469,41 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
     pub fn is_powered_by(
         &self,
-        pos: Position,
-        size: (u8, u8),
+        entity_pos: Position,
+        entity_size: (u8, u8),
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Option<PowerGridIdentifier> {
         self.get_entities_colliding_with(
             Position {
-                x: pos.x - usize::from(data_store.max_power_search_range),
-                y: pos.y - usize::from(data_store.max_power_search_range),
+                x: entity_pos.x - usize::from(data_store.max_power_search_range),
+                y: entity_pos.y - usize::from(data_store.max_power_search_range),
             },
             (
-                2 * data_store.max_power_search_range + size.0,
-                2 * data_store.max_power_search_range + size.1,
+                2 * data_store.max_power_search_range + entity_size.0,
+                2 * data_store.max_power_search_range + entity_size.1,
             ),
             data_store,
         )
         .into_iter()
         .find_map(|e| match e {
-            Entity::PowerPole { grid_id, .. } => Some(*grid_id),
+            Entity::PowerPole {
+                ty, grid_id, pos, ..
+            } => {
+                let power_range = data_store.power_pole_data[usize::from(*ty)].power_range;
+                let size: (u8, u8) = data_store.power_pole_data[usize::from(*ty)].size;
+                if entity_pos.contained_in_sized(
+                    entity_size,
+                    Position {
+                        x: pos.x - usize::from(power_range),
+                        y: pos.y - usize::from(power_range),
+                    },
+                    (2 * power_range + size.0, 2 * power_range + size.1),
+                ) {
+                    Some(*grid_id)
+                } else {
+                    None
+                }
+            },
             _ => None,
         })
     }
@@ -507,10 +534,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 let e_pos = e.get_pos();
                 let e_size = e.get_size(data_store);
 
-                !((pos.x + usize::from(size.0)) <= e_pos.x
-                    || (pos.y + usize::from(size.1)) <= e_pos.y
-                    || (pos.x) >= (e_pos.x + usize::from(e_size.0))
-                    || (pos.y) >= (e_pos.y + usize::from(e_size.1)))
+                pos.contained_in_sized(size, e_pos, e_size)
             })
     }
 
@@ -799,6 +823,13 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
         info: InserterInfo<ItemIdxType>,
     },
+    Chest {
+        // This means at most 256 different types of Chest can exist, should be fine :)
+        ty: u8,
+        pos: Position,
+        item: Option<Item<ItemIdxType>>,
+        index: usize,
+    },
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeIdxType> {
@@ -810,10 +841,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::Inserter { pos, .. } => *pos,
             Self::Underground { pos, .. } => *pos,
             Self::Splitter { pos, .. } => *pos,
+            Self::Chest { pos, .. } => *pos,
         }
     }
 
-    pub const fn get_size(&self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> (u8, u8) {
+    pub fn get_size(&self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> (u8, u8) {
         match self {
             Self::Assembler { .. } => (3, 3),
             Self::PowerPole { ty, .. } => (1, 1),
@@ -826,6 +858,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
                 Dir::South => (2, 1),
                 Dir::West => (1, 2),
             },
+            Self::Chest { ty, .. } => data_store.chest_tile_sizes[*ty as usize],
         }
     }
 }
@@ -870,6 +903,9 @@ pub enum PlaceEntityType<ItemIdxType: WeakIdxTrait> {
         direction: Dir,
         in_mode: Option<SplitterDistributionMode>,
         out_mode: Option<SplitterDistributionMode>,
+    },
+    Chest {
+        pos: Position,
     },
 }
 

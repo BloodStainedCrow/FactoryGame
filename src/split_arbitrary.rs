@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, cmp::min, mem};
+use std::{cmp::min, mem};
 
 use rayon::iter::{
     plumbing::{bridge, Producer},

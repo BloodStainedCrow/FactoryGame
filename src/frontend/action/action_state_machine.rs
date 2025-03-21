@@ -204,6 +204,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                         self.current_mouse_pos,
                                     );
                                 }
+                                PlaceEntityType::Chest { pos } => {*pos = Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.local_player_pos,
+                                    self.current_mouse_pos,
+                                );},
                             },
                         },
                     }
@@ -385,6 +390,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         out_mode: None,
                     },
                 ));
+                vec![]
+            },
+            (
+                ActionStateMachineState::Idle | ActionStateMachineState::Holding(_),
+                KeyCode::Digit7,
+            ) => {
+                self.state =
+                    ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Chest {
+                        pos: Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.local_player_pos,
+                            self.current_mouse_pos,
+                        ),
+                    }));
                 vec![]
             },
             (

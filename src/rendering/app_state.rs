@@ -15,6 +15,7 @@ use crate::{
         splitter::Splitter,
         BeltStore, MultiBeltStore,
     },
+    chest::{FullChestStore, MultiChestStore},
     data::{DataStore, ItemRecipeDir},
     frontend::{
         action::{
@@ -31,8 +32,8 @@ use crate::{
             Position,
         },
     },
-    inserter::belt_belt_inserter::BeltBeltInserter,
-    item::{IdxTrait, Item, Recipe, WeakIdxTrait},
+    inserter::{belt_belt_inserter::BeltBeltInserter, StaticID, Storage, MOVETIME},
+    item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
     power::{
         power_grid::{all_storages, PowerGrid, PowerGridIdentifier},
         PowerGridStorage, Watt,
@@ -43,6 +44,7 @@ use crate::{
     },
     storage_list::{full_to_by_item, grid_size, num_recipes, sizes, storages_by_item},
 };
+use itertools::Itertools;
 use log::{error, info, warn};
 use rayon::iter::ParallelBridge;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
@@ -95,6 +97,7 @@ pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub belts: BeltStore<RecipeIdxType>,
     pub belt_belt_inserters: BeltBeltInserterStore<ItemIdxType>,
     pub splitters: SplitterStore<ItemIdxType>,
+    pub chests: FullChestStore<ItemIdxType>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -213,6 +216,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                 splitters: vec![Vec::new(); data_store.item_names.len()].into_boxed_slice(),
                 item: PhantomData,
             },
+            chests: FullChestStore {
+                stores: (0..data_store.item_names.len())
+                    .map(|id| Item {
+                        id: id.try_into().unwrap(),
+                    })
+                    .map(|item| MultiChestStore::new(item, data_store))
+                    .collect(),
+            },
         }
     }
 
@@ -222,7 +233,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
         }
 
         let num_grids_total = self.power_grids.power_grids.iter().flatten().count();
-        let mut all_storages = storages_by_item(&mut self.power_grids, data_store);
+        let mut all_storages =
+            storages_by_item(&mut self.power_grids, &mut self.chests, data_store);
         let sizes: Vec<_> = sizes(data_store, num_grids_total).into_iter().collect();
         // dbg!(&all_storages);
         assert_eq!(sizes.len(), data_store.item_names.len());
@@ -293,7 +305,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
         from: (BeltId<ItemIdxType>, u16),
         to: (BeltId<ItemIdxType>, u16),
         info: BeltBeltInserterAdditionInfo,
-    ) {
+    ) -> usize {
         assert_eq!(from.0.item, to.0.item);
         self.belt_belt_inserters.inserters[Into::<usize>::into(from.0.item.id)].push((
             BeltBeltInserter::new(),
@@ -303,7 +315,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                 cooldown: info.cooldown,
                 item: PhantomData,
             },
-        ))
+        ));
+        self.belt_belt_inserters.inserters[Into::<usize>::into(from.0.item.id)].len() - 1
     }
 
     pub fn add_splitter(&mut self, splitter: Splitter, item: Option<Item<ItemIdxType>>) -> usize {
@@ -333,6 +346,15 @@ pub enum AppState {
 enum InserterUpdateInfo {
     NewAssembler { pos: Position, size: (u8, u8) },
     NewBelt { pos: Position },
+}
+
+#[derive(Debug)]
+enum InstantiateInserterError {
+    NotUnattachedInserter,
+    SourceMissing,
+    DestMissing,
+    PleaseSpecifyFilter,
+    ItemConflict,
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, RecipeIdxType> {
@@ -417,7 +439,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             dir,
                             filter,
                         } => {
-                            let _ = self.try_adding_inserter(pos, dir, Some(filter), data_store);
+                            let ret = self.try_adding_inserter(pos, dir, Some(filter), data_store);
+                            dbg!(ret);
                         },
                         crate::frontend::world::tile::PlaceEntityType::Belt { pos, direction } => {
                             if !self.world.can_fit(pos, (1, 1), data_store) {
@@ -692,6 +715,28 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 self, pos, direction, in_mode, out_mode, data_store,
                             );
                         },
+                        crate::frontend::world::tile::PlaceEntityType::Chest { pos } => {
+                            // FIXME: Chest item hardcoded
+                            let item = Item {
+                                id: ItemIdxType::from(0),
+                            };
+
+                            let index = self.simulation_state.factory.chests.stores
+                                [usize_from(item.id)]
+                            .add_chest(0, data_store);
+
+                            self.world.add_entity(
+                                // FIXME: Chest type hardcoded
+                                Entity::Chest {
+                                    ty: 0,
+                                    pos,
+                                    item: Some(item),
+                                    index,
+                                },
+                                &self.simulation_state,
+                                data_store,
+                            );
+                        },
                     },
                     crate::frontend::action::place_entity::EntityPlaceOptions::Multiple(vec) => {
                         todo!()
@@ -930,516 +975,280 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             .add_assembler(power_grid_id, recipe, data_store)
     }
 
-    // FIXME: This is bugged
     fn try_instantiate_inserter(
         &mut self,
         pos: Position,
         filter: Option<Item<ItemIdxType>>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Result<(), ()> {
-        enum InserterStartInfo<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+    ) -> Result<(), InstantiateInserterError> {
+        enum InserterConnection<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
             Belt(BeltTileId<ItemIdxType>, u16),
-            Assembler(AssemblerInfo<RecipeIdxType>),
+            Storage(Storage<RecipeIdxType>),
         }
 
         let Some(Entity::Inserter {
+            pos: _pos,
+            direction,
             info: InserterInfo::NotAttached { start_pos, end_pos },
-            ..
         }) = self
             .world
-            .get_chunk_for_tile(pos)
-            .unwrap()
-            .get_entity_at(pos, data_store)
+            .get_entities_colliding_with(pos, (1, 1), data_store)
+            .into_iter()
+            .next()
         else {
-            return Err(());
+            return Err(InstantiateInserterError::NotUnattachedInserter);
         };
 
-        let start_pos = *start_pos;
-        let end_pos = *end_pos;
+        let start_conn: Option<(
+            InserterConnection<ItemIdxType, RecipeIdxType>,
+            Option<Vec<Item<ItemIdxType>>>,
+        )> = self
+            .world
+            .get_entities_colliding_with(*start_pos, (1, 1), data_store)
+            .into_iter()
+            .next()
+            .map(|e| match e {
+                Entity::Inserter { .. } | Entity::PowerPole { .. } => None,
 
-        let start_chunk = self.world.get_chunk_for_tile(start_pos);
-
-        #[allow(clippy::option_if_let_else)]
-        let start_info = if let Some(chunk) = start_chunk {
-            if let Some(start_entity) = chunk.get_entity_at(start_pos, data_store) {
-                match start_entity {
-                    Entity::Assembler { pos, info } => Some(InserterStartInfo::Assembler(*info)),
-                    Entity::PowerPole { .. } => {
-                        warn!("Tried to place inserter starting on on PowerPole");
-                        None
-                    },
-                    Entity::Belt { id, belt_pos, .. } => {
-                        Some(InserterStartInfo::Belt(*id, *belt_pos))
-                    },
-                    Entity::Underground { id, belt_pos, .. } => {
-                        Some(InserterStartInfo::Belt(*id, *belt_pos))
-                    },
-                    Entity::Splitter { .. } => {
-                        todo!()
-                    },
-                    Entity::Inserter { .. } => {
-                        warn!("Tried to place inserter starting on another Inserter");
-                        None
-                    },
+                Entity::Assembler {
+                    pos,
+                    info: AssemblerInfo::Powered(id),
+                    // FXIME: Translate the recipe_idx to
+                } => Some((
+                    InserterConnection::Storage(Storage::Assembler {
+                        grid: id.grid,
+                        recipe_idx_with_this_item: id.recipe.id,
+                        index: id.assembler_index,
+                    }),
+                    Some(
+                        data_store.recipe_to_items[&id.recipe]
+                            .iter()
+                            .filter_map(|(dir, item)| (*dir == ItemRecipeDir::Out).then_some(*item))
+                            .collect(),
+                    ),
+                )),
+                Entity::Assembler { .. } => None,
+                Entity::Belt {
+                    id: BeltTileId::BeltId(id),
+                    belt_pos,
+                    ..
                 }
-            } else {
-                info!("Tried to place inserter starting on nothing!");
-                None
-            }
-        } else {
-            warn!("Tried to place inserter starting outside world/in ungenerated chunk!");
-            None
+                | Entity::Underground {
+                    id: BeltTileId::BeltId(id),
+                    belt_pos,
+                    ..
+                } => Some((
+                    InserterConnection::Belt(BeltTileId::BeltId(*id), *belt_pos),
+                    Some(vec![id.item]),
+                )),
+                Entity::Belt {
+                    id: BeltTileId::EmptyBeltId(idx),
+                    belt_pos,
+                    ..
+                }
+                | Entity::Underground {
+                    id: BeltTileId::EmptyBeltId(idx),
+                    belt_pos,
+                    ..
+                } => Some((
+                    InserterConnection::Belt(BeltTileId::EmptyBeltId(*idx), *belt_pos),
+                    None,
+                )),
+                Entity::Splitter {
+                    pos,
+                    direction,
+                    item,
+                    id,
+                } => todo!("Inserters on splitters"),
+                Entity::Chest {
+                    ty,
+                    pos,
+                    item,
+                    index,
+                } => Some((
+                    InserterConnection::Storage(Storage::Static {
+                        static_id: StaticID::Chest,
+                        index: *index,
+                    }),
+                    Some(item.into_iter().copied().collect()),
+                )),
+            })
+            .flatten();
+
+        let Some(start_conn) = start_conn else {
+            return Err(InstantiateInserterError::SourceMissing);
         };
 
-        if let Some(start_info) = start_info {
-            let end_chunk = self.world.get_chunk_for_tile_mut(end_pos);
+        let dest_conn: Option<(
+            InserterConnection<ItemIdxType, RecipeIdxType>,
+            Option<Vec<Item<ItemIdxType>>>,
+        )> = self
+            .world
+            .get_entities_colliding_with(*end_pos, (1, 1), data_store)
+            .into_iter()
+            .next()
+            .map(|e| match e {
+                Entity::Inserter { .. } | Entity::PowerPole { .. } => None,
 
-            if let Some(end_chunk) = end_chunk {
-                let end_entity = end_chunk.get_entity_at(end_pos, data_store);
-                // I don´t like cloning here, but it should be fine. No entity should be big enough for this to matter much
-                let end_entity = end_entity.cloned();
-                if let Some(end_entity) = end_entity {
-                    match end_entity {
-                        Entity::Assembler { info, .. } => {
-                            let id = match info {
-                                AssemblerInfo::UnpoweredNoRecipe => {
-                                    return Ok(());
-                                },
-                                AssemblerInfo::Unpowered(_) => {
-                                    return Ok(());
-                                },
-                                AssemblerInfo::PoweredNoRecipe(_) => {
-                                    return Ok(());
-                                },
-                                AssemblerInfo::Powered(assembler_id) => assembler_id,
-                            };
-
-                            match start_info {
-                                InserterStartInfo::Belt(belt_tile_id, belt_pos) => {
-                                    let Some(filter) = filter.or_else(|| match belt_tile_id {
-                                        BeltTileId::EmptyBeltId(_) => {
-                                            let mut inputs = data_store
-                                                .recipe_to_items
-                                                .get(&id.recipe)
-                                                .unwrap()
-                                                .iter()
-                                                .filter(|i| i.0 == ItemRecipeDir::Ing);
-                                            let first_input = inputs.next();
-
-                                            if inputs.next().is_none() {
-                                                first_input.map(|i| i.1)
-                                            } else {
-                                                None
-                                            }
-                                        },
-                                        BeltTileId::BeltId(belt_id) => Some(belt_id.item),
-                                    }) else {
-                                        warn!("Could not determine filter for inserter, please specify a filter!");
-                                        return Err(());
-                                    };
-
-                                    match belt_tile_id {
-                                        BeltTileId::EmptyBeltId(idx) => {
-                                            // We are inserting something on an empty belt!
-                                            // It should no longer be empty!
-
-                                            // Ensure that the assembler can take this item
-                                            let Ok(storage) = data_store
-                                                .get_storage_id_for_assembler(
-                                                    crate::data::ItemRecipeDir::Out,
-                                                    filter,
-                                                    id,
-                                                )
-                                            else {
-                                                warn!(
-                                                    "This assembler does not require ing {:?}",
-                                                    filter
-                                                );
-                                                return Err(());
-                                            };
-
-                                            // Remove the old empty belt
-                                            let mut empty_belt = EmptyBelt::new(0);
-
-                                            mem::swap(
-                                                &mut empty_belt,
-                                                &mut self
-                                                    .simulation_state
-                                                    .factory
-                                                    .belts
-                                                    .empty_belts[idx],
-                                            );
-
-                                            self.simulation_state
-                                                .factory
-                                                .belts
-                                                .empty_belt_holes
-                                                .push(idx);
-
-                                            let mut instantiated_belt =
-                                                empty_belt.into_smart_belt();
-
-                                            // Add the inserter to the belt
-                                            instantiated_belt
-                                                .add_out_inserter(belt_pos - 1, storage)
-                                                .unwrap();
-
-                                            let new_item_id: usize = filter.id.into();
-
-                                            let hole_to_use =
-                                                self.simulation_state.factory.belts.belts
-                                                    [new_item_id]
-                                                    .holes
-                                                    .pop();
-
-                                            let new_id = if let Some(idx) = hole_to_use {
-                                                mem::swap(
-                                                    &mut instantiated_belt,
-                                                    &mut self.simulation_state.factory.belts.belts
-                                                        [new_item_id]
-                                                        .belts[idx],
-                                                );
-                                                mem::drop(instantiated_belt);
-
-                                                BeltTileId::BeltId(BeltId {
-                                                    item: filter,
-                                                    index: idx,
-                                                })
-                                            } else {
-                                                self.simulation_state.factory.belts.belts
-                                                    [new_item_id]
-                                                    .belts
-                                                    .push(instantiated_belt);
-
-                                                BeltTileId::BeltId(BeltId {
-                                                    item: filter,
-                                                    index: self
-                                                        .simulation_state
-                                                        .factory
-                                                        .belts
-                                                        .belts[new_item_id]
-                                                        .belts
-                                                        .len()
-                                                        - 1,
-                                                })
-                                            };
-
-                                            let Some(place_chunk) =
-                                                self.world.get_chunk_for_tile_mut(pos)
-                                            else {
-                                                warn!(
-                                                    "Tried to place inserter outside world/in ungenerated chunk!"
-                                                );
-                                                return Err(());
-                                            };
-
-                                            // Modify the inserter entity
-                                            let Some(Entity::Inserter {
-                                                pos,
-                                                direction,
-                                                info,
-                                            }) = place_chunk.get_entity_at_mut(pos, data_store)
-                                            else {
-                                                unreachable!()
-                                            };
-                                            *info = InserterInfo::Attached(
-                                                AttachedInserter::BeltStorage {
-                                                    id: new_id,
-                                                    belt_pos: belt_pos - 1,
-                                                },
-                                            );
-
-                                            self.world.update_belt_id(belt_tile_id, new_id);
-                                        },
-                                        BeltTileId::BeltId(belt_id) => {
-                                            if belt_id.item != filter {
-                                                warn!("Can not output {filter:?} on belt already carrying {:?}", belt_id.item);
-                                                return Err(());
-                                            }
-
-                                            let item_id: usize = filter.id.into();
-                                            let belt =
-                                                &mut self.simulation_state.factory.belts.belts
-                                                    [item_id]
-                                                    .belts[belt_id.index];
-
-                                            let Ok(storage) = data_store
-                                                .get_storage_id_for_assembler(
-                                                    crate::data::ItemRecipeDir::Ing,
-                                                    filter,
-                                                    id,
-                                                )
-                                            else {
-                                                warn!(
-                                                    "This assembler does not require ing {:?}",
-                                                    filter
-                                                );
-                                                return Err(());
-                                            };
-
-                                            // Add the inserter to the belt
-                                            belt.add_out_inserter(belt_pos - 1, storage).unwrap();
-
-                                            let Some(place_chunk) =
-                                                self.world.get_chunk_for_tile_mut(pos)
-                                            else {
-                                                warn!(
-                                                    "Tried to place inserter outside world/in ungenerated chunk!"
-                                                );
-                                                return Err(());
-                                            };
-
-                                            // Modify the inserter entity
-                                            let Some(Entity::Inserter {
-                                                pos,
-                                                direction,
-                                                info,
-                                            }) = place_chunk.get_entity_at_mut(pos, data_store)
-                                            else {
-                                                unreachable!()
-                                            };
-                                            *info = InserterInfo::Attached(
-                                                AttachedInserter::BeltStorage {
-                                                    id: belt_tile_id,
-                                                    belt_pos: belt_pos - 1,
-                                                },
-                                            );
-                                        },
-                                    }
-                                },
-                                InserterStartInfo::Assembler(assembler_id) => {
-                                    todo!()
-                                },
-                            }
-                        },
-                        Entity::PowerPole { .. } => {
-                            warn!("Tried to place assembler on PowerPole");
-                            return Err(());
-                        },
-                        Entity::Splitter { .. } => todo!(),
-                        Entity::Belt {
-                            id: belt_tile_id,
-                            belt_pos,
-                            ..
-                        }
-                        | Entity::Underground {
-                            id: belt_tile_id,
-                            belt_pos,
-                            ..
-                        } => match start_info {
-                            InserterStartInfo::Belt(belt_id, belt_pos) => {
-                                todo!()
-                            },
-                            InserterStartInfo::Assembler(info) => {
-                                let assembler_id = match info {
-                                    AssemblerInfo::UnpoweredNoRecipe => {
-                                        return Ok(());
-                                    },
-                                    AssemblerInfo::Unpowered(recipe) => {
-                                        return Ok(());
-                                    },
-                                    AssemblerInfo::PoweredNoRecipe(_) => {
-                                        return Ok(());
-                                    },
-                                    AssemblerInfo::Powered(assembler_id) => assembler_id,
-                                };
-
-                                let Some(filter) = filter.or_else(|| match belt_tile_id {
-                                    BeltTileId::EmptyBeltId(_) => {
-                                        let filter = match info {
-                                            AssemblerInfo::Unpowered(recipe)
-                                            | AssemblerInfo::Powered(AssemblerID {
-                                                recipe, ..
-                                            }) => {
-                                                let mut inputs = data_store
-                                                    .recipe_to_items
-                                                    .get(&recipe)
-                                                    .unwrap()
-                                                    .iter()
-                                                    .filter(|i| i.0 == ItemRecipeDir::Out);
-                                                let first_input = inputs.next();
-
-                                                if inputs.next().is_none() {
-                                                    first_input.map(|i| i.1)
-                                                } else {
-                                                    None
-                                                }
-                                            },
-
-                                            AssemblerInfo::UnpoweredNoRecipe
-                                            | AssemblerInfo::PoweredNoRecipe(_) => None,
-                                        };
-
-                                        filter
-                                    },
-                                    BeltTileId::BeltId(belt_id) => Some(belt_id.item),
-                                }) else {
-                                    warn!("Could not determine filter for inserter, please specify a filter!");
-                                    return Err(());
-                                };
-
-                                match belt_tile_id {
-                                    BeltTileId::EmptyBeltId(idx) => {
-                                        // We are removing something from an empty belt!
-                                        // It should no longer be empty!
-
-                                        let Ok(storage) = data_store.get_storage_id_for_assembler(
-                                            crate::data::ItemRecipeDir::Out,
-                                            filter,
-                                            assembler_id,
-                                        ) else {
-                                            warn!("This assembler cannot output {:?}", filter);
-                                            return Err(());
-                                        };
-
-                                        // Remove the old empty belt
-                                        let mut empty_belt = EmptyBelt::new(0);
-
-                                        mem::swap(
-                                            &mut empty_belt,
-                                            &mut self.simulation_state.factory.belts.empty_belts
-                                                [idx],
-                                        );
-
-                                        self.simulation_state
-                                            .factory
-                                            .belts
-                                            .empty_belt_holes
-                                            .push(idx);
-
-                                        let mut instantiated_belt = empty_belt.into_smart_belt();
-
-                                        // Add the inserter to the belt
-                                        instantiated_belt
-                                            .add_in_inserter(belt_pos - 1, storage)
-                                            .unwrap();
-
-                                        let new_item_id: usize = filter.id.into();
-
-                                        let hole_to_use = self.simulation_state.factory.belts.belts
-                                            [new_item_id]
-                                            .holes
-                                            .pop();
-
-                                        let new_id = if let Some(idx) = hole_to_use {
-                                            mem::swap(
-                                                &mut instantiated_belt,
-                                                &mut self.simulation_state.factory.belts.belts
-                                                    [new_item_id]
-                                                    .belts[idx],
-                                            );
-                                            mem::drop(instantiated_belt);
-
-                                            BeltTileId::BeltId(BeltId {
-                                                item: filter,
-                                                index: idx,
-                                            })
-                                        } else {
-                                            self.simulation_state.factory.belts.belts[new_item_id]
-                                                .belts
-                                                .push(instantiated_belt);
-
-                                            BeltTileId::BeltId(BeltId {
-                                                item: filter,
-                                                index: self.simulation_state.factory.belts.belts
-                                                    [new_item_id]
-                                                    .belts
-                                                    .len()
-                                                    - 1,
-                                            })
-                                        };
-
-                                        let Some(place_chunk) =
-                                            self.world.get_chunk_for_tile_mut(pos)
-                                        else {
-                                            warn!(
-                                                    "Tried to place inserter outside world/in ungenerated chunk!"
-                                                );
-                                            return Ok(());
-                                        };
-
-                                        // Modify the inserter entity
-                                        let Some(Entity::Inserter {
-                                            pos,
-                                            direction,
-                                            info,
-                                        }) = place_chunk.get_entity_at_mut(pos, data_store)
-                                        else {
-                                            unreachable!()
-                                        };
-                                        *info =
-                                            InserterInfo::Attached(AttachedInserter::BeltStorage {
-                                                id: new_id,
-                                                belt_pos: belt_pos - 1,
-                                            });
-
-                                        self.world.update_belt_id(belt_tile_id, new_id);
-                                    },
-                                    BeltTileId::BeltId(belt_id) => {
-                                        if belt_id.item != filter {
-                                            // TODO: Try to downgrade the belt if it is empty
-                                            warn!("You cannot connect an inserter to a belt, which carries an item different from its filter");
-                                            return Err(());
-                                        }
-                                        let item_id: usize = filter.id.into();
-                                        let belt = &mut self.simulation_state.factory.belts.belts
-                                            [item_id]
-                                            .belts[belt_id.index];
-
-                                        let Ok(storage) = data_store.get_storage_id_for_assembler(
-                                            crate::data::ItemRecipeDir::Out,
-                                            filter,
-                                            assembler_id,
-                                        ) else {
-                                            warn!("This assembler cannot output {:?}", filter);
-                                            return Ok(());
-                                        };
-
-                                        // Add the inserter to the belt
-                                        belt.add_in_inserter(belt_pos - 1, storage).unwrap();
-
-                                        let Some(place_chunk) =
-                                            self.world.get_chunk_for_tile_mut(pos)
-                                        else {
-                                            warn!(
-                                                "Tried to place inserter outside world/in ungenerated chunk!"
-                                            );
-                                            return Ok(());
-                                        };
-
-                                        // Modify the inserter entity
-                                        let Some(Entity::Inserter {
-                                            pos,
-                                            direction,
-                                            info,
-                                        }) = place_chunk.get_entity_at_mut(pos, data_store)
-                                        else {
-                                            unreachable!()
-                                        };
-                                        // TODO: Why -1 here?
-                                        *info =
-                                            InserterInfo::Attached(AttachedInserter::BeltStorage {
-                                                id: belt_tile_id,
-                                                belt_pos: belt_pos - 1,
-                                            });
-                                    },
-                                }
-                            },
-                        },
-                        Entity::Inserter {
-                            pos,
-                            direction,
-                            info,
-                        } => todo!(),
-                    }
-                } else {
-                    // We do not have a end entity
+                Entity::Assembler {
+                    pos,
+                    info: AssemblerInfo::Powered(id),
+                    // FXIME: Translate the recipe_idx to
+                } => Some((
+                    InserterConnection::Storage(Storage::Assembler {
+                        grid: id.grid,
+                        recipe_idx_with_this_item: id.recipe.id,
+                        index: id.assembler_index,
+                    }),
+                    Some(
+                        data_store.recipe_to_items[&id.recipe]
+                            .iter()
+                            .filter_map(|(dir, item)| (*dir == ItemRecipeDir::Ing).then_some(*item))
+                            .collect(),
+                    ),
+                )),
+                Entity::Assembler { .. } => None,
+                Entity::Belt {
+                    id: BeltTileId::BeltId(id),
+                    belt_pos,
+                    ..
                 }
-            } else {
-                warn!("Tried to place inserter outside world/in ungenerated chunk!");
-            };
-        } else {
-            // We do not have a start entity
+                | Entity::Underground {
+                    id: BeltTileId::BeltId(id),
+                    belt_pos,
+                    ..
+                } => Some((
+                    InserterConnection::Belt(BeltTileId::BeltId(*id), *belt_pos),
+                    Some(vec![id.item]),
+                )),
+                Entity::Belt {
+                    id: BeltTileId::EmptyBeltId(idx),
+                    belt_pos,
+                    ..
+                }
+                | Entity::Underground {
+                    id: BeltTileId::EmptyBeltId(idx),
+                    belt_pos,
+                    ..
+                } => Some((
+                    InserterConnection::Belt(BeltTileId::EmptyBeltId(*idx), *belt_pos),
+                    None,
+                )),
+                Entity::Splitter {
+                    pos,
+                    direction,
+                    item,
+                    id,
+                } => todo!(),
+                Entity::Chest {
+                    ty,
+                    pos,
+                    item,
+                    index,
+                } => Some((
+                    InserterConnection::Storage(Storage::Static {
+                        static_id: StaticID::Chest,
+                        index: *index,
+                    }),
+                    Some(item.into_iter().copied().collect()),
+                )),
+            })
+            .flatten();
+
+        let Some(dest_conn) = dest_conn else {
+            return Err(InstantiateInserterError::DestMissing);
+        };
+
+        let filter = filter
+            .into_iter()
+            .chain(start_conn.1.into_iter().flatten())
+            .chain(dest_conn.1.into_iter().flatten())
+            .all_equal_value();
+
+        let filter = match filter {
+            Ok(filter) => filter,
+            Err(None) => return Err(InstantiateInserterError::PleaseSpecifyFilter),
+            Err(Some(wrong)) => return Err(InstantiateInserterError::ItemConflict),
+        };
+
+        let Entity::Inserter { info, .. } = self
+            .world
+            .get_chunk_for_tile_mut(pos)
+            .unwrap()
+            .get_entity_at_mut(pos, data_store)
+            .unwrap()
+        else {
+            unreachable!("We already checked it was an unattached inserter before")
+        };
+
+        match (start_conn.0, dest_conn.0) {
+            (
+                InserterConnection::Belt(start_belt_id, start_belt_pos),
+                InserterConnection::Belt(dest_belt_id, dest_belt_pos),
+            ) => {
+                // TODO:
+                //debug_assert_eq!(filter, start_belt_id.item);
+                //debug_assert_eq!(start_belt_id.item, dest_belt_id.item);
+                //// FIXME: The movetime should be dependent on the inserter type!
+                //let index = self.simulation_state.factory.add_belt_belt_inserter(
+                //    (start_belt_id, start_belt_pos),
+                //    (dest_belt_id, dest_belt_pos),
+                //    BeltBeltInserterAdditionInfo { cooldown: MOVETIME },
+                //);
+                //*info = InserterInfo::Attached(AttachedInserter::BeltBelt {
+                //    item: filter,
+                //    inserter: index,
+                //})
+            },
+            (
+                InserterConnection::Belt(start_belt_id, start_belt_pos),
+                InserterConnection::Storage(dest_storage_untranslated),
+            ) => {
+                let dest_storage = dest_storage_untranslated.translate(filter, data_store);
+                let (belt, id) = self
+                    .simulation_state
+                    .factory
+                    .belts
+                    .get_mut_and_instantiate(filter, start_belt_id);
+
+                debug_assert_eq!(filter, id.item);
+                let index = belt.add_out_inserter(start_belt_pos - 1, dest_storage);
+
+                *info = InserterInfo::Attached(AttachedInserter::BeltStorage {
+                    id: BeltTileId::BeltId(id),
+                    belt_pos: start_belt_pos - 1,
+                });
+                if BeltTileId::BeltId(id) != start_belt_id {
+                    self.world
+                        .update_belt_id(start_belt_id, BeltTileId::BeltId(id));
+                }
+            },
+            (
+                InserterConnection::Storage(start_storage_untranslated),
+                InserterConnection::Belt(dest_belt_id, dest_belt_pos),
+            ) => {
+                let start_storage = start_storage_untranslated.translate(filter, data_store);
+                let (belt, id) = self
+                    .simulation_state
+                    .factory
+                    .belts
+                    .get_mut_and_instantiate(filter, dest_belt_id);
+                debug_assert_eq!(filter, id.item);
+
+                let index = belt.add_in_inserter(dest_belt_pos - 1, start_storage);
+                *info = InserterInfo::Attached(AttachedInserter::BeltStorage {
+                    id: BeltTileId::BeltId(id),
+                    belt_pos: dest_belt_pos - 1,
+                });
+                if BeltTileId::BeltId(id) != dest_belt_id {
+                    self.world
+                        .update_belt_id(dest_belt_id, BeltTileId::BeltId(id));
+                }
+            },
+            (
+                InserterConnection::Storage(start_storage_untranslated),
+                InserterConnection::Storage(dest_storage_untranslated),
+            ) => todo!(),
         }
 
         Ok(())
@@ -1451,8 +1260,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         dir: Dir,
         filter: Option<Item<ItemIdxType>>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Result<(), ()> {
-        self.add_unattached_inserter(pos, dir, data_store)?;
+    ) -> Result<(), InstantiateInserterError> {
+        match self.add_unattached_inserter(pos, dir, data_store) {
+            Ok(_) => {},
+            Err(_) => return Err(InstantiateInserterError::NotUnattachedInserter),
+        };
 
         self.try_instantiate_inserter(pos, filter, data_store)
     }

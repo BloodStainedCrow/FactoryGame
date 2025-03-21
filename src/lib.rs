@@ -74,6 +74,8 @@ mod storage_list;
 
 pub mod split_arbitrary;
 
+mod chest;
+
 impl WeakIdxTrait for u8 {}
 impl WeakIdxTrait for u16 {}
 impl IdxTrait for u8 {}

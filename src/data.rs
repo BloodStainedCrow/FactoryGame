@@ -1,12 +1,14 @@
 use std::{array, collections::HashMap, marker::PhantomData};
 
+use itertools::Itertools;
 use log::{info, warn};
 use sha2::{Digest, Sha256};
+use strum::IntoEnumIterator;
 
 use crate::{
     assembler::TIMERTYPE,
     frontend::world::tile::{AssemblerID, Dir},
-    inserter::{Storage, StorageID},
+    inserter::{StaticID, Storage, StorageID},
     item::{IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
     power::{power_grid::PowerGridIdentifier, Joule, Watt},
 };
@@ -160,6 +162,13 @@ pub fn get_raw_data_test() -> RawDataStore {
                 allowed_in: AllowedIn::AllIncludingBeacons,
             },
         ],
+
+        chests: vec![RawChest {
+            name: "factory_game::wooden_chest".to_string(),
+            display_name: "Wooden Chest".to_string(),
+            tile_size: (1, 1),
+            number_of_slots: 16,
+        }],
     }
 }
 
@@ -179,6 +188,14 @@ pub struct RawRecipeData {
 struct RawItemStack {
     item: ItemString,
     amount: ITEMCOUNTTYPE,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+struct RawChest {
+    name: String,
+    display_name: String,
+    tile_size: (u8, u8),
+    number_of_slots: u8,
 }
 
 enum FluidDir {
@@ -219,6 +236,7 @@ pub struct RawDataStore {
     miners: Vec<RawMiner>,
     power_poles: Vec<RawPowerPole>,
     modules: Vec<RawModule>,
+    chests: Vec<RawChest>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -324,6 +342,13 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     pub lab_infos: Vec<()>,
     pub item_is_science: Vec<bool>,
+
+    pub item_stack_sizes: Vec<ITEMCOUNTTYPE>,
+    pub chest_num_slots: Vec<u8>,
+    pub chest_tile_sizes: Vec<(u8, u8)>,
+
+    pub recipe_to_translated_index:
+        HashMap<(Recipe<RecipeIdxType>, Item<ItemIdxType>), RecipeIdxType>,
 }
 
 #[derive(Debug)]
@@ -737,9 +762,7 @@ impl RawDataStore {
                 .iter()
                 .map(|p| p.power_range)
                 .max()
-                .expect("At least one type of power pole must exist")
-                // FIXME: Quick hack to get this working
-                + 3,
+                .expect("At least one type of power pole must exist"),
 
             max_inserter_search_range: 2,
 
@@ -749,8 +772,55 @@ impl RawDataStore {
                 .map(|i| i.science_data.is_some())
                 .collect(),
             lab_infos: vec![],
-            num_different_static_containers: 0,
+            num_different_static_containers: StaticID::iter().count(),
             num_recipes_with_item,
+
+            item_stack_sizes: self.items.iter().map(|item| item.stack_size).collect(),
+            chest_num_slots: self
+                .chests
+                .iter()
+                .map(|chest| chest.number_of_slots)
+                .collect(),
+            chest_tile_sizes: self.chests.iter().map(|chest| chest.tile_size).collect(),
+
+            recipe_to_translated_index: (0..self.recipes.len())
+                .cartesian_product(
+                    self.items
+                        .iter()
+                        .enumerate()
+                        .map(|(item_id, item_name)| (item_id, &item_name.name)),
+                )
+                .map(|(recipe_id, (item_id, item_name))| {
+                    (
+                        (
+                            Recipe {
+                                id: recipe_id.try_into().unwrap(),
+                            },
+                            Item {
+                                id: item_id.try_into().unwrap(),
+                            },
+                        ),
+                        self.recipes
+                            .iter()
+                            .take(recipe_id)
+                            .filter(|recipe| {
+                                recipe
+                                    .ings
+                                    .iter()
+                                    .map(|stack| &stack.item)
+                                    .any(|item| item == item_name)
+                                    | recipe
+                                        .output
+                                        .iter()
+                                        .map(|stack| &stack.item)
+                                        .any(|item| item == item_name)
+                            })
+                            .count()
+                            .try_into()
+                            .unwrap(),
+                    )
+                })
+                .collect(),
         }
     }
 
@@ -794,7 +864,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> DataStore<ItemIdxType, Reci
     pub fn get_storage_id_for_lab_science(
         &self,
         grid: PowerGridIdentifier,
-        lab_type: u8,
         lab_idx: u16,
     ) -> Storage<RecipeIdxType> {
         // let num_entries_for_assemblers = self.recipe_item_to_storage_list_idx.len();
@@ -806,7 +875,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> DataStore<ItemIdxType, Reci
 
         Storage::Lab {
             grid,
-            lab_type,
             index: lab_idx,
         }
         // StorageID {

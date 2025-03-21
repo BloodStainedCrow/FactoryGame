@@ -1,11 +1,14 @@
 use std::marker::PhantomData;
 
 use crate::{
-    item::{IdxTrait, WeakIdxTrait},
+    data::DataStore,
+    item::{self, usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
     power::power_grid::PowerGridIdentifier,
 };
 
+use enum_map::Enum;
 use static_assertions::const_assert;
+use strum::EnumIter;
 
 pub mod belt_belt_inserter;
 pub mod belt_storage_inserter;
@@ -56,11 +59,42 @@ pub enum Storage<RecipeIdxType: WeakIdxTrait> {
     },
     Lab {
         grid: PowerGridIdentifier,
-        lab_type: u8,
         index: u16,
     },
     Static {
-        static_id: u16,
-        index: u16,
+        static_id: StaticID,
+        index: usize,
     },
+}
+
+impl<RecipeIdxType: IdxTrait> Storage<RecipeIdxType> {
+    pub fn translate<ItemIdxType: IdxTrait>(
+        self,
+        item: Item<ItemIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
+        match self {
+            Storage::Assembler {
+                grid,
+                recipe_idx_with_this_item,
+                index,
+            } => Storage::Assembler {
+                grid,
+                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                    Recipe {
+                        id: recipe_idx_with_this_item,
+                    },
+                    item,
+                )],
+                index,
+            },
+            storage => storage,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, EnumIter)]
+#[repr(u8)]
+pub enum StaticID {
+    Chest = 0,
 }

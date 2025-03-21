@@ -4,7 +4,9 @@ pub mod smart;
 
 pub mod splitter;
 
-use crate::item::Item;
+use std::mem;
+
+use crate::item::{usize_from, Item};
 use belt::Belt;
 use smart::{EmptyBelt, Side, SmartBelt};
 
@@ -52,6 +54,33 @@ pub struct BreakBeltResultInfo<ItemIdxType: WeakIdxTrait> {
 }
 
 impl<RecipeIdxType: IdxTrait> BeltStore<RecipeIdxType> {
+    pub fn get_mut_and_instantiate<ItemIdxType: IdxTrait>(
+        &mut self,
+        item: Item<ItemIdxType>,
+        id: BeltTileId<ItemIdxType>,
+    ) -> (&mut SmartBelt<RecipeIdxType>, BeltId<ItemIdxType>) {
+        match id {
+            BeltTileId::EmptyBeltId(index) => {
+                self.empty_belt_holes.push(index);
+
+                let empty_belt = mem::take(&mut self.empty_belts[index]);
+
+                let smart_belt = empty_belt.into_smart_belt();
+
+                let id = self.add_belt(item, smart_belt);
+
+                (self.get_belt_mut(id), id)
+            },
+            BeltTileId::BeltId(belt_id) => {
+                assert_eq!(item, belt_id.item);
+                (
+                    &mut self.belts[usize_from(item.id)].belts[belt_id.index],
+                    belt_id,
+                )
+            },
+        }
+    }
+
     pub fn add_length<ItemIdxType: IdxTrait>(
         &mut self,
         belt: BeltTileId<ItemIdxType>,
@@ -71,6 +100,13 @@ impl<RecipeIdxType: IdxTrait> BeltStore<RecipeIdxType> {
         id: BeltId<ItemIdxType>,
     ) -> &SmartBelt<RecipeIdxType> {
         &self.belts[Into::<usize>::into(id.item.id)].belts[id.index]
+    }
+
+    pub fn get_belt_mut<ItemIdxType: IdxTrait>(
+        &mut self,
+        id: BeltId<ItemIdxType>,
+    ) -> &mut SmartBelt<RecipeIdxType> {
+        &mut self.belts[Into::<usize>::into(id.item.id)].belts[id.index]
     }
 
     pub fn add_belt<ItemIdxType: IdxTrait>(
