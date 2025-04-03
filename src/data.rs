@@ -32,7 +32,7 @@ pub fn get_raw_data_test() -> RawDataStore {
                     amount: 1,
                 }]
                 .into_boxed_slice(),
-                time_to_craft: 600,
+                time_to_craft: 6,
                 is_intermediate: false,
             },
             // RawRecipeData {

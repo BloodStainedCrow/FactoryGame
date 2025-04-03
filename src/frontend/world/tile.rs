@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
+    marker::PhantomData,
     ops::{Add, ControlFlow},
 };
 
@@ -10,7 +11,7 @@ use strum::EnumIter;
 use itertools::Itertools;
 
 use crate::{
-    belt::splitter::SplitterDistributionMode,
+    belt::{splitter::SplitterDistributionMode, BeltTileId},
     data::DataStore,
     item::{IdxTrait, Item, Recipe, WeakIdxTrait},
     power::power_grid::PowerGridIdentifier,
@@ -229,7 +230,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             Entity::Splitter {
                 pos,
                 direction,
-                item,
                 id: splitter_id,
             } => {
                 let ids = sim_state
@@ -813,8 +813,6 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Splitter {
         pos: Position,
         direction: Dir,
-        // TODO:
-        item: Option<Item<ItemIdxType>>,
         id: usize,
     },
     Inserter {
@@ -863,18 +861,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
     }
 }
 
-const TEST: usize = const { size_of::<Entity<u8, u8>>() };
-
 #[derive(
     Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, Hash, PartialOrd, Ord,
-)]
-pub enum BeltTileId<ItemIdxType: WeakIdxTrait> {
-    EmptyBeltId(usize),
-    BeltId(BeltId<ItemIdxType>),
-}
-
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize, PartialOrd, Ord,
 )]
 pub struct BeltId<ItemIdxType: WeakIdxTrait> {
     pub item: Item<ItemIdxType>,

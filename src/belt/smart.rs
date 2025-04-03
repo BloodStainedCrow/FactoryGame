@@ -1,7 +1,11 @@
 use std::{cmp::min, iter::repeat, mem};
 
-use log::warn;
-
+use super::belt::{Belt, NoSpaceError};
+use super::belt::{BeltLenType, ItemInfo};
+use super::sushi::{SushiBelt, SushiInserterStore};
+use crate::belt::FreeIndex;
+use crate::belt::Inserter;
+use crate::item::Item;
 use crate::{
     inserter::{
         belt_storage_inserter::{BeltStorageInserter, Dir},
@@ -11,17 +15,17 @@ use crate::{
     storage_list::SingleItemStorages,
 };
 
-use super::belt::{Belt, NoSpaceError};
-
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct SmartBelt<RecipeIdxType: WeakIdxTrait> {
-    is_circular: bool,
-    first_free_index: FreeIndex,
+pub struct SmartBelt<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+    pub(super) is_circular: bool,
+    pub(super) first_free_index: FreeIndex,
     /// Important, zero_index must ALWAYS be used using mod len
-    zero_index: usize,
-    locs: Box<[bool]>,
-    inserters: InserterStore<RecipeIdxType>,
+    pub(super) zero_index: BeltLenType,
+    pub(super) locs: Box<[bool]>,
+    pub(super) inserters: InserterStore<RecipeIdxType>,
+
+    pub(super) item: Item<ItemIdxType>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default)]
@@ -32,20 +36,8 @@ pub struct EmptyBelt {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct InserterStore<RecipeIdxType: WeakIdxTrait> {
-    inserters: Vec<Inserter<RecipeIdxType>>,
-    offsets: Vec<u16>,
-}
-
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-enum Inserter<RecipeIdxType: WeakIdxTrait> {
-    Out(BeltStorageInserter<RecipeIdxType, { Dir::BeltToStorage }>),
-    In(BeltStorageInserter<RecipeIdxType, { Dir::StorageToBelt }>),
-}
-
-#[derive(Debug, PartialEq, Clone, Copy, serde::Deserialize, serde::Serialize)]
-enum FreeIndex {
-    FreeIndex(usize),
-    OldFreeIndex(usize),
+    pub(super) inserters: Vec<Inserter<RecipeIdxType>>,
+    pub(super) offsets: Vec<u16>,
 }
 
 #[derive(Debug)]
@@ -59,9 +51,14 @@ const MIN_INSERTER_SPACING: usize = 8;
 #[derive(Debug)]
 pub struct SpaceOccupiedError;
 
-impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
+pub(super) enum InserterAdditionError {
+    SpaceOccupied,
+    ItemMismatch,
+}
+
+impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, RecipeIdxType> {
     #[must_use]
-    pub fn new(len: u16) -> Self {
+    pub fn new(len: u16, item: Item<ItemIdxType>) -> Self {
         Self {
             is_circular: false,
             first_free_index: FreeIndex::FreeIndex(0),
@@ -71,30 +68,45 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
                 inserters: vec![],
                 offsets: vec![],
             },
+
+            item,
+        }
+    }
+
+    fn into_loc_index(&self, pos: BeltLenType) -> usize {
+        usize::from((self.zero_index + pos) % self.get_len())
+    }
+
+    pub(super) fn into_sushi_belt(self) -> SushiBelt<ItemIdxType, RecipeIdxType> {
+        let Self {
+            is_circular,
+            first_free_index,
+            zero_index,
+            locs,
+            inserters: InserterStore { inserters, offsets },
+            item,
+        } = self;
+
+        SushiBelt {
+            is_circular,
+            locs: locs
+                .into_iter()
+                .map(|loc| if *loc { Some(item) } else { None })
+                .collect(),
+            first_free_index,
+            zero_index,
+            inserters: SushiInserterStore {
+                inserters: inserters
+                    .into_iter()
+                    .map(|inserter| (inserter, item))
+                    .collect(),
+                offsets,
+            },
         }
     }
 
     pub fn make_circular(&mut self) {
         self.is_circular = true;
-    }
-
-    // TODO:
-    fn query_item(&self, pos: u16) -> Option<()> {
-        let pos = usize::from(pos);
-
-        if self.locs[(self.zero_index + pos) % self.locs.len()] {
-            Some(())
-        } else {
-            None
-        }
-    }
-
-    pub fn get_front(&self) -> Option<()> {
-        self.query_item(0)
-    }
-
-    pub fn get_back(&self) -> Option<()> {
-        self.query_item(self.get_len() - 1)
     }
 
     pub fn get_front_mut(&mut self) -> &mut bool {
@@ -109,14 +121,14 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
 
     pub fn get_mut(&mut self, index: u16) -> &mut bool {
         self.update_first_free_pos_maybe(index.into());
-        &mut self.locs[(index as usize + self.zero_index) % self.locs.len()]
+        &mut self.locs[self.into_loc_index(index)]
     }
 
-    pub fn get_two(&mut self, indices: [usize; 2]) -> [&mut bool; 2] {
+    pub fn get_two(&mut self, indices: [BeltLenType; 2]) -> [&mut bool; 2] {
         self.update_first_free_pos_maybe(min(indices[0], indices[1]));
 
         self.locs
-            .get_many_mut(indices.map(|i| (i + self.zero_index) % self.locs.len()))
+            .get_many_mut(indices.map(|i| self.into_loc_index(i)))
             .expect("Index out of bounds or same")
     }
 
@@ -163,28 +175,19 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
                         state: belt_storage_inserter.state,
                     },
                 });
-            } else if pos >= belt_pos {
+            } else if pos > belt_pos {
                 return None;
             }
+            pos += 1;
         }
 
         None
     }
 
-    // FIXME: This is horrendously slow. it breaks my tests since they are compiled without optimizations!!!
-    // FIXME: This is super slow on belts with lots of inserters
-    /// # Errors
-    /// If the index is already used by another inserter
-    /// # Panics
-    /// If the index is greater or equal to the length of the belt
-    pub fn add_out_inserter(
-        &mut self,
-        index: u16,
-        storage_id: Storage<RecipeIdxType>,
-    ) -> Result<(), SpaceOccupiedError> {
+    pub fn remove_inserter(&mut self, pos: BeltLenType) {
         assert!(
-            usize::from(index) < self.locs.len(),
-            "Bounds check {index} >= {}",
+            usize::from(pos) < self.locs.len(),
+            "Bounds check {pos} >= {}",
             self.locs.len()
         );
 
@@ -194,9 +197,54 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
         for offset in &self.inserters.offsets {
             let next_inserter_pos = pos_after_last_inserter + offset;
 
+            match next_inserter_pos.cmp(&pos) {
+                std::cmp::Ordering::Greater => panic!("The belt did not have an inserter at position specified to remove inserter from"), // This is the index to insert at
+                std::cmp::Ordering::Equal => break,
+
+                std::cmp::Ordering::Less => {
+                    pos_after_last_inserter = next_inserter_pos + 1;
+                    i += 1;
+                },
+            }
+        }
+
+        self.inserters.inserters.remove(i);
+        let removed = self.inserters.offsets.remove(i);
+        // The offset after i (which has now shifted left to i)
+        self.inserters.offsets[i] += removed + 1;
+    }
+
+    // FIXME: This is horrendously slow. it breaks my tests since they are compiled without optimizations!!!
+    // FIXME: This is super slow on belts with lots of inserters
+    /// # Errors
+    /// If the index is already used by another inserter
+    /// # Panics
+    /// If the index is greater or equal to the length of the belt
+    pub(super) fn add_out_inserter(
+        &mut self,
+        filter: Item<ItemIdxType>,
+        index: u16,
+        storage_id: Storage<RecipeIdxType>,
+    ) -> Result<(), InserterAdditionError> {
+        assert!(
+            usize::from(index) < self.locs.len(),
+            "Bounds check {index} >= {}",
+            self.locs.len()
+        );
+
+        if filter != self.item {
+            return Err(InserterAdditionError::ItemMismatch);
+        }
+
+        let mut pos_after_last_inserter = 0;
+        let mut i = 0;
+
+        for offset in &self.inserters.offsets {
+            let next_inserter_pos = pos_after_last_inserter + offset;
+
             match next_inserter_pos.cmp(&index) {
                 std::cmp::Ordering::Greater => break, // This is the index to insert at
-                std::cmp::Ordering::Equal => return Err(SpaceOccupiedError),
+                std::cmp::Ordering::Equal => return Err(InserterAdditionError::SpaceOccupied),
 
                 std::cmp::Ordering::Less => {
                     pos_after_last_inserter = next_inserter_pos + 1;
@@ -227,14 +275,19 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
     /// If the index is greater or equal to the length of the belt
     pub fn add_in_inserter(
         &mut self,
+        filter: Item<ItemIdxType>,
         index: u16,
         storage_id: Storage<RecipeIdxType>,
-    ) -> Result<(), SpaceOccupiedError> {
+    ) -> Result<(), InserterAdditionError> {
         assert!(
             usize::from(index) < self.locs.len(),
             "Bounds check {index} >= {}",
             self.locs.len()
         );
+
+        if filter != self.item {
+            return Err(InserterAdditionError::ItemMismatch);
+        }
 
         let mut pos_after_last_inserter = 0;
         let mut i = 0;
@@ -244,7 +297,7 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
 
             match next_inserter_pos.cmp(&index) {
                 std::cmp::Ordering::Greater => break, // This is the index to insert at
-                std::cmp::Ordering::Equal => return Err(SpaceOccupiedError),
+                std::cmp::Ordering::Equal => return Err(InserterAdditionError::SpaceOccupied),
 
                 std::cmp::Ordering::Less => {
                     pos_after_last_inserter = next_inserter_pos + 1;
@@ -341,13 +394,15 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
                     // TODO: Make sure this is actually correct
                     if old != *loc {
                         // the inserter changed something.
-                        if !*loc && i < first_possible_free_pos {
+                        if !*loc && i < usize::from(first_possible_free_pos) {
                             // This is the new first free pos.
-                            first_possible_free_pos = i;
-                            self.first_free_index = FreeIndex::FreeIndex(i);
-                        } else if *loc && i == first_possible_free_pos {
+                            first_possible_free_pos = BeltLenType::try_from(i).unwrap();
+                            self.first_free_index =
+                                FreeIndex::FreeIndex(BeltLenType::try_from(i).unwrap());
+                        } else if *loc && i == usize::from(first_possible_free_pos) {
                             // This was the old first free pos
-                            self.first_free_index = FreeIndex::OldFreeIndex(i);
+                            self.first_free_index =
+                                FreeIndex::OldFreeIndex(BeltLenType::try_from(i).unwrap());
                         }
                     }
                 },
@@ -360,7 +415,7 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
         }
     }
 
-    fn update_first_free_pos(&mut self, now_empty_pos: usize) {
+    fn update_first_free_pos(&mut self, now_empty_pos: BeltLenType) {
         match self.first_free_index {
             FreeIndex::OldFreeIndex(index) | FreeIndex::FreeIndex(index) => {
                 if now_empty_pos <= index {
@@ -370,7 +425,7 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
         }
     }
 
-    fn update_first_free_pos_maybe(&mut self, now_maybe_empty_pos: usize) {
+    fn update_first_free_pos_maybe(&mut self, now_maybe_empty_pos: BeltLenType) {
         match self.first_free_index {
             FreeIndex::OldFreeIndex(index) | FreeIndex::FreeIndex(index) => {
                 if now_maybe_empty_pos <= index {
@@ -380,7 +435,7 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
         }
     }
 
-    fn find_and_update_real_first_free_index(&mut self) -> usize {
+    fn find_and_update_real_first_free_index(&mut self) -> BeltLenType {
         let new_free_index = match self.first_free_index {
             FreeIndex::FreeIndex(index) => index,
             FreeIndex::OldFreeIndex(index) => {
@@ -391,18 +446,24 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
                 let mut iter = self
                     .locs
                     .iter()
-                    .skip(self.zero_index)
-                    .chain(self.locs.iter().take(self.zero_index))
-                    .skip(search_start_index);
+                    .skip(self.zero_index as usize)
+                    .chain(self.locs.iter().take(self.zero_index as usize))
+                    .skip(usize::from(search_start_index));
 
-                debug_assert_eq!(iter.clone().count(), self.locs.len() - search_start_index);
+                debug_assert_eq!(
+                    iter.clone().count(),
+                    self.locs.len() - usize::from(search_start_index)
+                );
 
                 // We now have an iterator which is effectively the belt in the correct order,
                 // starting at search_start_index
 
-                iter.position(|x| !(*x))
-                    .unwrap_or(self.locs.len() - search_start_index)
-                    + search_start_index
+                BeltLenType::try_from(
+                    iter.position(|x| !(*x))
+                        .unwrap_or(self.locs.len() - usize::from(search_start_index))
+                        + usize::from(search_start_index),
+                )
+                .unwrap()
             },
         };
 
@@ -411,25 +472,9 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
         new_free_index
     }
 
-    #[must_use]
-    pub fn items(&self) -> impl DoubleEndedIterator<Item = &bool> {
-        // TODO: I have another implementation of this:
-        // TODO: Check which is faster (or simpler)
-        // let mut iter = self
-        //     .locs
-        //     .iter()
-        //     .skip(self.zero_index)
-        //     .chain(self.locs.iter().take(self.zero_index));
-        let len = self.locs.len();
-        let (start, end) = self.locs.split_at(self.zero_index % self.locs.len());
-
-        debug_assert_eq!(end.iter().chain(start.iter()).count(), len);
-        end.iter().chain(start.iter())
-    }
-
     fn items_mut(
         locs: &mut [bool],
-        zero_index: usize,
+        zero_index: BeltLenType,
     ) -> impl DoubleEndedIterator<Item = &mut bool> {
         // TODO: I have another implementation of this:
         // TODO: Check which is faster (or simpler)
@@ -439,7 +484,7 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
         //     .skip(self.zero_index)
         //     .chain(self.locs.iter().take(self.zero_index));
         let len = locs.len();
-        let (start, end) = locs.split_at_mut(zero_index % locs.len());
+        let (start, end) = locs.split_at_mut(usize::from(zero_index) % locs.len());
 
         debug_assert_eq!(end.iter().chain(start.iter()).count(), len);
         end.iter_mut().chain(start.iter_mut())
@@ -450,6 +495,11 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
     /// # Panics
     /// If one of the belts is longer than `u16::MAX`
     pub fn join(front: Self, back: Self) -> Self {
+        assert_eq!(
+            front.item, back.item,
+            "Tried to merge smart belts with different items."
+        );
+
         // TODO: currently we always join the belt, this can potentially result in lag spikes when attaching new pieces of belt to a
         // very long belt, because of having to copy a lot of data around. This could be solved by implementing a maximum length of belt,
         // and attaching two belts back to back when we exceed this length. This does require a lot of testing to make sure this break is
@@ -470,9 +520,10 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
             zero_index: front_zero_index,
             locs: front_locs,
             inserters: front_inserters,
+            item,
         } = front;
         // Important, first_free_index must ALWAYS be used using mod len
-        let front_zero_index = front_zero_index % front_locs.len();
+        let front_zero_index = usize::from(front_zero_index) % front_locs.len();
 
         let Self {
             is_circular: _,
@@ -480,9 +531,10 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
             zero_index: back_zero_index,
             locs: back_locs,
             inserters: mut back_inserters,
+            item,
         } = back;
         // Important, first_free_index must ALWAYS be used using mod len
-        let back_zero_index = back_zero_index % back_locs.len();
+        let back_zero_index = usize::from(back_zero_index) % back_locs.len();
 
         let num_front_inserters = front_inserters.offsets.len();
         let _num_back_inserters = back_inserters.offsets.len();
@@ -520,9 +572,10 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
         Self {
             is_circular: false,
             first_free_index: new_first_free_index,
-            zero_index: front_zero_index,
+            zero_index: BeltLenType::try_from(front_zero_index).unwrap(),
             locs: front_locs_vec.into_boxed_slice(),
             inserters: new_inserters,
+            item,
         }
     }
 
@@ -532,16 +585,19 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
     pub fn join_with_empty(self, empty: EmptyBelt, side: Side) -> Self {
         assert!(!self.is_circular);
 
+        let len = self.get_len();
+
         let Self {
             is_circular: _,
             first_free_index,
             zero_index,
             locs,
             mut inserters,
+            item,
         } = self;
 
         // Important, first_free_index must ALWAYS be used using mod len
-        let zero_index = zero_index % locs.len();
+        let zero_index = zero_index % len;
 
         let mut locs = locs.into_vec();
 
@@ -549,13 +605,16 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
 
         let (new_empty, new_zero, front_extension_amount) = match side {
             Side::FRONT => {
-                locs.splice(zero_index..zero_index, repeat(false).take(empty.len.into()));
+                locs.splice(
+                    usize::from(zero_index)..usize::from(zero_index),
+                    repeat(false).take(empty.len.into()),
+                );
                 (FreeIndex::FreeIndex(0), zero_index, empty.len)
             },
             Side::BACK => {
                 locs.splice(
-                    ((zero_index + (old_len - 1)) % old_len)
-                        ..((zero_index + (old_len - 1)) % old_len),
+                    ((usize::from(zero_index) + (old_len - 1)) % old_len)
+                        ..((usize::from(zero_index) + (old_len - 1)) % old_len),
                     repeat(false).take(empty.len.into()),
                 );
                 (
@@ -563,7 +622,7 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
                         FreeIndex::FreeIndex(idx) => FreeIndex::FreeIndex(idx),
                         FreeIndex::OldFreeIndex(idx) => FreeIndex::OldFreeIndex(idx),
                     },
-                    zero_index + usize::from(empty.len),
+                    zero_index + empty.len,
                     0,
                 )
             },
@@ -581,18 +640,17 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
             zero_index: new_zero,
             locs: locs.into_boxed_slice(),
             inserters,
+            item,
         }
     }
 
-    pub fn add_length(&mut self, amount: u16, side: Side) -> u16 {
-        assert!(!self.is_circular);
-        take_mut::take(self, |s| s.join_with_empty(EmptyBelt::new(amount), side));
-        self.get_len()
-    }
-
-    pub fn break_belt_at(&mut self, belt_pos_to_break_at: u16) -> Self {
+    pub fn break_belt_at(&mut self, belt_pos_to_break_at: u16) -> Option<Self> {
+        // TODO: Is this correct
         if self.is_circular {
-            todo!("Handle making the belt non circular!")
+            self.is_circular = false;
+            self.first_free_index = FreeIndex::OldFreeIndex(0);
+            self.zero_index = belt_pos_to_break_at;
+            return None;
         }
 
         let mut new_locs = None;
@@ -601,7 +659,7 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
 
             let len = locs_vec.len();
 
-            locs_vec.rotate_left(self.zero_index % len);
+            locs_vec.rotate_left(usize::from(self.zero_index) % len);
 
             new_locs = Some(
                 locs_vec
@@ -649,9 +707,10 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
                 inserters: new_inserters,
                 offsets: new_offsets,
             },
+            item: self.item,
         };
 
-        new_belt
+        Some(new_belt)
     }
 }
 
@@ -676,8 +735,11 @@ impl EmptyBelt {
         }
     }
 
-    pub fn into_smart_belt<RecipeIdxType: IdxTrait>(self) -> SmartBelt<RecipeIdxType> {
-        SmartBelt::new(self.len.into())
+    pub fn into_smart_belt<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        self,
+        item: Item<ItemIdxType>,
+    ) -> SmartBelt<ItemIdxType, RecipeIdxType> {
+        SmartBelt::new(self.len.into(), item)
     }
 
     pub fn add_length(&mut self, amount: u16, side: Side) -> u16 {
@@ -698,7 +760,9 @@ impl EmptyBelt {
         }
     }
 
-    pub fn make_circular(&mut self) {}
+    pub fn make_circular(&mut self) {
+        todo!()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -707,28 +771,22 @@ pub enum Side {
     BACK,
 }
 
-impl<RecipeIdxType: IdxTrait> Belt for SmartBelt<RecipeIdxType> {
-    // fn query_item(&self, pos: usize) -> Option<Item> {
-    //     if self.locs[(self.zero_index + pos) % self.locs.len()] {
-    //         Some(T::ITEM_ENUM)
-    //     } else {
-    //         None
-    //     }
-    // }
+impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Belt<ItemIdxType>
+    for SmartBelt<ItemIdxType, RecipeIdxType>
+{
+    fn add_length(&mut self, amount: BeltLenType, side: Side) -> BeltLenType {
+        assert!(!self.is_circular);
+        take_mut::take(self, |s| s.join_with_empty(EmptyBelt::new(amount), side));
+        self.get_len()
+    }
 
-    // fn remove_item(&mut self, pos: usize) -> Option<Item> {
-    //     self.update_first_free_pos(pos);
-    //     self.query_item(pos).inspect(|_| {
-    //         let len = self.locs.len();
-    //         self.locs[(self.zero_index + pos) % len] = false;
-    //     })
-    // }
-
-    fn try_insert_item(&mut self, pos: u16) -> Result<(), super::belt::NoSpaceError> {
-        if self.query_item(pos).is_none() {
-            let pos = usize::from(pos);
-            let len = self.locs.len();
-            self.locs[(self.zero_index + pos) % len] = true;
+    fn try_insert_item(
+        &mut self,
+        pos: BeltLenType,
+        item: Item<ItemIdxType>,
+    ) -> Result<(), super::belt::NoSpaceError> {
+        if Belt::<ItemIdxType>::query_item(self, pos).is_none() {
+            self.locs[self.into_loc_index(pos)] = true;
 
             // TODO: Check that the compiler realizes these are the same
             // Update first_free_index to show that it is old
@@ -757,16 +815,16 @@ impl<RecipeIdxType: IdxTrait> Belt for SmartBelt<RecipeIdxType> {
 
         match self.first_free_index {
             FreeIndex::FreeIndex(idx) | FreeIndex::OldFreeIndex(idx) => {
-                debug_assert!(idx <= self.locs.len());
+                debug_assert!(idx <= self.get_len());
             },
         }
-        if self.query_item(0).is_none() {
+        if Belt::<ItemIdxType>::query_item(self, 0).is_none() {
             // Correctness: Since we always % len whenever we access using self.zero_index, we do not need to % len here
             // TODO: This could overflow after usize::MAX ticks which is 9749040289 Years. Should be fine!
             self.zero_index += 1;
             match self.first_free_index {
                 FreeIndex::FreeIndex(0) | FreeIndex::OldFreeIndex(0) => {
-                    if self.query_item(0).is_none() {
+                    if Belt::<ItemIdxType>::query_item(self, 0).is_none() {
                         self.first_free_index = FreeIndex::FreeIndex(0);
                     } else {
                         self.first_free_index = FreeIndex::OldFreeIndex(0);
@@ -782,20 +840,20 @@ impl<RecipeIdxType: IdxTrait> Belt for SmartBelt<RecipeIdxType> {
             return;
         }
 
-        self.zero_index %= self.locs.len();
+        self.zero_index %= self.get_len();
 
         let first_free_index_real = self.find_and_update_real_first_free_index();
 
-        let len = self.locs.len();
+        let len = self.get_len();
 
         let slice = &mut self.locs;
 
-        let (end_slice, start_slice) = slice.split_at_mut(self.zero_index);
+        let (end_slice, start_slice) = slice.split_at_mut(usize::from(self.zero_index));
 
         if self.zero_index + first_free_index_real >= len {
             // We have two stuck and one moving slice
-            let (middle_stuck_slice, moving_slice) =
-                end_slice.split_at_mut((self.zero_index + first_free_index_real) % len);
+            let (middle_stuck_slice, moving_slice) = end_slice
+                .split_at_mut(usize::from((self.zero_index + first_free_index_real) % len));
 
             // By definition, we know starting_stuck_slice is fully compressed with items!
             // Also by definition we know that moving_slice[0] MUST be empty (otherwise it would not be moving and part of the stuck slice)
@@ -813,7 +871,7 @@ impl<RecipeIdxType: IdxTrait> Belt for SmartBelt<RecipeIdxType> {
             }
         } else {
             let (starting_stuck_slice, middle_moving_slice) =
-                start_slice.split_at_mut(first_free_index_real);
+                start_slice.split_at_mut(usize::from(first_free_index_real));
 
             assert!(!middle_moving_slice.is_empty());
             assert!(!starting_stuck_slice.is_empty());
@@ -839,8 +897,44 @@ impl<RecipeIdxType: IdxTrait> Belt for SmartBelt<RecipeIdxType> {
         self.first_free_index = FreeIndex::OldFreeIndex(first_free_index_real);
     }
 
-    fn get_len(&self) -> u16 {
+    fn get_len(&self) -> BeltLenType {
         self.locs.len().try_into().unwrap()
+    }
+
+    fn query_item(&self, pos: BeltLenType) -> Option<ItemInfo<ItemIdxType>> {
+        if self.locs[self.into_loc_index(pos)] {
+            Some(ItemInfo::Implicit)
+        } else {
+            None
+        }
+    }
+
+    fn remove_item(&mut self, pos: BeltLenType) -> Option<ItemInfo<ItemIdxType>> {
+        if self.locs[self.into_loc_index(pos)] {
+            self.locs[self.into_loc_index(pos)] = false;
+            Some(ItemInfo::Implicit)
+        } else {
+            None
+        }
+    }
+
+    fn items(&self) -> Vec<Option<Item<ItemIdxType>>> {
+        let (start, end) = self
+            .locs
+            .split_at(usize::from(self.zero_index % self.get_len()));
+
+        debug_assert_eq!(
+            end.iter().chain(start.iter()).count(),
+            usize::from(self.get_len())
+        );
+        end.iter()
+            .chain(start.iter())
+            .map(|loc| if *loc { Some(self.item) } else { None })
+            .collect()
+    }
+
+    fn item_hint(&self) -> Option<Vec<Item<ItemIdxType>>> {
+        Some(vec![self.item])
     }
 }
 

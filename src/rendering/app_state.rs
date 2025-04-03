@@ -1,43 +1,30 @@
 use std::{
     collections::BTreeSet,
-    fs::File,
-    io::Write,
     marker::PhantomData,
     mem::{self},
     ops::ControlFlow,
 };
 
 use crate::{
-    assembler::TIMERTYPE,
-    belt::{
-        belt::Belt,
-        smart::{EmptyBelt, Side, SmartBelt},
-        splitter::Splitter,
-        BeltStore, MultiBeltStore,
-    },
+    belt::{belt::Belt, splitter::Splitter, BeltStore, BeltTileId},
     chest::{FullChestStore, MultiChestStore},
     data::{DataStore, ItemRecipeDir},
     frontend::{
         action::{
-            action_state_machine::ActionStateMachine,
             belt_placement::{handle_belt_placement, handle_splitter_placement},
             set_recipe::SetRecipeInfo,
             ActionType,
         },
         world::{
             tile::{
-                AssemblerID, AssemblerInfo, AttachedInserter, BeltId, BeltTileId, Dir, Entity,
-                InserterInfo, World, BELT_LEN_PER_TILE,
+                AssemblerID, AssemblerInfo, AttachedInserter, Dir, Entity, InserterInfo, World,
             },
             Position,
         },
     },
-    inserter::{belt_belt_inserter::BeltBeltInserter, StaticID, Storage, MOVETIME},
+    inserter::{StaticID, Storage},
     item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
-    power::{
-        power_grid::{all_storages, PowerGrid, PowerGridIdentifier},
-        PowerGridStorage, Watt,
-    },
+    power::{power_grid::PowerGridIdentifier, PowerGridStorage, Watt},
     research::{ResearchProgress, TechState},
     statistics::{
         production::ProductionInfo, recipe::RecipeTickInfo, research::ResearchInfo, GenStatistics,
@@ -46,11 +33,7 @@ use crate::{
 };
 use itertools::Itertools;
 use log::{error, info, warn};
-use rayon::iter::ParallelBridge;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
-use tilelib::types::Renderer;
-
-use super::{render_world::render_world, TextureAtlas};
 
 use crate::frontend::action::place_tile::PositionInfo;
 
@@ -94,128 +77,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SimulationState<ItemIdxType
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub power_grids: PowerGridStorage<RecipeIdxType>,
-    pub belts: BeltStore<RecipeIdxType>,
-    pub belt_belt_inserters: BeltBeltInserterStore<ItemIdxType>,
-    pub splitters: SplitterStore<ItemIdxType>,
+    pub belts: BeltStore<ItemIdxType, RecipeIdxType>,
     pub chests: FullChestStore<ItemIdxType>,
-}
-
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct SplitterStore<ItemIdxType: WeakIdxTrait> {
-    pub empty_splitters: Vec<Splitter>,
-    // TODO: Holes
-    pub splitters: Box<[Vec<Splitter>]>,
-    item: PhantomData<ItemIdxType>,
-}
-
-impl<ItemIdxType: IdxTrait> SplitterStore<ItemIdxType> {
-    pub fn get_splitter_belt_ids<'a>(
-        &'a self,
-        item: Option<Item<ItemIdxType>>,
-        id: usize,
-    ) -> [impl IntoIterator<Item = BeltTileId<ItemIdxType>> + use<'a, ItemIdxType>; 2] {
-        let index_to_id = move |index| match item {
-            Some(item) => BeltTileId::BeltId(BeltId { item, index }),
-            None => BeltTileId::EmptyBeltId(index),
-        };
-
-        match item {
-            Some(item) => [
-                self.splitters[Into::<usize>::into(item.id)][id]
-                    .input_belts
-                    .iter()
-                    .copied()
-                    .map(index_to_id),
-                self.splitters[Into::<usize>::into(item.id)][id]
-                    .output_belts
-                    .iter()
-                    .copied()
-                    .map(index_to_id),
-            ],
-            None => [
-                self.empty_splitters[id]
-                    .input_belts
-                    .iter()
-                    .copied()
-                    .map(index_to_id),
-                self.empty_splitters[id]
-                    .output_belts
-                    .iter()
-                    .copied()
-                    .map(index_to_id),
-            ],
-        }
-    }
-}
-
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct BeltBeltInserterStore<ItemIdxType: WeakIdxTrait> {
-    // TODO: Holes
-    pub inserters: Box<[Vec<(BeltBeltInserter, BeltBeltInserterInfo<ItemIdxType>)>]>,
-}
-
-impl<ItemIdxType: IdxTrait> BeltBeltInserterStore<ItemIdxType> {
-    pub fn update<RecipeIdxType: IdxTrait>(
-        &mut self,
-        belts: &mut BeltStore<RecipeIdxType>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) {
-        self.inserters
-            .par_iter_mut()
-            .zip(belts.belts.par_iter_mut())
-            .for_each(|(inserters, belts)| {
-                for ins in inserters {
-                    let [source, dest] = if ins.1.source.0 == ins.1.dest.0 {
-                        // We are taking and inserting from the same belt
-                        debug_assert!(ins.1.source.1 != ins.1.dest.1);
-                        belts.belts[ins.1.source.0]
-                            .get_two([ins.1.source.1 as usize, ins.1.dest.1 as usize])
-                    } else {
-                        let [source_belt, dest_belt] = belts
-                            .belts
-                            .get_many_mut([ins.1.source.0, ins.1.dest.0])
-                            .expect("Index out of bounds");
-                        [
-                            source_belt.get_mut(ins.1.source.1),
-                            dest_belt.get_mut(ins.1.dest.1),
-                        ]
-                    };
-                    ins.0.update(source, dest, todo!());
-                }
-            });
-    }
-}
-
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct BeltBeltInserterInfo<ItemIdxType: WeakIdxTrait> {
-    source: (usize, u16),
-    dest: (usize, u16),
-    cooldown: u8,
-    item: PhantomData<ItemIdxType>,
-}
-
-pub struct BeltBeltInserterAdditionInfo {
-    pub cooldown: u8,
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, RecipeIdxType> {
     fn new(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         Self {
             power_grids: PowerGridStorage::new(),
-            belts: BeltStore {
-                empty_belts: vec![],
-                empty_belt_holes: vec![],
-                belts: vec![MultiBeltStore::default(); data_store.recipe_timers.len()]
-                    .into_boxed_slice(),
-            },
-            belt_belt_inserters: BeltBeltInserterStore {
-                inserters: vec![Vec::new(); data_store.item_names.len()].into_boxed_slice(),
-            },
-            splitters: SplitterStore {
-                empty_splitters: vec![],
-                splitters: vec![Vec::new(); data_store.item_names.len()].into_boxed_slice(),
-                item: PhantomData,
-            },
+            belts: BeltStore::new(data_store),
             chests: FullChestStore {
                 stores: (0..data_store.item_names.len())
                     .map(|id| Item {
@@ -240,100 +110,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
         assert_eq!(sizes.len(), data_store.item_names.len());
         let storages_by_item = full_to_by_item(&mut all_storages, &sizes);
 
-        self.belts
-            .belts
-            .par_iter_mut()
-            .zip(storages_by_item)
-            .zip(self.belt_belt_inserters.inserters.par_iter_mut())
-            .zip(self.splitters.splitters.par_iter_mut())
-            .enumerate()
-            .for_each(
-                |(item_id, (((belt_store, item_storages), belt_belt_inserters), splitters))| {
-                    let grid_size = grid_size(
-                        Item {
-                            id: item_id.try_into().unwrap(),
-                        },
-                        data_store,
-                    );
-                    let num_recipes = num_recipes(
-                        Item {
-                            id: item_id.try_into().unwrap(),
-                        },
-                        data_store,
-                    );
-
-                    for belt in &mut belt_store.belts {
-                        belt.update();
-                        belt.update_inserters(
-                            item_storages,
-                            num_grids_total,
-                            num_recipes,
-                            grid_size,
-                        );
-                    }
-
-                    for (ins, info) in belt_belt_inserters {
-                        let [source, dest] = if info.source.0 == info.dest.0 {
-                            assert_ne!(
-                                info.source.1, info.dest.1,
-                                "An inserter cannot take and drop off on the same tile"
-                            );
-                            // We are taking and placing onto the same belt
-                            let belt = &mut belt_store.belts[info.source.0];
-
-                            belt.get_two([info.source.1.into(), info.dest.1.into()])
-                        } else {
-                            let [inp, out] = belt_store
-                                .belts
-                                .get_many_mut([info.source.0, info.dest.0])
-                                .unwrap();
-
-                            [inp.get_mut(info.source.1), out.get_mut(info.dest.1)]
-                        };
-                        ins.update(source, dest, info.cooldown);
-                    }
-
-                    for splitter in splitters {
-                        splitter.update(belt_store);
-                    }
-                },
-            );
-    }
-
-    pub fn add_belt_belt_inserter(
-        &mut self,
-        from: (BeltId<ItemIdxType>, u16),
-        to: (BeltId<ItemIdxType>, u16),
-        info: BeltBeltInserterAdditionInfo,
-    ) -> usize {
-        assert_eq!(from.0.item, to.0.item);
-        self.belt_belt_inserters.inserters[Into::<usize>::into(from.0.item.id)].push((
-            BeltBeltInserter::new(),
-            BeltBeltInserterInfo {
-                source: (from.0.index, from.1),
-                dest: (to.0.index, to.1),
-                cooldown: info.cooldown,
-                item: PhantomData,
-            },
-        ));
-        self.belt_belt_inserters.inserters[Into::<usize>::into(from.0.item.id)].len() - 1
-    }
-
-    pub fn add_splitter(&mut self, splitter: Splitter, item: Option<Item<ItemIdxType>>) -> usize {
-        match item {
-            Some(item) => {
-                self.splitters.splitters[Into::<usize>::into(item.id)].push(splitter);
-                self.splitters.splitters[Into::<usize>::into(item.id)].len() - 1
-            },
-            None => {
-                self.splitters.empty_splitters.push(splitter);
-                self.splitters.empty_splitters.len() - 1
-            },
-        }
-    }
-
-    pub fn remove_splitter(&mut self, item: Option<Item<ItemIdxType>>, index: usize) {
-        todo!()
+        self.belts.update(storages_by_item);
     }
 }
 
@@ -845,6 +622,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     }
 
     pub fn update(&mut self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) {
+        self.simulation_state.factory.chests.update();
+
         self.simulation_state.factory.belt_update(data_store);
 
         // TODO: Do I want this, or just do it in the belt_update
@@ -1013,7 +792,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 Entity::Assembler {
                     pos,
                     info: AssemblerInfo::Powered(id),
-                    // FXIME: Translate the recipe_idx to
+                    // FIXME: Translate the recipe_idx to
                 } => Some((
                     InserterConnection::Storage(Storage::Assembler {
                         grid: id.grid,
@@ -1029,37 +808,27 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 )),
                 Entity::Assembler { .. } => None,
                 Entity::Belt {
-                    id: BeltTileId::BeltId(id),
+                    id: BeltTileId::AnyBelt(id, _),
                     belt_pos,
                     ..
                 }
                 | Entity::Underground {
-                    id: BeltTileId::BeltId(id),
+                    id: BeltTileId::AnyBelt(id, _),
                     belt_pos,
                     ..
                 } => Some((
-                    InserterConnection::Belt(BeltTileId::BeltId(*id), *belt_pos),
-                    Some(vec![id.item]),
+                    InserterConnection::Belt(BeltTileId::AnyBelt(*id, PhantomData), *belt_pos),
+                    match self
+                        .simulation_state
+                        .factory
+                        .belts
+                        .get_pure_item(BeltTileId::AnyBelt(*id, PhantomData))
+                    {
+                        Some(item) => Some(vec![item]),
+                        None => None,
+                    },
                 )),
-                Entity::Belt {
-                    id: BeltTileId::EmptyBeltId(idx),
-                    belt_pos,
-                    ..
-                }
-                | Entity::Underground {
-                    id: BeltTileId::EmptyBeltId(idx),
-                    belt_pos,
-                    ..
-                } => Some((
-                    InserterConnection::Belt(BeltTileId::EmptyBeltId(*idx), *belt_pos),
-                    None,
-                )),
-                Entity::Splitter {
-                    pos,
-                    direction,
-                    item,
-                    id,
-                } => todo!("Inserters on splitters"),
+                Entity::Splitter { pos, direction, id } => todo!("Inserters on splitters"),
                 Entity::Chest {
                     ty,
                     pos,
@@ -1109,37 +878,27 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 )),
                 Entity::Assembler { .. } => None,
                 Entity::Belt {
-                    id: BeltTileId::BeltId(id),
+                    id: BeltTileId::AnyBelt(id, _),
                     belt_pos,
                     ..
                 }
                 | Entity::Underground {
-                    id: BeltTileId::BeltId(id),
+                    id: BeltTileId::AnyBelt(id, _),
                     belt_pos,
                     ..
                 } => Some((
-                    InserterConnection::Belt(BeltTileId::BeltId(*id), *belt_pos),
-                    Some(vec![id.item]),
+                    InserterConnection::Belt(BeltTileId::AnyBelt(*id, PhantomData), *belt_pos),
+                    match self
+                        .simulation_state
+                        .factory
+                        .belts
+                        .get_pure_item(BeltTileId::AnyBelt(*id, PhantomData))
+                    {
+                        Some(item) => Some(vec![item]),
+                        None => None,
+                    },
                 )),
-                Entity::Belt {
-                    id: BeltTileId::EmptyBeltId(idx),
-                    belt_pos,
-                    ..
-                }
-                | Entity::Underground {
-                    id: BeltTileId::EmptyBeltId(idx),
-                    belt_pos,
-                    ..
-                } => Some((
-                    InserterConnection::Belt(BeltTileId::EmptyBeltId(*idx), *belt_pos),
-                    None,
-                )),
-                Entity::Splitter {
-                    pos,
-                    direction,
-                    item,
-                    id,
-                } => todo!(),
+                Entity::Splitter { pos, direction, id } => todo!(),
                 Entity::Chest {
                     ty,
                     pos,
@@ -1205,45 +964,49 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 InserterConnection::Storage(dest_storage_untranslated),
             ) => {
                 let dest_storage = dest_storage_untranslated.translate(filter, data_store);
-                let (belt, id) = self
+
+                match self
                     .simulation_state
                     .factory
                     .belts
-                    .get_mut_and_instantiate(filter, start_belt_id);
-
-                debug_assert_eq!(filter, id.item);
-                let index = belt.add_out_inserter(start_belt_pos - 1, dest_storage);
+                    .add_belt_storage_inserter(
+                        filter,
+                        start_belt_id,
+                        start_belt_pos - 1,
+                        dest_storage,
+                    ) {
+                    Ok(()) => {},
+                    Err(_) => todo!(),
+                };
 
                 *info = InserterInfo::Attached(AttachedInserter::BeltStorage {
-                    id: BeltTileId::BeltId(id),
+                    id: start_belt_id,
                     belt_pos: start_belt_pos - 1,
                 });
-                if BeltTileId::BeltId(id) != start_belt_id {
-                    self.world
-                        .update_belt_id(start_belt_id, BeltTileId::BeltId(id));
-                }
             },
             (
                 InserterConnection::Storage(start_storage_untranslated),
                 InserterConnection::Belt(dest_belt_id, dest_belt_pos),
             ) => {
                 let start_storage = start_storage_untranslated.translate(filter, data_store);
-                let (belt, id) = self
+
+                match self
                     .simulation_state
                     .factory
                     .belts
-                    .get_mut_and_instantiate(filter, dest_belt_id);
-                debug_assert_eq!(filter, id.item);
-
-                let index = belt.add_in_inserter(dest_belt_pos - 1, start_storage);
+                    .add_belt_storage_inserter(
+                        filter,
+                        dest_belt_id,
+                        dest_belt_pos - 1,
+                        start_storage,
+                    ) {
+                    Ok(()) => {},
+                    Err(_) => todo!(),
+                };
                 *info = InserterInfo::Attached(AttachedInserter::BeltStorage {
-                    id: BeltTileId::BeltId(id),
+                    id: dest_belt_id,
                     belt_pos: dest_belt_pos - 1,
                 });
-                if BeltTileId::BeltId(id) != dest_belt_id {
-                    self.world
-                        .update_belt_id(dest_belt_id, BeltTileId::BeltId(id));
-                }
             },
             (
                 InserterConnection::Storage(start_storage_untranslated),

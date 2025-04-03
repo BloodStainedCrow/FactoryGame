@@ -13,6 +13,7 @@ use std::{
     borrow::Borrow,
     env,
     net::{IpAddr, Ipv4Addr},
+    process::exit,
     simd::cmp::SimdPartialEq,
     sync::{
         atomic::AtomicU64,
@@ -99,6 +100,8 @@ pub fn main() {
 
     let (loaded, tick, sender) = if Some("--client") == mode.as_deref() {
         run_client(StartGameInfo {})
+    } else if Some("--dedicated") == mode.as_deref() {
+        run_dedicated_server(StartGameInfo {});
     } else {
         run_integrated_server(StartGameInfo {})
     };
@@ -169,6 +172,39 @@ fn run_integrated_server(
                 tick_counter,
                 send,
             );
+        },
+        data::DataStoreOptions::ItemU8RecipeU16(data_store) => todo!(),
+        data::DataStoreOptions::ItemU16RecipeU8(data_store) => todo!(),
+        data::DataStoreOptions::ItemU16RecipeU16(data_store) => todo!(),
+    }
+}
+
+fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
+    // TODO: Do mod loading here
+    let raw_data = get_raw_data_test();
+    let data_store = raw_data.process();
+
+    let connections: Arc<Mutex<Vec<std::net::TcpStream>>> = Arc::default();
+
+    accept_continously(connections.clone()).unwrap();
+
+    match data_store {
+        data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
+            let game_state = load()
+                .map(|save| save.game_state)
+                .unwrap_or_else(|| GameState::new(&data_store));
+
+            let mut game = Game::new(GameInitData::DedicatedServer(
+                game_state,
+                ServerInfo { connections },
+            ))
+            .unwrap();
+
+            let data_store = Arc::new(data_store);
+            match game.run(&data_store) {
+                multiplayer::ExitReason::UserQuit => exit(0),
+                multiplayer::ExitReason::ConnectionDropped => exit(1),
+            }
         },
         data::DataStoreOptions::ItemU8RecipeU16(data_store) => todo!(),
         data::DataStoreOptions::ItemU16RecipeU8(data_store) => todo!(),

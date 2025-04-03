@@ -9,14 +9,15 @@ use crate::{
         belt::Belt,
         smart::{EmptyBelt, Side, SmartBelt},
         splitter::{Splitter, SplitterDistributionMode, SPLITTER_BELT_LEN},
+        BeltBeltInserterAdditionInfo, BeltTileId,
     },
     data::DataStore,
     frontend::world::{
-        tile::{BeltTileId, Dir, DirRelative, Entity, UndergroundDir, World, BELT_LEN_PER_TILE},
+        tile::{Dir, DirRelative, Entity, UndergroundDir, World, BELT_LEN_PER_TILE},
         Position,
     },
-    item::{IdxTrait, WeakIdxTrait},
-    rendering::app_state::{BeltBeltInserterAdditionInfo, GameState, SimulationState},
+    item::{IdxTrait, Item, WeakIdxTrait},
+    rendering::app_state::{GameState, SimulationState},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,24 +54,19 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         } else if let Some((id, pos)) =
             should_sideload(game_state, splitter_direction, front_pos, data_store)
         {
+            // Add the little belt at the front of the splitter
+            let new_belt = game_state
+                .simulation_state
+                .factory
+                .belts
+                .add_empty_belt(SPLITTER_BELT_LEN);
             // Add Sideloading inserter
-            let new_id = match id {
-                BeltTileId::EmptyBeltId(_) => todo!("Handle Sideloading on empty belts"),
-                BeltTileId::BeltId(dest_id) => {
-                    let new_id = game_state
-                        .simulation_state
-                        .factory
-                        .belts
-                        .add_belt(dest_id.item, SmartBelt::new(SPLITTER_BELT_LEN));
-                    game_state.simulation_state.factory.add_belt_belt_inserter(
-                        (new_id, 0),
-                        (dest_id, pos),
-                        BeltBeltInserterAdditionInfo { cooldown: 0 },
-                    );
-                    BeltTileId::BeltId(new_id)
-                },
-            };
-            (new_id, SPLITTER_BELT_LEN)
+            game_state
+                .simulation_state
+                .factory
+                .belts
+                .add_sideloading_inserter(new_belt, (id, pos));
+            (new_belt, SPLITTER_BELT_LEN)
         } else {
             let id = game_state
                 .simulation_state
@@ -125,34 +121,9 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         [self_front_id, self_back_id]
     });
 
-    let item = match belt_connections
-        .iter()
-        .flatten()
-        .filter_map(|b| match b {
-            BeltTileId::EmptyBeltId(_) => None,
-            BeltTileId::BeltId(belt_id) => Some(belt_id.item),
-        })
-        .all_equal_value()
-    {
-        Ok(item) => Some(item),
-        Err(None) => None,
-        Err(Some(mismatched)) => {
-            error!("Cannot merge belts carrying different items");
-            todo!("Cannot merge belts carrying different items")
-        },
-    };
-
     let belt_connections = belt_connections.map(|tile_id| match tile_id {
-        [BeltTileId::EmptyBeltId(front_idx), BeltTileId::EmptyBeltId(back_idx)] => match item {
-            Some(item) => todo!("Instantiate the belt"),
-            None => [front_idx, back_idx],
-        },
-        [BeltTileId::EmptyBeltId(_), BeltTileId::BeltId(belt_id)] => todo!("Instantiate the belt"),
-        [BeltTileId::BeltId(belt_id_front), BeltTileId::EmptyBeltId(_)] => {
-            todo!("Instantiate the belt")
-        },
-        [BeltTileId::BeltId(belt_id_front), BeltTileId::BeltId(belt_id_back)] => {
-            [belt_id_back.index, belt_id_front.index]
+        [BeltTileId::AnyBelt(front_idx, _), BeltTileId::AnyBelt(back_idx, _)] => {
+            [front_idx, back_idx]
         },
     });
 
@@ -163,16 +134,12 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         output_belts: [belt_connections[0][1], belt_connections[1][1]],
     };
 
-    let id = game_state
-        .simulation_state
-        .factory
-        .add_splitter(splitter, item);
+    let id = game_state.simulation_state.factory.add_splitter(splitter);
 
     game_state.world.add_entity(
         Entity::Splitter {
             pos: splitter_pos,
             direction: splitter_direction,
-            item,
             id,
         },
         &game_state.simulation_state,
@@ -211,35 +178,30 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         } else if let Some((id, pos)) =
             should_sideload(game_state, new_belt_direction, front_pos, data_store)
         {
+            // Add new belt
+            let new_belt = game_state
+                .simulation_state
+                .factory
+                .belts
+                .add_empty_belt(BELT_LEN_PER_TILE);
             // Add Sideloading inserter
-            let new_id = match id {
-                BeltTileId::EmptyBeltId(_) => todo!("Handle Sideloading on empty belts"),
-                BeltTileId::BeltId(dest_id) => {
-                    let new_id = game_state
-                        .simulation_state
-                        .factory
-                        .belts
-                        .add_belt(dest_id.item, SmartBelt::new(BELT_LEN_PER_TILE));
-                    game_state.simulation_state.factory.add_belt_belt_inserter(
-                        (new_id, 0),
-                        (dest_id, pos),
-                        BeltBeltInserterAdditionInfo { cooldown: 0 },
-                    );
-                    BeltTileId::BeltId(new_id)
-                },
-            };
+            game_state
+                .simulation_state
+                .factory
+                .belts
+                .add_sideloading_inserter(new_belt, (id, pos));
 
             game_state.world.add_entity(
                 Entity::Belt {
                     pos: new_belt_pos,
                     direction: new_belt_direction,
-                    id: new_id,
+                    id: new_belt,
                     belt_pos: BELT_LEN_PER_TILE,
                 },
                 &game_state.simulation_state,
                 data_store,
             );
-            (new_id, BELT_LEN_PER_TILE)
+            (new_belt, BELT_LEN_PER_TILE)
         } else {
             let id = game_state
                 .simulation_state
@@ -335,19 +297,11 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 };
 
                 // Add Sideloading inserter
-                match id {
-                    BeltTileId::EmptyBeltId(_) => todo!("Handle Sideloading on empty belts"),
-                    BeltTileId::BeltId(dest_id) => {
-                        let BeltTileId::BeltId(back_id) = back_id else {
-                            todo!("Handle Sideloading on empty belts")
-                        };
-                        game_state.simulation_state.factory.add_belt_belt_inserter(
-                            (back_id, 0),
-                            (dest_id, belt_pos),
-                            BeltBeltInserterAdditionInfo { cooldown: 0 },
-                        );
-                    },
-                }
+                game_state
+                    .simulation_state
+                    .factory
+                    .belts
+                    .add_sideloading_inserter(back_id, (id, belt_pos));
             } else {
                 // Do nothing
             }
@@ -412,23 +366,26 @@ fn handle_belt_breaking<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
             let res = game_state.simulation_state.factory.belts.break_belt_at(id, belt_pos_to_break_at);
 
-            match res.kept_side {
-                Side::FRONT => {
-                    // FIXME: Understand this + 1
-                    game_state.world.update_belt_id_after(res.kept_id, res.new_id, belt_pos_to_break_at + 1);
-                    game_state.world.modify_belt_pos(res.new_id, -i16::try_from(belt_pos_to_break_at).unwrap());
-
-                    let new_len = game_state.simulation_state.factory.belts.get_len(res.new_id);
-
-                    match res.kept_id {
-                        BeltTileId::EmptyBeltId(_) => todo!("Handle Sideloading on empty belts"),
-                        BeltTileId::BeltId(kept_id) => {
-                            let BeltTileId::BeltId(new_id) = res.new_id else {unreachable!()};
-                            game_state.simulation_state.factory.add_belt_belt_inserter((new_id, 0), (kept_id, belt_pos_to_break_at - 1), BeltBeltInserterAdditionInfo { cooldown: 0});
+            match res.new_belt {
+                Some((new_id, new_belt_side)) => {
+                    match new_belt_side {
+                        Side::FRONT => unimplemented!("In the currerent implementation we will always keep the Front."),
+                        Side::BACK => {
+                            // FIXME: Understand this + 1
+                            game_state.world.update_belt_id_after(res.kept_id, new_id, belt_pos_to_break_at + 1);
+                            game_state.world.modify_belt_pos(new_id, -i16::try_from(belt_pos_to_break_at).unwrap());
+        
+                            let new_len = game_state.simulation_state.factory.belts.get_len(new_id);
+        
+                            game_state
+                                .simulation_state
+                                .factory
+                                .belts
+                                .add_sideloading_inserter(new_id, (res.kept_id, belt_pos_to_break_at - 1));
                         },
                     }
                 },
-                Side::BACK => unimplemented!("In the currerent implementation we will always keep the Front."),
+                None => todo!("The belt stopped being circular. What tot do?"),
             }
         },
         (BeltState::Sideloading, BeltState::Straight) => unreachable!("Should be impossible"),
@@ -475,34 +432,11 @@ fn attach_to_back_of_belt<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             (final_belt_id, final_belt_len)
         },
         None => {
-            // We did not merge with a back belt (i.e. the new belt does not exist in the simulation), so we just add this to the front belt
-            let new_back_belt = EmptyBelt::new(back_belt_len);
-            match front_belt_id {
-                BeltTileId::EmptyBeltId(front_idx) => {
-                    take_mut::take(
-                        &mut game_state.simulation_state.factory.belts.empty_belts[front_idx],
-                        |front_belt| EmptyBelt::join(new_back_belt, front_belt),
-                    );
+            let new_length = game_state.simulation_state
+                .factory
+                .belts.add_length(front_belt_id, back_belt_len, Side::BACK);
 
-                    (
-                        BeltTileId::EmptyBeltId(front_idx),
-                        game_state.simulation_state.factory.belts.empty_belts[front_idx].len,
-                    )
-                },
-                BeltTileId::BeltId(front_belt_id) => {
-                    let front_item_id: usize = front_belt_id.item.id.into();
-                    let front_belt = game_state.simulation_state.factory.belts.belts[front_item_id]
-                        .belts
-                        .get_mut(front_belt_id.index)
-                        .expect("id from world not in simulation!!");
-
-                    take_mut::take(front_belt, |front_belt| {
-                        front_belt.join_with_empty(new_back_belt, Side::BACK)
-                    });
-
-                    (BeltTileId::BeltId(front_belt_id), front_belt.get_len())
-                },
-            }
+           (front_belt_id, new_length)
         },
     };
 
@@ -516,160 +450,9 @@ fn merge_belts<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     back_tile_id: BeltTileId<ItemIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> (BeltTileId<ItemIdxType>, u16) {
-    if front_tile_id == back_tile_id {
-        let len = simulation_state.factory.belts.get_len(front_tile_id);
-
-        match front_tile_id {
-            BeltTileId::EmptyBeltId(idx) => {
-                simulation_state.factory.belts.empty_belts[idx].make_circular()
-            },
-            BeltTileId::BeltId(belt_id) => {
-                simulation_state.factory.belts.belts[Into::<usize>::into(belt_id.item.id)].belts
-                    [belt_id.index]
-                    .make_circular();
-            },
-        }
-        return (front_tile_id, len);
-    }
-
-    let (final_len, final_id) = match (front_tile_id, back_tile_id) {
-        (BeltTileId::EmptyBeltId(front_idx), BeltTileId::EmptyBeltId(back_idx)) => {
-            // Remove back belt from simulation
-            let mut back_belt = EmptyBelt::new(0);
-
-            mem::swap(
-                &mut back_belt,
-                &mut simulation_state.factory.belts.empty_belts[back_idx],
-            );
-
-            let back_len = back_belt.len;
-
-            simulation_state
-                .factory
-                .belts
-                .empty_belt_holes
-                .push(back_idx);
-
-            // Get ref to front belt
-            let front_belt = simulation_state
-                .factory
-                .belts
-                .empty_belts
-                .get_mut(front_idx)
-                .expect("id from world not in simulation!!");
-
-            let front_len = front_belt.len;
-
-            // Merge front and middle and back
-            take_mut::take(front_belt, |front_belt| {
-                EmptyBelt::join(front_belt, back_belt)
-            });
-
-            (front_len + back_len, front_tile_id)
-        },
-        (BeltTileId::EmptyBeltId(front_idx), BeltTileId::BeltId(back_id)) => {
-            // Remove front belt from simulation
-            let mut front_belt = EmptyBelt::new(0);
-
-            mem::swap(
-                &mut front_belt,
-                &mut simulation_state.factory.belts.empty_belts[front_idx],
-            );
-
-            let back_item_id: usize = back_id.item.id.into();
-
-            // Get ref to back belt
-            let back_belt = simulation_state.factory.belts.belts[back_item_id]
-                .belts
-                .get_mut(back_id.index)
-                .expect("id from world not in simulation!!");
-
-            let back_len = back_belt.get_len();
-
-            let front_len = front_belt.len;
-
-            // Merge front and middle and back
-            take_mut::take(back_belt, |back_belt| {
-                back_belt.join_with_empty(front_belt, Side::FRONT)
-            });
-
-            (front_len + back_len, back_tile_id)
-        },
-        (BeltTileId::BeltId(front_id), BeltTileId::EmptyBeltId(back_idx)) => {
-            // Remove back belt from simulation
-            let mut back_belt = EmptyBelt::new(0);
-
-            mem::swap(
-                &mut back_belt,
-                &mut simulation_state.factory.belts.empty_belts[back_idx],
-            );
-
-            let back_len = back_belt.len;
-
-            simulation_state
-                .factory
-                .belts
-                .empty_belt_holes
-                .push(back_idx);
-
-            let front_item_id: usize = front_id.item.id.into();
-
-            // Get ref to front belt
-            let front_belt = simulation_state.factory.belts.belts[front_item_id]
-                .belts
-                .get_mut(front_id.index)
-                .expect("id from world not in simulation!!");
-
-            let front_len = front_belt.get_len();
-
-            // Merge front and middle and back
-            take_mut::take(front_belt, |front_belt| {
-                front_belt.join_with_empty(back_belt, Side::BACK)
-            });
-
-            (front_len + back_len, front_tile_id)
-        },
-        (BeltTileId::BeltId(front_id), BeltTileId::BeltId(back_id)) => {
-            // Remove back belt from simulation
-            let mut back_belt = SmartBelt::new(0);
-            let back_item_id: usize = back_id.item.id.into();
-            let front_item_id: usize = front_id.item.id.into();
-
-            if front_item_id != back_item_id {
-                // TODO: Try to downgrade the belt if it is empty
-                warn!("Two belts filled with different items cannot be connected");
-                panic!();
-            }
-
-            let back_len = back_belt.get_len();
-
-            mem::swap(
-                &mut back_belt,
-                &mut simulation_state.factory.belts.belts[back_item_id].belts[back_id.index],
-            );
-
-            simulation_state.factory.belts.belts[back_item_id]
-                .holes
-                .push(back_id.index);
-
-            // Get ref to front belt
-            let front_belt = simulation_state.factory.belts.belts[front_item_id]
-                .belts
-                .get_mut(front_id.index)
-                .expect("id from world not in simulation!!");
-
-            let front_len = front_belt.get_len();
-
-            // Merge front and middle and back
-            take_mut::take(front_belt, |front_belt| {
-                SmartBelt::join(front_belt, back_belt)
-            });
-
-            (front_len + back_len, front_tile_id)
-        },
-    };
-
-    (final_id, final_len)
+    simulation_state
+            .factory
+            .belts.merge_belts(front_tile_id, back_tile_id, data_store)
 }
 
 fn get_belt_dir_for_sideloading<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(

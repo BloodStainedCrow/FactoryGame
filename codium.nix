@@ -1,6 +1,6 @@
 let
   nix-vscode-extensions.url = "github:nix-community/nix-vscode-extensions";
-  pkgs = import (fetchTarball("https://github.com/NixOS/nixpkgs/archive/929116e316068c7318c54eb4d827f7d9756d5e9c.tar.gz")) { };
+  pkgs = import (fetchTarball("https://github.com/NixOS/nixpkgs/archive/1750f3c1c89488e2ffdd47cab9d05454dddfb734.tar.gz")) { };
 in
 pkgs.mkShell {
   buildInputs = [

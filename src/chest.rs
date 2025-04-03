@@ -1,13 +1,25 @@
 use std::{cmp::min, u8};
 
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+
 use crate::{
     data::DataStore,
     item::{usize_from, IdxTrait, Item, WeakIdxTrait, ITEMCOUNTTYPE},
 };
 
+const CHEST_GOAL_AMOUNT: ITEMCOUNTTYPE =
+    // ITEMCOUNTTYPE::MAX / 2;
+    50;
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct FullChestStore<ItemIdxType: WeakIdxTrait> {
     pub stores: Box<[MultiChestStore<ItemIdxType>]>,
+}
+
+impl<ItemIdxType: IdxTrait> FullChestStore<ItemIdxType> {
+    pub fn update(&mut self) {
+        self.stores.par_iter_mut().for_each(|store| store.update());
+    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -49,8 +61,9 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         } else {
             self.inout.push(0);
             self.storage.push(0);
-            self.max_items
-                .push(u16::from(stack_size) * u16::from(num_stacks));
+            self.max_items.push(
+                u16::from(stack_size) * u16::from(num_stacks) - u16::from(ITEMCOUNTTYPE::MAX),
+            );
             self.inout.len() - 1
         }
     }
@@ -68,10 +81,10 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
             .iter_mut()
             .zip(self.storage.iter_mut().zip(self.max_items.iter().copied()))
         {
-            let to_move = inout.abs_diff(128);
+            let to_move = inout.abs_diff(CHEST_GOAL_AMOUNT);
 
-            if *inout >= 128 {
-                let moved: ITEMCOUNTTYPE = min(to_move as u16, *storage)
+            if *inout >= CHEST_GOAL_AMOUNT {
+                let moved: ITEMCOUNTTYPE = min(to_move as u16, max_items - *storage)
                     .try_into()
                     .expect("since to_move was a ITEMCOUNTTYPE, this always fits");
                 *inout -= moved;
@@ -79,7 +92,7 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
 
                 debug_assert!(*storage <= max_items);
             } else {
-                let moved: ITEMCOUNTTYPE = min(to_move as u16, max_items - *storage)
+                let moved: ITEMCOUNTTYPE = min(to_move as u16, *storage)
                     .try_into()
                     .expect("since to_move was a ITEMCOUNTTYPE, this always fits");
                 *inout += moved;

@@ -2,7 +2,7 @@ use std::cmp::min;
 
 use crate::item::IdxTrait;
 
-use super::MultiBeltStore;
+use super::{belt::Belt, MultiBeltStore};
 
 type BeltBeltInserterID = u32;
 
@@ -67,7 +67,10 @@ pub struct Splitter {
 
 impl Splitter {
     // TODO: Test this
-    pub fn update<ItemIdxType: IdxTrait>(&mut self, belts: &mut MultiBeltStore<ItemIdxType>) {
+    pub fn update<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        &mut self,
+        belts: &mut MultiBeltStore<ItemIdxType, RecipeIdxType>,
+    ) {
         // FIXME: Handle the case where an input and output are the same belt!
         let [input_1, input_2, output_1, output_2] = belts
             .belts
@@ -78,7 +81,8 @@ impl Splitter {
                 self.output_belts[1],
             ])
             .expect("Inputs or outputs overlap (or something is out of bounds)");
-        let mut inputs = [input_1, input_2];
+        let mut inputs: [&mut super::smart::SmartBelt<ItemIdxType, RecipeIdxType>; 2] =
+            [input_1, input_2];
         let mut outputs = [output_1, output_2];
 
         let num_items_possible_to_input = inputs

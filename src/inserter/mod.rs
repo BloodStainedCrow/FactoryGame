@@ -29,6 +29,14 @@ pub enum InserterState {
     EmptyAndMovingBack(u8),
 }
 
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+enum SushiInserterState<ItemIdxType: WeakIdxTrait> {
+    Empty,
+    FullAndWaitingForSlot(Item<ItemIdxType>),
+    FullAndMovingOut(u8, Item<ItemIdxType>),
+    EmptyAndMovingBack(u8),
+}
+
 // TODO: We still need to store the timer and hand fullness. For the timer, 5 bits should suffice
 //       I don't think we need to store the recipe_id in 8 bits, since 32 recipes should be max for any resource (so 5 bits)
 // Current Plan: htttttrrrrrsssssssssssssssssssss

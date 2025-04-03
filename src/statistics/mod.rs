@@ -40,10 +40,6 @@ impl GenStatistics {
     }
 
     pub fn append_single_set_of_samples(&mut self, samples: (ProductionInfo, ResearchProgress)) {
-        if samples.0.items_produced.iter().any(|v| *v > 0) {
-            error!("PRODUCED SOMETHING");
-        }
-
         self.production.append_single_set_of_samples(samples.0);
         self.research.append_single_set_of_samples(samples.1);
     }

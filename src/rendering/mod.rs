@@ -18,7 +18,7 @@ pub struct TextureAtlas {
 
     player: Sprite,
 
-    plate: Sprite,
+    items: Box<[Sprite]>,
 
     default: Sprite,
 }
