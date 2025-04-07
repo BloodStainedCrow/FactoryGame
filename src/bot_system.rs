@@ -23,11 +23,12 @@ use log::info;
 use crate::{
     frontend::world::{tile::World, Position},
     item::{usize_from, IdxTrait, Item, WeakIdxTrait, ITEMCOUNTTYPE},
-    network_graph::{Network, NodeIndex, WeakIndex},
+    network_graph::{Network, WeakIndex},
     power::{Joule, Watt},
     rendering::app_state::SimulationState,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct RoboportId {
     index: u32,
 }
@@ -52,7 +53,7 @@ struct BotNetwork<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     // TODO: This might need another graph to handle removal of roboports
     current_tick: u32,
     roboports: Vec<Roboport>,
-    network: Network<RoboportId, NetworkEntity<ItemIdxType>>,
+    network: Network<RoboportId, (), NetworkEntity<ItemIdxType>>,
     bot_jobs: BTreeMap<u32, Vec<BotUpdate<ItemIdxType>>>,
 
     providers: Box<[MultiChestInfo]>,
@@ -345,7 +346,6 @@ const LOGIBOT_SPEED_EMPTY: f32 = LOGIBOT_SPEED_CHARGED / 5.0;
 const LOGIBOT_POWER_CONSUMPTION: Watt = Watt(63_750);
 
 struct Roboport {
-    node_id: NodeIndex,
     pos: Position,
     current_charge: Joule,
     construction_bots_idle: u8,
@@ -632,7 +632,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
 
     fn add_requester_chest(
         &mut self,
-        roboport_id: u32,
+        roboport_id: RoboportId,
         item: Item<ItemIdxType>,
         num_items: u16,
         requested_items: u16,
@@ -642,7 +642,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
             self.requesters[usize_from(item.id)].add_chest(num_items, requested_items, max_items);
 
         let weak_idx = self.network.add_weak_element(
-            self.roboports[roboport_id as usize].node_id,
+            roboport_id,
             NetworkEntity::Requester {
                 item,
                 index: requester_idx,
@@ -654,12 +654,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
 
     fn remove_requester_chest(
         &mut self,
-        roboport_id: u32,
+        roboport_id: RoboportId,
         weak_idx: WeakIndex,
     ) -> (Item<ItemIdxType>, u16) {
-        let entity = self
-            .network
-            .remove_weak_element(self.roboports[roboport_id as usize].node_id, weak_idx);
+        let entity = self.network.remove_weak_element(roboport_id, weak_idx);
 
         let NetworkEntity::Provider { item, index } = entity else {
             unreachable!()
@@ -672,7 +670,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
 
     fn add_provider_chest(
         &mut self,
-        roboport_id: u32,
+        roboport_id: RoboportId,
         item: Item<ItemIdxType>,
         num_items: u16,
         max_items: u16,
@@ -680,7 +678,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
         let provider_idx = self.providers[usize_from(item.id)].add_chest(num_items, max_items);
 
         let weak_idx = self.network.add_weak_element(
-            self.roboports[roboport_id as usize].node_id,
+            roboport_id,
             NetworkEntity::Provider {
                 item,
                 index: provider_idx,
@@ -692,12 +690,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
 
     fn remove_provider_chest(
         &mut self,
-        roboport_id: u32,
+        roboport_id: RoboportId,
         weak_idx: WeakIndex,
     ) -> (Item<ItemIdxType>, u16) {
-        let entity = self
-            .network
-            .remove_weak_element(self.roboports[roboport_id as usize].node_id, weak_idx);
+        let entity = self.network.remove_weak_element(roboport_id, weak_idx);
 
         let NetworkEntity::Provider { item, index } = entity else {
             unreachable!()

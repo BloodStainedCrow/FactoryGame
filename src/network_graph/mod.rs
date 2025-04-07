@@ -1,81 +1,95 @@
-use std::{collections::HashMap, usize};
+use std::{fmt::Debug, iter::once, usize};
 
+use bimap::BiMap;
 use petgraph::{
     prelude::StableUnGraph,
     visit::{EdgeRef, IntoNodeReferences},
 };
 
-pub struct Network<S, W> {
+use std::hash::Hash;
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct Network<NodeKey: Eq + Hash, S, W> {
     // We use stableUnGraph here to allow remove_node to not invalidate any other indices
     graph: StableUnGraph<NetworkNode<S, W>, ()>,
+    key_map: BiMap<NodeKey, petgraph::stable_graph::NodeIndex>,
 }
 
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct NetworkNode<S, W> {
     node_info: S,
     connected_weak_components: Vec<Option<W>>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct NodeIndex {
-    index: petgraph::stable_graph::NodeIndex,
 }
 
 pub struct WeakIndex {
     index: usize,
 }
 
-pub struct NodeUpdate {
-    pub old_node: NodeIndex,
-    /// This is is the index of the newly created network this node ended up in
-    pub new_network: usize,
-    pub new_node: NodeIndex,
+pub struct NetworkUpdate {
+    new_network: usize,
 }
 
-impl<S, W> Network<S, W> {
-    pub fn new(first_node: S) -> (Self, NodeIndex) {
-        let mut slf = Self {
-            graph: StableUnGraph::default(),
-        };
+impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
+    pub fn new(first_node: S, key: NodeKey) -> Self {
+        let mut graph = StableUnGraph::default();
 
-        let index = slf.graph.add_node(NetworkNode {
+        let index = graph.add_node(NetworkNode {
             node_info: first_node,
             connected_weak_components: vec![],
         });
 
-        (slf, NodeIndex { index })
+        Self {
+            graph,
+            key_map: once((key, index)).collect(),
+        }
     }
 
     pub fn add_node(
         &mut self,
         value: S,
-        connection_points: (NodeIndex, impl IntoIterator<Item = NodeIndex>),
-    ) -> NodeIndex {
+        key: NodeKey,
+        connection_points: (NodeKey, impl IntoIterator<Item = NodeKey>),
+    ) {
         let index = self.graph.add_node(NetworkNode {
             node_info: value,
             connected_weak_components: vec![],
         });
 
-        self.graph.add_edge(index, connection_points.0.index, ());
+        self.key_map
+            .insert_no_overwrite(key, index)
+            .expect("cannot use the same key for multiple nodes!");
+
+        dbg!(&self.key_map);
+
+        self.graph.add_edge(
+            index,
+            *self.key_map.get_by_left(&connection_points.0).unwrap(),
+            (),
+        );
 
         for connection in connection_points.1.into_iter() {
-            self.graph.add_edge(index, connection.index, ());
+            self.graph
+                .add_edge(index, *self.key_map.get_by_left(&connection).unwrap(), ());
         }
-
-        NodeIndex { index }
     }
 
     pub fn remove_node<'a>(
         &'a mut self,
-        index: NodeIndex,
+        key: NodeKey,
     ) -> (
         S,
-        impl IntoIterator<Item = W> + use<'a, S, W>,
-        impl IntoIterator<Item = (Self, impl IntoIterator<Item = NodeUpdate>)> + use<'a, S, W>,
+        impl IntoIterator<Item = W> + use<'a, NodeKey, S, W>,
+        impl IntoIterator<Item = (Self, impl IntoIterator<Item = NodeKey>)> + use<'a, NodeKey, S, W>,
     ) {
         let NetworkNode {
             node_info,
             connected_weak_components,
-        } = self.graph.remove_node(index.index).unwrap();
+        } = self
+            .graph
+            .remove_node(*self.key_map.get_by_left(&key).unwrap())
+            .unwrap();
+
+        self.key_map.remove_by_left(&key);
 
         let mut components = petgraph::algo::tarjan_scc(&self.graph);
 
@@ -86,59 +100,46 @@ impl<S, W> Network<S, W> {
         // All remaining components (if any, will be turned into other networks)
         let move_to_another_network = components;
 
-        let new_networks =
-            move_to_another_network
-                .into_iter()
-                .enumerate()
-                .map(|(network_index, component)| {
-                    let connections: Vec<_> = component
-                        .iter()
-                        .map(|idx| self.graph.edges(*idx))
-                        .flat_map(|edges| edges)
-                        .map(|edge| (edge.source(), edge.target()))
-                        .collect();
+        let new_networks = move_to_another_network.into_iter().map(|component| {
+            let connections: Vec<_> = component
+                .iter()
+                .map(|idx| self.graph.edges(*idx))
+                .flat_map(|edges| edges)
+                .map(|edge| (edge.source(), edge.target()))
+                .collect();
 
-                    debug_assert_eq!(component.len(), connections.len());
+            debug_assert_eq!(component.len(), connections.len());
 
-                    let mut new_network = Self {
-                        graph: StableUnGraph::default(),
-                    };
+            let mut new_graph = StableUnGraph::default();
 
-                    let new_indices: Vec<_> = component
-                        .iter()
-                        .map(|idx| {
-                            new_network
-                                .graph
-                                .add_node(self.graph.remove_node(*idx).unwrap())
-                        })
-                        .collect();
+            let new_indices: Vec<_> = component
+                .iter()
+                .map(|idx| new_graph.add_node(self.graph.remove_node(*idx).unwrap()))
+                .collect();
 
-                    for (source, dest) in connections {
-                        let source_idx_old = component.iter().position(|v| *v == source).unwrap();
-                        let dest_idx_old = component.iter().position(|v| *v == dest).unwrap();
+            for (source, dest) in connections {
+                let source_idx_old = component.iter().position(|v| *v == source).unwrap();
+                let dest_idx_old = component.iter().position(|v| *v == dest).unwrap();
 
-                        new_network.graph.add_edge(
-                            new_indices[source_idx_old],
-                            new_indices[dest_idx_old],
-                            (),
-                        );
-                    }
+                new_graph.add_edge(new_indices[source_idx_old], new_indices[dest_idx_old], ());
+            }
 
-                    let node_updates = new_network
-                        .graph
-                        .node_references()
-                        .map(|node| NodeUpdate {
-                            old_node: NodeIndex {
-                                index: component
-                                    [new_indices.iter().position(|v| *v == node.0).unwrap()],
-                            },
-                            new_network: network_index,
-                            new_node: NodeIndex { index: node.0 },
-                        })
-                        .collect::<Vec<_>>();
+            let keys_in_this: Vec<_> = component
+                .iter()
+                .map(|old_node| self.key_map.get_by_right(old_node).unwrap().clone())
+                .collect();
 
-                    (new_network, node_updates)
-                });
+            (
+                Network {
+                    graph: new_graph,
+                    key_map: component
+                        .into_iter()
+                        .map(|old_node| self.key_map.remove_by_right(&old_node).unwrap())
+                        .collect(),
+                },
+                keys_in_this,
+            )
+        });
 
         (
             node_info,
@@ -147,10 +148,10 @@ impl<S, W> Network<S, W> {
         )
     }
 
-    pub fn add_weak_element(&mut self, index: NodeIndex, value: W) -> WeakIndex {
+    pub fn add_weak_element(&mut self, key: NodeKey, value: W) -> WeakIndex {
         let weak_components = &mut self
             .graph
-            .node_weight_mut(index.index)
+            .node_weight_mut(*self.key_map.get_by_left(&key).unwrap())
             .unwrap()
             .connected_weak_components;
 
@@ -169,9 +170,9 @@ impl<S, W> Network<S, W> {
         WeakIndex { index }
     }
 
-    pub fn remove_weak_element(&mut self, node_index: NodeIndex, weak_index: WeakIndex) -> W {
+    pub fn remove_weak_element(&mut self, key: NodeKey, weak_index: WeakIndex) -> W {
         self.graph
-            .node_weight_mut(node_index.index)
+            .node_weight_mut(*self.key_map.get_by_left(&key).unwrap())
             .unwrap()
             .connected_weak_components[weak_index.index]
             .take()
@@ -181,41 +182,44 @@ impl<S, W> Network<S, W> {
     pub fn add_node_merging(
         &mut self,
         value: S,
-        connection_points_first: (NodeIndex, impl IntoIterator<Item = NodeIndex>),
+        node_key: NodeKey,
+        connection_points: (NodeKey, impl IntoIterator<Item = NodeKey>),
         other: Self,
-        connection_points_other: (NodeIndex, impl IntoIterator<Item = NodeIndex>),
-    ) -> (NodeIndex, impl IntoIterator<Item = NodeUpdate>) {
-        let new_node_id = self.add_node(value, connection_points_first);
+    ) {
+        let index = if let Some(index) = self.key_map.get_by_left(&node_key) {
+            *index
+        } else {
+            let index = self.graph.add_node(NetworkNode {
+                node_info: value,
+                connected_weak_components: vec![],
+            });
+            self.key_map.insert_no_overwrite(node_key, index).unwrap();
+            index
+        };
 
-        let Self { graph } = other;
+        let Self { graph, key_map } = other;
 
-        let node_index_lookup = join_graphs(&mut self.graph, graph);
+        join_graphs(&mut self.graph, &mut self.key_map, graph, key_map);
 
         self.graph.add_edge(
-            new_node_id.index,
-            node_index_lookup[&connection_points_other.0.index],
+            index,
+            *self.key_map.get_by_left(&connection_points.0).unwrap(),
             (),
         );
 
-        for connection in connection_points_other.1 {
+        for connection in connection_points.1 {
             self.graph
-                .add_edge(new_node_id.index, node_index_lookup[&connection.index], ());
+                .add_edge(index, *self.key_map.get_by_left(&connection).unwrap(), ());
         }
-
-        let v = node_index_lookup.into_iter().map(|v| NodeUpdate {
-            old_node: NodeIndex { index: v.0 },
-            new_network: usize::MAX,
-            new_node: NodeIndex { index: v.1 },
-        });
-
-        (new_node_id, v)
     }
 }
 
-fn join_graphs<T, S: Default>(
+fn join_graphs<NodeKey: Eq + Hash + Clone + Debug, T, S: Default>(
     first: &mut StableUnGraph<T, S>,
+    first_map: &mut BiMap<NodeKey, petgraph::stable_graph::NodeIndex>,
     mut second: StableUnGraph<T, S>,
-) -> HashMap<petgraph::prelude::NodeIndex, petgraph::prelude::NodeIndex> {
+    mut second_map: BiMap<NodeKey, petgraph::stable_graph::NodeIndex>,
+) {
     #[cfg(debug_assertions)]
     let first_components = petgraph::algo::tarjan_scc(&*first).len();
     #[cfg(debug_assertions)]
@@ -270,5 +274,10 @@ fn join_graphs<T, S: Default>(
         assert_eq!(final_components, first_components + second_components);
     }
 
-    old_node_indices.into_iter().zip(new_node_indices).collect()
+    first_map.extend(
+        old_node_indices
+            .iter()
+            .zip(new_node_indices)
+            .map(|(old, new)| (second_map.remove_by_right(old).unwrap().0, new)),
+    );
 }

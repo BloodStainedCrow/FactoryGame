@@ -1,10 +1,12 @@
 use std::{
+    collections::HashMap,
     iter::Sum,
     ops::{Add, Div, Mul, Sub},
 };
 
+use itertools::Itertools;
 use log::warn;
-use power_grid::{IndexUpdateInfo, PowerGrid, PowerGridIdentifier, PowerPoleUpdateInfo};
+use power_grid::{IndexUpdateInfo, PowerGrid, PowerGridIdentifier};
 
 use crate::{
     assembler::AssemblerOnclickInfo,
@@ -124,18 +126,20 @@ impl Watt {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct PowerGridStorage<RecipeIdxType: WeakIdxTrait> {
-    pub power_grids: Vec<Option<PowerGrid<RecipeIdxType>>>,
+pub struct PowerGridStorage<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+    pub power_grids: Vec<Option<PowerGrid<ItemIdxType, RecipeIdxType>>>,
+    pub pole_pos_to_grid_id: HashMap<Position, PowerGridIdentifier>,
 }
 
-impl<RecipeIdxType: IdxTrait> PowerGridStorage<RecipeIdxType> {
+impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxType, RecipeIdxType> {
     pub fn new() -> Self {
         Self {
             power_grids: vec![],
+            pole_pos_to_grid_id: HashMap::default(),
         }
     }
 
-    pub fn get_assembler_info<ItemIdxType: IdxTrait>(
+    pub fn get_assembler_info(
         &self,
         assembler_id: AssemblerID<RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -146,44 +150,125 @@ impl<RecipeIdxType: IdxTrait> PowerGridStorage<RecipeIdxType> {
             .get_assembler_info(assembler_id, data_store)
     }
 
-    pub fn add_power_grid<ItemIdxType: IdxTrait>(
+    fn add_power_grid(
         &mut self,
+        first_pole_position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> PowerGridIdentifier {
         // TODO: This is O(N). Is that a problem?
         let hole_idx = self.power_grids.iter().position(Option::is_none);
 
-        if let Some(hole_idx) = hole_idx {
-            self.power_grids[hole_idx] = Some(PowerGrid::new(data_store));
+        let new_grid = PowerGrid::new(data_store, first_pole_position);
+
+        let id = if let Some(hole_idx) = hole_idx {
+            self.power_grids[hole_idx] = Some(new_grid);
             hole_idx
                 .try_into()
                 .expect("If this is not in range, this means we had too many power grids before?")
         } else {
             let len = self.power_grids.len();
-            self.power_grids.push(Some(PowerGrid::new(data_store)));
+            self.power_grids.push(Some(new_grid));
             len.try_into().expect(&format!(
                 "Too many power grids, max, {} allowed",
                 PowerGridIdentifier::MAX
             ))
+        };
+
+        self.pole_pos_to_grid_id.insert(first_pole_position, id);
+
+        id
+    }
+
+    /// Returns a list of power poles, which have their PowerGridId changed
+    pub fn add_pole(
+        &mut self,
+        pole_position: Position,
+        connected_poles: impl IntoIterator<Item = Position>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Option<(
+        impl IntoIterator<Item = Position>,
+        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
+    )> {
+        let connected_poles: Vec<_> = connected_poles.into_iter().collect();
+
+        if let Some(first_connection) = connected_poles.last() {
+            let grid = self.pole_pos_to_grid_id[first_connection];
+
+            let need_to_merge = !connected_poles
+                .iter()
+                .map(|pos| self.pole_pos_to_grid_id[pos])
+                .all_equal();
+
+            self.pole_pos_to_grid_id.insert(pole_position, grid);
+
+            if need_to_merge {
+                let poles_to_update: Vec<_> = connected_poles
+                    .iter()
+                    .copied()
+                    .filter(|pos| self.pole_pos_to_grid_id[pos] != grid)
+                    .collect();
+
+                let mut storage_update_vec = vec![];
+
+                let mut ran_once = false;
+                for other_grid in connected_poles
+                    .iter()
+                    .map(|pos| self.pole_pos_to_grid_id[pos])
+                    .collect::<Vec<_>>()
+                {
+                    ran_once = true;
+                    let storage_updates = self
+                        .merge_power_grids(
+                            grid,
+                            other_grid,
+                            data_store,
+                            pole_position,
+                            connected_poles.iter().copied(),
+                        )
+                        .into_iter()
+                        .flatten();
+
+                    storage_update_vec.extend(storage_updates);
+                }
+                assert!(ran_once);
+
+                Some((poles_to_update, storage_update_vec))
+            } else {
+                self.power_grids[grid as usize]
+                    .as_mut()
+                    .unwrap()
+                    .add_pole(pole_position, connected_poles);
+                None
+            }
+        } else {
+            // Create a new grid
+            self.add_power_grid(pole_position, data_store);
+            None
         }
     }
 
-    pub fn remove_power_grid(&mut self, id: PowerGridIdentifier) {
+    /// Returns a list of power poles, which have their PowerGridId changed
+    pub fn remove_pole(
+        &mut self,
+        pole_position: Position,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Option<impl IntoIterator<Item = Position>> {
+        Some(vec![todo!()])
+    }
+
+    fn remove_power_grid(&mut self, id: PowerGridIdentifier) {
         self.power_grids[usize::from(id)] = None;
     }
 
     #[must_use]
-    pub fn merge_power_grids<ItemIdxType: IdxTrait>(
+    fn merge_power_grids(
         &mut self,
         kept_id: PowerGridIdentifier,
         removed_id: PowerGridIdentifier,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
         new_pole_pos: Position,
         new_pole_connections: impl IntoIterator<Item = Position>,
-    ) -> Option<(
-        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
-        impl IntoIterator<Item = PowerPoleUpdateInfo>,
-    )> {
+    ) -> Option<impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>> {
         if kept_id == removed_id {
             warn!("Tried to merge a grid with itself!");
             return None;
@@ -191,15 +276,15 @@ impl<RecipeIdxType: IdxTrait> PowerGridStorage<RecipeIdxType> {
 
         let second = self.power_grids[usize::from(removed_id)].take().unwrap();
 
-        let pole_updates: Vec<PowerPoleUpdateInfo> = second
-            .grid_graph
-            .poles()
-            .into_iter()
-            .map(|pos| PowerPoleUpdateInfo {
-                position: pos,
-                new_grid_id: kept_id,
-            })
-            .collect();
+        // let pole_updates: Vec<PowerPoleUpdateInfo> = second
+        //     .grid_graph
+        //     .poles()
+        //     .into_iter()
+        //     .map(|pos| PowerPoleUpdateInfo {
+        //         position: pos,
+        //         new_grid_id: kept_id,
+        //     })
+        //     .collect();
 
         let mut updates = None;
 
@@ -220,6 +305,6 @@ impl<RecipeIdxType: IdxTrait> PowerGridStorage<RecipeIdxType> {
             },
         );
 
-        updates.map(|u| (u, pole_updates))
+        updates
     }
 }

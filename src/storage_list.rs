@@ -156,7 +156,7 @@ fn get_full_storage_index<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 }
 
 pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    grids: &'a mut PowerGridStorage<RecipeIdxType>,
+    grids: &'a mut PowerGridStorage<ItemIdxType, RecipeIdxType>,
     chest_store: &'a mut FullChestStore<ItemIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> FullStorages<'a> {
@@ -205,7 +205,7 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 }
 
 fn all_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    grids: &'a mut PowerGridStorage<RecipeIdxType>,
+    grids: &'a mut PowerGridStorage<ItemIdxType, RecipeIdxType>,
     chest_store: &'a mut FullChestStore<ItemIdxType>,
     data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
 ) -> impl IntoIterator<

@@ -4,7 +4,6 @@ use std::{
 };
 
 use enum_map::{Enum, EnumMap};
-use log::warn;
 use strum::EnumIter;
 
 use itertools::Itertools;
@@ -189,10 +188,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         .insert(chunk_pos);
                 },
             },
-            Entity::PowerPole { grid_id, .. } => {
+            Entity::PowerPole { pos, .. } => {
+                let grid = sim_state.factory.power_grids.pole_pos_to_grid_id[&pos];
                 self.power_grid_lookup
                     .grid_to_chunks
-                    .entry(grid_id)
+                    .entry(grid)
                     .or_default()
                     .insert(chunk_pos);
             },
@@ -319,11 +319,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             }
                         },
                     },
-                    Entity::PowerPole { grid_id, .. } => {
-                        if *grid_id == old_id {
-                            *grid_id = new_id;
-                        }
-                    },
+                    Entity::PowerPole { .. } => {},
                     Entity::Inserter { info, .. } => match info {
                         InserterInfo::NotAttached { .. } => {},
                         InserterInfo::Attached(attached_inserter) => match attached_inserter {
@@ -486,7 +482,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         entity_pos: Position,
         entity_size: (u8, u8),
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Option<PowerGridIdentifier> {
+    ) -> Option<Position> {
         self.get_entities_colliding_with(
             Position {
                 x: entity_pos.x - usize::from(data_store.max_power_search_range),
@@ -500,9 +496,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         )
         .into_iter()
         .find_map(|e| match e {
-            Entity::PowerPole {
-                ty, grid_id, pos, ..
-            } => {
+            Entity::PowerPole { ty, pos, .. } => {
                 let power_range = data_store.power_pole_data[usize::from(*ty)].power_range;
                 let size: (u8, u8) = data_store.power_pole_data[usize::from(*ty)].size;
                 if entity_pos.contained_in_sized(
@@ -513,7 +507,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     },
                     (2 * power_range + size.0, 2 * power_range + size.1),
                 ) {
-                    Some(*grid_id)
+                    Some(*pos)
                 } else {
                     None
                 }
@@ -634,6 +628,60 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         )
         .into_iter()
         .filter(|e| matches!(e, Entity::PowerPole { .. }))
+    }
+
+    pub fn update_pole_power(
+        &mut self,
+        pole_position: Position,
+        grid: PowerGridIdentifier,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl IntoIterator<Item = &Entity<ItemIdxType, RecipeIdxType>> {
+        let Entity::PowerPole {
+            ty,
+            pos: pole_position,
+            ..
+        } = self
+            .get_entities_colliding_with(pole_position, (1, 1), data_store)
+            .into_iter()
+            .next()
+            .unwrap()
+        else {
+            unreachable!()
+        };
+
+        let power_range = data_store.power_pole_data[usize::from(*ty)].power_range;
+
+        self.mutate_entities_colliding_with(
+            Position {
+                x: pole_position.x - power_range as usize,
+                y: pole_position.y - power_range as usize,
+            },
+            (power_range * 2 + 1, power_range * 2 + 1),
+            data_store,
+            |entity| {
+                match entity {
+                    Entity::Assembler {
+                        info: AssemblerInfo::Powered(v),
+                        ..
+                    } => todo!(),
+                    Entity::Assembler {
+                        info: AssemblerInfo::PoweredNoRecipe(v),
+                        ..
+                    } => *v = grid,
+                    Entity::Roboport { power_grid, .. } => {
+                        assert!(power_grid.is_some());
+                        *power_grid = Some(grid);
+                    },
+
+                    _ => {
+                        // FIXME: This will add unintentional fallthrough
+                    },
+                }
+                ControlFlow::Continue(())
+            },
+        );
+
+        vec![todo!()]
     }
 }
 
@@ -808,7 +856,6 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         // This means at most 256 different types of power poles can exist, should be fine :)
         ty: u8,
         pos: Position,
-        grid_id: PowerGridIdentifier,
         connected_power_poles: Vec<Position>,
     },
     Belt {

@@ -273,7 +273,6 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             Entity::PowerPole {
                                 ty,
                                 pos,
-                                grid_id,
                                 connected_power_poles,
                             } => {
                                 // TODO:
@@ -497,7 +496,6 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     crate::frontend::world::tile::Entity::PowerPole {
                         ty,
                         pos,
-                        grid_id,
                         connected_power_poles,
                     } => {
                         // TODO:
@@ -524,7 +522,11 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         );
 
                         let pg = &game_state.simulation_state.factory.power_grids.power_grids
-                            [*grid_id as usize];
+                            [game_state
+                                .simulation_state
+                                .factory
+                                .power_grids
+                                .pole_pos_to_grid_id[pos] as usize];
 
                         dbg!(pg);
                     },
