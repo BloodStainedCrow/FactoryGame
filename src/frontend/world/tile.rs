@@ -356,7 +356,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         &mut self,
         old_id: BeltTileId<ItemIdxType>,
         new_id: BeltTileId<ItemIdxType>,
-        belt_pos_which_has_to_be_less_or_equal: u16,
+        belt_pos_earliest: u16,
     ) {
         let old_chunks = self.belt_lookup.belt_id_to_chunks.remove(&old_id);
 
@@ -374,7 +374,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     Entity::Roboport { .. } => {},
                     Entity::Belt { id, belt_pos, .. }
                     | Entity::Underground { id, belt_pos, .. } => {
-                        if *id == old_id && belt_pos_which_has_to_be_less_or_equal <= *belt_pos {
+                        if *id == old_id && belt_pos_earliest <= *belt_pos {
                             *id = new_id;
                         }
                     },
@@ -382,8 +382,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     Entity::Inserter { info, .. } => match info {
                         InserterInfo::NotAttached { .. } => {},
                         InserterInfo::Attached(attached_inserter) => match attached_inserter {
-                            AttachedInserter::BeltStorage { id, .. } => {
-                                if *id == old_id {
+                            AttachedInserter::BeltStorage { id, belt_pos } => {
+                                if *id == old_id && belt_pos_earliest <= *belt_pos {
                                     *id = new_id;
                                 }
                             },

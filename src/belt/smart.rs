@@ -621,15 +621,15 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
 
         let mut current_pos = 0;
 
-        let split_at_inserters = loop {
+        let (split_at_inserters, new_offs) = loop {
             let Some((i, next_offset)) = offsets.next() else {
-                break self.inserters.offsets.len();
+                break (self.inserters.offsets.len(), 0);
             };
 
             current_pos += next_offset;
 
             if current_pos >= belt_pos_to_break_at {
-                break i;
+                break (i, current_pos - belt_pos_to_break_at);
             }
         };
 
@@ -637,7 +637,8 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
         let mut new_offsets = self.inserters.offsets.split_off(split_at_inserters);
 
         if let Some(offs) = new_offsets.get_mut(0) {
-            *offs -= belt_pos_to_break_at
+            // TODO: Make sure this is correct!
+            *offs = new_offs;
         }
 
         let new_belt = Self {
