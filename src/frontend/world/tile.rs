@@ -278,6 +278,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 item,
                 index,
             } => {},
+            Entity::Roboport {
+                ty,
+                pos,
+                power_grid,
+                network,
+                id,
+            } => {},
         }
 
         let chunk = self
@@ -329,6 +336,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             AttachedInserter::StorageStorage(_) => todo!(),
                         },
                     },
+                    Entity::Roboport { power_grid, .. } => {
+                        if *power_grid == Some(old_id) {
+                            *power_grid = Some(new_id);
+                        }
+                    },
                     Entity::Belt { .. }
                     | Entity::Underground { .. }
                     | Entity::Splitter { .. }
@@ -363,6 +375,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     Entity::Assembler { .. } => {},
                     Entity::PowerPole { .. } => {},
                     Entity::Chest { .. } => {},
+                    Entity::Roboport { .. } => {},
                     Entity::Belt { id, belt_pos, .. }
                     | Entity::Underground { id, belt_pos, .. } => {
                         if *id == old_id && belt_pos_which_has_to_be_less_or_equal <= *belt_pos {
@@ -416,6 +429,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     Entity::Assembler { .. } => {},
                     Entity::PowerPole { .. } => {},
                     Entity::Chest { .. } => {},
+                    Entity::Roboport { .. } => {},
                     Entity::Belt { id, belt_pos, .. }
                     | Entity::Underground { id, belt_pos, .. } => {
                         if *id == id_to_change {
@@ -830,6 +844,14 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         item: Option<Item<ItemIdxType>>,
         index: usize,
     },
+    Roboport {
+        // This means at most 256 different types of Roboports can exist, should be fine
+        ty: u8,
+        pos: Position,
+        power_grid: Option<PowerGridIdentifier>,
+        network: u16,
+        id: u32,
+    },
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeIdxType> {
@@ -842,6 +864,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::Underground { pos, .. } => *pos,
             Self::Splitter { pos, .. } => *pos,
             Self::Chest { pos, .. } => *pos,
+            Self::Roboport { pos, .. } => *pos,
         }
     }
 
@@ -859,6 +882,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
                 Dir::West => (1, 2),
             },
             Self::Chest { ty, .. } => data_store.chest_tile_sizes[*ty as usize],
+            Self::Roboport { ty, .. } => (4, 4),
         }
     }
 }

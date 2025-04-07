@@ -1010,6 +1010,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             .map(|e| match e {
                 Entity::Inserter { .. } | Entity::PowerPole { .. } => None,
 
+                Entity::Roboport { ty, pos, power_grid, network, id } => {
+                    // TODO:
+                    warn!("It is currently not possible to add or remove bots from roboports using inserters");
+                    None
+                }
+
                 Entity::Assembler {
                     pos,
                     info: AssemblerInfo::Powered(id),
@@ -1089,6 +1095,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             .next()
             .map(|e| match e {
                 Entity::Inserter { .. } | Entity::PowerPole { .. } => None,
+
+                Entity::Roboport { ty, pos, power_grid, network, id } => {
+                    // TODO:
+                    warn!("It is currently not possible to add or remove bots from roboports using inserters");
+                    None
+                }
 
                 Entity::Assembler {
                     pos,

@@ -1,4 +1,4 @@
-use std::{cmp::min, collections::BTreeMap, marker::PhantomData};
+use std::{cmp::max, cmp::min, collections::BTreeMap, marker::PhantomData};
 
 // I will render bots as "particles" with a fixed size instanced gpu buffer
 // This is fine as long as we do not override bots, which are still flying
@@ -22,18 +22,40 @@ use log::info;
 
 use crate::{
     frontend::world::{tile::World, Position},
-    item::{IdxTrait, Item, WeakIdxTrait, ITEMCOUNTTYPE},
+    item::{usize_from, IdxTrait, Item, WeakIdxTrait, ITEMCOUNTTYPE},
+    network_graph::{Network, NodeIndex, WeakIndex},
     power::{Joule, Watt},
     rendering::app_state::SimulationState,
 };
+
+struct RoboportId {
+    index: u32,
+}
+
+enum NetworkEntity<ItemIdxType: WeakIdxTrait> {
+    Requester {
+        item: Item<ItemIdxType>,
+        index: usize,
+    },
+    Provider {
+        item: Item<ItemIdxType>,
+        index: usize,
+    },
+    Storage,
+}
+
+struct BotSystem<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+    networks: Vec<BotNetwork<ItemIdxType, RecipeIdxType>>,
+}
 
 struct BotNetwork<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     // TODO: This might need another graph to handle removal of roboports
     current_tick: u32,
     roboports: Vec<Roboport>,
+    network: Network<RoboportId, NetworkEntity<ItemIdxType>>,
     bot_jobs: BTreeMap<u32, Vec<BotUpdate<ItemIdxType>>>,
 
-    providers: Box<[MultiProviderInfo]>,
+    providers: Box<[MultiChestInfo]>,
     requesters: Box<[MultiRequesterInfo]>,
     storages: Box<[MultiStorageInfo]>,
 
@@ -152,11 +174,139 @@ impl BotRenderInfo {
     }
 }
 
-struct MultiProviderInfo {}
+struct MultiChestInfo {
+    in_out: Vec<ITEMCOUNTTYPE>,
+    storages: Vec<u16>,
+    max_items: Vec<u16>,
+    holes: Vec<usize>,
+}
 
-struct MultiRequesterInfo {}
+impl MultiChestInfo {
+    pub fn new() -> Self {
+        Self {
+            in_out: vec![],
+            storages: vec![],
+            max_items: vec![],
+            holes: vec![],
+        }
+    }
+
+    pub fn add_chest(&mut self, items: u16, max_items: u16) -> usize {
+        assert!(items <= max_items);
+
+        let free_spots = max_items - items;
+
+        let inout = min(
+            ITEMCOUNTTYPE::try_from(items).unwrap_or(ITEMCOUNTTYPE::MAX),
+            max(
+                ITEMCOUNTTYPE::MAX / 2,
+                ITEMCOUNTTYPE::MAX
+                    .saturating_sub(free_spots.try_into().unwrap_or(ITEMCOUNTTYPE::MAX)),
+            ),
+        );
+
+        let storage = items.saturating_sub(inout.into());
+
+        assert_eq!(items, inout as u16 + storage);
+
+        if let Some(hole) = self.holes.pop() {
+            self.in_out[hole] = inout;
+
+            self.max_items[hole] = max_items;
+            self.storages[hole] = storage;
+
+            hole
+        } else {
+            self.in_out.push(inout);
+            self.max_items.push(max_items);
+            self.storages.push(storage);
+
+            self.storages.len()
+        }
+    }
+
+    pub fn remove_chest(&mut self, index: usize) -> u16 {
+        self.holes.push(index);
+        let items = self.storages[index] + self.in_out[index] as u16;
+
+        self.storages[index] = 0;
+        self.max_items[index] = 0;
+        self.in_out[index] = 0;
+
+        items
+    }
+}
+
+struct MultiRequesterInfo {
+    in_out: Vec<ITEMCOUNTTYPE>,
+    storages: Vec<u16>,
+    requests: Vec<u16>,
+    max_items: Vec<u16>,
+    holes: Vec<usize>,
+}
+
+impl MultiRequesterInfo {
+    pub fn new() -> Self {
+        Self {
+            in_out: vec![],
+            storages: vec![],
+            requests: vec![],
+            max_items: vec![],
+            holes: vec![],
+        }
+    }
+
+    pub fn add_chest(&mut self, items: u16, request: u16, max_items: u16) -> usize {
+        assert!(items <= max_items);
+        assert!(request <= max_items);
+
+        let free_spots = max_items - items;
+
+        let inout = min(
+            ITEMCOUNTTYPE::try_from(items).unwrap_or(ITEMCOUNTTYPE::MAX),
+            max(
+                ITEMCOUNTTYPE::MAX / 2,
+                ITEMCOUNTTYPE::MAX
+                    .saturating_sub(free_spots.try_into().unwrap_or(ITEMCOUNTTYPE::MAX)),
+            ),
+        );
+
+        let storage = items.saturating_sub(inout.into());
+
+        assert_eq!(items, inout as u16 + storage);
+
+        if let Some(hole) = self.holes.pop() {
+            self.in_out[hole] = inout;
+
+            self.max_items[hole] = max_items;
+            self.storages[hole] = storage;
+            self.requests[hole] = request;
+
+            hole
+        } else {
+            self.in_out.push(inout);
+            self.max_items.push(max_items);
+            self.storages.push(storage);
+            self.requests.push(request);
+
+            self.storages.len()
+        }
+    }
+
+    pub fn remove_chest(&mut self, index: usize) -> u16 {
+        self.holes.push(index);
+        let items = self.storages[index] + self.in_out[index] as u16;
+
+        self.storages[index] = 0;
+        self.max_items[index] = 0;
+        self.in_out[index] = 0;
+
+        items
+    }
+}
 
 struct MultiStorageInfo {}
+
 enum BotUpdate<ItemIdxType: WeakIdxTrait> {
     DoGoal(BotGoal<ItemIdxType>),
     // TODO: To allow removing of robotports I will need generational indices!
@@ -195,6 +345,7 @@ const LOGIBOT_SPEED_EMPTY: f32 = LOGIBOT_SPEED_CHARGED / 5.0;
 const LOGIBOT_POWER_CONSUMPTION: Watt = Watt(63_750);
 
 struct Roboport {
+    node_id: NodeIndex,
     pos: Position,
     current_charge: Joule,
     construction_bots_idle: u8,
@@ -477,6 +628,84 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
         &mut self,
     ) -> impl IntoIterator<Item = (Item<ItemIdxType>, ITEMCOUNTTYPE, u16, u16)> {
         vec![todo!()]
+    }
+
+    fn add_requester_chest(
+        &mut self,
+        roboport_id: u32,
+        item: Item<ItemIdxType>,
+        num_items: u16,
+        requested_items: u16,
+        max_items: u16,
+    ) -> WeakIndex {
+        let requester_idx =
+            self.requesters[usize_from(item.id)].add_chest(num_items, requested_items, max_items);
+
+        let weak_idx = self.network.add_weak_element(
+            self.roboports[roboport_id as usize].node_id,
+            NetworkEntity::Requester {
+                item,
+                index: requester_idx,
+            },
+        );
+
+        weak_idx
+    }
+
+    fn remove_requester_chest(
+        &mut self,
+        roboport_id: u32,
+        weak_idx: WeakIndex,
+    ) -> (Item<ItemIdxType>, u16) {
+        let entity = self
+            .network
+            .remove_weak_element(self.roboports[roboport_id as usize].node_id, weak_idx);
+
+        let NetworkEntity::Provider { item, index } = entity else {
+            unreachable!()
+        };
+
+        let item_count = self.providers[usize_from(item.id)].remove_chest(index);
+
+        (item, item_count)
+    }
+
+    fn add_provider_chest(
+        &mut self,
+        roboport_id: u32,
+        item: Item<ItemIdxType>,
+        num_items: u16,
+        max_items: u16,
+    ) -> WeakIndex {
+        let provider_idx = self.providers[usize_from(item.id)].add_chest(num_items, max_items);
+
+        let weak_idx = self.network.add_weak_element(
+            self.roboports[roboport_id as usize].node_id,
+            NetworkEntity::Provider {
+                item,
+                index: provider_idx,
+            },
+        );
+
+        weak_idx
+    }
+
+    fn remove_provider_chest(
+        &mut self,
+        roboport_id: u32,
+        weak_idx: WeakIndex,
+    ) -> (Item<ItemIdxType>, u16) {
+        let entity = self
+            .network
+            .remove_weak_element(self.roboports[roboport_id as usize].node_id, weak_idx);
+
+        let NetworkEntity::Provider { item, index } = entity else {
+            unreachable!()
+        };
+
+        let item_count = self.providers[usize_from(item.id)].remove_chest(index);
+
+        (item, item_count)
     }
 
     fn update_logibots(

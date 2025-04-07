@@ -76,6 +76,8 @@ pub mod split_arbitrary;
 
 mod chest;
 
+mod network_graph;
+
 impl WeakIdxTrait for u8 {}
 impl WeakIdxTrait for u16 {}
 impl IdxTrait for u8 {}
