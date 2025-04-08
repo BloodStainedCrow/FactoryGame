@@ -16,7 +16,7 @@ use std::{
     simd::cmp::SimdPartialEq,
     sync::{
         atomic::AtomicU64,
-        mpsc::{channel, Receiver, Sender},
+        mpsc::{channel, Sender},
         Arc, Mutex,
     },
     thread,
@@ -24,12 +24,11 @@ use std::{
 
 use data::{get_raw_data_test, DataStore};
 use frontend::{
-    action::{action_state_machine::ActionStateMachine, ActionType},
+    action::action_state_machine::ActionStateMachine,
     input::Input,
     world::tile::CHUNK_SIZE_FLOAT,
 };
 use item::{IdxTrait, WeakIdxTrait};
-use log::info;
 use multiplayer::{
     connection_reciever::accept_continously, ClientConnectionInfo, Game, GameInitData, ServerInfo,
 };
@@ -281,7 +280,6 @@ fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Se
 
 // Type your code here, or load an example.
 
-use std::simd::Mask;
 use std::simd::Simd;
 
 // TODO: Increase if possible

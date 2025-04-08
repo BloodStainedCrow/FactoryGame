@@ -4,7 +4,7 @@ use petgraph::prelude::{DiGraphMap, GraphMap};
 
 use crate::{
     frontend::world::{
-        tile::{AssemblerID, MachineID},
+        tile::MachineID,
         Position,
     },
     item::{IdxTrait, WeakIdxTrait},

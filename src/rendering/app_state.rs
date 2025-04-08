@@ -1,13 +1,9 @@
 use std::{
-    collections::BTreeSet,
-    iter::once,
     marker::PhantomData,
-    mem::{self},
     ops::ControlFlow,
 };
 
 use crate::{
-    assembler::TIMERTYPE,
     belt::{belt::Belt, splitter::Splitter, BeltStore, MultiBeltStore},
     chest::{FullChestStore, MultiChestStore},
     data::{DataStore, ItemRecipeDir},
@@ -20,28 +16,27 @@ use crate::{
         world::{
             tile::{
                 AssemblerID, AssemblerInfo, AttachedInserter, BeltId, BeltTileId, Dir, Entity,
-                InserterInfo, World, BELT_LEN_PER_TILE,
+                InserterInfo, World,
             },
             Position,
         },
     },
-    inserter::{belt_belt_inserter::BeltBeltInserter, StaticID, Storage, MOVETIME},
+    inserter::{belt_belt_inserter::BeltBeltInserter, StaticID, Storage},
     item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
     power::{
-        power_grid::{all_storages, PowerGrid, PowerGridIdentifier},
+        power_grid::PowerGridIdentifier,
         PowerGridStorage, Watt,
     },
     research::{ResearchProgress, TechState},
     statistics::{
-        production::ProductionInfo, recipe::RecipeTickInfo, research::ResearchInfo, GenStatistics,
+        production::ProductionInfo, recipe::RecipeTickInfo, GenStatistics,
     },
     storage_list::{full_to_by_item, grid_size, num_recipes, sizes, storages_by_item},
 };
 use itertools::Itertools;
-use log::{error, info, warn};
+use log::{info, warn};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 
-use super::{render_world::render_world, TextureAtlas};
 
 use crate::frontend::action::place_tile::PositionInfo;
 

@@ -19,7 +19,7 @@ pub trait Belt {
 
 impl Display for dyn Belt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut s = String::new();
+        let s = String::new();
 
         for i in 0..self.get_len() {
             // match self.query_item(i) {

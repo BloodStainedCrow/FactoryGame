@@ -9,19 +9,16 @@ use crate::{
     assembler::{AssemblerOnclickInfo, AssemblerRemovalInfo, FullAssemblerStore},
     data::{DataStore, LazyPowerMachineInfo},
     frontend::world::{tile::AssemblerID, Position},
-    inserter::{Storage, StorageID},
+    inserter::Storage,
     item::{IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
     lab::MultiLabStore,
     network_graph::Network,
     power::Joule,
     research::{ResearchProgress, TechState},
-    statistics::{
-        production::ProductionInfo,
-        recipe::{RecipeTickInfo, RecipeTickInfoParts, SingleRecipeTickInfo},
-    },
+    statistics::recipe::{RecipeTickInfo, RecipeTickInfoParts, SingleRecipeTickInfo},
 };
 
-use super::{grid_graph::GridGraph, Watt};
+use super::Watt;
 
 pub const MAX_POWER_MULT: u8 = 64;
 

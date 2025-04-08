@@ -2,9 +2,9 @@ use place_entity::PlaceEntityInfo;
 use place_tile::PlaceFloorTileByHandInfo;
 use set_recipe::SetRecipeInfo;
 
-use crate::item::{IdxTrait, WeakIdxTrait};
+use crate::item::WeakIdxTrait;
 
-use super::world::{tile::World, Position};
+use super::world::Position;
 
 pub mod action_state_machine;
 pub mod belt_placement;

@@ -907,7 +907,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                         let roboport_pos = self.roboports[idx as usize].pos;
 
                         let charge_time =
-                            (charge_needed.0 as f32 / BOT_CHARGING_RATE.joules_per_tick().0 as f32);
+                            charge_needed.0 as f32 / BOT_CHARGING_RATE.joules_per_tick().0 as f32;
 
                         // Add the logibot, which is now entering to the particle draw buffer
                         render_infos.push(BotRenderInfo::VShape {
@@ -948,7 +948,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                             self.roboports[idx as usize].current_charge - charge_needed;
 
                         let charge_time =
-                            (charge_needed.0 as f32 / BOT_CHARGING_RATE.joules_per_tick().0 as f32);
+                            charge_needed.0 as f32 / BOT_CHARGING_RATE.joules_per_tick().0 as f32;
 
                         let ((time, update), render) = match next_goal {
                             BotGoal::DepositItem {

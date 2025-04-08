@@ -2,11 +2,10 @@ use std::marker::PhantomData;
 
 use crate::{
     data::DataStore,
-    item::{self, usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
+    item::{IdxTrait, Item, Recipe, WeakIdxTrait},
     power::power_grid::PowerGridIdentifier,
 };
 
-use enum_map::Enum;
 use static_assertions::const_assert;
 use strum::EnumIter;
 

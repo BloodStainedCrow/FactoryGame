@@ -1,8 +1,4 @@
-use std::{
-    collections::HashSet,
-    marker::PhantomData,
-    sync::mpsc::{Receiver, Sender},
-};
+use std::{collections::HashSet, marker::PhantomData, sync::mpsc::Receiver};
 
 use log::warn;
 use winit::keyboard::KeyCode;
@@ -17,7 +13,6 @@ use crate::{
         },
         input::Input,
         world::{
-            self,
             tile::{Dir, Entity, FloorTile, PlaceEntityType, World},
             Position,
         },
@@ -83,7 +78,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
            + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType> {
         input.try_iter().map(|input| {
 
-            let mut actions = match input {
+            let actions = match input {
                 Input::LeftClickPressed => {
                     match &self.state {
                         ActionStateMachineState::Idle => {

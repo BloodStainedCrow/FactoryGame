@@ -1,11 +1,10 @@
-use std::{cmp::min, iter::repeat, mem};
+use std::{cmp::min, iter::repeat};
 
-use log::warn;
 
 use crate::{
     inserter::{
         belt_storage_inserter::{BeltStorageInserter, Dir},
-        InserterState, Storage, StorageID, MOVETIME,
+        InserterState, Storage, MOVETIME,
     },
     item::{IdxTrait, WeakIdxTrait},
     storage_list::SingleItemStorages,

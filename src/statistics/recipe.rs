@@ -2,7 +2,7 @@ use std::{iter::Sum, ops::Add};
 
 use crate::{
     data::DataStore,
-    item::{IdxTrait, WeakIdxTrait},
+    item::IdxTrait,
 };
 
 #[derive(Debug, Clone)]

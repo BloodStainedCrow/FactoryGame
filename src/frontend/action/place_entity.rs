@@ -1,6 +1,6 @@
 use crate::{
-    frontend::world::tile::{PlaceEntityType, World},
-    item::{IdxTrait, WeakIdxTrait},
+    frontend::world::tile::PlaceEntityType,
+    item::WeakIdxTrait,
 };
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

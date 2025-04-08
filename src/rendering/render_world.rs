@@ -5,18 +5,14 @@ use crate::{
     data::DataStore,
     frontend::{
         action::action_state_machine::{ActionStateMachine, WIDTH_PER_LEVEL},
-        world::{
-            tile::{
+        world::tile::{
                 AssemblerID, AssemblerInfo, BeltId, BeltTileId, Dir, Entity, BELT_LEN_PER_TILE,
                 CHUNK_SIZE_FLOAT,
             },
-            Position,
-        },
     },
-    item::{usize_from, IdxTrait, Item, WeakIdxTrait},
+    item::{usize_from, IdxTrait, Item},
 };
 use log::{info, warn};
-use petgraph::data;
 use tilelib::types::{DrawInstance, Layer, Renderer};
 
 use super::{app_state::GameState, TextureAtlas};
@@ -45,7 +41,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     let mut warning_layer = Layer::square_tile_grid(tilesize);
 
-    let mut range_layer = Layer::square_tile_grid(tilesize);
+    let range_layer = Layer::square_tile_grid(tilesize);
 
     let player_pos = state_machine.local_player_pos;
 

@@ -1,6 +1,6 @@
 use crate::{
     frontend::world::Position,
-    item::{IdxTrait, Recipe, WeakIdxTrait},
+    item::{Recipe, WeakIdxTrait},
 };
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

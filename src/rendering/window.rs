@@ -1,5 +1,4 @@
 use std::{
-    marker::PhantomData,
     sync::{atomic::AtomicU64, mpsc::Sender, Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -7,11 +6,11 @@ use std::{
 use crate::{
     data::DataStore,
     frontend::{action::action_state_machine::ActionStateMachine, input::Input},
-    item::{IdxTrait, WeakIdxTrait},
+    item::WeakIdxTrait,
     rendering::render_world::render_world,
-    saving::{load, save, SaveGame},
+    saving::save,
 };
-use log::{error, info, warn};
+use log::{info, warn};
 use tilelib::types::{Display, Sprite, Texture};
 use winit::{
     event::{ElementState, MouseButton, WindowEvent},
@@ -162,7 +161,7 @@ impl winit::application::ApplicationHandler for App {
                     (ElementState::Released, MouseButton::Left) => Input::LeftClickReleased,
                     (ElementState::Pressed, MouseButton::Right) => Input::RightClickPressed,
                     (ElementState::Released, MouseButton::Right) => Input::RightClickReleased,
-                    (v) => todo!("{:?}", v),
+                    v => todo!("{:?}", v),
                 };
 
                 self.input_sender.send(input).unwrap();

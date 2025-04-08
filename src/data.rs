@@ -1,14 +1,14 @@
-use std::{array, collections::HashMap, marker::PhantomData};
+use std::{array, collections::HashMap};
 
 use itertools::Itertools;
-use log::{info, warn};
+use log::warn;
 use sha2::{Digest, Sha256};
 use strum::IntoEnumIterator;
 
 use crate::{
     assembler::TIMERTYPE,
     frontend::world::tile::{AssemblerID, Dir},
-    inserter::{StaticID, Storage, StorageID},
+    inserter::{StaticID, Storage},
     item::{IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
     power::{power_grid::PowerGridIdentifier, Joule, Watt},
 };

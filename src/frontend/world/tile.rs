@@ -1,7 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     ops::{Add, ControlFlow},
-    sync::Arc,
 };
 
 use enum_map::{Enum, EnumMap};
@@ -12,7 +11,6 @@ use itertools::Itertools;
 use crate::{
     belt::splitter::SplitterDistributionMode,
     data::DataStore,
-    inserter::Storage,
     item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
     power::power_grid::PowerGridIdentifier,
     rendering::app_state::{calculate_inserter_positions, SimulationState},
@@ -706,6 +704,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 },
             }
 
+            // Unattach inserters
             self.mutate_entities_colliding_with(
                 inserter_search_area.0,
                 inserter_search_area.1,
@@ -1103,8 +1102,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
         }
     }
 }
-
-const TEST: usize = const { size_of::<Entity<u8, u8>>() };
 
 #[derive(
     Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, Hash, PartialOrd, Ord,

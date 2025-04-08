@@ -9,7 +9,7 @@ mod test {
         arch::x86_64::{
             __m256i, _mm256_add_epi8, _mm256_blendv_epi8, _mm256_cmpeq_epi8, _mm256_loadu_si256,
             _mm256_movemask_epi8, _mm256_set1_epi8, _mm256_set_epi8, _mm256_setzero_si256,
-            _mm256_storeu_si256, _mm_prefetch, _MM_HINT_T0,
+            _mm256_storeu_si256,
         },
         thread,
         time::{Duration, Instant},
@@ -41,7 +41,7 @@ mod test {
             let mut output = Vec::new();
             output.resize(256, 0);
 
-            let mut sum = Duration::from_secs(0);
+            let sum = Duration::from_secs(0);
 
             let size = belt.len() * size_of::<bool>()
                 + indices.len() * size_of::<u8>()

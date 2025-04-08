@@ -9,7 +9,7 @@ use directories::ProjectDirs;
 use log::error;
 
 use crate::{
-    item::{IdxTrait, WeakIdxTrait},
+    item::IdxTrait,
     rendering::app_state::GameState,
 };
 

@@ -15,7 +15,7 @@ use crate::{
         tile::{BeltTileId, Dir, DirRelative, Entity, UndergroundDir, World, BELT_LEN_PER_TILE},
         Position,
     },
-    item::{IdxTrait, WeakIdxTrait},
+    item::IdxTrait,
     rendering::app_state::{BeltBeltInserterAdditionInfo, GameState, SimulationState},
 };
 
@@ -290,7 +290,7 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         underground_dir: UndergroundDir::Exit,
                         ..
                     } => *id,
-                    Entity::Splitter { pos, direction, .. } => todo!(),
+                    Entity::Splitter {   .. } => todo!(),
                     _ => unreachable!(),
                 };
 
@@ -330,7 +330,7 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         underground_dir: UndergroundDir::Exit,
                         ..
                     } => (*id, *belt_pos),
-                    Entity::Splitter { pos, direction, .. } => todo!(),
+                    Entity::Splitter {   .. } => todo!(),
                     _ => unreachable!(),
                 };
 
