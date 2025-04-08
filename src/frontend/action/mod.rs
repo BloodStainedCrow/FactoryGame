@@ -26,5 +26,5 @@ pub enum ActionType<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     Remove(Position),
 
-    Ping((u64, u64)),
+    Ping(Position),
 }

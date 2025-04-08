@@ -432,7 +432,7 @@ impl RawDataStore {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn turn<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    pub fn turn<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         self,
     ) -> DataStore<ItemIdxType, RecipeIdxType> {
         let checksum = self.get_checksum();

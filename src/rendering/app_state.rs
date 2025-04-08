@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ops::ControlFlow};
+use std::{borrow::Borrow, marker::PhantomData, ops::ControlFlow};
 
 use crate::{
     belt::{belt::Belt, splitter::Splitter, BeltStore, MultiBeltStore},
@@ -334,11 +334,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     #[allow(clippy::too_many_lines)]
     pub fn apply_actions(
         &mut self,
-        actions: impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>,
+        actions: impl IntoIterator<Item = impl Borrow<ActionType<ItemIdxType, RecipeIdxType>>>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         for action in actions {
-            match action {
+            // FIXME: I just clone for now
+            match action.borrow().clone() {
                 ActionType::PlaceFloorTile(place_floor_tile_by_hand_info) => {
                     let num_items_needed = match place_floor_tile_by_hand_info.ghost_info.position {
                         PositionInfo::Rect { pos, width, height } => width * height,
@@ -590,7 +591,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     self.world.players[usize::from(id)].visible = true;
                     self.world.players[usize::from(id)].pos = pos;
                 },
-                ActionType::Ping((x, y)) => {
+                ActionType::Ping(Position { x, y }) => {
                     // Do nothing for now
                     info!("Ping at {:?}", (x, y));
                     // TODO:
@@ -1180,4 +1181,30 @@ pub fn calculate_inserter_positions(pos: Position, dir: Dir) -> (Position, Posit
     };
 
     (start_pos, end_pos)
+}
+
+// #[cfg(test)]
+mod tests {
+    use std::sync::LazyLock;
+
+    use crate::{
+        blueprint::{random_blueprint_strategy, random_position},
+        data::{get_raw_data_test, DataStore},
+        frontend::world::Position,
+        rendering::app_state::GameState,
+    };
+    use proptest::proptest;
+    static DATA_STORE: LazyLock<DataStore<u8, u8>> =
+        LazyLock::new(|| get_raw_data_test().turn::<u8, u8>());
+
+    proptest! {
+        #[test]
+        fn test_random_blueprint(base_pos in random_position(), blueprint in random_blueprint_strategy::<u8, u8>(0..100, &DATA_STORE)) {
+
+            let mut game_state = GameState::new(&DATA_STORE);
+
+            blueprint.apply(base_pos, &mut game_state, &DATA_STORE);
+
+        }
+    }
 }

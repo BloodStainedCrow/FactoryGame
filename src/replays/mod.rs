@@ -21,7 +21,7 @@ pub struct Replay<
     DataStor: AsRef<DataStore<ItemIdxType, RecipeIdxType>>,
 > {
     starting_state: GameState<ItemIdxType, RecipeIdxType>,
-    actions: Vec<ReplayAction<ItemIdxType, RecipeIdxType>>,
+    pub actions: Vec<ReplayAction<ItemIdxType, RecipeIdxType>>,
 
     data_store: DataStor,
 
@@ -31,9 +31,9 @@ pub struct Replay<
 }
 
 #[derive(Debug, Clone)]
-struct ReplayAction<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+pub struct ReplayAction<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     timestamp: u64,
-    action: ActionType<ItemIdxType, RecipeIdxType>,
+    pub action: ActionType<ItemIdxType, RecipeIdxType>,
 }
 
 impl<

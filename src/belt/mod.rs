@@ -10,8 +10,6 @@ use crate::item::{usize_from, Item};
 use belt::Belt;
 use smart::{EmptyBelt, Side, SmartBelt};
 
-#[cfg(test)]
-use crate::item::Item;
 use crate::{
     frontend::world::tile::{BeltId, BeltTileId},
     item::{IdxTrait, WeakIdxTrait},

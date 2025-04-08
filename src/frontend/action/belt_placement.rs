@@ -263,7 +263,6 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         if dir.reverse() == new_belt_direction {
             continue;
         }
-        dbg!(dir);
         let potentially_incoming_pos = new_belt_pos + dir.reverse();
         let belt_dir = get_belt_out_dir(&game_state.world, potentially_incoming_pos, data_store);
         if let Some(belt_dir) = belt_dir {
@@ -290,7 +289,7 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         underground_dir: UndergroundDir::Exit,
                         ..
                     } => *id,
-                    Entity::Splitter {   .. } => todo!(),
+                    Entity::Splitter { .. } => todo!(),
                     _ => unreachable!(),
                 };
 
@@ -330,7 +329,7 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         underground_dir: UndergroundDir::Exit,
                         ..
                     } => (*id, *belt_pos),
-                    Entity::Splitter {   .. } => todo!(),
+                    Entity::Splitter { .. } => todo!(),
                     _ => unreachable!(),
                 };
 
@@ -951,14 +950,5 @@ fn expected_belt_state(belt_dir: Dir, gets_input_from: impl FnMut(&Dir) -> bool)
         4 => BeltState::DoubleSideloading,
 
         _ => unreachable!(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-
-    proptest! {
-
-        // TODO: Make sure that `should_merge` and `should_sideload` are mutually exclusive!
     }
 }

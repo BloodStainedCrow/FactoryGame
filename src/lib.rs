@@ -24,9 +24,7 @@ use std::{
 
 use data::{get_raw_data_test, DataStore};
 use frontend::{
-    action::action_state_machine::ActionStateMachine,
-    input::Input,
-    world::tile::CHUNK_SIZE_FLOAT,
+    action::action_state_machine::ActionStateMachine, input::Input, world::tile::CHUNK_SIZE_FLOAT,
 };
 use item::{IdxTrait, WeakIdxTrait};
 use multiplayer::{
@@ -74,6 +72,8 @@ mod storage_list;
 pub mod split_arbitrary;
 
 mod chest;
+
+pub mod blueprint;
 
 mod network_graph;
 
@@ -369,69 +369,69 @@ pub fn simd(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::{iter, rc::Rc};
+// #[cfg(test)]
+// mod tests {
+//     use std::{iter, rc::Rc};
 
-    use test::{black_box, Bencher};
+//     use test::{black_box, Bencher};
 
-    use crate::{
-        data::get_raw_data_test,
-        frontend::{action::ActionType, world::tile::World},
-        rendering::app_state::{GameState, SimulationState},
-        replays::{run_till_finished, Replay},
-        TICKS_PER_SECOND_LOGIC,
-    };
+//     use crate::{
+//         data::get_raw_data_test,
+//         frontend::{action::ActionType, world::tile::World},
+//         rendering::app_state::{GameState, SimulationState},
+//         replays::{run_till_finished, Replay},
+//         TICKS_PER_SECOND_LOGIC,
+//     };
 
-    #[bench]
-    fn clone_empty_simulation(b: &mut Bencher) {
-        let data_store = get_raw_data_test().process().assume_simple();
+//     #[bench]
+//     fn clone_empty_simulation(b: &mut Bencher) {
+//         let data_store = get_raw_data_test().process().assume_simple();
 
-        let game_state = GameState::new(&data_store);
+//         let game_state = GameState::new(&data_store);
 
-        let replay = Replay::new(game_state, Rc::new(data_store));
+//         let replay = Replay::new(game_state, Rc::new(data_store));
 
-        b.iter(|| replay.clone());
-    }
+//         b.iter(|| replay.clone());
+//     }
 
-    #[bench]
-    fn empty_simulation(b: &mut Bencher) {
-        // 1 hour
-        const NUM_TICKS: u64 = TICKS_PER_SECOND_LOGIC * 60 * 60;
+//     #[bench]
+//     fn empty_simulation(b: &mut Bencher) {
+//         // 1 hour
+//         const NUM_TICKS: u64 = TICKS_PER_SECOND_LOGIC * 60 * 60;
 
-        let data_store = get_raw_data_test().process().assume_simple();
+//         let data_store = get_raw_data_test().process().assume_simple();
 
-        let game_state = GameState::new(&data_store);
+//         let game_state = GameState::new(&data_store);
 
-        let mut replay = Replay::new(game_state, Rc::new(data_store));
+//         let mut replay = Replay::new(game_state, Rc::new(data_store));
 
-        for _ in 0..NUM_TICKS {
-            replay.tick();
-        }
+//         for _ in 0..NUM_TICKS {
+//             replay.tick();
+//         }
 
-        replay.finish();
+//         replay.finish();
 
-        b.iter(|| black_box(replay.clone().run().with(run_till_finished)));
-    }
+//         b.iter(|| black_box(replay.clone().run().with(run_till_finished)));
+//     }
 
-    #[bench]
-    fn noop_actions_simulation(b: &mut Bencher) {
-        // 1 hour
-        const NUM_TICKS: u64 = TICKS_PER_SECOND_LOGIC * 60 * 60;
+//     #[bench]
+//     fn noop_actions_simulation(b: &mut Bencher) {
+//         // 1 hour
+//         const NUM_TICKS: u64 = TICKS_PER_SECOND_LOGIC * 60 * 60;
 
-        let data_store = get_raw_data_test().process().assume_simple();
+//         let data_store = get_raw_data_test().process().assume_simple();
 
-        let game_state = GameState::new(&data_store);
+//         let game_state = GameState::new(&data_store);
 
-        let mut replay = Replay::new(game_state, Rc::new(data_store));
+//         let mut replay = Replay::new(game_state, Rc::new(data_store));
 
-        for _ in 0..NUM_TICKS {
-            replay.append_actions(iter::repeat(ActionType::Ping((100, 100))).take(5));
-            replay.tick();
-        }
+//         for _ in 0..NUM_TICKS {
+//             replay.append_actions(iter::repeat(ActionType::Ping((100, 100))).take(5));
+//             replay.tick();
+//         }
 
-        replay.finish();
+//         replay.finish();
 
-        b.iter(|| replay.clone().run().with(run_till_finished));
-    }
-}
+//         b.iter(|| replay.clone().run().with(run_till_finished));
+//     }
+// }

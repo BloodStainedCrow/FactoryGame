@@ -158,10 +158,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         self.chunks.get(x, y)
     }
 
-    pub fn set_floor_tile(&mut self, pos: Position, floor_tile: FloorTile) {
-        self.get_chunk_for_tile_mut(pos)
-            .expect("Chunk not generated")
-            .floor_tiles[pos.x % 16][pos.y % 16] = floor_tile;
+    pub fn set_floor_tile(&mut self, pos: Position, floor_tile: FloorTile) -> Result<(), ()> {
+        if let Some(chunk) = self.get_chunk_for_tile_mut(pos) {
+            chunk.floor_tiles[pos.x % 16][pos.y % 16] = floor_tile;
+            Ok(())
+        } else {
+            Err(())
+        }
     }
 
     pub fn add_entity(
@@ -169,12 +172,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         entity: Entity<ItemIdxType, RecipeIdxType>,
         sim_state: &SimulationState<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) {
-        debug_assert!(self.can_fit(entity.get_pos(), entity.get_size(data_store), data_store));
+    ) -> Result<(), ()> {
+        if !self.can_fit(entity.get_pos(), entity.get_size(data_store), data_store) {
+            return Err(());
+        }
 
         let pos = entity.get_pos();
 
         let chunk_pos = self.get_chunk_pos_for_tile(pos);
+
+        if self.get_chunk_for_tile_mut(pos).is_none() {
+            return Err(());
+        }
 
         match entity {
             Entity::Assembler { info, .. } => match info {
@@ -292,6 +301,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             .expect("Chunk outside the world!");
 
         chunk.entities.push(entity);
+
+        Ok(())
     }
 
     pub fn update_power_grid_id(
