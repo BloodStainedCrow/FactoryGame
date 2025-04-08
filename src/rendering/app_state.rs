@@ -692,6 +692,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         );
                     }
                 },
+                ActionType::Remove(pos) => {
+                    self.world
+                        .remove_entity_at(pos, &mut self.simulation_state, data_store);
+                },
             }
         }
     }
@@ -1144,26 +1148,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             return Err(());
         }
 
-        let start_pos = Position {
-            x: pos
-                .x
-                .checked_add_signed(dir.reverse().into_offset().0.into())
-                .unwrap(),
-            y: pos
-                .y
-                .checked_add_signed(dir.reverse().into_offset().1.into())
-                .unwrap(),
-        };
-        let end_pos = Position {
-            x: pos
-                .x
-                .checked_add_signed(dir.into_offset().0.into())
-                .unwrap(),
-            y: pos
-                .y
-                .checked_add_signed(dir.into_offset().1.into())
-                .unwrap(),
-        };
+        let (start_pos, end_pos) = calculate_inserter_positions(pos, dir);
 
         self.world.add_entity(
             Entity::Inserter {
@@ -1177,4 +1162,30 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         Ok(())
     }
+}
+
+// TODO: Different types of inserters
+pub fn calculate_inserter_positions(pos: Position, dir: Dir) -> (Position, Position) {
+    let start_pos = Position {
+        x: pos
+            .x
+            .checked_add_signed(dir.reverse().into_offset().0.into())
+            .unwrap(),
+        y: pos
+            .y
+            .checked_add_signed(dir.reverse().into_offset().1.into())
+            .unwrap(),
+    };
+    let end_pos = Position {
+        x: pos
+            .x
+            .checked_add_signed(dir.into_offset().0.into())
+            .unwrap(),
+        y: pos
+            .y
+            .checked_add_signed(dir.into_offset().1.into())
+            .unwrap(),
+    };
+
+    (start_pos, end_pos)
 }

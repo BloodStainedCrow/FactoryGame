@@ -32,11 +32,11 @@ const MAX_ACCUMULATOR_DISCHARGE_RATE: Watt = Watt(300_000);
 
 const MAX_ACCUMULATOR_CHARGE: Joule = Joule(5_000_000);
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Assembler {
         recipe: Recipe<RecipeIdxType>,
-        index: usize,
+        index: u16,
     },
     Lab {
         index: usize,
@@ -243,6 +243,48 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             new_pole_pos,
             (pole_connections.next().unwrap(), pole_connections),
         );
+    }
+
+    pub fn remove_pole(
+        &mut self,
+        pole_pos: Position,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> (
+        impl IntoIterator<Item = Position>,
+        impl IntoIterator<Item = Self>,
+        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
+    ) {
+        let ((), no_longer_connected_entities, new_electric_networks) =
+            self.grid_graph.remove_node(pole_pos);
+
+        let no_longer_connected_entities: Vec<_> =
+            no_longer_connected_entities.into_iter().collect();
+
+        let new_electric_networks: Vec<_> = new_electric_networks
+            .into_iter()
+            .map(|v| {
+                todo!();
+            })
+            .collect();
+
+        for no_longer_connected_entity in no_longer_connected_entities.iter().copied() {
+            match no_longer_connected_entity {
+                PowerGridEntity::Assembler { recipe, index } => {
+                    self.remove_assembler(
+                        AssemblerID {
+                            recipe,
+                            grid: 0, // Does no matter
+                            assembler_index: index,
+                        },
+                        data_store,
+                    );
+                },
+                PowerGridEntity::Lab { index } => todo!(),
+                PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
+            }
+        }
+
+        (vec![], vec![], vec![])
     }
 
     pub fn add_assembler(

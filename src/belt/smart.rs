@@ -49,9 +49,10 @@ enum FreeIndex {
 }
 
 #[derive(Debug)]
-pub struct BeltInserterInfo {
-    outgoing: bool,
-    state: InserterState,
+pub struct BeltInserterInfo<RecipeIdxType: WeakIdxTrait> {
+    pub outgoing: bool,
+    pub state: InserterState,
+    pub connection: Storage<RecipeIdxType>,
 }
 
 const MIN_INSERTER_SPACING: usize = 8;
@@ -142,7 +143,7 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
     }
 
     #[must_use]
-    pub fn get_inserter_info_at(&self, belt_pos: u16) -> Option<BeltInserterInfo> {
+    pub fn get_inserter_info_at(&self, belt_pos: u16) -> Option<BeltInserterInfo<RecipeIdxType>> {
         let mut pos = 0;
 
         for (offset, inserter) in self
@@ -157,10 +158,12 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
                     Inserter::Out(belt_storage_inserter) => BeltInserterInfo {
                         outgoing: true,
                         state: belt_storage_inserter.state,
+                        connection: belt_storage_inserter.storage_id,
                     },
                     Inserter::In(belt_storage_inserter) => BeltInserterInfo {
                         outgoing: false,
                         state: belt_storage_inserter.state,
+                        connection: belt_storage_inserter.storage_id,
                     },
                 });
             } else if pos >= belt_pos {

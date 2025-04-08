@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     ops::{Add, ControlFlow},
+    sync::Arc,
 };
 
 use enum_map::{Enum, EnumMap};
@@ -11,9 +12,10 @@ use itertools::Itertools;
 use crate::{
     belt::splitter::SplitterDistributionMode,
     data::DataStore,
-    item::{IdxTrait, Item, Recipe, WeakIdxTrait},
+    inserter::Storage,
+    item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
     power::power_grid::PowerGridIdentifier,
-    rendering::app_state::SimulationState,
+    rendering::app_state::{calculate_inserter_positions, SimulationState},
     TICKS_PER_SECOND_LOGIC,
 };
 
@@ -587,6 +589,174 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     }
                 }
             }
+        }
+    }
+
+    // TODO: What does this return?
+    pub fn remove_entity_at(
+        &mut self,
+        pos: Position,
+        sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        let entity = self
+            .get_entities_colliding_with(pos, (1, 1), data_store)
+            .into_iter()
+            .next();
+
+        if let Some(entity) = entity {
+            let e_pos = entity.get_pos();
+            let e_size = entity.get_size(data_store);
+            let max_inserter_range = data_store.max_inserter_search_range;
+
+            let inserter_search_area = (
+                Position {
+                    x: pos.x - max_inserter_range as usize,
+                    y: pos.y - max_inserter_range as usize,
+                },
+                (
+                    2 * max_inserter_range + e_size.0,
+                    2 * max_inserter_range + e_size.1,
+                ),
+            );
+
+            match entity {
+                Entity::Assembler { pos, info } => match info {
+                    AssemblerInfo::UnpoweredNoRecipe
+                    | AssemblerInfo::Unpowered(_)
+                    | AssemblerInfo::PoweredNoRecipe(_) => {
+                        // Nothing to do besides removing the entity
+                    },
+                    AssemblerInfo::Powered(assembler_id) => {
+                        let assembler_removal_info = sim_state.factory.power_grids.power_grids
+                            [assembler_id.grid as usize]
+                            .as_mut()
+                            .unwrap()
+                            .remove_assembler(*assembler_id, data_store);
+                    },
+                },
+                Entity::PowerPole {
+                    ty,
+                    pos,
+                    connected_power_poles,
+                } => {
+                    let power_updates = sim_state.factory.power_grids.remove_pole(*pos, data_store);
+                    todo!("Apply power updates")
+                },
+
+                Entity::Belt {
+                    pos,
+                    direction,
+                    id,
+                    belt_pos,
+                } => todo!(),
+                Entity::Underground {
+                    pos,
+                    underground_dir,
+                    direction,
+                    id,
+                    belt_pos,
+                } => todo!(),
+                Entity::Splitter {
+                    pos,
+                    direction,
+                    item,
+                    id,
+                } => todo!(),
+
+                Entity::Chest {
+                    ty,
+                    pos,
+                    item,
+                    index,
+                } => {
+                    if let Some(item) = item {
+                        let chest_removal_info = sim_state.factory.chests.stores
+                            [usize_from(item.id)]
+                        .remove_chest(*index, data_store);
+                    } else {
+                        todo!("What does not having an item mean?")
+                    }
+                },
+                Entity::Roboport {
+                    ty,
+                    pos,
+                    power_grid,
+                    network,
+                    id,
+                } => todo!(),
+
+                Entity::Inserter {
+                    pos,
+                    direction,
+                    info: InserterInfo::NotAttached { .. },
+                } => {},
+                Entity::Inserter {
+                    pos,
+                    direction,
+                    info: InserterInfo::Attached(attached),
+                } => match attached {
+                    AttachedInserter::BeltStorage { id, belt_pos } => {
+                        todo!("Remove BeltStorageInserter")
+                    },
+                    AttachedInserter::BeltBelt { item, inserter } => {
+                        todo!("Remove BeltBelt Inserter")
+                    },
+                    AttachedInserter::StorageStorage(_) => todo!(),
+                },
+            }
+
+            self.mutate_entities_colliding_with(
+                inserter_search_area.0,
+                inserter_search_area.1,
+                data_store,
+                |e| {
+                    match e {
+                        Entity::Inserter {
+                            pos,
+                            direction,
+                            info: InserterInfo::NotAttached { .. },
+                        } => {
+                            // Nothing to do
+                        },
+                        Entity::Inserter {
+                            pos,
+                            direction,
+                            info,
+                        } => {
+                            let (start_pos, end_pos) =
+                                calculate_inserter_positions(*pos, *direction);
+
+                            if start_pos.contained_in(e_pos, e_size)
+                                || end_pos.contained_in(e_pos, e_size)
+                            {
+                                // This Inserter is connected to the entity we are removing!
+                                match info {
+                                    InserterInfo::NotAttached { start_pos, end_pos } => {
+                                        unreachable!()
+                                    },
+                                    InserterInfo::Attached(attached_inserter) => {
+                                        match attached_inserter {
+                                            AttachedInserter::BeltStorage { id, belt_pos } => {
+                                                todo!("Remove BeltStorageInserter")
+                                            },
+                                            AttachedInserter::BeltBelt { item, inserter } => {
+                                                todo!("Remove BeltBelt Inserter")
+                                            },
+                                            AttachedInserter::StorageStorage(_) => todo!(),
+                                        }
+                                    },
+                                }
+                            }
+                        },
+
+                        _ => {},
+                    }
+                    ControlFlow::Continue(())
+                },
+            );
+        } else {
+            // Nothing to do
         }
     }
 

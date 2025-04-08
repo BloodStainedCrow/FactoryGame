@@ -253,6 +253,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         pole_position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Option<impl IntoIterator<Item = Position>> {
+        let (changed_power_pole, new_grids, index_updates) = self.power_grids
+            [self.pole_pos_to_grid_id[&pole_position] as usize]
+            .as_mut()
+            .unwrap()
+            .remove_pole(pole_position, data_store);
         Some(vec![todo!()])
     }
 

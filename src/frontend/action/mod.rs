@@ -4,7 +4,7 @@ use set_recipe::SetRecipeInfo;
 
 use crate::item::{IdxTrait, WeakIdxTrait};
 
-use super::world::tile::World;
+use super::world::{tile::World, Position};
 
 pub mod action_state_machine;
 pub mod belt_placement;
@@ -24,20 +24,7 @@ pub enum ActionType<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     Position(PLAYERID, (f32, f32)),
 
-    Ping((u64, u64)),
-}
+    Remove(Position),
 
-// This is not meant as an anti-cheat or anything, just a sanity check to prevent accidentally breaking something because of network lag!
-#[must_use]
-pub fn still_valid<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    world: &World<ItemIdxType, RecipeIdxType>,
-    action: &ActionType<ItemIdxType, RecipeIdxType>,
-) -> bool {
-    match action {
-        ActionType::PlaceFloorTile(info) => todo!(),
-        ActionType::PlaceEntity(info) => todo!(),
-        ActionType::Position(_, _) => todo!(),
-        ActionType::SetRecipe(_) => todo!(),
-        ActionType::Ping(_) => true,
-    }
+    Ping((u64, u64)),
 }
