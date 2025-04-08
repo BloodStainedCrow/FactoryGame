@@ -19,7 +19,6 @@ use crate::{
     TICKS_PER_SECOND_LOGIC,
 };
 
-mod grid_graph;
 pub mod power_grid;
 
 #[derive(
