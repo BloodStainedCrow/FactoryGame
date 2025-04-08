@@ -799,12 +799,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         .filter(|e| matches!(e, Entity::PowerPole { .. }))
     }
 
+    // TODO: Does this need to return something
     pub fn update_pole_power(
         &mut self,
         pole_position: Position,
         grid: PowerGridIdentifier,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<Item = &Entity<ItemIdxType, RecipeIdxType>> {
+    ) {
         let Entity::PowerPole {
             ty,
             pos: pole_position,
@@ -849,8 +850,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 ControlFlow::Continue(())
             },
         );
-
-        vec![todo!()]
     }
 }
 

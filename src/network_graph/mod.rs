@@ -44,6 +44,14 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
         }
     }
 
+    pub fn keys(&self) -> impl IntoIterator<Item = &NodeKey> {
+        self.key_map.iter().map(|v| v.0)
+    }
+
+    pub fn nodes(&self) -> impl IntoIterator<Item = &S> {
+        self.graph.node_weights().map(|n| &n.node_info)
+    }
+
     pub fn add_node(
         &mut self,
         value: S,

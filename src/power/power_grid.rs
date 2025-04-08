@@ -30,7 +30,7 @@ const MAX_ACCUMULATOR_DISCHARGE_RATE: Watt = Watt(300_000);
 const MAX_ACCUMULATOR_CHARGE: Joule = Joule(5_000_000);
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
-enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+pub(super) enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Assembler {
         recipe: Recipe<RecipeIdxType>,
         index: u16,
@@ -48,7 +48,7 @@ enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 pub struct PowerGrid<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub stores: FullAssemblerStore<RecipeIdxType>,
     pub lab_stores: MultiLabStore,
-    grid_graph: Network<Position, (), PowerGridEntity<ItemIdxType, RecipeIdxType>>,
+    pub(super) grid_graph: Network<Position, (), PowerGridEntity<ItemIdxType, RecipeIdxType>>,
     steam_power_producers: SteamPowerProducerStore,
     num_solar_panels: u64,
     main_accumulator_count: u64,
@@ -77,6 +77,7 @@ impl From<BurnableFuelForAccumulators> for bool {
     }
 }
 
+#[derive(Debug)]
 pub struct IndexUpdateInfo<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub old: (Item<ItemIdxType>, Storage<RecipeIdxType>),
     pub new: (Item<ItemIdxType>, Storage<RecipeIdxType>),

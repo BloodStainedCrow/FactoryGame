@@ -1,7 +1,4 @@
-use std::{
-    marker::PhantomData,
-    ops::ControlFlow,
-};
+use std::{marker::PhantomData, ops::ControlFlow};
 
 use crate::{
     belt::{belt::Belt, splitter::Splitter, BeltStore, MultiBeltStore},
@@ -23,20 +20,14 @@ use crate::{
     },
     inserter::{belt_belt_inserter::BeltBeltInserter, StaticID, Storage},
     item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
-    power::{
-        power_grid::PowerGridIdentifier,
-        PowerGridStorage, Watt,
-    },
+    power::{power_grid::PowerGridIdentifier, PowerGridStorage, Watt},
     research::{ResearchProgress, TechState},
-    statistics::{
-        production::ProductionInfo, recipe::RecipeTickInfo, GenStatistics,
-    },
+    statistics::{production::ProductionInfo, recipe::RecipeTickInfo, GenStatistics},
     storage_list::{full_to_by_item, grid_size, num_recipes, sizes, storages_by_item},
 };
 use itertools::Itertools;
 use log::{info, warn};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
-
 
 use crate::frontend::action::place_tile::PositionInfo;
 
@@ -471,18 +462,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             {
                                 // Handle Entities that are now part of another power_grid
                                 for pole_position in pole_updates {
-                                    self.world.update_pole_power(
-                                        pole_position,
-                                        self.simulation_state
-                                            .factory
-                                            .power_grids
-                                            .pole_pos_to_grid_id[&pole_position],
-                                        data_store,
-                                    );
+                                    let grid = self
+                                        .simulation_state
+                                        .factory
+                                        .power_grids
+                                        .pole_pos_to_grid_id[&pole_position];
+
+                                    assert!(self.simulation_state.factory.power_grids.power_grids
+                                        [grid as usize]
+                                        .is_some());
+
+                                    self.world
+                                        .update_pole_power(pole_position, grid, data_store);
                                 }
 
                                 // Handle storage updates
-                                todo!()
+                                for storage_update in storage_updates {
+                                    todo!("Handle {:?}", storage_update);
+                                }
                             } else {
                                 // No updates needed
                             }

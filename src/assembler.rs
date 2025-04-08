@@ -315,15 +315,62 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .map(|(_, v)| v),
         );
 
-        let ret = todo!();
-        //Self {
-        //    recipe: self.recipe,
-        //    ings: new_ings,
-        //    outputs: new_outputs,
-        //    timers: new_timers.into(),
-        //    holes: self.holes,
-        //    len: 0,
-        //};
+        let mut new_speed = self.speed.into_vec();
+        new_speed.extend(
+            other
+                .speed
+                .into_vec()
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        let mut new_prod = self.bonus_productivity.into_vec();
+        new_prod.extend(
+            other
+                .bonus_productivity
+                .into_vec()
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        let mut new_base_power_consumption = self.base_power_consumption.into_vec();
+        new_base_power_consumption.extend(
+            other
+                .base_power_consumption
+                .into_vec()
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        let mut new_power_consumption_modifier = self.power_consumption_modifier.into_vec();
+        new_power_consumption_modifier.extend(
+            other
+                .power_consumption_modifier
+                .into_vec()
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        let ret = Self {
+            recipe: self.recipe,
+            ings: new_ings,
+            outputs: new_outputs,
+            timers: new_timers.into(),
+            holes: self.holes,
+            len: 0,
+            speed: new_speed.into_boxed_slice(),
+            bonus_productivity: new_prod.into_boxed_slice(),
+            power_consumption_modifier: new_power_consumption_modifier.into_boxed_slice(),
+            base_power_consumption: new_base_power_consumption.into_boxed_slice(),
+        };
 
         (ret, update_vec)
     }

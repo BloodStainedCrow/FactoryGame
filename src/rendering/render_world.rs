@@ -6,9 +6,9 @@ use crate::{
     frontend::{
         action::action_state_machine::{ActionStateMachine, WIDTH_PER_LEVEL},
         world::tile::{
-                AssemblerID, AssemblerInfo, BeltId, BeltTileId, Dir, Entity, BELT_LEN_PER_TILE,
-                CHUNK_SIZE_FLOAT,
-            },
+            AssemblerID, AssemblerInfo, BeltId, BeltTileId, Dir, Entity, BELT_LEN_PER_TILE,
+            CHUNK_SIZE_FLOAT,
+        },
     },
     item::{usize_from, IdxTrait, Item},
 };
@@ -522,7 +522,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 .simulation_state
                                 .factory
                                 .power_grids
-                                .pole_pos_to_grid_id[pos] as usize];
+                                .pole_pos_to_grid_id[pos] as usize]
+                            .as_ref()
+                            .unwrap();
 
                         dbg!(pg);
                     },

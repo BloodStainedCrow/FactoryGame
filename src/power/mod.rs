@@ -204,8 +204,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                 let poles_to_update: Vec<_> = connected_poles
                     .iter()
                     .copied()
-                    .filter(|pos| self.pole_pos_to_grid_id[pos] != grid)
+                    .filter_map(|pos| {
+                        (self.pole_pos_to_grid_id[&pos] != grid)
+                            .then_some(self.pole_pos_to_grid_id[&pos])
+                    })
+                    .unique()
+                    .flat_map(|merged_grid| {
+                        assert_ne!(merged_grid, grid);
+                        self.pole_pos_to_grid_id
+                            .iter()
+                            .filter_map(move |(k, v)| (*v == merged_grid).then_some(*k))
+                    })
                     .collect();
+
+                dbg!(&poles_to_update);
 
                 let mut storage_update_vec = vec![];
 
@@ -278,7 +290,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             return None;
         }
 
-        let second = self.power_grids[usize::from(removed_id)].take().unwrap();
+        let Some(second) = self.power_grids[usize::from(removed_id)].take() else {
+            warn!("Tried to merge grid with a grid that no longer exists");
+            return None;
+        };
+
+        for pole_pos in second.grid_graph.keys() {
+            *self.pole_pos_to_grid_id.get_mut(pole_pos).unwrap() = kept_id;
+        }
 
         // let pole_updates: Vec<PowerPoleUpdateInfo> = second
         //     .grid_graph
