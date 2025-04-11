@@ -30,6 +30,8 @@ charts-rs = { version = "0.3.20", features = ["resvg"] }
 strum = { version = "0.27.1", features = ["derive"] }
 bitvec = "1.0.1"
 bimap = { version = "0.6.3", features = ["serde"] }
+eframe = { version = "0.31.1", features = ["wgpu"] }
+egui_extras = "0.31.1"
 
 [dev-dependencies]
 rand = "0.8.5"

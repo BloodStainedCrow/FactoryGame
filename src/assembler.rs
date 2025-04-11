@@ -59,9 +59,9 @@ pub struct FullAssemblerStore<RecipeIdxType: WeakIdxTrait> {
 
 #[derive(Debug, Clone)]
 pub struct AssemblerOnclickInfo<ItemIdxType: WeakIdxTrait> {
-    inputs: Vec<(Item<ItemIdxType>, ITEMCOUNTTYPE)>,
-    outputs: Vec<(Item<ItemIdxType>, ITEMCOUNTTYPE)>,
-    timer_percentage: f32,
+    pub inputs: Vec<(Item<ItemIdxType>, ITEMCOUNTTYPE)>,
+    pub outputs: Vec<(Item<ItemIdxType>, ITEMCOUNTTYPE)>,
+    pub timer_percentage: f32,
 }
 
 impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {

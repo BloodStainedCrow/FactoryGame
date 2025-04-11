@@ -19,7 +19,7 @@ use crate::{
             Position,
         },
     },
-    item::{IdxTrait, Recipe, WeakIdxTrait},
+    item::{IdxTrait, Item, Recipe, WeakIdxTrait},
     rendering::app_state::GameState,
     replays::Replay,
 };
@@ -73,7 +73,7 @@ pub fn random_action<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         })),
         (random_position(), random_recipe(data_store))
             .prop_map(|(pos, recipe)| ActionType::SetRecipe(SetRecipeInfo { pos, recipe })),
-        random_entity_to_place().prop_map(|ty| {
+        random_entity_to_place(data_store).prop_map(|ty| {
             ActionType::PlaceEntity(PlaceEntityInfo {
                 entities: EntityPlaceOptions::Single(ty),
             })
@@ -82,15 +82,34 @@ pub fn random_action<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     ]
 }
 
-pub fn random_entity_to_place<ItemIdxType: IdxTrait>(
+pub fn random_entity_to_place<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> impl Strategy<Value = PlaceEntityType<ItemIdxType>> {
     prop_oneof![
-        random_position().prop_map(|pos| PlaceEntityType::Chest { pos }),
         random_position().prop_map(|pos| PlaceEntityType::Assembler(pos)),
+        random_position().prop_map(|pos| PlaceEntityType::Chest { pos }),
         (random_position(), random_dir()).prop_map(|(pos, dir)| PlaceEntityType::Belt {
             pos,
             direction: dir
         }),
+        (random_position(), 0..data_store.power_pole_data.len()).prop_map(|(pos, ty)| {
+            PlaceEntityType::PowerPole {
+                pos,
+                ty: ty.try_into().unwrap(),
+            }
+        }),
+        (random_position(), random_dir(), random_item(data_store))
+            .prop_map(|(pos, dir, filter)| { PlaceEntityType::Inserter { pos, dir, filter } }),
+        (random_position(), random_dir()).prop_map(|(pos, dir)| {
+            PlaceEntityType::Splitter {
+                pos,
+                direction: dir,
+
+                // TODO: Test inout modes
+                in_mode: None,
+                out_mode: None,
+            }
+        })
     ]
 }
 
@@ -109,6 +128,14 @@ pub fn random_recipe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     (0..data_store.recipe_timers.len())
         .prop_map(|recipe_idx| RecipeIdxType::try_from(recipe_idx).unwrap())
         .prop_map(|id| Recipe { id })
+}
+
+pub fn random_item<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+) -> impl Strategy<Value = Item<ItemIdxType>> {
+    (0..data_store.item_names.len())
+        .prop_map(|item_idx| ItemIdxType::try_from(item_idx).unwrap())
+        .prop_map(|id| Item { id })
 }
 
 pub fn random_position() -> impl Strategy<Value = Position> {

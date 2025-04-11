@@ -1,7 +1,6 @@
 use std::{collections::HashSet, marker::PhantomData, sync::mpsc::Receiver};
 
 use log::warn;
-use winit::keyboard::KeyCode;
 
 use crate::{
     data::DataStore,
@@ -11,7 +10,7 @@ use crate::{
             place_tile::{PlaceFloorTileByHandInfo, PlaceFloorTileGhostInfo},
             set_recipe::SetRecipeInfo,
         },
-        input::Input,
+        input::{Input, Key},
         world::{
             tile::{Dir, Entity, FloorTile, PlaceEntityType, World},
             Position,
@@ -25,12 +24,13 @@ use super::{place_tile::PositionInfo, ActionType, PLAYERID};
 const MIN_ZOOM_WIDTH: f32 = 1.0;
 pub const WIDTH_PER_LEVEL: usize = 16;
 
+#[derive(Debug)]
 pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub local_player_pos: (f32, f32),
     pub my_player_id: PLAYERID,
 
     current_mouse_pos: (f32, f32),
-    current_held_keys: HashSet<winit::keyboard::KeyCode>,
+    current_held_keys: HashSet<Key>,
     pub state: ActionStateMachineState<ItemIdxType>,
 
     pub zoom_level: f32,
@@ -38,12 +38,14 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     recipe: PhantomData<RecipeIdxType>,
 }
 
+#[derive(Debug)]
 pub enum ActionStateMachineState<ItemIdxType: WeakIdxTrait> {
     Idle,
     Holding(HeldObject<ItemIdxType>),
     Viewing(Position),
 }
 
+#[derive(Debug)]
 pub enum HeldObject<ItemIdxType: WeakIdxTrait> {
     Tile(FloorTile),
     // TODO: PlaceEntityType is not quite right for this case
@@ -261,23 +263,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
     fn handle_start_pressing_key(
         &mut self,
-        key: winit::keyboard::KeyCode,
+        key: Key,
         world: &World<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
         match (&self.state, key) {
-            (
-                ActionStateMachineState::Idle | ActionStateMachineState::Holding(_),
-                KeyCode::Digit1,
-            ) => {
+            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key1) => {
                 self.state =
                     ActionStateMachineState::Holding(HeldObject::Tile(FloorTile::Concrete));
                 vec![]
             },
-            (
-                ActionStateMachineState::Idle | ActionStateMachineState::Holding(_),
-                KeyCode::Digit2,
-            ) => {
+            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key2) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::Assembler(Self::player_mouse_to_tile(
                         self.zoom_level,
@@ -287,10 +283,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ));
                 vec![]
             },
-            (
-                ActionStateMachineState::Idle | ActionStateMachineState::Holding(_),
-                KeyCode::Digit3,
-            ) => {
+            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key3) => {
                 self.state =
                     ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Belt {
                         pos: Self::player_mouse_to_tile(
@@ -307,7 +300,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     pos,
                     direction,
                 })),
-                KeyCode::KeyR,
+                Key::R,
             ) => {
                 self.state =
                     ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Belt {
@@ -323,7 +316,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     in_mode,
                     out_mode,
                 })),
-                KeyCode::KeyR,
+                Key::R,
             ) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::Splitter {
@@ -335,10 +328,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ));
                 vec![]
             },
-            (
-                ActionStateMachineState::Idle | ActionStateMachineState::Holding(_),
-                KeyCode::Digit4,
-            ) => {
+            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key4) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::Inserter {
                         pos: Self::player_mouse_to_tile(
@@ -353,10 +343,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ));
                 vec![]
             },
-            (
-                ActionStateMachineState::Idle | ActionStateMachineState::Holding(_),
-                KeyCode::Digit5,
-            ) => {
+            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key5) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::PowerPole {
                         pos: Self::player_mouse_to_tile(
@@ -369,10 +356,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ));
                 vec![]
             },
-            (
-                ActionStateMachineState::Idle | ActionStateMachineState::Holding(_),
-                KeyCode::Digit6,
-            ) => {
+            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key6) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::Splitter {
                         pos: Self::player_mouse_to_tile(
@@ -387,10 +371,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ));
                 vec![]
             },
-            (
-                ActionStateMachineState::Idle | ActionStateMachineState::Holding(_),
-                KeyCode::Digit7,
-            ) => {
+            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key7) => {
                 self.state =
                     ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Chest {
                         pos: Self::player_mouse_to_tile(
@@ -407,7 +388,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     dir,
                     filter,
                 })),
-                KeyCode::KeyR,
+                Key::R,
             ) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::Inserter {
@@ -419,7 +400,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 vec![]
             },
 
-            (ActionStateMachineState::Viewing(pos), KeyCode::Digit1) => {
+            (ActionStateMachineState::Viewing(pos), Key::Key1) => {
                 let chunk = world
                     .get_chunk_for_tile(*pos)
                     .expect("Viewing position out of bounds");
@@ -442,7 +423,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
     fn handle_stop_pressing_key(
         &mut self,
-        key: winit::keyboard::KeyCode,
+        key: Key,
     ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
         match (&self.state, key) {
             (_, _) => vec![],
@@ -474,16 +455,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
         let mut move_dir = (0, 0);
 
-        if self.current_held_keys.contains(&KeyCode::KeyW) {
+        if self.current_held_keys.contains(&Key::W) {
             move_dir.1 -= 1;
         }
-        if self.current_held_keys.contains(&KeyCode::KeyA) {
+        if self.current_held_keys.contains(&Key::A) {
             move_dir.0 -= 1;
         }
-        if self.current_held_keys.contains(&KeyCode::KeyS) {
+        if self.current_held_keys.contains(&Key::S) {
             move_dir.1 += 1;
         }
-        if self.current_held_keys.contains(&KeyCode::KeyD) {
+        if self.current_held_keys.contains(&Key::D) {
             move_dir.0 += 1;
         }
 

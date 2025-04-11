@@ -90,6 +90,25 @@ impl<RecipeIdxType: IdxTrait> Storage<RecipeIdxType> {
             storage => storage,
         }
     }
+
+    pub fn change_grid(self, new_id: PowerGridIdentifier) -> Self {
+        match self {
+            Storage::Assembler {
+                grid: _,
+                recipe_idx_with_this_item,
+                index,
+            } => Storage::Assembler {
+                grid: new_id,
+                recipe_idx_with_this_item,
+                index,
+            },
+            Storage::Lab { grid: _, index } => Storage::Lab {
+                grid: new_id,
+                index,
+            },
+            Storage::Static { static_id, index } => Storage::Static { static_id, index },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, EnumIter)]

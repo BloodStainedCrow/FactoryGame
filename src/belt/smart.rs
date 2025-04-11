@@ -1,6 +1,5 @@
 use std::{cmp::min, iter::repeat};
 
-
 use crate::{
     inserter::{
         belt_storage_inserter::{BeltStorageInserter, Dir},
@@ -116,7 +115,7 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
         self.update_first_free_pos_maybe(min(indices[0], indices[1]));
 
         self.locs
-            .get_many_mut(indices.map(|i| (i + self.zero_index) % self.locs.len()))
+            .get_disjoint_mut(indices.map(|i| (i + self.zero_index) % self.locs.len()))
             .expect("Index out of bounds or same")
     }
 

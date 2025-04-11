@@ -1,6 +1,7 @@
 use std::{fmt::Debug, iter::once, usize};
 
 use bimap::BiMap;
+use log::{error, info};
 use petgraph::{
     prelude::StableUnGraph,
     visit::{EdgeRef, IntoNodeReferences},
@@ -87,7 +88,9 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
     ) -> (
         S,
         impl IntoIterator<Item = W> + use<'a, NodeKey, S, W>,
-        impl IntoIterator<Item = (Self, impl IntoIterator<Item = NodeKey>)> + use<'a, NodeKey, S, W>,
+        Option<
+            impl IntoIterator<Item = (Self, impl IntoIterator<Item = NodeKey>)> + use<'a, NodeKey, S, W>,
+        >,
     ) {
         let NetworkNode {
             node_info,
@@ -102,7 +105,12 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
         let mut components = petgraph::algo::tarjan_scc(&self.graph);
 
         if components.pop() == None {
-            todo!("The last node in a network was removed")
+            info!("The last node in a network was removed, the network can be deleted");
+            return (
+                node_info,
+                connected_weak_components.into_iter().flatten(),
+                None,
+            );
         }
 
         // All remaining components (if any, will be turned into other networks)
@@ -152,7 +160,7 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
         (
             node_info,
             connected_weak_components.into_iter().flatten(),
-            new_networks,
+            Some(new_networks),
         )
     }
 
