@@ -1,4 +1,5 @@
-use std::iter::successors;
+use core::num;
+use std::{cmp::min, iter::successors};
 
 use crate::{
     belt::{belt::Belt, smart::SmartBelt, splitter::SPLITTER_BELT_LEN},
@@ -19,7 +20,7 @@ use eframe::{
     },
     epaint::text::Row,
 };
-use egui_extras::Column;
+use egui_extras::{Column, TableBuilder};
 use log::{info, warn};
 use tilelib::types::{DrawInstance, Layer, RendererTrait};
 
@@ -527,8 +528,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     ctx: &Context,
     ui: &Ui,
-    state_machine: &ActionStateMachine<ItemIdxType, RecipeIdxType>,
-    game_state: &GameState<ItemIdxType, RecipeIdxType>,
+    state_machine: &mut ActionStateMachine<ItemIdxType, RecipeIdxType>,
+    game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
     match &state_machine.state {
@@ -572,6 +573,17 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                             let pb = ProgressBar::new(assembler.timer_percentage).show_percentage().corner_radius(CornerRadius::ZERO);
                             ui.add(pb);
+
+                            TableBuilder::new(ui).columns(Column::auto().resizable(false), assembler.inputs.len() + assembler.outputs.len()).body(|mut body| {
+                                body.row(5.0, |mut row| {
+                                    for (item, count) in assembler.inputs.iter().chain(assembler.outputs.iter()) {
+                                        row.col(|ui| {
+                                            ui.label(&data_store.item_names[usize_from(item.id)]);
+                                            ui.label(format!("{}", *count));
+                                        });
+                                    }
+                                });
+                            });
                         },
                     },
                     crate::frontend::world::tile::Entity::PowerPole {
@@ -681,19 +693,37 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         item,
                         index,
                     } => {
-                        let num_slots = data_store.chest_num_slots[*ty as usize];
+                        let Some(item) = item else {
+                            todo!()
+                        };
 
-                        match item {
-                            Some(item) => {
-                                let chest = game_state.simulation_state.factory.chests.stores
-                                    [usize_from(item.id)]
-                                .get_chest(*index);
-                                dbg!(chest);
-                            },
-                            None => {
-                                dbg!("Looking at empty chest");
-                            },
-                        }
+                        let stack_size: u16 = data_store.item_stack_sizes[usize_from(item.id)] as u16;
+
+                        let num_slots = data_store.chest_num_slots[*ty as usize];
+                        let (current_items, _max_items) = game_state.simulation_state.factory.chests.stores[usize_from(item.id)].get_chest(*index);
+
+                        TableBuilder::new(ui).columns(Column::auto().resizable(false), 10).body(|mut body| {
+                            body.rows(5.0, (num_slots / 10) as usize + (num_slots % 10 > 0) as usize, |mut row| {
+                                let idx = row.index();
+                                for col_idx in 0..10 {
+                                    let slot_id = idx * 10 + col_idx; 
+                                    if slot_id >= num_slots as usize {
+                                        break;
+                                    }
+                                    row.col(|ui| {
+                                        let this_slots_stack_count = min(current_items.saturating_sub(slot_id as u16 * stack_size), stack_size);
+
+                                        let clicked = ui.label(format!("{}", this_slots_stack_count)).clicked();
+                                        let mut shift = false;
+                                        ctx.input(|input| {shift = input.modifiers.shift; });
+
+                                        if shift && clicked {
+                                            todo!("Move the items into the players inventory if there is space");
+                                        }
+                                    });
+                                }
+                            });
+                        });
                     }
                     _ => todo!(),
                 }

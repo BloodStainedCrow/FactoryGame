@@ -588,6 +588,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
         todo!()
     }
 
+    // This is effectively a lookup into a voronoi texture!
     fn get_closest_roboport(&self, pos: (f32, f32)) -> u32 {
         todo!()
     }

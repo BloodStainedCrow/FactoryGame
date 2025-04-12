@@ -163,12 +163,26 @@ pub fn get_raw_data_test() -> RawDataStore {
             },
         ],
 
-        chests: vec![RawChest {
-            name: "factory_game::wooden_chest".to_string(),
-            display_name: "Wooden Chest".to_string(),
-            tile_size: (1, 1),
-            number_of_slots: 16,
-        }],
+        chests: vec![
+            RawChest {
+                name: "factory_game::wooden_chest".to_string(),
+                display_name: "Wooden Chest".to_string(),
+                tile_size: (1, 1),
+                number_of_slots: 16,
+            },
+            RawChest {
+                name: "factory_game::iron_chest".to_string(),
+                display_name: "Iron Chest".to_string(),
+                tile_size: (1, 1),
+                number_of_slots: 32,
+            },
+            RawChest {
+                name: "factory_game::steel_chest".to_string(),
+                display_name: "Steel Chest".to_string(),
+                tile_size: (1, 1),
+                number_of_slots: 48,
+            },
+        ],
     }
 }
 

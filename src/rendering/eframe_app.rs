@@ -1,8 +1,13 @@
-use std::sync::{mpsc::Sender, Arc, Mutex};
+use std::{
+    mem,
+    sync::{mpsc::Sender, Arc, LazyLock, Mutex},
+    time::Instant,
+};
 
 use eframe::{
     egui::{CentralPanel, Event, PaintCallbackInfo, Shape, Window},
     egui_wgpu::{self, CallbackTrait},
+    wgpu::hal::auxil::db,
 };
 use log::warn;
 use tilelib::types::RawRenderer;
@@ -95,14 +100,29 @@ impl eframe::App for App {
                             size, cb,
                         )));
 
-                        let game_state = loaded_game_sized.state.lock().unwrap();
-                        let state_machine = loaded_game_sized.state_machine.lock().unwrap();
+                        let mut game_state = loaded_game_sized.state.lock().unwrap();
+                        let mut state_machine = loaded_game_sized.state_machine.lock().unwrap();
+
+                        let tick = game.tick.load(std::sync::atomic::Ordering::Relaxed);
+
+                        static LAST_DRAW: LazyLock<Mutex<Instant>> =
+                            LazyLock::new(|| Mutex::new(Instant::now()));
+
+                        let mut now = Instant::now();
+
+                        mem::swap(&mut now, &mut *LAST_DRAW.lock().unwrap());
+
+                        let time_since_last_update = now.elapsed();
+
+                        dbg!(tick - self.last_rendered_update);
+
+                        self.last_rendered_update = tick;
 
                         render_ui(
                             ctx,
                             &ui,
-                            &state_machine,
-                            &game_state,
+                            &mut state_machine,
+                            &mut game_state,
                             &loaded_game_sized.data_store,
                         );
                     },
