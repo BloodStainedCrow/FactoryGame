@@ -8,10 +8,7 @@ use log::{error, info};
 
 use crate::{
     data::DataStore,
-    frontend::{
-        action::ActionType,
-        world::tile::World,
-    },
+    frontend::{action::ActionType, world::tile::World},
     item::{IdxTrait, WeakIdxTrait},
     rendering::app_state::GameState,
 };
