@@ -94,11 +94,15 @@ impl eframe::App for App {
                         painter.add(Shape::Callback(egui_wgpu::Callback::new_paint_callback(
                             size, cb,
                         )));
+
+                        let game_state = loaded_game_sized.state.lock().unwrap();
+                        let state_machine = loaded_game_sized.state_machine.lock().unwrap();
+
                         render_ui(
                             ctx,
                             &ui,
-                            &loaded_game_sized.state_machine.lock().unwrap(),
-                            &loaded_game_sized.state.lock().unwrap(),
+                            &state_machine,
+                            &game_state,
                             &loaded_game_sized.data_store,
                         );
                     },

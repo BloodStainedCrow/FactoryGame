@@ -1,6 +1,7 @@
 use std::{
     io::Read,
     marker::PhantomData,
+    mem,
     net::TcpStream,
     sync::{mpsc::Receiver, Arc, Mutex},
     time::{Duration, Instant},
@@ -73,6 +74,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
             .collect();
         dbg!(pre_lock.elapsed());
         local_actions.extend(state_machine.once_per_update_actions(world));
+
+        mem::drop(state_machine);
 
         postcard::to_io(&local_actions, &self.server_connection).expect("tcp send failed");
         let mut buffer = vec![0; 1000];
@@ -197,6 +200,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
             error!("Handle inputs {:?}", start.elapsed());
         }
         v.extend(state_machine.once_per_update_actions(&world));
+
+        mem::drop(state_machine);
 
         if start.elapsed() > Duration::from_millis(1) {
             error!("once_per_update_actions {:?}", start.elapsed());
