@@ -3,8 +3,6 @@
 #![feature(adt_const_params)]
 #![feature(array_try_map)]
 #![feature(never_type)]
-#![feature(precise_capturing_in_traits)]
-#![feature(get_many_mut)]
 
 extern crate test;
 
@@ -23,6 +21,7 @@ use std::{
 };
 
 use data::{get_raw_data_test, DataStore};
+use eframe::NativeOptions;
 use frontend::{
     action::action_state_machine::ActionStateMachine, input::Input, world::tile::CHUNK_SIZE_FLOAT,
 };
@@ -32,6 +31,7 @@ use multiplayer::{
 };
 use rendering::{
     app_state::{AppState, GameState},
+    eframe_app,
     window::{App, LoadedGame, LoadedGameInfo, LoadedGameSized},
 };
 use saving::load;
@@ -55,7 +55,7 @@ pub mod mod_manager;
 
 pub mod frontend;
 
-mod rendering;
+pub mod rendering;
 
 pub mod bot_system;
 
@@ -103,18 +103,35 @@ pub fn main() {
     } else {
         run_integrated_server(StartGameInfo {})
     };
-    let mut app = App::new(sender);
+    // let mut app = App::new(sender);
 
-    app.currently_loaded_game = Some(LoadedGameInfo {
-        state: loaded,
-        tick: tick,
-    });
-    app.state = AppState::Ingame;
-    let event_loop = EventLoop::new().unwrap();
+    // app.currently_loaded_game = Some(LoadedGameInfo {
+    //     state: loaded,
+    //     tick: tick,
+    // });
+    // app.state = AppState::Ingame;
+    // let event_loop = EventLoop::new().unwrap();
 
-    event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+    // event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
 
-    let _ = event_loop.run_app(&mut app);
+    // let _ = event_loop.run_app(&mut app);
+
+    eframe::run_native(
+        "FactoryGame",
+        NativeOptions::default(),
+        Box::new(|cc| {
+            let mut app = eframe_app::App::new(cc, sender);
+
+            app.state = AppState::Ingame;
+            app.currently_loaded_game = Some(LoadedGameInfo {
+                state: loaded,
+                tick,
+            });
+
+            Ok(Box::new(app))
+        }),
+    )
+    .unwrap();
 }
 
 struct StartGameInfo {}

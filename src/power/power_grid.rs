@@ -1,6 +1,7 @@
 use std::{
     cmp::{max, min},
     iter::{self},
+    mem,
 };
 
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
@@ -142,6 +143,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         }
     }
 
+    fn new_from_graph(
+        graph: Network<Position, (), PowerGridEntity<ItemIdxType, RecipeIdxType>>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
+        Self {
+            grid_graph: graph,
+            // TODO: If adding a power pole has addition side effect besides changing the graph, this is not correct
+            ..Self::new(data_store, Position { x: 0, y: 0 })
+        }
+    }
+
     #[must_use]
     pub fn join(
         self,
@@ -191,6 +203,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                     + other.main_accumulator_charge * other.main_accumulator_count)
                     / (self.main_accumulator_count + other.main_accumulator_count)
             } else {
+                assert_eq!(Joule(0), self.main_accumulator_charge);
+                assert_eq!(Joule(0), other.main_accumulator_charge);
                 Joule(0)
             },
             use_burnable_fuel_to_charge_accumulators: match (
@@ -248,20 +262,45 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         pole_pos: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
-        impl IntoIterator<Item = Position>,
-        impl IntoIterator<Item = Self>,
-        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
+        impl IntoIterator<
+            Item = (
+                Self,
+                impl IntoIterator<Item = Position>,
+                impl IntoIterator<
+                    Item = (
+                        Item<ItemIdxType>,
+                        Storage<RecipeIdxType>,
+                        Storage<RecipeIdxType>,
+                    ),
+                >,
+            ),
+        >,
+        bool, // This tells the storage to delete us
     ) {
         let ((), no_longer_connected_entities, new_electric_networks) =
             self.grid_graph.remove_node(pole_pos);
+
+        if new_electric_networks.is_none() {
+            // We no longer exist
+
+            // No new networks
+            let new_networks: Vec<(_, Vec<_>, Vec<_>)> = vec![];
+
+            mem::drop(no_longer_connected_entities);
+            mem::drop(new_electric_networks);
+
+            assert!(self.grid_graph.keys().into_iter().count() == 0);
+            return (new_networks, true);
+        }
 
         let no_longer_connected_entities: Vec<_> =
             no_longer_connected_entities.into_iter().collect();
 
         let new_electric_networks: Vec<_> = new_electric_networks
             .into_iter()
-            .map(|v| {
-                todo!();
+            .flatten()
+            .map(|(network, v)| {
+                let new_network = Self::new_from_graph(network, data_store);
             })
             .collect();
 
@@ -271,18 +310,78 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                     self.remove_assembler(
                         AssemblerID {
                             recipe,
-                            grid: 0, // Does no matter
+                            grid: 0, // Does not matter
                             assembler_index: index,
                         },
                         data_store,
                     );
                 },
-                PowerGridEntity::Lab { index } => todo!(),
-                PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
+                PowerGridEntity::Lab { index } => todo!("Remove Assembler"),
+                PowerGridEntity::LazyPowerProducer { item, index } => {
+                    todo!("Remove LazyPowerProducer (Steam Engine)")
+                },
             }
         }
 
-        (vec![], vec![], vec![])
+        (vec![todo!()], false)
+    }
+
+    fn remove_connected_entity(
+        &mut self,
+        connected_entity: PowerGridEntity<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        match connected_entity {
+            PowerGridEntity::Assembler { recipe, index } => {
+                self.remove_assembler(
+                    AssemblerID {
+                        recipe,
+                        grid: 0, // Does not matter
+                        assembler_index: index,
+                    },
+                    data_store,
+                );
+            },
+            PowerGridEntity::Lab { index } => todo!("Remove Assembler"),
+            PowerGridEntity::LazyPowerProducer { item, index } => {
+                todo!("Remove LazyPowerProducer (Steam Engine)")
+            },
+        }
+    }
+
+    fn move_connected_entity(
+        &mut self,
+        other: &mut Self,
+        connected_entity: PowerGridEntity<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl IntoIterator<
+        Item = (
+            Item<ItemIdxType>,
+            Storage<RecipeIdxType>,
+            Storage<RecipeIdxType>,
+        ),
+    > {
+        match connected_entity {
+            PowerGridEntity::Assembler { recipe, index } => {
+                self.remove_assembler(
+                    AssemblerID {
+                        recipe,
+                        grid: 0, // Does not matter
+                        assembler_index: index,
+                    },
+                    data_store,
+                );
+                let new_id = other.add_assembler(0, recipe, data_store);
+
+                todo!()
+            },
+            PowerGridEntity::Lab { index } => todo!("Remove Assembler"),
+            PowerGridEntity::LazyPowerProducer { item, index } => {
+                todo!("Remove LazyPowerProducer (Steam Engine)")
+            },
+        }
+
+        vec![todo!()]
     }
 
     pub fn add_assembler(

@@ -71,7 +71,7 @@ impl Splitter {
         // FIXME: Handle the case where an input and output are the same belt!
         let [input_1, input_2, output_1, output_2] = belts
             .belts
-            .get_many_mut([
+            .get_disjoint_mut([
                 self.input_belts[0],
                 self.input_belts[1],
                 self.output_belts[0],

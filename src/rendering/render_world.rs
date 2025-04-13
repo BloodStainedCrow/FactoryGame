@@ -1,4 +1,5 @@
-use std::iter::successors;
+use core::num;
+use std::{cmp::min, iter::successors};
 
 use crate::{
     belt::{belt::Belt, smart::SmartBelt, splitter::SPLITTER_BELT_LEN},
@@ -12,8 +13,16 @@ use crate::{
     },
     item::{usize_from, IdxTrait, Item},
 };
+use eframe::{
+    egui::{
+        self, Align2, CentralPanel, Color32, Context, CornerRadius, Pos2, ProgressBar, Rect, Shape,
+        SidePanel, TopBottomPanel, Ui, Window,
+    },
+    epaint::text::Row,
+};
+use egui_extras::{Column, TableBuilder};
 use log::{info, warn};
-use tilelib::types::{DrawInstance, Layer, Renderer};
+use tilelib::types::{DrawInstance, Layer, RendererTrait};
 
 use super::{app_state::GameState, TextureAtlas};
 
@@ -23,7 +32,7 @@ use super::{app_state::GameState, TextureAtlas};
 
 #[allow(clippy::too_many_lines)]
 pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    renderer: &mut Renderer,
+    renderer: &mut impl RendererTrait,
     game_state: &GameState<ItemIdxType, RecipeIdxType>,
     texture_atlas: &TextureAtlas,
     state_machine: &ActionStateMachine<ItemIdxType, RecipeIdxType>,
@@ -426,7 +435,6 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 ) => match place_entity_type {
                     // TODO:
                     crate::frontend::world::tile::PlaceEntityType::Assembler(position) => {
-                        dbg!(position);
                         entity_layer.draw_sprite(
                             &texture_atlas.assembler,
                             DrawInstance {
@@ -460,33 +468,122 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         },
         crate::frontend::action::action_state_machine::ActionStateMachineState::Viewing(pos) => {
             // TODO:
-            let chunk = game_state
+        },
+    }
+
+    for (player_id, player) in game_state
+        .world
+        .players
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.visible)
+        .filter(|(i, _)| *i != state_machine.my_player_id as usize)
+    {
+        player_layer.draw_sprite(
+            &texture_atlas.player,
+            DrawInstance {
+                position: [
+                    player.pos.0 - state_machine.local_player_pos.0 + num_tiles_across_screen / 2.0,
+                    player.pos.1 - state_machine.local_player_pos.1 + num_tiles_across_screen / 2.0,
+                ],
+                size: [1.0, 2.0],
+                animation_frame: 0,
+            },
+        );
+        info!(
+            "Rendering other player {} at {:?}",
+            player_id,
+            [
+                player.pos.0 - state_machine.local_player_pos.0,
+                player.pos.1 - state_machine.local_player_pos.1,
+            ]
+        );
+    }
+
+    player_layer.draw_sprite(
+        &texture_atlas.player,
+        DrawInstance {
+            // Always in the middle
+            position: [num_tiles_across_screen / 2.0, num_tiles_across_screen / 2.0],
+            size: [1.0, 2.0],
+            animation_frame: 0,
+        },
+    );
+
+    info!("Rendering self at {:?}", state_machine.local_player_pos);
+
+    renderer.draw(&tile_layer);
+
+    renderer.draw(&range_layer);
+
+    renderer.draw(&entity_layer);
+
+    renderer.draw(&item_layer);
+
+    renderer.draw(&warning_layer);
+
+    renderer.draw(&player_layer);
+}
+
+pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    ctx: &Context,
+    ui: &Ui,
+    state_machine: &mut ActionStateMachine<ItemIdxType, RecipeIdxType>,
+    game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
+    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+) {
+    match &state_machine.state {
+        crate::frontend::action::action_state_machine::ActionStateMachineState::Idle => {},
+        crate::frontend::action::action_state_machine::ActionStateMachineState::Holding(
+            held_object,
+        ) => {},
+        crate::frontend::action::action_state_machine::ActionStateMachineState::Viewing(
+            position,
+        ) => {
+            Window::new("Viewing").show(ctx, |ui| {
+                let chunk = game_state
                 .world
-                .get_chunk_for_tile(*pos)
+                .get_chunk_for_tile(*position)
                 .expect("Cannot find chunk for viewing");
-            let entity = chunk.get_entity_at(*pos, data_store);
+            let entity = chunk.get_entity_at(*position, data_store);
 
             if let Some(entity) = entity {
-                dbg!(entity);
                 match entity {
                     crate::frontend::world::tile::Entity::Assembler { pos, info } => match info {
                         crate::frontend::world::tile::AssemblerInfo::UnpoweredNoRecipe => {
-                            println!("Viewing AssemblerWithoutRecipe {pos:?}");
+                            ui.label("Assembler");
                         },
                         crate::frontend::world::tile::AssemblerInfo::Unpowered(recipe) => {
-                            println!("Viewing Unpowered Assembler {pos:?}, {recipe:?}");
+                            ui.label("Assembler");
                         },
                         crate::frontend::world::tile::AssemblerInfo::PoweredNoRecipe(grid) => {
-                            println!("Viewing AssemblerWithoutRecipe {pos:?}, {grid:?}");
+                            ui.label("Assembler");
                         },
                         crate::frontend::world::tile::AssemblerInfo::Powered(assembler_id) => {
+                            ui.label("Assembler");
+
+                            // TODO:
+                            // ui.label(data_store.recipe_names[usize_from(assembler_id.recipe.id)]);
+
                             let assembler = game_state
                                 .simulation_state
                                 .factory
                                 .power_grids
                                 .get_assembler_info(*assembler_id, data_store);
 
-                            dbg!(assembler);
+                            let pb = ProgressBar::new(assembler.timer_percentage).show_percentage().corner_radius(CornerRadius::ZERO);
+                            ui.add(pb);
+
+                            TableBuilder::new(ui).columns(Column::auto().resizable(false), assembler.inputs.len() + assembler.outputs.len()).body(|mut body| {
+                                body.row(5.0, |mut row| {
+                                    for (item, count) in assembler.inputs.iter().chain(assembler.outputs.iter()) {
+                                        row.col(|ui| {
+                                            ui.label(&data_store.item_names[usize_from(item.id)]);
+                                            ui.label(format!("{}", *count));
+                                        });
+                                    }
+                                });
+                            });
                         },
                     },
                     crate::frontend::world::tile::Entity::PowerPole {
@@ -498,25 +595,6 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         let power_range = data_store.power_pole_data[usize::from(*ty)].power_range;
                         let size = data_store.power_pole_data[usize::from(*ty)].size;
 
-                        entity_layer.draw_sprite(
-                            &texture_atlas.assembler,
-                            DrawInstance {
-                                position: [
-                                    (pos.x - power_range as usize) as f32
-                                        - state_machine.local_player_pos.0
-                                        + num_tiles_across_screen / 2.0,
-                                    (pos.y - power_range as usize) as f32
-                                        - state_machine.local_player_pos.1
-                                        + num_tiles_across_screen / 2.0,
-                                ],
-                                size: [
-                                    (power_range * 2 + size.0) as f32,
-                                    (power_range * 2 + size.1) as f32,
-                                ],
-                                animation_frame: 0,
-                            },
-                        );
-
                         let pg = &game_state.simulation_state.factory.power_grids.power_grids
                             [game_state
                                 .simulation_state
@@ -526,7 +604,10 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             .as_ref()
                             .unwrap();
 
-                        dbg!(pg);
+                        ui.label("Power Grid");
+
+                        let pb = ProgressBar::new(pg.last_power_mult as f32 / 64.0);
+                        ui.add(pb);
                     },
                     crate::frontend::world::tile::Entity::Belt {
                         pos,
@@ -611,75 +692,71 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         pos,
                         item,
                         index,
-                    } => match item {
-                        Some(item) => {
-                            let chest = game_state.simulation_state.factory.chests.stores
-                                [usize_from(item.id)]
-                            .get_chest(*index);
-                            dbg!(chest);
-                        },
-                        None => {
-                            dbg!("Looking at empty chest");
-                        },
-                    },
+                    } => {
+                        let Some(item) = item else {
+                            todo!()
+                        };
+
+                        let stack_size: u16 = data_store.item_stack_sizes[usize_from(item.id)] as u16;
+
+                        let num_slots = data_store.chest_num_slots[*ty as usize];
+                        let (current_items, _max_items) = game_state.simulation_state.factory.chests.stores[usize_from(item.id)].get_chest(*index);
+
+                        TableBuilder::new(ui).columns(Column::auto().resizable(false), 10).body(|mut body| {
+                            body.rows(5.0, (num_slots / 10) as usize + (num_slots % 10 > 0) as usize, |mut row| {
+                                let idx = row.index();
+                                for col_idx in 0..10 {
+                                    let slot_id = idx * 10 + col_idx;
+                                    if slot_id >= num_slots as usize {
+                                        break;
+                                    }
+                                    row.col(|ui| {
+                                        let this_slots_stack_count = min(current_items.saturating_sub(slot_id as u16 * stack_size), stack_size);
+
+                                        let clicked = ui.label(format!("{}", this_slots_stack_count)).clicked();
+                                        let mut shift = false;
+                                        ctx.input(|input| {shift = input.modifiers.shift; });
+
+                                        if shift && clicked {
+                                            todo!("Move the items into the players inventory if there is space");
+                                        }
+                                    });
+                                }
+                            });
+                        });
+                    }
                     _ => todo!(),
                 }
             }
+            });
         },
     }
 
-    for (player_id, player) in game_state
-        .world
-        .players
-        .iter()
-        .enumerate()
-        .filter(|(_, p)| p.visible)
-        .filter(|(i, _)| *i != state_machine.my_player_id as usize)
-    {
-        player_layer.draw_sprite(
-            &texture_atlas.player,
-            DrawInstance {
-                position: [
-                    player.pos.0 - state_machine.local_player_pos.0 + num_tiles_across_screen / 2.0,
-                    player.pos.1 - state_machine.local_player_pos.1 + num_tiles_across_screen / 2.0,
-                ],
-                size: [1.0, 2.0],
-                animation_frame: 0,
-            },
-        );
-        info!(
-            "Rendering other player {} at {:?}",
-            player_id,
-            [
-                player.pos.0 - state_machine.local_player_pos.0,
-                player.pos.1 - state_machine.local_player_pos.1,
-            ]
-        );
-    }
+    egui::Area::new("Hotbar".into())
+        .anchor(Align2::CENTER_BOTTOM, (0.0, 0.0))
+        .show(ui.ctx(), |ui| {
+            egui_extras::TableBuilder::new(ui)
+                .columns(Column::auto().resizable(false), 10)
+                .body(|mut body| {
+                    body.row(30.0, |mut row| {
+                        for i in 0..10 {
+                            if row
+                                .col(|ui| {
+                                    let button_response = ui.button(format!("{i}"));
 
-    player_layer.draw_sprite(
-        &texture_atlas.player,
-        DrawInstance {
-            // Always in the middle
-            position: [num_tiles_across_screen / 2.0, num_tiles_across_screen / 2.0],
-            size: [1.0, 2.0],
-            animation_frame: 0,
-        },
-    );
-
-    info!("Rendering self at {:?}", state_machine.local_player_pos);
-
-    renderer.draw(&tile_layer);
-
-    renderer.draw(&range_layer);
-
-    renderer.draw(&entity_layer);
-
-    renderer.draw(&item_layer);
-
-    renderer.draw(&warning_layer);
-
-    renderer.draw(&player_layer);
+                                    if button_response.hovered() {
+                                        dbg!(i);
+                                    }
+                                })
+                                .1
+                                .hovered()
+                            {
+                                dbg!(i);
+                            };
+                        }
+                    });
+                });
+        });
 }
 
 fn render_items_straight<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(

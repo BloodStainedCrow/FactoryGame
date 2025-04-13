@@ -150,7 +150,7 @@ impl<ItemIdxType: IdxTrait> BeltBeltInserterStore<ItemIdxType> {
                     } else {
                         let [source_belt, dest_belt] = belts
                             .belts
-                            .get_many_mut([ins.1.source.0, ins.1.dest.0])
+                            .get_disjoint_mut([ins.1.source.0, ins.1.dest.0])
                             .expect("Index out of bounds");
                         [
                             source_belt.get_mut(ins.1.source.1),
@@ -258,7 +258,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                         } else {
                             let [inp, out] = belt_store
                                 .belts
-                                .get_many_mut([info.source.0, info.dest.0])
+                                .get_disjoint_mut([info.source.0, info.dest.0])
                                 .unwrap();
 
                             [inp.get_mut(info.source.1), out.get_mut(info.dest.1)]
@@ -1193,13 +1193,13 @@ mod tests {
         frontend::world::Position,
         rendering::app_state::GameState,
     };
-    use proptest::proptest;
+    use proptest::{prelude::ProptestConfig, proptest};
     static DATA_STORE: LazyLock<DataStore<u8, u8>> =
         LazyLock::new(|| get_raw_data_test().turn::<u8, u8>());
 
     proptest! {
         #[test]
-        fn test_random_blueprint(base_pos in random_position(), blueprint in random_blueprint_strategy::<u8, u8>(0..100, &DATA_STORE)) {
+        fn test_random_blueprint_does_not_crash(base_pos in random_position(), blueprint in random_blueprint_strategy::<u8, u8>(0..100, &DATA_STORE)) {
 
             let mut game_state = GameState::new(&DATA_STORE);
 

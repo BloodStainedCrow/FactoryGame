@@ -2,21 +2,24 @@ use std::{
     net::{IpAddr, TcpStream},
     ops::ControlFlow,
     sync::{atomic::AtomicU64, mpsc::Receiver, Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
+use eframe::wgpu::hal::auxil::db;
+use log::info;
 use plumbing::{Client, IntegratedServer, Server};
 use server::{ActionSource, GameStateUpdateHandler, HandledActionConsumer};
 
 use crate::{
-    data::{DataStore},
+    data::DataStore,
     frontend::{
         action::{action_state_machine::ActionStateMachine, ActionType},
         input::Input,
         world::tile::World,
     },
     item::{IdxTrait, WeakIdxTrait},
-    rendering::app_state::GameState, TICKS_PER_SECOND_RUNSPEED,
+    rendering::app_state::GameState,
+    TICKS_PER_SECOND_RUNSPEED,
 };
 
 mod plumbing;
@@ -127,11 +130,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
             spin_sleep_util::interval(Duration::from_secs(1) / TICKS_PER_SECOND_RUNSPEED as u32);
 
         loop {
+            let start = Instant::now();
             update_interval.tick();
+
+            info!("Waited for {:?}", start.elapsed());
             match self.do_tick(data_store) {
                 ControlFlow::Continue(_) => {},
                 ControlFlow::Break(e) => return e,
             }
+
+            info!("Full tick time: {:?}", start.elapsed());
         }
     }
 

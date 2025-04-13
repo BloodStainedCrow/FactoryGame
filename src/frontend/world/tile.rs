@@ -649,8 +649,25 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     pos,
                     connected_power_poles,
                 } => {
-                    let power_updates = sim_state.factory.power_grids.remove_pole(*pos, data_store);
-                    todo!("Apply power updates")
+                    let (pole_updates, grid_updates) =
+                        sim_state.factory.power_grids.remove_pole(*pos, data_store);
+
+                    for pole_pos in pole_updates {
+                        self.update_pole_power(
+                            pole_pos,
+                            sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos],
+                            data_store,
+                        );
+                    }
+
+                    for (old_id, new_id) in grid_updates {
+                        self.update_power_grid_id(sim_state, old_id, new_id);
+                    }
+
+                    // TODO: Remove power pole connections off connected power poles
+                    // for connected_pole_pos in connected_power_poles {
+                    //     self.remove_connection_from_pole(connected_pole_pos, *pos);
+                    // }
                 },
 
                 Entity::Belt {
@@ -768,6 +785,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         } else {
             // Nothing to do
         }
+
+        // TODO: Actually remove the entity!
     }
 
     #[must_use]
