@@ -706,7 +706,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             body.rows(5.0, (num_slots / 10) as usize + (num_slots % 10 > 0) as usize, |mut row| {
                                 let idx = row.index();
                                 for col_idx in 0..10 {
-                                    let slot_id = idx * 10 + col_idx; 
+                                    let slot_id = idx * 10 + col_idx;
                                     if slot_id >= num_slots as usize {
                                         break;
                                     }
