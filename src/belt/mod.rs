@@ -46,8 +46,6 @@ pub enum BeltTileId<ItemIdxType: WeakIdxTrait> {
     // SmartBeltId(BeltId<ItemIdxType>),
 }
 
-#[cfg(test)]
-use crate::item::Item;
 use crate::{
     frontend::world::tile::BeltId,
     item::{IdxTrait, WeakIdxTrait},

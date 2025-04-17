@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 177eb807670e81b0d1dfd99d5ff0e718dde5c7212af3470b96deb92de1ff2535 # shrinks to base_pos = Position { x: 1600, y: 1600 }, blueprint = Blueprint { actions: [PlaceEntity(PlaceEntityInfo { entities: Single(Belt { pos: Position { x: 1608, y: 1614 }, direction: North }) }), PlaceEntity(PlaceEntityInfo { entities: Single(Chest { pos: Position { x: 1608, y: 1614 } }) })] }cc f6a10fc1777158a587aad7b7a902680f918d501c613d3202543546ca9015026d # shrinks to base_pos = Position { x: 1600, y: 1600 }, blueprint = Blueprint { actions: [PlaceEntity(PlaceEntityInfo { entities: Single(Belt { pos: Position { x: 1605, y: 1602 }, direction: North }) }), Remove(Position { x: 1605, y: 1602 })] }
+cc 49aef3f1149bb4c2a8b62523f4d7b49d1b72b0e31a4e170f2fad098c93f5717e # shrinks to base_pos = Position { x: 1600, y: 1600 }, blueprint = Blueprint { actions: [PlaceEntity(PlaceEntityInfo { entities: Single(Belt { pos: Position { x: 1610, y: 1609 }, direction: North }) }), Remove(Position { x: 1610, y: 1609 })] }
+cc ad3ac079c73899af49885f9db66bc41a8d504c0fc2bb2d9cf736f1766f0b2579 # shrinks to base_pos = Position { x: 1600, y: 1600 }, blueprint = Blueprint { actions: [PlaceEntity(PlaceEntityInfo { entities: Single(Splitter { pos: Position { x: 1604, y: 1613 }, direction: North, in_mode: None, out_mode: None }) }), Remove(Position { x: 1604, y: 1613 })] }

@@ -1,23 +1,33 @@
-use std::iter::successors;
+use core::num;
+use std::{cmp::min, iter::successors};
 
 use crate::{
     belt::{belt::Belt, smart::SmartBelt, splitter::SPLITTER_BELT_LEN, BeltTileId},
     data::DataStore,
     frontend::{
-        action::action_state_machine::{ActionStateMachine, WIDTH_PER_LEVEL},
-        world::{
-            tile::{
-                AssemblerID, AssemblerInfo, BeltId, Dir, Entity, BELT_LEN_PER_TILE,
-                CHUNK_SIZE_FLOAT,
-            },
-            Position,
+        action::{
+            action_state_machine::{ActionStateMachine, WIDTH_PER_LEVEL},
+            set_recipe::SetRecipeInfo,
+            ActionType,
+        },
+        world::tile::{
+            AssemblerID, AssemblerInfo, BeltId, BeltTileId, Dir, Entity, BELT_LEN_PER_TILE,
+            CHUNK_SIZE_FLOAT,
         },
     },
-    item::{usize_from, IdxTrait, Item, WeakIdxTrait},
+    item::{usize_from, IdxTrait, Item, Recipe},
 };
+use eframe::{
+    egui::{
+        self, Align2, CentralPanel, Color32, ComboBox, Context, CornerRadius, Pos2, ProgressBar,
+        Rect, Shape, SidePanel, TopBottomPanel, Ui, Window,
+    },
+    epaint::text::Row,
+    wgpu::hal::auxil::db,
+};
+use egui_extras::{Column, TableBuilder};
 use log::{info, warn};
-use petgraph::data;
-use tilelib::types::{DrawInstance, Layer, Renderer};
+use tilelib::types::{DrawInstance, Layer, RendererTrait};
 
 use super::{app_state::GameState, TextureAtlas};
 
@@ -27,7 +37,7 @@ use super::{app_state::GameState, TextureAtlas};
 
 #[allow(clippy::too_many_lines)]
 pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    renderer: &mut Renderer,
+    renderer: &mut impl RendererTrait,
     game_state: &GameState<ItemIdxType, RecipeIdxType>,
     texture_atlas: &TextureAtlas,
     state_machine: &ActionStateMachine<ItemIdxType, RecipeIdxType>,
@@ -45,7 +55,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     let mut warning_layer = Layer::square_tile_grid(tilesize);
 
-    let mut range_layer = Layer::square_tile_grid(tilesize);
+    let range_layer = Layer::square_tile_grid(tilesize);
 
     let player_pos = state_machine.local_player_pos;
 
@@ -139,17 +149,27 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             },
                                         );
                                     },
-                                    AssemblerInfo::PoweredNoRecipe(grid)
-                                    | AssemblerInfo::Powered(AssemblerID {
-                                        recipe: _,
-                                        grid,
-                                        assembler_index: _,
-                                    }) => {
+                                    AssemblerInfo::PoweredNoRecipe(pole_position)
+                                    | AssemblerInfo::Powered {
+                                        id:
+                                            AssemblerID {
+                                                recipe: _,
+                                                grid: _,
+                                                assembler_index: _,
+                                            },
+                                        pole_position,
+                                    } => {
+                                        let grid = game_state
+                                            .simulation_state
+                                            .factory
+                                            .power_grids
+                                            .pole_pos_to_grid_id[pole_position];
+
                                         let last_power = game_state
                                             .simulation_state
                                             .factory
                                             .power_grids
-                                            .power_grids[usize::from(*grid)]
+                                            .power_grids[usize::from(grid)]
                                         .as_ref()
                                         .unwrap()
                                         .last_power_mult;
@@ -268,7 +288,6 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             Entity::PowerPole {
                                 ty,
                                 pos,
-                                grid_id,
                                 connected_power_poles,
                             } => {
                                 // TODO:
@@ -421,7 +440,6 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 ) => match place_entity_type {
                     // TODO:
                     crate::frontend::world::tile::PlaceEntityType::Assembler(position) => {
-                        dbg!(position);
                         entity_layer.draw_sprite(
                             &texture_atlas.assembler,
                             DrawInstance {
@@ -455,121 +473,12 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         },
         crate::frontend::action::action_state_machine::ActionStateMachineState::Viewing(pos) => {
             // TODO:
-            let chunk = game_state
-                .world
-                .get_chunk_for_tile(*pos)
-                .expect("Cannot find chunk for viewing");
-            let entity = chunk.get_entity_at(*pos, data_store);
-
-            if let Some(entity) = entity {
-                dbg!(entity);
-                match entity {
-                    crate::frontend::world::tile::Entity::Assembler { pos, info } => match info {
-                        crate::frontend::world::tile::AssemblerInfo::UnpoweredNoRecipe => {
-                            println!("Viewing AssemblerWithoutRecipe {pos:?}");
-                        },
-                        crate::frontend::world::tile::AssemblerInfo::Unpowered(recipe) => {
-                            println!("Viewing Unpowered Assembler {pos:?}, {recipe:?}");
-                        },
-                        crate::frontend::world::tile::AssemblerInfo::PoweredNoRecipe(grid) => {
-                            println!("Viewing AssemblerWithoutRecipe {pos:?}, {grid:?}");
-                        },
-                        crate::frontend::world::tile::AssemblerInfo::Powered(assembler_id) => {
-                            let assembler = game_state
-                                .simulation_state
-                                .factory
-                                .power_grids
-                                .get_assembler_info(*assembler_id, data_store);
-
-                            dbg!(assembler);
-                        },
-                    },
-                    crate::frontend::world::tile::Entity::PowerPole {
-                        ty,
-                        pos,
-                        grid_id,
-                        connected_power_poles,
-                    } => {
-                        // TODO:
-                        let power_range = data_store.power_pole_data[usize::from(*ty)].power_range;
-                        let size = data_store.power_pole_data[usize::from(*ty)].size;
-
-                        entity_layer.draw_sprite(
-                            &texture_atlas.assembler,
-                            DrawInstance {
-                                position: [
-                                    (pos.x - power_range as usize) as f32
-                                        - state_machine.local_player_pos.0
-                                        + num_tiles_across_screen / 2.0,
-                                    (pos.y - power_range as usize) as f32
-                                        - state_machine.local_player_pos.1
-                                        + num_tiles_across_screen / 2.0,
-                                ],
-                                size: [
-                                    (power_range * 2 + size.0) as f32,
-                                    (power_range * 2 + size.1) as f32,
-                                ],
-                                animation_frame: 0,
-                            },
-                        );
-
-                        let pg = &game_state.simulation_state.factory.power_grids.power_grids
-                            [*grid_id as usize];
-
-                        dbg!(pg);
-                    },
-                    crate::frontend::world::tile::Entity::Belt {
-                        pos,
-                        direction,
-                        id,
-                        belt_pos,
-                    } => match id {
-                        BeltTileId::AnyBelt(index, phantom_dat_) => todo!(),
-                    },
-                    crate::frontend::world::tile::Entity::Inserter {
-                        pos,
-                        direction,
-                        info,
-                    } => match info {
-                        crate::frontend::world::tile::InserterInfo::NotAttached {
-                            start_pos,
-                            end_pos,
-                        } => println!("Unattached inserter at {pos:?}"),
-                        crate::frontend::world::tile::InserterInfo::Attached(ins) => match ins {
-                            crate::frontend::world::tile::AttachedInserter::BeltStorage {
-                                id,
-                                belt_pos,
-                            } => {
-                                todo!()
-                            },
-                            crate::frontend::world::tile::AttachedInserter::BeltBelt {
-                                item,
-                                inserter,
-                            } => {
-                                todo!()
-                            },
-                            crate::frontend::world::tile::AttachedInserter::StorageStorage(_) => {
-                                todo!()
-                            },
-                        },
-                    },
-                    Entity::Splitter { .. } => {
-                        warn!("Viewing Splitter. This currently does nothing!");
-                    },
-                    Entity::Chest { item, index, .. } => match item {
-                        Some(item) => {
-                            let chest = game_state.simulation_state.factory.chests.stores
-                                [usize_from(item.id)]
-                            .get_chest(*index);
-                            dbg!(chest);
-                        },
-                        None => {
-                            dbg!("Looking at empty chest");
-                        },
-                    },
-                    _ => todo!(),
-                }
-            }
+        },
+        crate::frontend::action::action_state_machine::ActionStateMachineState::Decontructing(
+            position,
+            _,
+        ) => {
+            // TODO:
         },
     }
 
@@ -625,6 +534,249 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     renderer.draw(&warning_layer);
 
     renderer.draw(&player_layer);
+}
+
+pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    ctx: &Context,
+    ui: &Ui,
+    state_machine: &mut ActionStateMachine<ItemIdxType, RecipeIdxType>,
+    game_state: &GameState<ItemIdxType, RecipeIdxType>,
+    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
+    let mut actions = vec![];
+
+    match &state_machine.state {
+        crate::frontend::action::action_state_machine::ActionStateMachineState::Idle => {},
+        crate::frontend::action::action_state_machine::ActionStateMachineState::Holding(
+            held_object,
+        ) => {},
+        crate::frontend::action::action_state_machine::ActionStateMachineState::Viewing(
+            position,
+        ) => {
+            Window::new("Viewing").show(ctx, |ui| {
+                let chunk = game_state
+                .world
+                .get_chunk_for_tile(*position)
+                .expect("Cannot find chunk for viewing");
+            let entity = chunk.get_entity_at(*position, data_store);
+
+            if let Some(entity) = entity {
+                match entity {
+                    crate::frontend::world::tile::Entity::Assembler { pos, info } => {
+                        let mut goal_recipe: Option<Recipe<RecipeIdxType>> = match info {
+                            AssemblerInfo::UnpoweredNoRecipe => None,
+                            AssemblerInfo::Unpowered(recipe) => Some(*recipe),
+                            AssemblerInfo::PoweredNoRecipe(position) => None,
+                            AssemblerInfo::Powered { id, pole_position } => Some(id.recipe),
+                        };
+
+                        ComboBox::new("Recipe list", "Recipes").selected_text(goal_recipe.map(|recipe| data_store.recipe_names[usize_from(recipe.id)].as_str()).unwrap_or("Choose a recipe!")).show_ui(ui, |ui| {
+                            data_store.recipe_names.iter().enumerate().for_each(|(i, recipe_name)| {
+                                ui.selectable_value(&mut goal_recipe, Some(Recipe {id: i.try_into().unwrap()}), recipe_name);
+                            });
+                        });
+
+
+                        match info {
+                            crate::frontend::world::tile::AssemblerInfo::UnpoweredNoRecipe => {
+                                ui.label("Assembler");
+                                if let Some(goal_recipe) = goal_recipe {
+                                    actions.push(ActionType::SetRecipe(SetRecipeInfo { pos: *pos, recipe: goal_recipe }));
+                                }
+                            },
+                            crate::frontend::world::tile::AssemblerInfo::Unpowered(recipe) => {
+                                ui.label("Assembler");
+                                if let Some(goal_recipe) = goal_recipe {
+                                    if goal_recipe != *recipe {
+                                        actions.push(ActionType::SetRecipe(SetRecipeInfo { pos: *pos, recipe: goal_recipe }));
+                                    }
+                                }
+                            },
+                            crate::frontend::world::tile::AssemblerInfo::PoweredNoRecipe(grid) => {
+                                ui.label("Assembler");
+                                if let Some(goal_recipe) = goal_recipe {
+                                    actions.push(ActionType::SetRecipe(SetRecipeInfo { pos: *pos, recipe: goal_recipe }));
+                                }
+                            },
+                            crate::frontend::world::tile::AssemblerInfo::Powered {
+                                id,
+                                pole_position
+                            } => {
+                                ui.label("Assembler");
+
+                                if let Some(goal_recipe) = goal_recipe {
+                                    if goal_recipe != id.recipe {
+                                        actions.push(ActionType::SetRecipe(SetRecipeInfo { pos: *pos, recipe: goal_recipe }));
+                                    }
+                                }
+
+                                // TODO:
+                                // ui.label(data_store.recipe_names[usize_from(assembler_id.recipe.id)]);
+
+                                let assembler = game_state
+                                    .simulation_state
+                                    .factory
+                                    .power_grids
+                                    .get_assembler_info(*id, data_store);
+
+                                let pb = ProgressBar::new(assembler.timer_percentage).show_percentage().corner_radius(CornerRadius::ZERO);
+                                ui.add(pb);
+
+                                TableBuilder::new(ui).columns(Column::auto().resizable(false), assembler.inputs.len() + assembler.outputs.len()).body(|mut body| {
+                                    body.row(5.0, |mut row| {
+                                        for (item, count) in assembler.inputs.iter().chain(assembler.outputs.iter()) {
+                                            row.col(|ui| {
+                                                ui.label(&data_store.item_names[usize_from(item.id)]);
+                                                ui.label(format!("{}", *count));
+                                            });
+                                        }
+                                    });
+                                });
+                            }
+                        }
+                    },
+                    crate::frontend::world::tile::Entity::PowerPole {
+                        ty,
+                        pos,
+                        connected_power_poles,
+                    } => {
+                        // TODO:
+                        let power_range = data_store.power_pole_data[usize::from(*ty)].power_range;
+                        let size = data_store.power_pole_data[usize::from(*ty)].size;
+
+                        let pg = &game_state.simulation_state.factory.power_grids.power_grids
+                            [game_state
+                                .simulation_state
+                                .factory
+                                .power_grids
+                                .pole_pos_to_grid_id[pos] as usize]
+                            .as_ref()
+                            .unwrap();
+
+                        ui.label("Power Grid");
+
+                        let pb = ProgressBar::new(pg.last_power_mult as f32 / 64.0);
+                        ui.add(pb);
+                    },
+                    crate::frontend::world::tile::Entity::Belt {
+                        pos,
+                        direction,
+                        id,
+                        belt_pos,
+                    } => match id {
+                        BeltTileId::AnyBelt(index, phantom_dat_) => todo!(),
+                    },
+                    crate::frontend::world::tile::Entity::Inserter {
+                        pos,
+                        direction,
+                        info,
+                    } => match info {
+                        crate::frontend::world::tile::InserterInfo::NotAttached {
+                            start_pos,
+                            end_pos,
+                        } => println!("Unattached inserter at {pos:?}"),
+                        crate::frontend::world::tile::InserterInfo::Attached(ins) => match ins {
+                            crate::frontend::world::tile::AttachedInserter::BeltStorage {
+                                id,
+                                belt_pos,
+                            } => {
+                                todo!()
+                            },
+                            crate::frontend::world::tile::AttachedInserter::BeltBelt {
+                                item,
+                                inserter,
+                            } => {
+                                todo!()
+                            },
+                            crate::frontend::world::tile::AttachedInserter::StorageStorage(_) => {
+                                todo!()
+                            },
+                        },
+                    },
+                    Entity::Splitter { .. } => {
+                        warn!("Viewing Splitter. This currently does nothing!");
+                    },
+                    Entity::Chest {
+                        ty,
+                        pos,
+                        item,
+                        index,
+                    } => {
+                        let Some(item) = item else {
+                            todo!()
+                        };
+
+                        let stack_size: u16 = data_store.item_stack_sizes[usize_from(item.id)] as u16;
+
+                        let num_slots = data_store.chest_num_slots[*ty as usize];
+                        let (current_items, _max_items) = game_state.simulation_state.factory.chests.stores[usize_from(item.id)].get_chest(*index);
+
+                        TableBuilder::new(ui).columns(Column::auto().resizable(false), 10).body(|mut body| {
+                            body.rows(5.0, (num_slots / 10) as usize + (num_slots % 10 > 0) as usize, |mut row| {
+                                let idx = row.index();
+                                for col_idx in 0..10 {
+                                    let slot_id = idx * 10 + col_idx;
+                                    if slot_id >= num_slots as usize {
+                                        break;
+                                    }
+                                    row.col(|ui| {
+                                        let this_slots_stack_count = min(current_items.saturating_sub(slot_id as u16 * stack_size), stack_size);
+
+                                        let clicked = ui.label(format!("{}", this_slots_stack_count)).clicked();
+                                        let mut shift = false;
+                                        ctx.input(|input| {shift = input.modifiers.shift; });
+
+                                        if shift && clicked {
+                                            todo!("Move the items into the players inventory if there is space");
+                                        }
+                                    });
+                                }
+                            });
+                        });
+                    }
+                    _ => todo!(),
+                }
+            }
+            });
+        },
+        crate::frontend::action::action_state_machine::ActionStateMachineState::Decontructing(
+            position,
+            timer,
+        ) => {
+            Window::new("Deconstructing").show(ui.ctx(), |ui| {
+                let pb = ProgressBar::new((*timer as f32) / 100.0);
+                ui.add(pb);
+            });
+        },
+    }
+
+    egui::Area::new("Hotbar".into())
+        .anchor(Align2::CENTER_BOTTOM, (0.0, 0.0))
+        .show(ui.ctx(), |ui| {
+            egui_extras::TableBuilder::new(ui)
+                .columns(Column::auto().resizable(false), 10)
+                .body(|mut body| {
+                    body.row(30.0, |mut row| {
+                        for i in 0..10 {
+                            if row
+                                .col(|ui| {
+                                    let button_response = ui.button(format!("{i}"));
+
+                                    if button_response.hovered() {
+                                        dbg!(i);
+                                    }
+                                })
+                                .1
+                                .hovered()
+                            {
+                                dbg!(i);
+                            };
+                        }
+                    });
+                });
+        });
+
+    actions
 }
 
 fn render_items_straight<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(

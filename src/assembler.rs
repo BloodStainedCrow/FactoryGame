@@ -4,10 +4,10 @@ use itertools::Itertools;
 
 use crate::{
     data::{DataStore, ItemRecipeDir},
-    frontend::world::tile::AssemblerID,
+    frontend::world::{tile::AssemblerID, Position},
     item::{IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
     power::{
-        power_grid::{IndexUpdateInfo, PowerGridIdentifier, MAX_POWER_MULT},
+        power_grid::{IndexUpdateInfo, PowerGridEntity, PowerGridIdentifier, MAX_POWER_MULT},
         Joule, Watt,
     },
 };
@@ -48,6 +48,7 @@ pub struct MultiAssemblerStore<
     timers: Box<[TIMERTYPE]>,
 
     holes: Vec<usize>,
+    positions: Vec<Position>,
     len: usize,
 }
 
@@ -59,9 +60,9 @@ pub struct FullAssemblerStore<RecipeIdxType: WeakIdxTrait> {
 
 #[derive(Debug, Clone)]
 pub struct AssemblerOnclickInfo<ItemIdxType: WeakIdxTrait> {
-    inputs: Vec<(Item<ItemIdxType>, ITEMCOUNTTYPE)>,
-    outputs: Vec<(Item<ItemIdxType>, ITEMCOUNTTYPE)>,
-    timer_percentage: f32,
+    pub inputs: Vec<(Item<ItemIdxType>, ITEMCOUNTTYPE)>,
+    pub outputs: Vec<(Item<ItemIdxType>, ITEMCOUNTTYPE)>,
+    pub timer_percentage: f32,
 }
 
 impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
@@ -92,42 +93,41 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
     pub fn join<ItemIdxType: IdxTrait>(
         self,
         other: Self,
+        new_grid_id: PowerGridIdentifier,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-        self_grid: PowerGridIdentifier,
-        other_grid: PowerGridIdentifier,
     ) -> (
         Self,
         impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
     ) {
-        let mut idx_update = vec![];
+        // TODO: This just works with box::into_iter in edition 2024
+        let (assemblers_0_1, assemblers_0_1_updates): (Vec<_>, Vec<_>) = self
+            .assemblers_0_1
+            .into_vec()
+            .into_iter()
+            .zip(other.assemblers_0_1.into_vec())
+            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .unzip();
+
+        let (assemblers_1_1, assemblers_1_1_updates): (Vec<_>, Vec<_>) = self
+            .assemblers_1_1
+            .into_vec()
+            .into_iter()
+            .zip(other.assemblers_1_1.into_vec())
+            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .unzip();
 
         let ret = Self {
-            // TODO: This just works with box::into_iter in edition 2024
-            assemblers_0_1: self
-                .assemblers_0_1
-                .into_vec()
-                .into_iter()
-                .zip(other.assemblers_0_1.into_vec())
-                .map(|(a, b)| a.join(b, data_store, self_grid, other_grid))
-                .map(|(store, updates)| {
-                    idx_update.extend(updates);
-                    store
-                })
-                .collect(),
-            assemblers_1_1: self
-                .assemblers_1_1
-                .into_vec()
-                .into_iter()
-                .zip(other.assemblers_1_1.into_vec())
-                .map(|(a, b)| a.join(b, data_store, self_grid, other_grid))
-                .map(|(store, updates)| {
-                    idx_update.extend(updates);
-                    store
-                })
-                .collect(),
+            assemblers_0_1: assemblers_0_1.into_boxed_slice(),
+            assemblers_1_1: assemblers_1_1.into_boxed_slice(),
         };
 
-        (ret, idx_update)
+        (
+            ret,
+            assemblers_0_1_updates
+                .into_iter()
+                .flatten()
+                .chain(assemblers_1_1_updates.into_iter().flatten()),
+        )
     }
 
     pub fn get_info<ItemIdxType: IdxTrait>(
@@ -214,61 +214,22 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             base_power_consumption: vec![].into_boxed_slice(),
 
             holes: vec![],
+            positions: vec![],
             len: 0,
         }
     }
 
     // TODO: Properly test this!
     pub fn join<ItemIdxType: IdxTrait>(
-        self,
+        mut self,
         other: Self,
+        new_grid_id: PowerGridIdentifier,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-        self_grid: PowerGridIdentifier,
-        other_grid: PowerGridIdentifier,
     ) -> (
         Self,
         impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
     ) {
-        let mut update_vec = vec![];
-
-        for (new_offs, (idx, _)) in other
-            .timers
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| !other.holes.contains(i))
-            .enumerate()
-        {
-            for (dir, item) in data_store.recipe_to_items.get(&self.recipe).unwrap() {
-                let old_id = data_store
-                    .get_storage_id_for_assembler(
-                        *dir,
-                        *item,
-                        AssemblerID {
-                            recipe: other.recipe,
-                            grid: other_grid,
-                            assembler_index: idx.try_into().unwrap(),
-                        },
-                    )
-                    .unwrap();
-
-                let new_id = data_store
-                    .get_storage_id_for_assembler(
-                        *dir,
-                        *item,
-                        AssemblerID {
-                            recipe: other.recipe,
-                            grid: self_grid,
-                            assembler_index: (self.timers.len() + new_offs).try_into().unwrap(),
-                        },
-                    )
-                    .unwrap();
-
-                update_vec.push(IndexUpdateInfo {
-                    old: (*item, old_id),
-                    new: (*item, new_id),
-                });
-            }
-        }
+        let old_len = self.positions.len();
 
         let new_ings: [Box<[u8]>; NUM_INGS] = self
             .ings
@@ -315,17 +276,90 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .map(|(_, v)| v),
         );
 
-        let ret = todo!();
-        //Self {
-        //    recipe: self.recipe,
-        //    ings: new_ings,
-        //    outputs: new_outputs,
-        //    timers: new_timers.into(),
-        //    holes: self.holes,
-        //    len: 0,
-        //};
+        let mut new_speed = self.speed.into_vec();
+        new_speed.extend(
+            other
+                .speed
+                .into_vec()
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
 
-        (ret, update_vec)
+        let mut new_prod = self.bonus_productivity.into_vec();
+        new_prod.extend(
+            other
+                .bonus_productivity
+                .into_vec()
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        let mut new_base_power_consumption = self.base_power_consumption.into_vec();
+        new_base_power_consumption.extend(
+            other
+                .base_power_consumption
+                .into_vec()
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        let mut new_power_consumption_modifier = self.power_consumption_modifier.into_vec();
+        new_power_consumption_modifier.extend(
+            other
+                .power_consumption_modifier
+                .into_vec()
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        self.positions.extend(
+            other
+                .positions
+                .iter()
+                .copied()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        let updates = other
+            .positions
+            .into_iter()
+            .enumerate()
+            .filter(move |(i, _)| !other.holes.contains(i))
+            .enumerate()
+            .map(move |(new_index_offs, (old_index, pos))| IndexUpdateInfo {
+                position: pos,
+                new_storage: PowerGridEntity::Assembler {
+                    recipe: self.recipe,
+                    index: (old_len + new_index_offs).try_into().unwrap(),
+                },
+                new_grid: new_grid_id,
+            });
+
+        let ret = Self {
+            recipe: self.recipe,
+            ings: new_ings,
+            outputs: new_outputs,
+            timers: new_timers.into(),
+            holes: self.holes,
+            len: 0,
+            speed: new_speed.into_boxed_slice(),
+            bonus_productivity: new_prod.into_boxed_slice(),
+            power_consumption_modifier: new_power_consumption_modifier.into_boxed_slice(),
+            base_power_consumption: new_base_power_consumption.into_boxed_slice(),
+            positions: self.positions,
+        };
+
+        (ret, updates)
     }
 
     fn get_info<ItemIdxType: IdxTrait>(
@@ -643,9 +677,68 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         ret
     }
 
-    pub fn add_assembler(&mut self) -> usize {
+    fn remove_assembler_data(
+        &mut self,
+        index: usize,
+    ) -> (
+        [ITEMCOUNTTYPE; NUM_INGS],
+        [ITEMCOUNTTYPE; NUM_OUTPUTS],
+        TIMERTYPE,
+        Watt,
+        u8,
+        u8,
+        u8,
+    ) {
+        debug_assert!(!self.holes.contains(&index));
+        self.holes.push(index);
+
+        let ret = (
+            (0..NUM_INGS)
+                .map(|i| self.ings[i][index])
+                .collect_array()
+                .unwrap(),
+            (0..NUM_OUTPUTS)
+                .map(|i| self.outputs[i][index])
+                .collect_array()
+                .unwrap(),
+            self.timers[index],
+            self.base_power_consumption[index],
+            self.power_consumption_modifier[index],
+            self.bonus_productivity[index],
+            self.speed[index],
+        );
+        for ing in &mut self.ings {
+            ing[index] = 0;
+        }
+        for out in &mut self.outputs {
+            out[index] = ITEMCOUNTTYPE::MAX;
+        }
+        self.base_power_consumption[index] = Watt(0);
+
+        ret
+    }
+
+    pub fn add_assembler<ItemIdxType: IdxTrait>(
+        &mut self,
+        ty: u8,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> usize {
         // TODO: Is 0 the correct initial timer value?
-        self.add_assembler_with_data(array::from_fn(|i| 0), array::from_fn(|i| 0), 0)
+        self.add_assembler_with_data(
+            array::from_fn(|i| 0),
+            array::from_fn(|i| 0),
+            0,
+            Watt(0),
+            10,
+            0,
+            10,
+        )
+    }
+
+    pub fn move_assembler(&mut self, index: usize, dest: &mut Self) -> usize {
+        let data = self.remove_assembler_data(index);
+
+        dest.add_assembler_with_data(data.0, data.1, data.2, data.3, data.4, data.5, data.6)
     }
 
     fn add_assembler_with_data(
@@ -653,6 +746,10 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         ings: [ITEMCOUNTTYPE; NUM_INGS],
         out: [ITEMCOUNTTYPE; NUM_OUTPUTS],
         timer: TIMERTYPE,
+        power: Watt,
+        power_consumption_modifier: u8,
+        bonus_productiviy: u8,
+        speed: u8,
     ) -> usize {
         let len = self.timers.len();
         debug_assert!(len % Simdtype::LEN == 0);
@@ -674,6 +771,10 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 ing[hole_index] = new_val;
             }
             self.timers[hole_index] = 0;
+            self.base_power_consumption[hole_index] = power;
+            self.power_consumption_modifier[hole_index] = power_consumption_modifier;
+            self.bonus_productivity[hole_index] = bonus_productiviy;
+            self.speed[hole_index] = speed;
             return hole_index;
         }
 
@@ -715,6 +816,33 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 timers.resize(new_len, 0);
                 timers.into_boxed_slice()
             });
+
+            take_mut::take(&mut self.base_power_consumption, |base_power_consumption| {
+                let mut base_power_consumption = base_power_consumption.into_vec();
+                base_power_consumption.resize(new_len, Watt(0));
+                base_power_consumption.into_boxed_slice()
+            });
+
+            take_mut::take(
+                &mut self.power_consumption_modifier,
+                |power_consumption_modifier| {
+                    let mut power_consumption_modifier = power_consumption_modifier.into_vec();
+                    power_consumption_modifier.resize(new_len, 0);
+                    power_consumption_modifier.into_boxed_slice()
+                },
+            );
+
+            take_mut::take(&mut self.bonus_productivity, |bonus_productivity| {
+                let mut bonus_productivity = bonus_productivity.into_vec();
+                bonus_productivity.resize(new_len, 0);
+                bonus_productivity.into_boxed_slice()
+            });
+
+            take_mut::take(&mut self.speed, |speed| {
+                let mut speed = speed.into_vec();
+                speed.resize(new_len, 0);
+                speed.into_boxed_slice()
+            });
         }
 
         for (output, new_val) in self.outputs.iter_mut().zip(out) {
@@ -724,6 +852,10 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             ing[self.len] = new_val;
         }
         self.timers[self.len] = timer;
+        self.base_power_consumption[self.len] = power;
+        self.power_consumption_modifier[self.len] = power_consumption_modifier;
+        self.bonus_productivity[self.len] = bonus_productiviy;
+        self.speed[self.len] = speed;
 
         self.len += 1;
         self.len - 1

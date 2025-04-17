@@ -1,12 +1,7 @@
-use std::{
-    collections::BTreeSet,
-    marker::PhantomData,
-    mem::{self},
-    ops::ControlFlow,
-};
+use std::{borrow::Borrow, marker::PhantomData, ops::ControlFlow};
 
 use crate::{
-    belt::{belt::Belt, splitter::Splitter, BeltStore, BeltTileId},
+    belt::{belt::Belt, splitter::Splitter, BeltStore, MultiBeltStore},
     chest::{FullChestStore, MultiChestStore},
     data::{DataStore, ItemRecipeDir},
     frontend::{
@@ -17,18 +12,17 @@ use crate::{
         },
         world::{
             tile::{
-                AssemblerID, AssemblerInfo, AttachedInserter, Dir, Entity, InserterInfo, World,
+                AssemblerID, AssemblerInfo, AttachedInserter, BeltId, BeltTileId, Dir, Entity,
+                InserterInfo, World,
             },
             Position,
         },
     },
-    inserter::{StaticID, Storage},
+    inserter::{belt_belt_inserter::BeltBeltInserter, StaticID, Storage},
     item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
     power::{power_grid::PowerGridIdentifier, PowerGridStorage, Watt},
     research::{ResearchProgress, TechState},
-    statistics::{
-        production::ProductionInfo, recipe::RecipeTickInfo, research::ResearchInfo, GenStatistics,
-    },
+    statistics::{production::ProductionInfo, recipe::RecipeTickInfo, GenStatistics},
     storage_list::{full_to_by_item, grid_size, num_recipes, sizes, storages_by_item},
 };
 use itertools::Itertools;
@@ -76,9 +70,107 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SimulationState<ItemIdxType
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    pub power_grids: PowerGridStorage<RecipeIdxType>,
+    pub power_grids: PowerGridStorage<ItemIdxType, RecipeIdxType>,
     pub belts: BeltStore<ItemIdxType, RecipeIdxType>,
     pub chests: FullChestStore<ItemIdxType>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct SplitterStore<ItemIdxType: WeakIdxTrait> {
+    pub empty_splitters: Vec<Splitter>,
+    // TODO: Holes
+    pub splitters: Box<[Vec<Splitter>]>,
+    item: PhantomData<ItemIdxType>,
+}
+
+impl<ItemIdxType: IdxTrait> SplitterStore<ItemIdxType> {
+    pub fn get_splitter_belt_ids<'a>(
+        &'a self,
+        item: Option<Item<ItemIdxType>>,
+        id: usize,
+    ) -> [impl IntoIterator<Item = BeltTileId<ItemIdxType>> + use<'a, ItemIdxType>; 2] {
+        let index_to_id = move |index| match item {
+            Some(item) => BeltTileId::BeltId(BeltId { item, index }),
+            None => BeltTileId::EmptyBeltId(index),
+        };
+
+        match item {
+            Some(item) => [
+                self.splitters[Into::<usize>::into(item.id)][id]
+                    .input_belts
+                    .iter()
+                    .copied()
+                    .map(index_to_id),
+                self.splitters[Into::<usize>::into(item.id)][id]
+                    .output_belts
+                    .iter()
+                    .copied()
+                    .map(index_to_id),
+            ],
+            None => [
+                self.empty_splitters[id]
+                    .input_belts
+                    .iter()
+                    .copied()
+                    .map(index_to_id),
+                self.empty_splitters[id]
+                    .output_belts
+                    .iter()
+                    .copied()
+                    .map(index_to_id),
+            ],
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct BeltBeltInserterStore<ItemIdxType: WeakIdxTrait> {
+    // TODO: Holes
+    pub inserters: Box<[Vec<(BeltBeltInserter, BeltBeltInserterInfo<ItemIdxType>)>]>,
+}
+
+impl<ItemIdxType: IdxTrait> BeltBeltInserterStore<ItemIdxType> {
+    pub fn update<RecipeIdxType: IdxTrait>(
+        &mut self,
+        belts: &mut BeltStore<RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        self.inserters
+            .par_iter_mut()
+            .zip(belts.belts.par_iter_mut())
+            .for_each(|(inserters, belts)| {
+                for ins in inserters {
+                    let [source, dest] = if ins.1.source.0 == ins.1.dest.0 {
+                        // We are taking and inserting from the same belt
+                        debug_assert!(ins.1.source.1 != ins.1.dest.1);
+                        belts.belts[ins.1.source.0]
+                            .get_two([ins.1.source.1 as usize, ins.1.dest.1 as usize])
+                    } else {
+                        let [source_belt, dest_belt] = belts
+                            .belts
+                            .get_disjoint_mut([ins.1.source.0, ins.1.dest.0])
+                            .expect("Index out of bounds");
+                        [
+                            source_belt.get_mut(ins.1.source.1),
+                            dest_belt.get_mut(ins.1.dest.1),
+                        ]
+                    };
+                    ins.0.update(source, dest, todo!());
+                }
+            });
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct BeltBeltInserterInfo<ItemIdxType: WeakIdxTrait> {
+    source: (usize, u16),
+    dest: (usize, u16),
+    cooldown: u8,
+    item: PhantomData<ItemIdxType>,
+}
+
+pub struct BeltBeltInserterAdditionInfo {
+    pub cooldown: u8,
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, RecipeIdxType> {
@@ -98,10 +190,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
     }
 
     fn belt_update<'a>(&mut self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) {
-        if self.power_grids.power_grids.len() > 1 {
-            warn!("Bug here");
-        }
-
         let num_grids_total = self.power_grids.power_grids.iter().flatten().count();
         let mut all_storages =
             storages_by_item(&mut self.power_grids, &mut self.chests, data_store);
@@ -138,11 +226,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     #[allow(clippy::too_many_lines)]
     pub fn apply_actions(
         &mut self,
-        actions: impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>,
+        actions: impl IntoIterator<Item = impl Borrow<ActionType<ItemIdxType, RecipeIdxType>>>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         for action in actions {
-            match action {
+            // FIXME: I just clone for now
+            match action.borrow().clone() {
                 ActionType::PlaceFloorTile(place_floor_tile_by_hand_info) => {
                     let num_items_needed = match place_floor_tile_by_hand_info.ghost_info.position {
                         PositionInfo::Rect { pos, width, height } => width * height,
@@ -189,13 +278,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 continue;
                             }
 
-                            let powered_by = self.world.is_powered_by(position, (3, 3), data_store);
+                            let powered_by = self.world.is_powered_by(
+                                &self.simulation_state,
+                                position,
+                                (3, 3),
+                                data_store,
+                            );
 
-                            if let Some(grid_id) = powered_by {
+                            if let Some(pole_position) = powered_by {
                                 self.world.add_entity(
                                     crate::frontend::world::tile::Entity::Assembler {
                                         pos: position,
-                                        info: AssemblerInfo::PoweredNoRecipe(grid_id),
+                                        info: AssemblerInfo::PoweredNoRecipe(pole_position),
                                     },
                                     &self.simulation_state,
                                     data_store,
@@ -229,10 +323,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                             self.update_inserters(InserterUpdateInfo::NewBelt { pos }, data_store);
                         },
-                        crate::frontend::world::tile::PlaceEntityType::PowerPole { pos, ty } => {
+                        crate::frontend::world::tile::PlaceEntityType::PowerPole {
+                            pos: pole_pos,
+                            ty,
+                        } => {
                             // Check if the powerpole fits
                             if !self.world.can_fit(
-                                pos,
+                                pole_pos,
                                 data_store.power_pole_data[usize::from(ty)].size,
                                 data_store,
                             ) {
@@ -240,244 +337,117 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 continue;
                             }
 
-                            let new_pole_entity = {
-                                // Check which poles are in range to connect to
-                                let mut connection_candidates = self
-                                    .world
-                                    .get_power_poles_which_could_connect_to_pole_at(
-                                        pos,
-                                        data_store.power_pole_data[usize::from(ty)].size,
-                                        data_store.power_pole_data[usize::from(ty)]
-                                            .connection_range,
-                                        data_store,
-                                    )
-                                    .into_iter()
-                                    .peekable();
+                            // Check which poles are in range to connect to
+                            let connection_candidates: Vec<_> = self
+                                .world
+                                .get_power_poles_which_could_connect_to_pole_at(
+                                    pole_pos,
+                                    data_store.power_pole_data[usize::from(ty)].size,
+                                    data_store.power_pole_data[usize::from(ty)].connection_range,
+                                    data_store,
+                                )
+                                .into_iter()
+                                .map(|e| e.get_pos())
+                                .collect();
 
-                                if let Some(pole) = connection_candidates.peek() {
-                                    let final_id = match pole {
-                                        Entity::PowerPole { grid_id, .. } => *grid_id,
-                                        _ => unreachable!(
-                                            "List of power poles returned non power pole?!"
-                                        ),
-                                    };
-
-                                    // TODO: A rust magician would probably be able to write this without temporary vectors but this should work
-                                    let grids_to_merge: BTreeSet<PowerGridIdentifier> =
-                                        connection_candidates
-                                            .clone()
-                                            .map(|pole| match pole {
-                                                Entity::PowerPole { grid_id, .. } => *grid_id,
-                                                _ => unreachable!(
-                                                    "List of power poles returned non power pole?!"
-                                                ),
-                                            })
-                                            .collect();
-
-                                    let future_connected_power_poles: Vec<Position> =
-                                        connection_candidates.map(|e| e.get_pos()).collect();
-
-                                    // Merge all power_grids in the candidates
-                                    for grid_id in grids_to_merge {
-                                        let updates = self
-                                            .simulation_state
-                                            .factory
-                                            .power_grids
-                                            .merge_power_grids(
-                                                final_id,
-                                                grid_id,
-                                                data_store,
-                                                pos,
-                                                future_connected_power_poles.iter().copied(),
-                                            )
-                                            .unzip();
-
-                                        for pole_info in updates.1.into_iter().flatten() {
-                                            let e = self
-                                                .world
-                                                .get_chunk_for_tile_mut(pole_info.position)
-                                                .unwrap()
-                                                .get_entity_at_mut(pole_info.position, data_store)
-                                                .unwrap();
-
-                                            match e {
-                                                Entity::PowerPole { grid_id, .. } => {
-                                                    *grid_id = pole_info.new_grid_id
-                                                },
-                                                _ => unreachable!(
-                                                    "List of power poles returned non power pole?!"
-                                                ),
-                                            }
-                                        }
-
-                                        for storage_update_info in updates.0.into_iter().flatten() {
-                                            // FIXME: Here we loop through the whole factory (or all inserters at least) multiple times. That is awful
-                                            //        Accelerate that
-                                            // Update Inserters!
-                                            for belt_store in
-                                                &mut self.simulation_state.factory.belts.belts
-                                            {
-                                                for belt in belt_store.belts_mut() {
-                                                    belt.change_inserter_storage_id(
-                                                        storage_update_info.old.1,
-                                                        storage_update_info.new.1,
-                                                    );
-                                                }
-                                            }
-                                        }
-
-                                        self.world.update_power_grid_id(
-                                            &mut self.simulation_state,
-                                            grid_id,
-                                            final_id,
-                                        );
-                                    }
-
-                                    // Add this new connection to the connection candidates
-
-                                    for pole_pos in &future_connected_power_poles {
-                                        let pole = self
-                                            .world
-                                            .get_chunk_for_tile_mut(*pole_pos)
-                                            .unwrap()
-                                            .get_entity_at_mut(*pole_pos, data_store)
-                                            .unwrap();
-
-                                        match pole {
-                                            Entity::PowerPole {
-                                                connected_power_poles,
-                                                ..
-                                            } => connected_power_poles.push(pos),
-                                            _ => unreachable!(
-                                                "List of power poles returned non power pole?!"
-                                            ),
-                                        }
-                                    }
-
-                                    // Add any new machine, who are (exclusively) in range of this new pole into the grid
-
-                                    let power_range =
-                                        data_store.power_pole_data[usize::from(ty)].power_range;
-                                    let size = data_store.power_pole_data[usize::from(ty)].size;
-
-                                    let mut to_update_assemblers = vec![];
-
-                                    self.world.mutate_entities_colliding_with(
-                                        Position {
-                                            x: pos.x - usize::from(power_range),
-                                            y: pos.y - usize::from(power_range),
-                                        },
-                                        (2 * power_range + size.0, 2 * power_range + size.1),
-                                        data_store,
-                                        |e| {
-                                        match e {
-                                            Entity::Assembler { info, pos, .. } => match info {
-                                                AssemblerInfo::UnpoweredNoRecipe => *info = AssemblerInfo::PoweredNoRecipe(final_id),
-                                                AssemblerInfo::Unpowered(recipe) => {
-                                                    let new_id = Self::add_assembler_to_sim(&mut self.simulation_state, *recipe, final_id, data_store);
-
-                                                    to_update_assemblers.push(*pos);
-
-                                                    *info = AssemblerInfo::Powered(new_id);
-                                                },
-                                                AssemblerInfo::PoweredNoRecipe(_) | AssemblerInfo::Powered(..) => {}
-                                            },
-                                            Entity::Inserter { .. } => {
-                                                warn!("Could be powering Inserter, ignore for now!")
-                                            },
-                                            _ => {},
-                                        }
-                                        ControlFlow::Continue(())
-                                    });
-
-                                    // We might have instantiated an assembler, update surrounding inserters if necessary
-                                    for pos in to_update_assemblers {
-                                        self.update_inserters(
-                                            InserterUpdateInfo::NewAssembler { pos, size: (3, 3) },
-                                            data_store,
-                                        );
-                                    }
-
-                                    // The new Power Pole entity
-                                    Entity::PowerPole {
-                                        ty,
-                                        pos,
-                                        grid_id: final_id,
-                                        connected_power_poles: future_connected_power_poles,
-                                    }
-                                } else {
-                                    // We cannot connect to anything.
-                                    mem::drop(connection_candidates);
-                                    // Create a new PowerGrid.
-
-                                    let new_grid_id = self
+                            if let Some((pole_updates, storage_updates)) =
+                                self.simulation_state.factory.power_grids.add_pole(
+                                    pole_pos,
+                                    connection_candidates.iter().copied(),
+                                    data_store,
+                                )
+                            {
+                                // Handle Entities that are now part of another power_grid
+                                for pole_position in pole_updates {
+                                    let grid = self
                                         .simulation_state
                                         .factory
                                         .power_grids
-                                        .add_power_grid(data_store);
+                                        .pole_pos_to_grid_id[&pole_position];
 
-                                    self.simulation_state.factory.power_grids.power_grids
-                                        [usize::from(new_grid_id)]
-                                    .as_mut()
-                                    .unwrap()
-                                    .add_pole(pos, vec![]);
+                                    assert!(self.simulation_state.factory.power_grids.power_grids
+                                        [grid as usize]
+                                        .is_some());
 
-                                    // Add all machines in range into the grid
-                                    let power_range =
-                                        data_store.power_pole_data[usize::from(ty)].power_range;
-                                    let size = data_store.power_pole_data[usize::from(ty)].size;
+                                    self.world
+                                        .update_pole_power(pole_position, grid, data_store);
+                                }
 
-                                    let mut to_update_assemblers = vec![];
+                                // Handle storage updates
+                                for storage_update in storage_updates {
+                                    todo!("Handle {:?}", storage_update);
+                                }
+                            } else {
+                                // No updates needed
+                            }
 
-                                    self.world.mutate_entities_colliding_with(
-                                        Position {
-                                            x: pos.x - usize::from(power_range),
-                                            y: pos.y - usize::from(power_range),
-                                        },
-                                        (2 * power_range + size.0, 2 * power_range + size.1),
-                                        data_store,
-                                        |e| {
-                                        match e {
-                                            Entity::Assembler { info, pos, .. } => match info {
-                                                AssemblerInfo::UnpoweredNoRecipe => *info = AssemblerInfo::PoweredNoRecipe(new_grid_id),
-                                                AssemblerInfo::Unpowered(recipe) => {
-                                                    let new_id = Self::add_assembler_to_sim(&mut self.simulation_state, *recipe, new_grid_id, data_store);
+                            let grid = self
+                                .simulation_state
+                                .factory
+                                .power_grids
+                                .pole_pos_to_grid_id[&pole_pos];
 
-                                                    to_update_assemblers.push(*pos);
-
-                                                    *info = AssemblerInfo::Powered(new_id);
-                                                },
-                                                AssemblerInfo::PoweredNoRecipe(_) | AssemblerInfo::Powered(..) => {}
+                            // Handle Entities that are newly powered
+                            let power_range = data_store.power_pole_data[ty as usize].power_range;
+                            self.world.mutate_entities_colliding_with(
+                                Position {
+                                    x: pole_pos.x - power_range as usize,
+                                    y: pole_pos.y - power_range as usize,
+                                },
+                                (2 * power_range + 1, 2 * power_range + 1),
+                                data_store,
+                                |e| {
+                                    match e {
+                                        Entity::Assembler { pos, info } => match info {
+                                            AssemblerInfo::UnpoweredNoRecipe => {
+                                                *info = AssemblerInfo::PoweredNoRecipe(pole_pos);
                                             },
-                                            Entity::Inserter { .. } => {
-                                                warn!("Could be powering Inserter, ignore for now!")
+                                            AssemblerInfo::Unpowered(recipe) => {
+                                                let assembler_id = self
+                                                    .simulation_state
+                                                    .factory
+                                                    .power_grids
+                                                    .power_grids
+                                                    [grid as usize]
+                                                    .as_mut()
+                                                    .unwrap() // TODO: Assembler ty
+                                                    .add_assembler(
+                                                        0, grid, *recipe, pole_pos, *pos,
+                                                        data_store,
+                                                    );
+                                                *info = AssemblerInfo::Powered {
+                                                    id: assembler_id,
+                                                    pole_position: pole_pos,
+                                                };
                                             },
                                             _ => {},
-                                        }
-                                        ControlFlow::Continue(())
-                                    });
+                                        },
+                                        Entity::Roboport {
+                                            ty,
+                                            pos,
+                                            power_grid,
+                                            network,
+                                            id,
+                                        } => {
+                                            if power_grid.is_none() {
+                                                *power_grid = Some(grid)
+                                            }
+                                            todo!("Add Roboport to power grid")
+                                        },
 
-                                    // We might have instantiated an assembler, update surrounding inserters if necessary
-                                    for pos in to_update_assemblers {
-                                        self.update_inserters(
-                                            InserterUpdateInfo::NewAssembler { pos, size: (3, 3) },
-                                            data_store,
-                                        );
+                                        _ => {},
                                     }
-
-                                    Entity::PowerPole {
-                                        ty,
-                                        pos,
-                                        grid_id: new_grid_id,
-                                        connected_power_poles: vec![],
-                                    }
-                                }
-                            };
+                                    ControlFlow::Continue(())
+                                },
+                            );
 
                             // Add the powerpole entity to the correct chunk
-
                             self.world.add_entity(
-                                new_pole_entity,
+                                Entity::PowerPole {
+                                    ty,
+                                    pos: pole_pos,
+                                    connected_power_poles: connection_candidates,
+                                },
                                 &self.simulation_state,
                                 data_store,
                             );
@@ -523,7 +493,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     self.world.players[usize::from(id)].visible = true;
                     self.world.players[usize::from(id)].pos = pos;
                 },
-                ActionType::Ping((x, y)) => {
+                ActionType::Ping(Position { x, y }) => {
                     // Do nothing for now
                     info!("Ping at {:?}", (x, y));
                     // TODO:
@@ -544,19 +514,33 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     AssemblerInfo::Unpowered(_old_recipe) => {
                                         *info = AssemblerInfo::Unpowered(recipe)
                                     },
-                                    AssemblerInfo::PoweredNoRecipe(power_grid_id) => {
+                                    AssemblerInfo::PoweredNoRecipe(pole_position) => {
+                                        let grid_id = self
+                                            .simulation_state
+                                            .factory
+                                            .power_grids
+                                            .pole_pos_to_grid_id[&pole_position];
+
                                         let new_id = Self::add_assembler_to_sim(
                                             &mut self.simulation_state,
                                             recipe,
-                                            *power_grid_id,
+                                            grid_id,
+                                            *pole_position,
+                                            *pos,
                                             data_store,
                                         );
 
-                                        *info = AssemblerInfo::Powered(new_id);
+                                        *info = AssemblerInfo::Powered {
+                                            id: new_id,
+                                            pole_position: *pole_position,
+                                        };
 
                                         needs_update = true;
                                     },
-                                    AssemblerInfo::Powered(assembler_id) => {
+                                    AssemblerInfo::Powered {
+                                        id: assembler_id,
+                                        pole_position,
+                                    } => {
                                         let old_recipe_id = assembler_id.recipe;
 
                                         if old_recipe_id == recipe {
@@ -590,6 +574,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             &mut self.simulation_state,
                                             recipe,
                                             assembler_id.grid,
+                                            *pole_position,
+                                            *pos,
                                             data_store,
                                         );
 
@@ -616,6 +602,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             data_store,
                         );
                     }
+                },
+                ActionType::Remove(pos) => {
+                    self.world
+                        .remove_entity_at(pos, &mut self.simulation_state, data_store);
                 },
             }
         }
@@ -746,12 +736,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
         recipe: Recipe<RecipeIdxType>,
         power_grid_id: PowerGridIdentifier,
+        pole_position: Position,
+        assembler_position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> AssemblerID<RecipeIdxType> {
         sim_state.factory.power_grids.power_grids[power_grid_id as usize]
             .as_mut()
             .unwrap()
-            .add_assembler(power_grid_id, recipe, data_store)
+            // Assembler type
+            .add_assembler(
+                0,
+                power_grid_id,
+                recipe,
+                pole_position,
+                assembler_position,
+                data_store,
+            )
     }
 
     fn try_instantiate_inserter(
@@ -789,9 +789,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             .map(|e| match e {
                 Entity::Inserter { .. } | Entity::PowerPole { .. } => None,
 
+                Entity::Roboport { ty, pos, power_grid, network, id } => {
+                    // TODO:
+                    warn!("It is currently not possible to add or remove bots from roboports using inserters");
+                    None
+                }
+
                 Entity::Assembler {
                     pos,
-                    info: AssemblerInfo::Powered(id),
+                    info: AssemblerInfo::Powered {
+                        id,
+                        pole_position
+                    },
                     // FIXME: Translate the recipe_idx to
                 } => Some((
                     InserterConnection::Storage(Storage::Assembler {
@@ -859,10 +868,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             .map(|e| match e {
                 Entity::Inserter { .. } | Entity::PowerPole { .. } => None,
 
+                Entity::Roboport { ty, pos, power_grid, network, id } => {
+                    // TODO:
+                    warn!("It is currently not possible to add or remove bots from roboports using inserters");
+                    None
+                }
+
                 Entity::Assembler {
                     pos,
-                    info: AssemblerInfo::Powered(id),
-                    // FXIME: Translate the recipe_idx to
+                    info: AssemblerInfo::Powered {
+                        id,
+                        pole_position,
+                    },
+                    // FIXME: Translate the recipe_idx to
                 } => Some((
                     InserterConnection::Storage(Storage::Assembler {
                         grid: id.grid,
@@ -1043,26 +1061,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             return Err(());
         }
 
-        let start_pos = Position {
-            x: pos
-                .x
-                .checked_add_signed(dir.reverse().into_offset().0.into())
-                .unwrap(),
-            y: pos
-                .y
-                .checked_add_signed(dir.reverse().into_offset().1.into())
-                .unwrap(),
-        };
-        let end_pos = Position {
-            x: pos
-                .x
-                .checked_add_signed(dir.into_offset().0.into())
-                .unwrap(),
-            y: pos
-                .y
-                .checked_add_signed(dir.into_offset().1.into())
-                .unwrap(),
-        };
+        let (start_pos, end_pos) = calculate_inserter_positions(pos, dir);
 
         self.world.add_entity(
             Entity::Inserter {
@@ -1075,5 +1074,57 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         );
 
         Ok(())
+    }
+}
+
+// TODO: Different types of inserters
+pub fn calculate_inserter_positions(pos: Position, dir: Dir) -> (Position, Position) {
+    let start_pos = Position {
+        x: pos
+            .x
+            .checked_add_signed(dir.reverse().into_offset().0.into())
+            .unwrap(),
+        y: pos
+            .y
+            .checked_add_signed(dir.reverse().into_offset().1.into())
+            .unwrap(),
+    };
+    let end_pos = Position {
+        x: pos
+            .x
+            .checked_add_signed(dir.into_offset().0.into())
+            .unwrap(),
+        y: pos
+            .y
+            .checked_add_signed(dir.into_offset().1.into())
+            .unwrap(),
+    };
+
+    (start_pos, end_pos)
+}
+
+// #[cfg(test)]
+mod tests {
+    use std::sync::LazyLock;
+
+    use crate::{
+        blueprint::{random_blueprint_strategy, random_position},
+        data::{get_raw_data_test, DataStore},
+        frontend::world::Position,
+        rendering::app_state::GameState,
+    };
+    use proptest::{prelude::ProptestConfig, proptest};
+    static DATA_STORE: LazyLock<DataStore<u8, u8>> =
+        LazyLock::new(|| get_raw_data_test().turn::<u8, u8>());
+
+    proptest! {
+        #[test]
+        fn test_random_blueprint_does_not_crash(base_pos in random_position(), blueprint in random_blueprint_strategy::<u8, u8>(0..100, &DATA_STORE)) {
+
+            let mut game_state = GameState::new(&DATA_STORE);
+
+            blueprint.apply(base_pos, &mut game_state, &DATA_STORE);
+
+        }
     }
 }

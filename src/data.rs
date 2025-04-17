@@ -1,14 +1,14 @@
-use std::{array, collections::HashMap, marker::PhantomData};
+use std::{array, collections::HashMap};
 
 use itertools::Itertools;
-use log::{info, warn};
+use log::warn;
 use sha2::{Digest, Sha256};
 use strum::IntoEnumIterator;
 
 use crate::{
     assembler::TIMERTYPE,
     frontend::world::tile::{AssemblerID, Dir},
-    inserter::{StaticID, Storage, StorageID},
+    inserter::{StaticID, Storage},
     item::{IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
     power::{power_grid::PowerGridIdentifier, Joule, Watt},
 };
@@ -163,12 +163,26 @@ pub fn get_raw_data_test() -> RawDataStore {
             },
         ],
 
-        chests: vec![RawChest {
-            name: "factory_game::wooden_chest".to_string(),
-            display_name: "Wooden Chest".to_string(),
-            tile_size: (1, 1),
-            number_of_slots: 16,
-        }],
+        chests: vec![
+            RawChest {
+                name: "factory_game::wooden_chest".to_string(),
+                display_name: "Wooden Chest".to_string(),
+                tile_size: (1, 1),
+                number_of_slots: 16,
+            },
+            RawChest {
+                name: "factory_game::iron_chest".to_string(),
+                display_name: "Iron Chest".to_string(),
+                tile_size: (1, 1),
+                number_of_slots: 32,
+            },
+            RawChest {
+                name: "factory_game::steel_chest".to_string(),
+                display_name: "Steel Chest".to_string(),
+                tile_size: (1, 1),
+                number_of_slots: 48,
+            },
+        ],
     }
 }
 
@@ -296,6 +310,8 @@ enum RawEntity {
 #[derive(Debug)]
 pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub checksum: String,
+
+    pub recipe_names: Vec<String>,
 
     pub recipe_num_ing_lookup: Vec<usize>,
     pub recipe_num_out_lookup: Vec<usize>,
@@ -432,7 +448,7 @@ impl RawDataStore {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn turn<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    pub fn turn<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         self,
     ) -> DataStore<ItemIdxType, RecipeIdxType> {
         let checksum = self.get_checksum();
@@ -728,6 +744,12 @@ impl RawDataStore {
 
         DataStore {
             checksum,
+
+            recipe_names: self
+                .recipes
+                .iter()
+                .map(|r| r.display_name.clone())
+                .collect(),
 
             recipe_num_ing_lookup,
             recipe_num_out_lookup,

@@ -5,7 +5,6 @@ use std::{
 };
 
 use enum_map::{Enum, EnumMap};
-use log::warn;
 use strum::EnumIter;
 
 use itertools::Itertools;
@@ -13,9 +12,11 @@ use itertools::Itertools;
 use crate::{
     belt::{splitter::SplitterDistributionMode, BeltTileId},
     data::DataStore,
-    item::{IdxTrait, Item, Recipe, WeakIdxTrait},
-    power::power_grid::PowerGridIdentifier,
-    rendering::app_state::SimulationState,
+    frontend::world,
+    inserter::Storage,
+    item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
+    power::power_grid::{PowerGridEntity, PowerGridIdentifier},
+    rendering::app_state::{calculate_inserter_positions, SimulationState},
     TICKS_PER_SECOND_LOGIC,
 };
 
@@ -160,10 +161,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         self.chunks.get(x, y)
     }
 
-    pub fn set_floor_tile(&mut self, pos: Position, floor_tile: FloorTile) {
-        self.get_chunk_for_tile_mut(pos)
-            .expect("Chunk not generated")
-            .floor_tiles[pos.x % 16][pos.y % 16] = floor_tile;
+    pub fn set_floor_tile(&mut self, pos: Position, floor_tile: FloorTile) -> Result<(), ()> {
+        if let Some(chunk) = self.get_chunk_for_tile_mut(pos) {
+            chunk.floor_tiles[pos.x % 16][pos.y % 16] = floor_tile;
+            Ok(())
+        } else {
+            Err(())
+        }
     }
 
     pub fn add_entity(
@@ -171,18 +175,37 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         entity: Entity<ItemIdxType, RecipeIdxType>,
         sim_state: &SimulationState<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) {
-        debug_assert!(self.can_fit(entity.get_pos(), entity.get_size(data_store), data_store));
+    ) -> Result<(), ()> {
+        if !self.can_fit(entity.get_pos(), entity.get_size(data_store), data_store) {
+            return Err(());
+        }
 
         let pos = entity.get_pos();
 
         let chunk_pos = self.get_chunk_pos_for_tile(pos);
 
+        if self.get_chunk_for_tile_mut(pos).is_none() {
+            return Err(());
+        }
+
         match entity {
             Entity::Assembler { info, .. } => match info {
                 AssemblerInfo::UnpoweredNoRecipe | AssemblerInfo::Unpowered(_) => {},
-                AssemblerInfo::PoweredNoRecipe(grid)
-                | AssemblerInfo::Powered(AssemblerID { grid, .. }) => {
+                AssemblerInfo::PoweredNoRecipe(pole_position) => {
+                    let grid = sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_position];
+                    self.power_grid_lookup
+                        .grid_to_chunks
+                        .entry(grid)
+                        .or_default()
+                        .insert(chunk_pos);
+                },
+                AssemblerInfo::Powered {
+                    id: AssemblerID { grid, .. },
+                    pole_position,
+                } => {
+                    let lookup_grid =
+                        sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_position];
+                    assert_eq!(grid, lookup_grid);
                     self.power_grid_lookup
                         .grid_to_chunks
                         .entry(grid)
@@ -190,10 +213,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         .insert(chunk_pos);
                 },
             },
-            Entity::PowerPole { grid_id, .. } => {
+            Entity::PowerPole { pos, .. } => {
+                let grid = sim_state.factory.power_grids.pole_pos_to_grid_id[&pos];
                 self.power_grid_lookup
                     .grid_to_chunks
-                    .entry(grid_id)
+                    .entry(grid)
                     .or_default()
                     .insert(chunk_pos);
             },
@@ -278,6 +302,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 item,
                 index,
             } => {},
+            Entity::Roboport {
+                ty,
+                pos,
+                power_grid,
+                network,
+                id,
+            } => {},
         }
 
         let chunk = self
@@ -285,6 +316,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             .expect("Chunk outside the world!");
 
         chunk.entities.push(entity);
+
+        Ok(())
     }
 
     pub fn update_power_grid_id(
@@ -305,18 +338,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 match entity {
                     Entity::Assembler { info, .. } => match info {
                         AssemblerInfo::UnpoweredNoRecipe | AssemblerInfo::Unpowered(_) => {},
-                        AssemblerInfo::PoweredNoRecipe(grid)
-                        | AssemblerInfo::Powered(AssemblerID { grid, .. }) => {
-                            if *grid == old_id {
-                                *grid = new_id;
+                        AssemblerInfo::PoweredNoRecipe(pole_position) => {},
+                        AssemblerInfo::Powered {
+                            id:
+                                AssemblerID {
+                                    grid: grid_in_id, ..
+                                },
+                            pole_position,
+                        } => {
+                            let grid =
+                                sim_state.factory.power_grids.pole_pos_to_grid_id[pole_position];
+                            assert_eq!(grid, new_id);
+                            if *grid_in_id == old_id {
+                                *grid_in_id = new_id;
                             }
                         },
                     },
-                    Entity::PowerPole { grid_id, .. } => {
-                        if *grid_id == old_id {
-                            *grid_id = new_id;
-                        }
-                    },
+                    Entity::PowerPole { .. } => {},
                     Entity::Inserter { info, .. } => match info {
                         InserterInfo::NotAttached { .. } => {},
                         InserterInfo::Attached(attached_inserter) => match attached_inserter {
@@ -328,6 +366,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             },
                             AttachedInserter::StorageStorage(_) => todo!(),
                         },
+                    },
+                    Entity::Roboport { power_grid, .. } => {
+                        if *power_grid == Some(old_id) {
+                            *power_grid = Some(new_id);
+                        }
                     },
                     Entity::Belt { .. }
                     | Entity::Underground { .. }
@@ -348,7 +391,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         &mut self,
         old_id: BeltTileId<ItemIdxType>,
         new_id: BeltTileId<ItemIdxType>,
-        belt_pos_which_has_to_be_less_or_equal: u16,
+        belt_pos_earliest: u16,
     ) {
         let old_chunks = self.belt_lookup.belt_id_to_chunks.remove(&old_id);
 
@@ -363,9 +406,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     Entity::Assembler { .. } => {},
                     Entity::PowerPole { .. } => {},
                     Entity::Chest { .. } => {},
+                    Entity::Roboport { .. } => {},
                     Entity::Belt { id, belt_pos, .. }
                     | Entity::Underground { id, belt_pos, .. } => {
-                        if *id == old_id && belt_pos_which_has_to_be_less_or_equal <= *belt_pos {
+                        if *id == old_id && belt_pos_earliest <= *belt_pos {
                             *id = new_id;
                         }
                     },
@@ -373,8 +417,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     Entity::Inserter { info, .. } => match info {
                         InserterInfo::NotAttached { .. } => {},
                         InserterInfo::Attached(attached_inserter) => match attached_inserter {
-                            AttachedInserter::BeltStorage { id, .. } => {
-                                if *id == old_id {
+                            AttachedInserter::BeltStorage { id, belt_pos } => {
+                                if *id == old_id && belt_pos_earliest <= *belt_pos {
                                     *id = new_id;
                                 }
                             },
@@ -416,6 +460,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     Entity::Assembler { .. } => {},
                     Entity::PowerPole { .. } => {},
                     Entity::Chest { .. } => {},
+                    Entity::Roboport { .. } => {},
                     Entity::Belt { id, belt_pos, .. }
                     | Entity::Underground { id, belt_pos, .. } => {
                         if *id == id_to_change {
@@ -469,10 +514,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
     pub fn is_powered_by(
         &self,
+        sim_state: &SimulationState<ItemIdxType, RecipeIdxType>,
         entity_pos: Position,
         entity_size: (u8, u8),
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Option<PowerGridIdentifier> {
+    ) -> Option<Position> {
         self.get_entities_colliding_with(
             Position {
                 x: entity_pos.x - usize::from(data_store.max_power_search_range),
@@ -486,9 +532,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         )
         .into_iter()
         .find_map(|e| match e {
-            Entity::PowerPole {
-                ty, grid_id, pos, ..
-            } => {
+            Entity::PowerPole { ty, pos, .. } => {
+                if sim_state
+                    .factory
+                    .power_grids
+                    .pole_pos_to_grid_id
+                    .get(pos)
+                    .is_none()
+                {
+                    // This is a power pole that does not actually exist anymore
+                    // TODO: This is a hack :/
+                    return None;
+                }
+
                 let power_range = data_store.power_pole_data[usize::from(*ty)].power_range;
                 let size: (u8, u8) = data_store.power_pole_data[usize::from(*ty)].size;
                 if entity_pos.contained_in_sized(
@@ -499,7 +555,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     },
                     (2 * power_range + size.0, 2 * power_range + size.1),
                 ) {
-                    Some(*grid_id)
+                    Some(*pos)
                 } else {
                     None
                 }
@@ -582,6 +638,412 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         }
     }
 
+    // TODO: What does this return?
+    pub fn remove_entity_at(
+        &mut self,
+        pos: Position,
+        sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        let entity = self
+            .get_entities_colliding_with(pos, (1, 1), data_store)
+            .into_iter()
+            .next();
+
+        if let Some(entity) = entity {
+            let e_pos = entity.get_pos();
+            let e_size = entity.get_size(data_store);
+            let max_inserter_range = data_store.max_inserter_search_range;
+
+            let inserter_search_area = (
+                Position {
+                    x: pos.x - max_inserter_range as usize,
+                    y: pos.y - max_inserter_range as usize,
+                },
+                (
+                    2 * max_inserter_range + e_size.0,
+                    2 * max_inserter_range + e_size.1,
+                ),
+            );
+
+            match entity {
+                Entity::Assembler { pos, info } => match info {
+                    AssemblerInfo::UnpoweredNoRecipe
+                    | AssemblerInfo::Unpowered(_)
+                    | AssemblerInfo::PoweredNoRecipe(_) => {
+                        // Nothing to do besides removing the entity
+                    },
+                    AssemblerInfo::Powered {
+                        id: assembler_id,
+                        pole_position,
+                    } => {
+                        // TODO:
+                        let assembler_removal_info = sim_state.factory.power_grids.power_grids
+                            [assembler_id.grid as usize]
+                            .as_mut()
+                            .unwrap()
+                            .remove_assembler(*assembler_id, data_store);
+                    },
+                },
+                Entity::PowerPole {
+                    ty,
+                    pos,
+                    connected_power_poles,
+                } => {
+                    let old_id = sim_state.factory.power_grids.pole_pos_to_grid_id[pos];
+
+                    let (
+                        _poles_which_changed,
+                        machines_which_changed,
+                        no_longer_connected_entity_positions,
+                    ) = sim_state.factory.power_grids.remove_pole(*pos, data_store);
+
+                    for index_update in machines_which_changed {
+                        self.mutate_entities_colliding_with(
+                            index_update.position,
+                            (1, 1),
+                            data_store,
+                            |e| {
+                                match (e, index_update.new_storage) {
+                                    (
+                                        Entity::Assembler {
+                                            pos,
+                                            info: AssemblerInfo::Powered { id, pole_position },
+                                        },
+                                        crate::power::power_grid::PowerGridEntity::Assembler {
+                                            recipe,
+                                            index,
+                                        },
+                                    ) => {
+                                        assert_eq!(id.recipe, recipe);
+
+                                        assert_eq!(id.grid, old_id);
+
+                                        id.assembler_index = index;
+                                        id.grid = index_update.new_grid;
+                                    },
+                                    (entity, power_grid_entity) => {
+                                        unreachable!(
+                                            "Expected {power_grid_entity:?} found {entity:?}"
+                                        )
+                                    },
+                                }
+                                ControlFlow::Break(())
+                            },
+                        );
+
+                        // FIXME: HARDCODED!
+                        let assembler_size = (3, 3);
+
+                        let inserter_search_area = (
+                            Position {
+                                x: index_update.position.x - max_inserter_range as usize,
+                                y: index_update.position.y - max_inserter_range as usize,
+                            },
+                            (
+                                2 * max_inserter_range + assembler_size.0,
+                                2 * max_inserter_range + assembler_size.1,
+                            ),
+                        );
+
+                        let new_storages: Vec<_> = match index_update.new_storage {
+                            PowerGridEntity::Assembler { recipe, index } => data_store
+                                .recipe_to_items[&recipe]
+                                .iter()
+                                .map(|(_dir, item)| {
+                                    (
+                                        item,
+                                        Storage::Assembler {
+                                            grid: index_update.new_grid,
+                                            recipe_idx_with_this_item: data_store
+                                                .recipe_to_translated_index[&(recipe, *item)],
+                                            index,
+                                        },
+                                    )
+                                })
+                                .collect(),
+                            PowerGridEntity::Lab { index } => todo!(),
+                            PowerGridEntity::LazyPowerProducer { item, index } => {
+                                todo!("Expand Storage type")
+                            },
+                        };
+
+                        assert!(new_storages
+                            .iter()
+                            .map(|(item, _storage)| item)
+                            .all_unique());
+
+                        self.mutate_entities_colliding_with(
+                            inserter_search_area.0,
+                            inserter_search_area.1,
+                            data_store,
+                            |e| {
+                                match e {
+                                    Entity::Inserter {
+                                        pos,
+                                        direction,
+                                        info: InserterInfo::NotAttached { .. },
+                                    } => {
+                                        // Nothing to do
+                                    },
+                                    Entity::Inserter {
+                                        pos,
+                                        direction,
+                                        info,
+                                    } => {
+                                        let (start_pos, end_pos) =
+                                            calculate_inserter_positions(*pos, *direction);
+
+                                        if start_pos
+                                            .contained_in(index_update.position, assembler_size)
+                                            || end_pos
+                                                .contained_in(index_update.position, assembler_size)
+                                        {
+                                            // This Inserter is connected to the entity we are removing!
+                                            match info {
+                                                InserterInfo::NotAttached {
+                                                    start_pos,
+                                                    end_pos,
+                                                } => {
+                                                    unreachable!()
+                                                },
+                                                InserterInfo::Attached(attached_inserter) => {
+                                                    match attached_inserter {
+                                                        AttachedInserter::BeltStorage {
+                                                            id,
+                                                            belt_pos,
+                                                        } => match id {
+                                                            BeltTileId::EmptyBeltId(_) => todo!(),
+                                                            BeltTileId::BeltId(belt_id) => {
+                                                                sim_state
+                                                                    .factory
+                                                                    .belts
+                                                                    .get_belt_mut(*belt_id)
+                                                                    .set_inserter_storage_id(
+                                                                        *belt_pos,
+                                                                        new_storages
+                                                                            .iter()
+                                                                            .copied()
+                                                                            .find(|(item, _)| {
+                                                                                **item
+                                                                                    == belt_id.item
+                                                                            })
+                                                                            .unwrap()
+                                                                            .1,
+                                                                    );
+                                                            },
+                                                        },
+                                                        AttachedInserter::BeltBelt {
+                                                            item,
+                                                            inserter,
+                                                        } => {
+                                                            todo!("Change BeltBelt Inserter Index")
+                                                        },
+                                                        AttachedInserter::StorageStorage(_) => {
+                                                            todo!()
+                                                        },
+                                                    }
+                                                },
+                                            }
+                                        }
+                                    },
+
+                                    _ => {},
+                                }
+                                ControlFlow::Continue(())
+                            },
+                        );
+                    }
+
+                    for unconnected_position in no_longer_connected_entity_positions {
+                        // FIXME: Hardcoded size
+                        let pole_pos = self.is_powered_by(
+                            &sim_state,
+                            unconnected_position,
+                            (3, 3),
+                            data_store,
+                        );
+
+                        self.mutate_entities_colliding_with(
+                            unconnected_position,
+                            (1, 1),
+                            data_store,
+                            |e| {
+                                match e {
+                                    Entity::Assembler { pos, info } => match info {
+                                        AssemblerInfo::UnpoweredNoRecipe => unreachable!(),
+                                        AssemblerInfo::Unpowered(recipe) => unreachable!(),
+                                        AssemblerInfo::PoweredNoRecipe(position) => unreachable!(),
+                                        AssemblerInfo::Powered { id, pole_position } => {
+                                            assert!(sim_state
+                                                .factory
+                                                .power_grids
+                                                .pole_pos_to_grid_id
+                                                .get(pole_position)
+                                                .is_none());
+
+                                            if let Some(new_pole_pos) = pole_pos {
+                                                // FIXME: Items are lost here!
+                                                let grid_id = sim_state
+                                                    .factory
+                                                    .power_grids
+                                                    .pole_pos_to_grid_id[&new_pole_pos];
+
+                                                // FIXME: Assembler type
+                                                let new_id =
+                                                    sim_state.factory.power_grids.power_grids
+                                                        [usize::from(grid_id)]
+                                                    .as_mut()
+                                                    .unwrap()
+                                                    .add_assembler(
+                                                        0,
+                                                        grid_id,
+                                                        id.recipe,
+                                                        new_pole_pos,
+                                                        *pos,
+                                                        data_store,
+                                                    );
+
+                                                *id = new_id;
+                                            } else {
+                                                // FIXME: This will delete items!
+                                                *info = AssemblerInfo::Unpowered(id.recipe)
+                                            }
+                                        },
+                                    },
+                                    Entity::PowerPole { .. } => unreachable!(),
+
+                                    _ => unreachable!(),
+                                }
+                                ControlFlow::Continue(())
+                            },
+                        );
+                    }
+                },
+
+                Entity::Belt {
+                    pos,
+                    direction,
+                    id,
+                    belt_pos,
+                } => todo!(),
+                Entity::Underground {
+                    pos,
+                    underground_dir,
+                    direction,
+                    id,
+                    belt_pos,
+                } => todo!(),
+                Entity::Splitter {
+                    pos,
+                    direction,
+                    item,
+                    id,
+                } => todo!(),
+
+                Entity::Chest {
+                    ty,
+                    pos,
+                    item,
+                    index,
+                } => {
+                    if let Some(item) = item {
+                        let chest_removal_info = sim_state.factory.chests.stores
+                            [usize_from(item.id)]
+                        .remove_chest(*index, data_store);
+                    } else {
+                        todo!("What does not having an item mean?")
+                    }
+                },
+                Entity::Roboport {
+                    ty,
+                    pos,
+                    power_grid,
+                    network,
+                    id,
+                } => todo!(),
+
+                Entity::Inserter {
+                    pos,
+                    direction,
+                    info: InserterInfo::NotAttached { .. },
+                } => {},
+                Entity::Inserter {
+                    pos,
+                    direction,
+                    info: InserterInfo::Attached(attached),
+                } => match attached {
+                    AttachedInserter::BeltStorage { id, belt_pos } => {
+                        todo!("Remove BeltStorageInserter")
+                    },
+                    AttachedInserter::BeltBelt { item, inserter } => {
+                        todo!("Remove BeltBelt Inserter")
+                    },
+                    AttachedInserter::StorageStorage(_) => todo!(),
+                },
+            }
+
+            // Unattach inserters from self
+            self.mutate_entities_colliding_with(
+                inserter_search_area.0,
+                inserter_search_area.1,
+                data_store,
+                |e| {
+                    match e {
+                        Entity::Inserter {
+                            pos,
+                            direction,
+                            info: InserterInfo::NotAttached { .. },
+                        } => {
+                            // Nothing to do
+                        },
+                        Entity::Inserter {
+                            pos,
+                            direction,
+                            info,
+                        } => {
+                            let (start_pos, end_pos) =
+                                calculate_inserter_positions(*pos, *direction);
+
+                            if start_pos.contained_in(e_pos, e_size)
+                                || end_pos.contained_in(e_pos, e_size)
+                            {
+                                // This Inserter is connected to the entity we are removing!
+                                match info {
+                                    InserterInfo::NotAttached { start_pos, end_pos } => {
+                                        unreachable!()
+                                    },
+                                    InserterInfo::Attached(attached_inserter) => {
+                                        match attached_inserter {
+                                            AttachedInserter::BeltStorage { id, belt_pos } => {
+                                                todo!("Remove BeltStorageInserter")
+                                            },
+                                            AttachedInserter::BeltBelt { item, inserter } => {
+                                                todo!("Remove BeltBelt Inserter")
+                                            },
+                                            AttachedInserter::StorageStorage(_) => todo!(),
+                                        }
+                                    },
+                                }
+                            }
+                        },
+
+                        _ => {},
+                    }
+                    ControlFlow::Continue(())
+                },
+            );
+        } else {
+            // Nothing to do
+        }
+
+        // TODO: Actually remove the entity!
+        self.get_chunk_for_tile_mut(pos)
+            .unwrap()
+            .entities
+            .retain(|e| !pos.contained_in(e.get_pos(), e.get_size(data_store)));
+    }
+
     #[must_use]
     pub fn can_fit(
         &self,
@@ -620,6 +1082,46 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         )
         .into_iter()
         .filter(|e| matches!(e, Entity::PowerPole { .. }))
+    }
+
+    // TODO: Does this need to return something
+    pub fn update_pole_power(
+        &mut self,
+        pole_position: Position,
+        grid: PowerGridIdentifier,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        let Entity::PowerPole {
+            ty,
+            pos: pole_position,
+            ..
+        } = self
+            .get_entities_colliding_with(pole_position, (1, 1), data_store)
+            .into_iter()
+            .next()
+            .unwrap()
+        else {
+            unreachable!()
+        };
+    }
+
+    fn get_power_pole_range(
+        &self,
+        pole_pos: Position,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> (u8, (u8, u8)) {
+        let Some(Entity::PowerPole { ty, .. }) = self
+            .get_entities_colliding_with(pole_pos, (1, 1), data_store)
+            .into_iter()
+            .next()
+        else {
+            unreachable!()
+        };
+
+        let range = data_store.power_pole_data[usize::from(*ty)].connection_range;
+        let size = data_store.power_pole_data[usize::from(*ty)].size;
+
+        (range, size)
     }
 }
 
@@ -748,15 +1250,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
     }
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum AssemblerInfo<RecipeIdxType: WeakIdxTrait> {
     UnpoweredNoRecipe,
     Unpowered(Recipe<RecipeIdxType>),
-    PoweredNoRecipe(PowerGridIdentifier),
-    Powered(AssemblerID<RecipeIdxType>),
+    PoweredNoRecipe(Position),
+    Powered {
+        id: AssemblerID<RecipeIdxType>,
+        pole_position: Position,
+    },
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum InserterInfo<ItemIdxType: WeakIdxTrait> {
     NotAttached {
         start_pos: Position,
@@ -765,7 +1270,7 @@ pub enum InserterInfo<ItemIdxType: WeakIdxTrait> {
     Attached(AttachedInserter<ItemIdxType>),
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum AttachedInserter<ItemIdxType: WeakIdxTrait> {
     BeltStorage {
         id: BeltTileId<ItemIdxType>,
@@ -784,7 +1289,7 @@ pub enum UndergroundDir {
     Exit,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Assembler {
         pos: Position,
@@ -794,7 +1299,6 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         // This means at most 256 different types of power poles can exist, should be fine :)
         ty: u8,
         pos: Position,
-        grid_id: PowerGridIdentifier,
         connected_power_poles: Vec<Position>,
     },
     Belt {
@@ -828,6 +1332,14 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         item: Option<Item<ItemIdxType>>,
         index: usize,
     },
+    Roboport {
+        // This means at most 256 different types of Roboports can exist, should be fine
+        ty: u8,
+        pos: Position,
+        power_grid: Option<PowerGridIdentifier>,
+        network: u16,
+        id: u32,
+    },
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeIdxType> {
@@ -840,6 +1352,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::Underground { pos, .. } => *pos,
             Self::Splitter { pos, .. } => *pos,
             Self::Chest { pos, .. } => *pos,
+            Self::Roboport { pos, .. } => *pos,
         }
     }
 
@@ -857,6 +1370,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
                 Dir::West => (1, 2),
             },
             Self::Chest { ty, .. } => data_store.chest_tile_sizes[*ty as usize],
+            Self::Roboport { ty, .. } => (4, 4),
         }
     }
 }

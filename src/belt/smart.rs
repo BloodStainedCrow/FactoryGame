@@ -1,15 +1,9 @@
-use std::{cmp::min, iter::repeat, mem};
+use std::{cmp::min, iter::repeat};
 
-use super::belt::{Belt, NoSpaceError};
-use super::belt::{BeltLenType, ItemInfo};
-use super::sushi::{SushiBelt, SushiInserterStore};
-use crate::belt::FreeIndex;
-use crate::belt::Inserter;
-use crate::item::Item;
 use crate::{
     inserter::{
         belt_storage_inserter::{BeltStorageInserter, Dir},
-        InserterState, Storage, StorageID, MOVETIME,
+        InserterState, Storage, MOVETIME,
     },
     item::{IdxTrait, WeakIdxTrait},
     storage_list::SingleItemStorages,
@@ -41,9 +35,10 @@ pub struct InserterStore<RecipeIdxType: WeakIdxTrait> {
 }
 
 #[derive(Debug)]
-pub struct BeltInserterInfo {
-    outgoing: bool,
-    state: InserterState,
+pub struct BeltInserterInfo<RecipeIdxType: WeakIdxTrait> {
+    pub outgoing: bool,
+    pub state: InserterState,
+    pub connection: Storage<RecipeIdxType>,
 }
 
 const MIN_INSERTER_SPACING: usize = 8;
@@ -128,7 +123,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
         self.update_first_free_pos_maybe(min(indices[0], indices[1]));
 
         self.locs
-            .get_many_mut(indices.map(|i| self.into_loc_index(i)))
+            .get_disjoint_mut(indices.map(|i| self.into_loc_index(i)))
             .expect("Index out of bounds or same")
     }
 
@@ -153,8 +148,33 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
         }
     }
 
+    pub fn set_inserter_storage_id(&mut self, belt_pos: u16, new: Storage<RecipeIdxType>) {
+        let mut pos = 0;
+
+        for (offset, inserter) in self
+            .inserters
+            .offsets
+            .iter()
+            .zip(self.inserters.inserters.iter_mut())
+        {
+            pos += offset;
+            if pos == belt_pos {
+                match inserter {
+                    Inserter::Out(belt_storage_inserter) => {
+                        belt_storage_inserter.storage_id = new;
+                    },
+                    Inserter::In(belt_storage_inserter) => {
+                        belt_storage_inserter.storage_id = new;
+                    },
+                }
+            } else if pos >= belt_pos {
+                unreachable!()
+            }
+        }
+    }
+
     #[must_use]
-    pub fn get_inserter_info_at(&self, belt_pos: u16) -> Option<BeltInserterInfo> {
+    pub fn get_inserter_info_at(&self, belt_pos: u16) -> Option<BeltInserterInfo<RecipeIdxType>> {
         let mut pos = 0;
 
         for (offset, inserter) in self
@@ -169,10 +189,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
                     Inserter::Out(belt_storage_inserter) => BeltInserterInfo {
                         outgoing: true,
                         state: belt_storage_inserter.state,
+                        connection: belt_storage_inserter.storage_id,
                     },
                     Inserter::In(belt_storage_inserter) => BeltInserterInfo {
                         outgoing: false,
                         state: belt_storage_inserter.state,
+                        connection: belt_storage_inserter.storage_id,
                     },
                 });
             } else if pos > belt_pos {
@@ -679,15 +701,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
 
         let mut current_pos = 0;
 
-        let split_at_inserters = loop {
+        let (split_at_inserters, new_offs) = loop {
             let Some((i, next_offset)) = offsets.next() else {
-                break self.inserters.offsets.len();
+                break (self.inserters.offsets.len(), 0);
             };
 
             current_pos += next_offset;
 
             if current_pos >= belt_pos_to_break_at {
-                break i;
+                break (i, current_pos - belt_pos_to_break_at);
             }
         };
 
@@ -695,7 +717,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
         let mut new_offsets = self.inserters.offsets.split_off(split_at_inserters);
 
         if let Some(offs) = new_offsets.get_mut(0) {
-            *offs -= belt_pos_to_break_at
+            // TODO: Make sure this is correct!
+            *offs = new_offs;
         }
 
         let new_belt = Self {

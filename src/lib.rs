@@ -3,8 +3,6 @@
 #![feature(adt_const_params)]
 #![feature(array_try_map)]
 #![feature(never_type)]
-#![feature(precise_capturing_in_traits)]
-#![feature(get_many_mut)]
 
 extern crate test;
 
@@ -17,25 +15,24 @@ use std::{
     simd::cmp::SimdPartialEq,
     sync::{
         atomic::AtomicU64,
-        mpsc::{channel, Receiver, Sender},
+        mpsc::{channel, Sender},
         Arc, Mutex,
     },
     thread,
 };
 
 use data::{get_raw_data_test, DataStore};
+use eframe::NativeOptions;
 use frontend::{
-    action::{action_state_machine::ActionStateMachine, ActionType},
-    input::Input,
-    world::tile::CHUNK_SIZE_FLOAT,
+    action::action_state_machine::ActionStateMachine, input::Input, world::tile::CHUNK_SIZE_FLOAT,
 };
 use item::{IdxTrait, WeakIdxTrait};
-use log::info;
 use multiplayer::{
     connection_reciever::accept_continously, ClientConnectionInfo, Game, GameInitData, ServerInfo,
 };
 use rendering::{
     app_state::{AppState, GameState},
+    eframe_app,
     window::{App, LoadedGame, LoadedGameInfo, LoadedGameSized},
 };
 use saving::load;
@@ -59,7 +56,7 @@ pub mod mod_manager;
 
 pub mod frontend;
 
-mod rendering;
+pub mod rendering;
 
 pub mod bot_system;
 
@@ -76,6 +73,10 @@ mod storage_list;
 pub mod split_arbitrary;
 
 mod chest;
+
+pub mod blueprint;
+
+mod network_graph;
 
 impl WeakIdxTrait for u8 {}
 impl WeakIdxTrait for u16 {}
@@ -105,18 +106,35 @@ pub fn main() {
     } else {
         run_integrated_server(StartGameInfo {})
     };
-    let mut app = App::new(sender);
+    // let mut app = App::new(sender);
 
-    app.currently_loaded_game = Some(LoadedGameInfo {
-        state: loaded,
-        tick: tick,
-    });
-    app.state = AppState::Ingame;
-    let event_loop = EventLoop::new().unwrap();
+    // app.currently_loaded_game = Some(LoadedGameInfo {
+    //     state: loaded,
+    //     tick: tick,
+    // });
+    // app.state = AppState::Ingame;
+    // let event_loop = EventLoop::new().unwrap();
 
-    event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+    // event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
 
-    let _ = event_loop.run_app(&mut app);
+    // let _ = event_loop.run_app(&mut app);
+
+    eframe::run_native(
+        "FactoryGame",
+        NativeOptions::default(),
+        Box::new(|cc| {
+            let mut app = eframe_app::App::new(cc, sender);
+
+            app.state = AppState::Ingame;
+            app.currently_loaded_game = Some(LoadedGameInfo {
+                state: loaded,
+                tick,
+            });
+
+            Ok(Box::new(app))
+        }),
+    )
+    .unwrap();
 }
 
 struct StartGameInfo {}
@@ -149,12 +167,15 @@ fn run_integrated_server(
                     .unwrap_or_else(|| GameState::new(&data_store)),
             ));
 
+            let (ui_sender, ui_recv) = channel();
+
             let mut game = Game::new(GameInitData::IntegratedServer {
                 game_state: game_state.clone(),
                 tick_counter: tick_counter.clone(),
                 info: ServerInfo { connections },
                 action_state_machine: state_machine.clone(),
                 inputs: recv,
+                ui_actions: ui_recv,
             })
             .unwrap();
 
@@ -168,6 +189,7 @@ fn run_integrated_server(
                     state: game_state,
                     state_machine,
                     data_store,
+                    ui_action_sender: ui_sender,
                 }),
                 tick_counter,
                 send,
@@ -234,6 +256,8 @@ fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Se
                     .unwrap_or_else(|| GameState::new(&data_store)),
             ));
 
+            let (ui_sender, ui_recv) = channel();
+
             let mut game = Game::new(GameInitData::Client {
                 game_state: game_state.clone(),
                 action_state_machine: state_machine.clone(),
@@ -243,6 +267,7 @@ fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Se
                     ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
                     port: 8080,
                 },
+                ui_actions: ui_recv,
             })
             .unwrap();
 
@@ -256,6 +281,7 @@ fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Se
                     state: game_state,
                     state_machine,
                     data_store,
+                    ui_action_sender: ui_sender,
                 }),
                 tick_counter,
                 send,
@@ -315,7 +341,6 @@ fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Se
 
 // Type your code here, or load an example.
 
-use std::simd::Mask;
 use std::simd::Simd;
 
 // TODO: Increase if possible
@@ -405,69 +430,69 @@ pub fn simd(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::{iter, rc::Rc};
+// #[cfg(test)]
+// mod tests {
+//     use std::{iter, rc::Rc};
 
-    use test::{black_box, Bencher};
+//     use test::{black_box, Bencher};
 
-    use crate::{
-        data::get_raw_data_test,
-        frontend::{action::ActionType, world::tile::World},
-        rendering::app_state::{GameState, SimulationState},
-        replays::{run_till_finished, Replay},
-        TICKS_PER_SECOND_LOGIC,
-    };
+//     use crate::{
+//         data::get_raw_data_test,
+//         frontend::{action::ActionType, world::tile::World},
+//         rendering::app_state::{GameState, SimulationState},
+//         replays::{run_till_finished, Replay},
+//         TICKS_PER_SECOND_LOGIC,
+//     };
 
-    #[bench]
-    fn clone_empty_simulation(b: &mut Bencher) {
-        let data_store = get_raw_data_test().process().assume_simple();
+//     #[bench]
+//     fn clone_empty_simulation(b: &mut Bencher) {
+//         let data_store = get_raw_data_test().process().assume_simple();
 
-        let game_state = GameState::new(&data_store);
+//         let game_state = GameState::new(&data_store);
 
-        let replay = Replay::new(game_state, Rc::new(data_store));
+//         let replay = Replay::new(game_state, Rc::new(data_store));
 
-        b.iter(|| replay.clone());
-    }
+//         b.iter(|| replay.clone());
+//     }
 
-    #[bench]
-    fn empty_simulation(b: &mut Bencher) {
-        // 1 hour
-        const NUM_TICKS: u64 = TICKS_PER_SECOND_LOGIC * 60 * 60;
+//     #[bench]
+//     fn empty_simulation(b: &mut Bencher) {
+//         // 1 hour
+//         const NUM_TICKS: u64 = TICKS_PER_SECOND_LOGIC * 60 * 60;
 
-        let data_store = get_raw_data_test().process().assume_simple();
+//         let data_store = get_raw_data_test().process().assume_simple();
 
-        let game_state = GameState::new(&data_store);
+//         let game_state = GameState::new(&data_store);
 
-        let mut replay = Replay::new(game_state, Rc::new(data_store));
+//         let mut replay = Replay::new(game_state, Rc::new(data_store));
 
-        for _ in 0..NUM_TICKS {
-            replay.tick();
-        }
+//         for _ in 0..NUM_TICKS {
+//             replay.tick();
+//         }
 
-        replay.finish();
+//         replay.finish();
 
-        b.iter(|| black_box(replay.clone().run().with(run_till_finished)));
-    }
+//         b.iter(|| black_box(replay.clone().run().with(run_till_finished)));
+//     }
 
-    #[bench]
-    fn noop_actions_simulation(b: &mut Bencher) {
-        // 1 hour
-        const NUM_TICKS: u64 = TICKS_PER_SECOND_LOGIC * 60 * 60;
+//     #[bench]
+//     fn noop_actions_simulation(b: &mut Bencher) {
+//         // 1 hour
+//         const NUM_TICKS: u64 = TICKS_PER_SECOND_LOGIC * 60 * 60;
 
-        let data_store = get_raw_data_test().process().assume_simple();
+//         let data_store = get_raw_data_test().process().assume_simple();
 
-        let game_state = GameState::new(&data_store);
+//         let game_state = GameState::new(&data_store);
 
-        let mut replay = Replay::new(game_state, Rc::new(data_store));
+//         let mut replay = Replay::new(game_state, Rc::new(data_store));
 
-        for _ in 0..NUM_TICKS {
-            replay.append_actions(iter::repeat(ActionType::Ping((100, 100))).take(5));
-            replay.tick();
-        }
+//         for _ in 0..NUM_TICKS {
+//             replay.append_actions(iter::repeat(ActionType::Ping((100, 100))).take(5));
+//             replay.tick();
+//         }
 
-        replay.finish();
+//         replay.finish();
 
-        b.iter(|| replay.clone().run().with(run_till_finished));
-    }
-}
+//         b.iter(|| replay.clone().run().with(run_till_finished));
+//     }
+// }

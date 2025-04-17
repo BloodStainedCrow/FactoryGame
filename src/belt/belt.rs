@@ -53,7 +53,7 @@ where
     T: Belt<ItemIdxType>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut s = String::new();
+        let s = String::new();
 
         for i in 0..self.0.get_len() {
             // match self.query_item(i) {

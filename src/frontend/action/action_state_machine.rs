@@ -1,11 +1,6 @@
-use std::{
-    collections::HashSet,
-    marker::PhantomData,
-    sync::mpsc::{Receiver, Sender},
-};
+use std::{collections::HashSet, marker::PhantomData, sync::mpsc::Receiver};
 
 use log::warn;
-use winit::keyboard::KeyCode;
 
 use crate::{
     data::DataStore,
@@ -15,9 +10,8 @@ use crate::{
             place_tile::{PlaceFloorTileByHandInfo, PlaceFloorTileGhostInfo},
             set_recipe::SetRecipeInfo,
         },
-        input::Input,
+        input::{Input, Key},
         world::{
-            self,
             tile::{Dir, Entity, FloorTile, PlaceEntityType, World},
             Position,
         },
@@ -30,12 +24,13 @@ use super::{place_tile::PositionInfo, ActionType, PLAYERID};
 const MIN_ZOOM_WIDTH: f32 = 1.0;
 pub const WIDTH_PER_LEVEL: usize = 16;
 
+#[derive(Debug)]
 pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub local_player_pos: (f32, f32),
     pub my_player_id: PLAYERID,
 
     current_mouse_pos: (f32, f32),
-    current_held_keys: HashSet<winit::keyboard::KeyCode>,
+    current_held_keys: HashSet<Key>,
     pub state: ActionStateMachineState<ItemIdxType>,
 
     pub zoom_level: f32,
@@ -43,12 +38,15 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     recipe: PhantomData<RecipeIdxType>,
 }
 
+#[derive(Debug)]
 pub enum ActionStateMachineState<ItemIdxType: WeakIdxTrait> {
     Idle,
+    Decontructing(Position, u32),
     Holding(HeldObject<ItemIdxType>),
     Viewing(Position),
 }
 
+#[derive(Debug)]
 pub enum HeldObject<ItemIdxType: WeakIdxTrait> {
     Tile(FloorTile),
     // TODO: PlaceEntityType is not quite right for this case
@@ -83,7 +81,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
            + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType> {
         input.try_iter().map(|input| {
 
-            let mut actions = match input {
+            let actions = match input {
                 Input::LeftClickPressed => {
                     match &self.state {
                         ActionStateMachineState::Idle => {
@@ -148,10 +146,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
                             vec![]
                         },
+                        ActionStateMachineState::Decontructing(_, _) => {
+                            self.state = ActionStateMachineState::Idle;
+                            vec![]
+                        }
                     }
                 },
                 Input::RightClickPressed => match &self.state {
-                    ActionStateMachineState::Idle => vec![],
+                    ActionStateMachineState::Idle => {
+                        let pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.local_player_pos,
+                            self.current_mouse_pos,
+                        );
+                        if world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next().is_some() {
+                            self.state = ActionStateMachineState::Decontructing(pos, 100);
+                        }
+                        vec![]
+                    },
                     ActionStateMachineState::Holding(_held_object) => {
                         self.state = ActionStateMachineState::Idle;
                         vec![]
@@ -160,6 +172,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         self.state = ActionStateMachineState::Idle;
                         vec![]
                     },
+                    ActionStateMachineState::Decontructing(_, _) => vec![],
+                },
+                Input::RightClickReleased => match &self.state {
+                    ActionStateMachineState::Decontructing(_, _) => {
+                        self.state = ActionStateMachineState::Idle;
+                        vec![]
+                    },
+                    _ => vec![]
                 },
                 Input::MouseMove(x, y) => {
                     self.current_mouse_pos = (x, y);
@@ -211,6 +231,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 );},
                             },
                         },
+                        ActionStateMachineState::Decontructing(position, timer) =>{
+                            //todo!("Check if we are still over the same thing")
+                            },
                     }
 
                     vec![]
@@ -254,7 +277,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     vec![]
                 },
 
-                i @ (Input::LeftClickReleased | Input::RightClickReleased) => {
+                i @ (Input::LeftClickReleased) => {
                     dbg!(i);
                     vec![]
                 },
@@ -266,23 +289,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
     fn handle_start_pressing_key(
         &mut self,
-        key: winit::keyboard::KeyCode,
+        key: Key,
         world: &World<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
         match (&self.state, key) {
-            (
-                ActionStateMachineState::Idle | ActionStateMachineState::Holding(_),
-                KeyCode::Digit1,
-            ) => {
+            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key1) => {
                 self.state =
                     ActionStateMachineState::Holding(HeldObject::Tile(FloorTile::Concrete));
                 vec![]
             },
-            (
-                ActionStateMachineState::Idle | ActionStateMachineState::Holding(_),
-                KeyCode::Digit2,
-            ) => {
+            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key2) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::Assembler(Self::player_mouse_to_tile(
                         self.zoom_level,
@@ -292,10 +309,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ));
                 vec![]
             },
-            (
-                ActionStateMachineState::Idle | ActionStateMachineState::Holding(_),
-                KeyCode::Digit3,
-            ) => {
+            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key3) => {
                 self.state =
                     ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Belt {
                         pos: Self::player_mouse_to_tile(
@@ -312,7 +326,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     pos,
                     direction,
                 })),
-                KeyCode::KeyR,
+                Key::R,
             ) => {
                 self.state =
                     ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Belt {
@@ -328,7 +342,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     in_mode,
                     out_mode,
                 })),
-                KeyCode::KeyR,
+                Key::R,
             ) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::Splitter {
@@ -340,10 +354,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ));
                 vec![]
             },
-            (
-                ActionStateMachineState::Idle | ActionStateMachineState::Holding(_),
-                KeyCode::Digit4,
-            ) => {
+            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key4) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::Inserter {
                         pos: Self::player_mouse_to_tile(
@@ -358,10 +369,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ));
                 vec![]
             },
-            (
-                ActionStateMachineState::Idle | ActionStateMachineState::Holding(_),
-                KeyCode::Digit5,
-            ) => {
+            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key5) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::PowerPole {
                         pos: Self::player_mouse_to_tile(
@@ -374,10 +382,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ));
                 vec![]
             },
-            (
-                ActionStateMachineState::Idle | ActionStateMachineState::Holding(_),
-                KeyCode::Digit6,
-            ) => {
+            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key6) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::Splitter {
                         pos: Self::player_mouse_to_tile(
@@ -392,10 +397,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ));
                 vec![]
             },
-            (
-                ActionStateMachineState::Idle | ActionStateMachineState::Holding(_),
-                KeyCode::Digit7,
-            ) => {
+            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key7) => {
                 self.state =
                     ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Chest {
                         pos: Self::player_mouse_to_tile(
@@ -412,7 +414,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     dir,
                     filter,
                 })),
-                KeyCode::KeyR,
+                Key::R,
             ) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::Inserter {
@@ -424,7 +426,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 vec![]
             },
 
-            (ActionStateMachineState::Viewing(pos), KeyCode::Digit1) => {
+            (ActionStateMachineState::Viewing(pos), Key::Key1) => {
                 let chunk = world
                     .get_chunk_for_tile(*pos)
                     .expect("Viewing position out of bounds");
@@ -447,7 +449,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
     fn handle_stop_pressing_key(
         &mut self,
-        key: winit::keyboard::KeyCode,
+        key: Key,
     ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
         match (&self.state, key) {
             (_, _) => vec![],
@@ -474,21 +476,52 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     pub fn once_per_update_actions(
         &mut self,
         world: &World<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
         let mut actions = Vec::new();
 
+        if let ActionStateMachineState::Decontructing(pos, timer) = &mut self.state {
+            // Check if we are still over the thing we were deconstructing
+            if world
+                .get_entities_colliding_with(*pos, (1, 1), data_store)
+                .into_iter()
+                .next()
+                == world
+                    .get_entities_colliding_with(
+                        Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.local_player_pos,
+                            self.current_mouse_pos,
+                        ),
+                        (1, 1),
+                        data_store,
+                    )
+                    .into_iter()
+                    .next()
+            {
+                *timer -= 1;
+                if *timer == 0 {
+                    let pos = *pos;
+                    self.state = ActionStateMachineState::Idle;
+                    actions.push(ActionType::Remove(pos));
+                }
+            } else {
+                self.state = ActionStateMachineState::Idle;
+            }
+        }
+
         let mut move_dir = (0, 0);
 
-        if self.current_held_keys.contains(&KeyCode::KeyW) {
+        if self.current_held_keys.contains(&Key::W) {
             move_dir.1 -= 1;
         }
-        if self.current_held_keys.contains(&KeyCode::KeyA) {
+        if self.current_held_keys.contains(&Key::A) {
             move_dir.0 -= 1;
         }
-        if self.current_held_keys.contains(&KeyCode::KeyS) {
+        if self.current_held_keys.contains(&Key::S) {
             move_dir.1 += 1;
         }
-        if self.current_held_keys.contains(&KeyCode::KeyD) {
+        if self.current_held_keys.contains(&Key::D) {
             move_dir.0 += 1;
         }
 

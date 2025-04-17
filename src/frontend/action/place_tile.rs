@@ -3,7 +3,7 @@ use crate::{
         tile::{FloorTile, World},
         Position,
     },
-    item::{IdxTrait, WeakIdxTrait},
+    item::IdxTrait,
 };
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

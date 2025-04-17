@@ -1,11 +1,13 @@
 use std::{
     io::Read,
     marker::PhantomData,
+    mem,
     net::TcpStream,
     sync::{mpsc::Receiver, Arc, Mutex},
     time::{Duration, Instant},
 };
 
+use eframe::wgpu::hal::auxil::db;
 use log::{error, warn};
 
 use crate::{
@@ -28,6 +30,7 @@ pub(super) struct Client<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
     pub(super) local_input: Receiver<Input>,
     pub(super) local_actions: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
     pub(super) server_connection: TcpStream,
+    pub(super) ui_actions: Receiver<ActionType<ItemIdxType, RecipeIdxType>>,
 }
 
 pub(super) struct Server<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
@@ -50,25 +53,30 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Server<ItemIdxType, RecipeI
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, RecipeIdxType>
     for Client<ItemIdxType, RecipeIdxType>
 {
-    fn get(
-        &self,
+    fn get<'a>(
+        &'a self,
         current_tick: u64,
         world: &World<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
-    {
+    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
+           + use<'a, ItemIdxType, RecipeIdxType> {
         // This will block (?) if we did not yet recieve the actions from the server for this tick
         // TODO: This could introduce hitches which might be noticeable.
         //       This could be solved either by introducing some fixed delay on all actions (i.e. just running the client a couple ticks in the past compared to the server)
         //       Or using a rollback feature, by (i.e.) assuming no actions are run
         // Get the actions from what the server sent us
+        let pre_lock = Instant::now();
+
         let mut state_machine = self.local_actions.lock().unwrap();
 
         let mut local_actions: Vec<_> = state_machine
             .handle_inputs(&self.local_input, world, data_store)
             .into_iter()
             .collect();
-        local_actions.extend(state_machine.once_per_update_actions(world));
+        dbg!(pre_lock.elapsed());
+        local_actions.extend(state_machine.once_per_update_actions(world, data_store));
+
+        mem::drop(state_machine);
 
         postcard::to_io(&local_actions, &self.server_connection).expect("tcp send failed");
         let mut buffer = vec![0; 1000];
@@ -76,6 +84,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
             postcard::from_io((&self.server_connection, &mut buffer)).unwrap();
 
         recieved_actions
+            .into_iter()
+            .chain(self.ui_actions.try_iter())
     }
 }
 
@@ -167,6 +177,7 @@ pub(super) struct IntegratedServer<ItemIdxType: WeakIdxTrait, RecipeIdxType: Wea
     pub(super) local_actions: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
     pub(super) local_input: Receiver<Input>,
     pub(super) server: Server<ItemIdxType, RecipeIdxType>,
+    pub(super) ui_actions: Receiver<ActionType<ItemIdxType, RecipeIdxType>>,
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, RecipeIdxType>
@@ -192,7 +203,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         if start.elapsed() > Duration::from_millis(1) {
             error!("Handle inputs {:?}", start.elapsed());
         }
-        v.extend(state_machine.once_per_update_actions(&world));
+        v.extend(state_machine.once_per_update_actions(&world, &data_store));
+
+        mem::drop(state_machine);
 
         if start.elapsed() > Duration::from_millis(1) {
             error!("once_per_update_actions {:?}", start.elapsed());
@@ -206,7 +219,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         if start.elapsed() > Duration::from_millis(1) {
             error!("server.get {:?}", start.elapsed());
         }
-        ret
+
+        ret.into_iter().chain(self.ui_actions.try_iter())
     }
 }
 

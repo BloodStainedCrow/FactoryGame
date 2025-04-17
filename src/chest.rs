@@ -68,6 +68,20 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         }
     }
 
+    pub fn remove_chest<RecipeIdxType: IdxTrait>(
+        &mut self,
+        index: usize,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> u16 {
+        self.holes.push(index);
+
+        let items = self.inout[index] as u16 + self.storage[index];
+        self.inout[index] = 0;
+        self.storage[index] = 0;
+        self.storage[index] = 0;
+        items
+    }
+
     pub fn get_chest(&self, index: usize) -> (u16, u16) {
         (
             self.storage[index] + u16::from(self.inout[index]),

@@ -5,7 +5,7 @@ use crate::{
     storage_list::{index, SingleItemStorages},
 };
 
-use super::{InserterState, Storage, StorageID};
+use super::{InserterState, Storage};
 
 #[derive(ConstParamTy, PartialEq, Eq)]
 pub enum Dir {

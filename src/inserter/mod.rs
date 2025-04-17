@@ -2,11 +2,10 @@ use std::marker::PhantomData;
 
 use crate::{
     data::DataStore,
-    item::{self, usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
+    item::{IdxTrait, Item, Recipe, WeakIdxTrait},
     power::power_grid::PowerGridIdentifier,
 };
 
-use enum_map::Enum;
 use static_assertions::const_assert;
 use strum::EnumIter;
 
@@ -97,6 +96,25 @@ impl<RecipeIdxType: IdxTrait> Storage<RecipeIdxType> {
                 index,
             },
             storage => storage,
+        }
+    }
+
+    pub fn change_grid(self, new_id: PowerGridIdentifier) -> Self {
+        match self {
+            Storage::Assembler {
+                grid: _,
+                recipe_idx_with_this_item,
+                index,
+            } => Storage::Assembler {
+                grid: new_id,
+                recipe_idx_with_this_item,
+                index,
+            },
+            Storage::Lab { grid: _, index } => Storage::Lab {
+                grid: new_id,
+                index,
+            },
+            Storage::Static { static_id, index } => Storage::Static { static_id, index },
         }
     }
 }
