@@ -311,6 +311,8 @@ enum RawEntity {
 pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub checksum: String,
 
+    pub recipe_names: Vec<String>,
+
     pub recipe_num_ing_lookup: Vec<usize>,
     pub recipe_num_out_lookup: Vec<usize>,
     pub recipe_to_ing_out_combo_idx: Vec<usize>,
@@ -742,6 +744,12 @@ impl RawDataStore {
 
         DataStore {
             checksum,
+
+            recipe_names: self
+                .recipes
+                .iter()
+                .map(|r| r.display_name.clone())
+                .collect(),
 
             recipe_num_ing_lookup,
             recipe_num_out_lookup,

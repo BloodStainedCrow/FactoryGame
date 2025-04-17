@@ -118,13 +118,20 @@ impl eframe::App for App {
 
                         self.last_rendered_update = tick;
 
-                        render_ui(
+                        let render_actions = render_ui(
                             ctx,
                             &ui,
                             &mut state_machine,
                             &game_state,
                             &loaded_game_sized.data_store,
                         );
+
+                        for action in render_actions {
+                            loaded_game_sized
+                                .ui_action_sender
+                                .send(action)
+                                .expect("Ui action channel died");
+                        }
                     },
                     LoadedGame::ItemU8RecipeU16(loaded_game_sized) => todo!(),
                     LoadedGame::ItemU16RecipeU8(loaded_game_sized) => todo!(),

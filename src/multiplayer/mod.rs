@@ -64,6 +64,7 @@ pub enum GameInitData<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         game_state: Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
         action_state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
         inputs: Receiver<Input>,
+        ui_actions: Receiver<ActionType<ItemIdxType, RecipeIdxType>>,
         tick_counter: Arc<AtomicU64>,
         info: ClientConnectionInfo,
     },
@@ -72,6 +73,7 @@ pub enum GameInitData<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         game_state: Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
         action_state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
         inputs: Receiver<Input>,
+        ui_actions: Receiver<ActionType<ItemIdxType, RecipeIdxType>>,
         tick_counter: Arc<AtomicU64>,
         info: ServerInfo,
     },
@@ -91,6 +93,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 inputs,
                 tick_counter,
                 info,
+                ui_actions,
             } => {
                 let stream = std::net::TcpStream::connect((info.ip, info.port))?;
                 Ok(Self::Client(
@@ -99,6 +102,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                         local_actions: action_state_machine,
                         local_input: inputs,
                         server_connection: stream,
+                        ui_actions,
                     }),
                     tick_counter,
                 ))
@@ -113,12 +117,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 info,
                 action_state_machine,
                 inputs,
+                ui_actions,
             } => Ok(Self::IntegratedServer(
                 game_state,
                 GameStateUpdateHandler::new(IntegratedServer {
                     local_actions: action_state_machine,
                     local_input: inputs,
                     server: Server::new(info),
+                    ui_actions,
                 }),
                 tick_counter,
             )),

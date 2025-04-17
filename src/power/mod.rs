@@ -15,8 +15,7 @@ use crate::{
         tile::{AssemblerID, MachineID},
         Position,
     },
-    inserter::Storage,
-    item::{IdxTrait, Item, WeakIdxTrait},
+    item::{IdxTrait, WeakIdxTrait},
     TICKS_PER_SECOND_LOGIC,
 };
 

@@ -5,7 +5,10 @@ use std::{
 
 use crate::{
     data::DataStore,
-    frontend::{action::action_state_machine::ActionStateMachine, input::Input},
+    frontend::{
+        action::{action_state_machine::ActionStateMachine, ActionType},
+        input::Input,
+    },
     item::WeakIdxTrait,
     rendering::render_world::render_world,
     saving::save,
@@ -51,6 +54,7 @@ pub struct LoadedGameSized<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrai
     pub state: Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
     pub state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
     pub data_store: Arc<DataStore<ItemIdxType, RecipeIdxType>>,
+    pub ui_action_sender: Sender<ActionType<ItemIdxType, RecipeIdxType>>,
 }
 
 pub struct Window {

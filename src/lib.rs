@@ -164,12 +164,15 @@ fn run_integrated_server(
                     .unwrap_or_else(|| GameState::new(&data_store)),
             ));
 
+            let (ui_sender, ui_recv) = channel();
+
             let mut game = Game::new(GameInitData::IntegratedServer {
                 game_state: game_state.clone(),
                 tick_counter: tick_counter.clone(),
                 info: ServerInfo { connections },
                 action_state_machine: state_machine.clone(),
                 inputs: recv,
+                ui_actions: ui_recv,
             })
             .unwrap();
 
@@ -183,6 +186,7 @@ fn run_integrated_server(
                     state: game_state,
                     state_machine,
                     data_store,
+                    ui_action_sender: ui_sender,
                 }),
                 tick_counter,
                 send,
@@ -216,6 +220,8 @@ fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Se
                     .unwrap_or_else(|| GameState::new(&data_store)),
             ));
 
+            let (ui_sender, ui_recv) = channel();
+
             let mut game = Game::new(GameInitData::Client {
                 game_state: game_state.clone(),
                 action_state_machine: state_machine.clone(),
@@ -225,6 +231,7 @@ fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Se
                     ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
                     port: 8080,
                 },
+                ui_actions: ui_recv,
             })
             .unwrap();
 
@@ -238,6 +245,7 @@ fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Se
                     state: game_state,
                     state_machine,
                     data_store,
+                    ui_action_sender: ui_sender,
                 }),
                 tick_counter,
                 send,

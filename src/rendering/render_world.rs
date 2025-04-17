@@ -5,20 +5,25 @@ use crate::{
     belt::{belt::Belt, smart::SmartBelt, splitter::SPLITTER_BELT_LEN},
     data::DataStore,
     frontend::{
-        action::action_state_machine::{ActionStateMachine, WIDTH_PER_LEVEL},
+        action::{
+            action_state_machine::{ActionStateMachine, WIDTH_PER_LEVEL},
+            set_recipe::SetRecipeInfo,
+            ActionType,
+        },
         world::tile::{
             AssemblerID, AssemblerInfo, BeltId, BeltTileId, Dir, Entity, BELT_LEN_PER_TILE,
             CHUNK_SIZE_FLOAT,
         },
     },
-    item::{usize_from, IdxTrait, Item},
+    item::{usize_from, IdxTrait, Item, Recipe},
 };
 use eframe::{
     egui::{
-        self, Align2, CentralPanel, Color32, Context, CornerRadius, Pos2, ProgressBar, Rect, Shape,
-        SidePanel, TopBottomPanel, Ui, Window,
+        self, Align2, CentralPanel, Color32, ComboBox, Context, CornerRadius, Pos2, ProgressBar,
+        Rect, Shape, SidePanel, TopBottomPanel, Ui, Window,
     },
     epaint::text::Row,
+    wgpu::hal::auxil::db,
 };
 use egui_extras::{Column, TableBuilder};
 use log::{info, warn};
@@ -547,7 +552,9 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     state_machine: &mut ActionStateMachine<ItemIdxType, RecipeIdxType>,
     game_state: &GameState<ItemIdxType, RecipeIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-) {
+) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
+    let mut actions = vec![];
+
     match &state_machine.state {
         crate::frontend::action::action_state_machine::ActionStateMachineState::Idle => {},
         crate::frontend::action::action_state_machine::ActionStateMachineState::Holding(
@@ -565,45 +572,78 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
             if let Some(entity) = entity {
                 match entity {
-                    crate::frontend::world::tile::Entity::Assembler { pos, info } => match info {
-                        crate::frontend::world::tile::AssemblerInfo::UnpoweredNoRecipe => {
-                            ui.label("Assembler");
-                        },
-                        crate::frontend::world::tile::AssemblerInfo::Unpowered(recipe) => {
-                            ui.label("Assembler");
-                        },
-                        crate::frontend::world::tile::AssemblerInfo::PoweredNoRecipe(grid) => {
-                            ui.label("Assembler");
-                        },
-                        crate::frontend::world::tile::AssemblerInfo::Powered {
-                            id,
-                            pole_position
-                        } => {
-                            ui.label("Assembler");
+                    crate::frontend::world::tile::Entity::Assembler { pos, info } => {
+                        let mut goal_recipe: Option<Recipe<RecipeIdxType>> = match info {
+                            AssemblerInfo::UnpoweredNoRecipe => None,
+                            AssemblerInfo::Unpowered(recipe) => Some(*recipe),
+                            AssemblerInfo::PoweredNoRecipe(position) => None,
+                            AssemblerInfo::Powered { id, pole_position } => Some(id.recipe),
+                        };
 
-                            // TODO:
-                            // ui.label(data_store.recipe_names[usize_from(assembler_id.recipe.id)]);
-
-                            let assembler = game_state
-                                .simulation_state
-                                .factory
-                                .power_grids
-                                .get_assembler_info(*id, data_store);
-
-                            let pb = ProgressBar::new(assembler.timer_percentage).show_percentage().corner_radius(CornerRadius::ZERO);
-                            ui.add(pb);
-
-                            TableBuilder::new(ui).columns(Column::auto().resizable(false), assembler.inputs.len() + assembler.outputs.len()).body(|mut body| {
-                                body.row(5.0, |mut row| {
-                                    for (item, count) in assembler.inputs.iter().chain(assembler.outputs.iter()) {
-                                        row.col(|ui| {
-                                            ui.label(&data_store.item_names[usize_from(item.id)]);
-                                            ui.label(format!("{}", *count));
-                                        });
-                                    }
-                                });
+                        ComboBox::new("Recipe list", "Recipes").selected_text(goal_recipe.map(|recipe| data_store.recipe_names[usize_from(recipe.id)].as_str()).unwrap_or("Choose a recipe!")).show_ui(ui, |ui| {
+                            data_store.recipe_names.iter().enumerate().for_each(|(i, recipe_name)| {
+                                ui.selectable_value(&mut goal_recipe, Some(Recipe {id: i.try_into().unwrap()}), recipe_name);
                             });
-                        },
+                        });
+
+
+                        match info {
+                            crate::frontend::world::tile::AssemblerInfo::UnpoweredNoRecipe => {
+                                ui.label("Assembler");
+                                if let Some(goal_recipe) = goal_recipe {
+                                    actions.push(ActionType::SetRecipe(SetRecipeInfo { pos: *pos, recipe: goal_recipe }));
+                                }
+                            },
+                            crate::frontend::world::tile::AssemblerInfo::Unpowered(recipe) => {
+                                ui.label("Assembler");
+                                if let Some(goal_recipe) = goal_recipe {
+                                    if goal_recipe != *recipe {
+                                        actions.push(ActionType::SetRecipe(SetRecipeInfo { pos: *pos, recipe: goal_recipe }));
+                                    }
+                                }
+                            },
+                            crate::frontend::world::tile::AssemblerInfo::PoweredNoRecipe(grid) => {
+                                ui.label("Assembler");
+                                if let Some(goal_recipe) = goal_recipe {
+                                    actions.push(ActionType::SetRecipe(SetRecipeInfo { pos: *pos, recipe: goal_recipe }));
+                                }
+                            },
+                            crate::frontend::world::tile::AssemblerInfo::Powered {
+                                id,
+                                pole_position
+                            } => {
+                                ui.label("Assembler");
+
+                                if let Some(goal_recipe) = goal_recipe {
+                                    if goal_recipe != id.recipe {
+                                        actions.push(ActionType::SetRecipe(SetRecipeInfo { pos: *pos, recipe: goal_recipe }));
+                                    }
+                                }
+
+                                // TODO:
+                                // ui.label(data_store.recipe_names[usize_from(assembler_id.recipe.id)]);
+
+                                let assembler = game_state
+                                    .simulation_state
+                                    .factory
+                                    .power_grids
+                                    .get_assembler_info(*id, data_store);
+
+                                let pb = ProgressBar::new(assembler.timer_percentage).show_percentage().corner_radius(CornerRadius::ZERO);
+                                ui.add(pb);
+
+                                TableBuilder::new(ui).columns(Column::auto().resizable(false), assembler.inputs.len() + assembler.outputs.len()).body(|mut body| {
+                                    body.row(5.0, |mut row| {
+                                        for (item, count) in assembler.inputs.iter().chain(assembler.outputs.iter()) {
+                                            row.col(|ui| {
+                                                ui.label(&data_store.item_names[usize_from(item.id)]);
+                                                ui.label(format!("{}", *count));
+                                            });
+                                        }
+                                    });
+                                });
+                            }
+                        }
                     },
                     crate::frontend::world::tile::Entity::PowerPole {
                         ty,
@@ -785,6 +825,8 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     });
                 });
         });
+
+    actions
 }
 
 fn render_items_straight<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(

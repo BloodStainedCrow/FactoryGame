@@ -30,6 +30,7 @@ pub(super) struct Client<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
     pub(super) local_input: Receiver<Input>,
     pub(super) local_actions: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
     pub(super) server_connection: TcpStream,
+    pub(super) ui_actions: Receiver<ActionType<ItemIdxType, RecipeIdxType>>,
 }
 
 pub(super) struct Server<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
@@ -52,13 +53,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Server<ItemIdxType, RecipeI
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, RecipeIdxType>
     for Client<ItemIdxType, RecipeIdxType>
 {
-    fn get(
-        &self,
+    fn get<'a>(
+        &'a self,
         current_tick: u64,
         world: &World<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
-    {
+    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
+           + use<'a, ItemIdxType, RecipeIdxType> {
         // This will block (?) if we did not yet recieve the actions from the server for this tick
         // TODO: This could introduce hitches which might be noticeable.
         //       This could be solved either by introducing some fixed delay on all actions (i.e. just running the client a couple ticks in the past compared to the server)
@@ -83,6 +84,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
             postcard::from_io((&self.server_connection, &mut buffer)).unwrap();
 
         recieved_actions
+            .into_iter()
+            .chain(self.ui_actions.try_iter())
     }
 }
 
@@ -174,6 +177,7 @@ pub(super) struct IntegratedServer<ItemIdxType: WeakIdxTrait, RecipeIdxType: Wea
     pub(super) local_actions: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
     pub(super) local_input: Receiver<Input>,
     pub(super) server: Server<ItemIdxType, RecipeIdxType>,
+    pub(super) ui_actions: Receiver<ActionType<ItemIdxType, RecipeIdxType>>,
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, RecipeIdxType>
@@ -215,7 +219,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         if start.elapsed() > Duration::from_millis(1) {
             error!("server.get {:?}", start.elapsed());
         }
-        ret
+
+        ret.into_iter().chain(self.ui_actions.try_iter())
     }
 }
 
