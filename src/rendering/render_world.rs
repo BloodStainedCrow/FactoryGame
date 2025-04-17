@@ -144,17 +144,27 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             },
                                         );
                                     },
-                                    AssemblerInfo::PoweredNoRecipe(grid)
-                                    | AssemblerInfo::Powered(AssemblerID {
-                                        recipe: _,
-                                        grid,
-                                        assembler_index: _,
-                                    }) => {
+                                    AssemblerInfo::PoweredNoRecipe(pole_position)
+                                    | AssemblerInfo::Powered {
+                                        id:
+                                            AssemblerID {
+                                                recipe: _,
+                                                grid: _,
+                                                assembler_index: _,
+                                            },
+                                        pole_position,
+                                    } => {
+                                        let grid = game_state
+                                            .simulation_state
+                                            .factory
+                                            .power_grids
+                                            .pole_pos_to_grid_id[pole_position];
+
                                         let last_power = game_state
                                             .simulation_state
                                             .factory
                                             .power_grids
-                                            .power_grids[usize::from(*grid)]
+                                            .power_grids[usize::from(grid)]
                                         .as_ref()
                                         .unwrap()
                                         .last_power_mult;
@@ -469,6 +479,12 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         crate::frontend::action::action_state_machine::ActionStateMachineState::Viewing(pos) => {
             // TODO:
         },
+        crate::frontend::action::action_state_machine::ActionStateMachineState::Decontructing(
+            position,
+            _,
+        ) => {
+            // TODO:
+        },
     }
 
     for (player_id, player) in game_state
@@ -529,7 +545,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     ctx: &Context,
     ui: &Ui,
     state_machine: &mut ActionStateMachine<ItemIdxType, RecipeIdxType>,
-    game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
+    game_state: &GameState<ItemIdxType, RecipeIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
     match &state_machine.state {
@@ -559,7 +575,10 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         crate::frontend::world::tile::AssemblerInfo::PoweredNoRecipe(grid) => {
                             ui.label("Assembler");
                         },
-                        crate::frontend::world::tile::AssemblerInfo::Powered(assembler_id) => {
+                        crate::frontend::world::tile::AssemblerInfo::Powered {
+                            id,
+                            pole_position
+                        } => {
                             ui.label("Assembler");
 
                             // TODO:
@@ -569,7 +588,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 .simulation_state
                                 .factory
                                 .power_grids
-                                .get_assembler_info(*assembler_id, data_store);
+                                .get_assembler_info(*id, data_store);
 
                             let pb = ProgressBar::new(assembler.timer_percentage).show_percentage().corner_radius(CornerRadius::ZERO);
                             ui.add(pb);
@@ -728,6 +747,15 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     _ => todo!(),
                 }
             }
+            });
+        },
+        crate::frontend::action::action_state_machine::ActionStateMachineState::Decontructing(
+            position,
+            timer,
+        ) => {
+            Window::new("Deconstructing").show(ui.ctx(), |ui| {
+                let pb = ProgressBar::new((*timer as f32) / 100.0);
+                ui.add(pb);
             });
         },
     }

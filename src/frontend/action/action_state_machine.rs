@@ -41,6 +41,7 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
 #[derive(Debug)]
 pub enum ActionStateMachineState<ItemIdxType: WeakIdxTrait> {
     Idle,
+    Decontructing(Position, u32),
     Holding(HeldObject<ItemIdxType>),
     Viewing(Position),
 }
@@ -145,10 +146,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
                             vec![]
                         },
+                        ActionStateMachineState::Decontructing(_, _) => {
+                            self.state = ActionStateMachineState::Idle;
+                            vec![]
+                        }
                     }
                 },
                 Input::RightClickPressed => match &self.state {
-                    ActionStateMachineState::Idle => vec![],
+                    ActionStateMachineState::Idle => {
+                        let pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.local_player_pos,
+                            self.current_mouse_pos,
+                        );
+                        if world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next().is_some() {
+                            self.state = ActionStateMachineState::Decontructing(pos, 100);
+                        }
+                        vec![]
+                    },
                     ActionStateMachineState::Holding(_held_object) => {
                         self.state = ActionStateMachineState::Idle;
                         vec![]
@@ -157,6 +172,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         self.state = ActionStateMachineState::Idle;
                         vec![]
                     },
+                    ActionStateMachineState::Decontructing(_, _) => vec![],
+                },
+                Input::RightClickReleased => match &self.state {
+                    ActionStateMachineState::Decontructing(_, _) => {
+                        self.state = ActionStateMachineState::Idle;
+                        vec![]
+                    },
+                    _ => vec![]
                 },
                 Input::MouseMove(x, y) => {
                     self.current_mouse_pos = (x, y);
@@ -208,6 +231,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 );},
                             },
                         },
+                        ActionStateMachineState::Decontructing(position, timer) =>{
+                            //todo!("Check if we are still over the same thing")
+                            },
                     }
 
                     vec![]
@@ -251,7 +277,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     vec![]
                 },
 
-                i @ (Input::LeftClickReleased | Input::RightClickReleased) => {
+                i @ (Input::LeftClickReleased) => {
                     dbg!(i);
                     vec![]
                 },
@@ -450,8 +476,39 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     pub fn once_per_update_actions(
         &mut self,
         world: &World<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
         let mut actions = Vec::new();
+
+        if let ActionStateMachineState::Decontructing(pos, timer) = &mut self.state {
+            // Check if we are still over the thing we were deconstructing
+            if world
+                .get_entities_colliding_with(*pos, (1, 1), data_store)
+                .into_iter()
+                .next()
+                == world
+                    .get_entities_colliding_with(
+                        Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.local_player_pos,
+                            self.current_mouse_pos,
+                        ),
+                        (1, 1),
+                        data_store,
+                    )
+                    .into_iter()
+                    .next()
+            {
+                *timer -= 1;
+                if *timer == 0 {
+                    let pos = *pos;
+                    self.state = ActionStateMachineState::Idle;
+                    actions.push(ActionType::Remove(pos));
+                }
+            } else {
+                self.state = ActionStateMachineState::Idle;
+            }
+        }
 
         let mut move_dir = (0, 0);
 

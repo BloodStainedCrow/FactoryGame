@@ -114,7 +114,7 @@ impl eframe::App for App {
 
                         let time_since_last_update = now.elapsed();
 
-                        dbg!(tick - self.last_rendered_update);
+                        // dbg!(tick - self.last_rendered_update);
 
                         self.last_rendered_update = tick;
 
@@ -122,7 +122,7 @@ impl eframe::App for App {
                             ctx,
                             &ui,
                             &mut state_machine,
-                            &mut game_state,
+                            &game_state,
                             &loaded_game_sized.data_store,
                         );
                     },

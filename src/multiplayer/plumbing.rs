@@ -73,7 +73,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
             .into_iter()
             .collect();
         dbg!(pre_lock.elapsed());
-        local_actions.extend(state_machine.once_per_update_actions(world));
+        local_actions.extend(state_machine.once_per_update_actions(world, data_store));
 
         mem::drop(state_machine);
 
@@ -199,7 +199,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         if start.elapsed() > Duration::from_millis(1) {
             error!("Handle inputs {:?}", start.elapsed());
         }
-        v.extend(state_machine.once_per_update_actions(&world));
+        v.extend(state_machine.once_per_update_actions(&world, &data_store));
 
         mem::drop(state_machine);
 

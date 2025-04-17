@@ -15,7 +15,8 @@ use crate::{
         tile::{AssemblerID, MachineID},
         Position,
     },
-    item::{IdxTrait, WeakIdxTrait},
+    inserter::Storage,
+    item::{IdxTrait, Item, WeakIdxTrait},
     TICKS_PER_SECOND_LOGIC,
 };
 
@@ -296,11 +297,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
         impl IntoIterator<Item = Position>,
-        impl IntoIterator<Item = (PowerGridIdentifier, PowerGridIdentifier)>,
+        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
+        impl IntoIterator<Item = Position>,
     ) {
-        let old_id = self.pole_pos_to_grid_id[&pole_position];
+        let old_id = self.pole_pos_to_grid_id.remove(&pole_position).unwrap();
 
-        let (new_grids, delete_network) = self.power_grids[old_id as usize]
+        let (new_grids, delete_network, no_longer_connected_entity_positions) = self.power_grids
+            [old_id as usize]
             .as_mut()
             .unwrap()
             .remove_pole(pole_position, data_store);
@@ -308,35 +311,40 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         if delete_network {
             debug_assert!(new_grids.into_iter().count() == 0);
 
-            let grid_id = self.pole_pos_to_grid_id.remove(&pole_position).unwrap();
+            self.remove_power_grid(old_id);
 
-            self.remove_power_grid(grid_id);
-
-            return (vec![], vec![]);
+            return (vec![], vec![], no_longer_connected_entity_positions);
         }
 
         let mut pole_updates = vec![];
         let mut index_updates = vec![];
-        let mut grid_updates = vec![];
 
-        for (new_grid, poles_in_this_grid, storages_to_move_into_that_grid) in new_grids {
+        for (new_grid, storages_to_move_into_that_grid) in new_grids {
             let new_id = self.add_power_grid(new_grid, data_store);
-            for pole in poles_in_this_grid {
+            for pole in self.power_grids[new_id as usize]
+                .as_ref()
+                .unwrap()
+                .grid_graph
+                .keys()
+            {
                 *self.pole_pos_to_grid_id.get_mut(&pole).unwrap() = new_id;
-                pole_updates.push(pole);
+                pole_updates.push(*pole);
             }
 
             index_updates.extend(storages_to_move_into_that_grid.into_iter().map(
-                |(item, old_storage, new_storage)| IndexUpdateInfo {
-                    old: (item, old_storage.change_grid(old_id)),
-                    new: (item, new_storage.change_grid(new_id)),
+                |(position, new_storage)| IndexUpdateInfo {
+                    position,
+                    new_grid: new_id,
+                    new_storage,
                 },
             ));
-
-            grid_updates.push((old_id, new_id));
         }
 
-        (pole_updates, grid_updates)
+        (
+            pole_updates,
+            index_updates,
+            no_longer_connected_entity_positions,
+        )
     }
 
     fn remove_power_grid(&mut self, id: PowerGridIdentifier) {

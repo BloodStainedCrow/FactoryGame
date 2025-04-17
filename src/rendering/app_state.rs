@@ -386,18 +386,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 continue;
                             }
 
-                            let powered_by = self.world.is_powered_by(position, (3, 3), data_store);
+                            let powered_by = self.world.is_powered_by(
+                                &self.simulation_state,
+                                position,
+                                (3, 3),
+                                data_store,
+                            );
 
                             if let Some(pole_position) = powered_by {
                                 self.world.add_entity(
                                     crate::frontend::world::tile::Entity::Assembler {
                                         pos: position,
-                                        info: AssemblerInfo::PoweredNoRecipe(
-                                            self.simulation_state
-                                                .factory
-                                                .power_grids
-                                                .pole_pos_to_grid_id[&pole_position],
-                                        ),
+                                        info: AssemblerInfo::PoweredNoRecipe(pole_position),
                                     },
                                     &self.simulation_state,
                                     data_store,
@@ -431,10 +431,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                             self.update_inserters(InserterUpdateInfo::NewBelt { pos }, data_store);
                         },
-                        crate::frontend::world::tile::PlaceEntityType::PowerPole { pos, ty } => {
+                        crate::frontend::world::tile::PlaceEntityType::PowerPole {
+                            pos: pole_pos,
+                            ty,
+                        } => {
                             // Check if the powerpole fits
                             if !self.world.can_fit(
-                                pos,
+                                pole_pos,
                                 data_store.power_pole_data[usize::from(ty)].size,
                                 data_store,
                             ) {
@@ -446,7 +449,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             let connection_candidates: Vec<_> = self
                                 .world
                                 .get_power_poles_which_could_connect_to_pole_at(
-                                    pos,
+                                    pole_pos,
                                     data_store.power_pole_data[usize::from(ty)].size,
                                     data_store.power_pole_data[usize::from(ty)].connection_range,
                                     data_store,
@@ -455,11 +458,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 .map(|e| e.get_pos())
                                 .collect();
 
-                            if let Some((pole_updates, storage_updates)) = self
-                                .simulation_state
-                                .factory
-                                .power_grids
-                                .add_pole(pos, connection_candidates.iter().copied(), data_store)
+                            if let Some((pole_updates, storage_updates)) =
+                                self.simulation_state.factory.power_grids.add_pole(
+                                    pole_pos,
+                                    connection_candidates.iter().copied(),
+                                    data_store,
+                                )
                             {
                                 // Handle Entities that are now part of another power_grid
                                 for pole_position in pole_updates {
@@ -489,14 +493,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 .simulation_state
                                 .factory
                                 .power_grids
-                                .pole_pos_to_grid_id[&pos];
+                                .pole_pos_to_grid_id[&pole_pos];
 
                             // Handle Entities that are newly powered
                             let power_range = data_store.power_pole_data[ty as usize].power_range;
                             self.world.mutate_entities_colliding_with(
                                 Position {
-                                    x: pos.x - power_range as usize,
-                                    y: pos.y - power_range as usize,
+                                    x: pole_pos.x - power_range as usize,
+                                    y: pole_pos.y - power_range as usize,
                                 },
                                 (2 * power_range + 1, 2 * power_range + 1),
                                 data_store,
@@ -504,7 +508,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     match e {
                                         Entity::Assembler { pos, info } => match info {
                                             AssemblerInfo::UnpoweredNoRecipe => {
-                                                *info = AssemblerInfo::PoweredNoRecipe(grid);
+                                                *info = AssemblerInfo::PoweredNoRecipe(pole_pos);
                                             },
                                             AssemblerInfo::Unpowered(recipe) => {
                                                 let assembler_id = self
@@ -514,9 +518,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                     .power_grids
                                                     [grid as usize]
                                                     .as_mut()
-                                                    .unwrap()
-                                                    .add_assembler(grid, *recipe, data_store);
-                                                *info = AssemblerInfo::Powered(assembler_id);
+                                                    .unwrap() // TODO: Assembler ty
+                                                    .add_assembler(
+                                                        0, grid, *recipe, pole_pos, *pos,
+                                                        data_store,
+                                                    );
+                                                *info = AssemblerInfo::Powered {
+                                                    id: assembler_id,
+                                                    pole_position: pole_pos,
+                                                };
                                             },
                                             _ => {},
                                         },
@@ -543,7 +553,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             self.world.add_entity(
                                 Entity::PowerPole {
                                     ty,
-                                    pos,
+                                    pos: pole_pos,
                                     connected_power_poles: connection_candidates,
                                 },
                                 &self.simulation_state,
@@ -612,19 +622,33 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     AssemblerInfo::Unpowered(_old_recipe) => {
                                         *info = AssemblerInfo::Unpowered(recipe)
                                     },
-                                    AssemblerInfo::PoweredNoRecipe(grid) => {
+                                    AssemblerInfo::PoweredNoRecipe(pole_position) => {
+                                        let grid_id = self
+                                            .simulation_state
+                                            .factory
+                                            .power_grids
+                                            .pole_pos_to_grid_id[&pole_position];
+
                                         let new_id = Self::add_assembler_to_sim(
                                             &mut self.simulation_state,
                                             recipe,
-                                            *grid,
+                                            grid_id,
+                                            *pole_position,
+                                            *pos,
                                             data_store,
                                         );
 
-                                        *info = AssemblerInfo::Powered(new_id);
+                                        *info = AssemblerInfo::Powered {
+                                            id: new_id,
+                                            pole_position: *pole_position,
+                                        };
 
                                         needs_update = true;
                                     },
-                                    AssemblerInfo::Powered(assembler_id) => {
+                                    AssemblerInfo::Powered {
+                                        id: assembler_id,
+                                        pole_position,
+                                    } => {
                                         let old_recipe_id = assembler_id.recipe;
 
                                         if old_recipe_id == recipe {
@@ -658,6 +682,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             &mut self.simulation_state,
                                             recipe,
                                             assembler_id.grid,
+                                            *pole_position,
+                                            *pos,
                                             data_store,
                                         );
 
@@ -816,12 +842,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
         recipe: Recipe<RecipeIdxType>,
         power_grid_id: PowerGridIdentifier,
+        pole_position: Position,
+        assembler_position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> AssemblerID<RecipeIdxType> {
         sim_state.factory.power_grids.power_grids[power_grid_id as usize]
             .as_mut()
             .unwrap()
-            .add_assembler(power_grid_id, recipe, data_store)
+            // Assembler type
+            .add_assembler(
+                0,
+                power_grid_id,
+                recipe,
+                pole_position,
+                assembler_position,
+                data_store,
+            )
     }
 
     fn try_instantiate_inserter(
@@ -867,8 +903,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                 Entity::Assembler {
                     pos,
-                    info: AssemblerInfo::Powered(id),
-                    // FXIME: Translate the recipe_idx to
+                    info: AssemblerInfo::Powered {
+                        id,
+                        pole_position
+                    },
+                    // FIXME: Translate the recipe_idx to
                 } => Some((
                     InserterConnection::Storage(Storage::Assembler {
                         grid: id.grid,
@@ -953,8 +992,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                 Entity::Assembler {
                     pos,
-                    info: AssemblerInfo::Powered(id),
-                    // FXIME: Translate the recipe_idx to
+                    info: AssemblerInfo::Powered {
+                        id,
+                        pole_position,
+                    },
+                    // FIXME: Translate the recipe_idx to
                 } => Some((
                     InserterConnection::Storage(Storage::Assembler {
                         grid: id.grid,

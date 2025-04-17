@@ -140,6 +140,31 @@ impl<RecipeIdxType: IdxTrait> SmartBelt<RecipeIdxType> {
         }
     }
 
+    pub fn set_inserter_storage_id(&mut self, belt_pos: u16, new: Storage<RecipeIdxType>) {
+        let mut pos = 0;
+
+        for (offset, inserter) in self
+            .inserters
+            .offsets
+            .iter()
+            .zip(self.inserters.inserters.iter_mut())
+        {
+            pos += offset;
+            if pos == belt_pos {
+                match inserter {
+                    Inserter::Out(belt_storage_inserter) => {
+                        belt_storage_inserter.storage_id = new;
+                    },
+                    Inserter::In(belt_storage_inserter) => {
+                        belt_storage_inserter.storage_id = new;
+                    },
+                }
+            } else if pos >= belt_pos {
+                unreachable!()
+            }
+        }
+    }
+
     #[must_use]
     pub fn get_inserter_info_at(&self, belt_pos: u16) -> Option<BeltInserterInfo<RecipeIdxType>> {
         let mut pos = 0;

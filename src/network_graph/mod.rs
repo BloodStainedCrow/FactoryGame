@@ -1,8 +1,9 @@
 use std::{fmt::Debug, iter::once, usize};
 
 use bimap::BiMap;
-use log::{error, info};
+use log::info;
 use petgraph::{
+    algo::tarjan_scc,
     prelude::StableUnGraph,
     visit::{EdgeRef, IntoNodeReferences},
 };
@@ -51,6 +52,20 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
 
     pub fn nodes(&self) -> impl IntoIterator<Item = &S> {
         self.graph.node_weights().map(|n| &n.node_info)
+    }
+
+    pub fn weak_components(&self) -> impl IntoIterator<Item = &W> {
+        self.graph
+            .node_weights()
+            .flat_map(|n| &n.connected_weak_components)
+            .flatten()
+    }
+
+    pub fn weak_components_mut(&mut self) -> impl IntoIterator<Item = &mut W> {
+        self.graph
+            .node_weights_mut()
+            .flat_map(|n| &mut n.connected_weak_components)
+            .flatten()
     }
 
     pub fn add_node(
@@ -104,6 +119,10 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
 
         let mut components = petgraph::algo::tarjan_scc(&self.graph);
 
+        // Pop the first component, (which will stay in this network)
+        // TODO: It is probably good to have the largest component stay, but testing is required
+        components.sort_by_key(|v| -(v.len() as isize));
+
         if components.pop() == None {
             info!("The last node in a network was removed, the network can be deleted");
             return (
@@ -124,13 +143,15 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
                 .map(|edge| (edge.source(), edge.target()))
                 .collect();
 
-            debug_assert_eq!(component.len(), connections.len());
-
             let mut new_graph = StableUnGraph::default();
+
+            dbg!(&component);
 
             let new_indices: Vec<_> = component
                 .iter()
-                .map(|idx| new_graph.add_node(self.graph.remove_node(*idx).unwrap()))
+                .map(|idx: &petgraph::prelude::NodeIndex| {
+                    new_graph.add_node(self.graph.remove_node(*idx).unwrap())
+                })
                 .collect();
 
             for (source, dest) in connections {
@@ -227,6 +248,17 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
             self.graph
                 .add_edge(index, *self.key_map.get_by_left(&connection).unwrap(), ());
         }
+
+        debug_assert!(tarjan_scc(&self.graph).len() == 1);
+    }
+
+    pub fn modify_weak_component(&mut self, key: NodeKey, index: WeakIndex) -> &mut W {
+        self.graph
+            .node_weight_mut(*self.key_map.get_by_left(&key).unwrap())
+            .unwrap()
+            .connected_weak_components[index.index]
+            .as_mut()
+            .unwrap()
     }
 }
 

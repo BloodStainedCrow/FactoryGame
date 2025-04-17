@@ -1,9 +1,10 @@
 use crate::{
     assembler::TIMERTYPE,
     data::DataStore,
+    frontend::world::Position,
     item::{IdxTrait, Item, ITEMCOUNTTYPE},
     power::{
-        power_grid::{IndexUpdateInfo, PowerGridIdentifier, MAX_POWER_MULT},
+        power_grid::{IndexUpdateInfo, PowerGridEntity, PowerGridIdentifier, MAX_POWER_MULT},
         Joule, Watt,
     },
     research::Technology,
@@ -14,6 +15,9 @@ pub struct MultiLabStore {
     pub sciences: Box<[Vec<ITEMCOUNTTYPE>]>,
     timer: Vec<TIMERTYPE>,
     holes: Vec<usize>,
+
+    // This is not used in normal updates, but only for when the indices change (i.e. when merging power networks)
+    positions: Vec<Position>,
 }
 
 impl MultiLabStore {
@@ -23,6 +27,7 @@ impl MultiLabStore {
             sciences: vec![Vec::new(); science_bottle_items.len()].into_boxed_slice(),
             timer: vec![],
             holes: vec![],
+            positions: vec![],
         }
     }
 
@@ -30,66 +35,64 @@ impl MultiLabStore {
     pub fn join<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         mut self,
         other: Self,
-        self_grid: PowerGridIdentifier,
-        other_grid: PowerGridIdentifier,
+        new_grid_id: PowerGridIdentifier,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
         Self,
         impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
     ) {
-        let mut updates = vec![];
+        let old_len = self.positions.len();
 
-        for (new_idx_offs, (other_idx, _)) in other
-            .timer
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| !other.holes.contains(i))
-            .enumerate()
-        {
-            assert_eq!(data_store.science_bottle_items.len(), other.sciences.len());
-
-            for science in &data_store.science_bottle_items {
-                updates.push(IndexUpdateInfo {
-                    old: (
-                        *science,
-                        data_store.get_storage_id_for_lab_science(
-                            self_grid,
-                            other_idx.try_into().unwrap(),
-                        ),
-                    ),
-                    new: (
-                        *science,
-                        data_store.get_storage_id_for_lab_science(
-                            other_grid,
-                            (self.timer.len() + new_idx_offs).try_into().unwrap(),
-                        ),
-                    ),
-                });
-            }
-        }
-
-        let new_sciences = self
-            .sciences
-            .into_vec()
-            .into_iter()
+        self.sciences
+            .iter_mut()
             .zip(other.sciences)
-            .map(|(mut s, o)| {
+            .for_each(|(s, o)| {
                 s.extend(
                     o.into_iter()
                         .enumerate()
                         .filter(|(i, _)| !other.holes.contains(i))
                         .map(|(_, v)| v),
                 );
-                s
-            })
-            .collect();
+            });
 
-        self.timer.extend(other.timer);
+        self.timer.extend(
+            other
+                .timer
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        self.positions.extend(
+            other
+                .positions
+                .iter()
+                .copied()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        let updates = other
+            .positions
+            .into_iter()
+            .enumerate()
+            .filter(move |(i, _)| !other.holes.contains(i))
+            .enumerate()
+            .map(move |(new_index_offs, (old_index, pos))| IndexUpdateInfo {
+                position: pos,
+                new_storage: PowerGridEntity::Lab {
+                    index: (old_len + new_index_offs).try_into().unwrap(),
+                },
+                new_grid: new_grid_id,
+            });
 
         let ret = Self {
-            sciences: new_sciences,
+            sciences: self.sciences,
             timer: self.timer,
             holes: self.holes,
+            positions: self.positions,
         };
 
         (ret, updates)

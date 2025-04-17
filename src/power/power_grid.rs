@@ -31,7 +31,7 @@ const MAX_ACCUMULATOR_DISCHARGE_RATE: Watt = Watt(300_000);
 const MAX_ACCUMULATOR_CHARGE: Joule = Joule(5_000_000);
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
-pub(super) enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+pub enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Assembler {
         recipe: Recipe<RecipeIdxType>,
         index: u16,
@@ -49,7 +49,8 @@ pub(super) enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakId
 pub struct PowerGrid<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub stores: FullAssemblerStore<RecipeIdxType>,
     pub lab_stores: MultiLabStore,
-    pub(super) grid_graph: Network<Position, (), PowerGridEntity<ItemIdxType, RecipeIdxType>>,
+    pub(super) grid_graph:
+        Network<Position, (), (Position, PowerGridEntity<ItemIdxType, RecipeIdxType>)>,
     steam_power_producers: SteamPowerProducerStore,
     num_solar_panels: u64,
     main_accumulator_count: u64,
@@ -80,8 +81,9 @@ impl From<BurnableFuelForAccumulators> for bool {
 
 #[derive(Debug)]
 pub struct IndexUpdateInfo<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    pub old: (Item<ItemIdxType>, Storage<RecipeIdxType>),
-    pub new: (Item<ItemIdxType>, Storage<RecipeIdxType>),
+    pub position: Position,
+    pub new_storage: PowerGridEntity<ItemIdxType, RecipeIdxType>,
+    pub new_grid: PowerGridIdentifier,
 }
 
 pub struct PowerPoleUpdateInfo {
@@ -144,7 +146,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     }
 
     fn new_from_graph(
-        graph: Network<Position, (), PowerGridEntity<ItemIdxType, RecipeIdxType>>,
+        graph: Network<Position, (), (Position, PowerGridEntity<ItemIdxType, RecipeIdxType>)>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         Self {
@@ -167,17 +169,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         Self,
         impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
     ) {
-        let mut update_vec = vec![];
+        let (new_stores, assembler_updates) = self.stores.join(other.stores, self_grid, data_store);
 
-        let (new_stores, updates) =
-            self.stores
-                .join(other.stores, data_store, self_grid, other_grid);
-        update_vec.extend(updates);
-
-        let (new_labs, updates) =
-            self.lab_stores
-                .join(other.lab_stores, self_grid, other_grid, data_store);
-        update_vec.extend(updates);
+        let (new_labs, lab_updates) = self
+            .lab_stores
+            .join(other.lab_stores, self_grid, data_store);
 
         let mut new_grid_graph = self.grid_graph;
         let mut new_pole_connections = new_pole_connections.into_iter();
@@ -217,7 +213,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                     if s == o {
                         Some(s)
                     } else {
-                        todo!("You specified using Fuel on one power network, and not using it on another, how do I want to handle this...")
+                        todo!("You specified using Fuel to charge accumulators on one power network, and not using it on another, how do I want to handle this...")
                     }
                 },
             },
@@ -233,7 +229,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             },
         };
 
-        (ret, update_vec)
+        (ret, assembler_updates.into_iter().chain(lab_updates))
     }
 
     pub fn get_assembler_info(
@@ -265,47 +261,58 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         impl IntoIterator<
             Item = (
                 Self,
-                impl IntoIterator<Item = Position>,
-                impl IntoIterator<
-                    Item = (
-                        Item<ItemIdxType>,
-                        Storage<RecipeIdxType>,
-                        Storage<RecipeIdxType>,
-                    ),
-                >,
+                impl IntoIterator<Item = (Position, PowerGridEntity<ItemIdxType, RecipeIdxType>)>,
             ),
         >,
         bool, // This tells the storage to delete us
+        impl IntoIterator<Item = Position>,
     ) {
+        dbg!(&self.grid_graph);
         let ((), no_longer_connected_entities, new_electric_networks) =
             self.grid_graph.remove_node(pole_pos);
+
+        let no_longer_connected_entities: Vec<_> =
+            no_longer_connected_entities.into_iter().collect();
+
+        // This is needed to make sure both paths have the same type (since closures have different types even if identical)
+        let closure = |v: (Position, PowerGridEntity<ItemIdxType, RecipeIdxType>)| v.0;
 
         if new_electric_networks.is_none() {
             // We no longer exist
 
             // No new networks
-            let new_networks: Vec<(_, Vec<_>, Vec<_>)> = vec![];
+            let new_networks: Vec<(_, Vec<_>)> = vec![];
 
-            mem::drop(no_longer_connected_entities);
             mem::drop(new_electric_networks);
 
             assert!(self.grid_graph.keys().into_iter().count() == 0);
-            return (new_networks, true);
+            return (
+                new_networks,
+                true,
+                no_longer_connected_entities.into_iter().map(closure),
+            );
         }
 
-        let no_longer_connected_entities: Vec<_> =
-            no_longer_connected_entities.into_iter().collect();
+        let new_electric_networks: Vec<_> = new_electric_networks.into_iter().flatten().collect();
 
         let new_electric_networks: Vec<_> = new_electric_networks
             .into_iter()
-            .flatten()
-            .map(|(network, v)| {
-                let new_network = Self::new_from_graph(network, data_store);
+            .map(|(network, pole_position_in_new_network)| {
+                dbg!(&network);
+                let mut new_network: PowerGrid<ItemIdxType, RecipeIdxType> =
+                    Self::new_from_graph(network, data_store);
+
+                let storage_updates = self
+                    .move_connected_entities(&mut new_network, data_store)
+                    .into_iter()
+                    .collect();
+
+                (new_network, storage_updates)
             })
             .collect();
 
         for no_longer_connected_entity in no_longer_connected_entities.iter().copied() {
-            match no_longer_connected_entity {
+            match no_longer_connected_entity.1 {
                 PowerGridEntity::Assembler { recipe, index } => {
                     self.remove_assembler(
                         AssemblerID {
@@ -323,7 +330,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             }
         }
 
-        (vec![todo!()], false)
+        // TODO: Do I want to return the no_longer_connected_entities positions?
+
+        dbg!(&self.grid_graph);
+
+        (
+            new_electric_networks,
+            false,
+            no_longer_connected_entities.into_iter().map(closure),
+        )
     }
 
     fn remove_connected_entity(
@@ -349,45 +364,48 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         }
     }
 
-    fn move_connected_entity(
-        &mut self,
-        other: &mut Self,
-        connected_entity: PowerGridEntity<ItemIdxType, RecipeIdxType>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<
-        Item = (
-            Item<ItemIdxType>,
-            Storage<RecipeIdxType>,
-            Storage<RecipeIdxType>,
-        ),
-    > {
-        match connected_entity {
-            PowerGridEntity::Assembler { recipe, index } => {
-                self.remove_assembler(
-                    AssemblerID {
-                        recipe,
-                        grid: 0, // Does not matter
-                        assembler_index: index,
-                    },
-                    data_store,
-                );
-                let new_id = other.add_assembler(0, recipe, data_store);
+    // The caller is responsible that the connected Entity is removed from self's graph
+    fn move_connected_entities<'a, 'b, 'c>(
+        &'a mut self,
+        other: &'b mut Self,
+        data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl IntoIterator<Item = (Position, PowerGridEntity<ItemIdxType, RecipeIdxType>)>
+           + use<'a, 'b, 'c, ItemIdxType, RecipeIdxType> {
+        other
+            .grid_graph
+            .weak_components_mut()
+            .into_iter()
+            .map(|connected_entity| match &mut dbg!(connected_entity.1) {
+                PowerGridEntity::Assembler { recipe, index } => {
+                    let new_idx =
+                        self.move_assembler(&mut other.stores, *recipe, *index, data_store);
 
-                todo!()
-            },
-            PowerGridEntity::Lab { index } => todo!("Remove Assembler"),
-            PowerGridEntity::LazyPowerProducer { item, index } => {
-                todo!("Remove LazyPowerProducer (Steam Engine)")
-            },
-        }
+                    let ret = (
+                        connected_entity.0,
+                        PowerGridEntity::Assembler {
+                            recipe: *recipe,
+                            index: new_idx.try_into().unwrap(),
+                        },
+                    );
 
-        vec![todo!()]
+                    *index = new_idx.try_into().unwrap();
+
+                    ret
+                },
+                PowerGridEntity::Lab { index } => todo!("Move Lab"),
+                PowerGridEntity::LazyPowerProducer { item, index } => {
+                    todo!("Move LazyPowerProducer (Steam Engine)")
+                },
+            })
     }
 
     pub fn add_assembler(
         &mut self,
+        ty: u8,
         grid_id: PowerGridIdentifier,
         recipe: Recipe<RecipeIdxType>,
+        connected_power_pole_position: Position,
+        assembler_position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> AssemblerID<RecipeIdxType> {
         let new_idx = match (
@@ -396,10 +414,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         ) {
             (0, 1) => self.stores.assemblers_0_1
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
-            .add_assembler(),
+            .add_assembler(ty, data_store),
 
             _ => unreachable!(),
         };
+
+        self.grid_graph.add_weak_element(
+            connected_power_pole_position,
+            (
+                assembler_position,
+                PowerGridEntity::Assembler {
+                    recipe,
+                    index: new_idx.try_into().unwrap(),
+                },
+            ),
+        );
 
         AssemblerID {
             recipe,
@@ -420,6 +449,29 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             (0, 1) => self.stores.assemblers_0_1
                 [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
             .remove_assembler(assembler_id.assembler_index as usize),
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn move_assembler(
+        &mut self,
+        other_stores: &mut FullAssemblerStore<RecipeIdxType>,
+        recipe: Recipe<RecipeIdxType>,
+        index: u16,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> usize {
+        match (
+            data_store.recipe_num_ing_lookup[recipe.id.into()],
+            data_store.recipe_num_out_lookup[recipe.id.into()],
+        ) {
+            (0, 1) => self.stores.assemblers_0_1
+                [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
+            .move_assembler(
+                index.into(),
+                &mut other_stores.assemblers_0_1
+                    [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]],
+            ),
 
             _ => unreachable!(),
         }
