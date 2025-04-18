@@ -341,6 +341,79 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SushiBelt<ItemIdxType, Reci
 
         Some(new_belt)
     }
+
+    pub fn join(front: Self, back: Self) -> Self {
+        let front_len = front.get_len() as usize;
+        let _back_len = back.get_len() as usize;
+
+        assert!(!front.is_circular);
+        assert!(!back.is_circular);
+
+        // TODO: Check if maybe choosing the shorter belt somewhere could make this faster?
+        // My guess is that splicing the one with the shorter tail (see Vec::splice) will be best
+
+        let Self {
+            is_circular: _,
+            first_free_index: front_first_free_index,
+            zero_index: front_zero_index,
+            locs: front_locs,
+            inserters: front_inserters,
+        } = front;
+
+        // Important, first_free_index must ALWAYS be used using mod len
+        let front_zero_index = usize::from(front_zero_index) % front_locs.len();
+
+        let Self {
+            is_circular: _,
+            first_free_index: _back_first_free_index,
+            zero_index: back_zero_index,
+            locs: back_locs,
+            inserters: mut back_inserters,
+        } = back;
+        // Important, first_free_index must ALWAYS be used using mod len
+        let back_zero_index = usize::from(back_zero_index) % back_locs.len();
+
+        let num_front_inserters = front_inserters.offsets.len();
+        let _num_back_inserters = back_inserters.offsets.len();
+
+        let free_spots_before_last_inserter_front: u16 = front_inserters.offsets.iter().sum();
+        let length_after_last_inserter = TryInto::<u16>::try_into(front_len)
+            .expect("Belt should be max u16::MAX long")
+            - free_spots_before_last_inserter_front
+            - TryInto::<u16>::try_into(num_front_inserters)
+                .expect("Belt should be max u16::MAX long");
+
+        if let Some(offs) = back_inserters.offsets.get_mut(0) {
+            *offs += length_after_last_inserter;
+        }
+
+        let mut new_inserters = front_inserters;
+        new_inserters
+            .inserters
+            .append(&mut back_inserters.inserters);
+        new_inserters.offsets.append(&mut back_inserters.offsets);
+
+        let new_first_free_index = front_first_free_index;
+
+        let mut front_locs_vec = Vec::from(front_locs);
+
+        let back_loc_iter = back_locs
+            .iter()
+            .skip(back_zero_index)
+            .chain(back_locs.iter().take(back_zero_index));
+
+        let insert_pos = (front_zero_index + front_len) % (front_len + 1);
+
+        front_locs_vec.splice(insert_pos..insert_pos, back_loc_iter.copied());
+
+        Self {
+            is_circular: false,
+            first_free_index: new_first_free_index,
+            zero_index: BeltLenType::try_from(front_zero_index).unwrap(),
+            locs: front_locs_vec.into_boxed_slice(),
+            inserters: new_inserters,
+        }
+    }
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Belt<ItemIdxType>

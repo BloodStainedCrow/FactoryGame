@@ -1,7 +1,9 @@
 use std::{borrow::Borrow, marker::PhantomData, ops::ControlFlow};
 
 use crate::{
-    belt::{belt::Belt, splitter::Splitter, BeltStore, MultiBeltStore},
+    belt::{
+        belt::Belt, splitter::Splitter, BeltBeltInserterInfo, BeltStore, BeltTileId, MultiBeltStore,
+    },
     chest::{FullChestStore, MultiChestStore},
     data::{DataStore, ItemRecipeDir},
     frontend::{
@@ -12,8 +14,8 @@ use crate::{
         },
         world::{
             tile::{
-                AssemblerID, AssemblerInfo, AttachedInserter, BeltId, BeltTileId, Dir, Entity,
-                InserterInfo, World,
+                AssemblerID, AssemblerInfo, AttachedInserter, BeltId, Dir, Entity, InserterInfo,
+                World,
             },
             Position,
         },
@@ -76,101 +78,9 @@ pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct SplitterStore<ItemIdxType: WeakIdxTrait> {
-    pub empty_splitters: Vec<Splitter>,
-    // TODO: Holes
-    pub splitters: Box<[Vec<Splitter>]>,
-    item: PhantomData<ItemIdxType>,
-}
-
-impl<ItemIdxType: IdxTrait> SplitterStore<ItemIdxType> {
-    pub fn get_splitter_belt_ids<'a>(
-        &'a self,
-        item: Option<Item<ItemIdxType>>,
-        id: usize,
-    ) -> [impl IntoIterator<Item = BeltTileId<ItemIdxType>> + use<'a, ItemIdxType>; 2] {
-        let index_to_id = move |index| match item {
-            Some(item) => BeltTileId::BeltId(BeltId { item, index }),
-            None => BeltTileId::EmptyBeltId(index),
-        };
-
-        match item {
-            Some(item) => [
-                self.splitters[Into::<usize>::into(item.id)][id]
-                    .input_belts
-                    .iter()
-                    .copied()
-                    .map(index_to_id),
-                self.splitters[Into::<usize>::into(item.id)][id]
-                    .output_belts
-                    .iter()
-                    .copied()
-                    .map(index_to_id),
-            ],
-            None => [
-                self.empty_splitters[id]
-                    .input_belts
-                    .iter()
-                    .copied()
-                    .map(index_to_id),
-                self.empty_splitters[id]
-                    .output_belts
-                    .iter()
-                    .copied()
-                    .map(index_to_id),
-            ],
-        }
-    }
-}
-
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BeltBeltInserterStore<ItemIdxType: WeakIdxTrait> {
     // TODO: Holes
     pub inserters: Box<[Vec<(BeltBeltInserter, BeltBeltInserterInfo<ItemIdxType>)>]>,
-}
-
-impl<ItemIdxType: IdxTrait> BeltBeltInserterStore<ItemIdxType> {
-    pub fn update<RecipeIdxType: IdxTrait>(
-        &mut self,
-        belts: &mut BeltStore<RecipeIdxType>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) {
-        self.inserters
-            .par_iter_mut()
-            .zip(belts.belts.par_iter_mut())
-            .for_each(|(inserters, belts)| {
-                for ins in inserters {
-                    let [source, dest] = if ins.1.source.0 == ins.1.dest.0 {
-                        // We are taking and inserting from the same belt
-                        debug_assert!(ins.1.source.1 != ins.1.dest.1);
-                        belts.belts[ins.1.source.0]
-                            .get_two([ins.1.source.1 as usize, ins.1.dest.1 as usize])
-                    } else {
-                        let [source_belt, dest_belt] = belts
-                            .belts
-                            .get_disjoint_mut([ins.1.source.0, ins.1.dest.0])
-                            .expect("Index out of bounds");
-                        [
-                            source_belt.get_mut(ins.1.source.1),
-                            dest_belt.get_mut(ins.1.dest.1),
-                        ]
-                    };
-                    ins.0.update(source, dest, todo!());
-                }
-            });
-    }
-}
-
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct BeltBeltInserterInfo<ItemIdxType: WeakIdxTrait> {
-    source: (usize, u16),
-    dest: (usize, u16),
-    cooldown: u8,
-    item: PhantomData<ItemIdxType>,
-}
-
-pub struct BeltBeltInserterAdditionInfo {
-    pub cooldown: u8,
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, RecipeIdxType> {
@@ -198,7 +108,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
         assert_eq!(sizes.len(), data_store.item_names.len());
         let storages_by_item = full_to_by_item(&mut all_storages, &sizes);
 
-        self.belts.update(storages_by_item);
+        self.belts
+            .update(num_grids_total, storages_by_item, data_store);
     }
 }
 

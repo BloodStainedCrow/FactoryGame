@@ -1,22 +1,17 @@
-use std::mem;
-
-use itertools::Itertools;
-use log::{error, warn};
 use strum::IntoEnumIterator;
 
 use crate::{
     belt::{
-        belt::Belt,
-        smart::{EmptyBelt, Side, SmartBelt},
+        smart::Side,
         splitter::{Splitter, SplitterDistributionMode, SPLITTER_BELT_LEN},
-        BeltBeltInserterAdditionInfo, BeltTileId,
+         BeltTileId,
     },
     data::DataStore,
     frontend::world::{
         tile::{Dir, DirRelative, Entity, UndergroundDir, World, BELT_LEN_PER_TILE},
         Position,
     },
-    item::{IdxTrait, Item, WeakIdxTrait},
+    item::IdxTrait,
     rendering::app_state::{GameState, SimulationState},
 };
 
@@ -134,7 +129,7 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         output_belts: [belt_connections[0][1], belt_connections[1][1]],
     };
 
-    let id = game_state.simulation_state.factory.add_splitter(splitter);
+    let id = game_state.simulation_state.factory.belts.add_splitter(splitter);
 
     game_state.world.add_entity(
         Entity::Splitter {
@@ -384,7 +379,7 @@ fn handle_belt_breaking<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         },
                     }
                 },
-                None => todo!("The belt stopped being circular. What tot do?"),
+                None => todo!("The belt stopped being circular. What to do?"),
             }
         },
         (BeltState::Sideloading, BeltState::Straight) => unreachable!("Should be impossible"),

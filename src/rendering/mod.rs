@@ -126,7 +126,7 @@ fn texture_atlas() -> TextureAtlas {
 
         no_power: Sprite::new(Texture::new(1, no_power, no_power_dimensions)),
 
-        plate: Sprite::new(Texture::new(1, plate, plate_dimensions)),
+        items: vec![Sprite::new(Texture::new(1, plate, plate_dimensions))].into_boxed_slice(),
 
         player: Sprite::new(Texture::new(1, player, player_dimensions)),
         belt: enum_map::EnumMap::from_array([

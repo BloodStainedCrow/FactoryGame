@@ -11,8 +11,7 @@ use crate::{
             ActionType,
         },
         world::tile::{
-            AssemblerID, AssemblerInfo, BeltId, BeltTileId, Dir, Entity, BELT_LEN_PER_TILE,
-            CHUNK_SIZE_FLOAT,
+            AssemblerID, AssemblerInfo, BeltId, Dir, Entity, BELT_LEN_PER_TILE, CHUNK_SIZE_FLOAT,
         },
     },
     item::{usize_from, IdxTrait, Item, Recipe},

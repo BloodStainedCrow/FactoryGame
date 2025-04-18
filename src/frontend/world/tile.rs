@@ -808,41 +808,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                                     unreachable!()
                                                 },
                                                 InserterInfo::Attached(attached_inserter) => {
-                                                    match attached_inserter {
-                                                        AttachedInserter::BeltStorage {
-                                                            id,
-                                                            belt_pos,
-                                                        } => match id {
-                                                            BeltTileId::EmptyBeltId(_) => todo!(),
-                                                            BeltTileId::BeltId(belt_id) => {
-                                                                sim_state
-                                                                    .factory
-                                                                    .belts
-                                                                    .get_belt_mut(*belt_id)
-                                                                    .set_inserter_storage_id(
-                                                                        *belt_pos,
-                                                                        new_storages
-                                                                            .iter()
-                                                                            .copied()
-                                                                            .find(|(item, _)| {
-                                                                                **item
-                                                                                    == belt_id.item
-                                                                            })
-                                                                            .unwrap()
-                                                                            .1,
-                                                                    );
-                                                            },
-                                                        },
-                                                        AttachedInserter::BeltBelt {
-                                                            item,
-                                                            inserter,
-                                                        } => {
-                                                            todo!("Change BeltBelt Inserter Index")
-                                                        },
-                                                        AttachedInserter::StorageStorage(_) => {
-                                                            todo!()
-                                                        },
-                                                    }
+                                                    sim_state
+                                                        .factory
+                                                        .belts
+                                                        .remove_inserter(attached_inserter);
+                                                    todo!();
                                                 },
                                             }
                                         }
@@ -934,12 +904,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     id,
                     belt_pos,
                 } => todo!(),
-                Entity::Splitter {
-                    pos,
-                    direction,
-                    item,
-                    id,
-                } => todo!(),
+                Entity::Splitter { pos, direction, id } => todo!(),
 
                 Entity::Chest {
                     ty,

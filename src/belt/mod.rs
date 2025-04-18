@@ -6,7 +6,7 @@ pub mod splitter;
 
 mod sushi;
 
-use std::{marker::PhantomData, mem};
+use std::{marker::PhantomData, mem, usize};
 
 use crate::{
     data::DataStore,
@@ -19,8 +19,9 @@ use crate::{
     storage_list::{grid_size, num_recipes},
 };
 use belt::{Belt, BeltLenType, NoSpaceError};
-use rayon::iter::IntoParallelRefMutIterator;
+use petgraph::prelude::StableUnGraph;
 use rayon::iter::{IndexedParallelIterator, ParallelIterator};
+use rayon::iter::{IntoParallelRefMutIterator, ParallelBridge};
 use smart::{EmptyBelt, InserterAdditionError, Side, SmartBelt, SpaceOccupiedError};
 use splitter::Splitter;
 use sushi::{SushiBelt, SushiInfo};
@@ -79,6 +80,21 @@ pub struct BeltStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     any_belts: Vec<AnyBelt<ItemIdxType>>,
     any_belt_holes: Vec<usize>,
+
+    belt_graph: StableUnGraph<BeltTileId<ItemIdxType>, BeltGraphConnection>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+enum BeltGraphConnection {
+    Sideload {
+        dest_belt_pos: BeltLenType,
+    },
+    BeltBeltInserter {
+        source_belt_pos: BeltLenType,
+        dest_belt_pos: BeltLenType,
+    },
+    Connected, // Used for handling extremely long belts and splitters
+               // Always connects the end of the source to the beginning of the destination
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -229,7 +245,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> InnerBeltStore<ItemIdxType,
     ) -> [&mut SmartBelt<ItemIdxType, RecipeIdxType>; N] {
         self.smart_belts[usize_from(item.id)]
             .belts
-            .get_many_mut(indices)
+            .get_disjoint_mut(indices)
             .unwrap()
     }
 
@@ -429,11 +445,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
             + IndexedParallelIterator<Item = &'a mut [&'a mut [u8]]>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
+        let storages_by_item: Vec<_> = storages_by_item.into_iter().collect();
+
         // FIXME: We need the belts to be sorted by item, to update them in parallel...
         self.inner
             .smart_belts
             .par_iter_mut()
-            .zip(storages_by_item)
+            .zip(storages_by_item.par_iter_mut())
             .zip(self.inner.belt_belt_inserters.inserters.par_iter_mut())
             .zip(self.splitters.splitters.par_iter_mut())
             .enumerate()
@@ -640,25 +658,37 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
                             },
                             Err(InserterAdditionError::ItemMismatch) => {
                                 // We need to transition to sushi belt
-                                self.make_sushi(index);
+                                let new_index = self.inner.make_sushi(*smart_belt_id);
+
+                                self.any_belts[index] = AnyBelt::Sushi(new_index);
+
+                                // Retry adding inserter
+                                let now_sushi_belt = self.inner.get_sushi_mut(new_index);
+
+                                now_sushi_belt
+                                    .add_in_inserter(filter, pos, storage_id)
+                                    .expect("We already became sushi, it should now work!");
                             },
                         }
 
                         let AnyBelt::Sushi(sushi_belt_id) = &mut self.any_belts[index] else {
                             unreachable!();
                         };
-                        let sushi_belt = &mut self.inner.sushi_belts[*sushi_belt_id];
+                        let sushi_belt = self.inner.get_sushi_mut(*sushi_belt_id);
                         debug_assert!(handle_sushi_belt(sushi_belt).is_ok());
                     },
                     AnyBelt::Sushi(sushi_belt_index) => {
-                        let sushi_belt = &mut self.inner.sushi_belts[*sushi_belt_index];
-
+                        let sushi_belt = self.inner.get_sushi_mut(*sushi_belt_index);
+                        // Adding an inserter cannot change a sushi belt to a smart belt
                         match handle_sushi_belt(sushi_belt) {
                             Ok(()) => {
-                                // It succeeded!
-                                match sushi_belt.check_sushi() {
+                                let (belt_belt_filter_in, belt_belt_filter_out) =
+                                    self.get_belt_belt_inserter_sushi_lists(id);
+                                match sushi_belt.check_sushi(belt_belt_filter_in, belt_belt_filter_out) {
                                     SushiInfo::Sushi => {},
-                                    SushiInfo::Pure(Some(item)) => {self.make_smart(index, item);},
+                                    SushiInfo::Pure(Some(item)) => {
+                                        self.inner.make_smart(index, item);
+                                    },
                                     SushiInfo::Pure(None) => unreachable!("I don't think it is possible to add an inserter and still be empty")
                                 }
                             },
@@ -698,7 +728,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
                             },
                             Err(InserterAdditionError::ItemMismatch) => {
                                 // We need to transition to sushi belt
-                                self.make_sushi(index);
+                                let new_index = self.inner.make_sushi(*smart_belt_id);
+
+                                self.any_belts[index] = AnyBelt::Sushi(new_index);
+
+                                // Retry adding inserter
+                                let now_sushi_belt = self.inner.get_sushi_mut(new_index);
+
+                                now_sushi_belt
+                                    .add_out_inserter(filter, pos, storage_id)
+                                    .expect("We already became sushi, it should now work!");
                             },
                         }
 
@@ -717,7 +756,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
                                     self.get_belt_belt_inserter_sushi_lists(id);
                                 match sushi_belt.check_sushi(belt_belt_filter_in, belt_belt_filter_out) {
                                     SushiInfo::Sushi => {},
-                                    SushiInfo::Pure(Some(item)) => {self.make_smart(index, item);},
+                                    SushiInfo::Pure(Some(item)) => {
+                                        self.inner.make_smart(index, item);
+                                    },
                                     SushiInfo::Pure(None) => unreachable!("I don't think it is possible to add an inserter and still be empty")
                                 }
                             },
@@ -875,7 +916,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
         todo!()
     }
 
-    fn remove_inserter(&mut self, id: BeltTileId<ItemIdxType>, pos: BeltLenType) {
+    pub fn remove_inserter(&mut self, id: BeltTileId<ItemIdxType>, pos: BeltLenType) {
         match id {
             BeltTileId::AnyBelt(index, _) => match &mut self.any_belts[index] {
                 AnyBelt::Smart(smart_belt_id) => {
@@ -889,7 +930,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
                         SushiInfo::Sushi => {},
                         SushiInfo::Pure(item) => {
                             if let Some(item) = item {
-                                self.make_smart(index, item);
+                                self.inner.make_smart(index, item);
                             }
                         },
                     }
@@ -913,8 +954,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
     ) -> impl IntoIterator<Item = Option<Item<ItemIdxType>>> {
         match id {
             BeltTileId::AnyBelt(index, _) => match &self.any_belts[index] {
-                AnyBelt::Smart(smart_belt) => smart_belt.items(),
-                AnyBelt::Sushi(sushi_belt) => sushi_belt.items(),
+                AnyBelt::Smart(smart_belt) => self.inner.get_smart(*smart_belt).items(),
+                AnyBelt::Sushi(sushi_belt) => self.inner.get_sushi(*sushi_belt).items(),
             },
         }
     }
@@ -946,36 +987,55 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
         match (front_tile_id, back_tile_id) {
             (BeltTileId::AnyBelt(front, _), BeltTileId::AnyBelt(back, _)) => {
                 assert_ne!(front, back);
-                match self.any_belts.get_many_mut([front, back]).unwrap() {
+                match self.any_belts.get_disjoint_mut([front, back]).unwrap() {
                     [AnyBelt::Smart(front_smart_belt), AnyBelt::Smart(back_smart_belt)] => {
                         if front_smart_belt.item == back_smart_belt.item {
-                            let back_smart_belt = self.inner.remove_smart_belt(*back_smart_belt);
-                            let front_smart_belt = self.inner.get_smart_mut(*front_smart_belt);
-                            take_mut::take(front_smart_belt, |front_belt| {
-                                SmartBelt::join(front_belt, back_smart_belt)
-                            });
-                            (front_tile_id, front_smart_belt.get_len())
+                            self.inner
+                                .merge_smart_belts(*front_smart_belt, *back_smart_belt);
+
+                            self.any_belts[back] = AnyBelt::Sushi(usize::MAX);
+                            self.any_belt_holes.push(back);
+
+                            (front_tile_id, self.get_len(front_tile_id))
                         } else {
-                            todo!("Convert belts to sushi and merge")
+                            todo!("Convert both belts to sushi and merge")
                         }
                     },
                     [AnyBelt::Smart(front_smart_belt), AnyBelt::Sushi(back_sushi_belt)] => {
                         todo!()
                     },
                     [AnyBelt::Sushi(front_sushi_belt), AnyBelt::Smart(back_smart_belt)] => todo!(),
-                    [AnyBelt::Sushi(front_sushi_belt), AnyBelt::Sushi(back_sushi_belt)] => todo!(),
+                    [AnyBelt::Sushi(front_sushi_belt), AnyBelt::Sushi(back_sushi_belt)] => {
+                        self.inner
+                            .merge_sushi_belts(*front_sushi_belt, *back_sushi_belt);
+
+                        self.any_belts[back] = AnyBelt::Sushi(usize::MAX);
+                        self.any_belt_holes.push(back);
+
+                        (front_tile_id, self.get_len(front_tile_id))
+                    },
                 }
             },
         }
     }
 
     pub fn add_splitter(&mut self, splitter: Splitter) -> usize {
+        // TODO: Do I want this to work this way
         self.inner.splitters.splitters.push(splitter);
         self.inner.splitters.splitters.len() - 1
     }
 
     pub fn remove_splitter(&mut self, index: usize) {
         todo!()
+    }
+
+    pub fn get_len(&self, id: BeltTileId<ItemIdxType>) -> u16 {
+        match id {
+            BeltTileId::AnyBelt(index, _) => match self.any_belts[index] {
+                AnyBelt::Smart(belt_id) => self.inner.get_smart(belt_id).get_len(),
+                AnyBelt::Sushi(index) => self.inner.get_sushi(index).get_len(),
+            },
+        }
     }
 }
 

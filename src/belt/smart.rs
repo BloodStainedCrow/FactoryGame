@@ -5,8 +5,14 @@ use crate::{
         belt_storage_inserter::{BeltStorageInserter, Dir},
         InserterState, Storage, MOVETIME,
     },
-    item::{IdxTrait, WeakIdxTrait},
+    item::{IdxTrait, Item, WeakIdxTrait},
     storage_list::SingleItemStorages,
+};
+
+use super::{
+    belt::{Belt, BeltLenType, ItemInfo, NoSpaceError},
+    sushi::{SushiBelt, SushiInserterStore},
+    FreeIndex, Inserter,
 };
 
 #[allow(clippy::module_name_repetitions)]
@@ -307,10 +313,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
             self.locs.len()
         );
 
-        if filter != self.item {
-            return Err(InserterAdditionError::ItemMismatch);
-        }
-
         let mut pos_after_last_inserter = 0;
         let mut i = 0;
 
@@ -326,6 +328,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
                     i += 1;
                 },
             }
+        }
+
+        // We only only return an item mismatch if we know the space is free, so we do not transition to sushi,
+        // And then fail anyway
+        if filter != self.item {
+            return Err(InserterAdditionError::ItemMismatch);
         }
 
         // Insert at i
