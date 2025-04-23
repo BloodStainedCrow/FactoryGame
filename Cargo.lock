@@ -2063,6 +2063,7 @@ checksum = "3954d50fe15b02142bf25d3b8bdadb634ec3948f103d04ffe3031bc8fe9d7058"
 dependencies = [
  "equivalent",
  "hashbrown",
+ "rayon",
 ]
 
 [[package]]
@@ -2933,6 +2934,7 @@ checksum = "3672b37090dbd86368a4145bc067582552b29c27377cad4e0a306c97f9bd7772"
 dependencies = [
  "fixedbitset",
  "indexmap",
+ "rayon",
  "serde",
  "serde_derive",
 ]

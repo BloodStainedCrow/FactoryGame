@@ -212,7 +212,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
         None
     }
 
-    pub fn remove_inserter(&mut self, pos: BeltLenType) {
+    pub fn remove_inserter(&mut self, pos: BeltLenType) -> Storage<RecipeIdxType> {
         assert!(
             usize::from(pos) < self.locs.len(),
             "Bounds check {pos} >= {}",
@@ -236,10 +236,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
             }
         }
 
-        self.inserters.inserters.remove(i);
+        let old_inserter = self.inserters.inserters.remove(i);
         let removed = self.inserters.offsets.remove(i);
         // The offset after i (which has now shifted left to i)
         self.inserters.offsets[i] += removed + 1;
+
+        match old_inserter {
+            Inserter::Out(inserter) => inserter.storage_id,
+            Inserter::In(inserter) => inserter.storage_id,
+        }
     }
 
     // FIXME: This is horrendously slow. it breaks my tests since they are compiled without optimizations!!!

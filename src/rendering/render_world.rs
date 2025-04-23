@@ -1,8 +1,7 @@
-use core::num;
 use std::{cmp::min, iter::successors};
 
 use crate::{
-    belt::{belt::Belt, smart::SmartBelt, splitter::SPLITTER_BELT_LEN, BeltTileId},
+    belt::{belt::Belt, splitter::SPLITTER_BELT_LEN, BeltTileId},
     data::DataStore,
     frontend::{
         action::{
@@ -11,19 +10,12 @@ use crate::{
             ActionType,
         },
         world::tile::{
-            AssemblerID, AssemblerInfo, BeltId, Dir, Entity, BELT_LEN_PER_TILE, CHUNK_SIZE_FLOAT,
+            AssemblerID, AssemblerInfo, Dir, Entity, BELT_LEN_PER_TILE, CHUNK_SIZE_FLOAT,
         },
     },
     item::{usize_from, IdxTrait, Item, Recipe},
 };
-use eframe::{
-    egui::{
-        self, Align2, CentralPanel, Color32, ComboBox, Context, CornerRadius, Pos2, ProgressBar,
-        Rect, Shape, SidePanel, TopBottomPanel, Ui, Window,
-    },
-    epaint::text::Row,
-    wgpu::hal::auxil::db,
-};
+use eframe::egui::{self, Align2, ComboBox, Context, CornerRadius, ProgressBar, Ui, Window};
 use egui_extras::{Column, TableBuilder};
 use log::{info, warn};
 use tilelib::types::{DrawInstance, Layer, RendererTrait};
@@ -308,8 +300,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 let [inputs, outputs] = game_state
                                     .simulation_state
                                     .factory
-                                    .splitters
-                                    .get_splitter_belt_ids(*item, *id);
+                                    .belts
+                                    .get_splitter_belt_ids(*id);
 
                                 let right_dir = direction.turn_right();
 
@@ -336,50 +328,46 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         chunk_draw_offs.1 + (pos.y % 16) as f32 + 0.5
                                             - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
                                     );
-                                    if let BeltTileId::SmartBeltId(belt_id) = input {
-                                        render_items_straight(
-                                            game_state
-                                                .simulation_state
-                                                .factory
-                                                .belts
-                                                .get_belt(belt_id),
-                                            *direction,
-                                            belt_id.item,
-                                            SPLITTER_BELT_LEN,
-                                            SPLITTER_BELT_LEN,
-                                            centered_on_tile,
-                                            &mut item_layer,
-                                            texture_atlas,
-                                        );
-                                    }
-                                    if let BeltTileId::SmartBeltId(belt_id) = output {
-                                        let out_belt = game_state
+                                    render_items_straight::<ItemIdxType, RecipeIdxType>(
+                                        game_state
                                             .simulation_state
                                             .factory
                                             .belts
-                                            .get_belt(belt_id);
-                                        let offs = direction.into_offset();
-                                        let item_render_base_pos: (f32, f32) = (
-                                            centered_on_tile.0 + f32::from(offs.0) * 0.5
-                                                - 0.5
-                                                    * (f32::from(offs.0)
-                                                        / f32::from(BELT_LEN_PER_TILE)),
-                                            centered_on_tile.1 + f32::from(offs.1) * 0.5
-                                                - 0.5
-                                                    * (f32::from(offs.1)
-                                                        / f32::from(BELT_LEN_PER_TILE)),
-                                        );
-                                        render_items_straight(
-                                            out_belt,
-                                            *direction,
-                                            belt_id.item,
-                                            out_belt.get_len(),
-                                            SPLITTER_BELT_LEN,
-                                            item_render_base_pos,
-                                            &mut item_layer,
-                                            texture_atlas,
-                                        );
-                                    }
+                                            .get_item_iter(input),
+                                        *direction,
+                                        SPLITTER_BELT_LEN,
+                                        SPLITTER_BELT_LEN,
+                                        centered_on_tile,
+                                        &mut item_layer,
+                                        texture_atlas,
+                                    );
+                                    let out_belt_len =
+                                        game_state.simulation_state.factory.belts.get_len(output);
+                                    let out_belt_iter = game_state
+                                        .simulation_state
+                                        .factory
+                                        .belts
+                                        .get_item_iter(output);
+                                    let offs = direction.into_offset();
+                                    let item_render_base_pos: (f32, f32) = (
+                                        centered_on_tile.0 + f32::from(offs.0) * 0.5
+                                            - 0.5
+                                                * (f32::from(offs.0)
+                                                    / f32::from(BELT_LEN_PER_TILE)),
+                                        centered_on_tile.1 + f32::from(offs.1) * 0.5
+                                            - 0.5
+                                                * (f32::from(offs.1)
+                                                    / f32::from(BELT_LEN_PER_TILE)),
+                                    );
+                                    render_items_straight::<ItemIdxType, RecipeIdxType>(
+                                        out_belt_iter,
+                                        *direction,
+                                        out_belt_len,
+                                        SPLITTER_BELT_LEN,
+                                        item_render_base_pos,
+                                        &mut item_layer,
+                                        texture_atlas,
+                                    );
                                 }
                                 // todo!()
                             },
@@ -779,17 +767,15 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 }
 
 fn render_items_straight<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    belt: &SmartBelt<ItemIdxType, RecipeIdxType>,
+    full_items_iter: impl IntoIterator<Item = Option<Item<ItemIdxType>>>,
     dir: Dir,
-    item: Item<ItemIdxType>,
     start_pos: u16,
     amount: u16,
     draw_pos_start_pos: (f32, f32),
     layer: &mut Layer,
     atlas: &TextureAtlas,
 ) {
-    let items_iter = belt
-        .items()
+    let items_iter = full_items_iter
         .into_iter()
         .skip((start_pos.checked_sub(amount).expect("Belt idx wrapped?!?")).into())
         .take(amount.into());
@@ -803,7 +789,6 @@ fn render_items_straight<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let mut item_render_base_pos: (f32, f32) = draw_pos_start_pos;
 
     for item in items_iter {
-        // TODO: Render different items differently
         if let Some(item) = item {
             layer.draw_sprite(
                 &atlas.items[item.id.into()],

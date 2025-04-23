@@ -1,4 +1,4 @@
-use std::iter::repeat;
+use std::{iter::repeat, mem};
 
 use itertools::Itertools;
 
@@ -235,15 +235,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SushiBelt<ItemIdxType, Reci
     }
 
     pub fn into_smart_belt(self, item: Item<ItemIdxType>) -> SmartBelt<ItemIdxType, RecipeIdxType> {
-        let found_item = self
-            .locs
-            .iter()
-            .copied()
-            .flatten()
-            .all_equal_value()
-            .expect("Belt is not pure (or is empty)!");
-
-        assert_eq!(item, found_item);
+        let found_item = match self.locs.iter().copied().flatten().all_equal_value() {
+            Ok(found_item) => {
+                assert_eq!(found_item, item);
+                found_item
+            },
+            Err(None) => item,
+            Err(Some(_)) => panic!("Belt is not pure!"),
+        };
 
         let Self {
             is_circular,
@@ -406,13 +405,50 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SushiBelt<ItemIdxType, Reci
 
         front_locs_vec.splice(insert_pos..insert_pos, back_loc_iter.copied());
 
-        Self {
+        dbg!(Self {
             is_circular: false,
             first_free_index: new_first_free_index,
             zero_index: BeltLenType::try_from(front_zero_index).unwrap(),
             locs: front_locs_vec.into_boxed_slice(),
             inserters: new_inserters,
-        }
+        })
+    }
+
+    fn find_and_update_real_first_free_index(&mut self) -> BeltLenType {
+        let new_free_index = match self.first_free_index {
+            FreeIndex::FreeIndex(index) => index,
+            FreeIndex::OldFreeIndex(index) => {
+                // println!("HAD TO SEARCH FOR FIRST FREE INDEX!");
+
+                let search_start_index = index;
+
+                let mut iter = self
+                    .locs
+                    .iter()
+                    .skip(self.zero_index as usize)
+                    .chain(self.locs.iter().take(self.zero_index as usize))
+                    .skip(usize::from(search_start_index));
+
+                debug_assert_eq!(
+                    iter.clone().count(),
+                    self.locs.len() - usize::from(search_start_index)
+                );
+
+                // We now have an iterator which is effectively the belt in the correct order,
+                // starting at search_start_index
+
+                BeltLenType::try_from(
+                    iter.position(|x| x.is_none())
+                        .unwrap_or(self.locs.len() - usize::from(search_start_index))
+                        + usize::from(search_start_index),
+                )
+                .unwrap()
+            },
+        };
+
+        self.first_free_index = FreeIndex::FreeIndex(new_free_index);
+
+        new_free_index
     }
 }
 
@@ -473,11 +509,141 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Belt<ItemIdxType>
     }
 
     fn update(&mut self) {
-        if self.is_circular {
-            self.zero_index = (self.zero_index + 1) % self.get_len();
+        if self.query_item(0).is_none() {
+            // Correctness: Since we always % len whenever we access using self.zero_index, we do not need to % len here
+            // TODO: This could overflow after usize::MAX ticks which is 9749040289 Years. Should be fine!
+            self.zero_index += 1;
+            match self.first_free_index {
+                FreeIndex::FreeIndex(0) | FreeIndex::OldFreeIndex(0) => {
+                    if self.query_item(0).is_none() {
+                        self.first_free_index = FreeIndex::FreeIndex(0);
+                    } else {
+                        self.first_free_index = FreeIndex::OldFreeIndex(0);
+                    }
+                },
+                FreeIndex::FreeIndex(_) => {
+                    unreachable!("FreeIndex should always point at the earliest known empty spot and we know that index 0 WAS an empty spot")
+                },
+                FreeIndex::OldFreeIndex(_) => {
+                    unreachable!("OldFreeIndex should always point at the earliest potential empty spot and we know that index 0 WAS an empty spot")
+                },
+            }
+            return;
         }
 
-        todo!()
+        self.zero_index %= self.get_len();
+        // println!("SLOW path");
+
+        let first_free_index_real = self.find_and_update_real_first_free_index();
+
+        let len = self.get_len();
+
+        let slice = &mut self.locs;
+
+        let (end_slice, start_slice) = slice.split_at_mut(self.zero_index.into());
+
+        if self.zero_index + first_free_index_real >= len {
+            // We have two stuck and one moving slice
+            let (middle_stuck_slice, moving_slice) =
+                end_slice.split_at_mut(((self.zero_index + first_free_index_real) % len).into());
+
+            // We can now either move the "moving_slice" to the left or the "stuck_slice" to the right and update the zero index
+            // We choose whichever is shorter
+
+            // TODO: Here it might sometimes be useful not to split at self.zero_index?
+
+            if first_free_index_real < len / 2 {
+                // Move the stuck_slice to the right
+                // TODO: Zero length checking!
+
+                if !start_slice.is_empty() && !middle_stuck_slice.is_empty() {
+                    // TODO: Do I need to check if moving_slice.len() > 0?
+
+                    // Step 1: Copy the empty spot into the stuck start_slice
+                    mem::swap(
+                        &mut middle_stuck_slice[middle_stuck_slice.len() - 1],
+                        &mut moving_slice[0],
+                    );
+
+                    // Step 2: Rotate the middle_stuck_slice to the right moving the empty spot to the start
+                    middle_stuck_slice.rotate_right(1);
+
+                    debug_assert!(middle_stuck_slice[0].is_none());
+
+                    // Step 3: Copy the empty spot into the stuck start_slice
+                    mem::swap(
+                        &mut start_slice[start_slice.len() - 1],
+                        &mut middle_stuck_slice[0],
+                    );
+
+                    // Step 4: Rotate the start_slice to the right moving the empty spot to the start of the belt
+                    start_slice.rotate_right(1);
+                } else {
+                    let non_empty_stuck_slice = if middle_stuck_slice.is_empty() {
+                        start_slice
+                    } else {
+                        middle_stuck_slice
+                    };
+
+                    // Step 1: Copy the first empty spot into the stuck slice
+                    mem::swap(
+                        &mut non_empty_stuck_slice[non_empty_stuck_slice.len() - 1],
+                        &mut moving_slice[0],
+                    );
+
+                    // Steps 2,3 are not necessary since we only have one stuck slice
+
+                    // Step 4: Rotate the start_slice to the right moving the empty spot to the start of the belt
+                    non_empty_stuck_slice.rotate_right(1);
+                }
+
+                // Step 5: Update zero_index (which currently points at the new empty spot at the start of the array) to now point one further,
+                // effectively moving the empty spot to the end of the belt
+                // Correctness: Since we always % len whenever we access using self.zero_index, we do not need to % len here
+                // TODO: This could overflow after usize::MAX ticks which is 9749040289 Years. Should be fine!
+                self.zero_index += 1;
+            } else {
+                // Move the moving_slice to the left
+                if !moving_slice.is_empty() {
+                    // This will rotate the first item to the end.
+                    moving_slice.rotate_left(1);
+                    // The first item of moving_slice is the first empty slot, therefore we automatically have the empty slot at the end
+                    // moving_slice[moving_slice.len() - 1].item = None;
+                }
+            }
+        } else {
+            let (starting_stuck_slice, middle_moving_slice) =
+                start_slice.split_at_mut(first_free_index_real.into());
+
+            assert!(!middle_moving_slice.is_empty());
+            assert!(!starting_stuck_slice.is_empty());
+
+            if first_free_index_real < len / 2 {
+                mem::swap(
+                    &mut middle_moving_slice[0],
+                    &mut starting_stuck_slice[starting_stuck_slice.len() - 1],
+                );
+
+                starting_stuck_slice.rotate_right(1);
+
+                self.zero_index += 1;
+            } else {
+                middle_moving_slice.rotate_left(1);
+
+                if !end_slice.is_empty() {
+                    mem::swap(
+                        &mut middle_moving_slice[middle_moving_slice.len() - 1],
+                        &mut end_slice[0],
+                    );
+
+                    end_slice.rotate_left(1);
+                }
+            }
+        }
+
+        // Instead of finding the real first_free_index after the update, we just use OldFreeIndex since most likely an inserter
+        // Will update it for us before the next update
+        self.first_free_index = FreeIndex::OldFreeIndex(first_free_index_real);
     }
 
     fn item_hint(&self) -> Option<Vec<Item<ItemIdxType>>> {

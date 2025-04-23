@@ -56,7 +56,9 @@ pub struct StorageID<RecipeIdxType: WeakIdxTrait> {
     pub phantom: PhantomData<RecipeIdxType>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[derive(
+    Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, Hash, PartialOrd, Ord,
+)]
 pub enum Storage<RecipeIdxType: WeakIdxTrait> {
     Assembler {
         grid: PowerGridIdentifier,
@@ -119,7 +121,19 @@ impl<RecipeIdxType: IdxTrait> Storage<RecipeIdxType> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, EnumIter)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    serde::Deserialize,
+    serde::Serialize,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    EnumIter,
+)]
 #[repr(u8)]
 pub enum StaticID {
     Chest = 0,

@@ -7,7 +7,7 @@ use crate::{
 
 use super::{InserterState, Storage};
 
-#[derive(ConstParamTy, PartialEq, Eq)]
+#[derive(Debug, ConstParamTy, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 pub enum Dir {
     BeltToStorage = 0,
     StorageToBelt = 1,

@@ -10,7 +10,7 @@ use strum::EnumIter;
 use itertools::Itertools;
 
 use crate::{
-    belt::{splitter::SplitterDistributionMode, BeltTileId},
+    belt::{splitter::SplitterDistributionMode, BeltTileId, SplitterTileId},
     data::DataStore,
     frontend::world,
     inserter::Storage,
@@ -258,8 +258,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             } => {
                 let ids = sim_state
                     .factory
-                    .splitters
-                    .get_splitter_belt_ids(item, splitter_id)
+                    .belts
+                    .get_splitter_belt_ids(splitter_id)
                     .into_iter()
                     .flatten();
 
@@ -808,10 +808,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                                     unreachable!()
                                                 },
                                                 InserterInfo::Attached(attached_inserter) => {
-                                                    sim_state
-                                                        .factory
-                                                        .belts
-                                                        .remove_inserter(attached_inserter);
+                                                    match attached_inserter {
+                                                        AttachedInserter::BeltStorage {
+                                                            id,
+                                                            belt_pos,
+                                                        } => sim_state
+                                                            .factory
+                                                            .belts
+                                                            .remove_inserter(*id, *belt_pos),
+                                                        AttachedInserter::BeltBelt {
+                                                            item,
+                                                            inserter,
+                                                        } => todo!(),
+                                                        AttachedInserter::StorageStorage(_) => {
+                                                            todo!()
+                                                        },
+                                                    }
                                                     todo!();
                                                 },
                                             }
@@ -1282,7 +1294,7 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Splitter {
         pos: Position,
         direction: Dir,
-        id: usize,
+        id: SplitterTileId,
     },
     Inserter {
         pos: Position,

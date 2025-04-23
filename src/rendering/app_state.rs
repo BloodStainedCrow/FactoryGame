@@ -923,7 +923,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     .simulation_state
                     .factory
                     .belts
-                    .add_belt_storage_inserter(
+                    .add_storage_belt_inserter(
                         filter,
                         dest_belt_id,
                         dest_belt_pos - 1,

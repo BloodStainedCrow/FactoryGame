@@ -4,7 +4,7 @@ use crate::{
     belt::{
         smart::Side,
         splitter::{Splitter, SplitterDistributionMode, SPLITTER_BELT_LEN},
-         BeltTileId,
+         BeltTileId, SplitterInfo,
     },
     data::DataStore,
     frontend::world::{
@@ -116,13 +116,7 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         [self_front_id, self_back_id]
     });
 
-    let belt_connections = belt_connections.map(|tile_id| match tile_id {
-        [BeltTileId::AnyBelt(front_idx, _), BeltTileId::AnyBelt(back_idx, _)] => {
-            [front_idx, back_idx]
-        },
-    });
-
-    let splitter = Splitter {
+    let splitter = SplitterInfo {
         in_mode: in_mode.unwrap_or_default(),
         out_mode: out_mode.unwrap_or_default(),
         input_belts: [belt_connections[0][0], belt_connections[1][0]],
