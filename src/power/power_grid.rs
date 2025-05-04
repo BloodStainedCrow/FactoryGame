@@ -62,6 +62,7 @@ pub struct PowerGrid<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     pub last_power_mult: u8,
     // power_history: Timeline<()>
+    pub is_placeholder: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize, serde::Serialize)]
@@ -143,6 +144,36 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             last_power_consumption: Watt(0),
 
             last_power_mult: MAX_POWER_MULT,
+
+            is_placeholder: false,
+        }
+    }
+
+    #[must_use]
+    pub fn new_placeholder(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+        let network = Network::new((), Position { x: 0, y: 0 });
+
+        Self {
+            stores: FullAssemblerStore::new(data_store),
+            lab_stores: MultiLabStore::new(&data_store.science_bottle_items),
+            grid_graph: network,
+            steam_power_producers: SteamPowerProducerStore {
+                all_producers: data_store
+                    .lazy_power_machine_infos
+                    .iter()
+                    .map(|info| MultiLazyPowerProducer::new(info))
+                    .collect(),
+            },
+            num_solar_panels: 0,
+            main_accumulator_count: 0,
+            main_accumulator_charge: Joule(0),
+            use_burnable_fuel_to_charge_accumulators: None,
+
+            last_power_consumption: Watt(0),
+
+            last_power_mult: MAX_POWER_MULT,
+
+            is_placeholder: true,
         }
     }
 
@@ -170,6 +201,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         Self,
         impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
     ) {
+        assert!(!self.is_placeholder);
+        assert!(!other.is_placeholder);
+
         let (new_stores, assembler_updates) = self.stores.join(other.stores, self_grid, data_store);
 
         let (new_labs, lab_updates) = self
@@ -228,6 +262,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                     other.last_power_mult
                 }
             },
+            is_placeholder: false,
         };
 
         (ret, assembler_updates.into_iter().chain(lab_updates))
@@ -246,6 +281,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         new_pole_pos: Position,
         pole_connections: impl IntoIterator<Item = Position>,
     ) {
+        assert!(!self.is_placeholder);
+
         let mut pole_connections = pole_connections.into_iter();
         self.grid_graph.add_node(
             (),
@@ -268,7 +305,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         bool, // This tells the storage to delete us
         impl IntoIterator<Item = Position>,
     ) {
-        dbg!(&self.grid_graph);
         let ((), no_longer_connected_entities, new_electric_networks) =
             self.grid_graph.remove_node(pole_pos);
 
@@ -409,13 +445,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         assembler_position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> AssemblerID<RecipeIdxType> {
+        assert!(!self.is_placeholder);
         let new_idx = match (
             data_store.recipe_num_ing_lookup[recipe.id.into()],
             data_store.recipe_num_out_lookup[recipe.id.into()],
         ) {
             (0, 1) => self.stores.assemblers_0_1
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
-            .add_assembler(ty, data_store),
+            .add_assembler(ty, assembler_position, data_store),
 
             _ => unreachable!(),
         };

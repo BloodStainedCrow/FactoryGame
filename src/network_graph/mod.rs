@@ -83,8 +83,6 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
             .insert_no_overwrite(key, index)
             .expect("cannot use the same key for multiple nodes!");
 
-        dbg!(&self.key_map);
-
         self.graph.add_edge(
             index,
             *self.key_map.get_by_left(&connection_points.0).unwrap(),

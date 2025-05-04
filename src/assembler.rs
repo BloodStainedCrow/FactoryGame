@@ -351,7 +351,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             outputs: new_outputs,
             timers: new_timers.into(),
             holes: self.holes,
-            len: 0,
+            len: self.positions.len(),
             speed: new_speed.into_boxed_slice(),
             bonus_productivity: new_prod.into_boxed_slice(),
             power_consumption_modifier: new_power_consumption_modifier.into_boxed_slice(),
@@ -688,6 +688,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         u8,
         u8,
         u8,
+        Position,
     ) {
         debug_assert!(!self.holes.contains(&index));
         self.holes.push(index);
@@ -706,6 +707,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             self.power_consumption_modifier[index],
             self.bonus_productivity[index],
             self.speed[index],
+            self.positions[index],
         );
         for ing in &mut self.ings {
             ing[index] = 0;
@@ -721,6 +723,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
     pub fn add_assembler<ItemIdxType: IdxTrait>(
         &mut self,
         ty: u8,
+        position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> usize {
         // TODO: Is 0 the correct initial timer value?
@@ -732,13 +735,16 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             10,
             0,
             10,
+            position,
         )
     }
 
     pub fn move_assembler(&mut self, index: usize, dest: &mut Self) -> usize {
         let data = self.remove_assembler_data(index);
 
-        dest.add_assembler_with_data(data.0, data.1, data.2, data.3, data.4, data.5, data.6)
+        dest.add_assembler_with_data(
+            data.0, data.1, data.2, data.3, data.4, data.5, data.6, data.7,
+        )
     }
 
     fn add_assembler_with_data(
@@ -750,9 +756,10 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         power_consumption_modifier: u8,
         bonus_productiviy: u8,
         speed: u8,
+        position: Position,
     ) -> usize {
         let len = self.timers.len();
-        debug_assert!(len % Simdtype::LEN == 0);
+        // debug_assert!(len % Simdtype::LEN == 0);
 
         for output in &self.outputs {
             debug_assert_eq!(output.len(), len);
@@ -775,6 +782,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             self.power_consumption_modifier[hole_index] = power_consumption_modifier;
             self.bonus_productivity[hole_index] = bonus_productiviy;
             self.speed[hole_index] = speed;
+            self.positions[hole_index] = position;
             return hole_index;
         }
 
@@ -856,6 +864,16 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         self.power_consumption_modifier[self.len] = power_consumption_modifier;
         self.bonus_productivity[self.len] = bonus_productiviy;
         self.speed[self.len] = speed;
+
+        self.positions.reserve(1);
+        assert_eq!(
+            self.positions.len(),
+            self.len,
+            "{:?}, {:?}",
+            self.positions,
+            self.len
+        );
+        self.positions.push(position);
 
         self.len += 1;
         self.len - 1

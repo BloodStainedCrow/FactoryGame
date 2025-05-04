@@ -2,7 +2,8 @@ use std::{borrow::Borrow, marker::PhantomData, ops::ControlFlow};
 
 use crate::{
     belt::{
-        belt::Belt, splitter::Splitter, BeltBeltInserterInfo, BeltStore, BeltTileId, MultiBeltStore,
+        belt::Belt, splitter::Splitter, BeltBeltInserterAdditionInfo, BeltBeltInserterInfo,
+        BeltStore, BeltTileId, MultiBeltStore,
     },
     chest::{FullChestStore, MultiChestStore},
     data::{DataStore, ItemRecipeDir},
@@ -20,7 +21,7 @@ use crate::{
             Position,
         },
     },
-    inserter::{belt_belt_inserter::BeltBeltInserter, StaticID, Storage},
+    inserter::{belt_belt_inserter::BeltBeltInserter, StaticID, Storage, MOVETIME},
     item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
     power::{power_grid::PowerGridIdentifier, PowerGridStorage, Watt},
     research::{ResearchProgress, TechState},
@@ -100,7 +101,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
     }
 
     fn belt_update<'a>(&mut self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) {
-        let num_grids_total = self.power_grids.power_grids.iter().flatten().count();
+        let num_grids_total = self.power_grids.power_grids.len();
         let mut all_storages =
             storages_by_item(&mut self.power_grids, &mut self.chests, data_store);
         let sizes: Vec<_> = sizes(data_store, num_grids_total).into_iter().collect();
@@ -221,7 +222,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             dir,
                             filter,
                         } => {
-                            let ret = self.try_adding_inserter(pos, dir, Some(filter), data_store);
+                            let ret = self.try_adding_inserter(pos, dir, filter, data_store);
                             dbg!(ret);
                         },
                         crate::frontend::world::tile::PlaceEntityType::Belt { pos, direction } => {
@@ -276,9 +277,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         .power_grids
                                         .pole_pos_to_grid_id[&pole_position];
 
-                                    assert!(self.simulation_state.factory.power_grids.power_grids
-                                        [grid as usize]
-                                        .is_some());
+                                    assert!(
+                                        !self.simulation_state.factory.power_grids.power_grids
+                                            [grid as usize]
+                                            .is_placeholder
+                                    );
 
                                     self.world
                                         .update_pole_power(pole_position, grid, data_store);
@@ -286,7 +289,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                                 // Handle storage updates
                                 for storage_update in storage_updates {
-                                    todo!("Handle {:?}", storage_update);
+                                    self.world.mutate_entities_colliding_with(storage_update.position, (1,1), data_store, |e| {
+                                        match (e, storage_update.new_storage) {
+                                            (Entity::Assembler { pos, info: AssemblerInfo::Powered { id, pole_position } }, crate::power::power_grid::PowerGridEntity::Assembler { recipe, index }) => {
+                                                assert_eq!(id.recipe, recipe);
+                                                id.grid = storage_update.new_grid;
+                                                id.assembler_index = index;
+                                            },
+
+                                            (_, _) => todo!("Handler storage_update {storage_update:?}")
+                                        }
+                                        ControlFlow::Break(())
+                                    });
                                 }
                             } else {
                                 // No updates needed
@@ -320,8 +334,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                     .power_grids
                                                     .power_grids
                                                     [grid as usize]
-                                                    .as_mut()
-                                                    .unwrap() // TODO: Assembler ty
+                                                    // TODO: Assembler ty
                                                     .add_assembler(
                                                         0, grid, *recipe, pole_pos, *pos,
                                                         data_store,
@@ -471,8 +484,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                     .power_grids
                                                     .power_grids
                                                     [assembler_id.grid as usize]
-                                                    .as_mut()
-                                                    .unwrap()
                                                     .remove_assembler(*assembler_id, data_store);
 
                                                 // TODO: Add the old_assembler_items to a players inventory or something
@@ -539,7 +550,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             .power_grids
             .power_grids
             .par_iter_mut()
-            .flatten()
             .map(|grid| grid.update(Watt(1000), &self.simulation_state.tech_state, data_store))
             .reduce(
                 || (0, RecipeTickInfo::new(data_store)),
@@ -652,8 +662,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> AssemblerID<RecipeIdxType> {
         sim_state.factory.power_grids.power_grids[power_grid_id as usize]
-            .as_mut()
-            .unwrap()
             // Assembler type
             .add_assembler(
                 0,
@@ -856,7 +864,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let filter = match filter {
             Ok(filter) => filter,
             Err(None) => return Err(InstantiateInserterError::PleaseSpecifyFilter),
-            Err(Some(wrong)) => return Err(InstantiateInserterError::ItemConflict),
+            Err(Some(wrong)) => {
+                dbg!(wrong);
+                return Err(InstantiateInserterError::ItemConflict);
+            },
         };
 
         let Entity::Inserter { info, .. } = self
@@ -874,19 +885,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 InserterConnection::Belt(start_belt_id, start_belt_pos),
                 InserterConnection::Belt(dest_belt_id, dest_belt_pos),
             ) => {
-                // TODO:
-                //debug_assert_eq!(filter, start_belt_id.item);
-                //debug_assert_eq!(start_belt_id.item, dest_belt_id.item);
-                //// FIXME: The movetime should be dependent on the inserter type!
-                //let index = self.simulation_state.factory.add_belt_belt_inserter(
-                //    (start_belt_id, start_belt_pos),
-                //    (dest_belt_id, dest_belt_pos),
-                //    BeltBeltInserterAdditionInfo { cooldown: MOVETIME },
-                //);
-                //*info = InserterInfo::Attached(AttachedInserter::BeltBelt {
-                //    item: filter,
-                //    inserter: index,
-                //})
+                // FIXME: The movetime should be dependent on the inserter type!
+                let index = self.simulation_state.factory.belts.add_belt_belt_inserter(
+                    (start_belt_id, start_belt_pos),
+                    (dest_belt_id, dest_belt_pos),
+                    BeltBeltInserterAdditionInfo {
+                        cooldown: MOVETIME,
+                        filter,
+                    },
+                );
+                *info = InserterInfo::Attached(AttachedInserter::BeltBelt {
+                    item: filter,
+                    inserter: index,
+                })
             },
             (
                 InserterConnection::Belt(start_belt_id, start_belt_pos),
@@ -1014,7 +1025,7 @@ pub fn calculate_inserter_positions(pos: Position, dir: Dir) -> (Position, Posit
     (start_pos, end_pos)
 }
 
-// #[cfg(test)]
+#[cfg(test)]
 mod tests {
     use std::sync::LazyLock;
 
@@ -1029,13 +1040,26 @@ mod tests {
         LazyLock::new(|| get_raw_data_test().turn::<u8, u8>());
 
     proptest! {
+        // #![proptest_config(ProptestConfig::with_cases(10_000))]
         #[test]
-        fn test_random_blueprint_does_not_crash(base_pos in random_position(), blueprint in random_blueprint_strategy::<u8, u8>(0..100, &DATA_STORE)) {
+        fn test_random_blueprint_does_not_crash(base_pos in random_position(), blueprint in random_blueprint_strategy::<u8, u8>(0..1_000, &DATA_STORE)) {
 
             let mut game_state = GameState::new(&DATA_STORE);
 
             blueprint.apply(base_pos, &mut game_state, &DATA_STORE);
 
+        }
+
+        #[test]
+        fn test_random_blueprint_does_not_crash_after(base_pos in random_position(), blueprint in random_blueprint_strategy::<u8, u8>(0..100, &DATA_STORE), time in 0usize..1000) {
+
+            let mut game_state = GameState::new(&DATA_STORE);
+
+            blueprint.apply(base_pos, &mut game_state, &DATA_STORE);
+
+            for _ in 0usize..time {
+                game_state.update(&DATA_STORE)
+            }
         }
     }
 }

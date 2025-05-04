@@ -680,8 +680,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         // TODO:
                         let assembler_removal_info = sim_state.factory.power_grids.power_grids
                             [assembler_id.grid as usize]
-                            .as_mut()
-                            .unwrap()
                             .remove_assembler(*assembler_id, data_store);
                     },
                 },
@@ -875,8 +873,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                                 let new_id =
                                                     sim_state.factory.power_grids.power_grids
                                                         [usize::from(grid_id)]
-                                                    .as_mut()
-                                                    .unwrap()
                                                     .add_assembler(
                                                         0,
                                                         grid_id,
@@ -1031,9 +1027,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         self.get_entities_colliding_with(pos, size, data_store)
             .into_iter()
             .next()
-            .inspect(|e| {
-                dbg!(e);
-            })
             .is_none()
     }
 
@@ -1367,7 +1360,7 @@ pub enum PlaceEntityType<ItemIdxType: WeakIdxTrait> {
         pos: Position,
         dir: Dir,
         /// The Item the inserter will move, must fit both the in and output side
-        filter: Item<ItemIdxType>,
+        filter: Option<Item<ItemIdxType>>,
     },
     Belt {
         pos: Position,

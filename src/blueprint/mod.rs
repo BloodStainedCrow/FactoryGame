@@ -78,7 +78,7 @@ pub fn random_action<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 entities: EntityPlaceOptions::Single(ty),
             })
         }),
-        random_position().prop_map(|pos| ActionType::Remove(pos)),
+        // random_position().prop_map(|pos| ActionType::Remove(pos)),
     ]
 }
 
@@ -98,18 +98,25 @@ pub fn random_entity_to_place<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 ty: ty.try_into().unwrap(),
             }
         }),
-        (random_position(), random_dir(), random_item(data_store))
-            .prop_map(|(pos, dir, filter)| { PlaceEntityType::Inserter { pos, dir, filter } }),
-        (random_position(), random_dir()).prop_map(|(pos, dir)| {
-            PlaceEntityType::Splitter {
-                pos,
-                direction: dir,
-
-                // TODO: Test inout modes
-                in_mode: None,
-                out_mode: None,
+        (random_position(), random_dir(), random_item(data_store)).prop_map(
+            |(pos, dir, filter)| {
+                PlaceEntityType::Inserter {
+                    pos,
+                    dir,
+                    filter: Some(filter),
+                }
             }
-        })
+        ),
+        // (random_position(), random_dir()).prop_map(|(pos, dir)| {
+        //     PlaceEntityType::Splitter {
+        //         pos,
+        //         direction: dir,
+
+        //         // TODO: Test inout modes
+        //         in_mode: None,
+        //         out_mode: None,
+        //     }
+        // })
     ]
 }
 

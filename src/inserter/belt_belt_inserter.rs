@@ -13,6 +13,86 @@ impl Default for BeltBeltInserter {
     }
 }
 
+pub trait Loc {
+    type Item;
+
+    fn has_item(&self) -> bool;
+
+    fn peek_item(&self) -> Option<Self::Item>;
+
+    fn try_take_item(&mut self) -> Option<Self::Item>;
+
+    /// Calling this on a Loc without an item is considered an error
+    fn force_take_item(&mut self) -> Self::Item;
+
+    /// Calling this on a Loc without an item is considered an error
+    fn force_put_loc_value(&mut self, to_put: Option<Self::Item>);
+
+    /// Calling this on a Loc with an item is considered an error
+    fn force_put_item(&mut self, to_put: Self::Item);
+}
+
+impl Loc for bool {
+    type Item = ();
+
+    fn has_item(&self) -> bool {
+        *self
+    }
+
+    fn peek_item(&self) -> Option<Self::Item> {
+        self.then_some(())
+    }
+
+    fn try_take_item(&mut self) -> Option<Self::Item> {
+        let ret = self.then_some(());
+        *self = false;
+        ret
+    }
+
+    fn force_take_item(&mut self) -> Self::Item {
+        debug_assert!(*self);
+        *self = false;
+        ()
+    }
+
+    fn force_put_loc_value(&mut self, to_put: Option<Self::Item>) {
+        *self = to_put.is_some();
+    }
+
+    fn force_put_item(&mut self, _to_put: Self::Item) {
+        *self = true;
+    }
+}
+
+impl<ItemIdxType: IdxTrait> Loc for Option<Item<ItemIdxType>> {
+    type Item = Item<ItemIdxType>;
+
+    fn has_item(&self) -> bool {
+        self.is_some()
+    }
+
+    fn peek_item(&self) -> Option<Self::Item> {
+        *self
+    }
+
+    fn try_take_item(&mut self) -> Option<Self::Item> {
+        self.take()
+    }
+
+    fn force_take_item(&mut self) -> Self::Item {
+        self.take().unwrap()
+    }
+
+    fn force_put_loc_value(&mut self, to_put: Option<Self::Item>) {
+        *self = to_put;
+    }
+
+    fn force_put_item(&mut self, to_put: Self::Item) {
+        debug_assert!(self.is_none());
+        *self = Some(to_put);
+    }
+}
+
 impl BeltBeltInserter {
     #[must_use]
     pub const fn new() -> Self {
@@ -21,21 +101,29 @@ impl BeltBeltInserter {
         }
     }
 
-    pub fn update(&mut self, loc_in: &mut bool, loc_out: &mut bool, movetime: u8) {
+    pub fn update<LocType: Loc>(
+        &mut self,
+        loc_in: &mut LocType,
+        loc_out: &mut LocType,
+        movetime: u8,
+        filter: LocType::Item,
+        filter_test: impl Fn(LocType::Item) -> bool,
+    ) {
         // TODO: I just added InserterStates and it is a lot slower (unsurprisingly),
         // Try and find a faster implementation of similar logic
 
         match self.state {
             InserterState::Empty => {
-                if *loc_in {
-                    *loc_in = false;
-
-                    self.state = InserterState::FullAndMovingOut(movetime);
+                if let Some(item) = loc_in.peek_item() {
+                    if filter_test(item) {
+                        loc_in.force_take_item();
+                        self.state = InserterState::FullAndMovingOut(movetime);
+                    }
                 }
             },
             InserterState::FullAndWaitingForSlot => {
-                if !*loc_out {
-                    *loc_out = true;
+                if !loc_out.has_item() {
+                    loc_out.force_put_item(filter);
 
                     self.state = InserterState::EmptyAndMovingBack(movetime);
                 }
@@ -56,6 +144,13 @@ impl BeltBeltInserter {
                     self.state = InserterState::Empty;
                 }
             },
+        }
+    }
+
+    pub fn update_instant<LocType: Loc>(&mut self, loc_in: &mut LocType, loc_out: &mut LocType) {
+        if !loc_out.has_item() {
+            let item = loc_in.try_take_item();
+            loc_out.force_put_loc_value(item);
         }
     }
 }

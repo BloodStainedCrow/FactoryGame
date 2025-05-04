@@ -116,7 +116,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         // Get the actions from what the clients sent us
         // FIXME: Puke this is awful
         let mut buffer = vec![0; 10000];
-        if start.elapsed() > Duration::from_millis(1) {
+        if start.elapsed() > Duration::from_millis(10) {
             error!("buffer {:?}", start.elapsed());
         }
         let recieved_actions: Vec<ActionType<_, _>> = self
@@ -149,7 +149,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
                 ret
             })
             .collect();
-        if start.elapsed() > Duration::from_millis(1) {
+        if start.elapsed() > Duration::from_millis(10) {
             error!("recieved_actions {:?}", start.elapsed());
         }
 
@@ -192,7 +192,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
            + use<'a, 'b, 'c, ItemIdxType, RecipeIdxType> {
         let start = Instant::now();
         let mut state_machine = self.local_actions.lock().unwrap();
-        if start.elapsed() > Duration::from_millis(1) {
+        if start.elapsed() > Duration::from_millis(10) {
             error!("Post lock {:?}", start.elapsed());
         }
 
@@ -200,14 +200,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
             .handle_inputs(&self.local_input, world, data_store)
             .into_iter()
             .collect();
-        if start.elapsed() > Duration::from_millis(1) {
+        if start.elapsed() > Duration::from_millis(10) {
             error!("Handle inputs {:?}", start.elapsed());
         }
         v.extend(state_machine.once_per_update_actions(&world, &data_store));
 
         mem::drop(state_machine);
 
-        if start.elapsed() > Duration::from_millis(1) {
+        if start.elapsed() > Duration::from_millis(10) {
             error!("once_per_update_actions {:?}", start.elapsed());
         }
 
@@ -216,7 +216,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
             .get(current_tick, world, data_store)
             .into_iter()
             .chain(v);
-        if start.elapsed() > Duration::from_millis(1) {
+        if start.elapsed() > Duration::from_millis(10) {
             error!("server.get {:?}", start.elapsed());
         }
 

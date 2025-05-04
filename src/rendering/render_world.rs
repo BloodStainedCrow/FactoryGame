@@ -161,8 +161,6 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             .factory
                                             .power_grids
                                             .power_grids[usize::from(grid)]
-                                        .as_ref()
-                                        .unwrap()
                                         .last_power_mult;
 
                                         if last_power == 0 {
@@ -237,7 +235,6 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 );
 
                                 for item in items_iter {
-                                    // TODO: Render different items differently
                                     if let Some(item) = item {
                                         item_layer.draw_sprite(
                                             &texture_atlas.items[item.id.into()],
@@ -636,9 +633,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 .simulation_state
                                 .factory
                                 .power_grids
-                                .pole_pos_to_grid_id[pos] as usize]
-                            .as_ref()
-                            .unwrap();
+                                .pole_pos_to_grid_id[pos] as usize];
 
                         ui.label("Power Grid");
 

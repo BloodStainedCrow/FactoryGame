@@ -364,7 +364,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         ),
                         dir: Dir::North,
                         // TODO:
-                        filter: Item { id: 0.into() },
+                        filter: None,
                     },
                 ));
                 vec![]

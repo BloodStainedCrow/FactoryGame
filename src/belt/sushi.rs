@@ -405,13 +405,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SushiBelt<ItemIdxType, Reci
 
         front_locs_vec.splice(insert_pos..insert_pos, back_loc_iter.copied());
 
-        dbg!(Self {
+        Self {
             is_circular: false,
             first_free_index: new_first_free_index,
             zero_index: BeltLenType::try_from(front_zero_index).unwrap(),
             locs: front_locs_vec.into_boxed_slice(),
             inserters: new_inserters,
-        })
+        }
     }
 
     fn find_and_update_real_first_free_index(&mut self) -> BeltLenType {

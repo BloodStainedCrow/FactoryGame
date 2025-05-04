@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     iter::Sum,
+    mem,
     ops::{Add, Div, Mul, Sub},
 };
 
@@ -126,7 +127,7 @@ impl Watt {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct PowerGridStorage<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    pub power_grids: Vec<Option<PowerGrid<ItemIdxType, RecipeIdxType>>>,
+    pub power_grids: Vec<PowerGrid<ItemIdxType, RecipeIdxType>>,
     pub pole_pos_to_grid_id: HashMap<Position, PowerGridIdentifier>,
 }
 
@@ -144,8 +145,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> AssemblerOnclickInfo<ItemIdxType> {
         self.power_grids[Into::<MachineID<RecipeIdxType>>::into(assembler_id).get_grid() as usize]
-            .as_ref()
-            .unwrap()
             .get_assembler_info(assembler_id, data_store)
     }
 
@@ -155,18 +154,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> PowerGridIdentifier {
         // TODO: This is O(N). Is that a problem?
-        let hole_idx = self.power_grids.iter().position(Option::is_none);
+        let hole_idx = self.power_grids.iter().position(|grid| grid.is_placeholder);
 
         let new_grid = PowerGrid::new(data_store, first_pole_position);
 
         let id = if let Some(hole_idx) = hole_idx {
-            self.power_grids[hole_idx] = Some(new_grid);
+            self.power_grids[hole_idx] = new_grid;
             hole_idx
                 .try_into()
                 .expect("If this is not in range, this means we had too many power grids before?")
         } else {
             let len = self.power_grids.len();
-            self.power_grids.push(Some(new_grid));
+            self.power_grids.push(new_grid);
             len.try_into().expect(&format!(
                 "Too many power grids, max, {} allowed",
                 PowerGridIdentifier::MAX
@@ -184,18 +183,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> PowerGridIdentifier {
         // TODO: This is O(N). Is that a problem?
-        let hole_idx = self.power_grids.iter().position(Option::is_none);
+        let hole_idx = self.power_grids.iter().position(|grid| grid.is_placeholder);
 
         let poles: Vec<_> = power_grid.grid_graph.keys().into_iter().copied().collect();
 
         let id = if let Some(hole_idx) = hole_idx {
-            self.power_grids[hole_idx] = Some(power_grid);
+            self.power_grids[hole_idx] = power_grid;
             hole_idx
                 .try_into()
                 .expect("If this is not in range, this means we had too many power grids before?")
         } else {
             let len = self.power_grids.len();
-            self.power_grids.push(Some(power_grid));
+            self.power_grids.push(power_grid);
             len.try_into().expect(&format!(
                 "Too many power grids, max, {} allowed",
                 PowerGridIdentifier::MAX
@@ -256,6 +255,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                 for other_grid in connected_poles
                     .iter()
                     .map(|pos| self.pole_pos_to_grid_id[pos])
+                    .unique()
                     .collect::<Vec<_>>()
                 {
                     ran_once = true;
@@ -276,10 +276,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
 
                 Some((poles_to_update, storage_update_vec))
             } else {
-                self.power_grids[grid as usize]
-                    .as_mut()
-                    .unwrap()
-                    .add_pole(pole_position, connected_poles);
+                self.power_grids[grid as usize].add_pole(pole_position, connected_poles);
                 None
             }
         } else {
@@ -301,16 +298,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
     ) {
         let old_id = self.pole_pos_to_grid_id.remove(&pole_position).unwrap();
 
-        let (new_grids, delete_network, no_longer_connected_entity_positions) = self.power_grids
-            [old_id as usize]
-            .as_mut()
-            .unwrap()
-            .remove_pole(pole_position, data_store);
+        let (new_grids, delete_network, no_longer_connected_entity_positions) =
+            self.power_grids[old_id as usize].remove_pole(pole_position, data_store);
 
         if delete_network {
             debug_assert!(new_grids.into_iter().count() == 0);
 
-            self.remove_power_grid(old_id);
+            self.remove_power_grid(old_id, data_store);
 
             return (vec![], vec![], no_longer_connected_entity_positions);
         }
@@ -320,12 +314,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
 
         for (new_grid, storages_to_move_into_that_grid) in new_grids {
             let new_id = self.add_power_grid(new_grid, data_store);
-            for pole in self.power_grids[new_id as usize]
-                .as_ref()
-                .unwrap()
-                .grid_graph
-                .keys()
-            {
+            for pole in self.power_grids[new_id as usize].grid_graph.keys() {
                 *self.pole_pos_to_grid_id.get_mut(&pole).unwrap() = new_id;
                 pole_updates.push(*pole);
             }
@@ -346,8 +335,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         )
     }
 
-    fn remove_power_grid(&mut self, id: PowerGridIdentifier) {
-        self.power_grids[usize::from(id)] = None;
+    fn remove_power_grid(
+        &mut self,
+        id: PowerGridIdentifier,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        self.power_grids[usize::from(id)] = PowerGrid::new_placeholder(data_store);
+
+        #[cfg(debug_assertions)]
+        {
+            assert!(self
+                .pole_pos_to_grid_id
+                .iter()
+                .all(|idx| !self.power_grids[usize::from(*idx.1)].is_placeholder))
+        }
     }
 
     #[must_use]
@@ -364,10 +365,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             return None;
         }
 
-        let Some(second) = self.power_grids[usize::from(removed_id)].take() else {
-            warn!("Tried to merge grid with a grid that no longer exists");
-            return None;
-        };
+        assert!(!self.power_grids[usize::from(kept_id)].is_placeholder);
+        assert!(!self.power_grids[usize::from(removed_id)].is_placeholder);
+
+        let mut placeholder = PowerGrid::new_placeholder(data_store);
+
+        mem::swap(
+            &mut placeholder,
+            &mut self.power_grids[usize::from(removed_id)],
+        );
+
+        let second = placeholder;
 
         for pole_pos in second.grid_graph.keys() {
             *self.pole_pos_to_grid_id.get_mut(pole_pos).unwrap() = kept_id;
@@ -386,22 +394,27 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         let mut updates = None;
 
         // TODO: If the power grid joining fails for whatever reason, this will abort the program!!!
-        take_mut::take(
-            self.power_grids[usize::from(kept_id)].as_mut().unwrap(),
-            |first| {
-                let ret = first.join(
-                    second,
-                    data_store,
-                    kept_id,
-                    removed_id,
-                    new_pole_pos,
-                    new_pole_connections,
-                );
-                updates = Some(ret.1);
-                ret.0
-            },
-        );
+        take_mut::take(&mut self.power_grids[usize::from(kept_id)], |first| {
+            let ret = first.join(
+                second,
+                data_store,
+                kept_id,
+                removed_id,
+                new_pole_pos,
+                new_pole_connections,
+            );
+            updates = Some(ret.1);
+            ret.0
+        });
 
-        updates
+        #[cfg(debug_assertions)]
+        {
+            assert!(self
+                .pole_pos_to_grid_id
+                .iter()
+                .all(|idx| !self.power_grids[usize::from(*idx.1)].is_placeholder))
+        }
+
+        updates.map(|v| v.into_iter().map(|v| dbg!(v)))
     }
 }
