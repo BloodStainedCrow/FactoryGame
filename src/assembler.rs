@@ -75,17 +75,17 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
             .iter()
             .map(|r| MultiAssemblerStore::new(*r))
             .collect();
-        // let assemblers_1_1 = data_store
-        //     .ing_out_num_to_recipe
-        //     .get(&(1, 1))
-        //     .unwrap()
-        //     .iter()
-        //     .map(|r| MultiAssemblerStore::new(*r))
-        //     .collect();
+        let assemblers_1_1 = data_store
+            .ing_out_num_to_recipe
+            .get(&(1, 1))
+            .unwrap()
+            .iter()
+            .map(|r| MultiAssemblerStore::new(*r))
+            .collect();
 
         Self {
             assemblers_0_1,
-            assemblers_1_1: vec![].into_boxed_slice(),
+            assemblers_1_1,
         }
     }
 
@@ -148,6 +148,15 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
                 );
 
                 self.assemblers_0_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .get_info(assembler_id.assembler_index, data_store)
+            },
+            (1, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_1_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]].recipe
+                );
+
+                self.assemblers_1_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
                     .get_info(assembler_id.assembler_index, data_store)
             },
 
@@ -620,6 +629,26 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             times_ings_used,
             num_finished_crafts,
         )
+    }
+
+    pub fn get_all_mut(
+        &mut self,
+    ) -> (
+        [&mut [ITEMCOUNTTYPE]; NUM_INGS],
+        [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS],
+    ) {
+        (
+            self.ings.each_mut().map(|b| &mut **b),
+            self.outputs.each_mut().map(|b| &mut **b),
+        )
+    }
+
+    pub fn get_all_outputs_mut(&mut self) -> [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS] {
+        self.outputs.each_mut().map(|b| &mut **b)
+    }
+
+    pub fn get_all_ings_mut(&mut self) -> [&mut [ITEMCOUNTTYPE]; NUM_INGS] {
+        self.ings.each_mut().map(|b| &mut **b)
     }
 
     pub fn get_outputs_mut(&mut self, idx: usize) -> &mut [ITEMCOUNTTYPE] {

@@ -1423,14 +1423,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
                                 now_sushi_belt
                                     .add_in_inserter(filter, pos, storage_id)
                                     .expect("We already became sushi, it should now work!");
+
+                                let AnyBelt::Sushi(sushi_belt_id) = &mut self.any_belts[index]
+                                else {
+                                    unreachable!();
+                                };
+                                let sushi_belt = self.inner.get_sushi_mut(*sushi_belt_id);
+                                debug_assert!(handle_sushi_belt(sushi_belt).is_ok());
                             },
                         }
-
-                        let AnyBelt::Sushi(sushi_belt_id) = &mut self.any_belts[index] else {
-                            unreachable!();
-                        };
-                        let sushi_belt = self.inner.get_sushi_mut(*sushi_belt_id);
-                        debug_assert!(handle_sushi_belt(sushi_belt).is_ok());
                     },
                     AnyBelt::Sushi(sushi_belt_index) => {
                         let sushi_belt = self.inner.get_sushi_mut(*sushi_belt_index);

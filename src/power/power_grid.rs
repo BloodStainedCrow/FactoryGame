@@ -454,6 +454,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
             .add_assembler(ty, assembler_position, data_store),
 
+            (1, 1) => self.stores.assemblers_1_1
+                [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
+            .add_assembler(ty, assembler_position, data_store),
+
             _ => unreachable!(),
         };
 
@@ -485,6 +489,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             data_store.recipe_num_out_lookup[assembler_id.recipe.id.into()],
         ) {
             (0, 1) => self.stores.assemblers_0_1
+                [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
+            .remove_assembler(assembler_id.assembler_index as usize),
+            (1, 1) => self.stores.assemblers_1_1
                 [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
             .remove_assembler(assembler_id.assembler_index as usize),
 

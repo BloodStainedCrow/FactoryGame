@@ -48,41 +48,41 @@ pub fn get_raw_data_test() -> RawDataStore {
                 time_to_craft: 6,
                 is_intermediate: false,
             },
-            // RawRecipeData {
-            //     name: "factory_game::iron_smelting".to_string(),
-            //     display_name: "Smelt Iron Ore into Iron Plates".to_string(),
-            //     possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
-            //     ings: vec![RawItemStack {
-            //         item: "factory_game::iron_ore".to_string(),
-            //         amount: 1,
-            //     }]
-            //     .into_boxed_slice(),
-            //     output: vec![RawItemStack {
-            //         item: "factory_game::iron_plate".to_string(),
-            //         amount: 1,
-            //     }]
-            //     .into_boxed_slice(),
-            //     time_to_craft: 300,
-            //     is_intermediate: true,
-            // },
-            // RawRecipeData {
-            //     name: "factory_game::gears".to_string(),
-            //     display_name: "Gears".to_string(),
-            //     possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
-            //     ings: vec![RawItemStack {
-            //         item: "factory_game::iron_plate".to_string(),
-            //         amount: 2,
-            //     }]
-            //     .into_boxed_slice(),
-            //     output: vec![RawItemStack {
-            //         item: "factory_game::gear".to_string(),
-            //         amount: 1,
-            //     }]
-            //     .into_boxed_slice(),
-            //     time_to_craft: 600,
+            RawRecipeData {
+                name: "factory_game::iron_smelting".to_string(),
+                display_name: "Smelt Iron Ore into Iron Plates".to_string(),
+                possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
+                ings: vec![RawItemStack {
+                    item: "factory_game::iron_ore".to_string(),
+                    amount: 1,
+                }]
+                .into_boxed_slice(),
+                output: vec![RawItemStack {
+                    item: "factory_game::iron_plate".to_string(),
+                    amount: 1,
+                }]
+                .into_boxed_slice(),
+                time_to_craft: 300,
+                is_intermediate: true,
+            },
+            RawRecipeData {
+                name: "factory_game::gears".to_string(),
+                display_name: "Gears".to_string(),
+                possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
+                ings: vec![RawItemStack {
+                    item: "factory_game::iron_plate".to_string(),
+                    amount: 2,
+                }]
+                .into_boxed_slice(),
+                output: vec![RawItemStack {
+                    item: "factory_game::gear".to_string(),
+                    amount: 1,
+                }]
+                .into_boxed_slice(),
+                time_to_craft: 600,
 
-            //     is_intermediate: true,
-            // },
+                is_intermediate: true,
+            },
         ],
         items: vec![
             RawItem {
@@ -103,24 +103,24 @@ pub fn get_raw_data_test() -> RawDataStore {
                 science_data: None,
                 is_fluid: false,
             },
-            // RawItem {
-            //     name: "factory_game::iron_plate".to_string(),
-            //     display_name: "Iron Plate".to_string(),
-            //     stack_size: 100,
-            //     placed_as: None,
-            //     burnable_in: vec![].into_boxed_slice(),
-            //     science_data: None,
-            //     is_fluid: false,
-            // },
-            // RawItem {
-            //     name: "factory_game::gear".to_string(),
-            //     display_name: "Gear".to_string(),
-            //     stack_size: 50,
-            //     placed_as: None,
-            //     burnable_in: vec![].into_boxed_slice(),
-            //     science_data: None,
-            //     is_fluid: false,
-            // },
+            RawItem {
+                name: "factory_game::iron_plate".to_string(),
+                display_name: "Iron Plate".to_string(),
+                stack_size: 100,
+                placed_as: None,
+                burnable_in: vec![].into_boxed_slice(),
+                science_data: None,
+                is_fluid: false,
+            },
+            RawItem {
+                name: "factory_game::gear".to_string(),
+                display_name: "Gear".to_string(),
+                stack_size: 50,
+                placed_as: None,
+                burnable_in: vec![].into_boxed_slice(),
+                science_data: None,
+                is_fluid: false,
+            },
         ],
         machines: vec![RawAssemblingMachine {
             name: "factory_game::assembler".to_string(),

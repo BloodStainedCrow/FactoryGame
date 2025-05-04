@@ -1,5 +1,7 @@
 use std::{cmp::min, iter::repeat};
 
+use log::info;
+
 use crate::{
     inserter::{
         belt_storage_inserter::{BeltStorageInserter, Dir},
@@ -474,7 +476,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
         let new_free_index = match self.first_free_index {
             FreeIndex::FreeIndex(index) => index,
             FreeIndex::OldFreeIndex(index) => {
-                // println!("HAD TO SEARCH FOR FIRST FREE INDEX!");
+                info!("HAD TO SEARCH FOR FIRST FREE INDEX!");
 
                 let search_start_index = index;
 
@@ -493,12 +495,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
                 // We now have an iterator which is effectively the belt in the correct order,
                 // starting at search_start_index
 
-                BeltLenType::try_from(
+                let new_free_index = BeltLenType::try_from(
                     iter.position(|x| !(*x))
                         .unwrap_or(self.locs.len() - usize::from(search_start_index))
                         + usize::from(search_start_index),
                 )
-                .unwrap()
+                .unwrap();
+
+                if new_free_index as usize == self.locs.len() {
+                    debug_assert!(self.locs.iter().all(|x| *x));
+                } else {
+                    debug_assert!(self.query_item(new_free_index).is_none());
+                    for i in 0..new_free_index {
+                        debug_assert!(self.query_item(i).is_some());
+                    }
+                }
+
+                new_free_index
             },
         };
 
@@ -591,30 +604,27 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
             .append(&mut back_inserters.inserters);
         new_inserters.offsets.append(&mut back_inserters.offsets);
 
-        let new_first_free_index = front_first_free_index;
-
         let mut front_locs_vec = Vec::from(front_locs);
+
+        front_locs_vec.rotate_left(front_zero_index);
 
         let back_loc_iter = back_locs
             .iter()
             .skip(back_zero_index)
             .chain(back_locs.iter().take(back_zero_index));
 
-        let insert_pos = (front_zero_index + front_len) % (front_len + 1);
-
-        front_locs_vec.splice(insert_pos..insert_pos, back_loc_iter.copied());
+        front_locs_vec.extend(back_loc_iter.copied());
 
         Self {
             is_circular: false,
-            first_free_index: new_first_free_index,
-            zero_index: BeltLenType::try_from(front_zero_index).unwrap(),
+            first_free_index: FreeIndex::OldFreeIndex(0),
+            zero_index: 0,
             locs: front_locs_vec.into_boxed_slice(),
             inserters: new_inserters,
             item,
         }
     }
 
-    #[allow(clippy::needless_pass_by_value)]
     #[must_use]
     /// Side is on which side the empty belt is attached
     pub fn join_with_empty(self, empty: EmptyBelt, side: Side) -> Self {
@@ -881,6 +891,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Belt<ItemIdxType>
         let first_free_index_real = self.find_and_update_real_first_free_index();
 
         let len = self.get_len();
+
+        assert!(first_free_index_real < len);
+        assert!(first_free_index_real > 0);
 
         let slice = &mut self.locs;
 

@@ -471,26 +471,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             continue;
                                         }
 
-                                        match (
-                                            data_store.recipe_num_ing_lookup
-                                                [old_recipe_id.id.into()],
-                                            data_store.recipe_num_out_lookup
-                                                [old_recipe_id.id.into()],
-                                        ) {
-                                            (0, 1) => {
-                                                let old_assembler = self
-                                                    .simulation_state
-                                                    .factory
-                                                    .power_grids
-                                                    .power_grids
-                                                    [assembler_id.grid as usize]
-                                                    .remove_assembler(*assembler_id, data_store);
-
-                                                // TODO: Add the old_assembler_items to a players inventory or something
-                                            },
-
-                                            _ => unreachable!(),
-                                        };
+                                        let old_assembler =
+                                            self.simulation_state.factory.power_grids.power_grids
+                                                [assembler_id.grid as usize]
+                                                .remove_assembler(*assembler_id, data_store);
 
                                         let new_id = Self::add_assembler_to_sim(
                                             &mut self.simulation_state,
@@ -855,20 +839,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             return Err(InstantiateInserterError::DestMissing);
         };
 
-        let filter = filter
-            .into_iter()
-            .chain(start_conn.1.into_iter().flatten())
-            .chain(dest_conn.1.into_iter().flatten())
-            .all_equal_value();
-
-        let filter = match filter {
-            Ok(filter) => filter,
-            Err(None) => return Err(InstantiateInserterError::PleaseSpecifyFilter),
-            Err(Some(wrong)) => {
-                dbg!(wrong);
-                return Err(InstantiateInserterError::ItemConflict);
+        let filter = filter.unwrap_or(
+            match start_conn
+                .1
+                .into_iter()
+                .flatten()
+                .chain(dest_conn.1.into_iter().flatten())
+                .all_equal_value()
+            {
+                Ok(filter) => filter,
+                Err(None) => return Err(InstantiateInserterError::PleaseSpecifyFilter),
+                Err(Some(wrong)) => {
+                    dbg!(wrong);
+                    return Err(InstantiateInserterError::PleaseSpecifyFilter);
+                },
             },
-        };
+        );
 
         let Entity::Inserter { info, .. } = self
             .world

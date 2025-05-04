@@ -267,38 +267,99 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
         &'a mut [ITEMCOUNTTYPE],
     ),
 > + use<'a, 'b, ItemIdxType, RecipeIdxType> {
-    let i =
-        assembler_store
-            .assemblers_0_1
-            .iter_mut()
-            .enumerate()
-            .map(move |(recipe_id_0_1, multi)| {
-                let item = data_store.recipe_to_items[&multi.recipe]
-                    .iter()
-                    .filter_map(|(dir, item)| {
-                        if *dir == ItemRecipeDir::Out {
-                            Some(item)
-                        } else {
-                            None
-                        }
-                    })
-                    .nth(0)
-                    .copied()
-                    .unwrap();
+    let i = assembler_store
+        .assemblers_0_1
+        .iter_mut()
+        .enumerate()
+        .map(move |(recipe_id_0_1, multi)| {
+            let item = data_store.recipe_to_items[&multi.recipe]
+                .iter()
+                .filter_map(|(dir, item)| {
+                    if *dir == ItemRecipeDir::Out {
+                        Some(item)
+                    } else {
+                        None
+                    }
+                })
+                .nth(0)
+                .copied()
+                .unwrap();
 
-                (
-                    item,
-                    Storage::Assembler {
-                        grid,
-                        recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
-                            data_store.ing_out_num_to_recipe[&(0, 1)][recipe_id_0_1],
-                            item,
-                        )],
-                        index: 0,
-                    },
-                    multi.get_outputs_mut(0),
-                )
-            });
+            (
+                item,
+                Storage::Assembler {
+                    grid,
+                    recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                        data_store.ing_out_num_to_recipe[&(0, 1)][recipe_id_0_1],
+                        item,
+                    )],
+                    index: 0,
+                },
+                multi.get_outputs_mut(0),
+            )
+        })
+        .chain(
+            assembler_store
+                .assemblers_1_1
+                .iter_mut()
+                .enumerate()
+                .flat_map(move |(recipe_id_1_1, multi)| {
+                    let item_in = data_store.recipe_to_items[&multi.recipe]
+                        .iter()
+                        .filter_map(|(dir, item)| {
+                            if *dir == ItemRecipeDir::Ing {
+                                Some(item)
+                            } else {
+                                None
+                            }
+                        })
+                        .nth(0)
+                        .copied()
+                        .unwrap();
+
+                    let item_out = data_store.recipe_to_items[&multi.recipe]
+                        .iter()
+                        .filter_map(|(dir, item)| {
+                            if *dir == ItemRecipeDir::Out {
+                                Some(item)
+                            } else {
+                                None
+                            }
+                        })
+                        .nth(0)
+                        .copied()
+                        .unwrap();
+
+                    let ([ings], [outputs]) = multi.get_all_mut();
+
+                    [
+                        (
+                            item_in,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(1, 1)][recipe_id_1_1],
+                                    item_in,
+                                )],
+                                index: 0,
+                            },
+                            ings,
+                        ),
+                        (
+                            item_out,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(1, 1)][recipe_id_1_1],
+                                    item_out,
+                                )],
+                                index: 0,
+                            },
+                            outputs,
+                        ),
+                    ]
+                }),
+        );
     i
 }
 

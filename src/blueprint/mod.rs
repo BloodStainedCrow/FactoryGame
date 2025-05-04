@@ -1,12 +1,12 @@
-use std::{any, ops::Range};
+use std::ops::Range;
 
 use proptest::{
-    prelude::{any, prop, Just, Strategy},
+    prelude::{prop, Just, Strategy},
     prop_oneof,
 };
 
 use crate::{
-    data::{self, DataStore},
+    data::DataStore,
     frontend::{
         action::{
             place_entity::{EntityPlaceOptions, PlaceEntityInfo},

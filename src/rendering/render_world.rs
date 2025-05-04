@@ -237,7 +237,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 for item in items_iter {
                                     if let Some(item) = item {
                                         item_layer.draw_sprite(
-                                            &texture_atlas.items[item.id.into()],
+                                            // &texture_atlas.items[item.id.into()],
+                                            &texture_atlas.items[0],
                                             DrawInstance {
                                                 position: [
                                                     item_render_base_pos.0,
