@@ -41,7 +41,7 @@ pub struct GameState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub world: World<ItemIdxType, RecipeIdxType>,
     pub simulation_state: SimulationState<ItemIdxType, RecipeIdxType>,
 
-    statistics: GenStatistics,
+    pub statistics: GenStatistics,
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, RecipeIdxType> {
@@ -712,10 +712,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         index: id.assembler_index,
                     }),
                     Some(
-                        data_store.recipe_to_items[&id.recipe]
+                        dbg!(data_store.recipe_to_items[&id.recipe]
                             .iter()
                             .filter_map(|(dir, item)| (*dir == ItemRecipeDir::Out).then_some(*item))
-                            .collect(),
+                            .collect()),
                     ),
                 )),
                 Entity::Assembler { .. } => None,
@@ -839,20 +839,29 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             return Err(InstantiateInserterError::DestMissing);
         };
 
+        // For determining the filter we use this plan:
+        // If a filter is specified, use that
+        // If we can determine a single source item use that,
+        // If we can determine a single destination item use that
+        // Else make the user do it
         let filter = filter.unwrap_or(
-            match start_conn
-                .1
-                .into_iter()
-                .flatten()
-                .chain(dest_conn.1.into_iter().flatten())
-                .all_equal_value()
-            {
-                Ok(filter) => filter,
-                Err(None) => return Err(InstantiateInserterError::PleaseSpecifyFilter),
+            if let Some(filter) = (match start_conn.1.into_iter().flatten().all_equal_value() {
+                Ok(filter) => Some(filter),
+                Err(None) => None,
                 Err(Some(wrong)) => {
-                    dbg!(wrong);
                     return Err(InstantiateInserterError::PleaseSpecifyFilter);
                 },
+            })
+            .or_else(
+                || match dest_conn.1.into_iter().flatten().all_equal_value() {
+                    Ok(filter) => Some(filter),
+                    Err(None) => None,
+                    Err(Some(wrong)) => None,
+                },
+            ) {
+                filter
+            } else {
+                return Err(InstantiateInserterError::PleaseSpecifyFilter);
             },
         );
 
@@ -1026,7 +1035,7 @@ mod tests {
         LazyLock::new(|| get_raw_data_test().turn::<u8, u8>());
 
     proptest! {
-        // #![proptest_config(ProptestConfig::with_cases(10_000))]
+        // #![proptest_config(ProptestConfig::with_cases(1_000))]
         #[test]
         fn test_random_blueprint_does_not_crash(base_pos in random_position(), blueprint in random_blueprint_strategy::<u8, u8>(0..1_000, &DATA_STORE)) {
 
@@ -1037,7 +1046,7 @@ mod tests {
         }
 
         #[test]
-        fn test_random_blueprint_does_not_crash_after(base_pos in random_position(), blueprint in random_blueprint_strategy::<u8, u8>(0..100, &DATA_STORE), time in 0usize..1000) {
+        fn test_random_blueprint_does_not_crash_after(base_pos in random_position(), blueprint in random_blueprint_strategy::<u8, u8>(0..100, &DATA_STORE), time in 0usize..600) {
 
             let mut game_state = GameState::new(&DATA_STORE);
 

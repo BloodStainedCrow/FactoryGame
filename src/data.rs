@@ -1,7 +1,9 @@
 use std::{array, collections::HashMap};
 
+use eframe::egui::Color32;
 use itertools::Itertools;
 use log::warn;
+use rand::random;
 use sha2::{Digest, Sha256};
 use strum::IntoEnumIterator;
 
@@ -387,6 +389,8 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     pub recipe_to_translated_index:
         HashMap<(Recipe<RecipeIdxType>, Item<ItemIdxType>), RecipeIdxType>,
+
+    pub item_to_colour: Vec<Color32>,
 }
 
 #[derive(Debug)]
@@ -864,6 +868,12 @@ impl RawDataStore {
                             .unwrap(),
                     )
                 })
+                .collect(),
+
+            item_to_colour: self
+                .items
+                .iter()
+                .map(|item_name| Color32::from_rgb(random(), random(), random()))
                 .collect(),
         }
     }

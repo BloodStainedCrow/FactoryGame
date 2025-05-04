@@ -14,10 +14,10 @@ use crate::{
 };
 
 // TODO: Keyframe support
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Replay<
-    ItemIdxType: IdxTrait,
-    RecipeIdxType: IdxTrait,
+    ItemIdxType: WeakIdxTrait,
+    RecipeIdxType: WeakIdxTrait,
     DataStor: AsRef<DataStore<ItemIdxType, RecipeIdxType>>,
 > {
     starting_state: GameState<ItemIdxType, RecipeIdxType>,
@@ -30,7 +30,7 @@ pub struct Replay<
     end_timestep: Option<u64>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ReplayAction<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     timestamp: u64,
     pub action: ActionType<ItemIdxType, RecipeIdxType>,
@@ -135,7 +135,7 @@ impl<V, F: Future<Output = V>> ReplayViewer<V, F> {
 
         let Complete(v) = gs else { unreachable!() };
 
-        every_step(&v);
+        let _ = every_step(&v);
 
         v
     }

@@ -391,21 +391,26 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         //     })
         //     .collect();
 
-        let mut updates = None;
+        let mut placeholder = PowerGrid::new_placeholder(data_store);
 
-        // TODO: If the power grid joining fails for whatever reason, this will abort the program!!!
-        take_mut::take(&mut self.power_grids[usize::from(kept_id)], |first| {
-            let ret = first.join(
-                second,
-                data_store,
-                kept_id,
-                removed_id,
-                new_pole_pos,
-                new_pole_connections,
-            );
-            updates = Some(ret.1);
-            ret.0
-        });
+        mem::swap(
+            &mut placeholder,
+            &mut self.power_grids[usize::from(kept_id)],
+        );
+
+        let first = placeholder;
+
+        let mut ret = first.join(
+            second,
+            data_store,
+            kept_id,
+            removed_id,
+            new_pole_pos,
+            new_pole_connections,
+        );
+        let updates = ret.1;
+
+        mem::swap(&mut ret.0, &mut self.power_grids[usize::from(kept_id)]);
 
         #[cfg(debug_assertions)]
         {
@@ -415,6 +420,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                 .all(|idx| !self.power_grids[usize::from(*idx.1)].is_placeholder))
         }
 
-        updates.map(|v| v.into_iter().map(|v| dbg!(v)))
+        Some(updates)
     }
 }

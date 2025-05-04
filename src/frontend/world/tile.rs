@@ -94,46 +94,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     pub fn new() -> Self {
         let mut grid = SparseGrid::new(1_000_000, 1_000_000);
 
-        grid.insert(
-            100,
-            100,
-            Chunk {
-                floor_tiles: [[FloorTile::Empty; CHUNK_SIZE]; CHUNK_SIZE],
-                entities: vec![],
-            },
-        );
-        grid.insert(
-            99,
-            100,
-            Chunk {
-                floor_tiles: [[FloorTile::Empty; CHUNK_SIZE]; CHUNK_SIZE],
-                entities: vec![],
-            },
-        );
-        grid.insert(
-            100,
-            99,
-            Chunk {
-                floor_tiles: [[FloorTile::Empty; CHUNK_SIZE]; CHUNK_SIZE],
-                entities: vec![],
-            },
-        );
-        grid.insert(
-            101,
-            100,
-            Chunk {
-                floor_tiles: [[FloorTile::Empty; CHUNK_SIZE]; CHUNK_SIZE],
-                entities: vec![],
-            },
-        );
-        grid.insert(
-            100,
-            101,
-            Chunk {
-                floor_tiles: [[FloorTile::Empty; CHUNK_SIZE]; CHUNK_SIZE],
-                entities: vec![],
-            },
-        );
+        for x in 50..200 {
+            for y in 50..200 {
+                grid.insert(
+                    x,
+                    y,
+                    Chunk {
+                        floor_tiles: [[FloorTile::Empty; CHUNK_SIZE]; CHUNK_SIZE],
+                        entities: vec![],
+                    },
+                );
+            }
+        }
 
         Self {
             chunks: grid,

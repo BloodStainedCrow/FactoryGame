@@ -29,6 +29,9 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     pub local_player_pos: (f32, f32),
     pub my_player_id: PLAYERID,
 
+    pub statistics_panel_open: bool,
+    pub statistics_panel: StatisticsPanel,
+
     current_mouse_pos: (f32, f32),
     current_held_keys: HashSet<Key>,
     pub state: ActionStateMachineState<ItemIdxType>,
@@ -36,6 +39,17 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     pub zoom_level: f32,
 
     recipe: PhantomData<RecipeIdxType>,
+}
+
+#[derive(Debug)]
+pub enum StatisticsPanel {
+    Production(usize),
+}
+
+impl Default for StatisticsPanel {
+    fn default() -> Self {
+        Self::Production(1)
+    }
 }
 
 #[derive(Debug)]
@@ -61,6 +75,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         Self {
             my_player_id,
             local_player_pos,
+
+            statistics_panel_open: false,
+            statistics_panel: StatisticsPanel::default(),
+
             current_mouse_pos: (0.0, 0.0),
             current_held_keys: HashSet::new(),
             state: ActionStateMachineState::Idle,
@@ -441,6 +459,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 } else {
                     vec![]
                 }
+            },
+
+            (_, Key::P) => {
+                self.statistics_panel_open = !self.statistics_panel_open;
+                vec![]
             },
 
             (_, _) => vec![],

@@ -32,9 +32,10 @@ bitvec = "1.0.1"
 bimap = { version = "0.6.3", features = ["serde"] }
 eframe = { version = "0.31.1", features = ["wgpu"] }
 egui_extras = "0.31.1"
+egui_plot = "0.32.1"
+rand = "0.8.5"
 
 [dev-dependencies]
-rand = "0.8.5"
 
 [lints.rust]
 # TODO:

@@ -5,7 +5,7 @@ use crate::{
     data::DataStore,
     frontend::{
         action::{
-            action_state_machine::{ActionStateMachine, WIDTH_PER_LEVEL},
+            action_state_machine::{ActionStateMachine, StatisticsPanel, WIDTH_PER_LEVEL},
             set_recipe::SetRecipeInfo,
             ActionType,
         },
@@ -15,8 +15,11 @@ use crate::{
     },
     item::{usize_from, IdxTrait, Item, Recipe},
 };
-use eframe::egui::{self, Align2, ComboBox, Context, CornerRadius, ProgressBar, Ui, Window};
+use eframe::egui::{
+    self, Align2, Color32, ComboBox, Context, CornerRadius, ProgressBar, Stroke, Ui, Window,
+};
 use egui_extras::{Column, TableBuilder};
+use egui_plot::{Line, Plot, PlotPoints};
 use log::{info, warn};
 use tilelib::types::{DrawInstance, Layer, RendererTrait};
 
@@ -757,6 +760,48 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         }
                     });
                 });
+        });
+
+    Window::new("Statistics")
+        .open(&mut state_machine.statistics_panel_open)
+        .show(ctx, |ui| match state_machine.statistics_panel {
+            StatisticsPanel::Production(scale) => {
+                let points: Vec<(String, usize, PlotPoints)> = game_state
+                    .statistics
+                    .production
+                    .get_series(scale, data_store, Some(|_| true))
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, series)| (series.name, i, series.data))
+                    .map(|(name, i, data)| {
+                        (
+                            name,
+                            i,
+                            data.into_iter()
+                                .enumerate()
+                                .map(|(i, v)| [i as f64, v.into()])
+                                .collect(),
+                        )
+                    })
+                    .filter(|(_, _, points): &(_, _, PlotPoints)| {
+                        points.points().iter().any(|p| p.y > 0.0)
+                    })
+                    .collect();
+                let lines = points.into_iter().map(|(name, id, points)| {
+                    Line::new(dbg!(name), points)
+                        .stroke(Stroke::new(2.0, data_store.item_to_colour[dbg!(id)]))
+                });
+
+                Plot::new("production_graph")
+                    .allow_zoom([false, true])
+                    .allow_drag([false, true])
+                    .allow_scroll([false, true])
+                    .show(ui, |ui| {
+                        for line in lines {
+                            ui.line(line);
+                        }
+                    })
+            },
         });
 
     actions
