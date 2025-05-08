@@ -4,7 +4,7 @@ use crate::{
     belt::{
         smart::Side,
         splitter::{Splitter, SplitterDistributionMode, SPLITTER_BELT_LEN},
-         BeltTileId, SplitterInfo,
+        BeltTileId, SplitterInfo,
     },
     data::DataStore,
     frontend::world::{
@@ -123,7 +123,11 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         output_belts: [belt_connections[0][1], belt_connections[1][1]],
     };
 
-    let id = game_state.simulation_state.factory.belts.add_splitter(splitter);
+    let id = game_state
+        .simulation_state
+        .factory
+        .belts
+        .add_splitter(splitter);
 
     game_state.world.add_entity(
         Entity::Splitter {
@@ -362,9 +366,9 @@ fn handle_belt_breaking<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             // FIXME: Understand this + 1
                             game_state.world.update_belt_id_after(res.kept_id, new_id, belt_pos_to_break_at + 1);
                             game_state.world.modify_belt_pos(new_id, -i16::try_from(belt_pos_to_break_at).unwrap());
-        
+
                             let new_len = game_state.simulation_state.factory.belts.get_len(new_id);
-        
+
                             game_state
                                 .simulation_state
                                 .factory
@@ -420,11 +424,13 @@ fn attach_to_back_of_belt<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             (final_belt_id, final_belt_len)
         },
         None => {
-            let new_length = game_state.simulation_state
-                .factory
-                .belts.add_length(front_belt_id, back_belt_len, Side::BACK);
+            let new_length = game_state.simulation_state.factory.belts.add_length(
+                front_belt_id,
+                back_belt_len,
+                Side::BACK,
+            );
 
-           (front_belt_id, new_length)
+            (front_belt_id, new_length)
         },
     };
 
@@ -439,8 +445,9 @@ fn merge_belts<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> (BeltTileId<ItemIdxType>, u16) {
     simulation_state
-            .factory
-            .belts.merge_belts(front_tile_id, back_tile_id, data_store)
+        .factory
+        .belts
+        .merge_belts(front_tile_id, back_tile_id, data_store)
 }
 
 fn get_belt_dir_for_sideloading<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(

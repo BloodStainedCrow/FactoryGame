@@ -16,7 +16,7 @@ use crate::{
             Position,
         },
     },
-    item::{IdxTrait, Item, Recipe, WeakIdxTrait},
+    item::{IdxTrait, Recipe, WeakIdxTrait},
 };
 
 use super::{place_tile::PositionInfo, ActionType, PLAYERID};
@@ -241,8 +241,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                         self.local_player_pos,
                                         self.current_mouse_pos,
                                     );
-                                }
+                                },
                                 PlaceEntityType::Chest { pos } => {*pos = Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.local_player_pos,
+                                    self.current_mouse_pos,
+                                );},
+                                PlaceEntityType::SolarPanel { pos, .. } => {*pos = Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.local_player_pos,
+                                    self.current_mouse_pos,
+                                );},
+                                PlaceEntityType::Lab { pos, .. } => {*pos = Self::player_mouse_to_tile(
                                     self.zoom_level,
                                     self.local_player_pos,
                                     self.current_mouse_pos,
@@ -423,6 +433,31 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             self.local_player_pos,
                             self.current_mouse_pos,
                         ),
+                    }));
+                vec![]
+            },
+            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key8) => {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::SolarPanel {
+                        pos: Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.local_player_pos,
+                            self.current_mouse_pos,
+                        ),
+                        ty: 0,
+                    },
+                ));
+                vec![]
+            },
+            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key9) => {
+                self.state =
+                    ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Lab {
+                        pos: Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.local_player_pos,
+                            self.current_mouse_pos,
+                        ),
+                        ty: 0,
                     }));
                 vec![]
             },

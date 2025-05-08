@@ -5,9 +5,8 @@ use std::{
 };
 
 use eframe::{
-    egui::{CentralPanel, Event, PaintCallbackInfo, Shape, Window},
+    egui::{CentralPanel, Event, PaintCallbackInfo, Shape},
     egui_wgpu::{self, CallbackTrait},
-    wgpu::hal::auxil::db,
 };
 use log::warn;
 use tilelib::types::RawRenderer;
@@ -62,12 +61,12 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
         ctx.request_repaint();
 
+        let size = ctx.available_rect();
+
         CentralPanel::default().show(ctx, |ui| {
             let painter = ui.painter();
 
             if let Some(game) = &self.currently_loaded_game {
-                let size = ui.max_rect();
-
                 // if !ctx.wants_keyboard_input() && !ctx.wants_pointer_input() {
                 ui.input(|input_state| {
                     for event in &input_state.events {

@@ -23,6 +23,7 @@ struct NetworkNode<S, W> {
     connected_weak_components: Vec<Option<W>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct WeakIndex {
     index: usize,
 }

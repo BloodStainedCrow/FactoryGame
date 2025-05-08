@@ -1,11 +1,16 @@
-use std::{cmp::min, iter::successors};
+use std::{
+    cmp::{max, min},
+    iter::successors,
+};
 
 use crate::{
     belt::{belt::Belt, splitter::SPLITTER_BELT_LEN, BeltTileId},
     data::DataStore,
     frontend::{
         action::{
-            action_state_machine::{ActionStateMachine, StatisticsPanel, WIDTH_PER_LEVEL},
+            action_state_machine::{
+                ActionStateMachine, ActionStateMachineState, StatisticsPanel, WIDTH_PER_LEVEL,
+            },
             set_recipe::SetRecipeInfo,
             ActionType,
         },
@@ -14,12 +19,16 @@ use crate::{
         },
     },
     item::{usize_from, IdxTrait, Item, Recipe},
+    power::power_grid::MAX_POWER_MULT,
+    statistics::{
+        NUM_SAMPLES_AT_INTERVALS, NUM_X_AXIS_TICKS, RELATIVE_INTERVAL_MULTS, TIMESCALE_LEGEND,
+    },
 };
 use eframe::egui::{
     self, Align2, Color32, ComboBox, Context, CornerRadius, ProgressBar, Stroke, Ui, Window,
 };
 use egui_extras::{Column, TableBuilder};
-use egui_plot::{Line, Plot, PlotPoints};
+use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
 use log::{info, warn};
 use tilelib::types::{DrawInstance, Layer, RendererTrait};
 
@@ -390,6 +399,33 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     },
                                 );
                             },
+                            Entity::SolarPanel { ty, pos, .. } => {
+                                entity_layer.draw_sprite(
+                                    &texture_atlas.default,
+                                    DrawInstance {
+                                        position: [
+                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                        ],
+                                        size: [3.0, 3.0],
+                                        animation_frame: 0,
+                                    },
+                                );
+                            },
+                            // TODO: Render if a lab is working!
+                            Entity::Lab { ty, pos, .. } => {
+                                entity_layer.draw_sprite(
+                                    &texture_atlas.belt[Dir::North],
+                                    DrawInstance {
+                                        position: [
+                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                        ],
+                                        size: [3.0, 3.0],
+                                        animation_frame: 0,
+                                    },
+                                );
+                            },
 
                             e => todo!("{:?}", e),
                         }
@@ -456,6 +492,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         out_mode,
                     } => {},
                     crate::frontend::world::tile::PlaceEntityType::Chest { pos } => {},
+                    crate::frontend::world::tile::PlaceEntityType::SolarPanel { pos, ty } => {},
+                    crate::frontend::world::tile::PlaceEntityType::Lab { pos, ty } => {},
                 },
             }
         },
@@ -541,7 +579,8 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         crate::frontend::action::action_state_machine::ActionStateMachineState::Viewing(
             position,
         ) => {
-            Window::new("Viewing").show(ctx, |ui| {
+            let mut viewing = true;
+            Window::new("Viewing").open(&mut viewing).show(ctx, |ui| {
                 let chunk = game_state
                 .world
                 .get_chunk_for_tile(*position)
@@ -643,6 +682,40 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                         let pb = ProgressBar::new(pg.last_power_mult as f32 / 64.0);
                         ui.add(pb);
+
+                        let timescale = 1;
+                        let max_value_at_timescale = (MAX_POWER_MULT as f64) * (RELATIVE_INTERVAL_MULTS[..=timescale].iter().copied().product::<usize>() as f64);
+                        let num_samples = NUM_SAMPLES_AT_INTERVALS[timescale];
+
+                        let points = pg.power_history.get_series(timescale, data_store, Some(|_| true)).into_iter().map(|series| (series.name, series.data.into_iter()
+                        .enumerate()
+                        .map(|(i, v)| [i as f64, v.into()])
+                        .collect::<Vec<_>>()));
+                        let lines = points.into_iter().map(|(name, points)| {
+                            Line::new(name, points)
+                                .stroke(Stroke::new(2.0, Color32::GREEN))
+                        });
+
+                        Plot::new("power_history_graph").show_x(false).show_y(false)
+                        // .auto_bounds([true, false])
+                        .set_margin_fraction([0.0, 0.05].into())
+                        .y_grid_spacer(|_grid_input| (0..=4).map(|v| GridMark {
+                            value: v as f64 / 4.0 * max_value_at_timescale, step_size: 1.0 / 4.0 * max_value_at_timescale }).chain((0..=20).map(|v| GridMark {
+                                value: v as f64 / 20.0 * max_value_at_timescale, step_size: 1.0 / 20.0 * max_value_at_timescale })).collect())
+                        .x_grid_spacer(|_grid_input| (0..NUM_X_AXIS_TICKS[timescale]).map(|v| GridMark {
+                            value: v as f64 / (NUM_X_AXIS_TICKS[timescale] as f64) * (num_samples as f64), step_size: 1.0 / (NUM_X_AXIS_TICKS[timescale] as f64) * (num_samples as f64) }).collect())
+                        .custom_y_axes([AxisHints::new_y().formatter(|v, _| format!("{:.0}%", v.value/max_value_at_timescale*100.0))].to_vec())
+                        .custom_x_axes([AxisHints::new_x().formatter(|v, _| TIMESCALE_LEGEND[timescale](v.value))].to_vec())
+                            .include_y(0)
+                            .include_y(1.0 * max_value_at_timescale)
+                            .allow_zoom([false, false])
+                            .allow_drag([false, false])
+                            .allow_scroll([false, false])
+                            .show(ui, |ui| {
+                                for line in lines {
+                                    ui.line(line);
+                                }
+                            });
                     },
                     crate::frontend::world::tile::Entity::Belt {
                         pos,
@@ -724,6 +797,10 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 }
             }
             });
+
+            if !viewing {
+                state_machine.state = ActionStateMachineState::Idle;
+            }
         },
         crate::frontend::action::action_state_machine::ActionStateMachineState::Decontructing(
             position,
@@ -788,14 +865,64 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     })
                     .collect();
                 let lines = points.into_iter().map(|(name, id, points)| {
-                    Line::new(dbg!(name), points)
-                        .stroke(Stroke::new(2.0, data_store.item_to_colour[dbg!(id)]))
+                    Line::new(name, points).stroke(Stroke::new(2.0, data_store.item_to_colour[id]))
                 });
 
+                let ticks_per_value = RELATIVE_INTERVAL_MULTS[..=scale]
+                    .iter()
+                    .copied()
+                    .product::<usize>() as f64;
+
                 Plot::new("production_graph")
-                    .allow_zoom([false, true])
-                    .allow_drag([false, true])
-                    .allow_scroll([false, true])
+                    .set_margin_fraction([0.0, 0.05].into())
+                    .x_grid_spacer(|_grid_input| {
+                        (0..NUM_X_AXIS_TICKS[scale])
+                            .map(|v| GridMark {
+                                value: v as f64 / (NUM_X_AXIS_TICKS[scale] as f64)
+                                    * (NUM_SAMPLES_AT_INTERVALS[scale] as f64),
+                                step_size: 1.0 / (NUM_X_AXIS_TICKS[scale] as f64)
+                                    * (NUM_SAMPLES_AT_INTERVALS[scale] as f64),
+                            })
+                            .collect()
+                    })
+                    .y_grid_spacer(|grid_input| {
+                        let mut lower_dec = 10.0_f64.powf(
+                            (grid_input.bounds.1 / ticks_per_value * 60.0 * 60.0)
+                                .log10()
+                                .floor(),
+                        );
+
+                        if lower_dec < 1.0 {
+                            lower_dec = 1.0;
+                        }
+
+                        lower_dec = lower_dec * ticks_per_value / 60.0 / 60.0;
+
+                        (0..40)
+                            .map(|v| GridMark {
+                                value: (v as f64) / 4.0 * lower_dec,
+                                step_size: lower_dec / 4.0,
+                            })
+                            .chain((0..10).map(|v| GridMark {
+                                value: (v as f64) * lower_dec,
+                                step_size: 1.0 * lower_dec,
+                            }))
+                            .collect()
+                    })
+                    .custom_y_axes(
+                        [AxisHints::new_y().formatter(move |v, _| {
+                            format!("{:.1}/min", v.value / ticks_per_value * 60.0 * 60.0)
+                        })]
+                        .to_vec(),
+                    )
+                    .custom_x_axes(
+                        [AxisHints::new_x().formatter(|v, _| TIMESCALE_LEGEND[scale](v.value))]
+                            .to_vec(),
+                    )
+                    .include_y(0)
+                    .allow_zoom([false, false])
+                    .allow_drag([false, false])
+                    .allow_scroll([false, false])
                     .show(ui, |ui| {
                         for line in lines {
                             ui.line(line);

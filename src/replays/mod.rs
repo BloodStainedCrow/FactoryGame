@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::future::Future;
 use std::ops::ControlFlow;
 
@@ -18,7 +19,7 @@ use crate::{
 pub struct Replay<
     ItemIdxType: WeakIdxTrait,
     RecipeIdxType: WeakIdxTrait,
-    DataStor: AsRef<DataStore<ItemIdxType, RecipeIdxType>>,
+    DataStor: Borrow<DataStore<ItemIdxType, RecipeIdxType>>,
 > {
     starting_state: GameState<ItemIdxType, RecipeIdxType>,
     pub actions: Vec<ReplayAction<ItemIdxType, RecipeIdxType>>,
@@ -39,7 +40,7 @@ pub struct ReplayAction<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> 
 impl<
         ItemIdxType: IdxTrait,
         RecipeIdxType: IdxTrait,
-        DataStor: AsRef<DataStore<ItemIdxType, RecipeIdxType>>,
+        DataStor: Borrow<DataStore<ItemIdxType, RecipeIdxType>>,
     > Replay<ItemIdxType, RecipeIdxType, DataStor>
 {
     pub fn new(game_state: GameState<ItemIdxType, RecipeIdxType>, data_store: DataStor) -> Self {
@@ -94,9 +95,9 @@ impl<
                         .take_while(|a| a.timestamp == current_timestep)
                         .map(|ra| ra.action);
 
-                    game_state.apply_actions(this_ticks_actions, data_store.as_ref());
+                    game_state.apply_actions(this_ticks_actions, data_store.borrow());
 
-                    game_state.update(data_store.as_ref());
+                    game_state.update(data_store.borrow());
 
                     let game_state_opt: Option<GameState<ItemIdxType, RecipeIdxType>> =
                         yield_!(game_state);

@@ -83,10 +83,18 @@ impl WeakIdxTrait for u16 {}
 impl IdxTrait for u8 {}
 impl IdxTrait for u16 {}
 
-trait NewWithDataStore {
+pub trait NewWithDataStore {
     fn new<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         data_store: impl Borrow<DataStore<ItemIdxType, RecipeIdxType>>,
     ) -> Self;
+}
+
+impl NewWithDataStore for u32 {
+    fn new<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        _data_store: impl Borrow<DataStore<ItemIdxType, RecipeIdxType>>,
+    ) -> Self {
+        0
+    }
 }
 
 pub fn main() {

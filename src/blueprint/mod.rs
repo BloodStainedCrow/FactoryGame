@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::{borrow::Borrow, ops::Range};
 
 use proptest::{
     prelude::{prop, Just, Strategy},
@@ -131,6 +131,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                         out_mode: *out_mode,
                     }),
                 }),
+                ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::SolarPanel { pos, ty }),
+                }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::SolarPanel {
+                        pos: Position {
+                            x: base_pos.x + pos.x,
+                            y: base_pos.y + pos.y,
+                        },
+                        ty: *ty,
+                    }),
+                }),
                 ActionType::SetRecipe(SetRecipeInfo { pos, recipe }) => {
                     ActionType::SetRecipe(SetRecipeInfo {
                         pos: Position {
@@ -150,7 +161,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
         );
     }
 
-    pub fn from_replay<DS: AsRef<DataStore<ItemIdxType, RecipeIdxType>>>(
+    pub fn from_replay<DS: Borrow<DataStore<ItemIdxType, RecipeIdxType>>>(
         replay: &Replay<ItemIdxType, RecipeIdxType, DS>,
     ) -> Self {
         Self {
@@ -195,15 +206,15 @@ pub fn random_blueprint_action<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> impl Strategy<Value = ActionType<ItemIdxType, RecipeIdxType>> {
     prop_oneof![
-        random_blueprint_offs().prop_map(|pos| ActionType::PlaceFloorTile(
-            PlaceFloorTileByHandInfo {
-                ghost_info: PlaceFloorTileGhostInfo {
-                    tile: FloorTile::Concrete,
-                    position: PositionInfo::Single { pos: pos }
-                },
-                player: ()
-            }
-        )),
+        // random_blueprint_offs().prop_map(|pos| ActionType::PlaceFloorTile(
+        //     PlaceFloorTileByHandInfo {
+        //         ghost_info: PlaceFloorTileGhostInfo {
+        //             tile: FloorTile::Concrete,
+        //             position: PositionInfo::Single { pos: pos }
+        //         },
+        //         player: ()
+        //     }
+        // )),
         (random_blueprint_offs(), random_recipe(data_store))
             .prop_map(|(pos, recipe)| ActionType::SetRecipe(SetRecipeInfo { pos, recipe })),
         random_entity_to_place(data_store).prop_map(|ty| {
@@ -211,7 +222,7 @@ pub fn random_blueprint_action<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 entities: EntityPlaceOptions::Single(ty),
             })
         }),
-        random_blueprint_offs().prop_map(|pos| ActionType::Remove(pos)),
+        // random_blueprint_offs().prop_map(|pos| ActionType::Remove(pos)),
     ]
 }
 
@@ -221,6 +232,11 @@ pub fn random_entity_to_place<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     prop_oneof![
         random_blueprint_offs().prop_map(|pos| PlaceEntityType::Assembler(pos)),
         random_blueprint_offs().prop_map(|pos| PlaceEntityType::Chest { pos }),
+        (
+            random_blueprint_offs()
+            // 0..(data_store.solar_panel_sizes.len().try_into().unwrap())
+        )
+        .prop_map(|(pos)| PlaceEntityType::SolarPanel { pos, ty: 0 }),
         (random_blueprint_offs(), random_dir()).prop_map(|(pos, dir)| PlaceEntityType::Belt {
             pos,
             direction: dir
@@ -243,6 +259,8 @@ pub fn random_entity_to_place<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     filter: Some(filter),
                 }
             }),
+        (random_blueprint_offs(), (0u8..1))
+            .prop_map(|(pos, ty)| { PlaceEntityType::Lab { pos, ty } }),
         // (random_blueprint_offs(), random_dir()).prop_map(|(pos, dir)| {
         //     PlaceEntityType::Splitter {
         //         pos,

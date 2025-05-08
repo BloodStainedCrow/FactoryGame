@@ -14,6 +14,7 @@ use crate::{
             ActionType,
         },
         world::{
+            self,
             tile::{
                 AssemblerID, AssemblerInfo, AttachedInserter, BeltId, Dir, Entity, InserterInfo,
                 World,
@@ -24,7 +25,7 @@ use crate::{
     inserter::{belt_belt_inserter::BeltBeltInserter, StaticID, Storage, MOVETIME},
     item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
     power::{power_grid::PowerGridIdentifier, PowerGridStorage, Watt},
-    research::{ResearchProgress, TechState},
+    research::{ResearchProgress, TechState, Technology},
     statistics::{production::ProductionInfo, recipe::RecipeTickInfo, GenStatistics},
     storage_list::{full_to_by_item, grid_size, num_recipes, sizes, storages_by_item},
 };
@@ -65,7 +66,9 @@ pub struct SimulationState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrai
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SimulationState<ItemIdxType, RecipeIdxType> {
     pub fn new(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         Self {
-            tech_state: TechState::default(),
+            tech_state: TechState {
+                current_technology: Some(Technology { id: 0 }),
+            },
             factory: Factory::new(data_store),
         }
     }
@@ -349,15 +352,32 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         Entity::Roboport {
                                             ty,
                                             pos,
-                                            power_grid,
+                                            power_grid: power_grid @ None,
                                             network,
                                             id,
                                         } => {
-                                            if power_grid.is_none() {
-                                                *power_grid = Some(grid)
-                                            }
+                                            *power_grid = Some(grid);
                                             todo!("Add Roboport to power grid")
                                         },
+                                        Entity::SolarPanel {
+                                            pos,
+                                            ty,
+                                            pole_position: pole_position @ None,
+                                        } => {
+                                            let idx = self
+                                                .simulation_state
+                                                .factory
+                                                .power_grids
+                                                .power_grids[usize::from(grid)]
+                                            .add_solar_panel(*pos, *ty, pole_pos, data_store);
+
+                                            *pole_position = Some((pole_pos, idx));
+                                        },
+                                        Entity::Lab {
+                                            pos,
+                                            ty,
+                                            pole_position: pole_position @ None,
+                                        } => todo!(),
 
                                         _ => {},
                                     }
@@ -387,6 +407,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             );
                         },
                         crate::frontend::world::tile::PlaceEntityType::Chest { pos } => {
+                            info!("Trying to place chest at {pos:?}");
+                            // TODO: get size dynamically
+                            if !self.world.can_fit(pos, (1, 1), data_store) {
+                                warn!("Tried to place chest where it does not fit");
+                                continue;
+                            }
+
                             // FIXME: Chest item hardcoded
                             let item = Item {
                                 id: ItemIdxType::from(0),
@@ -403,6 +430,94 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     pos,
                                     item: Some(item),
                                     index,
+                                },
+                                &self.simulation_state,
+                                data_store,
+                            );
+                        },
+                        crate::frontend::world::tile::PlaceEntityType::SolarPanel { pos, ty } => {
+                            info!("Trying to place solar_panel at {pos:?}");
+                            // TODO: get size dynamically
+                            if !self.world.can_fit(pos, (3, 3), data_store) {
+                                warn!("Tried to place solar_panel where it does not fit");
+                                continue;
+                            }
+
+                            // FIXME: Hardcoded
+                            let powered_by = self.world.is_powered_by(
+                                &self.simulation_state,
+                                pos,
+                                (3, 3),
+                                data_store,
+                            );
+
+                            let powered_by = if let Some(pole_pos) = powered_by {
+                                let grid = self
+                                    .simulation_state
+                                    .factory
+                                    .power_grids
+                                    .pole_pos_to_grid_id[&pole_pos];
+
+                                let grid =
+                                    &mut self.simulation_state.factory.power_grids.power_grids
+                                        [usize::from(grid)];
+
+                                let weak_idx = grid.add_solar_panel(pos, ty, pole_pos, data_store);
+
+                                Some((pole_pos, weak_idx))
+                            } else {
+                                None
+                            };
+
+                            self.world.add_entity(
+                                Entity::SolarPanel {
+                                    pos,
+                                    ty,
+                                    pole_position: powered_by,
+                                },
+                                &self.simulation_state,
+                                data_store,
+                            );
+                        },
+                        crate::frontend::world::tile::PlaceEntityType::Lab { pos, ty } => {
+                            info!("Trying to place lab at {pos:?}");
+                            // TODO: get size dynamically
+                            if !self.world.can_fit(pos, (3, 3), data_store) {
+                                warn!("Tried to place lab where it does not fit");
+                                continue;
+                            }
+
+                            // FIXME: Hardcoded
+                            let powered_by = self.world.is_powered_by(
+                                &self.simulation_state,
+                                pos,
+                                (3, 3),
+                                data_store,
+                            );
+
+                            let powered_by = if let Some(pole_pos) = powered_by {
+                                let grid = self
+                                    .simulation_state
+                                    .factory
+                                    .power_grids
+                                    .pole_pos_to_grid_id[&pole_pos];
+
+                                let grid =
+                                    &mut self.simulation_state.factory.power_grids.power_grids
+                                        [usize::from(grid)];
+
+                                let weak_idx = grid.add_lab(pos, ty, pole_pos, data_store);
+
+                                Some((pole_pos, weak_idx.0, weak_idx.1))
+                            } else {
+                                None
+                            };
+
+                            self.world.add_entity(
+                                Entity::Lab {
+                                    pos,
+                                    ty,
+                                    pole_position: powered_by,
                                 },
                                 &self.simulation_state,
                                 data_store,
@@ -534,7 +649,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             .power_grids
             .power_grids
             .par_iter_mut()
-            .map(|grid| grid.update(Watt(1000), &self.simulation_state.tech_state, data_store))
+            .map(|grid| grid.update(Watt(60000), &self.simulation_state.tech_state, data_store))
             .reduce(
                 || (0, RecipeTickInfo::new(data_store)),
                 |(acc_progress, infos), (rhs_progress, info)| {
@@ -554,6 +669,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         // if self.statistics.production.num_samples_pushed % 60 == 0 {
         //     File::create("./stats.svg").unwrap().write(self.statistics.get_chart(1, data_store, Some(|_| true)).svg().unwrap().as_bytes()).unwrap();
         // }
+
+        self.current_tick += 1;
     }
 
     fn update_inserters(
@@ -690,7 +807,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             .into_iter()
             .next()
             .map(|e| match e {
-                Entity::Inserter { .. } | Entity::PowerPole { .. } => None,
+                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }  => None,
 
                 Entity::Roboport { ty, pos, power_grid, network, id } => {
                     // TODO:
@@ -753,6 +870,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     }),
                     Some(item.into_iter().copied().collect()),
                 )),
+                Entity::Lab { pos, ty, pole_position } => {
+                    // No removing items from Labs!
+                    None
+                }
             })
             .flatten();
 
@@ -769,7 +890,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             .into_iter()
             .next()
             .map(|e| match e {
-                Entity::Inserter { .. } | Entity::PowerPole { .. } => None,
+                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }  => None,
 
                 Entity::Roboport { ty, pos, power_grid, network, id } => {
                     // TODO:
@@ -832,6 +953,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     }),
                     Some(item.into_iter().copied().collect()),
                 )),
+                Entity::Lab { pos, ty, pole_position } => {
+                    if let Some((pole_pos, idx, lab_store_index)) = pole_position {
+                        Some((InserterConnection::Storage(Storage::Lab { grid: self.simulation_state.factory.power_grids.pole_pos_to_grid_id[pole_pos], index: *lab_store_index }), Some(data_store.science_bottle_items.iter().copied().collect())))
+                    } else {
+                        None
+                    }
+                }
             })
             .flatten();
 
@@ -1025,12 +1153,18 @@ mod tests {
     use std::sync::LazyLock;
 
     use crate::{
-        blueprint::{random_blueprint_strategy, random_position},
+        blueprint::{random_blueprint_strategy, random_position, Blueprint},
         data::{get_raw_data_test, DataStore},
-        frontend::world::Position,
+        frontend::{
+            action::{place_entity::PlaceEntityInfo, ActionType},
+            world::Position,
+        },
+        item::Recipe,
         rendering::app_state::GameState,
+        replays::Replay,
     };
     use proptest::{prelude::ProptestConfig, proptest};
+    use test::Bencher;
     static DATA_STORE: LazyLock<DataStore<u8, u8>> =
         LazyLock::new(|| get_raw_data_test().turn::<u8, u8>());
 
@@ -1056,5 +1190,95 @@ mod tests {
                 game_state.update(&DATA_STORE)
             }
         }
+    }
+
+    #[bench]
+    fn bench_random_blueprint_does_not_crash_after(b: &mut Bencher) {
+        let mut game_state = GameState::new(&DATA_STORE);
+
+        let mut rep = Replay::new(game_state.clone(), (*DATA_STORE).clone());
+
+        rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
+            entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
+                crate::frontend::world::tile::PlaceEntityType::PowerPole {
+                    pos: Position { x: 0, y: 5 },
+                    ty: 0,
+                },
+            ),
+        })]);
+
+        rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
+            entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
+                crate::frontend::world::tile::PlaceEntityType::Assembler(Position { x: 0, y: 6 }),
+            ),
+        })]);
+
+        rep.append_actions(vec![ActionType::SetRecipe(
+            crate::frontend::action::set_recipe::SetRecipeInfo {
+                pos: Position { x: 0, y: 6 },
+                recipe: Recipe { id: 0 },
+            },
+        )]);
+
+        rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
+            entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
+                crate::frontend::world::tile::PlaceEntityType::Belt {
+                    pos: Position { x: 1, y: 4 },
+                    direction: crate::frontend::world::tile::Dir::East,
+                },
+            ),
+        })]);
+
+        rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
+            entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
+                crate::frontend::world::tile::PlaceEntityType::Belt {
+                    pos: Position { x: 2, y: 4 },
+                    direction: crate::frontend::world::tile::Dir::East,
+                },
+            ),
+        })]);
+
+        rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
+            entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
+                crate::frontend::world::tile::PlaceEntityType::Inserter {
+                    pos: Position { x: 1, y: 5 },
+                    dir: crate::frontend::world::tile::Dir::North,
+                    filter: None,
+                },
+            ),
+        })]);
+
+        let blueprint = Blueprint::from_replay(&rep);
+
+        blueprint.apply(Position { x: 1600, y: 1600 }, &mut game_state, &DATA_STORE);
+
+        dbg!(&game_state
+            .world
+            .get_chunk_for_tile(Position { x: 1600, y: 1600 }));
+
+        dbg!(game_state.current_tick);
+
+        for _ in 0..60 {
+            game_state.update(&DATA_STORE);
+        }
+
+        b.iter(|| {
+            game_state.update(&DATA_STORE);
+        });
+
+        dbg!(game_state.current_tick);
+
+        // dbg!(&game_state.simulation_state.factory.belts);
+
+        assert!(
+            dbg!(
+                game_state
+                    .statistics
+                    .production
+                    .total
+                    .unwrap()
+                    .items_produced
+            )[0] > 0
+        );
     }
 }

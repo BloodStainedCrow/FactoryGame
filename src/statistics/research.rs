@@ -10,7 +10,7 @@ use super::IntoSeries;
 
 pub struct ResearchInfo {}
 
-impl NewWithDataStore for ResearchProgress {
+impl NewWithDataStore for u64 {
     fn new<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>(
         _data_store: impl std::borrow::Borrow<crate::data::DataStore<ItemIdxType, RecipeIdxType>>,
     ) -> Self {

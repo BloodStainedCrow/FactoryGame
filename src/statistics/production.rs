@@ -17,7 +17,7 @@ use super::{recipe::RecipeTickInfo, IntoSeries};
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ProductionInfo {
-    pub(super) items_produced: Vec<u64>,
+    pub items_produced: Vec<u64>,
     items_used: Vec<u64>,
 }
 

@@ -6,7 +6,6 @@ use crate::{
     assembler::FullAssemblerStore,
     chest::FullChestStore,
     data::{DataStore, ItemRecipeDir},
-    frontend::world::Position,
     inserter::Storage,
     item::{usize_from, IdxTrait, Item, Recipe, ITEMCOUNTTYPE},
     lab::MultiLabStore,
@@ -43,7 +42,7 @@ fn num_labs<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     item: Item<ItemIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> usize {
-    data_store.lab_infos.len() * usize::from(data_store.item_is_science[usize_from(item.id)])
+    usize::from(data_store.item_is_science[usize_from(item.id)])
 }
 
 pub fn num_recipes<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
@@ -200,15 +199,23 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         .count()
                         - 1,
                     "{:?}",
-                    Vec::from_iter(
-                        all_storages(grids, chest_store, data_store)
-                            .into_iter()
-                            .map(|v| {
-                                let idx =
-                                    get_full_storage_index(v.0, v.1, num_power_grids, data_store);
-                                (v, idx)
-                            })
-                    )
+                    {
+                        let mut r = Vec::from_iter(
+                            all_storages(grids, chest_store, data_store)
+                                .into_iter()
+                                .map(|v| {
+                                    let idx = get_full_storage_index(
+                                        v.0,
+                                        v.1,
+                                        num_power_grids,
+                                        data_store,
+                                    );
+                                    (v, idx)
+                                }),
+                        );
+                        r.sort_by_key(|v| v.1);
+                        r
+                    }
                 )
             },
             None => {
@@ -359,6 +366,80 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                         ),
                     ]
                 }),
+        )
+        .chain(
+            assembler_store
+                .assemblers_2_1
+                .iter_mut()
+                .enumerate()
+                .flat_map(move |(recipe_id_2_1, multi)| {
+                    let mut items_in = data_store.recipe_to_items[&multi.recipe].iter().filter_map(
+                        |(dir, item)| {
+                            if *dir == ItemRecipeDir::Ing {
+                                Some(item)
+                            } else {
+                                None
+                            }
+                        },
+                    );
+
+                    let item_in0 = *items_in.next().unwrap();
+                    let item_in1 = *items_in.next().unwrap();
+
+                    let item_out = data_store.recipe_to_items[&multi.recipe]
+                        .iter()
+                        .filter_map(|(dir, item)| {
+                            if *dir == ItemRecipeDir::Out {
+                                Some(item)
+                            } else {
+                                None
+                            }
+                        })
+                        .nth(0)
+                        .copied()
+                        .unwrap();
+
+                    let ([ings0, ings1], [outputs]) = multi.get_all_mut();
+
+                    [
+                        (
+                            item_in0,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(2, 1)][recipe_id_2_1],
+                                    item_in0,
+                                )],
+                                index: 0,
+                            },
+                            ings0,
+                        ),
+                        (
+                            item_in1,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(2, 1)][recipe_id_2_1],
+                                    item_in1,
+                                )],
+                                index: 0,
+                            },
+                            ings1,
+                        ),
+                        (
+                            item_out,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(2, 1)][recipe_id_2_1],
+                                    item_out,
+                                )],
+                                index: 0,
+                            },
+                            outputs,
+                        ),
+                    ]
+                }),
         );
     i
 }
@@ -374,8 +455,11 @@ fn all_lab_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &'a mut [ITEMCOUNTTYPE],
     ),
 > + use<'a, 'b, ItemIdxType, RecipeIdxType> {
-    // TODO:
-    vec![]
+    lab_store
+        .sciences
+        .iter_mut()
+        .zip(data_store.science_bottle_items.iter().copied())
+        .map(move |(v, item)| (item, Storage::Lab { grid, index: 0 }, v.as_mut_slice()))
 }
 
 fn all_lazy_power_machine_storages() {}

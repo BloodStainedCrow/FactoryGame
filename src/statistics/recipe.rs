@@ -16,6 +16,7 @@ pub struct SingleRecipeTickInfo {
 pub struct RecipeTickInfoParts {
     pub recipes_0_1: Vec<SingleRecipeTickInfo>,
     pub recipes_1_1: Vec<SingleRecipeTickInfo>,
+    pub recipes_2_1: Vec<SingleRecipeTickInfo>,
     // etc.
 }
 
@@ -37,6 +38,7 @@ impl RecipeTickInfo {
     ) -> Self {
         let mut recipes_0_1 = parts.recipes_0_1.into_iter();
         let mut recipes_1_1 = parts.recipes_1_1.into_iter();
+        let mut recipes_2_1 = parts.recipes_2_1.into_iter();
 
         let num_crafts_finished = data_store
             .recipe_num_ing_lookup
@@ -47,6 +49,9 @@ impl RecipeTickInfo {
                     "Number of recipes in parts does not match number of recipes in datastore",
                 ),
                 (1, 1) => recipes_1_1.next().expect(
+                    "Number of recipes in parts does not match number of recipes in datastore",
+                ),
+                (2, 1) => recipes_2_1.next().expect(
                     "Number of recipes in parts does not match number of recipes in datastore",
                 ),
                 // etc

@@ -34,7 +34,7 @@ pub fn get_raw_data_test() -> RawDataStore {
                     amount: 1,
                 }]
                 .into_boxed_slice(),
-                time_to_craft: 6,
+                time_to_craft: 60,
                 is_intermediate: false,
             },
             RawRecipeData {
@@ -68,6 +68,23 @@ pub fn get_raw_data_test() -> RawDataStore {
                 is_intermediate: true,
             },
             RawRecipeData {
+                name: "factory_game::copper_smelting".to_string(),
+                display_name: "Smelt Copper Ore into Copper Plates".to_string(),
+                possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
+                ings: vec![RawItemStack {
+                    item: "factory_game::copper_ore".to_string(),
+                    amount: 1,
+                }]
+                .into_boxed_slice(),
+                output: vec![RawItemStack {
+                    item: "factory_game::copper_plate".to_string(),
+                    amount: 1,
+                }]
+                .into_boxed_slice(),
+                time_to_craft: 300,
+                is_intermediate: true,
+            },
+            RawRecipeData {
                 name: "factory_game::gears".to_string(),
                 display_name: "Gears".to_string(),
                 possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
@@ -82,6 +99,30 @@ pub fn get_raw_data_test() -> RawDataStore {
                 }]
                 .into_boxed_slice(),
                 time_to_craft: 600,
+
+                is_intermediate: true,
+            },
+            RawRecipeData {
+                name: "factory_game::red_science".to_string(),
+                display_name: "Automation Science".to_string(),
+                possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
+                ings: vec![
+                    RawItemStack {
+                        item: "factory_game::gear".to_string(),
+                        amount: 1,
+                    },
+                    RawItemStack {
+                        item: "factory_game::copper_plate".to_string(),
+                        amount: 1,
+                    },
+                ]
+                .into_boxed_slice(),
+                output: vec![RawItemStack {
+                    item: "factory_game::red_science".to_string(),
+                    amount: 1,
+                }]
+                .into_boxed_slice(),
+                time_to_craft: 300,
 
                 is_intermediate: true,
             },
@@ -115,12 +156,30 @@ pub fn get_raw_data_test() -> RawDataStore {
                 is_fluid: false,
             },
             RawItem {
+                name: "factory_game::copper_plate".to_string(),
+                display_name: "Copper Plate".to_string(),
+                stack_size: 100,
+                placed_as: None,
+                burnable_in: vec![].into_boxed_slice(),
+                science_data: None,
+                is_fluid: false,
+            },
+            RawItem {
                 name: "factory_game::gear".to_string(),
                 display_name: "Gear".to_string(),
                 stack_size: 50,
                 placed_as: None,
                 burnable_in: vec![].into_boxed_slice(),
                 science_data: None,
+                is_fluid: false,
+            },
+            RawItem {
+                name: "factory_game::red_science".to_string(),
+                display_name: "Automation Science Pack".to_string(),
+                stack_size: 200,
+                placed_as: None,
+                burnable_in: vec![].into_boxed_slice(),
+                science_data: Some(()),
                 is_fluid: false,
             },
         ],
@@ -207,6 +266,16 @@ pub fn get_raw_data_test() -> RawDataStore {
                 number_of_slots: 48,
             },
         ],
+        technologies: vec![RawTechnology {
+            name: "factory_game::automation".to_string(),
+            display_name: "Automation".to_string(),
+            cost_of_single_research_unit: vec![RawItemStack {
+                item: "factory_game::red_science".to_string(),
+                amount: 1,
+            }],
+            num_units: 10,
+            precursors: vec![],
+        }],
     }
 }
 
@@ -275,6 +344,16 @@ pub struct RawDataStore {
     power_poles: Vec<RawPowerPole>,
     modules: Vec<RawModule>,
     chests: Vec<RawChest>,
+    technologies: Vec<RawTechnology>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+struct RawTechnology {
+    name: String,
+    display_name: String,
+    cost_of_single_research_unit: Vec<RawItemStack>,
+    num_units: u64,
+    precursors: Vec<String>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -331,7 +410,7 @@ enum RawEntity {
     Belt(()),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub checksum: String,
 
@@ -391,16 +470,18 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         HashMap<(Recipe<RecipeIdxType>, Item<ItemIdxType>), RecipeIdxType>,
 
     pub item_to_colour: Vec<Color32>,
+
+    pub technology_costs: Vec<(u64, Box<[ITEMCOUNTTYPE]>)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LazyPowerMachineInfo<ItemIdxType: WeakIdxTrait> {
     pub ingredient: Item<ItemIdxType>,
     pub power_per_item: Joule,
     pub max_power_per_tick: Joule,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PowerPoleData {
     pub size: (u8, u8),
     pub power_range: u8,
@@ -435,7 +516,7 @@ struct RecipeIndexLookup {
     out: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RecipeIngLookups {
     pub ing0: Vec<[ITEMCOUNTTYPE; 0]>,
     pub ing1: Vec<[ITEMCOUNTTYPE; 1]>,
@@ -444,7 +525,7 @@ pub struct RecipeIngLookups {
     pub ing4: Vec<[ITEMCOUNTTYPE; 4]>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RecipeOutputLookups {
     pub out1: Vec<[ITEMCOUNTTYPE; 1]>,
     pub out2: Vec<[ITEMCOUNTTYPE; 2]>,
@@ -501,7 +582,10 @@ impl RawDataStore {
             })
             .collect();
 
-        let science_bottle_items = self
+        let reverse_item_lookup: HashMap<ItemIdxType, &str> =
+            item_lookup.iter().map(|(k, v)| (*v, *k)).collect();
+
+        let science_bottle_items: Vec<Item<ItemIdxType>> = self
             .items
             .iter()
             .filter(|i| i.science_data.is_some())
@@ -768,6 +852,40 @@ impl RawDataStore {
             .map(|(ing, out)| ing + out)
             .collect();
 
+        assert!(
+            self.technologies
+                .iter()
+                .flat_map(|tech| tech.cost_of_single_research_unit.iter())
+                .all(|stack| science_bottle_items.contains(&Item {
+                    id: *item_lookup
+                        .get(stack.item.as_str())
+                        .expect("Could not find item")
+                })),
+            "Some research item in a technology is not designated as science item"
+        );
+
+        let technology_costs = self
+            .technologies
+            .iter()
+            .map(|tech| {
+                (
+                    tech.num_units,
+                    science_bottle_items
+                        .iter()
+                        .map(|item| reverse_item_lookup[&item.id])
+                        .map(|raw_item_name| {
+                            tech.cost_of_single_research_unit
+                                .iter()
+                                .find_map(|stack| {
+                                    (stack.item == raw_item_name).then_some(stack.amount)
+                                })
+                                .unwrap_or(0)
+                        })
+                        .collect(),
+                )
+            })
+            .collect();
+
         DataStore {
             checksum,
 
@@ -875,6 +993,8 @@ impl RawDataStore {
                 .iter()
                 .map(|item_name| Color32::from_rgb(random(), random(), random()))
                 .collect(),
+
+            technology_costs,
         }
     }
 

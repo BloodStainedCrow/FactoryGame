@@ -15,6 +15,7 @@ use crate::{
     frontend::world,
     inserter::Storage,
     item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
+    network_graph::WeakIndex,
     power::power_grid::{PowerGridEntity, PowerGridIdentifier},
     rendering::app_state::{calculate_inserter_positions, SimulationState},
     TICKS_PER_SECOND_LOGIC,
@@ -161,6 +162,34 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         }
 
         match entity {
+            Entity::Lab {
+                pos,
+                ty,
+                pole_position,
+            } => {
+                if let Some((pole_pos, _, _)) = pole_position {
+                    let grid = sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos];
+                    self.power_grid_lookup
+                        .grid_to_chunks
+                        .entry(grid)
+                        .or_default()
+                        .insert(chunk_pos);
+                }
+            },
+            Entity::SolarPanel {
+                pos,
+                ty,
+                pole_position,
+            } => {
+                if let Some((pole_pos, _)) = pole_position {
+                    let grid = sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos];
+                    self.power_grid_lookup
+                        .grid_to_chunks
+                        .entry(grid)
+                        .or_default()
+                        .insert(chunk_pos);
+                }
+            },
             Entity::Assembler { info, .. } => match info {
                 AssemblerInfo::UnpoweredNoRecipe | AssemblerInfo::Unpowered(_) => {},
                 AssemblerInfo::PoweredNoRecipe(pole_position) => {
@@ -308,6 +337,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
             for entity in &mut chunk.entities {
                 match entity {
+                    Entity::SolarPanel {
+                        pole_position: None,
+                        ..
+                    } => {},
+                    Entity::SolarPanel {
+                        pole_position: Some(_),
+                        ..
+                    } => todo!(),
+                    Entity::Lab {
+                        pole_position: None,
+                        ..
+                    } => {},
+                    Entity::Lab {
+                        pole_position: Some(_),
+                        ..
+                    } => todo!(),
                     Entity::Assembler { info, .. } => match info {
                         AssemblerInfo::UnpoweredNoRecipe | AssemblerInfo::Unpowered(_) => {},
                         AssemblerInfo::PoweredNoRecipe(pole_position) => {},
@@ -375,6 +420,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
             for entity in &mut chunk.entities {
                 match entity {
+                    Entity::Lab { .. } => {},
+                    Entity::SolarPanel { .. } => {},
                     Entity::Assembler { .. } => {},
                     Entity::PowerPole { .. } => {},
                     Entity::Chest { .. } => {},
@@ -429,6 +476,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
             for entity in &mut chunk.entities {
                 match entity {
+                    Entity::Lab { .. } => {},
+                    Entity::SolarPanel { .. } => {},
                     Entity::Assembler { .. } => {},
                     Entity::PowerPole { .. } => {},
                     Entity::Chest { .. } => {},
@@ -639,6 +688,34 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             );
 
             match entity {
+                Entity::Lab {
+                    pos,
+                    ty,
+                    pole_position,
+                } => {
+                    if let Some((pole_pos, idx, store_idx)) = *pole_position {
+                        sim_state.factory.power_grids.power_grids[usize::from(
+                            sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos],
+                        )]
+                        .remove_lab(pole_pos, idx, data_store);
+                    } else {
+                        // This was not connected, nothing to do
+                    }
+                },
+                Entity::SolarPanel {
+                    pos,
+                    ty,
+                    pole_position,
+                } => {
+                    if let Some((pole_pos, idx)) = *pole_position {
+                        sim_state.factory.power_grids.power_grids[usize::from(
+                            sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos],
+                        )]
+                        .remove_solar_panel(pole_pos, idx, data_store);
+                    } else {
+                        // This was not connected, nothing to do
+                    }
+                },
                 Entity::Assembler { pos, info } => match info {
                     AssemblerInfo::UnpoweredNoRecipe
                     | AssemblerInfo::Unpowered(_)
@@ -732,9 +809,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     )
                                 })
                                 .collect(),
-                            PowerGridEntity::Lab { index } => todo!(),
+                            PowerGridEntity::Lab { index, ty } => todo!(),
                             PowerGridEntity::LazyPowerProducer { item, index } => {
                                 todo!("Expand Storage type")
+                            },
+                            PowerGridEntity::SolarPanel { ty } => {
+                                vec![]
+                            },
+                            PowerGridEntity::Accumulator { ty } => {
+                                vec![]
                             },
                         };
 
@@ -862,8 +945,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                         },
                                     },
                                     Entity::PowerPole { .. } => unreachable!(),
+                                    Entity::SolarPanel {
+                                        pos,
+                                        ty,
+                                        pole_position,
+                                    } => {
+                                        *pole_position = None;
+                                    },
 
-                                    _ => unreachable!(),
+                                    e => unreachable!("Tried to unpower {e:?}"),
                                 }
                                 ControlFlow::Continue(())
                             },
@@ -1282,6 +1372,16 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         network: u16,
         id: u32,
     },
+    SolarPanel {
+        pos: Position,
+        ty: u8,
+        pole_position: Option<(Position, WeakIndex)>,
+    },
+    Lab {
+        pos: Position,
+        ty: u8,
+        pole_position: Option<(Position, WeakIndex, u16)>,
+    },
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeIdxType> {
@@ -1295,10 +1395,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::Splitter { pos, .. } => *pos,
             Self::Chest { pos, .. } => *pos,
             Self::Roboport { pos, .. } => *pos,
+            Self::SolarPanel { pos, .. } => *pos,
+            Self::Lab { pos, .. } => *pos,
         }
     }
 
     pub fn get_size(&self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> (u8, u8) {
+        // FIXME: Use data_store
         match self {
             Self::Assembler { .. } => (3, 3),
             Self::PowerPole { ty, .. } => (1, 1),
@@ -1313,6 +1416,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             },
             Self::Chest { ty, .. } => data_store.chest_tile_sizes[*ty as usize],
             Self::Roboport { ty, .. } => (4, 4),
+            Self::SolarPanel { ty, .. } => (3, 3),
+            Self::Lab { ty, .. } => (3, 3),
         }
     }
 }
@@ -1350,6 +1455,14 @@ pub enum PlaceEntityType<ItemIdxType: WeakIdxTrait> {
     },
     Chest {
         pos: Position,
+    },
+    SolarPanel {
+        pos: Position,
+        ty: u8,
+    },
+    Lab {
+        pos: Position,
+        ty: u8,
     },
 }
 

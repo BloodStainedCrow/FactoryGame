@@ -892,7 +892,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Belt<ItemIdxType>
 
         let len = self.get_len();
 
-        assert!(first_free_index_real < len);
+        if first_free_index_real == len {
+            // All slots are full
+            return;
+        }
+
+        assert!(first_free_index_real < len, "{self:?}");
         assert!(first_free_index_real > 0);
 
         let slice = &mut self.locs;
