@@ -377,8 +377,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             pos,
                                             ty,
                                             pole_position: pole_position @ None,
-                                        } => todo!(),
+                                        } => {
+                                            let idx = self
+                                                .simulation_state
+                                                .factory
+                                                .power_grids
+                                                .power_grids[usize::from(grid)]
+                                            .add_lab(*pos, *ty, pole_pos, data_store);
 
+                                            *pole_position = Some((pole_pos, idx.0, idx.1));
+                                        },
                                         _ => {},
                                     }
                                     ControlFlow::Continue(())
@@ -1193,7 +1201,7 @@ mod tests {
     }
 
     #[bench]
-    fn bench_random_blueprint_does_not_crash_after(b: &mut Bencher) {
+    fn bench_single_inserter(b: &mut Bencher) {
         let mut game_state = GameState::new(&DATA_STORE);
 
         let mut rep = Replay::new(game_state.clone(), (*DATA_STORE).clone());
@@ -1202,6 +1210,15 @@ mod tests {
             entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
                 crate::frontend::world::tile::PlaceEntityType::PowerPole {
                     pos: Position { x: 0, y: 5 },
+                    ty: 0,
+                },
+            ),
+        })]);
+
+        rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
+            entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
+                crate::frontend::world::tile::PlaceEntityType::SolarPanel {
+                    pos: Position { x: 0, y: 2 },
                     ty: 0,
                 },
             ),

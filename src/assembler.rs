@@ -44,6 +44,8 @@ pub struct MultiAssemblerStore<
     #[serde(with = "arrays")]
     ings: [Box<[ITEMCOUNTTYPE]>; NUM_INGS],
     #[serde(with = "arrays")]
+    ings_max_insert: [Box<[ITEMCOUNTTYPE]>; NUM_INGS],
+    #[serde(with = "arrays")]
     outputs: [Box<[ITEMCOUNTTYPE]>; NUM_OUTPUTS],
     timers: Box<[TIMERTYPE]>,
 
@@ -240,6 +242,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         Self {
             recipe,
 
+            ings_max_insert: array::from_fn(|_| vec![].into_boxed_slice()),
             ings: array::from_fn(|_| vec![].into_boxed_slice()),
             outputs: array::from_fn(|_| vec![].into_boxed_slice()),
             timers: vec![].into_boxed_slice(),
@@ -267,6 +270,24 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
     ) {
         let old_len = self.positions.len();
+
+        let new_ings_max: [Box<[u8]>; NUM_INGS] = self
+            .ings_max_insert
+            .into_iter()
+            .zip(other.ings_max_insert)
+            .map(|(s, o)| {
+                let mut s = s.into_vec();
+                s.extend(
+                    o.into_vec()
+                        .into_iter()
+                        .enumerate()
+                        .filter(|(i, _)| !other.holes.contains(i))
+                        .map(|(_, v)| v),
+                );
+                s.into_boxed_slice()
+            })
+            .collect_array()
+            .unwrap();
 
         let new_ings: [Box<[u8]>; NUM_INGS] = self
             .ings
@@ -384,6 +405,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
         let ret = Self {
             recipe: self.recipe,
+            ings_max_insert: new_ings_max,
             ings: new_ings,
             outputs: new_outputs,
             timers: new_timers.into(),
@@ -662,11 +684,17 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
     pub fn get_all_mut(
         &mut self,
     ) -> (
-        [&mut [ITEMCOUNTTYPE]; NUM_INGS],
+        (
+            [&[ITEMCOUNTTYPE]; NUM_INGS],
+            [&mut [ITEMCOUNTTYPE]; NUM_INGS],
+        ),
         [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS],
     ) {
         (
-            self.ings.each_mut().map(|b| &mut **b),
+            (
+                self.ings_max_insert.each_mut().map(|b| &**b),
+                self.ings.each_mut().map(|b| &mut **b),
+            ),
             self.outputs.each_mut().map(|b| &mut **b),
         )
     }
@@ -739,6 +767,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         index: usize,
     ) -> (
         [ITEMCOUNTTYPE; NUM_INGS],
+        [ITEMCOUNTTYPE; NUM_INGS],
         [ITEMCOUNTTYPE; NUM_OUTPUTS],
         TIMERTYPE,
         Watt,
@@ -751,6 +780,10 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         self.holes.push(index);
 
         let ret = (
+            (0..NUM_INGS)
+                .map(|i| self.ings_max_insert[i][index])
+                .collect_array()
+                .unwrap(),
             (0..NUM_INGS)
                 .map(|i| self.ings[i][index])
                 .collect_array()
@@ -785,6 +818,8 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
     ) -> usize {
         // TODO: Is 0 the correct initial timer value?
         self.add_assembler_with_data(
+            // TODO: Make this dependent on the speed fo the machine and recipe
+            array::from_fn(|i| 10),
             array::from_fn(|i| 0),
             array::from_fn(|i| 0),
             0,
@@ -800,12 +835,13 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         let data = self.remove_assembler_data(index);
 
         dest.add_assembler_with_data(
-            data.0, data.1, data.2, data.3, data.4, data.5, data.6, data.7,
+            data.0, data.1, data.2, data.3, data.4, data.5, data.6, data.7, data.8,
         )
     }
 
     fn add_assembler_with_data(
         &mut self,
+        ings_max_insert: [ITEMCOUNTTYPE; NUM_INGS],
         ings: [ITEMCOUNTTYPE; NUM_INGS],
         out: [ITEMCOUNTTYPE; NUM_OUTPUTS],
         timer: TIMERTYPE,
@@ -832,6 +868,9 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 output[hole_index] = new_val;
             }
             for (ing, new_val) in self.ings.iter_mut().zip(ings) {
+                ing[hole_index] = new_val;
+            }
+            for (ing, new_val) in self.ings_max_insert.iter_mut().zip(ings_max_insert) {
                 ing[hole_index] = new_val;
             }
             self.timers[hole_index] = 0;
@@ -869,6 +908,14 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             }
 
             for ing in &mut self.ings {
+                take_mut::take(ing, |ing| {
+                    let mut ing = ing.into_vec();
+                    ing.resize(new_len, 0);
+                    ing.into_boxed_slice()
+                });
+            }
+
+            for ing in &mut self.ings_max_insert {
                 take_mut::take(ing, |ing| {
                     let mut ing = ing.into_vec();
                     ing.resize(new_len, 0);
@@ -914,6 +961,9 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             output[self.len] = new_val;
         }
         for (ing, new_val) in self.ings.iter_mut().zip(ings) {
+            ing[self.len] = new_val;
+        }
+        for (ing, new_val) in self.ings_max_insert.iter_mut().zip(ings_max_insert) {
             ing[self.len] = new_val;
         }
         self.timers[self.len] = timer;

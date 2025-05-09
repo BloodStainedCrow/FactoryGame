@@ -58,7 +58,7 @@ impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::BeltToSt
                 }
             },
             InserterState::FullAndWaitingForSlot => {
-                let old = *index(
+                let (max_insert, old) = index(
                     storages,
                     self.storage_id,
                     num_grids_total,
@@ -66,15 +66,9 @@ impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::BeltToSt
                     grid_size,
                 );
                 // TODO:
-                if old < 100 {
+                if *old < *max_insert {
                     // There is space in the machine
-                    *index(
-                        storages,
-                        self.storage_id,
-                        num_grids_total,
-                        num_recipes,
-                        grid_size,
-                    ) += 1;
+                    *old += 1;
 
                     self.state = InserterState::EmptyAndMovingBack(movetime);
                 }
@@ -115,22 +109,16 @@ impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::StorageT
 
         match self.state {
             InserterState::Empty => {
-                let old = *index(
+                let (_max_insert, old) = index(
                     storages,
                     self.storage_id,
                     num_grids_total,
                     num_recipes,
                     grid_size,
                 );
-                if old > 0 {
+                if *old > 0 {
                     // There is an item in the machine
-                    *index(
-                        storages,
-                        self.storage_id,
-                        num_grids_total,
-                        num_recipes,
-                        grid_size,
-                    ) -= 1;
+                    *old -= 1;
 
                     self.state = InserterState::FullAndMovingOut(movetime);
                 }

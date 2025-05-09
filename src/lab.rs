@@ -13,6 +13,7 @@ use crate::{
 // TODO: Add variable power consumption and speed
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct MultiLabStore {
+    pub max_insert: Box<[Vec<ITEMCOUNTTYPE>]>,
     pub sciences: Box<[Vec<ITEMCOUNTTYPE>]>,
     timer: Vec<TIMERTYPE>,
     holes: Vec<usize>,
@@ -26,6 +27,7 @@ impl MultiLabStore {
     #[must_use]
     pub fn new<ItemIdxType: IdxTrait>(science_bottle_items: &[Item<ItemIdxType>]) -> Self {
         Self {
+            max_insert: vec![Vec::new(); science_bottle_items.len()].into_boxed_slice(),
             sciences: vec![Vec::new(); science_bottle_items.len()].into_boxed_slice(),
             timer: vec![],
             holes: vec![],
@@ -45,6 +47,18 @@ impl MultiLabStore {
         impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
     ) {
         let old_len = self.positions.len();
+
+        self.max_insert
+            .iter_mut()
+            .zip(other.max_insert)
+            .for_each(|(s, o)| {
+                s.extend(
+                    o.into_iter()
+                        .enumerate()
+                        .filter(|(i, _)| !other.holes.contains(i))
+                        .map(|(_, v)| v),
+                );
+            });
 
         self.sciences
             .iter_mut()
@@ -103,6 +117,7 @@ impl MultiLabStore {
             });
 
         let ret = Self {
+            max_insert: self.max_insert,
             sciences: self.sciences,
             timer: self.timer,
             holes: self.holes,
@@ -196,6 +211,8 @@ impl MultiLabStore {
         // FIXME: respect ty
         let idx = if let Some(hole_idx) = self.holes.pop() {
             self.positions[hole_idx] = position;
+            // TODO:
+            self.sciences.iter_mut().for_each(|v| v[hole_idx] = 10);
             self.sciences.iter_mut().for_each(|v| v[hole_idx] = 0);
             self.timer[hole_idx] = 0;
             self.types[hole_idx] = ty;
@@ -203,6 +220,7 @@ impl MultiLabStore {
             hole_idx
         } else {
             self.positions.push(position);
+            self.sciences.iter_mut().for_each(|v| v.push(10));
             self.sciences.iter_mut().for_each(|v| v.push(0));
             self.timer.push(0);
             self.types.push(ty);
@@ -236,6 +254,11 @@ impl MultiLabStore {
         let idx = if let Some(hole_idx) = other.holes.pop() {
             other.positions[hole_idx] = self.positions[index];
             other
+                .max_insert
+                .iter_mut()
+                .zip(self.max_insert.iter().map(|v| v[index]))
+                .for_each(|(v, value)| v[hole_idx] = value);
+            other
                 .sciences
                 .iter_mut()
                 .zip(self.sciences.iter().map(|v| v[index]))
@@ -250,6 +273,11 @@ impl MultiLabStore {
                 .sciences
                 .iter_mut()
                 .zip(self.sciences.iter().map(|v| v[index]))
+                .for_each(|(v, value)| v.push(value));
+            other
+                .max_insert
+                .iter_mut()
+                .zip(self.max_insert.iter().map(|v| v[index]))
                 .for_each(|(v, value)| v.push(value));
             other.timer.push(self.timer[index]);
             other.types.push(self.types[index]);

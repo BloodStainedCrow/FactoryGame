@@ -142,6 +142,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                         ty: *ty,
                     }),
                 }),
+                ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Lab { pos, ty }),
+                }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Lab {
+                        pos: Position {
+                            x: base_pos.x + pos.x,
+                            y: base_pos.y + pos.y,
+                        },
+                        ty: *ty,
+                    }),
+                }),
                 ActionType::SetRecipe(SetRecipeInfo { pos, recipe }) => {
                     ActionType::SetRecipe(SetRecipeInfo {
                         pos: Position {

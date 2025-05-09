@@ -7,9 +7,9 @@ use crate::{
     item::{usize_from, IdxTrait, Item, WeakIdxTrait, ITEMCOUNTTYPE},
 };
 
-const CHEST_GOAL_AMOUNT: ITEMCOUNTTYPE =
-    // ITEMCOUNTTYPE::MAX / 2;
-    50;
+const CHEST_GOAL_AMOUNT: ITEMCOUNTTYPE = ITEMCOUNTTYPE::MAX / 2;
+
+const MAX_INSERT_AMOUNT: &'static [ITEMCOUNTTYPE] = &[ITEMCOUNTTYPE::MAX; u16::MAX as usize];
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct FullChestStore<ItemIdxType: WeakIdxTrait> {
@@ -25,6 +25,7 @@ impl<ItemIdxType: IdxTrait> FullChestStore<ItemIdxType> {
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct MultiChestStore<ItemIdxType: WeakIdxTrait> {
     item: Item<ItemIdxType>,
+    max_insert: Option<Vec<ITEMCOUNTTYPE>>,
     pub inout: Vec<ITEMCOUNTTYPE>,
     storage: Vec<u16>,
     // TODO: Any way to not have to store this a billion times?
@@ -41,6 +42,7 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
             item,
             inout: vec![],
             storage: vec![],
+            max_insert: None,
             max_items: vec![],
             holes: vec![],
         }
@@ -53,17 +55,32 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
     ) -> usize {
         let stack_size = data_store.item_stack_sizes[usize_from(self.item.id)];
         let num_stacks = data_store.chest_num_slots[usize::from(ty)];
+        let max_items = u16::from(stack_size) * u16::from(num_stacks);
+
+        if max_items < u16::from(ITEMCOUNTTYPE::MAX) {
+            if self.max_insert.is_none() {
+                self.max_insert = Some(vec![ITEMCOUNTTYPE::MAX; self.max_items.len()]);
+            }
+        }
+
         if let Some(hole) = self.holes.pop() {
             self.inout[hole] = 0;
             self.storage[hole] = 0;
-            self.max_items[hole] = u16::from(stack_size) * u16::from(num_stacks);
+            if let Ok(max_insert) = max_items.try_into() {
+                self.max_insert.as_mut().unwrap()[hole] = max_insert;
+            }
+
+            self.max_items[hole] = max_items.saturating_sub(u16::from(ITEMCOUNTTYPE::MAX));
             hole
         } else {
             self.inout.push(0);
             self.storage.push(0);
-            self.max_items.push(
-                u16::from(stack_size) * u16::from(num_stacks) - u16::from(ITEMCOUNTTYPE::MAX),
-            );
+            if let Ok(max_insert) = max_items.try_into() {
+                self.max_insert.as_mut().unwrap().push(max_insert);
+            }
+
+            self.max_items
+                .push(max_items.saturating_sub(u16::from(ITEMCOUNTTYPE::MAX)));
             self.inout.len() - 1
         }
     }
@@ -113,5 +130,15 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
                 *storage -= moved as u16;
             }
         }
+    }
+
+    pub fn storage_list_slices(&mut self) -> (&[ITEMCOUNTTYPE], &mut [ITEMCOUNTTYPE]) {
+        (
+            self.max_insert
+                .as_ref()
+                .map(|v| v.as_slice())
+                .unwrap_or(MAX_INSERT_AMOUNT),
+            self.inout.as_mut_slice(),
+        )
     }
 }

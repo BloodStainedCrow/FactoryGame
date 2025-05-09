@@ -21,7 +21,7 @@ use crate::{
         Storage,
     },
     item::{usize_from, Item},
-    storage_list::{grid_size, num_recipes},
+    storage_list::{grid_size, num_recipes, SingleItemStorages},
 };
 use belt::{Belt, BeltLenType};
 use itertools::Itertools;
@@ -1109,13 +1109,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
         );
     }
 
-    pub fn update<'a>(
+    pub fn update<'a, 'b>(
         &mut self,
         num_grids_total: usize,
-        storages_by_item: impl IntoIterator<Item = &'a mut [&'a mut [u8]]>
-            + IndexedParallelIterator<Item = &'a mut [&'a mut [u8]]>,
+        storages_by_item: impl IntoIterator<Item = SingleItemStorages<'a, 'b>>
+            + IndexedParallelIterator<Item = SingleItemStorages<'a, 'b>>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) {
+    ) where
+        'b: 'a,
+    {
         // TODO: Once every (maybe more or less) check a single belt and check if it still needs to be sushi
 
         let mut storages_by_item: Vec<_> = storages_by_item.into_iter().collect();

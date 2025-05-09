@@ -377,9 +377,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
     }
 
     #[inline(never)]
-    pub fn update_inserters(
+    pub fn update_inserters<'a, 'b>(
         &mut self,
-        storages: SingleItemStorages,
+        storages: SingleItemStorages<'a, 'b>,
         num_grids_total: usize,
         num_recipes: usize,
         grid_size: usize,
