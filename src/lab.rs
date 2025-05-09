@@ -207,7 +207,7 @@ impl MultiLabStore {
         ty: u8,
         position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> usize {
+    ) -> u16 {
         // FIXME: respect ty
         let idx = if let Some(hole_idx) = self.holes.pop() {
             self.positions[hole_idx] = position;
@@ -228,10 +228,11 @@ impl MultiLabStore {
             self.positions.len() - 1
         };
 
-        idx
+        idx.try_into().expect("More than u16::MAX Labs in a grid")
     }
 
-    pub fn remove_lab(&mut self, index: usize) -> Box<[ITEMCOUNTTYPE]> {
+    pub fn remove_lab(&mut self, index: u16) -> Box<[ITEMCOUNTTYPE]> {
+        let index = index as usize;
         self.holes.push(index);
 
         let ret = self
@@ -247,7 +248,8 @@ impl MultiLabStore {
         ret
     }
 
-    pub fn move_lab(&mut self, index: usize, other: &mut Self) -> usize {
+    pub fn move_lab(&mut self, index: u16, other: &mut Self) -> u16 {
+        let index = index as usize;
         self.holes.push(index);
 
         // FIXME: respect ty
@@ -289,6 +291,7 @@ impl MultiLabStore {
             v[index] = 0;
         });
 
-        idx
+        idx.try_into()
+            .expect("More than u16::MAX Labs in a single grid")
     }
 }

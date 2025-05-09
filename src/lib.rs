@@ -83,6 +83,10 @@ impl WeakIdxTrait for u16 {}
 impl IdxTrait for u8 {}
 impl IdxTrait for u16 {}
 
+#[cfg(test)]
+static DATA_STORE: std::sync::LazyLock<DataStore<u8, u8>> =
+    std::sync::LazyLock::new(|| get_raw_data_test().turn::<u8, u8>());
+
 pub trait NewWithDataStore {
     fn new<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         data_store: impl Borrow<DataStore<ItemIdxType, RecipeIdxType>>,

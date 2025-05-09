@@ -218,7 +218,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         impl IntoIterator<Item = Position>,
         impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
     )> {
-        let connected_poles: Vec<_> = connected_poles.into_iter().collect();
+        let mut connected_poles: Vec<_> = connected_poles.into_iter().collect();
 
         if let Some(first_connection) = connected_poles.last() {
             let grid = self.pole_pos_to_grid_id[first_connection];
@@ -273,6 +273,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                     storage_update_vec.extend(storage_updates);
                 }
                 assert!(ran_once);
+
+                #[cfg(debug_assertions)]
+                {
+                    for key in self.power_grids[grid as usize].grid_graph.keys() {
+                        if let Some(index) = connected_poles.iter().position(|v| v == key) {
+                            connected_poles.remove(index);
+                        }
+                    }
+                    assert!(
+                        connected_poles.is_empty(),
+                        "Not all connected_poles ended up in final power grid!"
+                    );
+                }
 
                 Some((poles_to_update, storage_update_vec))
             } else {

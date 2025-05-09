@@ -41,7 +41,7 @@ pub enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
     },
     Lab {
         ty: u8,
-        index: usize,
+        index: u16,
     },
     LazyPowerProducer {
         item: Item<ItemIdxType>,
@@ -98,6 +98,8 @@ pub struct IndexUpdateInfo<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrai
     pub position: Position,
     pub new_storage: PowerGridEntity<ItemIdxType, RecipeIdxType>,
     pub new_grid: PowerGridIdentifier,
+    // IMPORTANTLY the WeakIdx always stays the same, since it is just a measure of how many machine are connected to a single pole,
+    // and we only move poles over to new networks so that stays
 }
 
 pub struct PowerPoleUpdateInfo {
@@ -677,9 +679,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     fn move_lab(
         &mut self,
         other_stores: &mut MultiLabStore,
-        index: usize,
+        index: u16,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> usize {
+    ) -> u16 {
         self.lab_stores.move_lab(index, other_stores)
     }
 

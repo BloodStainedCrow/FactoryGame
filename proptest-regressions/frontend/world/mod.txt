@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 32225c61974ad968a5965c97c9aff5706d4fe6a2f6236456e6fc7a7cec797b7a # shrinks to position = Position { x: 1600, y: 1600 }, test_position = Position { x: 1600, y: 1605 }, size = (1, 1)
+cc bb85a255bee435a3cf9a78fb4530874710b914cd9c637f9a94cea011f5a1f334 # shrinks to position = Position { x: 1606, y: 1606 }, test_position = Position { x: 1600, y: 1600 }, size = (1, 1), test_size = (7, 7)
+cc 61c1b335cc20ffc86bc8b2beb6a0408a0e17a4b4269392f83d577d451acfe2f7 # shrinks to position = Position { x: 1609, y: 1601 }, test_position = Position { x: 1607, y: 1600 }, size = (1, 1), test_size = (3, 2)
+cc f03b61bf6f8278bde61658b98b9182e0e8568e3a703ceb05992c65c468b75987 # shrinks to position = Position { x: 1610, y: 1609 }, test_position = Position { x: 1609, y: 1608 }, size = (2, 2), test_size = (1, 1)

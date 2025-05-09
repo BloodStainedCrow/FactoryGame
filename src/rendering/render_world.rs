@@ -747,7 +747,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             } => {
                                 todo!()
                             },
-                            crate::frontend::world::tile::AttachedInserter::StorageStorage(_) => {
+                            crate::frontend::world::tile::AttachedInserter::StorageStorage { .. } => {
                                 todo!()
                             },
                         },

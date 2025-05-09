@@ -1112,21 +1112,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
     pub fn update<'a, 'b>(
         &mut self,
         num_grids_total: usize,
-        storages_by_item: impl IntoIterator<Item = SingleItemStorages<'a, 'b>>
-            + IndexedParallelIterator<Item = SingleItemStorages<'a, 'b>>,
+        storages_by_item: impl IndexedParallelIterator<Item = SingleItemStorages<'a, 'b>>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) where
         'b: 'a,
     {
         // TODO: Once every (maybe more or less) check a single belt and check if it still needs to be sushi
 
-        let mut storages_by_item: Vec<_> = storages_by_item.into_iter().collect();
-
         // Update all the "Pure Belts"
         self.inner
             .smart_belts
             .par_iter_mut()
-            .zip(storages_by_item.par_iter_mut())
+            .zip(storages_by_item)
             .zip(
                 self.inner
                     .belt_belt_inserters

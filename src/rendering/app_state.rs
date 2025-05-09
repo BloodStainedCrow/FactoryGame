@@ -22,12 +22,18 @@ use crate::{
             Position,
         },
     },
-    inserter::{belt_belt_inserter::BeltBeltInserter, StaticID, Storage, MOVETIME},
+    inserter::{
+        belt_belt_inserter::BeltBeltInserter, storage_storage_inserter::StorageStorageInserter,
+        StaticID, Storage, MOVETIME,
+    },
     item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
     power::{power_grid::PowerGridIdentifier, PowerGridStorage, Watt},
     research::{ResearchProgress, TechState, Technology},
     statistics::{production::ProductionInfo, recipe::RecipeTickInfo, GenStatistics},
-    storage_list::{full_to_by_item, grid_size, num_recipes, sizes, storages_by_item},
+    storage_list::{
+        full_to_by_item, grid_size, num_recipes, sizes, storages_by_item, FullStorages,
+        SingleItemStorages,
+    },
 };
 use itertools::Itertools;
 use log::{error, info, warn};
@@ -78,7 +84,79 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SimulationState<ItemIdxType
 pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub power_grids: PowerGridStorage<ItemIdxType, RecipeIdxType>,
     pub belts: BeltStore<ItemIdxType, RecipeIdxType>,
+    storage_storage_inserters: StorageStorageInserterStore<RecipeIdxType>,
     pub chests: FullChestStore<ItemIdxType>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+struct StorageStorageInserterStore<RecipeIdxType: WeakIdxTrait> {
+    inserters: Box<[Vec<StorageStorageInserter<RecipeIdxType>>]>,
+    holes: Box<[Vec<usize>]>,
+}
+
+impl<RecipeIdxType: IdxTrait> StorageStorageInserterStore<RecipeIdxType> {
+    fn new<ItemIdxType: IdxTrait>(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+        Self {
+            inserters: vec![vec![]; data_store.item_names.len()].into_boxed_slice(),
+            holes: vec![vec![]; data_store.item_names.len()].into_boxed_slice(),
+        }
+    }
+
+    fn update<'a, 'b, ItemIdxType: IdxTrait>(
+        &mut self,
+        full_storages: impl IndexedParallelIterator<Item = SingleItemStorages<'a, 'b>>,
+        num_grids_total: usize,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) where
+        'b: 'a,
+    {
+        self.inserters
+            .par_iter_mut()
+            .zip(self.holes.par_iter_mut())
+            .zip(full_storages)
+            .enumerate()
+            .for_each(|(item_id, ((ins, holes), storages))| {
+                let item = Item {
+                    id: item_id.try_into().unwrap(),
+                };
+
+                let grid_size = grid_size(item, data_store);
+                let num_recipes = num_recipes(item, data_store);
+
+                ins.iter_mut()
+                    .enumerate()
+                    // FIXME: This is awful!
+                    // Ideally we could replace inserter holes with placeholder that do not do anything, but I don't quite know how those would work.
+                    .filter_map(|(i, v)| (!holes.contains(&i)).then_some(v))
+                    .for_each(|ins| {
+                        ins.update(storages, MOVETIME, num_grids_total, num_recipes, grid_size)
+                    });
+            });
+    }
+
+    fn add_ins<ItemIdxType: IdxTrait>(
+        &mut self,
+        item: Item<ItemIdxType>,
+        start: Storage<RecipeIdxType>,
+        dest: Storage<RecipeIdxType>,
+    ) -> usize {
+        let idx = if let Some(hole_idx) = self.holes[usize_from(item.id)].pop() {
+            self.inserters[usize_from(item.id)][hole_idx] =
+                StorageStorageInserter::new(start, dest);
+
+            hole_idx
+        } else {
+            self.inserters[usize_from(item.id)].push(StorageStorageInserter::new(start, dest));
+
+            self.inserters[usize_from(item.id)].len() - 1
+        };
+
+        idx
+    }
+
+    fn remove_ins<ItemIdxType: IdxTrait>(&mut self, item: Item<ItemIdxType>, index: usize) {
+        self.holes[usize_from(item.id)].push(index);
+    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -92,6 +170,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
         Self {
             power_grids: PowerGridStorage::new(),
             belts: BeltStore::new(data_store),
+            storage_storage_inserters: StorageStorageInserterStore::new(data_store),
             chests: FullChestStore {
                 stores: (0..data_store.item_names.len())
                     .map(|id| Item {
@@ -112,8 +191,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
         assert_eq!(sizes.len(), data_store.item_names.len());
         let storages_by_item = full_to_by_item(&mut all_storages, &sizes);
 
-        self.belts
-            .update(num_grids_total, storages_by_item, data_store);
+        let mut storages_by_item: Box<[_]> = storages_by_item.into_iter().collect();
+
+        self.storage_storage_inserters.update(
+            storages_by_item.par_iter_mut().map(|v| &mut **v),
+            num_grids_total,
+            data_store,
+        );
+
+        self.belts.update(
+            num_grids_total,
+            storages_by_item.par_iter_mut().map(|v| &mut **v),
+            data_store,
+        );
     }
 }
 
@@ -294,11 +384,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 for storage_update in storage_updates {
                                     self.world.mutate_entities_colliding_with(storage_update.position, (1,1), data_store, |e| {
                                         match (e, storage_update.new_storage) {
-                                            (Entity::Assembler { pos, info: AssemblerInfo::Powered { id, pole_position } }, crate::power::power_grid::PowerGridEntity::Assembler { recipe, index }) => {
+                                            (Entity::Assembler { pos: _, info: AssemblerInfo::Powered { id, pole_position: _ } }, crate::power::power_grid::PowerGridEntity::Assembler { recipe, index }) => {
                                                 assert_eq!(id.recipe, recipe);
                                                 id.grid = storage_update.new_grid;
                                                 id.assembler_index = index;
+                                                // FIXME: Store and update the weak_index
                                             },
+                                            (Entity::Lab { pos: _, ty: _, pole_position: Some((_pole_pos, weak_idx, lab_store_index)) }, crate::power::power_grid::PowerGridEntity::Lab { ty: _, index: new_idx  }) => {
+                                                *lab_store_index = new_idx;
+                                                // The weak index stays the same since it it still connected to the same power pole
+                                            }
 
                                             (_, _) => todo!("Handler storage_update {storage_update:?}")
                                         }
@@ -1082,7 +1177,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             (
                 InserterConnection::Storage(start_storage_untranslated),
                 InserterConnection::Storage(dest_storage_untranslated),
-            ) => todo!(),
+            ) => {
+                let start_storage = start_storage_untranslated.translate(filter, data_store);
+                let dest_storage = dest_storage_untranslated.translate(filter, data_store);
+
+                let index = self
+                    .simulation_state
+                    .factory
+                    .storage_storage_inserters
+                    .add_ins(filter, start_storage, dest_storage);
+                *info = InserterInfo::Attached(AttachedInserter::StorageStorage {
+                    item: filter,
+                    inserter: index,
+                });
+            },
         }
 
         Ok(())
@@ -1170,11 +1278,10 @@ mod tests {
         item::Recipe,
         rendering::app_state::GameState,
         replays::Replay,
+        DATA_STORE,
     };
     use proptest::{prelude::ProptestConfig, proptest};
     use test::Bencher;
-    static DATA_STORE: LazyLock<DataStore<u8, u8>> =
-        LazyLock::new(|| get_raw_data_test().turn::<u8, u8>());
 
     proptest! {
         // #![proptest_config(ProptestConfig::with_cases(1_000))]

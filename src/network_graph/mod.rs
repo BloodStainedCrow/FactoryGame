@@ -244,8 +244,12 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
         );
 
         for connection in connection_points.1 {
-            self.graph
-                .add_edge(index, *self.key_map.get_by_left(&connection).unwrap(), ());
+            let Some(conn) = self.key_map.get_by_left(&connection) else {
+                // The power pole this connection corresponds with will be added in a future merge. Just ignore it for now
+                continue;
+            };
+
+            self.graph.add_edge(index, *conn, ());
         }
 
         debug_assert!(tarjan_scc(&self.graph).len() == 1);

@@ -294,7 +294,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     AttachedInserter::BeltBelt { item, inserter } => {
                         todo!("We need to store the position in the belt_id_lookup")
                     },
-                    AttachedInserter::StorageStorage(_) => todo!(),
+                    AttachedInserter::StorageStorage { .. } => todo!(),
                 },
             },
             Entity::Chest {
@@ -381,7 +381,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             AttachedInserter::BeltBelt { item, inserter } => {
                                 // TODO
                             },
-                            AttachedInserter::StorageStorage(_) => todo!(),
+                            AttachedInserter::StorageStorage { .. } => todo!(),
                         },
                     },
                     Entity::Roboport { power_grid, .. } => {
@@ -442,7 +442,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                 }
                             },
                             AttachedInserter::BeltBelt { item, inserter } => todo!(),
-                            AttachedInserter::StorageStorage(_) => {},
+                            AttachedInserter::StorageStorage { .. } => {},
                         },
                     },
                 }
@@ -502,7 +502,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                 }
                             },
                             AttachedInserter::BeltBelt { item, inserter } => todo!(),
-                            AttachedInserter::StorageStorage(_) => {},
+                            AttachedInserter::StorageStorage { .. } => {},
                         },
                     },
                 }
@@ -568,7 +568,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
                 let power_range = data_store.power_pole_data[usize::from(*ty)].power_range;
                 let size: (u8, u8) = data_store.power_pole_data[usize::from(*ty)].size;
-                if entity_pos.contained_in_sized(
+                if entity_pos.overlap(
                     entity_size,
                     Position {
                         x: pos.x - usize::from(power_range),
@@ -611,7 +611,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 let e_pos = e.get_pos();
                 let e_size = e.get_size(data_store);
 
-                pos.contained_in_sized(size, e_pos, e_size)
+                pos.overlap(size, e_pos, e_size)
             })
     }
 
@@ -873,7 +873,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                                             item,
                                                             inserter,
                                                         } => todo!(),
-                                                        AttachedInserter::StorageStorage(_) => {
+                                                        AttachedInserter::StorageStorage {
+                                                            ..
+                                                        } => {
                                                             todo!()
                                                         },
                                                     }
@@ -1014,7 +1016,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     AttachedInserter::BeltBelt { item, inserter } => {
                         todo!("Remove BeltBelt Inserter")
                     },
-                    AttachedInserter::StorageStorage(_) => todo!(),
+                    AttachedInserter::StorageStorage { item, inserter } => {
+                        todo!("Remove StorageStorage Inserter")
+                    },
                 },
             }
 
@@ -1056,7 +1060,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                             AttachedInserter::BeltBelt { item, inserter } => {
                                                 todo!("Remove BeltBelt Inserter")
                                             },
-                                            AttachedInserter::StorageStorage(_) => todo!(),
+                                            AttachedInserter::StorageStorage { .. } => todo!(),
                                         }
                                     },
                                 }
@@ -1312,7 +1316,10 @@ pub enum AttachedInserter<ItemIdxType: WeakIdxTrait> {
         item: Item<ItemIdxType>,
         inserter: usize,
     },
-    StorageStorage(()),
+    StorageStorage {
+        item: Item<ItemIdxType>,
+        inserter: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
@@ -1566,5 +1573,58 @@ impl Add<Dir> for Position {
             x: self.x.checked_add_signed(offs.0.into()).unwrap(),
             y: self.y.checked_add_signed(offs.1.into()).unwrap(),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    use proptest::{prop_assert, prop_assert_eq, proptest};
+
+    use crate::{
+        blueprint::{random_entity_to_place, random_position, Blueprint},
+        frontend::{
+            action::{place_entity::PlaceEntityInfo, ActionType},
+            world::Position,
+        },
+        rendering::app_state::GameState,
+        replays::Replay,
+        DATA_STORE,
+    };
+
+    proptest! {
+
+        #[test]
+        fn test_get_entity(position in random_position(), ent in random_entity_to_place(&DATA_STORE)) {
+            let mut state = GameState::new(&DATA_STORE);
+
+            let mut rep = Replay::new(GameState::new(&DATA_STORE), &*DATA_STORE);
+
+            rep.append_actions([ActionType::PlaceEntity(PlaceEntityInfo { entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(ent) })]);
+
+            let bp = Blueprint::from_replay(&rep);
+
+            bp.apply(position, &mut state, &DATA_STORE);
+
+            let mut e_pos = None;
+            let mut e_size = None;
+            state.world.get_entities_colliding_with(position, (100, 100), &DATA_STORE).into_iter().for_each(|v| {
+                e_pos = Some(v.get_pos());
+                e_size = Some(v.get_size(&DATA_STORE));
+            });
+
+            prop_assert!(e_pos.is_some());
+            prop_assert!(e_size.is_some());
+
+            let e_pos = e_pos.unwrap();
+            let e_size = e_size.unwrap();
+
+            for x_pos in e_pos.x..(e_pos.x + (e_size.0 as usize)) {
+                for y_pos in e_pos.y..(e_pos.y + (e_size.1 as usize)) {
+                    prop_assert_eq!(state.world.get_entities_colliding_with(Position { x: x_pos, y: y_pos }, (1, 1), &DATA_STORE).into_iter().count(), 1,  "test_pos = {:?}, world + {:?}", Position {x: x_pos, y: y_pos}, state.world.get_chunk_for_tile(position));
+                }
+            }
+        }
+
     }
 }

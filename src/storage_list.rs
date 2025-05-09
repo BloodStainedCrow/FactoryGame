@@ -1,7 +1,7 @@
 use std::u16;
 
 use itertools::Itertools;
-use rayon::iter::IndexedParallelIterator;
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator};
 
 use crate::{
     assembler::FullAssemblerStore,
@@ -30,7 +30,7 @@ static NUMBER_OF_BOT_NETWORKS: usize = 0;
 type ItemSlot = ITEMCOUNTTYPE;
 type SingleGridStorage<'a, 'b> = (&'a [ITEMCOUNTTYPE], &'b mut [ITEMCOUNTTYPE]);
 pub type SingleItemStorages<'a, 'b> = &'a mut [SingleGridStorage<'b, 'b>]; //[SingleGridStorage; NUM_RECIPES * NUM_GRIDS];
-type FullStorages<'a, 'b> = Box<[SingleGridStorage<'a, 'b>]>; //[SingleGridStorage; NUM_ITEMS * NUM_RECIPES * NUM_GRIDS];
+pub type FullStorages<'a, 'b> = Box<[SingleGridStorage<'a, 'b>]>; //[SingleGridStorage; NUM_ITEMS * NUM_RECIPES * NUM_GRIDS];
 
 type ChestStorages<'a> = &'a mut [ITEMCOUNTTYPE; NUMBER_OF_CHESTS];
 /// Provider, Requester, Storage

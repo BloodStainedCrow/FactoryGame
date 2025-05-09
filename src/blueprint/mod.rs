@@ -318,7 +318,7 @@ pub fn random_blueprint_offs() -> impl Strategy<Value = Position> {
 }
 
 pub fn random_position() -> impl Strategy<Value = Position> {
-    ((1600u32..=1600u32), (1600u32..=1600u32)).prop_map(|(x, y)| Position {
+    ((1600u32..=1602u32), (1600u32..=1602u32)).prop_map(|(x, y)| Position {
         x: x as usize,
         y: y as usize,
     })
