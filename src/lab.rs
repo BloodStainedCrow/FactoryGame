@@ -212,7 +212,7 @@ impl MultiLabStore {
         let idx = if let Some(hole_idx) = self.holes.pop() {
             self.positions[hole_idx] = position;
             // TODO:
-            self.sciences.iter_mut().for_each(|v| v[hole_idx] = 10);
+            self.max_insert.iter_mut().for_each(|v| v[hole_idx] = 10);
             self.sciences.iter_mut().for_each(|v| v[hole_idx] = 0);
             self.timer[hole_idx] = 0;
             self.types[hole_idx] = ty;
@@ -220,7 +220,7 @@ impl MultiLabStore {
             hole_idx
         } else {
             self.positions.push(position);
-            self.sciences.iter_mut().for_each(|v| v.push(10));
+            self.max_insert.iter_mut().for_each(|v| v.push(10));
             self.sciences.iter_mut().for_each(|v| v.push(0));
             self.timer.push(0);
             self.types.push(ty);
