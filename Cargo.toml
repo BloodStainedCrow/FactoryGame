@@ -9,7 +9,7 @@ rust-version = "1.81"
 enum-map = { version = "2.7.3", features = ["serde"] }
 proptest = "1.4.0"
 winit = "0.30.8"
-tilelib = { path = "../tilelib" }
+tilelib = { git = "https://github.com/BloodStainedCrow/tilelib.git" }
 spin_sleep_util = "0.1.1"
 image = "0.25.5"
 log = "0.4.25"
