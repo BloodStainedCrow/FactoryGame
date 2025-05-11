@@ -198,35 +198,38 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         ActionStateMachineState::Holding(held_object) => match held_object {
                             HeldObject::Tile(floor_tile) => {},
                             HeldObject::Entity(place_entity_type) => match place_entity_type {
-                                PlaceEntityType::Assembler(position) => {
+                                PlaceEntityType::Assembler {
+                                    pos: position,
+                                    ty: _
+                                } => {
                                     *position = Self::player_mouse_to_tile(
                                         self.zoom_level,
                                         self.local_player_pos,
                                         self.current_mouse_pos,
                                     );
                                 },
-                                PlaceEntityType::Inserter { filter, pos, dir } => {
+                                PlaceEntityType::Inserter { pos, dir: _, filter: _ } => {
                                     *pos = Self::player_mouse_to_tile(
                                         self.zoom_level,
                                         self.local_player_pos,
                                         self.current_mouse_pos,
                                     );
                                 },
-                                PlaceEntityType::Belt { pos, direction } => {
+                                PlaceEntityType::Belt { pos, direction: _ } => {
                                     *pos = Self::player_mouse_to_tile(
                                         self.zoom_level,
                                         self.local_player_pos,
                                         self.current_mouse_pos,
                                     );
                                 },
-                                PlaceEntityType::PowerPole { pos, ty } => {
+                                PlaceEntityType::PowerPole { pos, ty: _ } => {
                                     *pos = Self::player_mouse_to_tile(
                                         self.zoom_level,
                                         self.local_player_pos,
                                         self.current_mouse_pos,
                                     );
                                 },
-                                PlaceEntityType::Splitter { pos, direction, in_mode, out_mode } => {
+                                PlaceEntityType::Splitter { pos, direction: _, in_mode: _, out_mode: _ } => {
                                     *pos = Self::player_mouse_to_tile(
                                         self.zoom_level,
                                         self.local_player_pos,
@@ -238,12 +241,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                     self.local_player_pos,
                                     self.current_mouse_pos,
                                 );},
-                                PlaceEntityType::SolarPanel { pos, .. } => {*pos = Self::player_mouse_to_tile(
+                                PlaceEntityType::SolarPanel { pos, ty: _ } => {*pos = Self::player_mouse_to_tile(
                                     self.zoom_level,
                                     self.local_player_pos,
                                     self.current_mouse_pos,
                                 );},
-                                PlaceEntityType::Lab { pos, .. } => {*pos = Self::player_mouse_to_tile(
+                                PlaceEntityType::Lab { pos, ty: _ } => {*pos = Self::player_mouse_to_tile(
                                     self.zoom_level,
                                     self.local_player_pos,
                                     self.current_mouse_pos,
@@ -320,11 +323,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key2) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::Assembler(Self::player_mouse_to_tile(
-                        self.zoom_level,
-                        self.local_player_pos,
-                        self.current_mouse_pos,
-                    )),
+                    PlaceEntityType::Assembler {
+                        pos: Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.local_player_pos,
+                            self.current_mouse_pos,
+                        ),
+                        // TODO:
+                        ty: 0,
+                    },
                 ));
                 vec![]
             },

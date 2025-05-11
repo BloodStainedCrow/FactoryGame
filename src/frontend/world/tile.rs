@@ -723,7 +723,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         // This was not connected, nothing to do
                     }
                 },
-                Entity::Assembler { pos, info } => match info {
+                Entity::Assembler {
+                    ty,
+                    pos,
+                    info,
+                    modules,
+                } => match info {
                     AssemblerInfo::UnpoweredNoRecipe
                     | AssemblerInfo::Unpowered(_)
                     | AssemblerInfo::PoweredNoRecipe(_) => {
@@ -761,8 +766,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                 match (e, index_update.new_storage) {
                                     (
                                         Entity::Assembler {
-                                            pos,
                                             info: AssemblerInfo::Powered { id, pole_position },
+                                            ..
                                         },
                                         crate::power::power_grid::PowerGridEntity::Assembler {
                                             recipe,
@@ -914,7 +919,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             data_store,
                             |e| {
                                 match e {
-                                    Entity::Assembler { pos, info } => match info {
+                                    Entity::Assembler {
+                                        ty,
+                                        pos,
+                                        info,
+                                        modules,
+                                    } => match info {
                                         AssemblerInfo::UnpoweredNoRecipe => unreachable!(),
                                         AssemblerInfo::Unpowered(recipe) => unreachable!(),
                                         AssemblerInfo::PoweredNoRecipe(position) => unreachable!(),
@@ -933,14 +943,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                                     .power_grids
                                                     .pole_pos_to_grid_id[&new_pole_pos];
 
-                                                // FIXME: Assembler type
                                                 let new_id =
                                                     sim_state.factory.power_grids.power_grids
                                                         [usize::from(grid_id)]
                                                     .add_assembler(
-                                                        0,
+                                                        *ty,
                                                         grid_id,
                                                         id.recipe,
+                                                        &*modules,
                                                         new_pole_pos,
                                                         *pos,
                                                         data_store,
@@ -1360,7 +1370,10 @@ pub enum UndergroundDir {
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Assembler {
+        ty: u8,
         pos: Position,
+        /// List of all the module slots of this inserter
+        modules: Box<[Option<usize>]>,
         info: AssemblerInfo<RecipeIdxType>,
     },
     PowerPole {
@@ -1468,7 +1481,10 @@ pub struct BeltId<ItemIdxType: WeakIdxTrait> {
 
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub enum PlaceEntityType<ItemIdxType: WeakIdxTrait> {
-    Assembler(Position),
+    Assembler {
+        pos: Position,
+        ty: u8,
+    },
     Inserter {
         pos: Position,
         dir: Dir,

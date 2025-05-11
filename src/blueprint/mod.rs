@@ -64,12 +64,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                     player: *player,
                 }),
                 ActionType::PlaceEntity(PlaceEntityInfo {
-                    entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler(pos)),
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler { pos, ty }),
                 }) => ActionType::PlaceEntity(PlaceEntityInfo {
-                    entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler(Position {
-                        x: base_pos.x + pos.x,
-                        y: base_pos.y + pos.y,
-                    })),
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler {
+                        pos: Position {
+                            x: base_pos.x + pos.x,
+                            y: base_pos.y + pos.y,
+                        },
+                        ty: *ty,
+                    }),
                 }),
                 ActionType::PlaceEntity(PlaceEntityInfo {
                     entities: EntityPlaceOptions::Single(PlaceEntityType::Belt { pos, direction }),
@@ -206,16 +209,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
         // FIXME: This will underflow if a entity extends past the edge of the selected area
         for e in entities {
             let actions = match e {
+                // FIXME: Insert Modules
                 crate::frontend::world::tile::Entity::Assembler {
+                    ty,
                     pos,
                     info: AssemblerInfo::PoweredNoRecipe(_) | AssemblerInfo::UnpoweredNoRecipe,
+                    modules,
                 } => vec![ActionType::PlaceEntity(PlaceEntityInfo {
-                    entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler(Position {
-                        x: pos.x - base_pos.x,
-                        y: pos.y - base_pos.y,
-                    })),
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler {
+                        pos: Position {
+                            x: pos.x - base_pos.x,
+                            y: pos.y - base_pos.y,
+                        },
+                        ty: *ty,
+                    }),
                 })],
                 crate::frontend::world::tile::Entity::Assembler {
+                    ty,
                     pos,
                     info:
                         AssemblerInfo::Powered {
@@ -223,14 +233,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                             ..
                         }
                         | AssemblerInfo::Unpowered(recipe),
+                    modules,
                 } => vec![
                     ActionType::PlaceEntity(PlaceEntityInfo {
-                        entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler(
-                            Position {
+                        entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler {
+                            pos: Position {
                                 x: pos.x - base_pos.x,
                                 y: pos.y - base_pos.y,
                             },
-                        )),
+                            ty: *ty,
+                        }),
                     }),
                     ActionType::SetRecipe(SetRecipeInfo {
                         pos: Position {
@@ -390,7 +402,7 @@ pub fn random_entity_to_place<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> impl Strategy<Value = PlaceEntityType<ItemIdxType>> {
     prop_oneof![
-        random_blueprint_offs().prop_map(|pos| PlaceEntityType::Assembler(pos)),
+        random_blueprint_offs().prop_map(|pos| PlaceEntityType::Assembler { pos, ty: 0 }),
         random_blueprint_offs().prop_map(|pos| PlaceEntityType::Chest { pos }),
         (
             random_blueprint_offs()

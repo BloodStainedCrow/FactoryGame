@@ -184,11 +184,14 @@ pub fn get_raw_data_test() -> RawDataStore {
             },
         ],
         machines: vec![RawAssemblingMachine {
-            name: "factory_game::assembler".to_string(),
-            display_name: "Assembling Machine".to_string(),
+            name: "factory_game::assembler2".to_string(),
+            display_name: "Assembling Machine 2".to_string(),
             tile_size: (3, 3),
-            working_power_draw: Watt(75000),
+            working_power_draw: Watt(150_000),
             fluid_connection_offsets: vec![],
+            base_bonus_prod: 0,
+            base_speed: 15,
+            num_module_slots: 2,
         }],
         miners: vec![],
         power_poles: vec![
@@ -312,6 +315,13 @@ struct RawAssemblingMachine {
     tile_size: (u8, u8),
     working_power_draw: Watt,
     fluid_connection_offsets: Vec<RawFluidConnection>,
+
+    num_module_slots: u8,
+
+    /// Base bonus productivity in %
+    base_bonus_prod: u8,
+    /// Speed multiplier compared to "baseline" in 5%
+    base_speed: u8,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -407,10 +417,36 @@ enum RawEntity {
 }
 
 #[derive(Debug, Clone)]
+pub struct AssemblerInfo {
+    pub size: (u8, u8),
+    pub num_module_slots: u8,
+
+    /// Base Speed as a numerator and divisor. All module modifiers apply multiplicatively
+    pub base_speed: u8,
+    pub base_prod: u8,
+    pub base_power_consumption: Watt,
+}
+
+#[derive(Debug, Clone)]
+pub struct ModuleInfo {
+    pub name: String,
+
+    pub speed_mod: i8,
+    pub prod_mod: i8,
+    pub power_mod: i8,
+}
+
+#[derive(Debug, Clone)]
 pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub checksum: String,
 
     pub max_entity_size: (usize, usize),
+
+    pub assembler_info: Vec<AssemblerInfo>,
+    pub module_info: Vec<ModuleInfo>,
+
+    /// In 5% steps
+    pub min_power_mod: u8,
 
     pub recipe_names: Vec<String>,
 
@@ -886,6 +922,32 @@ impl RawDataStore {
 
         DataStore {
             checksum,
+
+            assembler_info: self
+                .machines
+                .iter()
+                .map(|m| AssemblerInfo {
+                    size: m.tile_size,
+                    num_module_slots: m.num_module_slots,
+                    // TODO: Hm, this seems rather silly
+                    base_speed: m.base_speed,
+                    base_prod: m.base_bonus_prod,
+                    base_power_consumption: m.working_power_draw,
+                })
+                .collect(),
+
+            module_info: self
+                .modules
+                .iter()
+                .map(|module| ModuleInfo {
+                    name: module.display_name.clone(),
+                    speed_mod: module.speed_effect,
+                    prod_mod: module.productivity_effect,
+                    power_mod: module.power_effect,
+                })
+                .collect(),
+
+            min_power_mod: 4,
 
             // TODO:
             max_entity_size: (4, 4),

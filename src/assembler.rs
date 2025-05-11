@@ -1,4 +1,4 @@
-use std::{array, simd::Simd};
+use std::{array, cmp::max, simd::Simd};
 
 use itertools::Itertools;
 
@@ -29,16 +29,26 @@ pub struct MultiAssemblerStore<
 > {
     pub recipe: Recipe<RecipeIdxType>,
 
-    /// Crafting Speed in 10% increments
-    /// i.e. 18 => 180% Crafting speed
-    /// Maximum is 2550% Crafting Speed
-    speed: Box<[u8]>,
+    /// Base Crafting Speed in 5% increments
+    /// i.e. 28 => 140% Crafting speed
+    /// Maximum is 1275% Crafting Speed
+    base_speed: Box<[u8]>,
+
+    /// Crafting Speed in 5% increments
+    /// i.e. 28 => 140% Crafting speed
+    /// Maximum is 1275% Crafting Speed
+    combined_speed_mod: Box<[u8]>,
     /// Bonus Productivity in %
     bonus_productivity: Box<[u8]>,
-    /// Power Consumption in 10% increments
-    /// i.e. 18 => 180% Power Consumption
-    /// Maximum is 2550% x Base Power Consumption
+    /// Power Consumption in 5% increments
+    /// i.e. 28 => 140% Crafting speed
+    /// Maximum is 1275% x Base Power Consumption
     power_consumption_modifier: Box<[u8]>,
+
+    raw_speed_mod: Box<[i16]>,
+    raw_bonus_productivity: Box<[i16]>,
+    raw_power_consumption_modifier: Box<[i16]>,
+
     // TODO: This can likely be smaller than full u64
     base_power_consumption: Box<[Watt]>,
     #[serde(with = "arrays")]
@@ -250,9 +260,14 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             timers: vec![].into_boxed_slice(),
             prod_timers: vec![].into_boxed_slice(),
 
+            base_speed: vec![].into_boxed_slice(),
             bonus_productivity: vec![].into_boxed_slice(),
-            speed: vec![].into_boxed_slice(),
+            combined_speed_mod: vec![].into_boxed_slice(),
             power_consumption_modifier: vec![].into_boxed_slice(),
+
+            raw_speed_mod: vec![].into_boxed_slice(),
+            raw_bonus_productivity: vec![].into_boxed_slice(),
+            raw_power_consumption_modifier: vec![].into_boxed_slice(),
 
             base_power_consumption: vec![].into_boxed_slice(),
 
@@ -348,10 +363,21 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .map(|(_, v)| v),
         );
 
-        let mut new_speed = self.speed.into_vec();
+        let mut new_base_speed = self.base_speed.into_vec();
+        new_base_speed.extend(
+            other
+                .base_speed
+                .into_vec()
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        let mut new_speed = self.combined_speed_mod.into_vec();
         new_speed.extend(
             other
-                .speed
+                .combined_speed_mod
                 .into_vec()
                 .into_iter()
                 .enumerate()
@@ -385,6 +411,39 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         new_power_consumption_modifier.extend(
             other
                 .power_consumption_modifier
+                .into_vec()
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        let mut new_raw_speed_mod = self.raw_speed_mod.into_vec();
+        new_raw_speed_mod.extend(
+            other
+                .raw_speed_mod
+                .into_vec()
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        let mut new_raw_bonus_productivity = self.raw_bonus_productivity.into_vec();
+        new_raw_bonus_productivity.extend(
+            other
+                .raw_bonus_productivity
+                .into_vec()
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        let mut new_raw_power_consumption_modifier = self.raw_power_consumption_modifier.into_vec();
+        new_raw_power_consumption_modifier.extend(
+            other
+                .raw_power_consumption_modifier
                 .into_vec()
                 .into_iter()
                 .enumerate()
@@ -426,9 +485,15 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             prod_timers: new_prod_timers.into(),
             holes: self.holes,
             len: self.positions.len(),
-            speed: new_speed.into_boxed_slice(),
+            base_speed: new_base_speed.into_boxed_slice(),
+            combined_speed_mod: new_speed.into_boxed_slice(),
             bonus_productivity: new_prod.into_boxed_slice(),
             power_consumption_modifier: new_power_consumption_modifier.into_boxed_slice(),
+
+            raw_speed_mod: new_raw_speed_mod.into_boxed_slice(),
+            raw_bonus_productivity: new_raw_bonus_productivity.into_boxed_slice(),
+            raw_power_consumption_modifier: new_raw_power_consumption_modifier.into_boxed_slice(),
+
             base_power_consumption: new_base_power_consumption.into_boxed_slice(),
             positions: self.positions,
         };
@@ -646,21 +711,26 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             array: self.outputs.each_mut().map(|r| r.iter_mut()),
         };
 
-        for (mut outputs, (mut ings, (timer, (prod_timer, (speed_mod, bonus_prod))))) in outputs_arr
-            .zip(
-                ings_arr.zip(
-                    self.timers.iter_mut().zip(
-                        self.prod_timers.iter_mut().zip(
-                            self.speed
-                                .iter()
-                                .copied()
-                                .zip(self.bonus_productivity.iter().copied()),
+        for (
+            mut outputs,
+            (mut ings, (timer, (prod_timer, (speed_mod, (bonus_prod, (base_power, power_mod)))))),
+        ) in outputs_arr.zip(
+            ings_arr.zip(
+                self.timers.iter_mut().zip(
+                    self.prod_timers.iter_mut().zip(
+                        self.combined_speed_mod.iter().copied().zip(
+                            self.bonus_productivity.iter().copied().zip(
+                                self.base_power_consumption
+                                    .iter()
+                                    .copied()
+                                    .zip(self.power_consumption_modifier.iter().copied()),
+                            ),
                         ),
                     ),
                 ),
-            )
-        {
-            let increase = increase * (speed_mod as u16) / 10;
+            ),
+        ) {
+            let increase = increase * (speed_mod as u16) / 20;
 
             let ing_mul = ings
                 .iter()
@@ -682,7 +752,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 + new_timer_output_full * (1 - u16::from(space_mul));
 
             let new_prod_timer =
-                prod_timer.wrapping_add(new_timer.wrapping_sub(*timer) * (bonus_prod as u16) / 10);
+                prod_timer.wrapping_add(new_timer.wrapping_sub(*timer) * (bonus_prod as u16) / 100);
 
             let timer_mul: u8 = (new_timer < *timer).into();
             let prod_timer_mul: u8 = (new_prod_timer < *prod_timer).into();
@@ -705,10 +775,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         }
 
         (
-            POWER_DRAIN.joules_per_tick()
-                * u64::try_from(self.len - self.holes.len())
-                    .expect("more than u64::MAX assemblers")
-                + POWER_CONSUMPTION.joules_per_tick() * u64::from(running),
+            POWER_CONSUMPTION.joules_per_tick() * u64::from(running),
             times_ings_used,
             num_finished_crafts,
         )
@@ -805,9 +872,10 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         TIMERTYPE,
         TIMERTYPE,
         Watt,
+        i16,
+        i16,
         u8,
-        u8,
-        u8,
+        i16,
         Position,
     ) {
         debug_assert!(!self.holes.contains(&index));
@@ -829,9 +897,10 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             self.timers[index],
             self.prod_timers[index],
             self.base_power_consumption[index],
-            self.power_consumption_modifier[index],
-            self.bonus_productivity[index],
-            self.speed[index],
+            self.raw_power_consumption_modifier[index],
+            self.raw_bonus_productivity[index],
+            self.base_speed[index],
+            self.raw_speed_mod[index],
             self.positions[index],
         );
         for ing in &mut self.ings {
@@ -848,35 +917,74 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
     pub fn add_assembler<ItemIdxType: IdxTrait>(
         &mut self,
         ty: u8,
+        modules: &[Option<usize>],
         position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> usize {
-        // FIXME: Get power from data_store
-        // FIXME: Get Speed from data_store
+        assert_eq!(
+            modules.len(),
+            data_store.assembler_info[usize::from(ty)].num_module_slots as usize
+        );
+
+        let base_speed = data_store.assembler_info[usize::from(ty)].base_speed;
+        let bonus_productivity_of_machine = data_store.assembler_info[usize::from(ty)].base_prod;
+        let base_power_consumption: Watt =
+            data_store.assembler_info[usize::from(ty)].base_power_consumption;
+
+        let speed_mod = modules
+            .iter()
+            .copied()
+            .flatten()
+            .map(|module| i16::from(data_store.module_info[module].speed_mod))
+            .sum();
+
+        let prod = i16::from(bonus_productivity_of_machine)
+            + modules
+                .iter()
+                .copied()
+                .flatten()
+                .map(|module| i16::from(data_store.module_info[module].prod_mod))
+                .sum::<i16>();
+
+        let power_mod = modules
+            .iter()
+            .copied()
+            .flatten()
+            .map(|module| i16::from(data_store.module_info[module].power_mod))
+            .sum();
+
         self.add_assembler_with_data(
-            // TODO: Make this dependent on the speed fo the machine and recipe
+            // TODO: Make the automatic insertion limit dependent on the speed of the machine and recipe
             array::from_fn(|ing| 10),
             array::from_fn(|_| 0),
             array::from_fn(|_| 0),
             0,
             0,
-            Watt(0),
-            10,
-            4,
-            20,
+            base_power_consumption,
+            power_mod,
+            prod,
+            base_speed,
+            speed_mod,
             position,
+            data_store,
         )
     }
 
-    pub fn move_assembler(&mut self, index: usize, dest: &mut Self) -> usize {
+    pub fn move_assembler<ItemIdxType: IdxTrait>(
+        &mut self,
+        index: usize,
+        dest: &mut Self,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> usize {
         let data = self.remove_assembler_data(index);
 
         dest.add_assembler_with_data(
             data.0, data.1, data.2, data.3, data.4, data.5, data.6, data.7, data.8, data.9,
+            data.10, data_store,
         )
     }
 
-    fn add_assembler_with_data(
+    fn add_assembler_with_data<ItemIdxType: IdxTrait>(
         &mut self,
         ings_max_insert: [ITEMCOUNTTYPE; NUM_INGS],
         ings: [ITEMCOUNTTYPE; NUM_INGS],
@@ -884,10 +992,12 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         timer: TIMERTYPE,
         prod_timer: TIMERTYPE,
         power: Watt,
-        power_consumption_modifier: u8,
-        bonus_productiviy: u8,
-        speed: u8,
+        power_consumption_modifier: i16,
+        bonus_productiviy: i16,
+        base_speed: u8,
+        speed_mod: i16,
         position: Position,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> usize {
         let len = self.timers.len();
         // debug_assert!(len % Simdtype::LEN == 0);
@@ -914,9 +1024,25 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             self.timers[hole_index] = timer;
             self.prod_timers[hole_index] = prod_timer;
             self.base_power_consumption[hole_index] = power;
-            self.power_consumption_modifier[hole_index] = power_consumption_modifier;
-            self.bonus_productivity[hole_index] = bonus_productiviy;
-            self.speed[hole_index] = speed;
+
+            self.base_speed[hole_index] = base_speed;
+            self.raw_power_consumption_modifier[hole_index] = power_consumption_modifier;
+            self.raw_bonus_productivity[hole_index] = bonus_productiviy;
+            self.raw_speed_mod[hole_index] = speed_mod;
+
+            self.power_consumption_modifier[hole_index] = (power_consumption_modifier + 20)
+                .clamp(data_store.min_power_mod.into(), u8::MAX.into())
+                .try_into()
+                .expect("Value clamped already");
+            self.bonus_productivity[hole_index] = bonus_productiviy
+                .clamp(0, u8::MAX.into())
+                .try_into()
+                .expect("Value clamped already");
+            self.combined_speed_mod[hole_index] = ((speed_mod + 20) * i16::from(base_speed) / 20)
+                .clamp(0, u8::MAX.into())
+                .try_into()
+                .expect("Value clamped already");
+
             self.positions[hole_index] = position;
             return hole_index;
         }
@@ -995,7 +1121,40 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 bonus_productivity.into_boxed_slice()
             });
 
-            take_mut::take(&mut self.speed, |speed| {
+            take_mut::take(&mut self.base_speed, |speed| {
+                let mut speed = speed.into_vec();
+                speed.resize(new_len, 0);
+                speed.into_boxed_slice()
+            });
+
+            take_mut::take(&mut self.base_power_consumption, |base_power_consumption| {
+                let mut base_power_consumption = base_power_consumption.into_vec();
+                base_power_consumption.resize(new_len, Watt(0));
+                base_power_consumption.into_boxed_slice()
+            });
+
+            take_mut::take(
+                &mut self.raw_power_consumption_modifier,
+                |power_consumption_modifier| {
+                    let mut power_consumption_modifier = power_consumption_modifier.into_vec();
+                    power_consumption_modifier.resize(new_len, 0);
+                    power_consumption_modifier.into_boxed_slice()
+                },
+            );
+
+            take_mut::take(&mut self.raw_bonus_productivity, |bonus_productivity| {
+                let mut bonus_productivity = bonus_productivity.into_vec();
+                bonus_productivity.resize(new_len, 0);
+                bonus_productivity.into_boxed_slice()
+            });
+
+            take_mut::take(&mut self.raw_speed_mod, |speed| {
+                let mut speed = speed.into_vec();
+                speed.resize(new_len, 0);
+                speed.into_boxed_slice()
+            });
+
+            take_mut::take(&mut self.combined_speed_mod, |speed| {
                 let mut speed = speed.into_vec();
                 speed.resize(new_len, 0);
                 speed.into_boxed_slice()
@@ -1014,9 +1173,24 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         self.timers[self.len] = timer;
         self.prod_timers[self.len] = prod_timer;
         self.base_power_consumption[self.len] = power;
-        self.power_consumption_modifier[self.len] = power_consumption_modifier;
-        self.bonus_productivity[self.len] = bonus_productiviy;
-        self.speed[self.len] = speed;
+
+        self.base_speed[self.len] = base_speed;
+        self.raw_power_consumption_modifier[self.len] = power_consumption_modifier;
+        self.raw_bonus_productivity[self.len] = bonus_productiviy;
+        self.raw_speed_mod[self.len] = speed_mod;
+
+        self.power_consumption_modifier[self.len] = (power_consumption_modifier + 20)
+            .clamp(data_store.min_power_mod.into(), u8::MAX.into())
+            .try_into()
+            .expect("Values already clamped");
+        self.bonus_productivity[self.len] = bonus_productiviy
+            .clamp(0, u8::MAX.into())
+            .try_into()
+            .expect("Values already clamped");
+        self.combined_speed_mod[self.len] = ((speed_mod + 20) * i16::from(base_speed) / 20)
+            .clamp(0, u8::MAX.into())
+            .try_into()
+            .expect("Values already clamped");
 
         self.positions.reserve(1);
         assert_eq!(
@@ -1030,6 +1204,45 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
         self.len += 1;
         self.len - 1
+    }
+
+    pub fn modify_modifiers<ItemIdxType: IdxTrait>(
+        &mut self,
+        index: u16,
+        speed: i16,
+        prod: i16,
+        power: i16,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        self.raw_speed_mod[usize::from(index)] = self.raw_speed_mod[usize::from(index)]
+            .checked_add(speed)
+            .expect("Over/Underflowed");
+        self.raw_bonus_productivity[usize::from(index)] = self.raw_bonus_productivity
+            [usize::from(index)]
+        .checked_add(prod)
+        .expect("Over/Underflowed");
+        self.raw_power_consumption_modifier[usize::from(index)] = self
+            .raw_power_consumption_modifier[usize::from(index)]
+        .checked_add(power)
+        .expect("Over/Underflowed");
+
+        self.power_consumption_modifier[usize::from(index)] =
+            (self.raw_power_consumption_modifier[usize::from(index)] + 20)
+                .clamp(data_store.min_power_mod.into(), u8::MAX.into())
+                .try_into()
+                .expect("Values already clamped");
+        self.bonus_productivity[usize::from(index)] = self.raw_bonus_productivity
+            [usize::from(index)]
+        .clamp(0, u8::MAX.into())
+        .try_into()
+        .expect("Values already clamped");
+        self.combined_speed_mod[usize::from(index)] = ((self.raw_speed_mod[usize::from(index)]
+            + 20)
+            * i16::from(self.base_speed[usize::from(index)])
+            / 10)
+            .clamp(0, u8::MAX.into())
+            .try_into()
+            .expect("Values already clamped");
     }
 }
 

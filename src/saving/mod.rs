@@ -1,5 +1,6 @@
 use std::{
     borrow::Borrow,
+    env,
     fs::{create_dir_all, File},
     io::{Read, Write},
     marker::PhantomData,
@@ -7,6 +8,7 @@ use std::{
 
 use directories::ProjectDirs;
 use log::error;
+use ron::ser::PrettyConfig;
 
 use crate::{item::IdxTrait, rendering::app_state::GameState};
 
@@ -31,6 +33,28 @@ pub fn save<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let dir = ProjectDirs::from("de", "aschhoff", "factory_game").expect("No Home path found");
 
     create_dir_all(dir.data_dir()).expect("Could not create data dir");
+
+    if let Ok(s) = env::var("FACTORY_SAVE_READABLE") {
+        if s == "true" {
+            let readable_save_file_dir = dir.data_dir().join("readable.save");
+
+            let mut file = File::create(readable_save_file_dir).expect("Could not open file");
+
+            let res = ron::ser::to_string_pretty(
+                &SaveGame {
+                    checksum: checksum.clone(),
+                    game_state,
+                    item: PhantomData,
+                    recipe: PhantomData,
+                },
+                PrettyConfig::default(),
+            )
+            .unwrap();
+
+            file.write_all(res.as_bytes())
+                .expect("Could not write to file");
+        }
+    }
 
     let save_file_dir = dir.data_dir().join("save.save");
 

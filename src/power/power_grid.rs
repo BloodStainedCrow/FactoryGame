@@ -567,31 +567,132 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             })
     }
 
+    pub fn add_module_to_assembler(
+        &mut self,
+        id: AssemblerID<RecipeIdxType>,
+        module_kind: usize,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        let speed_mod = data_store.module_info[module_kind].speed_mod;
+        let prod_mod = data_store.module_info[module_kind].prod_mod;
+        let power_mod = data_store.module_info[module_kind].power_mod;
+
+        assert!(!self.is_placeholder);
+
+        match (
+            data_store.recipe_num_ing_lookup[id.recipe.id.into()],
+            data_store.recipe_num_out_lookup[id.recipe.id.into()],
+        ) {
+            (0, 1) => self.stores.assemblers_0_1
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+            (1, 1) => self.stores.assemblers_1_1
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+
+            (2, 1) => self.stores.assemblers_2_1
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+
+            _ => unreachable!(),
+        };
+    }
+
+    pub fn remove_module_to_assembler(
+        &mut self,
+        id: AssemblerID<RecipeIdxType>,
+        module_kind: usize,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        // TODO: This will crash if someone uses i8::MIN but oh well
+        let speed_mod = -data_store.module_info[module_kind].speed_mod;
+        let prod_mod = -data_store.module_info[module_kind].prod_mod;
+        let power_mod = -data_store.module_info[module_kind].power_mod;
+
+        assert!(!self.is_placeholder);
+
+        match (
+            data_store.recipe_num_ing_lookup[id.recipe.id.into()],
+            data_store.recipe_num_out_lookup[id.recipe.id.into()],
+        ) {
+            (0, 1) => self.stores.assemblers_0_1
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+            (1, 1) => self.stores.assemblers_1_1
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+
+            (2, 1) => self.stores.assemblers_2_1
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+
+            _ => unreachable!(),
+        };
+    }
+
     pub fn add_assembler(
         &mut self,
         ty: u8,
         grid_id: PowerGridIdentifier,
         recipe: Recipe<RecipeIdxType>,
+        modules: &[Option<usize>],
         connected_power_pole_position: Position,
         assembler_position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> AssemblerID<RecipeIdxType> {
         assert!(!self.is_placeholder);
+
         let new_idx = match (
             data_store.recipe_num_ing_lookup[recipe.id.into()],
             data_store.recipe_num_out_lookup[recipe.id.into()],
         ) {
             (0, 1) => self.stores.assemblers_0_1
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
-            .add_assembler(ty, assembler_position, data_store),
+            .add_assembler(ty, modules, assembler_position, data_store),
 
             (1, 1) => self.stores.assemblers_1_1
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
-            .add_assembler(ty, assembler_position, data_store),
+            .add_assembler(ty, modules, assembler_position, data_store),
 
             (2, 1) => self.stores.assemblers_2_1
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
-            .add_assembler(ty, assembler_position, data_store),
+            .add_assembler(ty, modules, assembler_position, data_store),
 
             _ => unreachable!(),
         };
@@ -656,6 +757,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 index.into(),
                 &mut other_stores.assemblers_0_1
                     [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]],
+                data_store,
             ),
             (1, 1) => self.stores.assemblers_1_1
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
@@ -663,6 +765,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 index.into(),
                 &mut other_stores.assemblers_1_1
                     [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]],
+                data_store,
             ),
             (2, 1) => self.stores.assemblers_2_1
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
@@ -670,6 +773,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 index.into(),
                 &mut other_stores.assemblers_2_1
                     [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]],
+                data_store,
             ),
 
             _ => unreachable!(),

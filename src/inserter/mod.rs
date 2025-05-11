@@ -71,8 +71,8 @@ pub enum Storage<RecipeIdxType: WeakIdxTrait> {
         index: u16,
     },
     Static {
-        static_id: StaticID,
         index: usize,
+        static_id: StaticID,
     },
 }
 

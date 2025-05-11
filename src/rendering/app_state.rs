@@ -37,7 +37,7 @@ use crate::{
     },
 };
 use itertools::Itertools;
-use log::{error, info, warn};
+use log::{error, info, trace, warn};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 
 use crate::frontend::action::place_tile::PositionInfo;
@@ -328,26 +328,36 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     crate::frontend::action::place_entity::EntityPlaceOptions::Single(
                         place_entity_type,
                     ) => match place_entity_type {
-                        crate::frontend::world::tile::PlaceEntityType::Assembler(position) => {
-                            info!("Trying to place assembler at {position:?}");
+                        crate::frontend::world::tile::PlaceEntityType::Assembler { pos, ty } => {
+                            info!("Trying to place assembler at {pos:?}");
                             // TODO: get size dynamically
-                            if !self.world.can_fit(position, (3, 3), data_store) {
+                            if !self.world.can_fit(pos, (3, 3), data_store) {
                                 warn!("Tried to place assembler where it does not fit");
                                 continue;
                             }
 
                             let powered_by = self.world.is_powered_by(
                                 &self.simulation_state,
-                                position,
+                                pos,
                                 (3, 3),
                                 data_store,
                             );
 
+                            let modules = vec![
+                                None;
+                                data_store.assembler_info[usize::from(ty)]
+                                    .num_module_slots
+                                    .into()
+                            ]
+                            .into_boxed_slice();
+
                             if let Some(pole_position) = powered_by {
                                 self.world.add_entity(
                                     crate::frontend::world::tile::Entity::Assembler {
-                                        pos: position,
+                                        ty,
+                                        pos,
                                         info: AssemblerInfo::PoweredNoRecipe(pole_position),
+                                        modules,
                                     },
                                     &self.simulation_state,
                                     data_store,
@@ -355,8 +365,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             } else {
                                 self.world.add_entity(
                                     crate::frontend::world::tile::Entity::Assembler {
-                                        pos: position,
+                                        ty,
+                                        pos,
                                         info: AssemblerInfo::UnpoweredNoRecipe,
+                                        modules,
                                     },
                                     &self.simulation_state,
                                     data_store,
@@ -369,7 +381,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             filter,
                         } => {
                             let ret = self.try_adding_inserter(pos, dir, filter, data_store);
-                            dbg!(ret);
+                            trace!("{:?}", ret);
                         },
                         crate::frontend::world::tile::PlaceEntityType::Belt { pos, direction } => {
                             if !self.world.can_fit(pos, (1, 1), data_store) {
@@ -436,22 +448,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 // Handle storage updates
                                 for storage_update in storage_updates {
                                     self.world.mutate_entities_colliding_with(storage_update.position, (1,1), data_store, |e| {
-                                        match (e, storage_update.new_storage) {
-                                            (Entity::Assembler { pos: _, info: AssemblerInfo::Powered { id, pole_position: _ } }, crate::power::power_grid::PowerGridEntity::Assembler { recipe, index }) => {
-                                                assert_eq!(id.recipe, recipe);
-                                                id.grid = storage_update.new_grid;
-                                                id.assembler_index = index;
-                                                // FIXME: Store and update the weak_index
-                                            },
-                                            (Entity::Lab { pos: _, ty: _, pole_position: Some((_pole_pos, weak_idx, lab_store_index)) }, crate::power::power_grid::PowerGridEntity::Lab { ty: _, index: new_idx  }) => {
-                                                *lab_store_index = new_idx;
-                                                // The weak index stays the same since it it still connected to the same power pole
-                                            }
+                                                    match (e, storage_update.new_storage) {
+                                                        (Entity::Assembler { ty: _, pos: _, info: AssemblerInfo::Powered { id, pole_position: _ }, modules: _ }, crate::power::power_grid::PowerGridEntity::Assembler { recipe, index }) => {
+                                                            assert_eq!(id.recipe, recipe);
+                                                            id.grid = storage_update.new_grid;
+                                                            id.assembler_index = index;
+                                                            // FIXME: Store and update the weak_index
+                                                        },
+                                                        (Entity::Lab { pos: _, ty: _, pole_position: Some((_pole_pos, weak_idx, lab_store_index)) }, crate::power::power_grid::PowerGridEntity::Lab { ty: _, index: new_idx  }) => {
+                                                            *lab_store_index = new_idx;
+                                                            // The weak index stays the same since it it still connected to the same power pole
+                                                        }
 
-                                            (_, _) => todo!("Handler storage_update {storage_update:?}")
-                                        }
-                                        ControlFlow::Break(())
-                                    });
+                                                        (_, _) => todo!("Handler storage_update {storage_update:?}")
+                                                    }
+                                                    ControlFlow::Break(())
+                                                });
                                 }
                             } else {
                                 // No updates needed
@@ -474,7 +486,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 data_store,
                                 |e| {
                                     match e {
-                                        Entity::Assembler { pos, info } => match info {
+                                        Entity::Assembler {
+                                            ty,
+                                            pos,
+                                            info,
+                                            modules,
+                                        } => match info {
                                             AssemblerInfo::UnpoweredNoRecipe => {
                                                 *info = AssemblerInfo::PoweredNoRecipe(pole_pos);
                                             },
@@ -485,10 +502,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                     .power_grids
                                                     .power_grids
                                                     [grid as usize]
-                                                    // TODO: Assembler ty
                                                     .add_assembler(
-                                                        0, grid, *recipe, pole_pos, *pos,
-                                                        data_store,
+                                                        *ty, grid, *recipe, &modules, pole_pos,
+                                                        *pos, data_store,
                                                     );
                                                 *info = AssemblerInfo::Powered {
                                                     id: assembler_id,
@@ -702,7 +718,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                         if let Some(mut entity) = assembler {
                             match &mut entity {
-                                Entity::Assembler { pos, ref mut info } => match info {
+                                Entity::Assembler {
+                                    ty,
+                                    pos,
+                                    ref mut info,
+                                    modules,
+                                } => match info {
                                     AssemblerInfo::UnpoweredNoRecipe => {
                                         *info = AssemblerInfo::Unpowered(recipe)
                                     },
@@ -718,7 +739,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                                         let new_id = Self::add_assembler_to_sim(
                                             &mut self.simulation_state,
+                                            *ty,
                                             recipe,
+                                            &modules,
                                             grid_id,
                                             *pole_position,
                                             *pos,
@@ -749,7 +772,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                                         let new_id = Self::add_assembler_to_sim(
                                             &mut self.simulation_state,
+                                            *ty,
                                             recipe,
+                                            &modules,
                                             assembler_id.grid,
                                             *pole_position,
                                             *pos,
@@ -784,6 +809,58 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     self.world
                         .remove_entity_at(pos, &mut self.simulation_state, data_store);
                 },
+                ActionType::AddModules {
+                    pos,
+                    modules: new_modules,
+                } => {
+                    self.world
+                        .mutate_entities_colliding_with(pos, (1, 1), data_store, |e| {
+                            match e {
+                                Entity::Assembler { modules, info, .. } => {
+                                    let num_free_module_slots =
+                                        modules.iter().filter(|slot| slot.is_none()).count();
+
+                                    if new_modules.len() > num_free_module_slots {
+                                        // Not enough space in the module slots
+                                        warn!("Tried to insert modules into non assembler");
+                                    } else {
+                                        // We are okay!
+
+                                        modules
+                                            .iter_mut()
+                                            .filter(|slot| slot.is_none())
+                                            .zip(new_modules.iter().copied())
+                                            .for_each(|(slot, new_module)| {
+                                                assert!(slot.is_none());
+                                                *slot = Some(new_module);
+                                            });
+
+                                        match info {
+                                            AssemblerInfo::UnpoweredNoRecipe
+                                            | AssemblerInfo::Unpowered(_)
+                                            | AssemblerInfo::PoweredNoRecipe(_) => {},
+                                            AssemblerInfo::Powered { id, pole_position } => {
+                                                for module in &new_modules {
+                                                    self.simulation_state
+                                                        .factory
+                                                        .power_grids
+                                                        .power_grids[usize::from(id.grid)]
+                                                    .add_module_to_assembler(
+                                                        *id, *module, data_store,
+                                                    );
+                                                }
+                                            },
+                                        }
+                                    }
+                                },
+                                _ => {
+                                    warn!("Tried to insert modules into non assembler");
+                                },
+                            }
+                            ControlFlow::Break(())
+                        });
+                },
+                ActionType::RemoveModules { pos, indices } => todo!(),
             }
         }
     }
@@ -798,6 +875,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         //    .factory
         //    .belt_belt_inserters
         //    .update(&mut self.simulation_state.factory.belts, data_store);
+
+        #[cfg(debug_assertions)]
+        {
+            let num_placeholders = self
+                .simulation_state
+                .factory
+                .power_grids
+                .power_grids
+                .iter()
+                .filter(|grid| grid.is_placeholder)
+                .count();
+            dbg!(
+                num_placeholders,
+                self.simulation_state.factory.power_grids.power_grids.len()
+            );
+        }
 
         let (tech_progress, recipe_tick_info): (ResearchProgress, RecipeTickInfo) = self
             .simulation_state
@@ -921,22 +1014,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
     fn add_assembler_to_sim(
         sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
+        ty: u8,
         recipe: Recipe<RecipeIdxType>,
+        modules: &[Option<usize>],
         power_grid_id: PowerGridIdentifier,
         pole_position: Position,
         assembler_position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> AssemblerID<RecipeIdxType> {
-        sim_state.factory.power_grids.power_grids[power_grid_id as usize]
-            // Assembler type
-            .add_assembler(
-                0,
-                power_grid_id,
-                recipe,
-                pole_position,
-                assembler_position,
-                data_store,
-            )
+        sim_state.factory.power_grids.power_grids[power_grid_id as usize].add_assembler(
+            ty,
+            power_grid_id,
+            recipe,
+            modules,
+            pole_position,
+            assembler_position,
+            data_store,
+        )
     }
 
     fn try_instantiate_inserter(
@@ -981,11 +1075,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 }
 
                 Entity::Assembler {
+                    ty,
                     pos,
                     info: AssemblerInfo::Powered {
                         id,
                         pole_position
                     },
+                    modules
                     // FIXME: Translate the recipe_idx to
                 } => Some((
                     InserterConnection::Storage(Storage::Assembler {
@@ -994,10 +1090,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         index: id.assembler_index,
                     }),
                     Some(
-                        dbg!(data_store.recipe_to_items[&id.recipe]
+                        data_store.recipe_to_items[&id.recipe]
                             .iter()
                             .filter_map(|(dir, item)| (*dir == ItemRecipeDir::Out).then_some(*item))
-                            .collect()),
+                            .collect(),
                     ),
                 )),
                 Entity::Assembler { .. } => None,
@@ -1064,11 +1160,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 }
 
                 Entity::Assembler {
+                    ty,
                     pos,
                     info: AssemblerInfo::Powered {
                         id,
                         pole_position,
                     },
+                    modules
                     // FIXME: Translate the recipe_idx to
                 } => Some((
                     InserterConnection::Storage(Storage::Assembler {
@@ -1395,7 +1493,10 @@ mod tests {
 
         rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
             entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
-                crate::frontend::world::tile::PlaceEntityType::Assembler(Position { x: 0, y: 6 }),
+                crate::frontend::world::tile::PlaceEntityType::Assembler {
+                    pos: Position { x: 0, y: 6 },
+                    ty: 0,
+                },
             ),
         })]);
 

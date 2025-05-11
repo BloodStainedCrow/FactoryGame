@@ -466,14 +466,14 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     place_entity_type,
                 ) => match place_entity_type {
                     // TODO:
-                    crate::frontend::world::tile::PlaceEntityType::Assembler(position) => {
+                    crate::frontend::world::tile::PlaceEntityType::Assembler { ty, pos } => {
                         entity_layer.draw_sprite(
                             &texture_atlas.assembler,
                             DrawInstance {
                                 position: [
-                                    position.x as f32 - state_machine.local_player_pos.0
+                                    pos.x as f32 - state_machine.local_player_pos.0
                                         + num_tiles_across_screen / 2.0,
-                                    position.y as f32 - state_machine.local_player_pos.1
+                                    pos.y as f32 - state_machine.local_player_pos.1
                                         + num_tiles_across_screen / 2.0,
                                 ],
                                 size: [3.0, 3.0],
@@ -600,7 +600,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
             if let Some(entity) = entity {
                 match entity {
-                    crate::frontend::world::tile::Entity::Assembler { pos, info } => {
+                    crate::frontend::world::tile::Entity::Assembler { ty, pos, info, modules } => {
                         let mut goal_recipe: Option<Recipe<RecipeIdxType>> = match info {
                             AssemblerInfo::UnpoweredNoRecipe => None,
                             AssemblerInfo::Unpowered(recipe) => Some(*recipe),
@@ -613,6 +613,8 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 ui.selectable_value(&mut goal_recipe, Some(Recipe {id: i.try_into().unwrap()}), recipe_name);
                             });
                         });
+
+                        // TODO: Render module slots
 
 
                         match info {
@@ -689,14 +691,16 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         let power_range = data_store.power_pole_data[usize::from(*ty)].power_range;
                         let size = data_store.power_pole_data[usize::from(*ty)].size;
 
-                        let pg = &game_state.simulation_state.factory.power_grids.power_grids
-                            [game_state
-                                .simulation_state
-                                .factory
-                                .power_grids
-                                .pole_pos_to_grid_id[pos] as usize];
+                        let grid_id = game_state
+                        .simulation_state
+                        .factory
+                        .power_grids
+                        .pole_pos_to_grid_id[pos] as usize;
 
-                        ui.label("Power Grid");
+                        let pg = &game_state.simulation_state.factory.power_grids.power_grids
+                            [grid_id];
+
+                        ui.label(format!("Power Grid number: {}", grid_id));
 
                         let pb = ProgressBar::new(pg.last_power_mult as f32 / 64.0);
                         ui.add(pb);
@@ -757,16 +761,16 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 id,
                                 belt_pos,
                             } => {
-                                todo!()
+                                // TODO:
                             },
                             crate::frontend::world::tile::AttachedInserter::BeltBelt {
                                 item,
                                 inserter,
                             } => {
-                                todo!()
+                                // TODO:
                             },
                             crate::frontend::world::tile::AttachedInserter::StorageStorage { .. } => {
-                                todo!()
+                                // TODO:
                             },
                         },
                     },

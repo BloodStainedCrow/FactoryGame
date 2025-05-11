@@ -10,10 +10,11 @@
             )),
         )),
         PlaceEntity((
-            entities: Single(Assembler((
+            entities: Single(Assembler (
+                pos: (
                 x: 15,
                 y: 8,
-            ))),
+            ), ty: 0 )),
         )),
         SetRecipe((
             pos: (

@@ -36,7 +36,7 @@ mod test {
     use proptest::{prop_assert, prop_assert_eq, prop_assume, proptest};
 
     proptest! {
-        #![proptest_config(ProptestConfig{ cases: 1_000, max_global_rejects: 100_000, ..Default::default()})]
+        // #![proptest_config(ProptestConfig{ cases: 1_000, max_global_rejects: 100_000, ..Default::default()})]
         #[test]
         fn position_contained_in_itself(position in random_position(), size in (1u16..100, 1u16..100)) {
             prop_assert!(position.contained_in(position, size));

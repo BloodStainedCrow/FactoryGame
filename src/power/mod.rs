@@ -378,6 +378,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             return None;
         }
 
+        #[cfg(debug_assertions)]
+        let num_placeholders = self
+            .power_grids
+            .iter()
+            .filter(|grid| grid.is_placeholder)
+            .count();
+
         assert!(!self.power_grids[usize::from(kept_id)].is_placeholder);
         assert!(!self.power_grids[usize::from(removed_id)].is_placeholder);
 
@@ -430,7 +437,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             assert!(self
                 .pole_pos_to_grid_id
                 .iter()
-                .all(|idx| !self.power_grids[usize::from(*idx.1)].is_placeholder))
+                .all(|idx| !self.power_grids[usize::from(*idx.1)].is_placeholder));
+
+            assert_eq!(
+                num_placeholders + 1,
+                self.power_grids
+                    .iter()
+                    .filter(|grid| grid.is_placeholder)
+                    .count()
+            );
         }
 
         Some(updates)

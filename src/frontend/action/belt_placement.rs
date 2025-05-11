@@ -747,7 +747,10 @@ mod test {
 
     fn chest_onto_belt() -> impl Strategy<Value = Vec<ActionType<u8, u8>>> {
         Just(vec![
-            place(PlaceEntityType::Assembler(Position { x: 0, y: 3 })),
+            place(PlaceEntityType::Assembler {
+                pos: Position { x: 0, y: 3 },
+                ty: 0,
+            }),
             ActionType::SetRecipe(SetRecipeInfo {
                 pos: Position { x: 0, y: 3 },
                 recipe: Recipe { id: 0 },
@@ -814,11 +817,11 @@ mod test {
 
             let ent = state.world.get_entities_colliding_with(Position { x: 1600, y: 1603 }, (1, 1), &DATA_STORE).into_iter().next().unwrap();
 
-            let assembler_powered = matches!(ent, Entity::Assembler { pos, info: AssemblerInfo::Powered { .. } |  AssemblerInfo::PoweredNoRecipe { .. } });
+            let assembler_powered = matches!(ent, Entity::Assembler { info: AssemblerInfo::Powered { .. } |  AssemblerInfo::PoweredNoRecipe { .. }, .. });
 
             prop_assert!(assembler_powered);
 
-            let assembler_working = matches!(ent, Entity::Assembler { pos, info: AssemblerInfo::Powered { .. } });
+            let assembler_working = matches!(ent, Entity::Assembler { info: AssemblerInfo::Powered { .. }, .. });
 
             prop_assume!(assembler_working, "{:?}", ent);
 
@@ -857,7 +860,7 @@ mod test {
 
             let assembler = state.world.get_entities_colliding_with(Position { x: 1600, y: 1603 }, (1, 1), &DATA_STORE).into_iter().next().unwrap();
 
-            let assembler_working = matches!(assembler, Entity::Assembler { pos, info: AssemblerInfo::Powered { .. } });
+            let assembler_working = matches!(assembler, Entity::Assembler { info: AssemblerInfo::Powered { .. }, .. });
 
             prop_assume!(assembler_working, "{:?}", assembler);
 

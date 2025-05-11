@@ -24,6 +24,9 @@ pub enum ActionType<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     Position(PLAYERID, (f32, f32)),
 
+    AddModules { pos: Position, modules: Vec<usize> },
+    RemoveModules { pos: Position, indices: Vec<usize> },
+
     Remove(Position),
 
     Ping(Position),
