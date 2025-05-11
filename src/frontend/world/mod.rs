@@ -11,14 +11,14 @@ pub struct Position {
 }
 
 impl Position {
-    pub fn contained_in(self, other: Position, size: (u8, u8)) -> bool {
+    pub fn contained_in(self, other: Position, size: (u16, u16)) -> bool {
         self.x >= other.x
             && self.y >= other.y
             && self.x < other.x + usize::from(size.0)
             && self.y < other.y + usize::from(size.1)
     }
 
-    pub fn overlap(self, self_size: (u8, u8), other: Position, size: (u8, u8)) -> bool {
+    pub fn overlap(self, self_size: (u16, u16), other: Position, size: (u16, u16)) -> bool {
         !((self.x + usize::from(self_size.0)) <= other.x
             || (self.y + usize::from(self_size.1)) <= other.y
             || (self.x) >= (other.x + usize::from(size.0))
@@ -38,12 +38,12 @@ mod test {
     proptest! {
         #![proptest_config(ProptestConfig{ cases: 1_000, max_global_rejects: 100_000, ..Default::default()})]
         #[test]
-        fn position_contained_in_itself(position in random_position(), size in (1u8..100, 1u8..100)) {
+        fn position_contained_in_itself(position in random_position(), size in (1u16..100, 1u16..100)) {
             prop_assert!(position.contained_in(position, size));
         }
 
         #[test]
-        fn position_contained_in(position in random_position(), test_position in random_position(), size in (1u8..10, 1u8..10)) {
+        fn position_contained_in(position in random_position(), test_position in random_position(), size in (1u16..10, 1u16..10)) {
             prop_assume!(test_position.x >= position.x);
             prop_assume!(test_position.y >= position.y);
             prop_assume!(test_position.x < position.x + size.0 as usize);
@@ -53,19 +53,19 @@ mod test {
         }
 
         #[test]
-        fn position_not_contained_in(position in random_position(), test_position in random_position(), size in (1u8..10, 1u8..10)) {
+        fn position_not_contained_in(position in random_position(), test_position in random_position(), size in (1u16..10, 1u16..10)) {
             prop_assume!(test_position.x < position.x || test_position.y < position.y || test_position.x >= position.x + size.0 as usize || test_position.y >= position.y + size.1 as usize);
 
             prop_assert!(!test_position.contained_in(position, size));
         }
 
         #[test]
-        fn position_contained_in_itself_sized(position in random_position(), self_size in (1u8..100, 1u8..100), other_size in (1u8..100, 1u8..100)) {
+        fn position_contained_in_itself_sized(position in random_position(), self_size in (1u16..100, 1u16..100), other_size in  (1u16..100, 1u16..100)) {
             prop_assert!(position.overlap(self_size, position, other_size));
         }
 
         #[test]
-        fn position_contained_in_sized(position in random_position(), test_position in random_position(), self_size in (1u8..100, 1u8..100), other_size in (1u8..100, 1u8..100)) {
+        fn position_contained_in_sized(position in random_position(), test_position in random_position(), self_size in  (1u16..100, 1u16..100), other_size in  (1u16..100, 1u16..100)) {
             prop_assume!(test_position.x + self_size.0 as usize >= position.x);
             prop_assume!(test_position.y + self_size.1 as usize >= position.y);
             prop_assume!(test_position.x < position.x + other_size.0 as usize);
@@ -76,7 +76,7 @@ mod test {
 
 
         #[test]
-        fn super_stupid_test_unsized(position in random_position(), test_position in random_position(), size in (1u8..10, 1u8..10)) {
+        fn super_stupid_test_unsized(position in random_position(), test_position in random_position(), size in (1u16..10, 1u16..10)) {
             let grid_size = max(position.x + size.0 as usize, max(test_position.x, max(position.y + size.1 as usize, test_position.y))) + 1;
 
             let mut grid = vec![vec![false; grid_size]; grid_size];
@@ -91,7 +91,7 @@ mod test {
         }
 
         #[test]
-        fn super_stupid_test_unsized_sized(position in random_position(), test_position in random_position(), size in (1u8..3, 1u8..3), test_size in (1u8..3, 1u8..3)) {
+        fn super_stupid_test_unsized_sized(position in random_position(), test_position in random_position(), size in (1u16..3, 1u16..3), test_size in (1u16..3, 1u16..3)) {
             let grid_size = max(position.x + size.0 as usize, max(test_position.x + test_size.0 as usize, max(position.y + size.1 as usize, test_position.y + test_size.1 as usize))) + 1;
 
             let mut grid = vec![vec![false; grid_size]; grid_size];

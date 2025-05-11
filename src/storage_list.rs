@@ -1,19 +1,16 @@
 use std::u16;
 
 use itertools::Itertools;
-use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator};
+use rayon::iter::IndexedParallelIterator;
 
 use crate::{
     assembler::FullAssemblerStore,
     chest::FullChestStore,
     data::{DataStore, ItemRecipeDir},
     inserter::Storage,
-    item::{usize_from, IdxTrait, Item, Recipe, ITEMCOUNTTYPE},
+    item::{usize_from, IdxTrait, Item, ITEMCOUNTTYPE},
     lab::MultiLabStore,
-    power::{
-        power_grid::{PowerGrid, PowerGridIdentifier},
-        PowerGridStorage,
-    },
+    power::{power_grid::PowerGridIdentifier, PowerGridStorage},
     split_arbitrary::split_arbitrary_mut_slice,
 };
 

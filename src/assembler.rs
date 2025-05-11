@@ -48,6 +48,7 @@ pub struct MultiAssemblerStore<
     #[serde(with = "arrays")]
     outputs: [Box<[ITEMCOUNTTYPE]>; NUM_OUTPUTS],
     timers: Box<[TIMERTYPE]>,
+    prod_timers: Box<[TIMERTYPE]>,
 
     holes: Vec<usize>,
     positions: Vec<Position>,
@@ -66,6 +67,7 @@ pub struct AssemblerOnclickInfo<ItemIdxType: WeakIdxTrait> {
     pub inputs: Vec<(Item<ItemIdxType>, ITEMCOUNTTYPE)>,
     pub outputs: Vec<(Item<ItemIdxType>, ITEMCOUNTTYPE)>,
     pub timer_percentage: f32,
+    pub prod_timer_percentage: f32,
 }
 
 impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
@@ -246,6 +248,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             ings: array::from_fn(|_| vec![].into_boxed_slice()),
             outputs: array::from_fn(|_| vec![].into_boxed_slice()),
             timers: vec![].into_boxed_slice(),
+            prod_timers: vec![].into_boxed_slice(),
 
             bonus_productivity: vec![].into_boxed_slice(),
             speed: vec![].into_boxed_slice(),
@@ -334,6 +337,17 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .map(|(_, v)| v),
         );
 
+        let mut new_prod_timers = self.prod_timers.into_vec();
+        new_prod_timers.extend(
+            other
+                .prod_timers
+                .into_vec()
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
         let mut new_speed = self.speed.into_vec();
         new_speed.extend(
             other
@@ -409,6 +423,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             ings: new_ings,
             outputs: new_outputs,
             timers: new_timers.into(),
+            prod_timers: new_prod_timers.into(),
             holes: self.holes,
             len: self.positions.len(),
             speed: new_speed.into_boxed_slice(),
@@ -464,6 +479,8 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 })
                 .collect(),
             timer_percentage: f32::from(self.timers[index as usize]) / f32::from(TIMERTYPE::MAX),
+            prod_timer_percentage: f32::from(self.prod_timers[index as usize])
+                / f32::from(TIMERTYPE::MAX),
         }
     }
 
@@ -629,9 +646,22 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             array: self.outputs.each_mut().map(|r| r.iter_mut()),
         };
 
-        for (mut outputs, (mut ings, timer)) in
-            outputs_arr.zip(ings_arr.zip(self.timers.iter_mut()))
+        for (mut outputs, (mut ings, (timer, (prod_timer, (speed_mod, bonus_prod))))) in outputs_arr
+            .zip(
+                ings_arr.zip(
+                    self.timers.iter_mut().zip(
+                        self.prod_timers.iter_mut().zip(
+                            self.speed
+                                .iter()
+                                .copied()
+                                .zip(self.bonus_productivity.iter().copied()),
+                        ),
+                    ),
+                ),
+            )
         {
+            let increase = increase * (speed_mod as u16) / 10;
+
             let ing_mul = ings
                 .iter()
                 .zip(our_ings.iter())
@@ -651,24 +681,27 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             let new_timer = new_timer_output_space * u16::from(space_mul)
                 + new_timer_output_full * (1 - u16::from(space_mul));
 
-            let timer_mul: u8 = (new_timer < *timer).into();
+            let new_prod_timer =
+                prod_timer.wrapping_add(new_timer.wrapping_sub(*timer) * (bonus_prod as u16) / 10);
 
-            // let work_done_mul = (*timer != new_timer).into();
+            let timer_mul: u8 = (new_timer < *timer).into();
+            let prod_timer_mul: u8 = (new_prod_timer < *prod_timer).into();
 
             // Power calculation
             // We use power if any work was done
             running += u32::from(ing_mul * u16::from(space_mul));
 
             *timer = new_timer;
+            *prod_timer = new_prod_timer;
             outputs
                 .iter_mut()
                 .zip(our_outputs.iter())
-                .for_each(|(output, new)| **output += timer_mul * space_mul * new);
+                .for_each(|(output, new)| **output += (timer_mul + prod_timer_mul) * new);
             ings.iter_mut()
                 .zip(our_ings.iter())
-                .for_each(|(ing, used)| **ing -= timer_mul * space_mul * used);
-            times_ings_used += u32::from(timer_mul * space_mul);
-            num_finished_crafts += u32::from(timer_mul * space_mul);
+                .for_each(|(ing, used)| **ing -= timer_mul * used);
+            times_ings_used += u32::from(timer_mul);
+            num_finished_crafts += u32::from(timer_mul + prod_timer_mul);
         }
 
         (
@@ -770,6 +803,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         [ITEMCOUNTTYPE; NUM_INGS],
         [ITEMCOUNTTYPE; NUM_OUTPUTS],
         TIMERTYPE,
+        TIMERTYPE,
         Watt,
         u8,
         u8,
@@ -793,6 +827,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .collect_array()
                 .unwrap(),
             self.timers[index],
+            self.prod_timers[index],
             self.base_power_consumption[index],
             self.power_consumption_modifier[index],
             self.bonus_productivity[index],
@@ -816,17 +851,19 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> usize {
-        // TODO: Is 0 the correct initial timer value?
+        // FIXME: Get power from data_store
+        // FIXME: Get Speed from data_store
         self.add_assembler_with_data(
             // TODO: Make this dependent on the speed fo the machine and recipe
-            array::from_fn(|i| 10),
-            array::from_fn(|i| 0),
-            array::from_fn(|i| 0),
+            array::from_fn(|ing| 10),
+            array::from_fn(|_| 0),
+            array::from_fn(|_| 0),
+            0,
             0,
             Watt(0),
             10,
-            0,
-            10,
+            4,
+            20,
             position,
         )
     }
@@ -835,7 +872,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         let data = self.remove_assembler_data(index);
 
         dest.add_assembler_with_data(
-            data.0, data.1, data.2, data.3, data.4, data.5, data.6, data.7, data.8,
+            data.0, data.1, data.2, data.3, data.4, data.5, data.6, data.7, data.8, data.9,
         )
     }
 
@@ -845,6 +882,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         ings: [ITEMCOUNTTYPE; NUM_INGS],
         out: [ITEMCOUNTTYPE; NUM_OUTPUTS],
         timer: TIMERTYPE,
+        prod_timer: TIMERTYPE,
         power: Watt,
         power_consumption_modifier: u8,
         bonus_productiviy: u8,
@@ -863,7 +901,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         }
 
         if let Some(hole_index) = self.holes.pop() {
-            // TODO: This is scatter assemblers which are close around the vec which is bad for cache locality
+            // TODO: This could scatter assemblers which are close around the vec which is bad for cache locality
             for (output, new_val) in self.outputs.iter_mut().zip(out) {
                 output[hole_index] = new_val;
             }
@@ -873,7 +911,8 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             for (ing, new_val) in self.ings_max_insert.iter_mut().zip(ings_max_insert) {
                 ing[hole_index] = new_val;
             }
-            self.timers[hole_index] = 0;
+            self.timers[hole_index] = timer;
+            self.prod_timers[hole_index] = prod_timer;
             self.base_power_consumption[hole_index] = power;
             self.power_consumption_modifier[hole_index] = power_consumption_modifier;
             self.bonus_productivity[hole_index] = bonus_productiviy;
@@ -882,7 +921,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             return hole_index;
         }
 
-        if self.len == self.outputs[0].len() {
+        if self.len == self.timers.len() {
             // We need to grow
             // TODO: This works on the assumption that Vec::into_boxed_slice does not reallocate,
             //       If it does, this code is still correct but horribly slow
@@ -929,6 +968,12 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 timers.into_boxed_slice()
             });
 
+            take_mut::take(&mut self.prod_timers, |prod_timers| {
+                let mut prod_timers = prod_timers.into_vec();
+                prod_timers.resize(new_len, 0);
+                prod_timers.into_boxed_slice()
+            });
+
             take_mut::take(&mut self.base_power_consumption, |base_power_consumption| {
                 let mut base_power_consumption = base_power_consumption.into_vec();
                 base_power_consumption.resize(new_len, Watt(0));
@@ -967,6 +1012,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             ing[self.len] = new_val;
         }
         self.timers[self.len] = timer;
+        self.prod_timers[self.len] = prod_timer;
         self.base_power_consumption[self.len] = power;
         self.power_consumption_modifier[self.len] = power_consumption_modifier;
         self.bonus_productivity[self.len] = bonus_productiviy;

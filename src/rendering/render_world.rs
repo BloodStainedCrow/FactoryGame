@@ -4,7 +4,9 @@ use std::{
 };
 
 use crate::{
+    assembler::AssemblerOnclickInfo,
     belt::{belt::Belt, splitter::SPLITTER_BELT_LEN, BeltTileId},
+    blueprint::Blueprint,
     data::DataStore,
     frontend::{
         action::{
@@ -29,7 +31,7 @@ use eframe::egui::{
 };
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
-use log::{info, warn};
+use log::{info, trace, warn};
 use tilelib::types::{DrawInstance, Layer, RendererTrait};
 
 use super::{app_state::GameState, TextureAtlas};
@@ -46,7 +48,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     state_machine: &ActionStateMachine<ItemIdxType, RecipeIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
-    let num_tiles_across_screen = WIDTH_PER_LEVEL as f32 * state_machine.zoom_level;
+    let num_tiles_across_screen =
+        WIDTH_PER_LEVEL as f32 * state_machine.zoom_level * state_machine.zoom_level;
     let tilesize: f32 = 1.0 / num_tiles_across_screen;
 
     let mut tile_layer = Layer::square_tile_grid(tilesize);
@@ -547,7 +550,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         },
     );
 
-    info!("Rendering self at {:?}", state_machine.local_player_pos);
+    trace!("Rendering self at {:?}", state_machine.local_player_pos);
 
     renderer.draw(&tile_layer);
 
@@ -570,6 +573,14 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
     let mut actions = vec![];
+
+    Window::new("BP").show(ctx, |ui| {
+        let bp = Blueprint::from_area(&game_state.world, [1590..1700, 1590..1700], data_store);
+
+        let mut s: String =
+            ron::ser::to_string_pretty(&bp, ron::ser::PrettyConfig::default()).unwrap();
+        ui.text_edit_multiline(&mut s);
+    });
 
     match &state_machine.state {
         crate::frontend::action::action_state_machine::ActionStateMachineState::Idle => {},
@@ -640,18 +651,25 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 // TODO:
                                 // ui.label(data_store.recipe_names[usize_from(assembler_id.recipe.id)]);
 
-                                let assembler = game_state
+                                let AssemblerOnclickInfo {
+                                    inputs,
+                                    outputs,
+                                    timer_percentage,
+                                    prod_timer_percentage,
+                                } = game_state
                                     .simulation_state
                                     .factory
                                     .power_grids
                                     .get_assembler_info(*id, data_store);
 
-                                let pb = ProgressBar::new(assembler.timer_percentage).show_percentage().corner_radius(CornerRadius::ZERO);
-                                ui.add(pb);
+                                let main_pb = ProgressBar::new(timer_percentage).show_percentage().corner_radius(CornerRadius::ZERO);
+                                ui.add(main_pb);
+                                let prod_pb = ProgressBar::new(prod_timer_percentage).fill(Color32::ORANGE).show_percentage().corner_radius(CornerRadius::ZERO);
+                                ui.add(prod_pb);
 
-                                TableBuilder::new(ui).columns(Column::auto().resizable(false), assembler.inputs.len() + assembler.outputs.len()).body(|mut body| {
+                                TableBuilder::new(ui).columns(Column::auto().resizable(false), inputs.len() + outputs.len()).body(|mut body| {
                                     body.row(5.0, |mut row| {
-                                        for (item, count) in assembler.inputs.iter().chain(assembler.outputs.iter()) {
+                                        for (item, count) in inputs.iter().chain(outputs.iter()) {
                                             row.col(|ui| {
                                                 ui.label(&data_store.item_names[usize_from(item.id)]);
                                                 ui.label(format!("{}", *count));
@@ -792,6 +810,12 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 }
                             });
                         });
+                    },
+                    Entity::Lab { pos, ty, pole_position } => {
+                        // TODO
+                    },
+                    Entity::SolarPanel { pos, ty, pole_position } => {
+                        // TODO
                     }
                     _ => todo!(),
                 }

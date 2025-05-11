@@ -112,24 +112,74 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
         self.is_circular = true;
     }
 
+    // pub fn get_take_item_fn<'a>(
+    //     &'a mut self,
+    //     pos: BeltLenType,
+    // ) -> Option<impl FnMut() + use<'a, ItemIdxType, RecipeIdxType>> {
+    //     self.locs[self.into_loc_index(pos)].then_some(move || {
+    //         self.update_first_free_pos(pos);
+    //         self.locs[self.into_loc_index(pos)] = false;
+    //     })
+    // }
+
+    // pub fn get_put_item_fn<'a>(
+    //     &'a mut self,
+    //     pos: BeltLenType,
+    // ) -> Option<impl FnMut() + use<'a, ItemIdxType, RecipeIdxType>> {
+    //     (!self.locs[self.into_loc_index(pos)]).then_some(move || {
+    //         let first_possible_free_pos = match self.first_free_index {
+    //             FreeIndex::OldFreeIndex(i) | FreeIndex::FreeIndex(i) => i,
+    //         };
+    //         if pos == first_possible_free_pos {
+    //             self.first_free_index =
+    //                 FreeIndex::OldFreeIndex(BeltLenType::try_from(pos).unwrap());
+    //         }
+
+    //         self.locs[self.into_loc_index(pos)] = true;
+    //     })
+    // }
+
+    // FIXME: These do not set free pos correctly if items are inserted
     pub fn get_front_mut(&mut self) -> &mut bool {
-        self.update_first_free_pos_maybe(0);
         self.get_mut(0)
     }
 
     pub fn get_back_mut(&mut self) -> &mut bool {
-        self.update_first_free_pos_maybe((self.get_len() - 1).into());
         self.get_mut(self.get_len() - 1)
     }
 
+    // FIXME: This function should no be public
     pub fn get_mut(&mut self, index: u16) -> &mut bool {
-        self.update_first_free_pos_maybe(index.into());
         &mut self.locs[self.into_loc_index(index)]
     }
 
-    pub fn get_two(&mut self, indices: [BeltLenType; 2]) -> [&mut bool; 2] {
-        self.update_first_free_pos_maybe(min(indices[0], indices[1]));
+    // fn get_take_and_put<'a>(
+    //     &mut self,
+    //     indices: [BeltLenType; 2],
+    // ) -> (
+    //     Option<impl FnMut() + use<'a, ItemIdxType, RecipeIdxType>>,
+    //     Option<impl FnMut() + use<'a, ItemIdxType, RecipeIdxType>>,
+    // ) {
+    //     (
+    //         self.locs[self.into_loc_index(indices[0])].then_some(move || {
+    //             self.update_first_free_pos(indices[0]);
+    //             self.locs[self.into_loc_index(indices[0])] = false;
+    //         }),
+    //         (!self.locs[self.into_loc_index(indices[1])]).then_some(move || {
+    //             let first_possible_free_pos = match self.first_free_index {
+    //                 FreeIndex::OldFreeIndex(i) | FreeIndex::FreeIndex(i) => i,
+    //             };
+    //             if indices[1] == first_possible_free_pos {
+    //                 self.first_free_index =
+    //                     FreeIndex::OldFreeIndex(BeltLenType::try_from(indices[1]).unwrap());
+    //             }
 
+    //             self.locs[self.into_loc_index(indices[1])] = true;
+    //         }),
+    //     )
+    // }
+
+    pub fn get_two(&mut self, indices: [BeltLenType; 2]) -> [&mut bool; 2] {
         self.locs
             .get_disjoint_mut(indices.map(|i| self.into_loc_index(i)))
             .expect("Index out of bounds or same")
@@ -452,7 +502,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
         }
     }
 
-    fn update_first_free_pos(&mut self, now_empty_pos: BeltLenType) {
+    pub fn remove_first_free_pos_maybe(&mut self, now_filled_pos: BeltLenType) {
+        match self.first_free_index {
+            FreeIndex::OldFreeIndex(index) | FreeIndex::FreeIndex(index) => {
+                if now_filled_pos == index {
+                    self.first_free_index = FreeIndex::OldFreeIndex(now_filled_pos);
+                }
+            },
+        }
+    }
+
+    pub fn update_first_free_pos(&mut self, now_empty_pos: BeltLenType) {
         match self.first_free_index {
             FreeIndex::OldFreeIndex(index) | FreeIndex::FreeIndex(index) => {
                 if now_empty_pos <= index {
@@ -465,7 +525,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
     fn update_first_free_pos_maybe(&mut self, now_maybe_empty_pos: BeltLenType) {
         match self.first_free_index {
             FreeIndex::OldFreeIndex(index) | FreeIndex::FreeIndex(index) => {
-                if now_maybe_empty_pos <= index {
+                if now_maybe_empty_pos < index {
                     self.first_free_index = FreeIndex::OldFreeIndex(now_maybe_empty_pos);
                 }
             },
@@ -474,7 +534,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
 
     fn find_and_update_real_first_free_index(&mut self) -> BeltLenType {
         let new_free_index = match self.first_free_index {
-            FreeIndex::FreeIndex(index) => index,
+            FreeIndex::FreeIndex(index) => {
+                debug_assert!(
+                    self.query_item(index).is_none(),
+                    "Free index not free {self:?}"
+                );
+
+                index
+            },
             FreeIndex::OldFreeIndex(index) => {
                 info!("HAD TO SEARCH FOR FIRST FREE INDEX!");
 
@@ -516,6 +583,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
         };
 
         self.first_free_index = FreeIndex::FreeIndex(new_free_index);
+        debug_assert!(
+            self.query_item(new_free_index).is_none(),
+            "Free index not free {self:?}"
+        );
 
         new_free_index
     }
@@ -679,14 +750,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
                 .expect("Max length of belt (u16::MAX) reached");
         }
 
-        Self {
+        let mut new = Self {
             is_circular: false,
             first_free_index: new_empty,
             zero_index: new_zero,
             locs: locs.into_boxed_slice(),
             inserters,
             item,
-        }
+        };
+
+        new.find_and_update_real_first_free_index();
+
+        new
     }
 
     pub fn break_belt_at(&mut self, belt_pos_to_break_at: u16) -> Option<Self> {
@@ -897,8 +972,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Belt<ItemIdxType>
             return;
         }
 
-        assert!(first_free_index_real < len, "{self:?}");
-        assert!(first_free_index_real > 0);
+        assert!(
+            first_free_index_real < len,
+            "first_free_index_real < len: {self:?}"
+        );
+        assert!(
+            first_free_index_real > 0,
+            "first_free_index_real > 0: {self:?}"
+        );
 
         let slice = &mut self.locs;
 

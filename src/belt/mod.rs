@@ -237,12 +237,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> InnerBeltStore<ItemIdxType,
         &mut self,
         id: BeltId<ItemIdxType>,
     ) -> SmartBelt<ItemIdxType, RecipeIdxType> {
-        let mut temp = SmartBelt::new(1, id.item);
-        mem::swap(
-            &mut temp,
-            &mut self.smart_belts[usize_from(id.item.id)].belts[id.index],
-        );
-        temp
+        self.smart_belts[usize_from(id.item.id)].remove_belt(id.index)
     }
 
     fn get_pure_splitter_belt_ids<'a>(
@@ -319,6 +314,37 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> InnerBeltStore<ItemIdxType,
         let sushi = belt.into_sushi_belt();
 
         let new_id = self.add_sushi_belt(sushi);
+
+        // TODO: This scales poorly
+        for bb_inserter in
+            &mut self.belt_belt_inserters.pure_to_pure_inserters[usize_from(id.item.id)]
+        {
+            if let Some(ins) = bb_inserter {
+                if ins.1 .0 .0 == id.index {
+                    // The (now sushi) belt was the input of this inserter
+                    todo!()
+                } else if ins.1 .1 .0 == id.index {
+                    // The (now sushi) belt was the destination of this inserter
+                    todo!()
+                }
+            }
+        }
+
+        for bb_inserter in &mut self.belt_belt_inserters.pure_to_sushi_inserters {
+            if let Some(ins) = bb_inserter {
+                if ins.1 .0 .0 == id {
+                    // The (now sushi) belt was the input of this inserter
+                    todo!()
+                }
+            }
+        }
+
+        for bb_inserter in &mut self.belt_belt_inserters.temp_sushi_to_smart_inserters {
+            if bb_inserter.1 .1 .0 == id {
+                // The (now sushi) belt was the dest of this inserter
+                todo!()
+            }
+        }
 
         // TODO: Update id whereever necessary
 
@@ -1154,7 +1180,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
                     for (ins, ((source, source_pos), (dest, dest_pos), cooldown, filter)) in
                         pure_to_pure_inserters.iter_mut().flatten()
                     {
-                        let [source, dest] = if *source == *dest {
+                        let [source_loc, dest_loc] = if *source == *dest {
                             assert_ne!(
                                 source_pos, dest_pos,
                                 "An inserter cannot take and drop off on the same tile"
@@ -1171,19 +1197,30 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
                         };
 
                         if *cooldown == 0 {
-                            ins.update_instant(source, dest);
+                            ins.update_instant(source_loc, dest_loc);
                         } else {
-                            ins.update(source, dest, *cooldown, (), |_| {
+                            ins.update(source_loc, dest_loc, *cooldown, (), |_| {
                                 filter
                                     .map(|filter_item| filter_item == item)
                                     .unwrap_or(true)
                             });
                         }
+
+                        let source_loc = *source_loc;
+                        let dest_loc = *dest_loc;
+
+                        if !source_loc {
+                            belt_store.belts[*source].update_first_free_pos(*source_pos);
+                        }
+
+                        if dest_loc {
+                            belt_store.belts[*dest].remove_first_free_pos_maybe(*dest_pos);
+                        }
                     }
 
                     for splitter in &mut splitters.pure_splitters {
                         // TODO: Assert that the item is the same!
-                        splitter.update(belt_store);
+                        //splitter.update(belt_store);
                     }
                 },
             );
@@ -1746,7 +1783,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
         }
     }
 
-    fn remove_belt_belt_inserter(&mut self, inserter_index: usize) {
+    pub fn remove_belt_belt_inserter(&mut self, inserter_index: usize) {
         todo!()
     }
 
@@ -1962,6 +1999,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> MultiBeltStore<ItemIdxType,
             self.belts.push(belt);
             self.belts.len() - 1
         }
+    }
+
+    pub fn remove_belt(&mut self, belt: usize) -> SmartBelt<ItemIdxType, RecipeIdxType> {
+        self.holes.push(belt);
+
+        let mut temp = SmartBelt::new(1, self.belts[belt].item);
+        temp.make_circular();
+        mem::swap(&mut temp, &mut self.belts[belt]);
+        temp
     }
 }
 

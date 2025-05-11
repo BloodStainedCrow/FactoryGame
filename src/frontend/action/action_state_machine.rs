@@ -110,13 +110,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 self.current_mouse_pos,
                             );
 
-                            let chunk = world.get_chunk_for_tile(pos);
-
-                            if let Some(chunk) = chunk {
-                                dbg!(pos);
-                                if chunk.get_entity_at(pos, data_store).is_some() {
-                                    self.state = ActionStateMachineState::Viewing(pos);
-                                }
+                            if let Some(e) = world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next() {
+                                self.state = ActionStateMachineState::Viewing(e.get_pos());
                             }
 
                             vec![]
@@ -154,12 +149,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 self.current_mouse_pos,
                             );
 
-                            let chunk = world.get_chunk_for_tile(pos);
-
-                            if let Some(chunk) = chunk {
-                                if chunk.get_entity_at(pos, data_store).is_some() {
-                                    self.state = ActionStateMachineState::Viewing(pos);
-                                }
+                            if let Some(e) = world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next() {
+                                self.state = ActionStateMachineState::Viewing(e.get_pos());
                             }
 
                             vec![]
@@ -520,8 +511,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         mouse_pos: (f32, f32),
     ) -> Position {
         let mouse_pos = (
-            ((mouse_pos.0 - 0.5) * (WIDTH_PER_LEVEL as f32)).mul_add(zoom_level, player_pos.0),
-            ((mouse_pos.1 - 0.5) * (WIDTH_PER_LEVEL as f32)).mul_add(zoom_level, player_pos.1),
+            ((mouse_pos.0 - 0.5) * (WIDTH_PER_LEVEL as f32))
+                .mul_add(zoom_level * zoom_level, player_pos.0),
+            ((mouse_pos.1 - 0.5) * (WIDTH_PER_LEVEL as f32))
+                .mul_add(zoom_level * zoom_level, player_pos.1),
         );
 
         Position {

@@ -15,19 +15,23 @@ use crate::{
             ActionType,
         },
         world::{
-            tile::{Dir, FloorTile, PlaceEntityType},
+            tile::{
+                AssemblerID, AssemblerInfo, AttachedInserter, Dir, FloorTile, InserterInfo,
+                PlaceEntityType, World,
+            },
             Position,
         },
     },
     item::{IdxTrait, Item, Recipe, WeakIdxTrait},
     rendering::app_state::GameState,
     replays::Replay,
+    statistics::recipe,
 };
 
 // For now blueprint will just be a list of actions
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct Blueprint<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    actions: Vec<ActionType<ItemIdxType, RecipeIdxType>>,
+    pub actions: Vec<ActionType<ItemIdxType, RecipeIdxType>>,
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, RecipeIdxType> {
@@ -178,6 +182,151 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
         Self {
             actions: replay.actions.iter().map(|ra| ra.action.clone()).collect(),
         }
+    }
+
+    pub fn from_area(
+        world: &World<ItemIdxType, RecipeIdxType>,
+        area: [Range<u16>; 2],
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
+        let mut bp = Self { actions: vec![] };
+
+        let base_pos = Position {
+            x: area[0].start as usize,
+            y: area[1].start as usize,
+        };
+
+        let entities = world.get_entities_colliding_with(
+            base_pos,
+            (area[0].end - area[0].start, area[1].end - area[1].start),
+            data_store,
+        );
+
+        // FIXME: This could be unreproducable if the power connection order matters
+        // FIXME: This will underflow if a entity extends past the edge of the selected area
+        for e in entities {
+            let actions = match e {
+                crate::frontend::world::tile::Entity::Assembler {
+                    pos,
+                    info: AssemblerInfo::PoweredNoRecipe(_) | AssemblerInfo::UnpoweredNoRecipe,
+                } => vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler(Position {
+                        x: pos.x - base_pos.x,
+                        y: pos.y - base_pos.y,
+                    })),
+                })],
+                crate::frontend::world::tile::Entity::Assembler {
+                    pos,
+                    info:
+                        AssemblerInfo::Powered {
+                            id: AssemblerID { recipe, .. },
+                            ..
+                        }
+                        | AssemblerInfo::Unpowered(recipe),
+                } => vec![
+                    ActionType::PlaceEntity(PlaceEntityInfo {
+                        entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler(
+                            Position {
+                                x: pos.x - base_pos.x,
+                                y: pos.y - base_pos.y,
+                            },
+                        )),
+                    }),
+                    ActionType::SetRecipe(SetRecipeInfo {
+                        pos: Position {
+                            x: pos.x - base_pos.x,
+                            y: pos.y - base_pos.y,
+                        },
+                        recipe: *recipe,
+                    }),
+                ],
+                crate::frontend::world::tile::Entity::PowerPole { ty, pos, .. } => {
+                    vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                        entities: EntityPlaceOptions::Single(PlaceEntityType::PowerPole {
+                            pos: Position {
+                                x: pos.x - base_pos.x,
+                                y: pos.y - base_pos.y,
+                            },
+                            ty: *ty,
+                        }),
+                    })]
+                },
+                crate::frontend::world::tile::Entity::Belt { pos, direction, .. } => {
+                    vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                        entities: EntityPlaceOptions::Single(PlaceEntityType::Belt {
+                            pos: Position {
+                                x: pos.x - base_pos.x,
+                                y: pos.y - base_pos.y,
+                            },
+                            direction: *direction,
+                        }),
+                    })]
+                },
+                crate::frontend::world::tile::Entity::Underground {
+                    pos,
+                    underground_dir,
+                    direction,
+                    id,
+                    belt_pos,
+                } => todo!(),
+                crate::frontend::world::tile::Entity::Splitter { pos, direction, id } => todo!(),
+                crate::frontend::world::tile::Entity::Inserter { pos, direction, .. } => {
+                    vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                        entities: EntityPlaceOptions::Single(PlaceEntityType::Inserter {
+                            pos: Position {
+                                x: pos.x - base_pos.x,
+                                y: pos.y - base_pos.y,
+                            },
+                            dir: *direction,
+                            filter: None,
+                        }),
+                    })]
+                },
+                crate::frontend::world::tile::Entity::Chest { ty, pos, .. } => {
+                    vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                        entities: EntityPlaceOptions::Single(PlaceEntityType::Chest {
+                            pos: Position {
+                                x: pos.x - base_pos.x,
+                                y: pos.y - base_pos.y,
+                            },
+                        }),
+                    })]
+                },
+                crate::frontend::world::tile::Entity::Roboport {
+                    ty,
+                    pos,
+                    power_grid,
+                    network,
+                    id,
+                } => todo!(),
+                crate::frontend::world::tile::Entity::SolarPanel { pos, ty, .. } => {
+                    vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                        entities: EntityPlaceOptions::Single(PlaceEntityType::SolarPanel {
+                            ty: *ty,
+                            pos: Position {
+                                x: pos.x - base_pos.x,
+                                y: pos.y - base_pos.y,
+                            },
+                        }),
+                    })]
+                },
+                crate::frontend::world::tile::Entity::Lab { pos, ty, .. } => {
+                    vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                        entities: EntityPlaceOptions::Single(PlaceEntityType::Lab {
+                            ty: *ty,
+                            pos: Position {
+                                x: pos.x - base_pos.x,
+                                y: pos.y - base_pos.y,
+                            },
+                        }),
+                    })]
+                },
+            };
+
+            bp.actions.extend(actions);
+        }
+
+        bp
     }
 }
 

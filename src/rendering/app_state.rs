@@ -1,10 +1,11 @@
-use std::{borrow::Borrow, marker::PhantomData, ops::ControlFlow};
+use std::{borrow::Borrow, fs::File, marker::PhantomData, ops::ControlFlow};
 
 use crate::{
     belt::{
         belt::Belt, splitter::Splitter, BeltBeltInserterAdditionInfo, BeltBeltInserterInfo,
         BeltStore, BeltTileId, MultiBeltStore,
     },
+    blueprint::Blueprint,
     chest::{FullChestStore, MultiChestStore},
     data::{DataStore, ItemRecipeDir},
     frontend::{
@@ -60,6 +61,46 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             statistics: GenStatistics::new(data_store),
         }
     }
+
+    pub fn new_with_production(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+        let mut ret = Self {
+            current_tick: 0,
+            world: World::new(),
+            simulation_state: SimulationState::new(data_store),
+            statistics: GenStatistics::new(data_store),
+        };
+
+        let file = File::open("test_blueprints/red_sci.bp").unwrap();
+        let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
+
+        for y_pos in (1590..30000).step_by(7) {
+            for x_pos in (1590..3000).step_by(20) {
+                if rand::random::<u16>() < u16::MAX / 10 {
+                    ret.update(data_store);
+                }
+
+                bp.apply(Position { x: x_pos, y: y_pos }, &mut ret, data_store);
+            }
+        }
+
+        ret
+    }
+
+    pub fn new_with_bp(data_store: &DataStore<ItemIdxType, RecipeIdxType>, bp_path: &str) -> Self {
+        let mut ret = Self {
+            current_tick: 0,
+            world: World::new(),
+            simulation_state: SimulationState::new(data_store),
+            statistics: GenStatistics::new(data_store),
+        };
+
+        let file = File::open(bp_path).unwrap();
+        let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
+
+        bp.apply(Position { x: 1590, y: 1590 }, &mut ret, data_store);
+
+        ret
+    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -84,12 +125,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SimulationState<ItemIdxType
 pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub power_grids: PowerGridStorage<ItemIdxType, RecipeIdxType>,
     pub belts: BeltStore<ItemIdxType, RecipeIdxType>,
-    storage_storage_inserters: StorageStorageInserterStore<RecipeIdxType>,
+    pub storage_storage_inserters: StorageStorageInserterStore<RecipeIdxType>,
     pub chests: FullChestStore<ItemIdxType>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-struct StorageStorageInserterStore<RecipeIdxType: WeakIdxTrait> {
+pub struct StorageStorageInserterStore<RecipeIdxType: WeakIdxTrait> {
     inserters: Box<[Vec<StorageStorageInserter<RecipeIdxType>>]>,
     holes: Box<[Vec<usize>]>,
 }
@@ -134,7 +175,7 @@ impl<RecipeIdxType: IdxTrait> StorageStorageInserterStore<RecipeIdxType> {
             });
     }
 
-    fn add_ins<ItemIdxType: IdxTrait>(
+    pub fn add_ins<ItemIdxType: IdxTrait>(
         &mut self,
         item: Item<ItemIdxType>,
         start: Storage<RecipeIdxType>,
@@ -154,7 +195,7 @@ impl<RecipeIdxType: IdxTrait> StorageStorageInserterStore<RecipeIdxType> {
         idx
     }
 
-    fn remove_ins<ItemIdxType: IdxTrait>(&mut self, item: Item<ItemIdxType>, index: usize) {
+    pub fn remove_ins<ItemIdxType: IdxTrait>(&mut self, item: Item<ItemIdxType>, index: usize) {
         self.holes[usize_from(item.id)].push(index);
     }
 }
@@ -234,6 +275,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         actions: impl IntoIterator<Item = impl Borrow<ActionType<ItemIdxType, RecipeIdxType>>>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
+        // let num_assemblers = self
+        //     .world
+        //     .get_chunks()
+        //     .into_iter()
+        //     .map(|c| {
+        //         c.get_entities()
+        //             .into_iter()
+        //             .filter(|e| matches!(e, Entity::Assembler { .. }))
+        //     })
+        //     .count();
+        // panic!("{}", num_assemblers);
+
         for action in actions {
             // FIXME: I just clone for now
             match action.borrow().clone() {
@@ -417,7 +470,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     x: pole_pos.x - power_range as usize,
                                     y: pole_pos.y - power_range as usize,
                                 },
-                                (2 * power_range + 1, 2 * power_range + 1),
+                                ((2 * power_range + 1).into(), (2 * power_range + 1).into()),
                                 data_store,
                                 |e| {
                                     match e {
@@ -752,7 +805,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             .power_grids
             .power_grids
             .par_iter_mut()
-            .map(|grid| grid.update(Watt(60000), &self.simulation_state.tech_state, data_store))
+            .map(|grid| grid.update(Watt(600000), &self.simulation_state.tech_state, data_store))
             .reduce(
                 || (0, RecipeTickInfo::new(data_store)),
                 |(acc_progress, infos), (rhs_progress, info)| {
@@ -795,7 +848,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         x: assembler_pos.x - usize::from(inserter_range),
                         y: assembler_pos.y - usize::from(inserter_range),
                     },
-                    (2 * inserter_range + size.0, 2 * inserter_range + size.1),
+                    (
+                        (2 * inserter_range + size.0).into(),
+                        (2 * inserter_range + size.1).into(),
+                    ),
                     data_store,
                     |e| {
                         match e {
@@ -805,8 +861,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 info,
                             } => match info {
                                 InserterInfo::NotAttached { start_pos, end_pos } => {
-                                    if start_pos.contained_in(assembler_pos, size)
-                                        || end_pos.contained_in(assembler_pos, size)
+                                    if start_pos
+                                        .contained_in(assembler_pos, (size.0.into(), size.1.into()))
+                                        || end_pos.contained_in(
+                                            assembler_pos,
+                                            (size.0.into(), size.1.into()),
+                                        )
                                     {
                                         inserter_positions.push(*pos);
                                     }
@@ -825,7 +885,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         x: belt_pos.x - usize::from(inserter_range),
                         y: belt_pos.y - usize::from(inserter_range),
                     },
-                    (2 * inserter_range + 1, 2 * inserter_range + 1),
+                    (
+                        (2 * inserter_range + 1).into(),
+                        (2 * inserter_range + 1).into(),
+                    ),
                     data_store,
                     |e| {
                         match e {
@@ -852,7 +915,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         }
 
         for pos in inserter_positions {
-            dbg!(pos);
             self.try_instantiate_inserter(pos, None, data_store);
         }
     }

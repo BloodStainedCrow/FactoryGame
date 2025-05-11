@@ -25,6 +25,8 @@ use super::{
     TextureAtlas,
 };
 
+use crate::saving::save;
+
 pub struct App {
     raw_renderer: RawRenderer,
     pub state: AppState,
@@ -140,6 +142,29 @@ impl eframe::App for App {
                 warn!("No Game loaded!");
             }
         });
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        if let Some(state) = &self.currently_loaded_game {
+            match &state.state {
+                LoadedGame::ItemU8RecipeU8(state) => save(
+                    &state.state.lock().unwrap(),
+                    state.data_store.checksum.clone(),
+                ),
+                LoadedGame::ItemU8RecipeU16(state) => save(
+                    &state.state.lock().unwrap(),
+                    state.data_store.checksum.clone(),
+                ),
+                LoadedGame::ItemU16RecipeU8(state) => save(
+                    &state.state.lock().unwrap(),
+                    state.data_store.checksum.clone(),
+                ),
+                LoadedGame::ItemU16RecipeU16(state) => save(
+                    &state.state.lock().unwrap(),
+                    state.data_store.checksum.clone(),
+                ),
+            }
+        }
     }
 }
 

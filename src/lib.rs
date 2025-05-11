@@ -33,11 +33,10 @@ use multiplayer::{
 use rendering::{
     app_state::{AppState, GameState},
     eframe_app,
-    window::{App, LoadedGame, LoadedGameInfo, LoadedGameSized},
+    window::{LoadedGame, LoadedGameInfo, LoadedGameSized},
 };
 use saving::load;
 use simple_logger::SimpleLogger;
-use winit::event_loop::EventLoop;
 
 const TICKS_PER_SECOND_LOGIC: u64 = 60;
 
@@ -104,6 +103,7 @@ impl NewWithDataStore for u32 {
 pub fn main() {
     SimpleLogger::new()
         .with_level(log::LevelFilter::Warn)
+        .env()
         .init()
         .unwrap();
 
@@ -174,9 +174,10 @@ fn run_integrated_server(
             ));
 
             let game_state = Arc::new(Mutex::new(
-                load()
-                    .map(|save| save.game_state)
-                    .unwrap_or_else(|| GameState::new(&data_store)),
+                load().map(|save| save.game_state).unwrap_or_else(|| {
+                    // GameState::new_with_bp(&data_store, "test_blueprints/red_sci.bp")
+                    GameState::new_with_production(&data_store)
+                }),
             ));
 
             let (ui_sender, ui_recv) = channel();

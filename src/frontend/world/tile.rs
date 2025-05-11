@@ -95,8 +95,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     pub fn new() -> Self {
         let mut grid = SparseGrid::new(1_000_000, 1_000_000);
 
-        for x in 50..200 {
-            for y in 50..200 {
+        for x in 50..400 {
+            for y in 50..2000 {
                 grid.insert(
                     x,
                     y,
@@ -537,17 +537,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         &self,
         sim_state: &SimulationState<ItemIdxType, RecipeIdxType>,
         entity_pos: Position,
-        entity_size: (u8, u8),
+        entity_size: (u16, u16),
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Option<Position> {
         self.get_entities_colliding_with(
             Position {
-                x: entity_pos.x - usize::from(data_store.max_power_search_range),
-                y: entity_pos.y - usize::from(data_store.max_power_search_range),
+                x: entity_pos.x - usize::from(data_store.max_power_search_range as u16),
+                y: entity_pos.y - usize::from(data_store.max_power_search_range as u16),
             },
             (
-                2 * data_store.max_power_search_range + entity_size.0,
-                2 * data_store.max_power_search_range + entity_size.1,
+                2 * data_store.max_power_search_range as u16 + entity_size.0,
+                2 * data_store.max_power_search_range as u16 + entity_size.1,
             ),
             data_store,
         )
@@ -566,15 +566,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     return None;
                 }
 
-                let power_range = data_store.power_pole_data[usize::from(*ty)].power_range;
-                let size: (u8, u8) = data_store.power_pole_data[usize::from(*ty)].size;
+                let power_range = data_store.power_pole_data[usize::from(*ty)].power_range as u16;
+                let size = data_store.power_pole_data[usize::from(*ty)].size;
                 if entity_pos.overlap(
                     entity_size,
                     Position {
                         x: pos.x - usize::from(power_range),
                         y: pos.y - usize::from(power_range),
                     },
-                    (2 * power_range + size.0, 2 * power_range + size.1),
+                    (
+                        2 * power_range + size.0 as u16,
+                        2 * power_range + size.1 as u16,
+                    ),
                 ) {
                     Some(*pos)
                 } else {
@@ -588,11 +591,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     pub fn get_entities_colliding_with<'a, 'b>(
         &'a self,
         pos: Position,
-        size: (u8, u8),
+        size: (u16, u16),
         data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl IntoIterator<Item = &'a Entity<ItemIdxType, RecipeIdxType>, IntoIter: Clone>
            + use<'a, 'b, ItemIdxType, RecipeIdxType> {
-        let bb_top_left = (pos.x, pos.y);
+        let max_size = data_store.max_entity_size;
+
+        let bb_top_left = (pos.x - max_size.0, pos.y - max_size.1);
 
         let bb_bottom_right = (pos.x + usize::from(size.0), pos.y + usize::from(size.1));
 
@@ -611,18 +616,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 let e_pos = e.get_pos();
                 let e_size = e.get_size(data_store);
 
-                pos.overlap(size, e_pos, e_size)
+                pos.overlap(size, e_pos, (e_size.0.into(), e_size.1.into()))
             })
     }
 
     pub fn mutate_entities_colliding_with<'a, 'b>(
         &'a mut self,
         pos: Position,
-        size: (u8, u8),
+        size: (u16, u16),
         data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
         mut f: impl FnMut(&mut Entity<ItemIdxType, RecipeIdxType>) -> ControlFlow<(), ()>,
     ) {
-        let bb_top_left = (pos.x, pos.y);
+        let max_size = data_store.max_entity_size;
+
+        let bb_top_left = (pos.x - max_size.0, pos.y - max_size.1);
 
         let bb_bottom_right = (pos.x + usize::from(size.0), pos.y + usize::from(size.1));
 
@@ -682,8 +689,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     y: pos.y - max_inserter_range as usize,
                 },
                 (
-                    2 * max_inserter_range + e_size.0,
-                    2 * max_inserter_range + e_size.1,
+                    2 * max_inserter_range as u16 + e_size.0 as u16,
+                    2 * max_inserter_range as u16 + e_size.1 as u16,
                 ),
             );
 
@@ -780,7 +787,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         );
 
                         // FIXME: HARDCODED!
-                        let assembler_size = (3, 3);
+                        let assembler_size: (u16, u16) = (3, 3);
 
                         let inserter_search_area = (
                             Position {
@@ -788,8 +795,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                 y: index_update.position.y - max_inserter_range as usize,
                             },
                             (
-                                2 * max_inserter_range + assembler_size.0,
-                                2 * max_inserter_range + assembler_size.1,
+                                2 * max_inserter_range as u16 + assembler_size.0,
+                                2 * max_inserter_range as u16 + assembler_size.1,
                             ),
                         );
 
@@ -1011,13 +1018,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     info: InserterInfo::Attached(attached),
                 } => match attached {
                     AttachedInserter::BeltStorage { id, belt_pos } => {
-                        todo!("Remove BeltStorageInserter")
+                        sim_state.factory.belts.remove_inserter(*id, *belt_pos);
                     },
                     AttachedInserter::BeltBelt { item, inserter } => {
-                        todo!("Remove BeltBelt Inserter")
+                        sim_state.factory.belts.remove_belt_belt_inserter(*inserter);
                     },
                     AttachedInserter::StorageStorage { item, inserter } => {
-                        todo!("Remove StorageStorage Inserter")
+                        sim_state
+                            .factory
+                            .storage_storage_inserters
+                            .remove_ins(*item, *inserter);
                     },
                 },
             }
@@ -1044,8 +1054,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             let (start_pos, end_pos) =
                                 calculate_inserter_positions(*pos, *direction);
 
-                            if start_pos.contained_in(e_pos, e_size)
-                                || end_pos.contained_in(e_pos, e_size)
+                            if start_pos.contained_in(e_pos, (e_size.0.into(), e_size.1.into()))
+                                || end_pos.contained_in(e_pos, (e_size.0.into(), e_size.1.into()))
                             {
                                 // This Inserter is connected to the entity we are removing!
                                 match info {
@@ -1055,12 +1065,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     InserterInfo::Attached(attached_inserter) => {
                                         match attached_inserter {
                                             AttachedInserter::BeltStorage { id, belt_pos } => {
-                                                todo!("Remove BeltStorageInserter")
+                                                sim_state
+                                                    .factory
+                                                    .belts
+                                                    .remove_inserter(*id, *belt_pos);
                                             },
                                             AttachedInserter::BeltBelt { item, inserter } => {
-                                                todo!("Remove BeltBelt Inserter")
+                                                sim_state
+                                                    .factory
+                                                    .belts
+                                                    .remove_belt_belt_inserter(*inserter);
                                             },
-                                            AttachedInserter::StorageStorage { .. } => todo!(),
+                                            AttachedInserter::StorageStorage { item, inserter } => {
+                                                sim_state
+                                                    .factory
+                                                    .storage_storage_inserters
+                                                    .remove_ins(*item, *inserter);
+                                            },
                                         }
                                     },
                                 }
@@ -1080,7 +1101,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         self.get_chunk_for_tile_mut(pos)
             .unwrap()
             .entities
-            .retain(|e| !pos.contained_in(e.get_pos(), e.get_size(data_store)));
+            .retain(|e| {
+                !pos.contained_in(
+                    e.get_pos(),
+                    (
+                        e.get_size(data_store).0.into(),
+                        e.get_size(data_store).1.into(),
+                    ),
+                )
+            });
     }
 
     #[must_use]
@@ -1090,7 +1119,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         size: (u8, u8),
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> bool {
-        self.get_entities_colliding_with(pos, size, data_store)
+        self.get_entities_colliding_with(pos, (size.0 as u16, size.1 as u16), data_store)
             .into_iter()
             .next()
             .is_none()
@@ -1111,8 +1140,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 y: pole_pos.y - usize::from(connection_range),
             },
             (
-                2 * connection_range + pole_size.0,
-                2 * connection_range + pole_size.1,
+                2 * connection_range as u16 + pole_size.0 as u16,
+                2 * connection_range as u16 + pole_size.1 as u16,
             ),
             data_store,
         )
@@ -1178,7 +1207,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
             let e_pos = e.get_pos();
             let e_size = e.get_size(data_store);
 
-            pos.contained_in(e_pos, e_size)
+            pos.contained_in(e_pos, (e_size.0.into(), e_size.1.into()))
         })
     }
 
@@ -1191,7 +1220,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
             let e_pos = e.get_pos();
             let e_size = e.get_size(data_store);
 
-            pos.contained_in(e_pos, e_size)
+            pos.contained_in(e_pos, (e_size.0.into(), e_size.1.into()))
         })
     }
 

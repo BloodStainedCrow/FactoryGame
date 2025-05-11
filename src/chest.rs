@@ -9,7 +9,7 @@ use crate::{
 
 const CHEST_GOAL_AMOUNT: ITEMCOUNTTYPE = ITEMCOUNTTYPE::MAX / 2;
 
-const MAX_INSERT_AMOUNT: &'static [ITEMCOUNTTYPE] = &[ITEMCOUNTTYPE::MAX; u16::MAX as usize];
+const MAX_INSERT_AMOUNT: &'static [ITEMCOUNTTYPE] = &[ITEMCOUNTTYPE::MAX; 10_000_000];
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct FullChestStore<ItemIdxType: WeakIdxTrait> {

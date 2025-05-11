@@ -47,7 +47,7 @@ pub fn get_raw_data_test() -> RawDataStore {
                     amount: 1,
                 }]
                 .into_boxed_slice(),
-                time_to_craft: 6,
+                time_to_craft: 60,
                 is_intermediate: false,
             },
             RawRecipeData {
@@ -305,10 +305,6 @@ struct RawChest {
     number_of_slots: u8,
 }
 
-enum FluidDir {
-    In,
-}
-
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct RawAssemblingMachine {
     name: String,
@@ -413,6 +409,8 @@ enum RawEntity {
 #[derive(Debug, Clone)]
 pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub checksum: String,
+
+    pub max_entity_size: (usize, usize),
 
     pub recipe_names: Vec<String>,
 
@@ -888,6 +886,9 @@ impl RawDataStore {
 
         DataStore {
             checksum,
+
+            // TODO:
+            max_entity_size: (4, 4),
 
             recipe_names: self
                 .recipes
