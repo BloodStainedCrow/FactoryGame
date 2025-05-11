@@ -9,3 +9,24 @@ Currently I am working on designing the power system. The next step after that, 
 
 # Why did you start?
 I was playing the above games and started being unable to expand due to performance issues. So in my hubris I declared: "How hard can it be?".
+
+# TODOS
+- ~~Place Power Production~~
+- ~~Blueprints so I can actually do perf tests~~
+- ~~Automatic insertion limit~~
+- ~~Assembler Module Support~~
+- Lazy Terrain Generation
+- Assembler Module Frontend
+- Assembler Power Consumption Modifier Support
+- Beacons
+- ~~Storage Storage Inserters~~
+- ~~Science Consumption in Labs~~
+- ~~Inserter connections to labs~~
+- Debug inserters
+- ~~Production Graphs~~
+- Mining Drills
+- Liquids
+- Place Steam Turbines
+- Splitters
+- Ore Generation
+- Bots
