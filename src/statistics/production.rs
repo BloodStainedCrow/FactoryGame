@@ -1,5 +1,6 @@
 use std::{
     borrow::Borrow,
+    collections::BTreeMap,
     ops::{Add, AddAssign},
 };
 
@@ -16,7 +17,7 @@ use super::{recipe::RecipeTickInfo, IntoSeries};
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ProductionInfo {
-    pub(super) items_produced: Vec<u64>,
+    pub items_produced: Vec<u64>,
     items_used: Vec<u64>,
 }
 
@@ -101,30 +102,33 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         filter: Option<impl Fn(Item<ItemIdxType>) -> bool>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl IntoIterator<Item = Series> {
-        values
-            .iter()
-            .map(|info| {
-                info.items_produced
-                    .iter()
-                    .zip(data_store.item_names.iter())
-                    .enumerate()
-                    .filter_map(|(item_id, v)| {
-                        filter
-                            .as_ref()
-                            .map(|filter| {
-                                filter(Item {
-                                    id: ItemIdxType::try_from(item_id).unwrap(),
+        BTreeMap::from_iter(
+            values
+                .iter()
+                .map(|info| {
+                    info.items_produced
+                        .iter()
+                        .zip(data_store.item_names.iter())
+                        .enumerate()
+                        .filter_map(|(item_id, v)| {
+                            filter
+                                .as_ref()
+                                .map(|filter| {
+                                    filter(Item {
+                                        id: ItemIdxType::try_from(item_id).unwrap(),
+                                    })
                                 })
-                            })
-                            .unwrap_or(true)
-                            .then_some(v)
-                    })
-            })
-            .flatten()
-            .map(|(v, k)| (k, v))
-            .into_group_map()
-            .into_iter()
-            .map(|a| (a.0.as_str(), a.1.into_iter().map(|v| *v as f32).collect()).into())
+                                .unwrap_or(true)
+                                .then_some(((item_id, v.1), *v.0))
+                        })
+                })
+                .flatten()
+                .into_group_map()
+                .into_iter()
+                .map(|(k, v)| (k.0, (k.1, v))),
+        )
+        .into_values()
+        .map(|a| (a.0.as_str(), a.1.into_iter().map(|v| v as f32).collect()).into())
     }
 }
 

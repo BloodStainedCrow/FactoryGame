@@ -1,17 +1,14 @@
 use std::{
     borrow::Borrow,
     fs::{create_dir_all, File},
-    io::Write,
+    io::{Read, Write},
     marker::PhantomData,
 };
 
 use directories::ProjectDirs;
 use log::error;
 
-use crate::{
-    item::{IdxTrait, WeakIdxTrait},
-    rendering::app_state::GameState,
-};
+use crate::{item::IdxTrait, rendering::app_state::GameState};
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct SaveGame<
@@ -31,8 +28,6 @@ pub fn save<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     game_state: &GameState<ItemIdxType, RecipeIdxType>,
     checksum: String,
 ) {
-    // TODO:
-    return;
     let dir = ProjectDirs::from("de", "aschhoff", "factory_game").expect("No Home path found");
 
     create_dir_all(dir.data_dir()).expect("Could not create data dir");
@@ -41,20 +36,15 @@ pub fn save<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     let mut file = File::create(save_file_dir).expect("Could not open file");
 
-    file.write_all(
-        ron::ser::to_string_pretty(
-            &SaveGame {
-                checksum,
-                game_state,
-                item: PhantomData,
-                recipe: PhantomData,
-            },
-            ron::ser::PrettyConfig::default(),
-        )
-        .unwrap()
-        .as_bytes(),
-    )
-    .expect("Could not write to file");
+    let res = bitcode::serialize(&SaveGame {
+        checksum,
+        game_state,
+        item: PhantomData,
+        recipe: PhantomData,
+    })
+    .unwrap();
+
+    file.write_all(&res).expect("Could not write to file");
 }
 
 /// # Panics
@@ -70,11 +60,15 @@ pub fn load<
 
     let file = File::open(save_file_dir);
 
-    file.map_or(None, |file| match ron::de::from_reader(file) {
-        Ok(val) => Some(val),
-        Err(err) => {
-            error!("Found save, but was unable to deserialize it!!!! \n{}", err);
-            None
-        },
+    file.map_or(None, |file| {
+        let v = file.bytes().collect::<Result<Vec<_>, _>>().unwrap();
+
+        match bitcode::deserialize(v.as_slice()) {
+            Ok(val) => Some(val),
+            Err(err) => {
+                error!("Found save, but was unable to deserialize it!!!! \n{}", err);
+                None
+            },
+        }
     })
 }

@@ -2,14 +2,15 @@ use std::{
     net::{IpAddr, TcpStream},
     ops::ControlFlow,
     sync::{atomic::AtomicU64, mpsc::Receiver, Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
+use log::info;
 use plumbing::{Client, IntegratedServer, Server};
 use server::{ActionSource, GameStateUpdateHandler, HandledActionConsumer};
 
 use crate::{
-    data::{self, get_raw_data_test, DataStore},
+    data::DataStore,
     frontend::{
         action::{action_state_machine::ActionStateMachine, ActionType},
         input::Input,
@@ -17,7 +18,7 @@ use crate::{
     },
     item::{IdxTrait, WeakIdxTrait},
     rendering::app_state::GameState,
-    TICKS_PER_SECOND_LOGIC, TICKS_PER_SECOND_RUNSPEED,
+    TICKS_PER_SECOND_RUNSPEED,
 };
 
 mod plumbing;
@@ -62,6 +63,7 @@ pub enum GameInitData<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         game_state: Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
         action_state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
         inputs: Receiver<Input>,
+        ui_actions: Receiver<ActionType<ItemIdxType, RecipeIdxType>>,
         tick_counter: Arc<AtomicU64>,
         info: ClientConnectionInfo,
     },
@@ -70,6 +72,7 @@ pub enum GameInitData<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         game_state: Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
         action_state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
         inputs: Receiver<Input>,
+        ui_actions: Receiver<ActionType<ItemIdxType, RecipeIdxType>>,
         tick_counter: Arc<AtomicU64>,
         info: ServerInfo,
     },
@@ -89,6 +92,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 inputs,
                 tick_counter,
                 info,
+                ui_actions,
             } => {
                 let stream = std::net::TcpStream::connect((info.ip, info.port))?;
                 Ok(Self::Client(
@@ -97,6 +101,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                         local_actions: action_state_machine,
                         local_input: inputs,
                         server_connection: stream,
+                        ui_actions,
                     }),
                     tick_counter,
                 ))
@@ -111,12 +116,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 info,
                 action_state_machine,
                 inputs,
+                ui_actions,
             } => Ok(Self::IntegratedServer(
                 game_state,
                 GameStateUpdateHandler::new(IntegratedServer {
                     local_actions: action_state_machine,
                     local_input: inputs,
                     server: Server::new(info),
+                    ui_actions,
                 }),
                 tick_counter,
             )),
@@ -128,11 +135,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
             spin_sleep_util::interval(Duration::from_secs(1) / TICKS_PER_SECOND_RUNSPEED as u32);
 
         loop {
+            let start = Instant::now();
             update_interval.tick();
+
+            info!("Waited for {:?}", start.elapsed());
             match self.do_tick(data_store) {
                 ControlFlow::Continue(_) => {},
                 ControlFlow::Break(e) => return e,
             }
+
+            info!("Full tick time: {:?}", start.elapsed());
         }
     }
 

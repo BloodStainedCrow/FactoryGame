@@ -9,7 +9,7 @@ rust-version = "1.81"
 enum-map = { version = "2.7.3", features = ["serde"] }
 proptest = "1.4.0"
 winit = "0.30.8"
-tilelib = { path = "../tilelib" }
+tilelib = { git = "https://github.com/BloodStainedCrow/tilelib.git" }
 spin_sleep_util = "0.1.1"
 image = "0.25.5"
 log = "0.4.25"
@@ -22,16 +22,21 @@ take_mut = "0.2.2"
 static_assertions = "1.1.0"
 itertools = "0.14.0"
 genawaiter = "0.99.1"
-petgraph = { version = "0.7.1", features = ["serde", "serde-1", "serde_derive"] }
+petgraph = { version = "0.7.1", features = ["rayon", "serde", "serde-1", "serde_derive"] }
 sha2 = "0.10.8"
 hex = "0.4.3"
 postcard = { version = "1.1.1", features = ["use-std"] }
 charts-rs = { version = "0.3.20", features = ["resvg"] }
 strum = { version = "0.27.1", features = ["derive"] }
 bitvec = "1.0.1"
+bimap = { version = "0.6.3", features = ["serde"] }
+eframe = { version = "0.31.1", features = ["wgpu"] }
+egui_extras = "0.31.1"
+egui_plot = "0.32.1"
+rand = "0.8.5"
+bitcode = { version = "0.6.6", features = ["serde"] }
 
 [dev-dependencies]
-rand = "0.8.5"
 
 [lints.rust]
 # TODO:
@@ -64,4 +69,4 @@ incremental = true
 
 [profile.release]
 lto = true
-codegen-units = 1
+# codegen-units = 1

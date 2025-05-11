@@ -1,15 +1,18 @@
 use std::num::NonZero;
 
-use crate::item::ITEMCOUNTTYPE;
+use crate::{
+    item::{IdxTrait, WeakIdxTrait, ITEMCOUNTTYPE},
+    storage_list::{index, SingleItemStorages},
+};
 
-use super::InserterState;
+use super::{InserterState, Storage};
 
 // FIXME: the storage_id cannot properly represent an index into multiple slices (which I have here, since
 // there are multiple lists of storages in the different MultiAssemblerStores (since multiple different recipes take for example Iron Plates))
-#[derive(Debug, Clone)]
-pub struct StorageStorageInserter {
-    storage_id_in: NonZero<u16>,
-    storage_id_out: NonZero<u16>,
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct StorageStorageInserter<RecipeIdxType: WeakIdxTrait> {
+    storage_id_in: Storage<RecipeIdxType>,
+    storage_id_out: Storage<RecipeIdxType>,
     state: InserterState,
 }
 
@@ -22,9 +25,9 @@ pub struct StorageStorageInserter {
 //       Luckily since inserter only have limited range (3 tiles or whatever) there is inherent locality in the accesses, if the MultiStores are somewhat spacially aligned.
 //       Though this could also lead to particularly poor access patterns if the belt/line of inserters is perpendicular to the stride pattern of the Multistore
 //       (maybe some weird quadtree weirdness could help?)
-impl StorageStorageInserter {
+impl<RecipeIdxType: IdxTrait> StorageStorageInserter<RecipeIdxType> {
     #[must_use]
-    pub const fn new(in_id: NonZero<u16>, out_id: NonZero<u16>) -> Self {
+    pub const fn new(in_id: Storage<RecipeIdxType>, out_id: Storage<RecipeIdxType>) -> Self {
         Self {
             storage_id_in: in_id,
             storage_id_out: out_id,
@@ -34,28 +37,44 @@ impl StorageStorageInserter {
 
     pub fn update(
         &mut self,
-        item_max_stack_size: ITEMCOUNTTYPE,
-        storages: &mut [ITEMCOUNTTYPE],
+        storages: SingleItemStorages,
         movetime: u8,
+        num_grids_total: usize,
+        num_recipes: usize,
+        grid_size: usize,
     ) {
         // TODO: I just added InserterStates and it is a lot slower (unsurprisingly),
         // Try and find a faster implementation of similar logic
 
         match self.state {
             InserterState::Empty => {
-                if storages[usize::from(Into::<u16>::into(self.storage_id_in))] > 0 {
+                let (_max_insert, old) = index(
+                    storages,
+                    self.storage_id_in,
+                    num_grids_total,
+                    num_recipes,
+                    grid_size,
+                );
+
+                if *old > 0 {
                     // There is an item in the machine
-                    storages[usize::from(Into::<u16>::into(self.storage_id_in))] -= 1;
+                    *old -= 1;
 
                     self.state = InserterState::FullAndMovingOut(movetime);
                 }
             },
             InserterState::FullAndWaitingForSlot => {
-                if storages[usize::from(Into::<u16>::into(self.storage_id_out))]
-                    < item_max_stack_size
-                {
+                let (max_insert, old) = index(
+                    storages,
+                    self.storage_id_out,
+                    num_grids_total,
+                    num_recipes,
+                    grid_size,
+                );
+
+                if *old < *max_insert {
                     // There is space in the machine
-                    storages[usize::from(Into::<u16>::into(self.storage_id_out))] += 1;
+                    *old += 1;
 
                     self.state = InserterState::EmptyAndMovingBack(movetime);
                 }

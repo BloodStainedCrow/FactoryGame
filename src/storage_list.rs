@@ -1,16 +1,21 @@
+use std::u16;
+
 use itertools::Itertools;
-use rayon::iter::{IndexedParallelIterator, ParallelBridge};
+use rayon::iter::IndexedParallelIterator;
 
 use crate::{
     assembler::FullAssemblerStore,
     chest::FullChestStore,
     data::{DataStore, ItemRecipeDir},
     inserter::Storage,
-    item::{usize_from, IdxTrait, Item, Recipe, ITEMCOUNTTYPE},
+    item::{usize_from, IdxTrait, Item, ITEMCOUNTTYPE},
     lab::MultiLabStore,
     power::{power_grid::PowerGridIdentifier, PowerGridStorage},
-    split_arbitrary::{split_arbitrary_mut, split_arbitrary_mut_slice},
+    split_arbitrary::split_arbitrary_mut_slice,
 };
+
+const ALWAYS_FULL: &'static [ITEMCOUNTTYPE] = &[0; u16::MAX as usize];
+const PANIC_ON_INSERT: &'static [ITEMCOUNTTYPE] = &[0; 0];
 
 const NUM_ITEMS: usize = 0;
 static NUM_GRIDS: usize = 0;
@@ -20,9 +25,9 @@ static NUMBER_OF_CHESTS: usize = 0;
 static NUMBER_OF_BOT_NETWORKS: usize = 0;
 
 type ItemSlot = ITEMCOUNTTYPE;
-type SingleGridStorage<'a> = &'a mut [ITEMCOUNTTYPE];
-pub type SingleItemStorages<'a, 'b> = &'a mut [SingleGridStorage<'b>]; //[SingleGridStorage; NUM_RECIPES * NUM_GRIDS];
-type FullStorages<'a> = Box<[SingleGridStorage<'a>]>; //[SingleGridStorage; NUM_ITEMS * NUM_RECIPES * NUM_GRIDS];
+type SingleGridStorage<'a, 'b> = (&'a [ITEMCOUNTTYPE], &'b mut [ITEMCOUNTTYPE]);
+pub type SingleItemStorages<'a, 'b> = &'a mut [SingleGridStorage<'b, 'b>]; //[SingleGridStorage; NUM_RECIPES * NUM_GRIDS];
+pub type FullStorages<'a, 'b> = Box<[SingleGridStorage<'a, 'b>]>; //[SingleGridStorage; NUM_ITEMS * NUM_RECIPES * NUM_GRIDS];
 
 type ChestStorages<'a> = &'a mut [ITEMCOUNTTYPE; NUMBER_OF_CHESTS];
 /// Provider, Requester, Storage
@@ -38,7 +43,7 @@ fn num_labs<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     item: Item<ItemIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> usize {
-    data_store.lab_infos.len() * usize::from(data_store.item_is_science[usize_from(item.id)])
+    usize::from(data_store.item_is_science[usize_from(item.id)])
 }
 
 pub fn num_recipes<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
@@ -78,7 +83,7 @@ pub fn index<'a, 'b, RecipeIdxType: IdxTrait>(
     num_grids_total: usize,
     num_recipes: usize,
     grid_size: usize,
-) -> &'a mut ITEMCOUNTTYPE {
+) -> (&'a ITEMCOUNTTYPE, &'a mut ITEMCOUNTTYPE) {
     match storage_id {
         Storage::Assembler {
             grid,
@@ -89,17 +94,28 @@ pub fn index<'a, 'b, RecipeIdxType: IdxTrait>(
                 usize_from(recipe_idx_with_this_item) < num_recipes,
                 "The recipe stored in an inserter needs to be translated!"
             );
-            &mut slice[Into::<usize>::into(grid) * grid_size
-                + Into::<usize>::into(recipe_idx_with_this_item)][Into::<usize>::into(index)]
+            let outer = &mut slice[Into::<usize>::into(grid) * grid_size
+                + Into::<usize>::into(recipe_idx_with_this_item)];
+            (
+                &outer.0[Into::<usize>::into(index)],
+                &mut outer.1[Into::<usize>::into(index)],
+            )
         },
         Storage::Lab { grid, index } => {
-            &mut slice[Into::<usize>::into(grid) * grid_size + num_recipes]
-                [Into::<usize>::into(index)]
+            let outer = &mut slice[Into::<usize>::into(grid) * grid_size + num_recipes];
+            (
+                &outer.0[Into::<usize>::into(index)],
+                &mut outer.1[Into::<usize>::into(index)],
+            )
         },
         Storage::Static { static_id, index } => {
             // debug_assert!(usize::from(static_id) < data_store.num_different_static_containers);
-            &mut slice[num_grids_total * grid_size + Into::<usize>::into(static_id as u8)]
-                [Into::<usize>::into(index)]
+            let outer =
+                &mut slice[num_grids_total * grid_size + Into::<usize>::into(static_id as u8)];
+            (
+                &outer.0[Into::<usize>::into(index)],
+                &mut outer.1[Into::<usize>::into(index)],
+            )
         },
     }
 }
@@ -115,19 +131,24 @@ pub fn sizes<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         .map(move |item| size_of_single_item_slice(item, num_grids_total, data_store))
 }
 
-pub fn full_to_by_item<'a, 'b>(
-    storages: &'a mut FullStorages<'a>,
-    sizes: &'b [usize],
-) -> impl IntoIterator<Item = SingleItemStorages<'a, 'a>>
-       + use<'a, 'b>
-       + IndexedParallelIterator<Item = SingleItemStorages<'a, 'a>> {
+pub fn full_to_by_item<'a, 'b, 'c, 'd>(
+    storages: &'d mut FullStorages<'a, 'b>,
+    sizes: &'c [usize],
+) -> impl IntoIterator<Item = SingleItemStorages<'a, 'b>>
+       + use<'a, 'b, 'c, 'd>
+       + IndexedParallelIterator<Item = SingleItemStorages<'a, 'b>>
+where
+    'b: 'a,
+    'd: 'a,
+    'd: 'b,
+{
     split_arbitrary_mut_slice(storages, &sizes)
 }
 
 fn get_full_storage_index<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     item: Item<ItemIdxType>,
     storage: Storage<RecipeIdxType>,
-    num_grids_total: usize,
+    num_power_grids: usize,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> usize {
     // FIXME: Recalculating this repeatedly is bad
@@ -135,14 +156,14 @@ fn get_full_storage_index<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         .map(|id| Item {
             id: ItemIdxType::try_from(id).unwrap(),
         })
-        .map(|item| size_of_single_item_slice(item, num_grids_total, data_store))
+        .map(|item| size_of_single_item_slice(item, num_power_grids, data_store))
         .sum();
 
     let num_recipes = num_recipes(item, data_store);
     let num_labs = num_labs(item, data_store);
     let grid_size = grid_size(item, data_store);
 
-    match storage {
+    let ret = match storage {
         Storage::Assembler {
             grid,
             recipe_idx_with_this_item: recipe,
@@ -150,27 +171,40 @@ fn get_full_storage_index<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         } => item_offs + usize::from(grid) * grid_size + usize_from(recipe),
         Storage::Lab { grid, index } => item_offs + usize::from(grid) * grid_size + num_recipes,
         Storage::Static { static_id, index } => {
-            item_offs + num_grids_total * grid_size + usize::from(static_id as u8)
+            item_offs + num_power_grids * grid_size + usize::from(static_id as u8)
         },
-    }
+    };
+
+    ret
 }
 
 pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    grids: &'a mut PowerGridStorage<RecipeIdxType>,
+    grids: &'a mut PowerGridStorage<ItemIdxType, RecipeIdxType>,
     chest_store: &'a mut FullChestStore<ItemIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-) -> FullStorages<'a> {
-    let num_grids_total = grids.power_grids.iter().flatten().count();
+) -> FullStorages<'a, 'a> {
+    let num_power_grids = grids.power_grids.len();
 
     #[cfg(debug_assertions)]
     {
-        all_storages(grids, chest_store, data_store)
-            .into_iter()
-            .map(|v| get_full_storage_index(v.0, v.1, num_grids_total, data_store))
-            .all_unique();
+        assert!(
+            all_storages(grids, chest_store, data_store)
+                .into_iter()
+                .map(|v| get_full_storage_index(v.0, v.1, num_power_grids, data_store))
+                .all_unique(),
+            "{:?}",
+            Vec::from_iter(
+                all_storages(grids, chest_store, data_store)
+                    .into_iter()
+                    .map(|v| {
+                        let idx = get_full_storage_index(v.0, v.1, num_power_grids, data_store);
+                        (v, idx)
+                    })
+            )
+        );
         let max_index = all_storages(grids, chest_store, data_store)
             .into_iter()
-            .map(|v| get_full_storage_index(v.0, v.1, num_grids_total, data_store))
+            .map(|v| get_full_storage_index(v.0, v.1, num_power_grids, data_store))
             .max();
 
         match max_index {
@@ -180,7 +214,25 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     all_storages(grids, chest_store, data_store)
                         .into_iter()
                         .count()
-                        - 1
+                        - 1,
+                    "{:?}",
+                    {
+                        let mut r = Vec::from_iter(
+                            all_storages(grids, chest_store, data_store)
+                                .into_iter()
+                                .map(|v| {
+                                    let idx = get_full_storage_index(
+                                        v.0,
+                                        v.1,
+                                        num_power_grids,
+                                        data_store,
+                                    );
+                                    (v, idx)
+                                }),
+                        );
+                        r.sort_by_key(|v| v.1);
+                        r
+                    }
                 )
             },
             None => {
@@ -198,20 +250,21 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     let all_storages_sorted = all_storages
         .into_iter()
-        .sorted_unstable_by_key(|v| get_full_storage_index(v.0, v.1, num_grids_total, data_store))
-        .map(|v| v.2)
+        .sorted_unstable_by_key(|v| get_full_storage_index(v.0, v.1, num_power_grids, data_store))
+        .map(|v| (v.2, v.3))
         .collect();
     all_storages_sorted
 }
 
 fn all_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    grids: &'a mut PowerGridStorage<RecipeIdxType>,
+    grids: &'a mut PowerGridStorage<ItemIdxType, RecipeIdxType>,
     chest_store: &'a mut FullChestStore<ItemIdxType>,
     data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
 ) -> impl IntoIterator<
     Item = (
         Item<ItemIdxType>,
         Storage<RecipeIdxType>,
+        &'a [ITEMCOUNTTYPE],
         &'a mut [ITEMCOUNTTYPE],
     ),
 > + use<'a, 'b, ItemIdxType, RecipeIdxType> {
@@ -219,7 +272,6 @@ fn all_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         .power_grids
         .iter_mut()
         .enumerate()
-        .filter_map(|(i, o)| o.as_mut().map(|grid| (i, grid)))
         .flat_map(|(grid_id, grid)| {
             let grid_id = grid_id.try_into().unwrap();
             all_assembler_storages(grid_id, &mut grid.stores, data_store)
@@ -237,17 +289,62 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
     Item = (
         Item<ItemIdxType>,
         Storage<RecipeIdxType>,
+        &'a [ITEMCOUNTTYPE],
         &'a mut [ITEMCOUNTTYPE],
     ),
 > + use<'a, 'b, ItemIdxType, RecipeIdxType> {
-    let i =
-        assembler_store
-            .assemblers_0_1
-            .iter_mut()
-            .enumerate()
-            .map(move |(recipe_id_0_1, multi)| {
-                (
-                    data_store.recipe_to_items[&multi.recipe]
+    let i = assembler_store
+        .assemblers_0_1
+        .iter_mut()
+        .enumerate()
+        .map(move |(recipe_id_0_1, multi)| {
+            let item = data_store.recipe_to_items[&multi.recipe]
+                .iter()
+                .filter_map(|(dir, item)| {
+                    if *dir == ItemRecipeDir::Out {
+                        Some(item)
+                    } else {
+                        None
+                    }
+                })
+                .nth(0)
+                .copied()
+                .unwrap();
+
+            (
+                item,
+                Storage::Assembler {
+                    grid,
+                    recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                        data_store.ing_out_num_to_recipe[&(0, 1)][recipe_id_0_1],
+                        item,
+                    )],
+                    index: 0,
+                },
+                ALWAYS_FULL,
+                multi.get_outputs_mut(0),
+            )
+        })
+        .chain(
+            assembler_store
+                .assemblers_1_1
+                .iter_mut()
+                .enumerate()
+                .flat_map(move |(recipe_id_1_1, multi)| {
+                    let item_in = data_store.recipe_to_items[&multi.recipe]
+                        .iter()
+                        .filter_map(|(dir, item)| {
+                            if *dir == ItemRecipeDir::Ing {
+                                Some(item)
+                            } else {
+                                None
+                            }
+                        })
+                        .nth(0)
+                        .copied()
+                        .unwrap();
+
+                    let item_out = data_store.recipe_to_items[&multi.recipe]
                         .iter()
                         .filter_map(|(dir, item)| {
                             if *dir == ItemRecipeDir::Out {
@@ -258,15 +355,117 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                         })
                         .nth(0)
                         .copied()
-                        .unwrap(),
-                    Storage::Assembler {
-                        grid,
-                        recipe_idx_with_this_item: RecipeIdxType::try_from(recipe_id_0_1).unwrap(),
-                        index: 0,
-                    },
-                    multi.get_outputs_mut(0),
-                )
-            });
+                        .unwrap();
+
+                    let (([ings_max_insert], [ings]), [outputs]) = multi.get_all_mut();
+
+                    [
+                        (
+                            item_in,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(1, 1)][recipe_id_1_1],
+                                    item_in,
+                                )],
+                                index: 0,
+                            },
+                            ings_max_insert,
+                            ings,
+                        ),
+                        (
+                            item_out,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(1, 1)][recipe_id_1_1],
+                                    item_out,
+                                )],
+                                index: 0,
+                            },
+                            ALWAYS_FULL,
+                            outputs,
+                        ),
+                    ]
+                }),
+        )
+        .chain(
+            assembler_store
+                .assemblers_2_1
+                .iter_mut()
+                .enumerate()
+                .flat_map(move |(recipe_id_2_1, multi)| {
+                    let mut items_in = data_store.recipe_to_items[&multi.recipe].iter().filter_map(
+                        |(dir, item)| {
+                            if *dir == ItemRecipeDir::Ing {
+                                Some(item)
+                            } else {
+                                None
+                            }
+                        },
+                    );
+
+                    let item_in0 = *items_in.next().unwrap();
+                    let item_in1 = *items_in.next().unwrap();
+
+                    let item_out = data_store.recipe_to_items[&multi.recipe]
+                        .iter()
+                        .filter_map(|(dir, item)| {
+                            if *dir == ItemRecipeDir::Out {
+                                Some(item)
+                            } else {
+                                None
+                            }
+                        })
+                        .nth(0)
+                        .copied()
+                        .unwrap();
+
+                    let (([ings0_max, ings1_max], [ings0, ings1]), [outputs]) = multi.get_all_mut();
+
+                    [
+                        (
+                            item_in0,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(2, 1)][recipe_id_2_1],
+                                    item_in0,
+                                )],
+                                index: 0,
+                            },
+                            ings0_max,
+                            ings0,
+                        ),
+                        (
+                            item_in1,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(2, 1)][recipe_id_2_1],
+                                    item_in1,
+                                )],
+                                index: 0,
+                            },
+                            ings1_max,
+                            ings1,
+                        ),
+                        (
+                            item_out,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(2, 1)][recipe_id_2_1],
+                                    item_out,
+                                )],
+                                index: 0,
+                            },
+                            ALWAYS_FULL,
+                            outputs,
+                        ),
+                    ]
+                }),
+        );
     i
 }
 
@@ -278,11 +477,23 @@ fn all_lab_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     Item = (
         Item<ItemIdxType>,
         Storage<RecipeIdxType>,
+        &'a [ITEMCOUNTTYPE],
         &'a mut [ITEMCOUNTTYPE],
     ),
 > + use<'a, 'b, ItemIdxType, RecipeIdxType> {
-    // TODO:
-    vec![]
+    lab_store
+        .sciences
+        .iter_mut()
+        .zip(lab_store.max_insert.iter())
+        .zip(data_store.science_bottle_items.iter().copied())
+        .map(move |((science, max_insert), item)| {
+            (
+                item,
+                Storage::Lab { grid, index: 0 },
+                max_insert.as_slice(),
+                science.as_mut_slice(),
+            )
+        })
 }
 
 fn all_lazy_power_machine_storages() {}
@@ -293,6 +504,7 @@ fn all_chest_storages<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     Item = (
         Item<ItemIdxType>,
         Storage<RecipeIdxType>,
+        &'a [ITEMCOUNTTYPE],
         &'a mut [ITEMCOUNTTYPE],
     ),
 > + use<'a, ItemIdxType, RecipeIdxType> {
@@ -304,13 +516,17 @@ fn all_chest_storages<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             let item = Item {
                 id: id.try_into().unwrap(),
             };
+
+            let (max_insert, data) = multi.storage_list_slices();
+
             (
                 item,
                 Storage::Static {
                     static_id: crate::inserter::StaticID::Chest,
                     index: 0,
                 },
-                multi.inout.as_mut_slice(),
+                max_insert,
+                data,
             )
         })
 }

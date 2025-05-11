@@ -1,7 +1,6 @@
 use std::{
     borrow::BorrowMut,
     marker::PhantomData,
-    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -9,13 +8,7 @@ use log::{error, info};
 
 use crate::{
     data::DataStore,
-    frontend::{
-        action::{
-            action_state_machine::{self, ActionStateMachine},
-            ActionType,
-        },
-        world::tile::World,
-    },
+    frontend::{action::ActionType, world::tile::World},
     item::{IdxTrait, WeakIdxTrait},
     rendering::app_state::GameState,
 };
@@ -84,29 +77,29 @@ impl<
         let actions_iter =
             self.action_interface
                 .get(game_state.current_tick, &game_state.world, data_store);
-        if start.elapsed() > Duration::from_millis(1) {
+        if start.elapsed() > Duration::from_millis(10) {
             error!("Got action iter {:?}", start.elapsed());
         }
         let actions: Vec<_> = actions_iter.into_iter().collect();
-        if start.elapsed() > Duration::from_millis(1) {
+        if start.elapsed() > Duration::from_millis(10) {
             error!("Got actions {:?}", start.elapsed());
         }
 
         game_state
             .borrow_mut()
             .apply_actions(actions.clone(), data_store);
-        if start.elapsed() > Duration::from_millis(1) {
+        if start.elapsed() > Duration::from_millis(10) {
             error!("Actions applied {:?}", start.elapsed());
         }
 
         self.action_interface
             .consume(game_state.current_tick, actions);
-        if start.elapsed() > Duration::from_millis(1) {
+        if start.elapsed() > Duration::from_millis(10) {
             error!("Actions sent {:?}", start.elapsed());
         }
 
         game_state.borrow_mut().update(data_store);
-        if start.elapsed() > Duration::from_millis(1) {
+        if start.elapsed() > Duration::from_millis(10) {
             error!("Update done {:?}", start.elapsed());
         } else {
             info!("Update done {:?}", start.elapsed());

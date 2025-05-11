@@ -1,6 +1,7 @@
 use std::{
     cmp::{max, min},
     iter::{self},
+    mem,
 };
 
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
@@ -9,18 +10,19 @@ use crate::{
     assembler::{AssemblerOnclickInfo, AssemblerRemovalInfo, FullAssemblerStore},
     data::{DataStore, LazyPowerMachineInfo},
     frontend::world::{tile::AssemblerID, Position},
-    inserter::{Storage, StorageID},
+    inserter::Storage,
     item::{IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
     lab::MultiLabStore,
+    network_graph::{Network, WeakIndex},
     power::Joule,
     research::{ResearchProgress, TechState},
     statistics::{
-        production::ProductionInfo,
         recipe::{RecipeTickInfo, RecipeTickInfoParts, SingleRecipeTickInfo},
+        Timeline,
     },
 };
 
-use super::{grid_graph::GridGraph, Watt};
+use super::Watt;
 
 pub const MAX_POWER_MULT: u8 = 64;
 
@@ -31,12 +33,37 @@ const MAX_ACCUMULATOR_DISCHARGE_RATE: Watt = Watt(300_000);
 
 const MAX_ACCUMULATOR_CHARGE: Joule = Joule(5_000_000);
 
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+pub enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+    Assembler {
+        recipe: Recipe<RecipeIdxType>,
+        index: u16,
+    },
+    Lab {
+        ty: u8,
+        index: u16,
+    },
+    LazyPowerProducer {
+        item: Item<ItemIdxType>,
+        index: usize,
+    },
+    SolarPanel {
+        ty: u8,
+    },
+    Accumulator {
+        ty: u8,
+    },
+}
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct PowerGrid<RecipeIdxType: WeakIdxTrait> {
+pub struct PowerGrid<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub stores: FullAssemblerStore<RecipeIdxType>,
     pub lab_stores: MultiLabStore,
-    pub(super) grid_graph: GridGraph<RecipeIdxType>,
+    pub(super) grid_graph:
+        Network<Position, (), (Position, PowerGridEntity<ItemIdxType, RecipeIdxType>)>,
     steam_power_producers: SteamPowerProducerStore,
+
+    // TODO: Currently there can only be a single type of solar panel and accumulator
     num_solar_panels: u64,
     main_accumulator_count: u64,
     main_accumulator_charge: Joule,
@@ -46,6 +73,8 @@ pub struct PowerGrid<RecipeIdxType: WeakIdxTrait> {
     last_power_consumption: Watt,
 
     pub last_power_mult: u8,
+    pub power_history: Timeline<u32>,
+    pub is_placeholder: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize, serde::Serialize)]
@@ -64,9 +93,13 @@ impl From<BurnableFuelForAccumulators> for bool {
     }
 }
 
+#[derive(Debug)]
 pub struct IndexUpdateInfo<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    pub old: (Item<ItemIdxType>, Storage<RecipeIdxType>),
-    pub new: (Item<ItemIdxType>, Storage<RecipeIdxType>),
+    pub position: Position,
+    pub new_storage: PowerGridEntity<ItemIdxType, RecipeIdxType>,
+    pub new_grid: PowerGridIdentifier,
+    // IMPORTANTLY the WeakIdx always stays the same, since it is just a measure of how many machine are connected to a single pole,
+    // and we only move poles over to new networks so that stays
 }
 
 pub struct PowerPoleUpdateInfo {
@@ -74,8 +107,8 @@ pub struct PowerPoleUpdateInfo {
     pub new_grid_id: PowerGridIdentifier,
 }
 
-pub fn all_storages<'a, RecipeIdxType: IdxTrait>(
-    grids: impl IntoIterator<Item = &'a mut PowerGrid<RecipeIdxType>>,
+pub fn all_storages<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    grids: impl IntoIterator<Item = &'a mut PowerGrid<ItemIdxType, RecipeIdxType>>,
 ) -> impl IntoIterator<Item = (usize, impl IntoIterator<Item = &'a mut [u8]>)> {
     // NOTE: This has to be assembled in the same way the lookup is generated in DataStore
     //       Currently this means assemblers -> labs -> TODO
@@ -98,13 +131,18 @@ pub fn all_storages<'a, RecipeIdxType: IdxTrait>(
     })
 }
 
-impl<RecipeIdxType: IdxTrait> PowerGrid<RecipeIdxType> {
+impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, RecipeIdxType> {
     #[must_use]
-    pub fn new<ItemIdxType: IdxTrait>(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+    pub fn new(
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        first_pole_pos: Position,
+    ) -> Self {
+        let network = Network::new((), first_pole_pos);
+
         Self {
             stores: FullAssemblerStore::new(data_store),
             lab_stores: MultiLabStore::new(&data_store.science_bottle_items),
-            grid_graph: GridGraph::new(),
+            grid_graph: network,
             steam_power_producers: SteamPowerProducerStore {
                 all_producers: data_store
                     .lazy_power_machine_infos
@@ -112,7 +150,7 @@ impl<RecipeIdxType: IdxTrait> PowerGrid<RecipeIdxType> {
                     .map(|info| MultiLazyPowerProducer::new(info))
                     .collect(),
             },
-            num_solar_panels: 100,
+            num_solar_panels: 0,
             main_accumulator_count: 0,
             main_accumulator_charge: Joule(0),
             use_burnable_fuel_to_charge_accumulators: None,
@@ -120,11 +158,56 @@ impl<RecipeIdxType: IdxTrait> PowerGrid<RecipeIdxType> {
             last_power_consumption: Watt(0),
 
             last_power_mult: MAX_POWER_MULT,
+
+            power_history: Timeline::new(false, data_store),
+
+            is_placeholder: false,
         }
     }
 
     #[must_use]
-    pub fn join<ItemIdxType: IdxTrait>(
+    pub fn new_placeholder(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+        let network = Network::new((), Position { x: 0, y: 0 });
+
+        Self {
+            stores: FullAssemblerStore::new(data_store),
+            lab_stores: MultiLabStore::new(&data_store.science_bottle_items),
+            grid_graph: network,
+            steam_power_producers: SteamPowerProducerStore {
+                all_producers: data_store
+                    .lazy_power_machine_infos
+                    .iter()
+                    .map(|info| MultiLazyPowerProducer::new(info))
+                    .collect(),
+            },
+            num_solar_panels: 0,
+            main_accumulator_count: 0,
+            main_accumulator_charge: Joule(0),
+            use_burnable_fuel_to_charge_accumulators: None,
+
+            last_power_consumption: Watt(0),
+
+            last_power_mult: MAX_POWER_MULT,
+
+            power_history: Timeline::new(false, data_store),
+
+            is_placeholder: true,
+        }
+    }
+
+    fn new_from_graph(
+        graph: Network<Position, (), (Position, PowerGridEntity<ItemIdxType, RecipeIdxType>)>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
+        Self {
+            grid_graph: graph,
+            // TODO: If adding a power pole has addition side effect besides changing the graph, this is not correct
+            ..Self::new(data_store, Position { x: 0, y: 0 })
+        }
+    }
+
+    #[must_use]
+    pub fn join(
         self,
         other: Self,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -136,21 +219,23 @@ impl<RecipeIdxType: IdxTrait> PowerGrid<RecipeIdxType> {
         Self,
         impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
     ) {
-        let mut update_vec = vec![];
+        assert!(!self.is_placeholder);
+        assert!(!other.is_placeholder);
 
-        let (new_stores, updates) =
-            self.stores
-                .join(other.stores, data_store, self_grid, other_grid);
-        update_vec.extend(updates);
+        let (new_stores, assembler_updates) = self.stores.join(other.stores, self_grid, data_store);
 
-        let (new_labs, updates) =
-            self.lab_stores
-                .join(other.lab_stores, self_grid, other_grid, data_store);
-        update_vec.extend(updates);
+        let (new_labs, lab_updates) = self
+            .lab_stores
+            .join(other.lab_stores, self_grid, data_store);
 
-        let new_grid_graph =
-            self.grid_graph
-                .join(other.grid_graph, new_pole_pos, new_pole_connections);
+        let mut new_grid_graph = self.grid_graph;
+        let mut new_pole_connections = new_pole_connections.into_iter();
+        new_grid_graph.add_node_merging(
+            (),
+            new_pole_pos,
+            (new_pole_connections.next().unwrap(), new_pole_connections),
+            other.grid_graph,
+        );
 
         let ret = Self {
             stores: new_stores,
@@ -167,6 +252,8 @@ impl<RecipeIdxType: IdxTrait> PowerGrid<RecipeIdxType> {
                     + other.main_accumulator_charge * other.main_accumulator_count)
                     / (self.main_accumulator_count + other.main_accumulator_count)
             } else {
+                assert_eq!(Joule(0), self.main_accumulator_charge);
+                assert_eq!(Joule(0), other.main_accumulator_charge);
                 Joule(0)
             },
             use_burnable_fuel_to_charge_accumulators: match (
@@ -179,7 +266,7 @@ impl<RecipeIdxType: IdxTrait> PowerGrid<RecipeIdxType> {
                     if s == o {
                         Some(s)
                     } else {
-                        todo!("You specified using Fuel on one power network, and not using it on another, how do I want to handle this...")
+                        todo!("You specified using Fuel to charge accumulators on one power network, and not using it on another, how do I want to handle this...")
                     }
                 },
             },
@@ -193,12 +280,20 @@ impl<RecipeIdxType: IdxTrait> PowerGrid<RecipeIdxType> {
                     other.last_power_mult
                 }
             },
+            power_history: {
+                if self.last_power_consumption >= other.last_power_consumption {
+                    self.power_history
+                } else {
+                    other.power_history
+                }
+            },
+            is_placeholder: false,
         };
 
-        (ret, update_vec)
+        (ret, assembler_updates.into_iter().chain(lab_updates))
     }
 
-    pub fn get_assembler_info<ItemIdxType: IdxTrait>(
+    pub fn get_assembler_info(
         &self,
         assembler_id: AssemblerID<RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -206,30 +301,311 @@ impl<RecipeIdxType: IdxTrait> PowerGrid<RecipeIdxType> {
         self.stores.get_info(assembler_id, data_store)
     }
 
-    pub fn add_pole(
+    pub fn add_solar_panel(
         &mut self,
-        pole_pos: Position,
-        pole_connections: impl IntoIterator<Item = Position>,
-    ) {
-        self.grid_graph.add_pole(pole_pos, pole_connections);
+        panel_position: Position,
+        ty: u8,
+        pole_connection: Position,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> WeakIndex {
+        assert!(!self.is_placeholder);
+
+        // FIXME: Respect the solar panel type
+        self.num_solar_panels += 1;
+
+        self.grid_graph.add_weak_element(
+            pole_connection,
+            (panel_position, PowerGridEntity::SolarPanel { ty }),
+        )
     }
 
-    pub fn add_assembler<ItemIdxType: IdxTrait>(
+    pub fn remove_solar_panel(
         &mut self,
+        pole_connection: Position,
+        weak_idx: WeakIndex,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        assert!(!self.is_placeholder);
+
+        // FIXME: Respect the solar panel type
+        self.num_solar_panels -= 1;
+
+        self.grid_graph
+            .remove_weak_element(pole_connection, weak_idx);
+    }
+
+    pub fn add_lab(
+        &mut self,
+        lab_position: Position,
+        ty: u8,
+        pole_connection: Position,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> (WeakIndex, u16) {
+        assert!(!self.is_placeholder);
+
+        let index = self.lab_stores.add_lab(ty, lab_position, data_store);
+
+        // FIXME: Respect the lab type
+        let weak_idx = self.grid_graph.add_weak_element(
+            pole_connection,
+            (lab_position, PowerGridEntity::Lab { ty, index }),
+        );
+
+        (
+            weak_idx,
+            index
+                .try_into()
+                .expect("More than u16::MAX labs in single grid"),
+        )
+    }
+
+    pub fn remove_lab(
+        &mut self,
+        pole_connection: Position,
+        weak_idx: WeakIndex,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Vec<(Item<ItemIdxType>, ITEMCOUNTTYPE)> {
+        assert!(!self.is_placeholder);
+
+        let (_lab_pos, PowerGridEntity::Lab { ty: _ty, index }) = self
+            .grid_graph
+            .remove_weak_element(pole_connection, weak_idx)
+        else {
+            unreachable!()
+        };
+
+        let residual_items = self.lab_stores.remove_lab(index);
+
+        data_store
+            .science_bottle_items
+            .iter()
+            .copied()
+            .zip(residual_items)
+            .collect()
+    }
+
+    pub fn add_pole(
+        &mut self,
+        new_pole_pos: Position,
+        pole_connections: impl IntoIterator<Item = Position>,
+    ) {
+        assert!(!self.is_placeholder);
+
+        let mut pole_connections = pole_connections.into_iter();
+        self.grid_graph.add_node(
+            (),
+            new_pole_pos,
+            (pole_connections.next().unwrap(), pole_connections),
+        );
+    }
+
+    pub fn remove_pole(
+        &mut self,
+        pole_pos: Position,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> (
+        impl IntoIterator<
+            Item = (
+                Self,
+                impl IntoIterator<Item = (Position, PowerGridEntity<ItemIdxType, RecipeIdxType>)>,
+            ),
+        >,
+        bool, // This tells the storage to delete us
+        impl IntoIterator<Item = Position>,
+    ) {
+        let ((), no_longer_connected_entities, new_electric_networks) =
+            self.grid_graph.remove_node(pole_pos);
+
+        let no_longer_connected_entities: Vec<_> =
+            no_longer_connected_entities.into_iter().collect();
+
+        // This is needed to make sure both paths have the same type (since closures have different types even if identical)
+        let closure = |v: (Position, PowerGridEntity<ItemIdxType, RecipeIdxType>)| v.0;
+
+        if new_electric_networks.is_none() {
+            // We no longer exist
+
+            // No new networks
+            let new_networks: Vec<(_, Vec<_>)> = vec![];
+
+            mem::drop(new_electric_networks);
+
+            assert!(self.grid_graph.keys().into_iter().count() == 0);
+            return (
+                new_networks,
+                true,
+                no_longer_connected_entities.into_iter().map(closure),
+            );
+        }
+
+        let new_electric_networks: Vec<_> = new_electric_networks.into_iter().flatten().collect();
+
+        let new_electric_networks: Vec<_> = new_electric_networks
+            .into_iter()
+            .map(|(network, pole_position_in_new_network)| {
+                dbg!(&network);
+                let mut new_network: PowerGrid<ItemIdxType, RecipeIdxType> =
+                    Self::new_from_graph(network, data_store);
+
+                let storage_updates = self
+                    .move_connected_entities(&mut new_network, data_store)
+                    .into_iter()
+                    .collect();
+
+                (new_network, storage_updates)
+            })
+            .collect();
+
+        for no_longer_connected_entity in no_longer_connected_entities.iter().copied() {
+            self.remove_connected_entity(no_longer_connected_entity.1, data_store);
+        }
+
+        // TODO: Do I want to return the no_longer_connected_entities positions?
+
+        dbg!(&self.grid_graph);
+
+        (
+            new_electric_networks,
+            false,
+            no_longer_connected_entities.into_iter().map(closure),
+        )
+    }
+
+    fn remove_connected_entity(
+        &mut self,
+        connected_entity: PowerGridEntity<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        match connected_entity {
+            PowerGridEntity::Assembler { recipe, index } => {
+                self.remove_assembler(
+                    AssemblerID {
+                        recipe,
+                        grid: 0, // Does not matter
+                        assembler_index: index,
+                    },
+                    data_store,
+                );
+            },
+            PowerGridEntity::Lab { index, ty: _ty } => {
+                let residual_items = self.lab_stores.remove_lab(index);
+            },
+            PowerGridEntity::LazyPowerProducer { item, index } => {
+                todo!("Remove LazyPowerProducer (Steam Engine)")
+            },
+            PowerGridEntity::SolarPanel { ty } => {
+                // FIXME: Respect ty
+                self.num_solar_panels -= 1;
+            },
+            PowerGridEntity::Accumulator { ty } => {
+                // FIXME: Respect ty
+                self.main_accumulator_count -= 1;
+            },
+        }
+    }
+
+    // The caller is responsible that the connected Entity is removed from self's graph
+    fn move_connected_entities<'a, 'b, 'c>(
+        &'a mut self,
+        other: &'b mut Self,
+        data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl IntoIterator<Item = (Position, PowerGridEntity<ItemIdxType, RecipeIdxType>)>
+           + use<'a, 'b, 'c, ItemIdxType, RecipeIdxType> {
+        other
+            .grid_graph
+            .weak_components_mut()
+            .into_iter()
+            .map(|connected_entity| match &mut dbg!(connected_entity.1) {
+                PowerGridEntity::Assembler { recipe, index } => {
+                    let new_idx =
+                        self.move_assembler(&mut other.stores, *recipe, *index, data_store);
+
+                    let ret = (
+                        connected_entity.0,
+                        PowerGridEntity::Assembler {
+                            recipe: *recipe,
+                            index: new_idx.try_into().unwrap(),
+                        },
+                    );
+
+                    *index = new_idx.try_into().unwrap();
+
+                    ret
+                },
+                PowerGridEntity::Lab { index, ty } => {
+                    let new_idx = self.move_lab(&mut other.lab_stores, *index, data_store);
+
+                    let ret = (
+                        connected_entity.0,
+                        PowerGridEntity::Lab {
+                            ty: *ty,
+                            index: new_idx,
+                        },
+                    );
+
+                    *index = new_idx.try_into().unwrap();
+
+                    ret
+                },
+                PowerGridEntity::LazyPowerProducer { item, index } => {
+                    todo!("Move LazyPowerProducer (Steam Engine)")
+                },
+                PowerGridEntity::SolarPanel { ty } => {
+                    // FIXME: Respect ty
+                    self.num_solar_panels -= 1;
+                    other.num_solar_panels += 1;
+
+                    *connected_entity
+                },
+                PowerGridEntity::Accumulator { ty } => {
+                    // FIXME: Respect ty
+                    self.main_accumulator_count -= 1;
+                    other.main_accumulator_count += 1;
+
+                    *connected_entity
+                },
+            })
+    }
+
+    pub fn add_assembler(
+        &mut self,
+        ty: u8,
         grid_id: PowerGridIdentifier,
         recipe: Recipe<RecipeIdxType>,
+        connected_power_pole_position: Position,
+        assembler_position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> AssemblerID<RecipeIdxType> {
+        assert!(!self.is_placeholder);
         let new_idx = match (
             data_store.recipe_num_ing_lookup[recipe.id.into()],
             data_store.recipe_num_out_lookup[recipe.id.into()],
         ) {
             (0, 1) => self.stores.assemblers_0_1
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
-            .add_assembler(),
+            .add_assembler(ty, assembler_position, data_store),
+
+            (1, 1) => self.stores.assemblers_1_1
+                [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
+            .add_assembler(ty, assembler_position, data_store),
+
+            (2, 1) => self.stores.assemblers_2_1
+                [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
+            .add_assembler(ty, assembler_position, data_store),
 
             _ => unreachable!(),
         };
+
+        self.grid_graph.add_weak_element(
+            connected_power_pole_position,
+            (
+                assembler_position,
+                PowerGridEntity::Assembler {
+                    recipe,
+                    index: new_idx.try_into().unwrap(),
+                },
+            ),
+        );
 
         AssemblerID {
             recipe,
@@ -238,7 +614,7 @@ impl<RecipeIdxType: IdxTrait> PowerGrid<RecipeIdxType> {
         }
     }
 
-    pub fn remove_assembler<ItemIdxType: IdxTrait>(
+    pub fn remove_assembler(
         &mut self,
         assembler_id: AssemblerID<RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -250,9 +626,63 @@ impl<RecipeIdxType: IdxTrait> PowerGrid<RecipeIdxType> {
             (0, 1) => self.stores.assemblers_0_1
                 [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
             .remove_assembler(assembler_id.assembler_index as usize),
+            (1, 1) => self.stores.assemblers_1_1
+                [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
+            .remove_assembler(assembler_id.assembler_index as usize),
+            (2, 1) => self.stores.assemblers_2_1
+                [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
+            .remove_assembler(assembler_id.assembler_index as usize),
 
             _ => unreachable!(),
         }
+
+        // FIXME: Remove Weak Elements from the graph
+    }
+
+    fn move_assembler(
+        &mut self,
+        other_stores: &mut FullAssemblerStore<RecipeIdxType>,
+        recipe: Recipe<RecipeIdxType>,
+        index: u16,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> usize {
+        match (
+            data_store.recipe_num_ing_lookup[recipe.id.into()],
+            data_store.recipe_num_out_lookup[recipe.id.into()],
+        ) {
+            (0, 1) => self.stores.assemblers_0_1
+                [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
+            .move_assembler(
+                index.into(),
+                &mut other_stores.assemblers_0_1
+                    [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]],
+            ),
+            (1, 1) => self.stores.assemblers_1_1
+                [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
+            .move_assembler(
+                index.into(),
+                &mut other_stores.assemblers_1_1
+                    [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]],
+            ),
+            (2, 1) => self.stores.assemblers_2_1
+                [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
+            .move_assembler(
+                index.into(),
+                &mut other_stores.assemblers_2_1
+                    [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]],
+            ),
+
+            _ => unreachable!(),
+        }
+    }
+
+    fn move_lab(
+        &mut self,
+        other_stores: &mut MultiLabStore,
+        index: u16,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> u16 {
+        self.lab_stores.move_lab(index, other_stores)
     }
 
     // TODO: Currently impossible because of Ing Generics
@@ -275,7 +705,7 @@ impl<RecipeIdxType: IdxTrait> PowerGrid<RecipeIdxType> {
 
     // FIXME: This is a huge, high branching function.
     // Make it simpler and more readable, and reduce repetition
-    fn extract_power<ItemIdxType: IdxTrait>(
+    fn extract_power(
         &mut self,
         goal_amount: Joule,
         solar_panel_production_amount: Watt,
@@ -482,49 +912,54 @@ impl<RecipeIdxType: IdxTrait> PowerGrid<RecipeIdxType> {
         min(old, to_extract)
     }
 
-    pub fn update<ItemIdxType: IdxTrait>(
+    pub fn update(
         &mut self,
         solar_panel_production_amount: Watt,
         tech_state: &TechState,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (ResearchProgress, RecipeTickInfo) {
         let (
-            ((power_used_0_1, infos_0_1), (power_used_1_1, infos_1_1)),
+            (
+                (power_used_0_1, infos_0_1),
+                ((power_used_1_1, infos_1_1), (power_used_2_1, infos_2_1)),
+            ),
             (lab_power_used, times_labs_used_science, tech_progress),
         ) = rayon::join(
             || {
                 rayon::join(
                     || {
                         self.stores
-                    .assemblers_0_1
-                    .par_iter_mut()
-                    .map(|s| {
-                        s.update_branchless::<RecipeIdxType>(
-                            self.last_power_mult,
-                            &data_store.recipe_index_lookups,
-                            &data_store.recipe_ings.ing0,
-                            &data_store.recipe_outputs.out1,
-                            &data_store.recipe_timers,
-                        )
-                    })
-                    .map(|(power_used, times_ings_used, crafts_finished)| {
-                        (power_used, SingleRecipeTickInfo {
-                            full_crafts: times_ings_used as u64,
-                            prod_crafts: crafts_finished.checked_sub(times_ings_used).expect("More ingredients used than crafts finished?!? Negative productivity?") as u64,
-                        })
-                    })
-                    .fold_with((Joule(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
-                        infos.push(info);
+                            .assemblers_0_1
+                            .par_iter_mut()
+                            .map(|s| {
+                                s.update_branchless::<RecipeIdxType>(
+                                    self.last_power_mult,
+                                    &data_store.recipe_index_lookups,
+                                    &data_store.recipe_ings.ing0,
+                                    &data_store.recipe_outputs.out1,
+                                    &data_store.recipe_timers,
+                                )
+                            })
+                            .map(|(power_used, times_ings_used, crafts_finished)| {
+                                (power_used, SingleRecipeTickInfo {
+                                    full_crafts: times_ings_used as u64,
+                                    prod_crafts: crafts_finished.checked_sub(times_ings_used).expect("More ingredients used than crafts finished?!? Negative productivity?") as u64,
+                                })
+                            })
+                            .fold_with((Joule(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
+                                infos.push(info);
 
-                        (acc_power + rhs_power, infos)
-                    }).reduce(|| (Joule(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
-                        infos.extend_from_slice(&info);
+                                (acc_power + rhs_power, infos)
+                            }).reduce(|| (Joule(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
+                                infos.extend_from_slice(&info);
 
-                        (acc_power + rhs_power, infos)
-                    })
+                                (acc_power + rhs_power, infos)
+                            })
                     },
                     || {
-                        self.stores
+                        rayon::join(
+                            || {
+                                self.stores
                         .assemblers_1_1
                         .par_iter_mut()
                         .map(|s| {
@@ -551,16 +986,50 @@ impl<RecipeIdxType: IdxTrait> PowerGrid<RecipeIdxType> {
 
                             (acc_power + rhs_power, infos)
                         })
+                            },
+                            || {
+                                self.stores
+                                    .assemblers_2_1
+                                    .par_iter_mut()
+                                    .map(|s| {
+                                        s.update_branchless::<RecipeIdxType>(
+                                            self.last_power_mult,
+                                            &data_store.recipe_index_lookups,
+                                            &data_store.recipe_ings.ing2,
+                                            &data_store.recipe_outputs.out1,
+                                            &data_store.recipe_timers,
+                                        )
+                                    })
+                                    .map(|(power_used, times_ings_used, crafts_finished)| {
+                                        (power_used, SingleRecipeTickInfo {
+                                            full_crafts: times_ings_used as u64,
+                                            prod_crafts: crafts_finished.checked_sub(times_ings_used).expect("More ingredients used than crafts finished?!? Negative productivity?") as u64,
+                                        })
+                                    })
+                                    .fold_with((Joule(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
+                                        infos.push(info);
+
+                                        (acc_power + rhs_power, infos)
+                                    }).reduce(|| (Joule(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
+                                        infos.extend_from_slice(&info);
+
+                                        (acc_power + rhs_power, infos)
+                                    })
+                            },
+                        )
                     },
                 )
             },
             || {
-                self.lab_stores
-                    .update(self.last_power_mult, &tech_state.current_technology)
+                self.lab_stores.update(
+                    self.last_power_mult,
+                    &tech_state.current_technology,
+                    data_store,
+                )
             },
         );
 
-        let power_used = power_used_0_1 + power_used_1_1;
+        let power_used = power_used_0_1 + power_used_1_1 + power_used_2_1;
 
         self.last_power_consumption = power_used.watt_from_tick();
 
@@ -570,13 +1039,15 @@ impl<RecipeIdxType: IdxTrait> PowerGrid<RecipeIdxType> {
             data_store,
         );
 
-        // TODO:
+        self.power_history
+            .append_single_set_of_samples(next_power_mult.into());
+
         self.last_power_mult = next_power_mult;
-        // self.last_power_mult = MAX_POWER_MULT;
 
         let parts = RecipeTickInfoParts {
             recipes_0_1: infos_0_1,
             recipes_1_1: infos_1_1,
+            recipes_2_1: infos_2_1,
         };
 
         (tech_progress, RecipeTickInfo::from_parts(parts, data_store))
@@ -764,86 +1235,3 @@ pub type PowerGridIdentifier = u8;
 //       - Or maybe just not worrying about it is possible if it turns out, that even non-vectorized code can reach the memory bandwidth limits we are constrained by
 
 // I decided on putting the MultiStores into the PowerGrid
-
-#[cfg(test)]
-mod test {
-    use proptest::{prop_assert_eq, prop_assume, proptest};
-
-    use crate::data::get_raw_data_test;
-
-    use super::*;
-
-    proptest! {
-
-        #[test]
-        fn test_power_grid_solar_only(num_solar in 0..1_000u64) {
-            const SOLAR_POWER: Watt = Watt(1_000);
-
-            let data_store = get_raw_data_test().process().assume_simple();
-
-            let mut power_grid = PowerGrid::<u8> {
-                stores: FullAssemblerStore::default(),
-                lab_stores: MultiLabStore::new::<u8>(&[]),
-                grid_graph: GridGraph::new(),
-                steam_power_producers: SteamPowerProducerStore::default(),
-                num_solar_panels: num_solar,
-                main_accumulator_count: 0,
-                main_accumulator_charge: Joule(0),
-                use_burnable_fuel_to_charge_accumulators: Some(BurnableFuelForAccumulators::No),
-                last_power_consumption: Watt(0),
-
-                last_power_mult: 64
-            };
-
-            prop_assert_eq!(power_grid.extract_power(SOLAR_POWER.joules_per_tick() * num_solar, SOLAR_POWER, &data_store), MAX_POWER_MULT);
-        }
-
-        #[test]
-        fn test_power_grid_always_satisfies_0(num_solar in 0..1_000u64, solar_power in 0..10_000u64) {
-            let solar_power: Watt = Watt(solar_power);
-
-            let data_store = get_raw_data_test().process().assume_simple();
-
-            let mut power_grid = PowerGrid::<u8>  {
-                stores: FullAssemblerStore::default(),
-                lab_stores: MultiLabStore::new::<u8>(&[]),
-                grid_graph: GridGraph::new(),
-                steam_power_producers: SteamPowerProducerStore::default(),
-                num_solar_panels: num_solar,
-                main_accumulator_count: 0,
-                main_accumulator_charge: Joule(0),
-                use_burnable_fuel_to_charge_accumulators: Some(BurnableFuelForAccumulators::No),
-                last_power_consumption: Watt(0),
-
-                last_power_mult: 64
-            };
-
-            prop_assert_eq!(power_grid.extract_power(Joule(0), solar_power, &data_store), MAX_POWER_MULT);
-        }
-
-        #[test]
-        fn test_power_grid_always_off_at_night_only_solar(num_solar in 0..1_000u64, power_needed in 0..1_000u64) {
-            prop_assume!(power_needed > 0);
-
-            let needed = Joule(power_needed);
-
-            let data_store = get_raw_data_test().process().assume_simple();
-
-            let mut power_grid = PowerGrid::<u8>  {
-                stores: FullAssemblerStore::default(),
-                lab_stores: MultiLabStore::new::<u8>(&[]),
-                grid_graph: GridGraph::new(),
-                steam_power_producers: SteamPowerProducerStore::default(),
-                num_solar_panels: num_solar,
-                main_accumulator_count: 0,
-                main_accumulator_charge: Joule(0),
-                use_burnable_fuel_to_charge_accumulators: Some(BurnableFuelForAccumulators::No),
-                last_power_consumption: Watt(0),
-
-                last_power_mult: 64
-            };
-
-            prop_assert_eq!(power_grid.extract_power(needed, Watt(0), &data_store), 0);
-        }
-    }
-}

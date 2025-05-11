@@ -2,11 +2,10 @@ use std::marker::PhantomData;
 
 use crate::{
     data::DataStore,
-    item::{self, usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
+    item::{IdxTrait, Item, Recipe, WeakIdxTrait},
     power::power_grid::PowerGridIdentifier,
 };
 
-use enum_map::Enum;
 use static_assertions::const_assert;
 use strum::EnumIter;
 
@@ -26,6 +25,14 @@ pub enum InserterState {
     Empty,
     FullAndWaitingForSlot,
     FullAndMovingOut(u8),
+    EmptyAndMovingBack(u8),
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+enum SushiInserterState<ItemIdxType: WeakIdxTrait> {
+    Empty,
+    FullAndWaitingForSlot(Item<ItemIdxType>),
+    FullAndMovingOut(u8, Item<ItemIdxType>),
     EmptyAndMovingBack(u8),
 }
 
@@ -49,7 +56,9 @@ pub struct StorageID<RecipeIdxType: WeakIdxTrait> {
     pub phantom: PhantomData<RecipeIdxType>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[derive(
+    Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, Hash, PartialOrd, Ord,
+)]
 pub enum Storage<RecipeIdxType: WeakIdxTrait> {
     Assembler {
         grid: PowerGridIdentifier,
@@ -91,9 +100,40 @@ impl<RecipeIdxType: IdxTrait> Storage<RecipeIdxType> {
             storage => storage,
         }
     }
+
+    pub fn change_grid(self, new_id: PowerGridIdentifier) -> Self {
+        match self {
+            Storage::Assembler {
+                grid: _,
+                recipe_idx_with_this_item,
+                index,
+            } => Storage::Assembler {
+                grid: new_id,
+                recipe_idx_with_this_item,
+                index,
+            },
+            Storage::Lab { grid: _, index } => Storage::Lab {
+                grid: new_id,
+                index,
+            },
+            Storage::Static { static_id, index } => Storage::Static { static_id, index },
+        }
+    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, EnumIter)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    serde::Deserialize,
+    serde::Serialize,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    EnumIter,
+)]
 #[repr(u8)]
 pub enum StaticID {
     Chest = 0,

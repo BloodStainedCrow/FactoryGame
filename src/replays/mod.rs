@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::future::Future;
 use std::ops::ControlFlow;
 
@@ -14,14 +15,14 @@ use crate::{
 };
 
 // TODO: Keyframe support
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Replay<
-    ItemIdxType: IdxTrait,
-    RecipeIdxType: IdxTrait,
-    DataStor: AsRef<DataStore<ItemIdxType, RecipeIdxType>>,
+    ItemIdxType: WeakIdxTrait,
+    RecipeIdxType: WeakIdxTrait,
+    DataStor: Borrow<DataStore<ItemIdxType, RecipeIdxType>>,
 > {
     starting_state: GameState<ItemIdxType, RecipeIdxType>,
-    actions: Vec<ReplayAction<ItemIdxType, RecipeIdxType>>,
+    pub actions: Vec<ReplayAction<ItemIdxType, RecipeIdxType>>,
 
     data_store: DataStor,
 
@@ -30,16 +31,16 @@ pub struct Replay<
     end_timestep: Option<u64>,
 }
 
-#[derive(Debug, Clone)]
-struct ReplayAction<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ReplayAction<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     timestamp: u64,
-    action: ActionType<ItemIdxType, RecipeIdxType>,
+    pub action: ActionType<ItemIdxType, RecipeIdxType>,
 }
 
 impl<
         ItemIdxType: IdxTrait,
         RecipeIdxType: IdxTrait,
-        DataStor: AsRef<DataStore<ItemIdxType, RecipeIdxType>>,
+        DataStor: Borrow<DataStore<ItemIdxType, RecipeIdxType>>,
     > Replay<ItemIdxType, RecipeIdxType, DataStor>
 {
     pub fn new(game_state: GameState<ItemIdxType, RecipeIdxType>, data_store: DataStor) -> Self {
@@ -94,9 +95,9 @@ impl<
                         .take_while(|a| a.timestamp == current_timestep)
                         .map(|ra| ra.action);
 
-                    game_state.apply_actions(this_ticks_actions, data_store.as_ref());
+                    game_state.apply_actions(this_ticks_actions, data_store.borrow());
 
-                    game_state.update(data_store.as_ref());
+                    game_state.update(data_store.borrow());
 
                     let game_state_opt: Option<GameState<ItemIdxType, RecipeIdxType>> =
                         yield_!(game_state);
@@ -135,7 +136,7 @@ impl<V, F: Future<Output = V>> ReplayViewer<V, F> {
 
         let Complete(v) = gs else { unreachable!() };
 
-        every_step(&v);
+        let _ = every_step(&v);
 
         v
     }

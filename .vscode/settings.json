@@ -18,7 +18,7 @@
     // "todo-tree.regex.regex": "(//|#|<!--|;|/\\*|^|^[ \\t]*(-|\\d+.)|:)\\s*($TAGS)",
     "todo-tree.regex.regex": "($TAGS)",
     "rust-analyzer.check.command": "check",
-    "rust-analyzer.check.allTargets": false,
+    "rust-analyzer.check.allTargets": true,
     "VsCodeTaskButtons.tasks": [
         {
             "label": "Build",

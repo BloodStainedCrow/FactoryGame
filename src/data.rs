@@ -1,14 +1,16 @@
-use std::{array, collections::HashMap, marker::PhantomData};
+use std::{array, collections::HashMap};
 
+use eframe::egui::Color32;
 use itertools::Itertools;
-use log::{info, warn};
+use log::warn;
+use rand::random;
 use sha2::{Digest, Sha256};
 use strum::IntoEnumIterator;
 
 use crate::{
     assembler::TIMERTYPE,
     frontend::world::tile::{AssemblerID, Dir},
-    inserter::{StaticID, Storage, StorageID},
+    inserter::{StaticID, Storage},
     item::{IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
     power::{power_grid::PowerGridIdentifier, Joule, Watt},
 };
@@ -32,44 +34,98 @@ pub fn get_raw_data_test() -> RawDataStore {
                     amount: 1,
                 }]
                 .into_boxed_slice(),
-                time_to_craft: 600,
+                time_to_craft: 60,
                 is_intermediate: false,
             },
-            // RawRecipeData {
-            //     name: "factory_game::iron_smelting".to_string(),
-            //     display_name: "Smelt Iron Ore into Iron Plates".to_string(),
-            //     possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
-            //     ings: vec![RawItemStack {
-            //         item: "factory_game::iron_ore".to_string(),
-            //         amount: 1,
-            //     }]
-            //     .into_boxed_slice(),
-            //     output: vec![RawItemStack {
-            //         item: "factory_game::iron_plate".to_string(),
-            //         amount: 1,
-            //     }]
-            //     .into_boxed_slice(),
-            //     time_to_craft: 300,
-            //     is_intermediate: true,
-            // },
-            // RawRecipeData {
-            //     name: "factory_game::gears".to_string(),
-            //     display_name: "Gears".to_string(),
-            //     possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
-            //     ings: vec![RawItemStack {
-            //         item: "factory_game::iron_plate".to_string(),
-            //         amount: 2,
-            //     }]
-            //     .into_boxed_slice(),
-            //     output: vec![RawItemStack {
-            //         item: "factory_game::gear".to_string(),
-            //         amount: 1,
-            //     }]
-            //     .into_boxed_slice(),
-            //     time_to_craft: 600,
+            RawRecipeData {
+                name: "factory_game::copper_ore_generation".to_string(),
+                display_name: "Generate Copper Ore from nothing".to_string(),
+                possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
+                ings: vec![].into_boxed_slice(),
+                output: vec![RawItemStack {
+                    item: "factory_game::copper_ore".to_string(),
+                    amount: 1,
+                }]
+                .into_boxed_slice(),
+                time_to_craft: 60,
+                is_intermediate: false,
+            },
+            RawRecipeData {
+                name: "factory_game::iron_smelting".to_string(),
+                display_name: "Smelt Iron Ore into Iron Plates".to_string(),
+                possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
+                ings: vec![RawItemStack {
+                    item: "factory_game::iron_ore".to_string(),
+                    amount: 1,
+                }]
+                .into_boxed_slice(),
+                output: vec![RawItemStack {
+                    item: "factory_game::iron_plate".to_string(),
+                    amount: 1,
+                }]
+                .into_boxed_slice(),
+                time_to_craft: 300,
+                is_intermediate: true,
+            },
+            RawRecipeData {
+                name: "factory_game::copper_smelting".to_string(),
+                display_name: "Smelt Copper Ore into Copper Plates".to_string(),
+                possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
+                ings: vec![RawItemStack {
+                    item: "factory_game::copper_ore".to_string(),
+                    amount: 1,
+                }]
+                .into_boxed_slice(),
+                output: vec![RawItemStack {
+                    item: "factory_game::copper_plate".to_string(),
+                    amount: 1,
+                }]
+                .into_boxed_slice(),
+                time_to_craft: 300,
+                is_intermediate: true,
+            },
+            RawRecipeData {
+                name: "factory_game::gears".to_string(),
+                display_name: "Gears".to_string(),
+                possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
+                ings: vec![RawItemStack {
+                    item: "factory_game::iron_plate".to_string(),
+                    amount: 2,
+                }]
+                .into_boxed_slice(),
+                output: vec![RawItemStack {
+                    item: "factory_game::gear".to_string(),
+                    amount: 1,
+                }]
+                .into_boxed_slice(),
+                time_to_craft: 600,
 
-            //     is_intermediate: true,
-            // },
+                is_intermediate: true,
+            },
+            RawRecipeData {
+                name: "factory_game::red_science".to_string(),
+                display_name: "Automation Science".to_string(),
+                possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
+                ings: vec![
+                    RawItemStack {
+                        item: "factory_game::gear".to_string(),
+                        amount: 1,
+                    },
+                    RawItemStack {
+                        item: "factory_game::copper_plate".to_string(),
+                        amount: 1,
+                    },
+                ]
+                .into_boxed_slice(),
+                output: vec![RawItemStack {
+                    item: "factory_game::red_science".to_string(),
+                    amount: 1,
+                }]
+                .into_boxed_slice(),
+                time_to_craft: 300,
+
+                is_intermediate: true,
+            },
         ],
         items: vec![
             RawItem {
@@ -81,24 +137,51 @@ pub fn get_raw_data_test() -> RawDataStore {
                 science_data: None,
                 is_fluid: false,
             },
-            // RawItem {
-            //     name: "factory_game::iron_plate".to_string(),
-            //     display_name: "Iron Plate".to_string(),
-            //     stack_size: 100,
-            //     placed_as: None,
-            //     burnable_in: vec![].into_boxed_slice(),
-            //     science_data: None,
-            //     is_fluid: false,
-            // },
-            // RawItem {
-            //     name: "factory_game::gear".to_string(),
-            //     display_name: "Gear".to_string(),
-            //     stack_size: 50,
-            //     placed_as: None,
-            //     burnable_in: vec![].into_boxed_slice(),
-            //     science_data: None,
-            //     is_fluid: false,
-            // },
+            RawItem {
+                name: "factory_game::copper_ore".to_string(),
+                display_name: "Copper Ore".to_string(),
+                stack_size: 100,
+                placed_as: None,
+                burnable_in: vec![].into_boxed_slice(),
+                science_data: None,
+                is_fluid: false,
+            },
+            RawItem {
+                name: "factory_game::iron_plate".to_string(),
+                display_name: "Iron Plate".to_string(),
+                stack_size: 100,
+                placed_as: None,
+                burnable_in: vec![].into_boxed_slice(),
+                science_data: None,
+                is_fluid: false,
+            },
+            RawItem {
+                name: "factory_game::copper_plate".to_string(),
+                display_name: "Copper Plate".to_string(),
+                stack_size: 100,
+                placed_as: None,
+                burnable_in: vec![].into_boxed_slice(),
+                science_data: None,
+                is_fluid: false,
+            },
+            RawItem {
+                name: "factory_game::gear".to_string(),
+                display_name: "Gear".to_string(),
+                stack_size: 50,
+                placed_as: None,
+                burnable_in: vec![].into_boxed_slice(),
+                science_data: None,
+                is_fluid: false,
+            },
+            RawItem {
+                name: "factory_game::red_science".to_string(),
+                display_name: "Automation Science Pack".to_string(),
+                stack_size: 200,
+                placed_as: None,
+                burnable_in: vec![].into_boxed_slice(),
+                science_data: Some(()),
+                is_fluid: false,
+            },
         ],
         machines: vec![RawAssemblingMachine {
             name: "factory_game::assembler".to_string(),
@@ -163,11 +246,35 @@ pub fn get_raw_data_test() -> RawDataStore {
             },
         ],
 
-        chests: vec![RawChest {
-            name: "factory_game::wooden_chest".to_string(),
-            display_name: "Wooden Chest".to_string(),
-            tile_size: (1, 1),
-            number_of_slots: 16,
+        chests: vec![
+            RawChest {
+                name: "factory_game::wooden_chest".to_string(),
+                display_name: "Wooden Chest".to_string(),
+                tile_size: (1, 1),
+                number_of_slots: 16,
+            },
+            RawChest {
+                name: "factory_game::iron_chest".to_string(),
+                display_name: "Iron Chest".to_string(),
+                tile_size: (1, 1),
+                number_of_slots: 32,
+            },
+            RawChest {
+                name: "factory_game::steel_chest".to_string(),
+                display_name: "Steel Chest".to_string(),
+                tile_size: (1, 1),
+                number_of_slots: 48,
+            },
+        ],
+        technologies: vec![RawTechnology {
+            name: "factory_game::automation".to_string(),
+            display_name: "Automation".to_string(),
+            cost_of_single_research_unit: vec![RawItemStack {
+                item: "factory_game::red_science".to_string(),
+                amount: 1,
+            }],
+            num_units: 10,
+            precursors: vec![],
         }],
     }
 }
@@ -196,10 +303,6 @@ struct RawChest {
     display_name: String,
     tile_size: (u8, u8),
     number_of_slots: u8,
-}
-
-enum FluidDir {
-    In,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -237,6 +340,16 @@ pub struct RawDataStore {
     power_poles: Vec<RawPowerPole>,
     modules: Vec<RawModule>,
     chests: Vec<RawChest>,
+    technologies: Vec<RawTechnology>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+struct RawTechnology {
+    name: String,
+    display_name: String,
+    cost_of_single_research_unit: Vec<RawItemStack>,
+    num_units: u64,
+    precursors: Vec<String>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -293,9 +406,13 @@ enum RawEntity {
     Belt(()),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub checksum: String,
+
+    pub max_entity_size: (usize, usize),
+
+    pub recipe_names: Vec<String>,
 
     pub recipe_num_ing_lookup: Vec<usize>,
     pub recipe_num_out_lookup: Vec<usize>,
@@ -349,16 +466,20 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     pub recipe_to_translated_index:
         HashMap<(Recipe<RecipeIdxType>, Item<ItemIdxType>), RecipeIdxType>,
+
+    pub item_to_colour: Vec<Color32>,
+
+    pub technology_costs: Vec<(u64, Box<[ITEMCOUNTTYPE]>)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LazyPowerMachineInfo<ItemIdxType: WeakIdxTrait> {
     pub ingredient: Item<ItemIdxType>,
     pub power_per_item: Joule,
     pub max_power_per_tick: Joule,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PowerPoleData {
     pub size: (u8, u8),
     pub power_range: u8,
@@ -393,7 +514,7 @@ struct RecipeIndexLookup {
     out: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RecipeIngLookups {
     pub ing0: Vec<[ITEMCOUNTTYPE; 0]>,
     pub ing1: Vec<[ITEMCOUNTTYPE; 1]>,
@@ -402,7 +523,7 @@ pub struct RecipeIngLookups {
     pub ing4: Vec<[ITEMCOUNTTYPE; 4]>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RecipeOutputLookups {
     pub out1: Vec<[ITEMCOUNTTYPE; 1]>,
     pub out2: Vec<[ITEMCOUNTTYPE; 2]>,
@@ -432,7 +553,7 @@ impl RawDataStore {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn turn<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    pub fn turn<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         self,
     ) -> DataStore<ItemIdxType, RecipeIdxType> {
         let checksum = self.get_checksum();
@@ -459,7 +580,10 @@ impl RawDataStore {
             })
             .collect();
 
-        let science_bottle_items = self
+        let reverse_item_lookup: HashMap<ItemIdxType, &str> =
+            item_lookup.iter().map(|(k, v)| (*v, *k)).collect();
+
+        let science_bottle_items: Vec<Item<ItemIdxType>> = self
             .items
             .iter()
             .filter(|i| i.science_data.is_some())
@@ -726,8 +850,51 @@ impl RawDataStore {
             .map(|(ing, out)| ing + out)
             .collect();
 
+        assert!(
+            self.technologies
+                .iter()
+                .flat_map(|tech| tech.cost_of_single_research_unit.iter())
+                .all(|stack| science_bottle_items.contains(&Item {
+                    id: *item_lookup
+                        .get(stack.item.as_str())
+                        .expect("Could not find item")
+                })),
+            "Some research item in a technology is not designated as science item"
+        );
+
+        let technology_costs = self
+            .technologies
+            .iter()
+            .map(|tech| {
+                (
+                    tech.num_units,
+                    science_bottle_items
+                        .iter()
+                        .map(|item| reverse_item_lookup[&item.id])
+                        .map(|raw_item_name| {
+                            tech.cost_of_single_research_unit
+                                .iter()
+                                .find_map(|stack| {
+                                    (stack.item == raw_item_name).then_some(stack.amount)
+                                })
+                                .unwrap_or(0)
+                        })
+                        .collect(),
+                )
+            })
+            .collect();
+
         DataStore {
             checksum,
+
+            // TODO:
+            max_entity_size: (4, 4),
+
+            recipe_names: self
+                .recipes
+                .iter()
+                .map(|r| r.display_name.clone())
+                .collect(),
 
             recipe_num_ing_lookup,
             recipe_num_out_lookup,
@@ -821,6 +988,14 @@ impl RawDataStore {
                     )
                 })
                 .collect(),
+
+            item_to_colour: self
+                .items
+                .iter()
+                .map(|item_name| Color32::from_rgb(random(), random(), random()))
+                .collect(),
+
+            technology_costs,
         }
     }
 
