@@ -175,8 +175,8 @@ fn run_integrated_server(
 
             let game_state = Arc::new(Mutex::new(
                 load().map(|save| save.game_state).unwrap_or_else(|| {
-                    GameState::new_with_bp(&data_store, "test_blueprints/red_sci.bp")
-                    // GameState::new_with_production(&data_store)
+                    // GameState::new_with_bp(&data_store, "test_blueprints/red_sci.bp")
+                    GameState::new_with_production(&data_store)
                 }),
             ));
 
