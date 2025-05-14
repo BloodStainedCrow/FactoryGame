@@ -7,17 +7,18 @@
         "XXX",
         "[ ]",
         "[x]",
-        "todo!()",
+        "todo!",
         "unsafe {",
         "unsafe fn",
-        "#[inline(never)]" // #[inline(never)] is bad for performance, so I treat is as a TODO
+        "#[inline(never)]" // #[inline(never)] is bad and normally left over from using cargo show-asm, so I treat is as a TODO
     ],
     "todo-tree.filtering.excludeGlobs": [
         "**/.vscode/settings.json"
     ],
     // "todo-tree.regex.regex": "(//|#|<!--|;|/\\*|^|^[ \\t]*(-|\\d+.)|:)\\s*($TAGS)",
     "todo-tree.regex.regex": "($TAGS)",
-    "rust-analyzer.check.command": "clippy",
+    "rust-analyzer.check.command": "check",
+    "rust-analyzer.check.allTargets": true,
     "VsCodeTaskButtons.tasks": [
         {
             "label": "Build",

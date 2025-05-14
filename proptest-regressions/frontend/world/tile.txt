@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 2e3b9ba78328ecf4a750336dff60175715d8543fd0fe1b0839e41724b2a5b1ef # shrinks to position = Position { x: 1600, y: 1600 }, ent = Lab { pos: Position { x: 0, y: 14 }, ty: 0 }
