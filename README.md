@@ -5,12 +5,12 @@ I created it as an exercise to see how far I could optimize the basic concepts a
 Another goal that emerged along the way, was learning about the way modern CPUs actually work.
 
 # Roadmap
-Currently I am working on designing the power system. The next step after that, is to create the tile based world representation and allow proper building of factories.
+Currently I adding beacons and thinking about how to efficiently add logistics bots. Then I want to build a comprehensive suit of benchmark test to show if/by how much I was able to improve performance.
 
 # Why did you start?
 I was playing the above games and started being unable to expand due to performance issues. So in my hubris I declared: "How hard can it be?".
 
-# TODOS
+## TODOS
 - ~~Place Power Production~~
 - ~~Blueprints so I can actually do perf tests~~
 - ~~Automatic insertion limit~~
