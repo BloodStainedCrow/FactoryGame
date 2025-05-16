@@ -75,7 +75,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         for y_pos in (1590..30000).step_by(7) {
             for x_pos in (1590..3000).step_by(20) {
-                if rand::random::<u16>() < u16::MAX / 10 {
+                if rand::random::<u16>() < u16::MAX / 100 {
                     ret.update(data_store);
                 }
 
@@ -822,7 +822,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                                     if new_modules.len() > num_free_module_slots {
                                         // Not enough space in the module slots
-                                        warn!("Tried to insert modules into non assembler");
+                                        warn!(
+                                            "Tried to insert more modules than space is available"
+                                        );
                                     } else {
                                         // We are okay!
 
@@ -860,7 +862,67 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             ControlFlow::Break(())
                         });
                 },
-                ActionType::RemoveModules { pos, indices } => todo!(),
+                ActionType::RemoveModules { pos, indices } => {
+                    self.world
+                        .mutate_entities_colliding_with(pos, (1, 1), data_store, |e| {
+                            match e {
+                                Entity::Assembler { modules, info, .. } => {
+                                    let num_used_module_slots =
+                                        modules.iter().filter(|slot| slot.is_some()).count();
+
+                                    if indices.len() > num_used_module_slots {
+                                        // Not enough space in the module slots
+                                        warn!("Tried to remove more modules than exist in machine");
+                                    } else {
+                                        // We are okay!
+
+                                        assert!(indices.iter().all_unique());
+
+                                        assert!(indices.iter().all(|v| *v < modules.len()));
+
+                                        let modules_to_remove = modules
+                                            .iter_mut()
+                                            .enumerate()
+                                            .filter(|(i, _)| indices.contains(i))
+                                            .map(|(_, slot)| {
+                                                let Some(module) = slot else {
+                                                    todo!("How do I want to handle this");
+                                                };
+
+                                                let module = *module;
+
+                                                *slot = None;
+
+                                                module
+                                            });
+
+                                        match info {
+                                            AssemblerInfo::UnpoweredNoRecipe
+                                            | AssemblerInfo::Unpowered(_)
+                                            | AssemblerInfo::PoweredNoRecipe(_) => {},
+                                            AssemblerInfo::Powered { id, pole_position } => {
+                                                for removed_module in modules_to_remove {
+                                                    self.simulation_state
+                                                        .factory
+                                                        .power_grids
+                                                        .power_grids[usize::from(id.grid)]
+                                                    .remove_module_from_assembler(
+                                                        *id,
+                                                        removed_module,
+                                                        data_store,
+                                                    );
+                                                }
+                                            },
+                                        }
+                                    }
+                                },
+                                _ => {
+                                    warn!("Tried to insert modules into non assembler");
+                                },
+                            }
+                            ControlFlow::Break(())
+                        });
+                },
             }
         }
     }

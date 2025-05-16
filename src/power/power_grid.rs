@@ -75,6 +75,8 @@ pub struct PowerGrid<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub last_power_mult: u8,
     pub power_history: Timeline<u32>,
     pub is_placeholder: bool,
+
+    pub num_assemblers_of_type: Box<[usize]>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize, serde::Serialize)]
@@ -162,6 +164,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             power_history: Timeline::new(false, data_store),
 
             is_placeholder: false,
+
+            num_assemblers_of_type: vec![0; data_store.assembler_info.len()].into_boxed_slice(),
         }
     }
 
@@ -192,6 +196,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             power_history: Timeline::new(false, data_store),
 
             is_placeholder: true,
+
+            num_assemblers_of_type: vec![].into_boxed_slice(),
         }
     }
 
@@ -208,7 +214,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
 
     #[must_use]
     pub fn join(
-        self,
+        mut self,
         other: Self,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
         self_grid: PowerGridIdentifier,
@@ -236,6 +242,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             (new_pole_connections.next().unwrap(), new_pole_connections),
             other.grid_graph,
         );
+
+        self.num_assemblers_of_type
+            .iter_mut()
+            .zip(other.num_assemblers_of_type)
+            .for_each(|(s, o)| {
+                *s += o;
+            });
 
         let ret = Self {
             stores: new_stores,
@@ -288,6 +301,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 }
             },
             is_placeholder: false,
+
+            num_assemblers_of_type: self.num_assemblers_of_type,
         };
 
         (ret, assembler_updates.into_iter().chain(lab_updates))
@@ -616,7 +631,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         };
     }
 
-    pub fn remove_module_to_assembler(
+    pub fn remove_module_from_assembler(
         &mut self,
         id: AssemblerID<RecipeIdxType>,
         module_kind: usize,
@@ -677,6 +692,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> AssemblerID<RecipeIdxType> {
         assert!(!self.is_placeholder);
+
+        self.num_assemblers_of_type[usize::from(ty)] += 1;
 
         let new_idx = match (
             data_store.recipe_num_ing_lookup[recipe.id.into()],

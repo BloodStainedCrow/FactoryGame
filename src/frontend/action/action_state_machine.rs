@@ -48,7 +48,7 @@ pub enum StatisticsPanel {
 
 impl Default for StatisticsPanel {
     fn default() -> Self {
-        Self::Production(1)
+        Self::Production(2)
     }
 }
 
