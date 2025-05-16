@@ -2,6 +2,8 @@ let
   pkgs = import (fetchTarball("https://github.com/NixOS/nixpkgs/archive/929116e316068c7318c54eb4d827f7d9756d5e9c.tar.gz")) { overlays = [  ]; };
   buildInputs = [
   ] ++ (with pkgs; [
+    rustup
+
     pkg-config
 
     # perf for cargo-flamegraph
