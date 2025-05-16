@@ -1,6 +1,5 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
-    marker::PhantomData,
     ops::{Add, ControlFlow},
 };
 
@@ -12,7 +11,6 @@ use itertools::Itertools;
 use crate::{
     belt::{splitter::SplitterDistributionMode, BeltTileId, SplitterTileId},
     data::DataStore,
-    frontend::world,
     inserter::Storage,
     item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
     network_graph::WeakIndex,
@@ -203,6 +201,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 AssemblerInfo::Powered {
                     id: AssemblerID { grid, .. },
                     pole_position,
+                    weak_index,
                 } => {
                     let lookup_grid =
                         sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_position];
@@ -362,6 +361,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     grid: grid_in_id, ..
                                 },
                             pole_position,
+                            weak_index,
                         } => {
                             let grid =
                                 sim_state.factory.power_grids.pole_pos_to_grid_id[pole_position];
@@ -737,11 +737,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     AssemblerInfo::Powered {
                         id: assembler_id,
                         pole_position,
+                        weak_index,
                     } => {
                         // TODO:
                         let assembler_removal_info = sim_state.factory.power_grids.power_grids
                             [assembler_id.grid as usize]
-                            .remove_assembler(*assembler_id, data_store);
+                            .remove_assembler(
+                                *assembler_id,
+                                *pole_position,
+                                *weak_index,
+                                data_store,
+                            );
                     },
                 },
                 Entity::PowerPole {
@@ -749,6 +755,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     pos,
                     connected_power_poles,
                 } => {
+                    let ty = *ty;
+
                     let old_id = sim_state.factory.power_grids.pole_pos_to_grid_id[pos];
 
                     let (
@@ -763,13 +771,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             (1, 1),
                             data_store,
                             |e| {
-                                match (e, index_update.new_storage) {
+                                match (e, index_update.new_storage.clone()) {
                                     (
                                         Entity::Assembler {
-                                            info: AssemblerInfo::Powered { id, pole_position },
+                                            info:
+                                                AssemblerInfo::Powered {
+                                                    id,
+                                                    pole_position,
+                                                    weak_index,
+                                                },
                                             ..
                                         },
                                         crate::power::power_grid::PowerGridEntity::Assembler {
+                                            ty,
                                             recipe,
                                             index,
                                         },
@@ -792,7 +806,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         );
 
                         // FIXME: HARDCODED!
-                        let assembler_size: (u16, u16) = (3, 3);
+                        let assembler_size: (u16, u16) =
+                            data_store.assembler_info[usize::from(ty)].size;
 
                         let inserter_search_area = (
                             Position {
@@ -806,7 +821,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         );
 
                         let new_storages: Vec<_> = match index_update.new_storage {
-                            PowerGridEntity::Assembler { recipe, index } => data_store
+                            PowerGridEntity::Assembler { ty, recipe, index } => data_store
                                 .recipe_to_items[&recipe]
                                 .iter()
                                 .map(|(_dir, item)| {
@@ -825,10 +840,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             PowerGridEntity::LazyPowerProducer { item, index } => {
                                 todo!("Expand Storage type")
                             },
-                            PowerGridEntity::SolarPanel { ty } => {
+                            PowerGridEntity::SolarPanel { .. } => {
                                 vec![]
                             },
-                            PowerGridEntity::Accumulator { ty } => {
+                            PowerGridEntity::Accumulator { .. } => {
+                                vec![]
+                            },
+                            PowerGridEntity::Beacon { .. } => {
                                 vec![]
                             },
                         };
@@ -928,7 +946,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                         AssemblerInfo::UnpoweredNoRecipe => unreachable!(),
                                         AssemblerInfo::Unpowered(recipe) => unreachable!(),
                                         AssemblerInfo::PoweredNoRecipe(position) => unreachable!(),
-                                        AssemblerInfo::Powered { id, pole_position } => {
+                                        AssemblerInfo::Powered {
+                                            id,
+                                            pole_position,
+                                            weak_index,
+                                        } => {
                                             assert!(sim_state
                                                 .factory
                                                 .power_grids
@@ -943,7 +965,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                                     .power_grids
                                                     .pole_pos_to_grid_id[&new_pole_pos];
 
-                                                let new_id =
+                                                let (new_id, new_weak_index) =
                                                     sim_state.factory.power_grids.power_grids
                                                         [usize::from(grid_id)]
                                                     .add_assembler(
@@ -957,6 +979,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                                     );
 
                                                 *id = new_id;
+                                                *weak_index = new_weak_index;
                                             } else {
                                                 // FIXME: This will delete items!
                                                 *info = AssemblerInfo::Unpowered(id.recipe)
@@ -1333,6 +1356,7 @@ pub enum AssemblerInfo<RecipeIdxType: WeakIdxTrait> {
     Powered {
         id: AssemblerID<RecipeIdxType>,
         pole_position: Position,
+        weak_index: WeakIndex,
     },
 }
 

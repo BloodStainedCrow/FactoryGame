@@ -28,6 +28,7 @@ use crate::{
         StaticID, Storage, MOVETIME,
     },
     item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
+    network_graph::WeakIndex,
     power::{power_grid::PowerGridIdentifier, PowerGridStorage, Watt},
     research::{ResearchProgress, TechState, Technology},
     statistics::{production::ProductionInfo, recipe::RecipeTickInfo, GenStatistics},
@@ -448,8 +449,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 // Handle storage updates
                                 for storage_update in storage_updates {
                                     self.world.mutate_entities_colliding_with(storage_update.position, (1,1), data_store, |e| {
-                                                    match (e, storage_update.new_storage) {
-                                                        (Entity::Assembler { ty: _, pos: _, info: AssemblerInfo::Powered { id, pole_position: _ }, modules: _ }, crate::power::power_grid::PowerGridEntity::Assembler { recipe, index }) => {
+                                                    match (e, storage_update.new_storage.clone()) {
+                                                        (Entity::Assembler { ty: _, pos: _, info: AssemblerInfo::Powered { id, pole_position: _, weak_index }, modules: _ }, crate::power::power_grid::PowerGridEntity::Assembler { ty: _, recipe, index }) => {
                                                             assert_eq!(id.recipe, recipe);
                                                             id.grid = storage_update.new_grid;
                                                             id.assembler_index = index;
@@ -496,7 +497,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                 *info = AssemblerInfo::PoweredNoRecipe(pole_pos);
                                             },
                                             AssemblerInfo::Unpowered(recipe) => {
-                                                let assembler_id = self
+                                                let (assembler_id, weak_index) = self
                                                     .simulation_state
                                                     .factory
                                                     .power_grids
@@ -509,6 +510,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                 *info = AssemblerInfo::Powered {
                                                     id: assembler_id,
                                                     pole_position: pole_pos,
+                                                    weak_index,
                                                 };
                                             },
                                             _ => {},
@@ -737,7 +739,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             .power_grids
                                             .pole_pos_to_grid_id[&pole_position];
 
-                                        let new_id = Self::add_assembler_to_sim(
+                                        let (new_id, new_weak_idx) = Self::add_assembler_to_sim(
                                             &mut self.simulation_state,
                                             *ty,
                                             recipe,
@@ -751,6 +753,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         *info = AssemblerInfo::Powered {
                                             id: new_id,
                                             pole_position: *pole_position,
+                                            weak_index: new_weak_idx,
                                         };
 
                                         needs_update = true;
@@ -758,6 +761,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     AssemblerInfo::Powered {
                                         id: assembler_id,
                                         pole_position,
+                                        weak_index,
                                     } => {
                                         let old_recipe_id = assembler_id.recipe;
 
@@ -768,9 +772,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         let old_assembler =
                                             self.simulation_state.factory.power_grids.power_grids
                                                 [assembler_id.grid as usize]
-                                                .remove_assembler(*assembler_id, data_store);
+                                                .remove_assembler(
+                                                    *assembler_id,
+                                                    *pole_position,
+                                                    *weak_index,
+                                                    data_store,
+                                                );
 
-                                        let new_id = Self::add_assembler_to_sim(
+                                        let (new_id, new_weak_index) = Self::add_assembler_to_sim(
                                             &mut self.simulation_state,
                                             *ty,
                                             recipe,
@@ -782,6 +791,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         );
 
                                         *assembler_id = new_id;
+                                        *weak_index = new_weak_index;
 
                                         needs_update = true;
                                     },
@@ -841,7 +851,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             AssemblerInfo::UnpoweredNoRecipe
                                             | AssemblerInfo::Unpowered(_)
                                             | AssemblerInfo::PoweredNoRecipe(_) => {},
-                                            AssemblerInfo::Powered { id, pole_position } => {
+                                            AssemblerInfo::Powered {
+                                                id,
+                                                pole_position,
+                                                weak_index,
+                                            } => {
                                                 for module in &new_modules {
                                                     self.simulation_state
                                                         .factory
@@ -900,7 +914,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             AssemblerInfo::UnpoweredNoRecipe
                                             | AssemblerInfo::Unpowered(_)
                                             | AssemblerInfo::PoweredNoRecipe(_) => {},
-                                            AssemblerInfo::Powered { id, pole_position } => {
+                                            AssemblerInfo::Powered {
+                                                id,
+                                                pole_position,
+                                                weak_index,
+                                            } => {
                                                 for removed_module in modules_to_remove {
                                                     self.simulation_state
                                                         .factory
@@ -952,21 +970,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 num_placeholders,
                 self.simulation_state.factory.power_grids.power_grids.len()
             );
+
+            let num_assemblers = self
+                .world
+                .get_chunks()
+                .into_iter()
+                .flat_map(|c| c.get_entities())
+                .filter(|e| matches!(e, Entity::Assembler { .. }))
+                .count();
+            dbg!(num_assemblers);
         }
 
         let (tech_progress, recipe_tick_info): (ResearchProgress, RecipeTickInfo) = self
             .simulation_state
             .factory
             .power_grids
-            .power_grids
-            .par_iter_mut()
-            .map(|grid| grid.update(Watt(600000), &self.simulation_state.tech_state, data_store))
-            .reduce(
-                || (0, RecipeTickInfo::new(data_store)),
-                |(acc_progress, infos), (rhs_progress, info)| {
-                    (acc_progress + rhs_progress, infos + &info)
-                },
-            );
+            .update(&self.simulation_state.tech_state, data_store);
 
         self.simulation_state
             .tech_state
@@ -1083,7 +1102,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         pole_position: Position,
         assembler_position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> AssemblerID<RecipeIdxType> {
+    ) -> (AssemblerID<RecipeIdxType>, WeakIndex) {
         sim_state.factory.power_grids.power_grids[power_grid_id as usize].add_assembler(
             ty,
             power_grid_id,
@@ -1141,7 +1160,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     pos,
                     info: AssemblerInfo::Powered {
                         id,
-                        pole_position
+                        pole_position,
+                        weak_index
                     },
                     modules
                     // FIXME: Translate the recipe_idx to
@@ -1227,6 +1247,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     info: AssemblerInfo::Powered {
                         id,
                         pole_position,
+                        weak_index
                     },
                     modules
                     // FIXME: Translate the recipe_idx to

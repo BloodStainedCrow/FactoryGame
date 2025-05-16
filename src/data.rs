@@ -193,6 +193,25 @@ pub fn get_raw_data_test() -> RawDataStore {
             base_speed: 15,
             num_module_slots: 2,
         }],
+        labs: vec![RawLab {
+            name: "factory_game::lab".to_string(),
+            display_name: "Lab".to_string(),
+            tile_size: (3, 3),
+            working_power_draw: Watt(60_000),
+            fluid_connection_offsets: vec![],
+            num_module_slots: 2,
+            base_bonus_prod: 0,
+            base_speed: 1,
+        }],
+        beacons: vec![RawBeacon {
+            name: "factory_game::beacon".to_string(),
+            display_name: "Beacon".to_string(),
+            tile_size: (3, 3),
+            working_power_draw: Watt(480_000),
+            num_module_slots: 2,
+            effectiveness: (1, 2),
+            effect_size: (9, 9),
+        }],
         miners: vec![],
         power_poles: vec![
             RawPowerPole {
@@ -325,6 +344,35 @@ struct RawAssemblingMachine {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+struct RawLab {
+    name: String,
+    display_name: String,
+    tile_size: (u8, u8),
+    working_power_draw: Watt,
+    fluid_connection_offsets: Vec<RawFluidConnection>,
+
+    num_module_slots: u8,
+
+    /// Base bonus productivity in %
+    base_bonus_prod: u8,
+    /// Speed multiplier compared to "baseline" in 5%
+    base_speed: u8,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+struct RawBeacon {
+    name: String,
+    display_name: String,
+    tile_size: (u8, u8),
+    working_power_draw: Watt,
+
+    num_module_slots: u8,
+    /// Numerator and denominator
+    effectiveness: (u8, u8),
+    effect_size: (u8, u8),
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct RawFluidConnection {
     fluid_dir: ItemRecipeDir,
     offs: (u8, u8),
@@ -346,6 +394,8 @@ pub struct RawDataStore {
     recipes: Vec<RawRecipeData>,
     items: Vec<RawItem>,
     machines: Vec<RawAssemblingMachine>,
+    labs: Vec<RawLab>,
+    beacons: Vec<RawBeacon>,
     miners: Vec<RawMiner>,
     power_poles: Vec<RawPowerPole>,
     modules: Vec<RawModule>,
@@ -418,13 +468,39 @@ enum RawEntity {
 
 #[derive(Debug, Clone)]
 pub struct AssemblerInfo {
-    pub size: (u8, u8),
+    pub display_name: String,
+
+    pub size: (u16, u16),
     pub num_module_slots: u8,
 
     /// Base Speed as a numerator and divisor. All module modifiers apply multiplicatively
     pub base_speed: u8,
     pub base_prod: u8,
     pub base_power_consumption: Watt,
+}
+
+#[derive(Debug, Clone)]
+pub struct LabInfo {
+    pub display_name: String,
+
+    pub size: (u16, u16),
+    pub num_module_slots: u8,
+
+    /// Base Speed as a numerator and divisor. All module modifiers apply multiplicatively
+    pub base_speed: u8,
+    pub base_prod: u8,
+    pub base_power_consumption: Watt,
+}
+
+#[derive(Debug, Clone)]
+pub struct BeaconInfo {
+    pub display_name: String,
+
+    pub size: (u16, u16),
+    pub num_module_slots: u8,
+    pub effectiveness: (u8, u8),
+    pub effect_range: (u16, u16),
+    pub power_consumption: Watt,
 }
 
 #[derive(Debug, Clone)]
@@ -443,6 +519,8 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub max_entity_size: (usize, usize),
 
     pub assembler_info: Vec<AssemblerInfo>,
+    pub lab_info: Vec<LabInfo>,
+    pub beacon_info: Vec<BeaconInfo>,
     pub module_info: Vec<ModuleInfo>,
 
     /// In 5% steps
@@ -493,7 +571,6 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     /// use Item to index, gives how many recipes have this item as an ingredient
     pub num_recipes_with_item: Vec<usize>,
 
-    pub lab_infos: Vec<()>,
     pub item_is_science: Vec<bool>,
 
     pub item_stack_sizes: Vec<ITEMCOUNTTYPE>,
@@ -927,12 +1004,42 @@ impl RawDataStore {
                 .machines
                 .iter()
                 .map(|m| AssemblerInfo {
-                    size: m.tile_size,
+                    display_name: m.display_name.clone(),
+
+                    size: (m.tile_size.0.into(), m.tile_size.1.into()),
                     num_module_slots: m.num_module_slots,
-                    // TODO: Hm, this seems rather silly
                     base_speed: m.base_speed,
                     base_prod: m.base_bonus_prod,
                     base_power_consumption: m.working_power_draw,
+                })
+                .collect(),
+
+            lab_info: self
+                .labs
+                .iter()
+                .map(|m| LabInfo {
+                    display_name: m.display_name.clone(),
+
+                    size: (m.tile_size.0.into(), m.tile_size.1.into()),
+                    num_module_slots: m.num_module_slots,
+                    base_speed: m.base_speed,
+                    base_prod: m.base_bonus_prod,
+                    base_power_consumption: m.working_power_draw,
+                })
+                .collect(),
+
+            beacon_info: self
+                .beacons
+                .iter()
+                .map(|m| BeaconInfo {
+                    display_name: m.display_name.clone(),
+
+                    size: (m.tile_size.0.into(), m.tile_size.1.into()),
+                    num_module_slots: m.num_module_slots,
+                    power_consumption: m.working_power_draw,
+
+                    effectiveness: m.effectiveness,
+                    effect_range: (m.effect_size.0.into(), m.effect_size.1.into()),
                 })
                 .collect(),
 
@@ -993,6 +1100,7 @@ impl RawDataStore {
                 .max()
                 .expect("At least one type of power pole must exist"),
 
+            // TODO:
             max_inserter_search_range: 2,
 
             item_is_science: self
@@ -1000,7 +1108,6 @@ impl RawDataStore {
                 .iter()
                 .map(|i| i.science_data.is_some())
                 .collect(),
-            lab_infos: vec![],
             num_different_static_containers: StaticID::iter().count(),
             num_recipes_with_item,
 

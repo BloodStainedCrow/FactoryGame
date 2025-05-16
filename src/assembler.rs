@@ -62,6 +62,7 @@ pub struct MultiAssemblerStore<
 
     holes: Vec<usize>,
     positions: Vec<Position>,
+    types: Vec<u8>,
     len: usize,
 }
 
@@ -273,6 +274,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
             holes: vec![],
             positions: vec![],
+            types: vec![],
             len: 0,
         }
     }
@@ -461,20 +463,34 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .map(|(_, v)| v),
         );
 
+        self.types.extend(
+            other
+                .types
+                .iter()
+                .copied()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
         let updates = other
             .positions
             .into_iter()
+            .zip(other.types)
             .enumerate()
             .filter(move |(i, _)| !other.holes.contains(i))
             .enumerate()
-            .map(move |(new_index_offs, (old_index, pos))| IndexUpdateInfo {
-                position: pos,
-                new_storage: PowerGridEntity::Assembler {
-                    recipe: self.recipe,
-                    index: (old_len + new_index_offs).try_into().unwrap(),
+            .map(
+                move |(new_index_offs, (old_index, (pos, ty)))| IndexUpdateInfo {
+                    position: pos,
+                    new_storage: PowerGridEntity::Assembler {
+                        ty,
+                        recipe: self.recipe,
+                        index: (old_len + new_index_offs).try_into().unwrap(),
+                    },
+                    new_grid: new_grid_id,
                 },
-                new_grid: new_grid_id,
-            });
+            );
 
         let ret = Self {
             recipe: self.recipe,
@@ -496,6 +512,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
             base_power_consumption: new_base_power_consumption.into_boxed_slice(),
             positions: self.positions,
+            types: self.types,
         };
 
         (ret, updates)

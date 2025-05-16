@@ -27,7 +27,7 @@ use crate::{
     },
 };
 use eframe::egui::{
-    self, Align2, Color32, ComboBox, Context, CornerRadius, ProgressBar, Stroke, Ui, Window,
+    self, Align2, Color32, ComboBox, Context, CornerRadius, Label, ProgressBar, Stroke, Ui, Window
 };
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
@@ -164,6 +164,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 assembler_index: _,
                                             },
                                         pole_position,
+                                        weak_index: _,
                                     } => {
                                         let grid = game_state
                                             .simulation_state
@@ -605,7 +606,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             AssemblerInfo::UnpoweredNoRecipe => None,
                             AssemblerInfo::Unpowered(recipe) => Some(*recipe),
                             AssemblerInfo::PoweredNoRecipe(position) => None,
-                            AssemblerInfo::Powered { id, pole_position } => Some(id.recipe),
+                            AssemblerInfo::Powered { id, pole_position, weak_index } => Some(id.recipe),
                         };
 
                         ComboBox::new("Recipe list", "Recipes").selected_text(goal_recipe.map(|recipe| data_store.recipe_names[usize_from(recipe.id)].as_str()).unwrap_or("Choose a recipe!")).show_ui(ui, |ui| {
@@ -640,7 +641,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             },
                             crate::frontend::world::tile::AssemblerInfo::Powered {
                                 id,
-                                pole_position
+                                pole_position, weak_index
                             } => {
                                 ui.label("Assembler");
 
@@ -716,6 +717,17 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         let lines = points.into_iter().map(|(name, points)| {
                             Line::new(name, points)
                                 .stroke(Stroke::new(2.0, Color32::GREEN))
+                        });
+
+                        TableBuilder::new(ui).columns(Column::auto(), 2).body(|body| {
+                            body.rows(1.0, pg.num_assemblers_of_type.len(), |mut row| {
+                                let i = row.index();
+                                row.col(|ui| {
+                                    ui.add(Label::new(&data_store.assembler_info[i].display_name).extend());
+                                    
+                                    });
+                                row.col(|ui| {ui.label(format!("{}", pg.num_assemblers_of_type[i]));});
+                            });
                         });
 
                         Plot::new("power_history_graph").show_x(false).show_y(false)

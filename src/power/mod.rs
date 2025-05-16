@@ -17,8 +17,13 @@ use crate::{
         Position,
     },
     item::{IdxTrait, WeakIdxTrait},
+    research::{ResearchProgress, TechState},
+    statistics::recipe::RecipeTickInfo,
     TICKS_PER_SECOND_LOGIC,
 };
+
+use rayon::iter::IntoParallelRefMutIterator;
+use rayon::iter::ParallelIterator;
 
 pub mod power_grid;
 
@@ -311,8 +316,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
     ) {
         let old_id = self.pole_pos_to_grid_id.remove(&pole_position).unwrap();
 
-        let (new_grids, delete_network, no_longer_connected_entity_positions) =
+        let (new_grids, delete_network, no_longer_connected_entity_positions, beacon_updates) =
             self.power_grids[old_id as usize].remove_pole(pole_position, data_store);
+
+        for beacon_update in beacon_updates {
+            match beacon_update.0 {
+                power_grid::BeaconAffectedEntity::Assembler { id } => {
+                    let grid = &mut self.power_grids[usize::from(id.grid)];
+
+                    grid.change_module_modifiers(id, beacon_update.1, data_store);
+                },
+                power_grid::BeaconAffectedEntity::Lab { grid, index } => todo!(),
+            }
+        }
 
         if delete_network {
             debug_assert!(new_grids.into_iter().count() == 0);
@@ -449,5 +465,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         }
 
         Some(updates)
+    }
+
+    pub fn update(
+        &mut self,
+        tech_state: &TechState,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> (ResearchProgress, RecipeTickInfo) {
+        self.power_grids
+            .par_iter_mut()
+            .map(|grid| grid.update(Watt(600000), tech_state, data_store))
+            .reduce(
+                || (0, RecipeTickInfo::new(data_store)),
+                |(acc_progress, infos), (rhs_progress, info)| {
+                    (acc_progress + rhs_progress, infos + &info)
+                },
+            )
     }
 }

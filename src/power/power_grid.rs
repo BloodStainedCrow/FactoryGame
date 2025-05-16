@@ -25,6 +25,7 @@ use crate::{
 use super::Watt;
 
 pub const MAX_POWER_MULT: u8 = 64;
+const MIN_BEACON_POWER_MULT: u8 = MAX_POWER_MULT / 2;
 
 pub const MAX_BURNER_RATE: Watt = Watt(1_800_000);
 
@@ -33,9 +34,10 @@ const MAX_ACCUMULATOR_DISCHARGE_RATE: Watt = Watt(300_000);
 
 const MAX_ACCUMULATOR_CHARGE: Joule = Joule(5_000_000);
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Assembler {
+        ty: u8,
         recipe: Recipe<RecipeIdxType>,
         index: u16,
     },
@@ -52,6 +54,22 @@ pub enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
     },
     Accumulator {
         ty: u8,
+    },
+    Beacon {
+        ty: u8,
+        modules: Box<[Option<usize>]>,
+        affected_entities: Vec<BeaconAffectedEntity<RecipeIdxType>>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+pub enum BeaconAffectedEntity<RecipeIdxType: WeakIdxTrait> {
+    Assembler {
+        id: AssemblerID<RecipeIdxType>,
+    },
+    Lab {
+        grid: PowerGridIdentifier,
+        index: usize,
     },
 }
 
@@ -77,6 +95,8 @@ pub struct PowerGrid<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub is_placeholder: bool,
 
     pub num_assemblers_of_type: Box<[usize]>,
+    pub num_labs_of_type: Box<[usize]>,
+    pub num_beacons_of_type: Box<[usize]>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize, serde::Serialize)]
@@ -107,30 +127,6 @@ pub struct IndexUpdateInfo<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrai
 pub struct PowerPoleUpdateInfo {
     pub position: Position,
     pub new_grid_id: PowerGridIdentifier,
-}
-
-pub fn all_storages<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    grids: impl IntoIterator<Item = &'a mut PowerGrid<ItemIdxType, RecipeIdxType>>,
-) -> impl IntoIterator<Item = (usize, impl IntoIterator<Item = &'a mut [u8]>)> {
-    // NOTE: This has to be assembled in the same way the lookup is generated in DataStore
-    //       Currently this means assemblers -> labs -> TODO
-    // TODO: This is very fragile :/
-    grids.into_iter().enumerate().map(|(grid_id, grid)| {
-        (
-            grid_id,
-            grid.stores
-                .assemblers_0_1
-                .iter_mut()
-                .flat_map(|store| iter::once(store.get_outputs_mut(0)))
-                // TODO: Chain the other storages here
-                .chain(
-                    grid.lab_stores
-                        .sciences
-                        .iter_mut()
-                        .map(std::vec::Vec::as_mut_slice),
-                ),
-        )
-    })
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, RecipeIdxType> {
@@ -166,6 +162,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             is_placeholder: false,
 
             num_assemblers_of_type: vec![0; data_store.assembler_info.len()].into_boxed_slice(),
+            num_labs_of_type: vec![0; data_store.lab_info.len()].into_boxed_slice(),
+            num_beacons_of_type: vec![0; data_store.beacon_info.len()].into_boxed_slice(),
         }
     }
 
@@ -198,6 +196,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             is_placeholder: true,
 
             num_assemblers_of_type: vec![].into_boxed_slice(),
+            num_labs_of_type: vec![].into_boxed_slice(),
+            num_beacons_of_type: vec![].into_boxed_slice(),
         }
     }
 
@@ -246,6 +246,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         self.num_assemblers_of_type
             .iter_mut()
             .zip(other.num_assemblers_of_type)
+            .for_each(|(s, o)| {
+                *s += o;
+            });
+
+        self.num_labs_of_type
+            .iter_mut()
+            .zip(other.num_labs_of_type)
+            .for_each(|(s, o)| {
+                *s += o;
+            });
+
+        self.num_beacons_of_type
+            .iter_mut()
+            .zip(other.num_beacons_of_type)
             .for_each(|(s, o)| {
                 *s += o;
             });
@@ -303,6 +317,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             is_placeholder: false,
 
             num_assemblers_of_type: self.num_assemblers_of_type,
+            num_labs_of_type: self.num_labs_of_type,
+            num_beacons_of_type: self.num_beacons_of_type,
         };
 
         (ret, assembler_updates.into_iter().chain(lab_updates))
@@ -358,20 +374,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     ) -> (WeakIndex, u16) {
         assert!(!self.is_placeholder);
 
+        self.num_labs_of_type[usize::from(ty)] += 1;
+
         let index = self.lab_stores.add_lab(ty, lab_position, data_store);
 
-        // FIXME: Respect the lab type
         let weak_idx = self.grid_graph.add_weak_element(
             pole_connection,
             (lab_position, PowerGridEntity::Lab { ty, index }),
         );
 
-        (
-            weak_idx,
-            index
-                .try_into()
-                .expect("More than u16::MAX labs in single grid"),
-        )
+        (weak_idx, index)
     }
 
     pub fn remove_lab(
@@ -382,12 +394,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     ) -> Vec<(Item<ItemIdxType>, ITEMCOUNTTYPE)> {
         assert!(!self.is_placeholder);
 
-        let (_lab_pos, PowerGridEntity::Lab { ty: _ty, index }) = self
+        let (_lab_pos, PowerGridEntity::Lab { ty, index }) = self
             .grid_graph
             .remove_weak_element(pole_connection, weak_idx)
         else {
             unreachable!()
         };
+
+        self.num_labs_of_type[usize::from(ty)] -= 1;
 
         let residual_items = self.lab_stores.remove_lab(index);
 
@@ -414,10 +428,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         );
     }
 
-    pub fn remove_pole(
+    pub fn remove_pole<'a>(
         &mut self,
         pole_pos: Position,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        data_store: &'a DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
         impl IntoIterator<
             Item = (
@@ -427,15 +441,57 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         >,
         bool, // This tells the storage to delete us
         impl IntoIterator<Item = Position>,
+        impl IntoIterator<Item = (BeaconAffectedEntity<RecipeIdxType>, (i16, i16, i16))>
+            + use<'a, ItemIdxType, RecipeIdxType>,
     ) {
         let ((), no_longer_connected_entities, new_electric_networks) =
             self.grid_graph.remove_node(pole_pos);
 
-        let no_longer_connected_entities: Vec<_> =
-            no_longer_connected_entities.into_iter().collect();
+        let (no_longer_connected_entities_pos, no_longer_connected_entities): (Vec<_>, Vec<_>) =
+            no_longer_connected_entities.into_iter().unzip();
 
         // This is needed to make sure both paths have the same type (since closures have different types even if identical)
-        let closure = |v: (Position, PowerGridEntity<ItemIdxType, RecipeIdxType>)| v.0;
+        let pos_closure = |v: &(Position, PowerGridEntity<ItemIdxType, RecipeIdxType>)| v.0;
+        let beacon_mod_closure = |v: PowerGridEntity<ItemIdxType, RecipeIdxType>| match &v {
+            PowerGridEntity::Beacon {
+                ty,
+                modules,
+                affected_entities,
+            } => {
+                let effect: (i16, i16, i16) = modules
+                    .iter()
+                    .flatten()
+                    .map(|module_ty| {
+                        (
+                            data_store.module_info[*module_ty].speed_mod.into(),
+                            data_store.module_info[*module_ty].prod_mod.into(),
+                            data_store.module_info[*module_ty].power_mod.into(),
+                        )
+                    })
+                    .reduce(|acc, v| (acc.0 + v.0, acc.1 + v.1, acc.2 + v.2))
+                    .unwrap_or((0, 0, 0));
+
+                let effect = (
+                    effect.0 * data_store.beacon_info[usize::from(*ty)].effectiveness.0 as i16
+                        / data_store.beacon_info[usize::from(*ty)].effectiveness.1 as i16,
+                    effect.1 * data_store.beacon_info[usize::from(*ty)].effectiveness.0 as i16
+                        / data_store.beacon_info[usize::from(*ty)].effectiveness.1 as i16,
+                    effect.2 * data_store.beacon_info[usize::from(*ty)].effectiveness.0 as i16
+                        / data_store.beacon_info[usize::from(*ty)].effectiveness.1 as i16,
+                );
+
+                if effect == (0, 0, 0) {
+                    // No effect, do not emit any updates
+                    vec![]
+                } else {
+                    affected_entities
+                        .into_iter()
+                        .map(|e| (*e, effect))
+                        .collect()
+                }
+            },
+            _ => vec![],
+        };
 
         if new_electric_networks.is_none() {
             // We no longer exist
@@ -449,7 +505,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             return (
                 new_networks,
                 true,
-                no_longer_connected_entities.into_iter().map(closure),
+                no_longer_connected_entities_pos,
+                no_longer_connected_entities
+                    .into_iter()
+                    .flat_map(beacon_mod_closure),
             );
         }
 
@@ -471,8 +530,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             })
             .collect();
 
-        for no_longer_connected_entity in no_longer_connected_entities.iter().copied() {
-            self.remove_connected_entity(no_longer_connected_entity.1, data_store);
+        for no_longer_connected_entity in no_longer_connected_entities.iter() {
+            self.remove_connected_entity(&no_longer_connected_entity, data_store);
         }
 
         // TODO: Do I want to return the no_longer_connected_entities positions?
@@ -482,28 +541,31 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         (
             new_electric_networks,
             false,
-            no_longer_connected_entities.into_iter().map(closure),
+            no_longer_connected_entities_pos,
+            no_longer_connected_entities
+                .into_iter()
+                .flat_map(beacon_mod_closure),
         )
     }
 
     fn remove_connected_entity(
         &mut self,
-        connected_entity: PowerGridEntity<ItemIdxType, RecipeIdxType>,
+        connected_entity: &PowerGridEntity<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         match connected_entity {
-            PowerGridEntity::Assembler { recipe, index } => {
-                self.remove_assembler(
+            PowerGridEntity::Assembler { ty, recipe, index } => {
+                self.remove_assembler_raw(
                     AssemblerID {
-                        recipe,
+                        recipe: *recipe,
                         grid: 0, // Does not matter
-                        assembler_index: index,
+                        assembler_index: *index,
                     },
                     data_store,
                 );
             },
             PowerGridEntity::Lab { index, ty: _ty } => {
-                let residual_items = self.lab_stores.remove_lab(index);
+                let residual_items = self.lab_stores.remove_lab(*index);
             },
             PowerGridEntity::LazyPowerProducer { item, index } => {
                 todo!("Remove LazyPowerProducer (Steam Engine)")
@@ -515,6 +577,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             PowerGridEntity::Accumulator { ty } => {
                 // FIXME: Respect ty
                 self.main_accumulator_count -= 1;
+            },
+            PowerGridEntity::Beacon {
+                ty,
+                modules,
+                affected_entities,
+            } => {
+                if self.last_power_mult >= MIN_BEACON_POWER_MULT {
+                    for effected_entity in affected_entities {}
+                }
+                todo!("Remove Beacon")
             },
         }
     }
@@ -530,14 +602,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             .grid_graph
             .weak_components_mut()
             .into_iter()
-            .map(|connected_entity| match &mut dbg!(connected_entity.1) {
-                PowerGridEntity::Assembler { recipe, index } => {
+            .map(|connected_entity| match &mut connected_entity.1 {
+                PowerGridEntity::Assembler { ty, recipe, index } => {
                     let new_idx =
                         self.move_assembler(&mut other.stores, *recipe, *index, data_store);
+
+                    self.num_assemblers_of_type[usize::from(*ty)] -= 1;
+                    other.num_assemblers_of_type[usize::from(*ty)] += 1;
 
                     let ret = (
                         connected_entity.0,
                         PowerGridEntity::Assembler {
+                            ty: *ty,
                             recipe: *recipe,
                             index: new_idx.try_into().unwrap(),
                         },
@@ -570,14 +646,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                     self.num_solar_panels -= 1;
                     other.num_solar_panels += 1;
 
-                    *connected_entity
+                    (connected_entity.0, PowerGridEntity::SolarPanel { ty: *ty })
                 },
                 PowerGridEntity::Accumulator { ty } => {
                     // FIXME: Respect ty
                     self.main_accumulator_count -= 1;
                     other.main_accumulator_count += 1;
 
-                    *connected_entity
+                    (connected_entity.0, PowerGridEntity::Accumulator { ty: *ty })
+                },
+                PowerGridEntity::Beacon {
+                    ty,
+                    modules,
+                    affected_entities,
+                } => {
+                    todo!("Move Beacon")
                 },
             })
     }
@@ -638,9 +721,67 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         // TODO: This will crash if someone uses i8::MIN but oh well
-        let speed_mod = -data_store.module_info[module_kind].speed_mod;
-        let prod_mod = -data_store.module_info[module_kind].prod_mod;
-        let power_mod = -data_store.module_info[module_kind].power_mod;
+        let speed_mod = data_store.module_info[module_kind]
+            .speed_mod
+            .checked_neg()
+            .expect("Negation failed");
+        let prod_mod = data_store.module_info[module_kind]
+            .prod_mod
+            .checked_neg()
+            .expect("Negation failed");
+        let power_mod = data_store.module_info[module_kind]
+            .power_mod
+            .checked_neg()
+            .expect("Negation failed");
+
+        assert!(!self.is_placeholder);
+
+        match (
+            data_store.recipe_num_ing_lookup[id.recipe.id.into()],
+            data_store.recipe_num_out_lookup[id.recipe.id.into()],
+        ) {
+            (0, 1) => self.stores.assemblers_0_1
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+            (1, 1) => self.stores.assemblers_1_1
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+
+            (2, 1) => self.stores.assemblers_2_1
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+
+            _ => unreachable!(),
+        };
+    }
+
+    pub fn change_module_modifiers(
+        &mut self,
+        id: AssemblerID<RecipeIdxType>,
+        modifiers: (i16, i16, i16),
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        let speed_mod = modifiers.0;
+        let prod_mod = modifiers.1;
+        let power_mod = modifiers.2;
 
         assert!(!self.is_placeholder);
 
@@ -690,7 +831,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         connected_power_pole_position: Position,
         assembler_position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> AssemblerID<RecipeIdxType> {
+    ) -> (AssemblerID<RecipeIdxType>, WeakIndex) {
         assert!(!self.is_placeholder);
 
         self.num_assemblers_of_type[usize::from(ty)] += 1;
@@ -714,30 +855,54 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             _ => unreachable!(),
         };
 
-        self.grid_graph.add_weak_element(
+        let weak_index = self.grid_graph.add_weak_element(
             connected_power_pole_position,
             (
                 assembler_position,
                 PowerGridEntity::Assembler {
+                    ty,
                     recipe,
                     index: new_idx.try_into().unwrap(),
                 },
             ),
         );
 
-        AssemblerID {
-            recipe,
-            grid: grid_id,
-            assembler_index: new_idx.try_into().expect("More than u16::MAX assemblers"),
-        }
+        (
+            AssemblerID {
+                recipe,
+                grid: grid_id,
+                assembler_index: new_idx.try_into().expect("More than u16::MAX assemblers"),
+            },
+            weak_index,
+        )
     }
 
     pub fn remove_assembler(
         &mut self,
         assembler_id: AssemblerID<RecipeIdxType>,
+        pole_pos: Position,
+        weak_idx: WeakIndex,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> AssemblerRemovalInfo {
-        match (
+        let removal_info = self.remove_assembler_raw(assembler_id, data_store);
+
+        let (pos, PowerGridEntity::Assembler { ty, recipe, index }) =
+            self.grid_graph.remove_weak_element(pole_pos, weak_idx)
+        else {
+            unreachable!()
+        };
+
+        self.num_assemblers_of_type[usize::from(ty)] -= 1;
+
+        removal_info
+    }
+
+    fn remove_assembler_raw(
+        &mut self,
+        assembler_id: AssemblerID<RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> AssemblerRemovalInfo {
+        let removal_info = match (
             data_store.recipe_num_ing_lookup[assembler_id.recipe.id.into()],
             data_store.recipe_num_out_lookup[assembler_id.recipe.id.into()],
         ) {
@@ -752,9 +917,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             .remove_assembler(assembler_id.assembler_index as usize),
 
             _ => unreachable!(),
-        }
+        };
 
-        // FIXME: Remove Weak Elements from the graph
+        removal_info
     }
 
     fn move_assembler(
@@ -1038,7 +1203,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         solar_panel_production_amount: Watt,
         tech_state: &TechState,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> (ResearchProgress, RecipeTickInfo) {
+    ) -> (
+        ResearchProgress,
+        RecipeTickInfo,
+        Vec<(BeaconAffectedEntity<RecipeIdxType>, (i16, i16, i16))>,
+    ) {
         let (
             (
                 (power_used_0_1, infos_0_1),
@@ -1159,6 +1328,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             solar_panel_production_amount,
             data_store,
         );
+
+        if next_power_mult < MIN_BEACON_POWER_MULT && self.last_power_mult >= MIN_BEACON_POWER_MULT
+        {
+            // TODO: Disable beacons
+        } else if next_power_mult >= MIN_BEACON_POWER_MULT
+            && self.last_power_mult < MIN_BEACON_POWER_MULT
+        {
+            // TODO: Enable beacons
+        }
 
         self.power_history
             .append_single_set_of_samples(next_power_mult.into());
