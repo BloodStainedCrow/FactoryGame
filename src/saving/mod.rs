@@ -84,8 +84,10 @@ pub fn load<
 
     let file = File::open(save_file_dir);
 
-    file.map_or(None, |file| {
-        let v = file.bytes().collect::<Result<Vec<_>, _>>().unwrap();
+    file.map_or(None, |mut file| {
+        let mut v = Vec::with_capacity(file.metadata().unwrap().len() as usize);
+
+        file.read_to_end(&mut v).unwrap();
 
         match bitcode::deserialize(v.as_slice()) {
             Ok(val) => Some(val),
