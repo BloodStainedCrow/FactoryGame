@@ -41,7 +41,7 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     recipe: PhantomData<RecipeIdxType>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum StatisticsPanel {
     Production(usize),
 }
@@ -199,54 +199,59 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             HeldObject::Tile(floor_tile) => {},
                             HeldObject::Entity(place_entity_type) => match place_entity_type {
                                 PlaceEntityType::Assembler {
-                                    pos: position,
-                                    ty: _
-                                } => {
-                                    *position = Self::player_mouse_to_tile(
-                                        self.zoom_level,
-                                        self.local_player_pos,
-                                        self.current_mouse_pos,
-                                    );
-                                },
+                                                                pos: position,
+                                                                ty: _
+                                                            } => {
+                                                                *position = Self::player_mouse_to_tile(
+                                                                    self.zoom_level,
+                                                                    self.local_player_pos,
+                                                                    self.current_mouse_pos,
+                                                                );
+                                                            },
                                 PlaceEntityType::Inserter { pos, dir: _, filter: _ } => {
-                                    *pos = Self::player_mouse_to_tile(
-                                        self.zoom_level,
-                                        self.local_player_pos,
-                                        self.current_mouse_pos,
-                                    );
-                                },
+                                                                *pos = Self::player_mouse_to_tile(
+                                                                    self.zoom_level,
+                                                                    self.local_player_pos,
+                                                                    self.current_mouse_pos,
+                                                                );
+                                                            },
                                 PlaceEntityType::Belt { pos, direction: _ } => {
-                                    *pos = Self::player_mouse_to_tile(
-                                        self.zoom_level,
-                                        self.local_player_pos,
-                                        self.current_mouse_pos,
-                                    );
-                                },
+                                                                *pos = Self::player_mouse_to_tile(
+                                                                    self.zoom_level,
+                                                                    self.local_player_pos,
+                                                                    self.current_mouse_pos,
+                                                                );
+                                                            },
                                 PlaceEntityType::PowerPole { pos, ty: _ } => {
-                                    *pos = Self::player_mouse_to_tile(
-                                        self.zoom_level,
-                                        self.local_player_pos,
-                                        self.current_mouse_pos,
-                                    );
-                                },
+                                                                *pos = Self::player_mouse_to_tile(
+                                                                    self.zoom_level,
+                                                                    self.local_player_pos,
+                                                                    self.current_mouse_pos,
+                                                                );
+                                                            },
                                 PlaceEntityType::Splitter { pos, direction: _, in_mode: _, out_mode: _ } => {
-                                    *pos = Self::player_mouse_to_tile(
-                                        self.zoom_level,
-                                        self.local_player_pos,
-                                        self.current_mouse_pos,
-                                    );
-                                },
+                                                                *pos = Self::player_mouse_to_tile(
+                                                                    self.zoom_level,
+                                                                    self.local_player_pos,
+                                                                    self.current_mouse_pos,
+                                                                );
+                                                            },
                                 PlaceEntityType::Chest { pos } => {*pos = Self::player_mouse_to_tile(
-                                    self.zoom_level,
-                                    self.local_player_pos,
-                                    self.current_mouse_pos,
-                                );},
+                                                                self.zoom_level,
+                                                                self.local_player_pos,
+                                                                self.current_mouse_pos,
+                                                            );},
                                 PlaceEntityType::SolarPanel { pos, ty: _ } => {*pos = Self::player_mouse_to_tile(
-                                    self.zoom_level,
-                                    self.local_player_pos,
-                                    self.current_mouse_pos,
-                                );},
+                                                                self.zoom_level,
+                                                                self.local_player_pos,
+                                                                self.current_mouse_pos,
+                                                            );},
                                 PlaceEntityType::Lab { pos, ty: _ } => {*pos = Self::player_mouse_to_tile(
+                                                                self.zoom_level,
+                                                                self.local_player_pos,
+                                                                self.current_mouse_pos,
+                                                            );},
+                                PlaceEntityType::Beacon { ty, pos } => {*pos = Self::player_mouse_to_tile(
                                     self.zoom_level,
                                     self.local_player_pos,
                                     self.current_mouse_pos,
@@ -450,6 +455,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key9) => {
                 self.state =
                     ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Lab {
+                        pos: Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.local_player_pos,
+                            self.current_mouse_pos,
+                        ),
+                        ty: 0,
+                    }));
+                vec![]
+            },
+            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key0) => {
+                self.state =
+                    ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Beacon {
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
                             self.local_player_pos,

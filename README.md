@@ -15,18 +15,21 @@ I was playing the above games and started being unable to expand due to performa
 - ~~Blueprints so I can actually do perf tests~~
 - ~~Automatic insertion limit~~
 - ~~Assembler Module Support~~
+- ~~World listener support (i.e. update whenever something changes in the world, for power, beacons and inserters)~~
 - Lazy Terrain Generation
-- Assembler Module Frontend
-- Assembler Power Consumption Modifier Support
-- Beacons
+- ~~Assembler Module Frontend~~
+- ~~Assembler Power Consumption Modifier Support~~
+- ~~Beacons~~
+- ~~FIX Beacon Flicker due to lowering power consumption when beacons are unpowered~~
 - ~~Storage Storage Inserters~~
 - ~~Science Consumption in Labs~~
 - ~~Inserter connections to labs~~
-- Debug inserters
+- ~~Debug inserters~~
 - ~~Production Graphs~~
 - Mining Drills
 - Liquids
 - Place Steam Turbines
 - Splitters
+- Decide if I want beacons to match factorio behaviour or keep the hard switch on/off
 - Ore Generation
 - Bots

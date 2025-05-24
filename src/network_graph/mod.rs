@@ -116,7 +116,8 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
 
         self.key_map.remove_by_left(&key);
 
-        let mut components = petgraph::algo::tarjan_scc(&self.graph);
+        // Use kosaraju_scc instead of tarjan_scc since tarjan_scc is recursive and will overflow the stack for huge power grids
+        let mut components = petgraph::algo::kosaraju_scc(&self.graph);
 
         // Pop the first component, (which will stay in this network)
         // TODO: It is probably good to have the largest component stay, but testing is required
@@ -143,8 +144,6 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
                 .collect();
 
             let mut new_graph = StableUnGraph::default();
-
-            dbg!(&component);
 
             let new_indices: Vec<_> = component
                 .iter()

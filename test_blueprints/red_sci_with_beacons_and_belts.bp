@@ -1,0 +1,1839 @@
+(
+    actions: [
+        PlaceEntity((
+            entities: Single(Assembler(
+                pos: (
+                    x: 24,
+                    y: 21,
+                ),
+                ty: 2,
+            )),
+        )),
+        SetRecipe((
+            pos: (
+                x: 24,
+                y: 21,
+            ),
+            recipe: (
+                id: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 24,
+                y: 21,
+            ),
+            modules: [
+                1,
+                1,
+                1,
+                1,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 22,
+                    y: 19,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 22,
+                    y: 25,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 19,
+                    y: 16,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 19,
+                y: 16,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 22,
+                    y: 16,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 22,
+                y: 16,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 19,
+                    y: 19,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 19,
+                y: 19,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 19,
+                    y: 23,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 19,
+                y: 23,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(SolarPanel(
+                pos: (
+                    x: 19,
+                    y: 13,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 22,
+                    y: 15,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 19,
+                    y: 26,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 19,
+                y: 26,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 22,
+                    y: 26,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 22,
+                y: 26,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 28,
+                    y: 19,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 28,
+                    y: 25,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 29,
+                    y: 23,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 29,
+                y: 23,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 26,
+                    y: 16,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 26,
+                y: 16,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 29,
+                    y: 16,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 29,
+                y: 16,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 29,
+                    y: 19,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 29,
+                y: 19,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Assembler(
+                pos: (
+                    x: 34,
+                    y: 21,
+                ),
+                ty: 2,
+            )),
+        )),
+        SetRecipe((
+            pos: (
+                x: 34,
+                y: 21,
+            ),
+            recipe: (
+                id: 2,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 34,
+                y: 21,
+            ),
+            modules: [
+                1,
+                1,
+                1,
+                1,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 32,
+                    y: 19,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 38,
+                    y: 19,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 38,
+                    y: 25,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 32,
+                    y: 25,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 32,
+                    y: 16,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 32,
+                y: 16,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 39,
+                    y: 23,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 39,
+                y: 23,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 36,
+                    y: 16,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 36,
+                y: 16,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 39,
+                    y: 16,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 39,
+                y: 16,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 39,
+                    y: 19,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 39,
+                y: 19,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(SolarPanel(
+                pos: (
+                    x: 29,
+                    y: 13,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 32,
+                    y: 15,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(SolarPanel(
+                pos: (
+                    x: 39,
+                    y: 13,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Inserter(
+                pos: (
+                    x: 27,
+                    y: 22,
+                ),
+                dir: East,
+                filter: None,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 28,
+                    y: 22,
+                ),
+                direction: East,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 29,
+                    y: 22,
+                ),
+                direction: East,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 30,
+                    y: 22,
+                ),
+                direction: East,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 31,
+                    y: 22,
+                ),
+                direction: East,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 32,
+                    y: 22,
+                ),
+                direction: East,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Inserter(
+                pos: (
+                    x: 33,
+                    y: 22,
+                ),
+                dir: East,
+                filter: None,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Inserter(
+                pos: (
+                    x: 37,
+                    y: 22,
+                ),
+                dir: East,
+                filter: None,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 38,
+                    y: 22,
+                ),
+                direction: East,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 39,
+                    y: 22,
+                ),
+                direction: East,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 40,
+                    y: 22,
+                ),
+                direction: East,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 41,
+                    y: 22,
+                ),
+                direction: East,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 26,
+                    y: 26,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 26,
+                y: 26,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 29,
+                    y: 26,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 29,
+                y: 26,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 32,
+                    y: 26,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 32,
+                y: 26,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 36,
+                    y: 26,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 36,
+                y: 26,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 39,
+                    y: 26,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 39,
+                y: 26,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Assembler(
+                pos: (
+                    x: 44,
+                    y: 21,
+                ),
+                ty: 2,
+            )),
+        )),
+        SetRecipe((
+            pos: (
+                x: 44,
+                y: 21,
+            ),
+            recipe: (
+                id: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 44,
+                y: 21,
+            ),
+            modules: [
+                1,
+                1,
+                1,
+                1,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 42,
+                    y: 19,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 48,
+                    y: 19,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 48,
+                    y: 25,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 42,
+                    y: 25,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 42,
+                    y: 16,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 42,
+                y: 16,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 49,
+                    y: 23,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 49,
+                y: 23,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 46,
+                    y: 16,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 46,
+                y: 16,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 49,
+                    y: 16,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 49,
+                y: 16,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 49,
+                    y: 19,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 49,
+                y: 19,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 42,
+                    y: 15,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Assembler(
+                pos: (
+                    x: 54,
+                    y: 21,
+                ),
+                ty: 2,
+            )),
+        )),
+        SetRecipe((
+            pos: (
+                x: 54,
+                y: 21,
+            ),
+            recipe: (
+                id: 5,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 54,
+                y: 21,
+            ),
+            modules: [
+                1,
+                1,
+                1,
+                1,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 52,
+                    y: 19,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 52,
+                    y: 25,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 52,
+                    y: 16,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 52,
+                y: 16,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 56,
+                    y: 16,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 56,
+                y: 16,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(SolarPanel(
+                pos: (
+                    x: 49,
+                    y: 13,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 52,
+                    y: 15,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 42,
+                    y: 22,
+                ),
+                direction: East,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Inserter(
+                pos: (
+                    x: 43,
+                    y: 22,
+                ),
+                dir: East,
+                filter: None,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Inserter(
+                pos: (
+                    x: 47,
+                    y: 22,
+                ),
+                dir: East,
+                filter: None,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Inserter(
+                pos: (
+                    x: 53,
+                    y: 22,
+                ),
+                dir: East,
+                filter: None,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 48,
+                    y: 22,
+                ),
+                direction: East,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 49,
+                    y: 22,
+                ),
+                direction: East,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 50,
+                    y: 22,
+                ),
+                direction: East,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 51,
+                    y: 22,
+                ),
+                direction: East,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 52,
+                    y: 22,
+                ),
+                direction: East,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Inserter(
+                pos: (
+                    x: 55,
+                    y: 20,
+                ),
+                dir: North,
+                filter: None,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Chest(
+                pos: (
+                    x: 55,
+                    y: 19,
+                ),
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Inserter(
+                pos: (
+                    x: 57,
+                    y: 22,
+                ),
+                dir: West,
+                filter: None,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 42,
+                    y: 26,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 42,
+                y: 26,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 46,
+                    y: 26,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 46,
+                y: 26,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 49,
+                    y: 26,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 49,
+                y: 26,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 52,
+                    y: 26,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 52,
+                y: 26,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 56,
+                    y: 26,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 56,
+                y: 26,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 58,
+                    y: 19,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 58,
+                    y: 25,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 59,
+                    y: 23,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 59,
+                y: 23,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 59,
+                    y: 16,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 59,
+                y: 16,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 59,
+                    y: 19,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 59,
+                y: 19,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Assembler(
+                pos: (
+                    x: 64,
+                    y: 21,
+                ),
+                ty: 2,
+            )),
+        )),
+        SetRecipe((
+            pos: (
+                x: 64,
+                y: 21,
+            ),
+            recipe: (
+                id: 3,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 64,
+                y: 21,
+            ),
+            modules: [
+                1,
+                1,
+                1,
+                1,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 62,
+                    y: 19,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 68,
+                    y: 19,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 68,
+                    y: 25,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 62,
+                    y: 25,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 62,
+                    y: 16,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 62,
+                y: 16,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 69,
+                    y: 23,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 69,
+                y: 23,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 66,
+                    y: 16,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 66,
+                y: 16,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 69,
+                    y: 16,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 69,
+                y: 16,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 69,
+                    y: 19,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 69,
+                y: 19,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(SolarPanel(
+                pos: (
+                    x: 59,
+                    y: 13,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 62,
+                    y: 15,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 72,
+                    y: 19,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 72,
+                    y: 25,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 72,
+                    y: 16,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 72,
+                y: 16,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(SolarPanel(
+                pos: (
+                    x: 69,
+                    y: 13,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 72,
+                    y: 15,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Inserter(
+                pos: (
+                    x: 63,
+                    y: 22,
+                ),
+                dir: West,
+                filter: None,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Inserter(
+                pos: (
+                    x: 67,
+                    y: 22,
+                ),
+                dir: West,
+                filter: None,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Inserter(
+                pos: (
+                    x: 73,
+                    y: 22,
+                ),
+                dir: West,
+                filter: None,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 62,
+                    y: 22,
+                ),
+                direction: West,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 61,
+                    y: 22,
+                ),
+                direction: West,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 60,
+                    y: 22,
+                ),
+                direction: West,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 59,
+                    y: 22,
+                ),
+                direction: West,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 58,
+                    y: 22,
+                ),
+                direction: West,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 72,
+                    y: 22,
+                ),
+                direction: West,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 71,
+                    y: 22,
+                ),
+                direction: West,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 70,
+                    y: 22,
+                ),
+                direction: West,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 69,
+                    y: 22,
+                ),
+                direction: West,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Belt(
+                pos: (
+                    x: 68,
+                    y: 22,
+                ),
+                direction: West,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 59,
+                    y: 26,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 59,
+                y: 26,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 62,
+                    y: 26,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 62,
+                y: 26,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 66,
+                    y: 26,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 66,
+                y: 26,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 69,
+                    y: 26,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 69,
+                y: 26,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 72,
+                    y: 26,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 72,
+                y: 26,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Assembler(
+                pos: (
+                    x: 74,
+                    y: 21,
+                ),
+                ty: 2,
+            )),
+        )),
+        SetRecipe((
+            pos: (
+                x: 74,
+                y: 21,
+            ),
+            recipe: (
+                id: 1,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 74,
+                y: 21,
+            ),
+            modules: [
+                1,
+                1,
+                1,
+                1,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 78,
+                    y: 19,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 78,
+                    y: 25,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 79,
+                    y: 23,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 79,
+                y: 23,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 76,
+                    y: 16,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 76,
+                y: 16,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 79,
+                    y: 16,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 79,
+                y: 16,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 79,
+                    y: 19,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 79,
+                y: 19,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 76,
+                    y: 26,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 76,
+                y: 26,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+        PlaceEntity((
+            entities: Single(Beacon(
+                ty: 0,
+                pos: (
+                    x: 79,
+                    y: 26,
+                ),
+            )),
+        )),
+        AddModules(
+            pos: (
+                x: 79,
+                y: 26,
+            ),
+            modules: [
+                0,
+                0,
+            ],
+        ),
+    ],
+)

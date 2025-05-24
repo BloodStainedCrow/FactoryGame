@@ -135,7 +135,7 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             direction: splitter_direction,
             id,
         },
-        &game_state.simulation_state,
+        &mut game_state.simulation_state,
         data_store,
     );
 }
@@ -164,7 +164,7 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     id,
                     belt_pos: result.belt_pos_of_segment,
                 },
-                &game_state.simulation_state,
+                &mut game_state.simulation_state,
                 data_store,
             );
             (id, result.new_belt_len)
@@ -191,7 +191,7 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     id: new_belt,
                     belt_pos: BELT_LEN_PER_TILE,
                 },
-                &game_state.simulation_state,
+                &mut game_state.simulation_state,
                 data_store,
             );
             (new_belt, BELT_LEN_PER_TILE)
@@ -208,7 +208,7 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     id,
                     belt_pos: BELT_LEN_PER_TILE,
                 },
-                &game_state.simulation_state,
+                &mut game_state.simulation_state,
                 data_store,
             );
             (id, BELT_LEN_PER_TILE)
@@ -827,7 +827,7 @@ mod test {
 
             let ent = state.world.get_entities_colliding_with(Position { x: 1602, y: 1602 }, (1, 1), &DATA_STORE).into_iter().next().unwrap();
 
-            let inserter_attached = matches!(ent, Entity::Inserter { pos, direction, info: InserterInfo::Attached { .. } });
+            let inserter_attached = matches!(ent, Entity::Inserter { info: InserterInfo::Attached { .. }, .. });
 
             prop_assert!(inserter_attached, "{:?}", ent);
         }
@@ -866,7 +866,7 @@ mod test {
 
             let ent = state.world.get_entities_colliding_with(Position { x: 1602, y: 1602 }, (1, 1), &DATA_STORE).into_iter().next().unwrap();
 
-            let inserter_attached = matches!(ent, Entity::Inserter { pos, direction, info: InserterInfo::Attached { .. } });
+            let inserter_attached = matches!(ent, Entity::Inserter { info: InserterInfo::Attached { .. }, .. });
 
             prop_assume!(inserter_attached, "{:?}", ent);
 
@@ -893,7 +893,7 @@ mod test {
 
             bp.apply(Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
 
-            let inserter_attached = matches!(state.world.get_entities_colliding_with(Position { x: 1602, y: 1602 }, (1, 1), &DATA_STORE).into_iter().next().unwrap(), Entity::Inserter { pos, direction, info: InserterInfo::Attached { .. } });
+            let inserter_attached = matches!(state.world.get_entities_colliding_with(Position { x: 1602, y: 1602 }, (1, 1), &DATA_STORE).into_iter().next().unwrap(), Entity::Inserter { info: InserterInfo::Attached { .. }, .. });
 
             prop_assume!(inserter_attached);
 

@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use log::{error, info};
+use log::{error, info, warn};
 
 use crate::{
     data::DataStore,
@@ -99,8 +99,10 @@ impl<
         }
 
         game_state.borrow_mut().update(data_store);
-        if start.elapsed() > Duration::from_millis(10) {
+        if start.elapsed() > Duration::from_millis(16) {
             error!("Update done {:?}", start.elapsed());
+        } else if start.elapsed() > Duration::from_millis(10) {
+            warn!("Update done {:?}", start.elapsed());
         } else {
             info!("Update done {:?}", start.elapsed());
         }

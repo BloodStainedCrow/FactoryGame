@@ -1,4 +1,4 @@
-use std::{array, collections::HashMap};
+use std::{array, cmp::max, collections::HashMap};
 
 use eframe::egui::Color32;
 use itertools::Itertools;
@@ -64,7 +64,7 @@ pub fn get_raw_data_test() -> RawDataStore {
                     amount: 1,
                 }]
                 .into_boxed_slice(),
-                time_to_craft: 300,
+                time_to_craft: 192,
                 is_intermediate: true,
             },
             RawRecipeData {
@@ -81,7 +81,7 @@ pub fn get_raw_data_test() -> RawDataStore {
                     amount: 1,
                 }]
                 .into_boxed_slice(),
-                time_to_craft: 300,
+                time_to_craft: 192,
                 is_intermediate: true,
             },
             RawRecipeData {
@@ -98,7 +98,7 @@ pub fn get_raw_data_test() -> RawDataStore {
                     amount: 1,
                 }]
                 .into_boxed_slice(),
-                time_to_craft: 600,
+                time_to_craft: 30,
 
                 is_intermediate: true,
             },
@@ -183,16 +183,38 @@ pub fn get_raw_data_test() -> RawDataStore {
                 is_fluid: false,
             },
         ],
-        machines: vec![RawAssemblingMachine {
-            name: "factory_game::assembler2".to_string(),
-            display_name: "Assembling Machine 2".to_string(),
-            tile_size: (3, 3),
-            working_power_draw: Watt(150_000),
-            fluid_connection_offsets: vec![],
-            base_bonus_prod: 0,
-            base_speed: 15,
-            num_module_slots: 2,
-        }],
+        machines: vec![
+            RawAssemblingMachine {
+                name: "factory_game::assembler1".to_string(),
+                display_name: "Assembling Machine".to_string(),
+                tile_size: (3, 3),
+                working_power_draw: Watt(150_000),
+                fluid_connection_offsets: vec![],
+                base_bonus_prod: 0,
+                base_speed: 10,
+                num_module_slots: 0,
+            },
+            RawAssemblingMachine {
+                name: "factory_game::assembler2".to_string(),
+                display_name: "Assembling Machine 2".to_string(),
+                tile_size: (3, 3),
+                working_power_draw: Watt(75_000),
+                fluid_connection_offsets: vec![],
+                base_bonus_prod: 0,
+                base_speed: 15,
+                num_module_slots: 2,
+            },
+            RawAssemblingMachine {
+                name: "factory_game::assembler3".to_string(),
+                display_name: "Assembling Machine 3".to_string(),
+                tile_size: (3, 3),
+                working_power_draw: Watt(375_000),
+                fluid_connection_offsets: vec![],
+                base_bonus_prod: 0,
+                base_speed: 25,
+                num_module_slots: 4,
+            },
+        ],
         labs: vec![RawLab {
             name: "factory_game::lab".to_string(),
             display_name: "Lab".to_string(),
@@ -249,22 +271,22 @@ pub fn get_raw_data_test() -> RawDataStore {
         ],
         modules: vec![
             RawModule {
-                name: "factory_game::prod_mod".to_string(),
-                display_name: "Productivity Module".to_string(),
-                item: "factory_game::prod_mod".to_string(),
-                productivity_effect: 10,
-                speed_effect: -2,
-                power_effect: 8,
-                allowed_in: AllowedIn::OnlyIntermediate,
-            },
-            RawModule {
                 name: "factory_game::speed_mod".to_string(),
                 display_name: "Speed Module".to_string(),
                 item: "factory_game::speed_mod".to_string(),
                 productivity_effect: 0,
-                speed_effect: 5,
-                power_effect: 7,
+                speed_effect: 10,
+                power_effect: 14,
                 allowed_in: AllowedIn::AllIncludingBeacons,
+            },
+            RawModule {
+                name: "factory_game::prod_mod".to_string(),
+                display_name: "Productivity Module".to_string(),
+                item: "factory_game::prod_mod".to_string(),
+                productivity_effect: 10,
+                speed_effect: -3,
+                power_effect: 16,
+                allowed_in: AllowedIn::OnlyIntermediate,
             },
         ],
 
@@ -521,6 +543,7 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub assembler_info: Vec<AssemblerInfo>,
     pub lab_info: Vec<LabInfo>,
     pub beacon_info: Vec<BeaconInfo>,
+    pub max_beacon_range: (u16, u16),
     pub module_info: Vec<ModuleInfo>,
 
     /// In 5% steps
@@ -537,6 +560,9 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     recipe_item_to_storage_list_idx:
         HashMap<(Recipe<RecipeIdxType>, Item<ItemIdxType>, ItemRecipeDir), u16>,
+
+    pub recipe_to_items_and_amounts:
+        HashMap<Recipe<RecipeIdxType>, Vec<(ItemRecipeDir, Item<ItemIdxType>, ITEMCOUNTTYPE)>>,
 
     /// A lookup from recipe to its ing and out idxs
     pub recipe_index_lookups: Vec<(usize, usize)>,
@@ -575,7 +601,7 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     pub item_stack_sizes: Vec<ITEMCOUNTTYPE>,
     pub chest_num_slots: Vec<u8>,
-    pub chest_tile_sizes: Vec<(u8, u8)>,
+    pub chest_tile_sizes: Vec<(u16, u16)>,
 
     pub recipe_to_translated_index:
         HashMap<(Recipe<RecipeIdxType>, Item<ItemIdxType>), RecipeIdxType>,
@@ -594,7 +620,7 @@ pub struct LazyPowerMachineInfo<ItemIdxType: WeakIdxTrait> {
 
 #[derive(Debug, Clone)]
 pub struct PowerPoleData {
-    pub size: (u8, u8),
+    pub size: (u16, u16),
     pub power_range: u8,
     pub connection_range: u8,
 }
@@ -946,11 +972,43 @@ impl RawDataStore {
             })
             .collect();
 
+        let recipe_to_items_and_amounts = self
+            .recipes
+            .iter()
+            .enumerate()
+            .map(|(i, r)| {
+                let mut v = vec![];
+
+                for ing in &r.ings {
+                    v.push((
+                        ItemRecipeDir::Ing,
+                        Item::from(*item_lookup.get(ing.item.as_str()).unwrap()),
+                        ing.amount,
+                    ));
+                }
+
+                for out in &r.output {
+                    v.push((
+                        ItemRecipeDir::Out,
+                        Item::from(*item_lookup.get(out.item.as_str()).unwrap()),
+                        out.amount,
+                    ));
+                }
+
+                (
+                    Recipe {
+                        id: RecipeIdxType::try_from(i).unwrap_or_else(|_| panic!()),
+                    },
+                    v,
+                )
+            })
+            .collect();
+
         let power_pole_data = self
             .power_poles
             .iter()
             .map(|p| PowerPoleData {
-                size: p.tile_size,
+                size: (p.tile_size.0 as u16, p.tile_size.1 as u16),
                 power_range: p.power_range,
                 connection_range: p.connection_range,
             })
@@ -1043,6 +1101,13 @@ impl RawDataStore {
                 })
                 .collect(),
 
+            max_beacon_range: self
+                .beacons
+                .iter()
+                .map(|b| (b.effect_size.0.into(), b.effect_size.1.into()))
+                .reduce(|a, b| (max(a.0, b.0), max(b.1, b.1)))
+                .unwrap_or((0, 0)),
+
             module_info: self
                 .modules
                 .iter()
@@ -1079,6 +1144,7 @@ impl RawDataStore {
             recipe_timers,
 
             recipe_to_items,
+            recipe_to_items_and_amounts,
 
             science_bottle_items,
 
@@ -1117,7 +1183,11 @@ impl RawDataStore {
                 .iter()
                 .map(|chest| chest.number_of_slots)
                 .collect(),
-            chest_tile_sizes: self.chests.iter().map(|chest| chest.tile_size).collect(),
+            chest_tile_sizes: self
+                .chests
+                .iter()
+                .map(|chest| (chest.tile_size.0 as u16, chest.tile_size.1 as u16))
+                .collect(),
 
             recipe_to_translated_index: (0..self.recipes.len())
                 .cartesian_product(

@@ -4,8 +4,17 @@
             entities: Single(Assembler(pos: (
                 x: 10,
                 y: 9,
-            ), ty: 0)),
+            ), ty: 2)),
         )),
+        AddModules(
+            pos: (
+                x: 10,
+                y: 9,
+            ),
+            modules: [
+                1, 1, 1, 0,
+            ],
+        ),
         SetRecipe((
             pos: (
                 x: 10,
@@ -28,8 +37,17 @@
             entities: Single(Assembler(pos:(
                 x: 14,
                 y: 9,
-            ), ty: 0)),
+            ), ty: 2)),
         )),
+        AddModules(
+            pos: (
+                x: 14,
+                y: 9,
+            ),
+            modules: [
+                1, 1, 1, 0,
+            ],
+        ),
         SetRecipe((
             pos: (
                 x: 14,
@@ -43,8 +61,17 @@
             entities: Single(Assembler(pos: (
                 x: 18,
                 y: 9,
-            ), ty: 0)),
+            ), ty: 2)),
         )),
+        AddModules(
+            pos: (
+                x: 18,
+                y: 9,
+            ),
+            modules: [
+                1, 1, 1, 0,
+            ],
+        ),
         SetRecipe((
             pos: (
                 x: 18,
@@ -58,8 +85,17 @@
             entities: Single(Assembler(pos: (
                 x: 22,
                 y: 11,
-            ), ty: 0)),
+            ), ty: 2)),
         )),
+        AddModules(
+            pos: (
+                x: 22,
+                y: 11,
+            ),
+            modules: [
+                1, 1, 1, 0,
+            ],
+        ),
         SetRecipe((
             pos: (
                 x: 22,
@@ -82,8 +118,17 @@
             entities: Single(Assembler(pos: (
                 x: 18,
                 y: 13,
-            ), ty: 0)),
+            ), ty: 2)),
         )),
+        AddModules(
+            pos: (
+                x: 18,
+                y: 13,
+            ),
+            modules: [
+                1, 1, 1, 0,
+            ],
+        ),
         SetRecipe((
             pos: (
                 x: 18,
@@ -97,8 +142,17 @@
             entities: Single(Assembler(pos: (
                 x: 14,
                 y: 13,
-            ), ty: 0)),
+            ), ty: 2)),
         )),
+        AddModules(
+            pos: (
+                x: 14,
+                y: 13,
+            ),
+            modules: [
+                1, 1, 1, 0,
+            ],
+        ),
         SetRecipe((
             pos: (
                 x: 14,

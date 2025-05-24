@@ -77,6 +77,8 @@ pub mod blueprint;
 
 mod network_graph;
 
+mod canonical;
+
 impl WeakIdxTrait for u8 {}
 impl WeakIdxTrait for u16 {}
 impl IdxTrait for u8 {}
@@ -175,8 +177,14 @@ fn run_integrated_server(
 
             let game_state = Arc::new(Mutex::new(
                 load().map(|save| save.game_state).unwrap_or_else(|| {
-                    GameState::new_with_bp(&data_store, "test_blueprints/red_sci.bp")
+                    // GameState::new_with_bp(
+                    //     &data_store,
+                    //     "test_blueprints/red_sci_with_beacons_and_belts.bp",
+                    // )
                     // GameState::new_with_production(&data_store)
+                    // GameState::new_with_beacon_production(&data_store)
+                    GameState::new_with_beacon_belt_production(&data_store)
+                    // GameState::new(&data_store)
                 }),
             ));
 

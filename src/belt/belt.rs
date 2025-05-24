@@ -1,10 +1,6 @@
-use std::{
-    error::Error,
-    fmt::{Display, Write},
-    marker::PhantomData,
-};
+use std::{error::Error, fmt::Display, marker::PhantomData};
 
-use crate::item::{self, IdxTrait, Item, WeakIdxTrait};
+use crate::item::{IdxTrait, Item, WeakIdxTrait};
 
 use super::smart::Side;
 

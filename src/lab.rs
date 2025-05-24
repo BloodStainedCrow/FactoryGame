@@ -18,6 +18,29 @@ pub struct MultiLabStore {
     timer: Vec<TIMERTYPE>,
     holes: Vec<usize>,
 
+    /// Base Crafting Speed in 5% increments
+    /// i.e. 28 => 140% Crafting speed
+    /// Maximum is 1275% Crafting Speed
+    base_speed: Vec<u8>,
+
+    /// Crafting Speed in 5% increments
+    /// i.e. 28 => 140% Crafting speed
+    /// Maximum is 1275% Crafting Speed
+    combined_speed_mod: Vec<u8>,
+    /// Bonus Productivity in %
+    bonus_productivity: Vec<u8>,
+    /// Power Consumption in 5% increments
+    /// i.e. 28 => 140% Crafting speed
+    /// Maximum is 1275% x Base Power Consumption
+    power_consumption_modifier: Vec<u8>,
+
+    raw_speed_mod: Vec<i16>,
+    raw_bonus_productivity: Vec<i16>,
+    raw_power_consumption_modifier: Vec<i16>,
+
+    // TODO: This can likely be smaller than full u64
+    base_power_consumption: Vec<Watt>,
+
     // This is not used in normal updates, but only for when the indices change (i.e. when merging power networks)
     positions: Vec<Position>,
     types: Vec<u8>,
@@ -30,6 +53,18 @@ impl MultiLabStore {
             max_insert: vec![Vec::new(); science_bottle_items.len()].into_boxed_slice(),
             sciences: vec![Vec::new(); science_bottle_items.len()].into_boxed_slice(),
             timer: vec![],
+
+            base_speed: vec![],
+            combined_speed_mod: vec![],
+            bonus_productivity: vec![],
+            power_consumption_modifier: vec![],
+
+            raw_speed_mod: vec![],
+            raw_bonus_productivity: vec![],
+            raw_power_consumption_modifier: vec![],
+
+            base_power_consumption: vec![],
+
             holes: vec![],
             positions: vec![],
             types: vec![],
@@ -81,6 +116,78 @@ impl MultiLabStore {
                 .map(|(_, v)| v),
         );
 
+        self.base_speed.extend(
+            other
+                .base_speed
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        self.combined_speed_mod.extend(
+            other
+                .combined_speed_mod
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        self.bonus_productivity.extend(
+            other
+                .bonus_productivity
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        self.power_consumption_modifier.extend(
+            other
+                .power_consumption_modifier
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        self.raw_speed_mod.extend(
+            other
+                .raw_speed_mod
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        self.raw_bonus_productivity.extend(
+            other
+                .raw_bonus_productivity
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        self.raw_power_consumption_modifier.extend(
+            other
+                .raw_power_consumption_modifier
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        self.base_power_consumption.extend(
+            other
+                .base_power_consumption
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
         self.positions.extend(
             other
                 .positions
@@ -109,7 +216,11 @@ impl MultiLabStore {
             .enumerate()
             .map(move |(new_index_offs, (old_index, pos))| IndexUpdateInfo {
                 position: pos,
-                new_storage: PowerGridEntity::Lab {
+                old_pg_entity: PowerGridEntity::Lab {
+                    index: old_index.try_into().unwrap(),
+                    ty: other.types[old_index],
+                },
+                new_pg_entity: PowerGridEntity::Lab {
                     index: (old_len + new_index_offs).try_into().unwrap(),
                     ty: other.types[old_index],
                 },
@@ -122,6 +233,16 @@ impl MultiLabStore {
             timer: self.timer,
             holes: self.holes,
             positions: self.positions,
+
+            base_power_consumption: self.base_power_consumption,
+            base_speed: self.base_speed,
+            bonus_productivity: self.bonus_productivity,
+            combined_speed_mod: self.combined_speed_mod,
+            power_consumption_modifier: self.power_consumption_modifier,
+            raw_bonus_productivity: self.raw_bonus_productivity,
+            raw_power_consumption_modifier: self.raw_power_consumption_modifier,
+            raw_speed_mod: self.raw_speed_mod,
+
             types: self.types,
         };
 
@@ -132,16 +253,18 @@ impl MultiLabStore {
     pub fn update<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut self,
         power_mult: u8,
-        current_research: &Option<Technology>,
+        current_research_costs: Option<&[u8]>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (Joule, u32, u16) {
         const POWER_CONSUMPTION: Watt = Watt(600);
         const TICKS_PER_SCIENCE: TIMERTYPE = 60;
 
-        let Some(current_research) = current_research else {
+        let Some(current_research_costs) = current_research_costs else {
             // We are not currently researching anything. This means we do not use any items any power or gained any progress
             return (Joule(0), 0, 0);
         };
+
+        let needed = current_research_costs;
 
         let mut times_ings_used = 0;
 
@@ -150,12 +273,6 @@ impl MultiLabStore {
         let increase = (TIMERTYPE::from(power_mult)
             * (TIMERTYPE::MAX / TIMERTYPE::from(MAX_POWER_MULT)))
             / TICKS_PER_SCIENCE;
-
-        let needed: Box<[_]> = data_store.technology_costs[usize::from(current_research.id)]
-            .1
-            .iter()
-            .map(|needed| *needed)
-            .collect();
 
         let mut sciences: Box<[_]> = self
             .sciences
@@ -167,7 +284,7 @@ impl MultiLabStore {
         for timer in self.timer.iter_mut() {
             let science_mul: u16 = sciences
                 .iter_mut()
-                .zip(&needed)
+                .zip(needed)
                 .map(|(science_iter, needed)| (science_iter.peek().unwrap(), needed))
                 .map(|(v, needed)| u16::from(**v >= *needed))
                 .product();
@@ -190,7 +307,7 @@ impl MultiLabStore {
             *timer = new_timer;
             sciences
                 .iter_mut()
-                .zip(&needed)
+                .zip(needed)
                 .map(|(science_iter, needed)| (science_iter.next().unwrap(), needed))
                 .for_each(|(v, needed)| *v -= *needed * did_finish_work)
         }
@@ -206,9 +323,26 @@ impl MultiLabStore {
         &mut self,
         ty: u8,
         position: Position,
+        modules: &[Option<usize>],
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> u16 {
-        // FIXME: respect ty
+        let base_speed = data_store.lab_info[usize::from(ty)].base_speed;
+        let base_prod = data_store.lab_info[usize::from(ty)].base_prod;
+        let base_power = data_store.lab_info[usize::from(ty)].base_power_consumption;
+
+        let (speed, prod, power) = modules
+            .iter()
+            .flatten()
+            .map(|module| {
+                (
+                    data_store.module_info[*module].speed_mod as i16,
+                    data_store.module_info[*module].prod_mod as i16,
+                    data_store.module_info[*module].power_mod as i16,
+                )
+            })
+            .reduce(|acc, v| (acc.0 + v.0, acc.1 + v.1, acc.2 + v.2))
+            .unwrap_or((0, 0, 0));
+
         let idx = if let Some(hole_idx) = self.holes.pop() {
             self.positions[hole_idx] = position;
             // TODO:
@@ -217,6 +351,26 @@ impl MultiLabStore {
             self.timer[hole_idx] = 0;
             self.types[hole_idx] = ty;
 
+            self.base_power_consumption[hole_idx] = base_power;
+
+            self.base_speed[hole_idx] = base_speed;
+            self.raw_power_consumption_modifier[hole_idx] = power;
+            self.raw_bonus_productivity[hole_idx] = i16::from(base_prod) + prod;
+            self.raw_speed_mod[hole_idx] = speed;
+
+            self.power_consumption_modifier[hole_idx] = (power + 20)
+                .clamp(data_store.min_power_mod.into(), u8::MAX.into())
+                .try_into()
+                .expect("Value clamped already");
+            self.bonus_productivity[hole_idx] = (i16::from(base_prod) + prod)
+                .clamp(0, u8::MAX.into())
+                .try_into()
+                .expect("Value clamped already");
+            self.combined_speed_mod[hole_idx] = ((speed + 20) * i16::from(base_speed) / 20)
+                .clamp(0, u8::MAX.into())
+                .try_into()
+                .expect("Value clamped already");
+
             hole_idx
         } else {
             self.positions.push(position);
@@ -224,6 +378,33 @@ impl MultiLabStore {
             self.sciences.iter_mut().for_each(|v| v.push(0));
             self.timer.push(0);
             self.types.push(ty);
+
+            self.base_power_consumption.push(base_power);
+
+            self.base_speed.push(base_speed);
+            self.raw_power_consumption_modifier.push(power);
+            self.raw_bonus_productivity
+                .push(i16::from(base_prod) + prod);
+            self.raw_speed_mod.push(speed);
+
+            self.power_consumption_modifier.push(
+                (power + 20)
+                    .clamp(data_store.min_power_mod.into(), u8::MAX.into())
+                    .try_into()
+                    .expect("Value clamped already"),
+            );
+            self.bonus_productivity.push(
+                (i16::from(base_prod) + prod)
+                    .clamp(0, u8::MAX.into())
+                    .try_into()
+                    .expect("Value clamped already"),
+            );
+            self.combined_speed_mod.push(
+                ((speed + 20) * i16::from(base_speed) / 20)
+                    .clamp(0, u8::MAX.into())
+                    .try_into()
+                    .expect("Value clamped already"),
+            );
 
             self.positions.len() - 1
         };
@@ -245,10 +426,16 @@ impl MultiLabStore {
             })
             .collect();
 
+        self.base_power_consumption[index] = Watt(0);
+        self.sciences
+            .iter_mut()
+            .for_each(|v| v[usize::from(index)] = 0);
+
         ret
     }
 
     pub fn move_lab(&mut self, index: u16, other: &mut Self) -> u16 {
+        todo!();
         let index = index as usize;
         self.holes.push(index);
 
@@ -293,5 +480,44 @@ impl MultiLabStore {
 
         idx.try_into()
             .expect("More than u16::MAX Labs in a single grid")
+    }
+
+    pub fn modify_modifiers<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        &mut self,
+        index: u16,
+        speed: i16,
+        prod: i16,
+        power: i16,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        self.raw_speed_mod[usize::from(index)] = self.raw_speed_mod[usize::from(index)]
+            .checked_add(speed)
+            .expect("Over/Underflowed");
+        self.raw_bonus_productivity[usize::from(index)] = self.raw_bonus_productivity
+            [usize::from(index)]
+        .checked_add(prod)
+        .expect("Over/Underflowed");
+        self.raw_power_consumption_modifier[usize::from(index)] = self
+            .raw_power_consumption_modifier[usize::from(index)]
+        .checked_add(power)
+        .expect("Over/Underflowed");
+
+        self.power_consumption_modifier[usize::from(index)] =
+            (self.raw_power_consumption_modifier[usize::from(index)] + 20)
+                .clamp(data_store.min_power_mod.into(), u8::MAX.into())
+                .try_into()
+                .expect("Values already clamped");
+        self.bonus_productivity[usize::from(index)] = self.raw_bonus_productivity
+            [usize::from(index)]
+        .clamp(0, u8::MAX.into())
+        .try_into()
+        .expect("Values already clamped");
+        self.combined_speed_mod[usize::from(index)] = ((self.raw_speed_mod[usize::from(index)]
+            + 20)
+            * i16::from(self.base_speed[usize::from(index)])
+            / 10)
+            .clamp(0, u8::MAX.into())
+            .try_into()
+            .expect("Values already clamped");
     }
 }

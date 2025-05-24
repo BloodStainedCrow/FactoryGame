@@ -21,13 +21,14 @@ use crate::{
         },
     },
     item::{usize_from, IdxTrait, Item, Recipe},
-    power::power_grid::MAX_POWER_MULT,
+    power::{power_grid::MAX_POWER_MULT, Watt},
     statistics::{
         NUM_SAMPLES_AT_INTERVALS, NUM_X_AXIS_TICKS, RELATIVE_INTERVAL_MULTS, TIMESCALE_LEGEND,
     },
 };
 use eframe::egui::{
-    self, Align2, Color32, ComboBox, Context, CornerRadius, Label, ProgressBar, Stroke, Ui, Window
+    self, Align2, Color32, ComboBox, Context, CornerRadius, Label, Layout, ProgressBar, Stroke, Ui,
+    Window,
 };
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
@@ -385,12 +386,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 }
                                 // todo!()
                             },
-                            Entity::Chest {
-                                ty,
-                                pos,
-                                item,
-                                index,
-                            } => {
+                            Entity::Chest { ty, pos, item } => {
                                 entity_layer.draw_sprite(
                                     &texture_atlas.default,
                                     DrawInstance {
@@ -429,6 +425,69 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         animation_frame: 0,
                                     },
                                 );
+                            },
+
+                            Entity::Beacon {
+                                ty,
+                                pos,
+                                modules,
+                                pole_position,
+                            } => {
+                                let (size_x, size_y) =
+                                    data_store.beacon_info[usize::from(*ty)].size;
+
+                                entity_layer.draw_sprite(
+                                    &texture_atlas.beacon,
+                                    DrawInstance {
+                                        position: [
+                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                        ],
+                                        size: [size_x.into(), size_y.into()],
+                                        animation_frame: 0,
+                                    },
+                                );
+
+                                if let Some((pole_pos, _)) = pole_position {
+                                    let grid = game_state
+                                        .simulation_state
+                                        .factory
+                                        .power_grids
+                                        .pole_pos_to_grid_id[pole_pos];
+
+                                    let last_power =
+                                        game_state.simulation_state.factory.power_grids.power_grids
+                                            [usize::from(grid)]
+                                        .last_power_mult;
+
+                                    if last_power == 0 {
+                                        warning_layer.draw_sprite(
+                                            &texture_atlas.no_power,
+                                            DrawInstance {
+                                                position: [
+                                                    chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                    chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                ],
+                                                size: [size_x.into(), size_y.into()],
+                                                animation_frame: 0,
+                                            },
+                                        );
+                                    }
+                                } else {
+                                    warning_layer.draw_sprite(
+                                        &texture_atlas.not_connected,
+                                        DrawInstance {
+                                            position: [
+                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                            ],
+                                            size: [size_x.into(), size_y.into()],
+                                            animation_frame: 0,
+                                        },
+                                    );
+                                }
+
+                                // TODO: Render modules
                             },
 
                             e => todo!("{:?}", e),
@@ -498,6 +557,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     crate::frontend::world::tile::PlaceEntityType::Chest { pos } => {},
                     crate::frontend::world::tile::PlaceEntityType::SolarPanel { pos, ty } => {},
                     crate::frontend::world::tile::PlaceEntityType::Lab { pos, ty } => {},
+                    crate::frontend::world::tile::PlaceEntityType::Beacon { pos, ty } => {},
                 },
             }
         },
@@ -645,6 +705,9 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             } => {
                                 ui.label("Assembler");
 
+
+                                ui.label(format!("{:?}", *id));
+
                                 if let Some(goal_recipe) = goal_recipe {
                                     if goal_recipe != id.recipe {
                                         actions.push(ActionType::SetRecipe(SetRecipeInfo { pos: *pos, recipe: goal_recipe }));
@@ -659,6 +722,11 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     outputs,
                                     timer_percentage,
                                     prod_timer_percentage,
+                                    base_speed,
+                                    speed_mod,
+                                    prod_mod,
+                                    power_consumption_mod,
+                                    base_power_consumption,
                                 } = game_state
                                     .simulation_state
                                     .factory
@@ -674,12 +742,17 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     body.row(5.0, |mut row| {
                                         for (item, count) in inputs.iter().chain(outputs.iter()) {
                                             row.col(|ui| {
-                                                ui.label(&data_store.item_names[usize_from(item.id)]);
-                                                ui.label(format!("{}", *count));
+                                                ui.add(egui::Label::new(&data_store.item_names[usize_from(item.id)]).wrap_mode(egui::TextWrapMode::Extend));
+                                                ui.add(egui::Label::new(format!("{}", *count)).wrap_mode(egui::TextWrapMode::Extend));
                                             });
                                         }
                                     });
                                 });
+
+                                ui.label(format!("Crafting Speed: {:.2}({:+.0}%)", base_speed * (1.0 + speed_mod), speed_mod * 100.0));
+                                ui.label(format!("Productivity: {:.1}%", prod_mod * 100.0));
+                                ui.label(format!("Max Consumption: {}({:+.0}%)", Watt((base_power_consumption.0 as f64 * (1.0 + power_consumption_mod as f64)) as u64), power_consumption_mod * 100.0));
+
                             }
                         }
                     },
@@ -724,11 +797,13 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 let i = row.index();
                                 row.col(|ui| {
                                     ui.add(Label::new(&data_store.assembler_info[i].display_name).extend());
-                                    
+
                                     });
                                 row.col(|ui| {ui.label(format!("{}", pg.num_assemblers_of_type[i]));});
                             });
                         });
+
+                        ui.label(format!("{}", pg.last_power_consumption));
 
                         Plot::new("power_history_graph").show_x(false).show_y(false)
                         // .auto_bounds([true, false])
@@ -763,28 +838,40 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         pos,
                         direction,
                         info,
-                    } => match info {
-                        crate::frontend::world::tile::InserterInfo::NotAttached {
-                            start_pos,
-                            end_pos,
-                        } => println!("Unattached inserter at {pos:?}"),
-                        crate::frontend::world::tile::InserterInfo::Attached(ins) => match ins {
-                            crate::frontend::world::tile::AttachedInserter::BeltStorage {
-                                id,
-                                belt_pos,
+                        filter,
+                    } => {
+                        ui.label("Assembler");
+                        match info {
+                            crate::frontend::world::tile::InserterInfo::NotAttached {
+                                start_pos,
+                                end_pos,
                             } => {
-                                // TODO:
+                                ui.label("NotAttached");
                             },
-                            crate::frontend::world::tile::AttachedInserter::BeltBelt {
-                                item,
-                                inserter,
-                            } => {
-                                // TODO:
+                            crate::frontend::world::tile::InserterInfo::Attached {info: ins, ..} => match ins {
+                                crate::frontend::world::tile::AttachedInserter::BeltStorage {
+                                    id,
+                                    belt_pos,
+                                } => {
+                                    ui.label("BeltStorage");
+                                    // TODO:
+                                },
+                                crate::frontend::world::tile::AttachedInserter::BeltBelt {
+                                    item,
+                                    inserter,
+                                } => {
+                                    ui.label("BeltBelt");
+                                    // TODO:
+                                },
+                                crate::frontend::world::tile::AttachedInserter::StorageStorage { item, inserter, .. } => {
+                                    ui.label("StorageStorage");
+                                    ui.label(&data_store.item_names[usize_from(item.id)]);
+
+                                    ui.label(format!("{:?}", game_state.simulation_state.factory.storage_storage_inserters.inserters[usize_from(item.id)][*inserter]));
+                                    // TODO:
+                                },
                             },
-                            crate::frontend::world::tile::AttachedInserter::StorageStorage { .. } => {
-                                // TODO:
-                            },
-                        },
+                        }
                     },
                     Entity::Splitter { .. } => {
                         warn!("Viewing Splitter. This currently does nothing!");
@@ -793,11 +880,12 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         ty,
                         pos,
                         item,
-                        index,
                     } => {
-                        let Some(item) = item else {
+                        let Some((item, index)) = item else {
                             todo!()
                         };
+                        ui.label(&data_store.item_names[usize_from(item.id)]);
+                        ui.label(format!("{}", *index));
 
                         let stack_size: u16 = data_store.item_stack_sizes[usize_from(item.id)] as u16;
 
@@ -827,10 +915,13 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             });
                         });
                     },
-                    Entity::Lab { pos, ty, pole_position } => {
+                    Entity::Lab { pos, ty, modules, pole_position } => {
                         // TODO
                     },
                     Entity::SolarPanel { pos, ty, pole_position } => {
+                        // TODO
+                    }
+                    Entity::Beacon { pos, ty, modules, pole_position } => {
                         // TODO
                     }
                     _ => todo!(),
@@ -881,94 +972,118 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     Window::new("Statistics")
         .open(&mut state_machine.statistics_panel_open)
-        .show(ctx, |ui| match state_machine.statistics_panel {
-            StatisticsPanel::Production(scale) => {
-                let points: Vec<(String, usize, PlotPoints)> = game_state
-                    .statistics
-                    .production
-                    .get_series(scale, data_store, Some(|_| true))
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, series)| (series.name, i, series.data))
-                    .map(|(name, i, data)| {
-                        (
-                            name,
-                            i,
-                            data.into_iter()
-                                .enumerate()
-                                .map(|(i, v)| [i as f64, v.into()])
-                                .collect(),
-                        )
-                    })
-                    .filter(|(_, _, points): &(_, _, PlotPoints)| {
-                        points.points().iter().any(|p| p.y > 0.0)
-                    })
-                    .collect();
-                let lines = points.into_iter().map(|(name, id, points)| {
-                    Line::new(name, points).stroke(Stroke::new(2.0, data_store.item_to_colour[id]))
-                });
+        .show(ctx, |ui| {
+            ui.with_layout(Layout::left_to_right(egui::Align::Min), |ui| {
+                ui.radio_value(
+                    &mut state_machine.statistics_panel,
+                    StatisticsPanel::Production(0),
+                    "10 Seconds",
+                );
+                ui.radio_value(
+                    &mut state_machine.statistics_panel,
+                    StatisticsPanel::Production(1),
+                    "1 Minute",
+                );
+                ui.radio_value(
+                    &mut state_machine.statistics_panel,
+                    StatisticsPanel::Production(2),
+                    "1 Hour",
+                );
+            });
 
-                let ticks_per_value = RELATIVE_INTERVAL_MULTS[..=scale]
-                    .iter()
-                    .copied()
-                    .product::<usize>() as f64;
+            match state_machine.statistics_panel {
+                StatisticsPanel::Production(scale) => {
+                    let points: Vec<(String, usize, PlotPoints)> = game_state
+                        .statistics
+                        .production
+                        .get_series(scale, data_store, Some(|_| true))
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, series)| (series.name, i, series.data))
+                        .map(|(name, i, data)| {
+                            (
+                                name,
+                                i,
+                                data.into_iter()
+                                    .enumerate()
+                                    .map(|(i, v)| [i as f64, v.into()])
+                                    .collect(),
+                            )
+                        })
+                        .filter(|(_, _, points): &(_, _, PlotPoints)| {
+                            points.points().iter().any(|p| p.y > 0.0)
+                        })
+                        .collect();
+                    let lines = points.into_iter().map(|(name, id, points)| {
+                        Line::new(name, points)
+                            .stroke(Stroke::new(2.0, data_store.item_to_colour[id]))
+                    });
 
-                Plot::new("production_graph")
-                    .set_margin_fraction([0.0, 0.05].into())
-                    .x_grid_spacer(|_grid_input| {
-                        (0..NUM_X_AXIS_TICKS[scale])
-                            .map(|v| GridMark {
-                                value: v as f64 / (NUM_X_AXIS_TICKS[scale] as f64)
-                                    * (NUM_SAMPLES_AT_INTERVALS[scale] as f64),
-                                step_size: 1.0 / (NUM_X_AXIS_TICKS[scale] as f64)
-                                    * (NUM_SAMPLES_AT_INTERVALS[scale] as f64),
-                            })
-                            .collect()
-                    })
-                    .y_grid_spacer(|grid_input| {
-                        let mut lower_dec = 10.0_f64.powf(
-                            (grid_input.bounds.1 / ticks_per_value * 60.0 * 60.0)
-                                .log10()
-                                .floor(),
-                        );
+                    let ticks_per_value = RELATIVE_INTERVAL_MULTS[..=scale]
+                        .iter()
+                        .copied()
+                        .product::<usize>() as f64;
 
-                        if lower_dec < 1.0 {
-                            lower_dec = 1.0;
-                        }
+                    Plot::new("production_graph")
+                        .set_margin_fraction([0.0, 0.05].into())
+                        .x_grid_spacer(|_grid_input| {
+                            (0..NUM_X_AXIS_TICKS[scale])
+                                .map(|v| GridMark {
+                                    value: v as f64 / (NUM_X_AXIS_TICKS[scale] as f64)
+                                        * (NUM_SAMPLES_AT_INTERVALS[scale] as f64),
+                                    step_size: 1.0 / (NUM_X_AXIS_TICKS[scale] as f64)
+                                        * (NUM_SAMPLES_AT_INTERVALS[scale] as f64),
+                                })
+                                .collect()
+                        })
+                        .y_grid_spacer(|grid_input| {
+                            let mut lower_dec = 10.0_f64.powf(
+                                (grid_input.bounds.1 / ticks_per_value * 60.0 * 60.0)
+                                    .log10()
+                                    .floor(),
+                            );
 
-                        lower_dec = lower_dec * ticks_per_value / 60.0 / 60.0;
+                            if lower_dec < 1.0 {
+                                lower_dec = 1.0;
+                            }
 
-                        (0..40)
-                            .map(|v| GridMark {
-                                value: (v as f64) / 4.0 * lower_dec,
-                                step_size: lower_dec / 4.0,
-                            })
-                            .chain((0..10).map(|v| GridMark {
-                                value: (v as f64) * lower_dec,
-                                step_size: 1.0 * lower_dec,
-                            }))
-                            .collect()
-                    })
-                    .custom_y_axes(
-                        [AxisHints::new_y().formatter(move |v, _| {
-                            format!("{:.1}/min", v.value / ticks_per_value * 60.0 * 60.0)
-                        })]
-                        .to_vec(),
-                    )
-                    .custom_x_axes(
-                        [AxisHints::new_x().formatter(|v, _| TIMESCALE_LEGEND[scale](v.value))]
+                            lower_dec = lower_dec * ticks_per_value / 60.0 / 60.0;
+
+                            (0..40)
+                                .map(|v| GridMark {
+                                    value: (v as f64) / 4.0 * lower_dec,
+                                    step_size: lower_dec / 4.0,
+                                })
+                                .chain((0..10).map(|v| GridMark {
+                                    value: (v as f64) * lower_dec,
+                                    step_size: 1.0 * lower_dec,
+                                }))
+                                .collect()
+                        })
+                        .custom_y_axes(
+                            [AxisHints::new_y().formatter(move |v, _| {
+                                format!("{:.1}/min", v.value / ticks_per_value * 60.0 * 60.0)
+                            })]
                             .to_vec(),
-                    )
-                    .include_y(0)
-                    .allow_zoom([false, false])
-                    .allow_drag([false, false])
-                    .allow_scroll([false, false])
-                    .show(ui, |ui| {
-                        for line in lines {
-                            ui.line(line);
-                        }
-                    })
-            },
+                        )
+                        .custom_x_axes(
+                            [
+                                AxisHints::new_x()
+                                    .formatter(|v, _| TIMESCALE_LEGEND[scale](v.value)),
+                            ]
+                            .to_vec(),
+                        )
+                        .include_y(0)
+                        .allow_zoom([false, false])
+                        .allow_drag([false, false])
+                        .allow_scroll([false, false])
+                        .show(ui, |ui| {
+                            for line in lines {
+                                ui.line(line);
+                            }
+                        })
+                },
+            }
         });
 
     actions

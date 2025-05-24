@@ -29,7 +29,7 @@ use crate::{
 };
 
 // For now blueprint will just be a list of actions
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Blueprint<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub actions: Vec<ActionType<ItemIdxType, RecipeIdxType>>,
 }
@@ -160,6 +160,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                         ty: *ty,
                     }),
                 }),
+                ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Beacon { pos, ty }),
+                }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Beacon {
+                        pos: Position {
+                            x: base_pos.x + pos.x,
+                            y: base_pos.y + pos.y,
+                        },
+                        ty: *ty,
+                    }),
+                }),
                 ActionType::SetRecipe(SetRecipeInfo { pos, recipe }) => {
                     ActionType::SetRecipe(SetRecipeInfo {
                         pos: Position {
@@ -173,7 +184,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                     x: base_pos.x + position.x,
                     y: base_pos.y + position.y,
                 }),
-                _ => unreachable!(),
+                ActionType::AddModules { pos, modules } => ActionType::AddModules {
+                    pos: Position {
+                        x: base_pos.x + pos.x,
+                        y: base_pos.y + pos.y,
+                    },
+                    modules: modules.clone(),
+                },
+                a => unreachable!("{:?}", a),
             }),
             data_store,
         );
@@ -209,21 +227,29 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
         // FIXME: This will underflow if a entity extends past the edge of the selected area
         for e in entities {
             let actions = match e {
-                // FIXME: Insert Modules
                 crate::frontend::world::tile::Entity::Assembler {
                     ty,
                     pos,
                     info: AssemblerInfo::PoweredNoRecipe(_) | AssemblerInfo::UnpoweredNoRecipe,
                     modules,
-                } => vec![ActionType::PlaceEntity(PlaceEntityInfo {
-                    entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler {
+                } => vec![
+                    ActionType::PlaceEntity(PlaceEntityInfo {
+                        entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler {
+                            pos: Position {
+                                x: pos.x - base_pos.x,
+                                y: pos.y - base_pos.y,
+                            },
+                            ty: *ty,
+                        }),
+                    }),
+                    ActionType::AddModules {
                         pos: Position {
                             x: pos.x - base_pos.x,
                             y: pos.y - base_pos.y,
                         },
-                        ty: *ty,
-                    }),
-                })],
+                        modules: modules.iter().flatten().copied().collect(),
+                    },
+                ],
                 crate::frontend::world::tile::Entity::Assembler {
                     ty,
                     pos,
@@ -251,6 +277,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                         },
                         recipe: *recipe,
                     }),
+                    ActionType::AddModules {
+                        pos: Position {
+                            x: pos.x - base_pos.x,
+                            y: pos.y - base_pos.y,
+                        },
+                        modules: modules.iter().flatten().copied().collect(),
+                    },
                 ],
                 crate::frontend::world::tile::Entity::PowerPole { ty, pos, .. } => {
                     vec![ActionType::PlaceEntity(PlaceEntityInfo {
@@ -332,6 +365,31 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                             },
                         }),
                     })]
+                },
+                crate::frontend::world::tile::Entity::Beacon {
+                    ty,
+                    pos,
+                    modules,
+                    pole_position,
+                } => {
+                    vec![
+                        ActionType::PlaceEntity(PlaceEntityInfo {
+                            entities: EntityPlaceOptions::Single(PlaceEntityType::Beacon {
+                                ty: *ty,
+                                pos: Position {
+                                    x: pos.x - base_pos.x,
+                                    y: pos.y - base_pos.y,
+                                },
+                            }),
+                        }),
+                        ActionType::AddModules {
+                            pos: Position {
+                                x: pos.x - base_pos.x,
+                                y: pos.y - base_pos.y,
+                            },
+                            modules: modules.into_iter().copied().flatten().collect(),
+                        },
+                    ]
                 },
             };
 

@@ -23,6 +23,8 @@ pub struct TextureAtlas {
 
     items: Box<[Sprite]>,
 
+    beacon: Sprite,
+
     default: Sprite,
 }
 
@@ -117,6 +119,12 @@ fn texture_atlas() -> TextureAtlas {
     let no_power_dimensions = no_power.dimensions();
     let no_power = no_power.to_rgba8().into_vec();
 
+    let beacon = include_bytes!("temp_assets/beacon.png");
+    let beacon = image::load_from_memory(beacon).unwrap();
+
+    let beacon_dimensions = beacon.dimensions();
+    let beacon = beacon.to_rgba8().into_vec();
+
     TextureAtlas {
         outside_world: Sprite::new(Texture::new(1, black, black_dimensions)),
         assembler: Sprite::new(Texture::new(1, assembler, assembler_dimensions)),
@@ -146,6 +154,8 @@ fn texture_atlas() -> TextureAtlas {
             Sprite::new(Texture::new(1, inserter_south, inserter_south_dimensions)),
             Sprite::new(Texture::new(1, inserter_west, inserter_west_dimensions)),
         ]),
+
+        beacon: Sprite::new(Texture::new(1, beacon, beacon_dimensions)),
 
         default: Sprite::new(Texture::default()),
     }

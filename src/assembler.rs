@@ -1,4 +1,4 @@
-use std::{array, cmp::max, simd::Simd};
+use std::{array, simd::Simd};
 
 use itertools::Itertools;
 
@@ -8,7 +8,7 @@ use crate::{
     item::{IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
     power::{
         power_grid::{IndexUpdateInfo, PowerGridEntity, PowerGridIdentifier, MAX_POWER_MULT},
-        Joule, Watt,
+        Watt,
     },
 };
 
@@ -79,6 +79,11 @@ pub struct AssemblerOnclickInfo<ItemIdxType: WeakIdxTrait> {
     pub outputs: Vec<(Item<ItemIdxType>, ITEMCOUNTTYPE)>,
     pub timer_percentage: f32,
     pub prod_timer_percentage: f32,
+    pub base_speed: f32,
+    pub speed_mod: f32,
+    pub prod_mod: f32,
+    pub power_consumption_mod: f32,
+    pub base_power_consumption: Watt,
 }
 
 impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
@@ -242,8 +247,8 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
 // }
 
 pub struct AssemblerRemovalInfo {
-    ings: Vec<ITEMCOUNTTYPE>,
-    outputs: Vec<ITEMCOUNTTYPE>,
+    pub ings: Vec<ITEMCOUNTTYPE>,
+    pub outputs: Vec<ITEMCOUNTTYPE>,
 }
 
 // TODO: Maybe also add a defragmentation routine to mend the ineffeciencies left by deconstruction large amounts of assemblers
@@ -483,7 +488,12 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             .map(
                 move |(new_index_offs, (old_index, (pos, ty)))| IndexUpdateInfo {
                     position: pos,
-                    new_storage: PowerGridEntity::Assembler {
+                    old_pg_entity: PowerGridEntity::Assembler {
+                        ty,
+                        recipe: self.recipe,
+                        index: old_index.try_into().unwrap(),
+                    },
+                    new_pg_entity: PowerGridEntity::Assembler {
                         ty,
                         recipe: self.recipe,
                         index: (old_len + new_index_offs).try_into().unwrap(),
@@ -563,6 +573,13 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             timer_percentage: f32::from(self.timers[index as usize]) / f32::from(TIMERTYPE::MAX),
             prod_timer_percentage: f32::from(self.prod_timers[index as usize])
                 / f32::from(TIMERTYPE::MAX),
+            base_speed: f32::from(self.base_speed[index as usize]) * 0.05,
+            speed_mod: f32::from(self.raw_speed_mod[index as usize]) * 0.05,
+            prod_mod: f32::from(self.bonus_productivity[index as usize]) * 0.01,
+            power_consumption_mod: f32::from(self.power_consumption_modifier[index as usize])
+                * 0.05
+                - 1.0,
+            base_power_consumption: self.base_power_consumption[index as usize],
         }
     }
 
@@ -681,7 +698,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         recipe_ings: &[[ITEMCOUNTTYPE; NUM_INGS]],
         recipe_outputs: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
         times: &[TIMERTYPE],
-    ) -> (Joule, u32, u32) {
+    ) -> (Watt, u32, u32) {
         // FIXME: These depend on which machine we are.
         const POWER_DRAIN: Watt = Watt(2_500);
         const POWER_CONSUMPTION: Watt = Watt(75_000);
@@ -728,6 +745,8 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             array: self.outputs.each_mut().map(|r| r.iter_mut()),
         };
 
+        let mut power = Watt(0);
+
         for (
             mut outputs,
             (mut ings, (timer, (prod_timer, (speed_mod, (bonus_prod, (base_power, power_mod)))))),
@@ -747,7 +766,8 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 ),
             ),
         ) {
-            let increase = increase * (speed_mod as u16) / 20;
+            // TODO: Benchmark if this is okay
+            let increase = increase.saturating_mul(speed_mod.into()) / 20;
 
             let ing_mul = ings
                 .iter()
@@ -768,15 +788,21 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             let new_timer = new_timer_output_space * u16::from(space_mul)
                 + new_timer_output_full * (1 - u16::from(space_mul));
 
-            let new_prod_timer =
-                prod_timer.wrapping_add(new_timer.wrapping_sub(*timer) * (bonus_prod as u16) / 100);
+            let new_prod_timer = prod_timer.wrapping_add(
+                new_timer
+                    .wrapping_sub(*timer)
+                    .saturating_mul(bonus_prod as u16)
+                    / 100,
+            );
 
             let timer_mul: u8 = (new_timer < *timer).into();
             let prod_timer_mul: u8 = (new_prod_timer < *prod_timer).into();
 
             // Power calculation
             // We use power if any work was done
-            running += u32::from(ing_mul * u16::from(space_mul));
+            power = power
+                + base_power * u64::from(ing_mul * u16::from(space_mul)) * u64::from(power_mod)
+                    / 20;
 
             *timer = new_timer;
             *prod_timer = new_prod_timer;
@@ -791,11 +817,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             num_finished_crafts += u32::from(timer_mul + prod_timer_mul);
         }
 
-        (
-            POWER_CONSUMPTION.joules_per_tick() * u64::from(running),
-            times_ings_used,
-            num_finished_crafts,
-        )
+        (power, times_ings_used, num_finished_crafts)
     }
 
     pub fn get_all_mut(
@@ -879,7 +901,40 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         ret
     }
 
-    fn remove_assembler_data(
+    pub fn remove_assembler_data(
+        &mut self,
+        index: usize,
+    ) -> (
+        Vec<ITEMCOUNTTYPE>,
+        Vec<ITEMCOUNTTYPE>,
+        Vec<ITEMCOUNTTYPE>,
+        TIMERTYPE,
+        TIMERTYPE,
+        Watt,
+        i16,
+        i16,
+        u8,
+        i16,
+        Position,
+    ) {
+        let data = self.remove_assembler_data_inner(index);
+
+        (
+            data.0.into(),
+            data.1.into(),
+            data.2.into(),
+            data.3.into(),
+            data.4.into(),
+            data.5.into(),
+            data.6.into(),
+            data.7.into(),
+            data.8.into(),
+            data.9.into(),
+            data.10.into(),
+        )
+    }
+
+    fn remove_assembler_data_inner(
         &mut self,
         index: usize,
     ) -> (
@@ -993,7 +1048,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         dest: &mut Self,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> usize {
-        let data = self.remove_assembler_data(index);
+        let data = self.remove_assembler_data_inner(index);
 
         dest.add_assembler_with_data(
             data.0, data.1, data.2, data.3, data.4, data.5, data.6, data.7, data.8, data.9,
@@ -1001,7 +1056,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         )
     }
 
-    fn add_assembler_with_data<ItemIdxType: IdxTrait>(
+    pub fn add_assembler_with_data<ItemIdxType: IdxTrait>(
         &mut self,
         ings_max_insert: [ITEMCOUNTTYPE; NUM_INGS],
         ings: [ITEMCOUNTTYPE; NUM_INGS],
