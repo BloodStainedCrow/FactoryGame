@@ -1,7 +1,6 @@
-use std::num::NonZero;
 
 use crate::{
-    item::{IdxTrait, WeakIdxTrait, ITEMCOUNTTYPE},
+    item::{IdxTrait, WeakIdxTrait},
     storage_list::{index, SingleItemStorages},
 };
 

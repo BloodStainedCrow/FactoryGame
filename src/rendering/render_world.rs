@@ -1,5 +1,5 @@
 use std::{
-    cmp::{max, min},
+    cmp::min,
     iter::successors,
 };
 
@@ -399,7 +399,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     },
                                 );
                             },
-                            Entity::SolarPanel { ty, pos, .. } => {
+                            Entity::SolarPanel {  pos, .. } => {
                                 entity_layer.draw_sprite(
                                     &texture_atlas.default,
                                     DrawInstance {
@@ -413,7 +413,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 );
                             },
                             // TODO: Render if a lab is working!
-                            Entity::Lab { ty, pos, .. } => {
+                            Entity::Lab {  pos, .. } => {
                                 entity_layer.draw_sprite(
                                     &texture_atlas.belt[Dir::North],
                                     DrawInstance {
@@ -892,7 +892,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         let num_slots = data_store.chest_num_slots[*ty as usize];
                         let (current_items, _max_items) = game_state.simulation_state.factory.chests.stores[usize_from(item.id)].get_chest(*index);
 
-                        TableBuilder::new(ui).columns(Column::auto().resizable(false), 10).body(|mut body| {
+                        TableBuilder::new(ui).columns(Column::auto().resizable(false), 10).body(|body| {
                             body.rows(5.0, (num_slots / 10) as usize + (num_slots % 10 > 0) as usize, |mut row| {
                                 let idx = row.index();
                                 for col_idx in 0..10 {

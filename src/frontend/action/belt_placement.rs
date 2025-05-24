@@ -3,7 +3,7 @@ use strum::IntoEnumIterator;
 use crate::{
     belt::{
         smart::Side,
-        splitter::{Splitter, SplitterDistributionMode, SPLITTER_BELT_LEN},
+        splitter::{SplitterDistributionMode, SPLITTER_BELT_LEN},
         BeltTileId, SplitterInfo,
     },
     data::DataStore,

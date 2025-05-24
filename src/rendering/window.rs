@@ -14,7 +14,7 @@ use crate::{
     saving::save,
 };
 use log::{info, warn};
-use tilelib::types::{Display, Sprite, Texture};
+use tilelib::types::Display;
 use winit::{
     event::{ElementState, MouseButton, WindowEvent},
     window::WindowAttributes,

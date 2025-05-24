@@ -1,10 +1,10 @@
-use std::{cmp::min, iter::repeat};
+use std::iter::repeat;
 
 use log::info;
 
 use crate::{
     inserter::{
-        belt_storage_inserter::{BeltStorageInserter, Dir},
+        belt_storage_inserter::BeltStorageInserter,
         InserterState, Storage, MOVETIME,
     },
     item::{IdxTrait, Item, WeakIdxTrait},
@@ -93,7 +93,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
         SushiBelt {
             is_circular,
             locs: locs
-                .into_iter()
+                .iter()
                 .map(|loc| if *loc { Some(item) } else { None })
                 .collect(),
             first_free_index,

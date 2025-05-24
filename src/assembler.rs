@@ -710,7 +710,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
         // TODO: For SOME reason, this is actually faster if this is a u32.
         // It is also better, since it allows possibly having more than u16::max assembers of a single recipe
-        let mut running: u32 = 0;
+        let running: u32 = 0;
 
         let mut times_ings_used = 0;
         let mut num_finished_crafts = 0;

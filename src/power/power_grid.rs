@@ -1,7 +1,6 @@
 use std::{
     cmp::{max, min},
     collections::HashMap,
-    iter::{self},
     mem,
 };
 
@@ -11,7 +10,6 @@ use crate::{
     assembler::{AssemblerOnclickInfo, AssemblerRemovalInfo, FullAssemblerStore},
     data::{DataStore, LazyPowerMachineInfo},
     frontend::world::{tile::AssemblerID, Position},
-    inserter::Storage,
     item::{IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
     lab::MultiLabStore,
     network_graph::{Network, WeakIndex},

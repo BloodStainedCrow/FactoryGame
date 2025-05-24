@@ -257,7 +257,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SushiBelt<ItemIdxType, Reci
             first_free_index,
             zero_index,
             locs: locs
-                .into_iter()
+                .iter()
                 .map(|loc| {
                     if let Some(found_item) = loc {
                         debug_assert_eq!(*found_item, item);

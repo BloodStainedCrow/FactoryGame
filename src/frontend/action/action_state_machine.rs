@@ -304,7 +304,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     vec![]
                 },
 
-                i @ (Input::LeftClickReleased) => {
+                i @ Input::LeftClickReleased => {
                     dbg!(i);
                     vec![]
                 },

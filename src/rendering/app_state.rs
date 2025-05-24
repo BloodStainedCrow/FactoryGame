@@ -1,13 +1,13 @@
-use std::{borrow::Borrow, fs::File, marker::PhantomData, ops::ControlFlow};
+use std::{borrow::Borrow, fs::File, ops::ControlFlow};
 
 use crate::{
     belt::{
-        belt::Belt, splitter::Splitter, BeltBeltInserterAdditionInfo, BeltBeltInserterInfo,
-        BeltStore, BeltTileId, MultiBeltStore,
+        belt::Belt, BeltBeltInserterInfo,
+        BeltStore,
     },
     blueprint::Blueprint,
     chest::{FullChestStore, MultiChestStore},
-    data::{DataStore, ItemRecipeDir},
+    data::DataStore,
     frontend::{
         action::{
             belt_placement::{handle_belt_placement, handle_splitter_placement},
@@ -15,35 +15,33 @@ use crate::{
             ActionType,
         },
         world::{
-            self,
             tile::{
-                AssemblerID, AssemblerInfo, AttachedInserter, BeltId, Dir, Entity, InserterInfo,
+                AssemblerID, AssemblerInfo, AttachedInserter, Dir, Entity, InserterInfo,
                 World,
             },
             Position,
         },
     },
     inserter::{
-        belt_belt_inserter::BeltBeltInserter, storage_storage_inserter::StorageStorageInserter,
-        StaticID, Storage, MOVETIME,
+        belt_belt_inserter::BeltBeltInserter, storage_storage_inserter::StorageStorageInserter, Storage, MOVETIME,
     },
     item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
     network_graph::WeakIndex,
     power::{
-        power_grid::{BeaconAffectedEntity, PowerGridIdentifier},
-        PowerGridStorage, Watt,
+        power_grid::PowerGridIdentifier,
+        PowerGridStorage,
     },
     research::{ResearchProgress, TechState, Technology},
     statistics::{production::ProductionInfo, recipe::RecipeTickInfo, GenStatistics},
     storage_list::{
-        full_to_by_item, grid_size, num_recipes, sizes, storages_by_item, FullStorages,
+        full_to_by_item, grid_size, num_recipes, sizes, storages_by_item,
         SingleItemStorages,
     },
 };
 use itertools::Itertools;
-use log::{error, info, trace, warn};
+use log::{info, trace, warn};
 use rayon::iter::{
-    IndexedParallelIterator, IntoParallelRefMutIterator, ParallelBridge, ParallelIterator,
+    IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
 };
 
 use crate::frontend::action::place_tile::PositionInfo;

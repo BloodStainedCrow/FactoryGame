@@ -7,7 +7,6 @@ use crate::{
         power_grid::{IndexUpdateInfo, PowerGridEntity, PowerGridIdentifier, MAX_POWER_MULT},
         Joule, Watt,
     },
-    research::Technology,
 };
 
 // TODO: Add variable power consumption and speed

@@ -16,7 +16,7 @@ use crate::{
         },
         world::{
             tile::{
-                AssemblerID, AssemblerInfo, AttachedInserter, Dir, FloorTile, InserterInfo,
+                AssemblerID, AssemblerInfo, Dir, FloorTile,
                 PlaceEntityType, World,
             },
             Position,
@@ -25,7 +25,6 @@ use crate::{
     item::{IdxTrait, Item, Recipe, WeakIdxTrait},
     rendering::app_state::GameState,
     replays::Replay,
-    statistics::recipe,
 };
 
 // For now blueprint will just be a list of actions
@@ -327,7 +326,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                         }),
                     })]
                 },
-                crate::frontend::world::tile::Entity::Chest { ty, pos, .. } => {
+                crate::frontend::world::tile::Entity::Chest {  pos, .. } => {
                     vec![ActionType::PlaceEntity(PlaceEntityInfo {
                         entities: EntityPlaceOptions::Single(PlaceEntityType::Chest {
                             pos: Position {
@@ -466,7 +465,7 @@ pub fn random_entity_to_place<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             random_blueprint_offs()
             // 0..(data_store.solar_panel_sizes.len().try_into().unwrap())
         )
-        .prop_map(|(pos)| PlaceEntityType::SolarPanel { pos, ty: 0 }),
+        .prop_map(|pos| PlaceEntityType::SolarPanel { pos, ty: 0 }),
         (random_blueprint_offs(), random_dir()).prop_map(|(pos, dir)| PlaceEntityType::Belt {
             pos,
             direction: dir

@@ -1605,7 +1605,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             *id = new_id;
                         }
                     },
-                    Entity::Splitter { pos, direction, .. } => todo!(),
+                    Entity::Splitter {   .. } => todo!(),
                     Entity::Inserter { info, .. } => match info {
                         InserterInfo::NotAttached { .. } => {},
                         InserterInfo::Attached {
@@ -1667,7 +1667,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                 .expect("belt_pos wrapped!");
                         }
                     },
-                    Entity::Splitter { pos, direction, .. } => todo!(),
+                    Entity::Splitter {   .. } => todo!(),
                     Entity::Inserter { info, .. } => match info {
                         InserterInfo::NotAttached { .. } => {},
                         InserterInfo::Attached {
@@ -2703,8 +2703,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
                 Dir::West => (1, 2),
             },
             Self::Chest { ty, .. } => data_store.chest_tile_sizes[*ty as usize],
-            Self::Roboport { ty, .. } => (4, 4),
-            Self::SolarPanel { ty, .. } => (3, 3),
+            Self::Roboport {  .. } => (4, 4),
+            Self::SolarPanel {  .. } => (3, 3),
             Self::Lab { ty, .. } => data_store.lab_info[usize::from(*ty)].size,
             Self::Beacon { ty, .. } => data_store.beacon_info[usize::from(*ty)].size,
         }

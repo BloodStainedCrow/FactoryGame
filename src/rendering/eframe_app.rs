@@ -101,7 +101,7 @@ impl eframe::App for App {
                             size, cb,
                         )));
 
-                        let mut game_state = loaded_game_sized.state.lock().unwrap();
+                        let game_state = loaded_game_sized.state.lock().unwrap();
                         let mut state_machine = loaded_game_sized.state_machine.lock().unwrap();
 
                         let tick = game.tick.load(std::sync::atomic::Ordering::Relaxed);

@@ -16,7 +16,7 @@ use std::{
 use crate::{
     data::DataStore,
     inserter::{
-        belt_belt_inserter::{BeltBeltInserter, SushiBeltBeltInserter},
+        belt_belt_inserter::BeltBeltInserter,
         belt_storage_inserter::{BeltStorageInserter, Dir},
         Storage,
     },
@@ -1081,7 +1081,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
                             .inserters
                             .iter()
                             .filter_map(|(ins, item)| {
-                                (matches!(ins, Inserter::In(_)).then_some(*item))
+                                matches!(ins, Inserter::In(_)).then_some(*item)
                             })
                             .dedup()
                             .collect(),
