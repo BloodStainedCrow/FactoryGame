@@ -183,8 +183,8 @@ fn run_integrated_server(
                     // )
                     // GameState::new_with_production(&data_store)
                     // GameState::new_with_beacon_production(&data_store)
-                    GameState::new_with_beacon_belt_production(&data_store)
-                    // GameState::new(&data_store)
+                    // GameState::new_with_beacon_belt_production(&data_store)
+                    GameState::new(&data_store)
                 }),
             ));
 

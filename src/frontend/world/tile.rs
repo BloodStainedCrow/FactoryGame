@@ -145,8 +145,8 @@ fn instantiate_inserter_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 Err(InstantiateInserterError::NotUnattachedInserter) => {
                     warn!("We seem to have instantiated the same inserter twice?!?");
                 },
-                Err(_) => {
-                    info!("try_instantiate_inserter failed at {:?}", pos);
+                Err(e) => {
+                    info!("try_instantiate_inserter failed at {:?}, with {e:?}", pos);
                 },
             }
         }),
@@ -423,7 +423,7 @@ fn newly_working_assembler<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     Entity::Beacon {
                         ty: beacon_ty,
                         pos: beacon_pos,
-                        modules: beacon_modules,
+                        modules: _,
                         pole_position: Some((beacon_pole_pos, beacon_weak_idx)),
                     } => {
                         let (beacon_range_x, beacon_range_y) =
@@ -482,16 +482,38 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                             pos: inserter_pos,
                             direction: _inserter_dir,
                             filter: _inserter_filter,
-                            info:
-                                InserterInfo::Attached {
-                                    start_pos,
-                                    end_pos,
-                                    info,
-                                },
+                            info,
                         } => {
-                            if start_pos.contained_in(pos, size) || end_pos.contained_in(pos, size)
+                            if let InserterInfo::Attached {
+                                start_pos,
+                                end_pos,
+                                info: attached_inserter,
+                            } = info
                             {
-                                todo!()
+                                if start_pos.contained_in(pos, size)
+                                    || end_pos.contained_in(pos, size)
+                                {
+                                    match attached_inserter {
+                                        AttachedInserter::BeltStorage { id, belt_pos } => {
+                                            todo!("Remove BeltStorage inserter");
+                                        },
+                                        AttachedInserter::BeltBelt { item, inserter } => {
+                                            todo!("Remove BeltBelt inserter");
+                                        },
+                                        AttachedInserter::StorageStorage { item, inserter } => {
+                                            // This migth return something at some point, and this will be a compiler error
+                                            let () = sim_state
+                                                .factory
+                                                .storage_storage_inserters
+                                                .remove_ins(*item, *inserter);
+
+                                            *info = InserterInfo::NotAttached {
+                                                start_pos: *start_pos,
+                                                end_pos: *end_pos,
+                                            };
+                                        },
+                                    }
+                                }
                             }
                         },
                         _ => {},
@@ -578,7 +600,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 Entity::Assembler {
                     ty,
                     pos,
-                    modules,
+                    modules: _,
                     info:
                         AssemblerInfo::Powered {
                             id,
@@ -589,18 +611,29 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     let assembler_size = data_store.assembler_info[usize::from(*ty)].size;
 
                     // Change assembler recipe
-                    todo!();
+                    let (removal_info, new_id) = sim_state.factory.power_grids.power_grids
+                        [usize::from(id.grid)]
+                    .change_assembler_recipe(
+                        *id,
+                        *pole_position,
+                        *weak_index,
+                        new_recipe,
+                        data_store,
+                    );
 
-                    // CORRECTNESS: Since we process updates in a FIFO order, and we push the disconnection first, we will disconnect first
+                    *id = new_id;
+
+                    // CORRECTNESS: Since we process updates in a LIFO order, and we push the reconnection first, we will disconnect first
+
+                    // Push trying to reconnect all connected inserters (if possible)
+                    cascading_updates.push(new_possible_inserter_connection(*pos, assembler_size));
+
                     // Push disconnecting all connected inserters
                     cascading_updates.push(removal_of_possible_inserter_connection(
                         *pos,
                         assembler_size,
                         data_store,
                     ));
-
-                    // Push trying to reconnect all connected inserters (if possible)
-                    cascading_updates.push(new_possible_inserter_connection(*pos, assembler_size));
                 },
                 Entity::Assembler {
                     ty,
@@ -631,18 +664,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     cascading_updates.push(newly_working_assembler(*pos, data_store));
                 },
                 Entity::Assembler {
-                    ty,
-                    pos,
-                    modules,
                     info: AssemblerInfo::Unpowered(recipe),
+                    ..
                 } => {
                     *recipe = new_recipe;
                 },
                 Entity::Assembler {
-                    ty,
-                    pos,
-                    modules,
                     info: info @ AssemblerInfo::UnpoweredNoRecipe,
+                    ..
                 } => {
                     *info = AssemblerInfo::Unpowered(new_recipe);
                 },
@@ -651,7 +680,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             ControlFlow::Break(())
         });
 
-        // CORRECTNESS: We rely on the updates being processed in a FIFO order!
+        // CORRECTNESS: We rely on the updates being processed in a LIFO order!
         while let Some(update) = cascading_updates.pop() {
             (update.update)(self, sim_state, &mut cascading_updates, data_store);
         }
@@ -996,6 +1025,29 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             ToInstantiate,
         }
 
+        #[derive(Debug, Clone, PartialEq)]
+        enum PossibleItem<ItemIdxType: IdxTrait> {
+            All,
+            List(Vec<Item<ItemIdxType>>),
+            None,
+        }
+
+        impl<ItemIdxType: IdxTrait> PossibleItem<ItemIdxType> {
+            fn contains(&self, item: Item<ItemIdxType>) -> bool {
+                match self {
+                    PossibleItem::All => true,
+                    PossibleItem::List(items) => items.contains(&item),
+                    PossibleItem::None => false,
+                }
+            }
+        }
+
+        struct InserterConnectionPossibility<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+            conn: InserterConnection<ItemIdxType, RecipeIdxType>,
+            inserter_item_hint: Option<Vec<Item<ItemIdxType>>>,
+            possible_item_list: PossibleItem<ItemIdxType>,
+        }
+
         let Some(Entity::Inserter {
             pos: _pos,
             direction,
@@ -1009,10 +1061,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             return Err(InstantiateInserterError::NotUnattachedInserter);
         };
 
-        let start_conn: Option<(
-            InserterConnection<ItemIdxType, RecipeIdxType>,
-            Option<Vec<Item<ItemIdxType>>>,
-        )> = self
+        let start_conn: Option<InserterConnectionPossibility<ItemIdxType, RecipeIdxType>> = self
             .get_entities_colliding_with(*start_pos, (1, 1), data_store)
             .into_iter()
             .next()
@@ -1026,28 +1075,29 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 }
 
                 Entity::Assembler {
-                    ty,
-                    pos,
+                    ty: _,
+                    pos: _,
                     info: AssemblerInfo::Powered {
                         id,
-                        pole_position,
-                        weak_index
+                        pole_position: _,
+                        weak_index: _
                     },
-                    modules
+                    modules: _
                     // FIXME: Translate the recipe_idx to
-                } => Some((
-                    InserterConnection::Storage(Static::Done(Storage::Assembler {
+                } => Some(InserterConnectionPossibility {
+                    conn: InserterConnection::Storage(Static::Done(Storage::Assembler {
                         grid: id.grid,
                         recipe_idx_with_this_item: id.recipe.id,
                         index: id.assembler_index,
                     })),
-                    Some(
+                    inserter_item_hint: None,
+                    possible_item_list: PossibleItem::List(
                         data_store.recipe_to_items[&id.recipe]
                             .iter()
                             .filter_map(|(dir, item)| (*dir == ItemRecipeDir::Out).then_some(*item))
                             .collect(),
                     ),
-                )),
+                }),
                 Entity::Assembler { .. } => None,
                 Entity::Belt {
                     id: BeltTileId::AnyBelt(id, _),
@@ -1058,9 +1108,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     id: BeltTileId::AnyBelt(id, _),
                     belt_pos,
                     ..
-                } => Some((
-                    InserterConnection::Belt(BeltTileId::AnyBelt(*id, PhantomData), *belt_pos),
-                    match simulation_state
+                } => Some(InserterConnectionPossibility {
+                    conn: InserterConnection::Belt(BeltTileId::AnyBelt(*id, PhantomData), *belt_pos),
+                    inserter_item_hint: match simulation_state
                         .factory
                         .belts
                         .get_pure_item(BeltTileId::AnyBelt(*id, PhantomData))
@@ -1068,27 +1118,37 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         Some(item) => Some(vec![item]),
                         None => None,
                     },
-                )),
+                    possible_item_list: match simulation_state
+                        .factory
+                        .belts
+                        .get_pure_item(BeltTileId::AnyBelt(*id, PhantomData))
+                    {
+                        Some(item) => PossibleItem::List(vec![item]),
+                        None => PossibleItem::All,
+                    },
+                }),
                 Entity::Splitter { pos, direction, id } => todo!("Inserters on splitters"),
                 Entity::Chest {
-                    ty,
-                    pos,
+                    ty: _,
+                    pos: _,
                     item: Some((item, index)),
-                } => Some((
-                    InserterConnection::Storage(Static::Done(Storage::Static {
+                } => Some(InserterConnectionPossibility {
+                    conn:  InserterConnection::Storage(Static::Done(Storage::Static {
                         static_id: StaticID::Chest,
                         index: *index,
                     })),
-                    Some(vec![*item]),
-                )),
+                    inserter_item_hint: None,
+                    possible_item_list: PossibleItem::List(vec![*item])
+                }),
                 Entity::Chest {
                     ty,
                     pos,
                     item: None,
-                } => Some((
-                    InserterConnection::Storage(Static::ToInstantiate),
-                    None,
-                )),
+                } => Some(InserterConnectionPossibility {
+                    conn:  InserterConnection::Storage(Static::ToInstantiate),
+                    inserter_item_hint: None,
+                    possible_item_list: PossibleItem::All
+                }),
                 Entity::Lab { pos, ty, pole_position, modules } => {
                     // No removing items from Labs!
                     None
@@ -1100,10 +1160,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             return Err(InstantiateInserterError::SourceMissing);
         };
 
-        let dest_conn: Option<(
-            InserterConnection<ItemIdxType, RecipeIdxType>,
-            Option<Vec<Item<ItemIdxType>>>,
-        )> = self
+        let dest_conn: Option<InserterConnectionPossibility<ItemIdxType, RecipeIdxType>> = self
             .get_entities_colliding_with(*end_pos, (1, 1), data_store)
             .into_iter()
             .next()
@@ -1117,28 +1174,29 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 }
 
                 Entity::Assembler {
-                    ty,
-                    pos,
+                    ty: _,
+                    pos: _,
                     info: AssemblerInfo::Powered {
                         id,
-                        pole_position,
-                        weak_index
+                        pole_position: _,
+                        weak_index: _
                     },
-                    modules
+                    modules: _
                     // FIXME: Translate the recipe_idx to
-                } => Some((
-                    InserterConnection::Storage(Static::Done(Storage::Assembler {
+                } => Some(InserterConnectionPossibility {
+                    conn: InserterConnection::Storage(Static::Done(Storage::Assembler {
                         grid: id.grid,
-                        recipe_idx_with_this_item: dbg!(id.recipe.id),
+                        recipe_idx_with_this_item: id.recipe.id,
                         index: id.assembler_index,
                     })),
-                    dbg!(Some(
+                    inserter_item_hint: None,
+                    possible_item_list: PossibleItem::List(
                         data_store.recipe_to_items[&id.recipe]
                             .iter()
                             .filter_map(|(dir, item)| (*dir == ItemRecipeDir::Ing).then_some(*item))
                             .collect(),
-                    )),
-                )),
+                    ),
+                }),
                 Entity::Assembler { .. } => None,
                 Entity::Belt {
                     id: BeltTileId::AnyBelt(id, _),
@@ -1149,9 +1207,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     id: BeltTileId::AnyBelt(id, _),
                     belt_pos,
                     ..
-                } => Some((
-                    InserterConnection::Belt(BeltTileId::AnyBelt(*id, PhantomData), *belt_pos),
-                    match simulation_state
+                } => Some(InserterConnectionPossibility {
+                    conn: InserterConnection::Belt(BeltTileId::AnyBelt(*id, PhantomData), *belt_pos),
+                    inserter_item_hint: match simulation_state
                         .factory
                         .belts
                         .get_pure_item(BeltTileId::AnyBelt(*id, PhantomData))
@@ -1159,30 +1217,40 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         Some(item) => Some(vec![item]),
                         None => None,
                     },
-                )),
+                    possible_item_list: match simulation_state
+                        .factory
+                        .belts
+                        .get_pure_item(BeltTileId::AnyBelt(*id, PhantomData))
+                    {
+                        Some(item) => PossibleItem::List(vec![item]),
+                        None => PossibleItem::All,
+                    },
+                }),
                 Entity::Splitter { pos, direction, id } => todo!(),
                 Entity::Chest {
                     ty,
                     pos,
                     item: Some((item, index)),
-                } => Some((
-                    InserterConnection::Storage(Static::Done(Storage::Static {
+                } => Some(InserterConnectionPossibility {
+                    conn:  InserterConnection::Storage(Static::Done(Storage::Static {
                         static_id: StaticID::Chest,
                         index: *index,
                     })),
-                    Some(vec![*item]),
-                )),
+                    inserter_item_hint: None,
+                    possible_item_list: PossibleItem::List(vec![*item])
+                }),
                 Entity::Chest {
-                    ty,
-                    pos,
+                    ty: _,
+                    pos: _,
                     item: None,
-                } => Some((
-                    InserterConnection::Storage(Static::ToInstantiate),
-                    None,
-                )),
+                } => Some(InserterConnectionPossibility {
+                    conn:  InserterConnection::Storage(Static::ToInstantiate),
+                    inserter_item_hint: None,
+                    possible_item_list: PossibleItem::All
+                }),
                 Entity::Lab { pos, ty, pole_position, modules } => {
                     if let Some((pole_pos, idx, lab_store_index)) = pole_position {
-                        Some((InserterConnection::Storage(Static::Done(Storage::Lab { grid: simulation_state.factory.power_grids.pole_pos_to_grid_id[pole_pos], index: *lab_store_index })), Some(data_store.science_bottle_items.iter().copied().collect())))
+                        Some(InserterConnectionPossibility { conn: InserterConnection::Storage(Static::Done(Storage::Lab { grid: simulation_state.factory.power_grids.pole_pos_to_grid_id[pole_pos], index: *lab_store_index })), inserter_item_hint: None, possible_item_list: PossibleItem::List(data_store.science_bottle_items.iter().copied().collect()) })
                     } else {
                         None
                     }
@@ -1194,35 +1262,61 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             return Err(InstantiateInserterError::DestMissing);
         };
 
+        let possible_items: PossibleItem<_> = match (
+            &start_conn.possible_item_list,
+            &dest_conn.possible_item_list,
+        ) {
+            (PossibleItem::All, i) => i.clone(),
+            (i, PossibleItem::All) => i.clone(),
+            (PossibleItem::List(a), PossibleItem::List(b)) => {
+                PossibleItem::List(a.iter().copied().filter(|v| b.contains(v)).collect())
+            },
+            (PossibleItem::None, _) => PossibleItem::None,
+            (_, PossibleItem::None) => PossibleItem::None,
+        };
+
+        if possible_items == PossibleItem::None {
+            return Err(InstantiateInserterError::ItemConflict);
+        }
+
+        dbg!(&possible_items);
+
         // For determining the filter we use this plan:
         // If a filter is specified, use that
         // If we can determine a single source item use that,
         // If we can determine a single destination item use that
         // Else make the user do it
-        let filter = filter.unwrap_or(
-            if let Some(filter) = (match start_conn.1.into_iter().flatten().all_equal_value() {
-                Ok(filter) => Some(filter),
-                Err(None) => None,
-                Err(Some(wrong)) => {
-                    return Err(InstantiateInserterError::PleaseSpecifyFilter);
-                },
-            })
-            .or_else(
-                || match dest_conn.1.into_iter().flatten().all_equal_value() {
-                    Ok(filter) => Some(filter),
-                    Err(None) => None,
-                    Err(Some(wrong)) => None,
-                },
-            ) {
-                filter
-            } else {
-                return Err(InstantiateInserterError::PleaseSpecifyFilter);
+        let determined_filter = match filter {
+            Some(filter) => {
+                if possible_items.contains(*filter) {
+                    *filter
+                } else {
+                    return Err(InstantiateInserterError::ItemConflict);
+                }
             },
-        );
+            None => {
+                // The user/game has not specified a filter, try and infer it
+
+                // TODO: Figure out what is most intuitive here, for now just use the only possible item otherwise error
+                match possible_items {
+                    PossibleItem::All => return Err(InstantiateInserterError::PleaseSpecifyFilter),
+                    PossibleItem::List(items) => match items.len().cmp(&1) {
+                        std::cmp::Ordering::Less => {
+                            return Err(InstantiateInserterError::ItemConflict)
+                        },
+                        std::cmp::Ordering::Equal => items[0],
+                        std::cmp::Ordering::Greater => {
+                            return Err(InstantiateInserterError::PleaseSpecifyFilter)
+                        },
+                    },
+                    PossibleItem::None => unreachable!(),
+                }
+            },
+        };
 
         let mut instantiated = vec![];
 
-        match (start_conn.0, dest_conn.0) {
+        match (start_conn.conn, dest_conn.conn) {
             (
                 InserterConnection::Belt(start_belt_id, start_belt_pos),
                 InserterConnection::Belt(dest_belt_id, dest_belt_pos),
@@ -1235,7 +1329,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     (dest_belt_id, dest_belt_pos),
                     BeltBeltInserterAdditionInfo {
                         cooldown: MOVETIME,
-                        filter,
+                        filter: determined_filter,
                     },
                 );
 
@@ -1250,7 +1344,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
                 *info = InserterInfo::Attached {
                     info: AttachedInserter::BeltBelt {
-                        item: filter,
+                        item: determined_filter,
                         inserter: index,
                     },
                     start_pos,
@@ -1275,9 +1369,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     item,
                                 } => {
                                     let index = simulation_state.factory.chests.stores
-                                        [usize_from(filter.id)]
+                                        [usize_from(determined_filter.id)]
                                     .add_chest(*ty, data_store);
-                                    *item = Some((filter, index));
+                                    *item = Some((determined_filter, index));
                                     instantiated.push(*chest_pos);
                                     storage = Some(Storage::Static {
                                         index,
@@ -1292,10 +1386,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     },
                 };
 
-                let dest_storage = dest_storage_untranslated.translate(filter, data_store);
+                let dest_storage =
+                    dest_storage_untranslated.translate(determined_filter, data_store);
 
                 match simulation_state.factory.belts.add_belt_storage_inserter(
-                    filter,
+                    determined_filter,
                     start_belt_id,
                     start_belt_pos - 1,
                     dest_storage,
@@ -1342,9 +1437,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     item,
                                 } => {
                                     let index = simulation_state.factory.chests.stores
-                                        [usize_from(filter.id)]
+                                        [usize_from(determined_filter.id)]
                                     .add_chest(*ty, data_store);
-                                    *item = Some((filter, index));
+                                    *item = Some((determined_filter, index));
                                     instantiated.push(*chest_pos);
                                     storage = Some(Storage::Static {
                                         index,
@@ -1359,10 +1454,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     },
                 };
 
-                let start_storage = start_storage_untranslated.translate(filter, data_store);
+                let start_storage =
+                    start_storage_untranslated.translate(determined_filter, data_store);
 
                 match simulation_state.factory.belts.add_storage_belt_inserter(
-                    filter,
+                    determined_filter,
                     dest_belt_id,
                     dest_belt_pos - 1,
                     start_storage,
@@ -1410,9 +1506,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     item,
                                 } => {
                                     let index = simulation_state.factory.chests.stores
-                                        [usize_from(filter.id)]
+                                        [usize_from(determined_filter.id)]
                                     .add_chest(*ty, data_store);
-                                    *item = Some((filter, index));
+                                    *item = Some((determined_filter, index));
                                     instantiated.push(*chest_pos);
                                     storage = Some(Storage::Static {
                                         index,
@@ -1439,9 +1535,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     item: item @ None,
                                 } => {
                                     let index = simulation_state.factory.chests.stores
-                                        [usize_from(filter.id)]
+                                        [usize_from(determined_filter.id)]
                                     .add_chest(*ty, data_store);
-                                    *item = Some((filter, index));
+                                    *item = Some((determined_filter, index));
                                     instantiated.push(*chest_pos);
                                     storage = Some(Storage::Static {
                                         index,
@@ -1456,11 +1552,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     },
                 };
 
-                let start_storage = start_storage_untranslated.translate(filter, data_store);
-                let dest_storage = dest_storage_untranslated.translate(filter, data_store);
+                let start_storage =
+                    start_storage_untranslated.translate(determined_filter, data_store);
+                let dest_storage =
+                    dest_storage_untranslated.translate(determined_filter, data_store);
 
                 let index = simulation_state.factory.storage_storage_inserters.add_ins(
-                    filter,
+                    determined_filter,
                     start_storage,
                     dest_storage,
                 );
@@ -1476,7 +1574,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
                 *info = InserterInfo::Attached {
                     info: AttachedInserter::StorageStorage {
-                        item: filter,
+                        item: determined_filter,
                         inserter: index,
                     },
                     start_pos,
@@ -1605,7 +1703,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             *id = new_id;
                         }
                     },
-                    Entity::Splitter {   .. } => todo!(),
+                    Entity::Splitter { .. } => todo!(),
                     Entity::Inserter { info, .. } => match info {
                         InserterInfo::NotAttached { .. } => {},
                         InserterInfo::Attached {
@@ -1667,7 +1765,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                 .expect("belt_pos wrapped!");
                         }
                     },
-                    Entity::Splitter {   .. } => todo!(),
+                    Entity::Splitter { .. } => todo!(),
                     Entity::Inserter { info, .. } => match info {
                         InserterInfo::NotAttached { .. } => {},
                         InserterInfo::Attached {
@@ -2478,71 +2576,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
             })
     }
 
-    // pub fn add_entity(&mut self, entity: Entity<ItemIdxType, RecipeIdxType>) {
-    //     if let Entity::Belt {
-    //         pos,
-    //         direction,
-    //         id,
-    //         belt_pos: _belt_pos,
-    //     } = entity
-    //     {
-    //         let v = self.belt_exit_chunks.entry(id).or_default();
-
-    //         let my_chunk = (pos.x / CHUNK_SIZE, pos.y / CHUNK_SIZE);
-
-    //         if (pos.x % CHUNK_SIZE).abs_diff(
-    //             (pos.x.wrapping_add_signed(direction.into_offset().0.into())) % CHUNK_SIZE,
-    //         ) > 1
-    //         {
-    //             v.insert((
-    //                 my_chunk
-    //                     .0
-    //                     .wrapping_add_signed(direction.into_offset().0.into()),
-    //                 my_chunk.1,
-    //             ));
-    //         }
-    //         if (pos.y % CHUNK_SIZE).abs_diff(
-    //             (pos.y.wrapping_add_signed(direction.into_offset().1.into())) % CHUNK_SIZE,
-    //         ) > 1
-    //         {
-    //             v.insert((
-    //                 my_chunk.0,
-    //                 my_chunk
-    //                     .1
-    //                     .wrapping_add_signed(direction.into_offset().1.into()),
-    //             ));
-    //         }
-    //         if (pos.x % CHUNK_SIZE).abs_diff(
-    //             (pos.x
-    //                 .wrapping_add_signed(direction.reverse().into_offset().0.into()))
-    //                 % CHUNK_SIZE,
-    //         ) > 1
-    //         {
-    //             v.insert((
-    //                 my_chunk
-    //                     .0
-    //                     .wrapping_add_signed(direction.reverse().into_offset().0.into()),
-    //                 my_chunk.1,
-    //             ));
-    //         }
-    //         if (pos.y % CHUNK_SIZE).abs_diff(
-    //             (pos.y
-    //                 .wrapping_add_signed(direction.reverse().into_offset().1.into()))
-    //                 % CHUNK_SIZE,
-    //         ) > 1
-    //         {
-    //             v.insert((
-    //                 my_chunk.0,
-    //                 my_chunk
-    //                     .1
-    //                     .wrapping_add_signed(direction.reverse().into_offset().1.into()),
-    //             ));
-    //         }
-    //     }
-
-    //     self.entities.push(entity);
-    // }
-
     #[must_use]
     pub fn get_entities(&self) -> impl IntoIterator<Item = &Entity<ItemIdxType, RecipeIdxType>> {
         &self.entities
@@ -2703,8 +2736,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
                 Dir::West => (1, 2),
             },
             Self::Chest { ty, .. } => data_store.chest_tile_sizes[*ty as usize],
-            Self::Roboport {  .. } => (4, 4),
-            Self::SolarPanel {  .. } => (3, 3),
+            Self::Roboport { .. } => (4, 4),
+            Self::SolarPanel { .. } => (3, 3),
             Self::Lab { ty, .. } => data_store.lab_info[usize::from(*ty)].size,
             Self::Beacon { ty, .. } => data_store.beacon_info[usize::from(*ty)].size,
         }

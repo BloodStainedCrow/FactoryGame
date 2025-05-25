@@ -5,7 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use log::info;
+use log::{info, trace};
 use plumbing::{Client, IntegratedServer, Server};
 use server::{ActionSource, GameStateUpdateHandler, HandledActionConsumer};
 
@@ -138,13 +138,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
             let start = Instant::now();
             update_interval.tick();
 
-            info!("Waited for {:?}", start.elapsed());
+            trace!("Waited for {:?}", start.elapsed());
             match self.do_tick(data_store) {
                 ControlFlow::Continue(_) => {},
                 ControlFlow::Break(e) => return e,
             }
 
-            info!("Full tick time: {:?}", start.elapsed());
+            trace!("Full tick time: {:?}", start.elapsed());
         }
     }
 

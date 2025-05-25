@@ -1,10 +1,7 @@
 use std::{borrow::Borrow, fs::File, ops::ControlFlow};
 
 use crate::{
-    belt::{
-        belt::Belt, BeltBeltInserterInfo,
-        BeltStore,
-    },
+    belt::{belt::Belt, BeltBeltInserterInfo, BeltStore},
     blueprint::Blueprint,
     chest::{FullChestStore, MultiChestStore},
     data::DataStore,
@@ -16,33 +13,27 @@ use crate::{
         },
         world::{
             tile::{
-                AssemblerID, AssemblerInfo, AttachedInserter, Dir, Entity, InserterInfo,
-                World,
+                AssemblerID, AssemblerInfo, AttachedInserter, Dir, Entity, InserterInfo, World,
             },
             Position,
         },
     },
     inserter::{
-        belt_belt_inserter::BeltBeltInserter, storage_storage_inserter::StorageStorageInserter, Storage, MOVETIME,
+        belt_belt_inserter::BeltBeltInserter, storage_storage_inserter::StorageStorageInserter,
+        Storage, MOVETIME,
     },
     item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
     network_graph::WeakIndex,
-    power::{
-        power_grid::PowerGridIdentifier,
-        PowerGridStorage,
-    },
+    power::{power_grid::PowerGridIdentifier, PowerGridStorage},
     research::{ResearchProgress, TechState, Technology},
     statistics::{production::ProductionInfo, recipe::RecipeTickInfo, GenStatistics},
     storage_list::{
-        full_to_by_item, grid_size, num_recipes, sizes, storages_by_item,
-        SingleItemStorages,
+        full_to_by_item, grid_size, num_recipes, sizes, storages_by_item, SingleItemStorages,
     },
 };
 use itertools::Itertools;
 use log::{info, trace, warn};
-use rayon::iter::{
-    IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
-};
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 
 use crate::frontend::action::place_tile::PositionInfo;
 

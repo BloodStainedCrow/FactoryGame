@@ -15,10 +15,7 @@ use crate::{
             ActionType,
         },
         world::{
-            tile::{
-                AssemblerID, AssemblerInfo, Dir, FloorTile,
-                PlaceEntityType, World,
-            },
+            tile::{AssemblerID, AssemblerInfo, Dir, FloorTile, PlaceEntityType, World},
             Position,
         },
     },
@@ -326,7 +323,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                         }),
                     })]
                 },
-                crate::frontend::world::tile::Entity::Chest {  pos, .. } => {
+                crate::frontend::world::tile::Entity::Chest { pos, .. } => {
                     vec![ActionType::PlaceEntity(PlaceEntityInfo {
                         entities: EntityPlaceOptions::Single(PlaceEntityType::Chest {
                             pos: Position {

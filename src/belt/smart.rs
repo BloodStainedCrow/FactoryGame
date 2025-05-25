@@ -3,10 +3,7 @@ use std::iter::repeat;
 use log::info;
 
 use crate::{
-    inserter::{
-        belt_storage_inserter::BeltStorageInserter,
-        InserterState, Storage, MOVETIME,
-    },
+    inserter::{belt_storage_inserter::BeltStorageInserter, InserterState, Storage, MOVETIME},
     item::{IdxTrait, Item, WeakIdxTrait},
     storage_list::SingleItemStorages,
 };

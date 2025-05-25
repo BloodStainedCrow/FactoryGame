@@ -1,7 +1,4 @@
-use std::{
-    cmp::min,
-    iter::successors,
-};
+use std::{cmp::min, iter::successors};
 
 use crate::{
     assembler::AssemblerOnclickInfo,
@@ -399,7 +396,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     },
                                 );
                             },
-                            Entity::SolarPanel {  pos, .. } => {
+                            Entity::SolarPanel { pos, .. } => {
                                 entity_layer.draw_sprite(
                                     &texture_atlas.default,
                                     DrawInstance {
@@ -413,7 +410,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 );
                             },
                             // TODO: Render if a lab is working!
-                            Entity::Lab {  pos, .. } => {
+                            Entity::Lab { pos, .. } => {
                                 entity_layer.draw_sprite(
                                     &texture_atlas.belt[Dir::North],
                                     DrawInstance {

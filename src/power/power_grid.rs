@@ -1052,6 +1052,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         )
     }
 
+    #[must_use]
     pub fn change_assembler_recipe(
         &mut self,
         old_assembler_id: AssemblerID<RecipeIdxType>,

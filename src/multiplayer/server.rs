@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use log::{error, info, warn};
+use log::{error, info, trace, warn};
 
 use crate::{
     data::DataStore,
@@ -104,7 +104,7 @@ impl<
         } else if start.elapsed() > Duration::from_millis(10) {
             warn!("Update done {:?}", start.elapsed());
         } else {
-            info!("Update done {:?}", start.elapsed());
+            trace!("Update done {:?}", start.elapsed());
         }
     }
 }

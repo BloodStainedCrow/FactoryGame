@@ -768,6 +768,14 @@ mod test {
                 pos: Position { x: 0, y: 2 },
                 ty: 0,
             }),
+            place(PlaceEntityType::PowerPole {
+                pos: Position { x: 5, y: 0 },
+                ty: 0,
+            }),
+            place(PlaceEntityType::SolarPanel {
+                pos: Position { x: 6, y: 0 },
+                ty: 0,
+            }),
         ])
     }
 
@@ -833,6 +841,31 @@ mod test {
         }
 
         #[test]
+        fn inserter_always_attaches_full_bp(actions in sideload_items().prop_shuffle()) {
+            let mut state = GameState::new(&DATA_STORE);
+
+            let bp = Blueprint { actions };
+
+            bp.apply(Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
+
+            let ent = state.world.get_entities_colliding_with(Position { x: 1600, y: 1603 }, (1, 1), &DATA_STORE).into_iter().next().unwrap();
+
+            let assembler_powered = matches!(ent, Entity::Assembler { info: AssemblerInfo::Powered { .. } |  AssemblerInfo::PoweredNoRecipe { .. }, .. });
+
+            prop_assert!(assembler_powered);
+
+            let assembler_working = matches!(ent, Entity::Assembler { info: AssemblerInfo::Powered { .. }, .. });
+
+            prop_assume!(assembler_working, "{:?}", ent);
+
+            let ent = state.world.get_entities_colliding_with(Position { x: 1602, y: 1602 }, (1, 1), &DATA_STORE).into_iter().next().unwrap();
+
+            let inserter_attached = matches!(ent, Entity::Inserter { info: InserterInfo::Attached { .. }, .. });
+
+            prop_assert!(inserter_attached, "{:?}", ent);
+        }
+
+        #[test]
         fn sideload_empty_does_not_crash(actions in belts_into_sideload().prop_shuffle()) {
             let mut state = GameState::new(&DATA_STORE);
 
@@ -874,7 +907,7 @@ mod test {
                 state.update(&DATA_STORE);
             }
 
-            let Some(Entity::Belt { pos, direction, id, belt_pos }) = state.world.get_entities_colliding_with(Position { x: 1602, y: 1601 }, (1, 1), &DATA_STORE).into_iter().next() else {
+            let Some(Entity::Belt { id, .. }) = state.world.get_entities_colliding_with(Position { x: 1602, y: 1601 }, (1, 1), &DATA_STORE).into_iter().next() else {
                 unreachable!()
             };
 
@@ -893,23 +926,35 @@ mod test {
 
             bp.apply(Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
 
+            let ent = state.world.get_entities_colliding_with(Position { x: 1600, y: 1603 }, (1, 1), &DATA_STORE).into_iter().next().unwrap();
+
+            let assembler_powered = matches!(ent, Entity::Assembler { info: AssemblerInfo::Powered { .. } |  AssemblerInfo::PoweredNoRecipe { .. }, .. });
+
+            prop_assume!(assembler_powered);
+
+            let assembler_working = matches!(ent, Entity::Assembler { info: AssemblerInfo::Powered { .. }, .. });
+
+            prop_assume!(assembler_working, "{:?}", ent);
+
             let inserter_attached = matches!(state.world.get_entities_colliding_with(Position { x: 1602, y: 1602 }, (1, 1), &DATA_STORE).into_iter().next().unwrap(), Entity::Inserter { info: InserterInfo::Attached { .. }, .. });
 
             prop_assume!(inserter_attached);
 
-            for _ in 0..200 {
+            for _ in 0..2000 {
                 state.update(&DATA_STORE);
             }
 
-            let Some(Entity::Belt { pos, direction, id: id_going_right, belt_pos }) = state.world.get_entities_colliding_with(Position { x: 1602, y: 1601 }, (1, 1), &DATA_STORE).into_iter().next() else {
+            let Some(Entity::Belt { id: id_going_right, .. }) = state.world.get_entities_colliding_with(Position { x: 1602, y: 1601 }, (1, 1), &DATA_STORE).into_iter().next() else {
                 unreachable!()
             };
 
-            let Some(Entity::Belt { pos, direction, id: id_going_down, belt_pos }) = state.world.get_entities_colliding_with(Position { x: 1604, y: 1602 }, (1, 1), &DATA_STORE).into_iter().next() else {
+            let Some(Entity::Belt { id: id_going_down, .. }) = state.world.get_entities_colliding_with(Position { x: 1604, y: 1602 }, (1, 1), &DATA_STORE).into_iter().next() else {
                 unreachable!()
             };
 
-            prop_assume!(state.statistics.production.total.unwrap().items_produced.iter().copied().sum::<u64>() > 0);
+            let produced = state.statistics.production.total.unwrap().items_produced.iter().copied().sum::<u64>();
+
+            prop_assume!(produced > 0, "{:?}", produced);
 
             prop_assert!(dbg!(state.simulation_state.factory.belts.get_item_iter(*id_going_down).into_iter().next().unwrap()).is_some(),"down: {:?}\n, right:{:?}", state.simulation_state.factory.belts.get_item_iter(*id_going_down).into_iter().collect::<Vec<_>>(), state.simulation_state.factory.belts.get_item_iter(*id_going_right).into_iter().collect::<Vec<_>>());
         }

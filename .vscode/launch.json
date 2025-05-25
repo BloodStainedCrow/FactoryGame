@@ -44,6 +44,25 @@
         {
             "type": "lldb",
             "request": "launch",
+            "name": "Debug executable 'factory' verbose",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=factory",
+                    "--package=factory",
+                ],
+                "filter": {
+                    "name": "factory",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "env": { "RUST_LOG": "info" }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
             "name": "Debug factory client",
             "cargo": {
                 "args": [
