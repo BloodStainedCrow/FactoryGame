@@ -37,7 +37,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
         game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        // FIXME: currently base_pos is unused!
         game_state.apply_actions(
             self.actions.iter().map(|a| match a {
                 ActionType::PlaceFloorTile(PlaceFloorTileByHandInfo {

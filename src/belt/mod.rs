@@ -2280,10 +2280,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
                                     _ins_info,
                                     ((source, _source_pos), (dest, _dest_pos), _movetime, _filter),
                                 )| {
-                                    dbg!((source, dest));
-
-                                    !dbg!(self.inner.smart_belts[item].holes.contains(source))
-                                        && !dbg!(self.inner.smart_belts[item].holes.contains(dest))
+                                    !self.inner.smart_belts[item].holes.contains(source)
+                                        && !self.inner.smart_belts[item].holes.contains(dest)
                                 },
                             )
                         }

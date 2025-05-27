@@ -952,38 +952,38 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             }
         }
 
-        // #[cfg(debug_assertions)]
-        // {
-        //     assert!(self
-        //         .world
-        //         .get_chunks()
-        //         .into_iter()
-        //         .flat_map(|chunk| chunk.get_entities())
-        //         .all(|e| match e {
-        //             Entity::Assembler {
-        //                 ty,
-        //                 pos,
-        //                 modules,
-        //                 info,
-        //             } => {
-        //                 match info {
-        //                     AssemblerInfo::UnpoweredNoRecipe => true,
-        //                     AssemblerInfo::Unpowered(recipe) => true,
-        //                     AssemblerInfo::PoweredNoRecipe(position) => true,
-        //                     AssemblerInfo::Powered {
-        //                         id,
-        //                         pole_position,
-        //                         weak_index,
-        //                     } => {
-        //                         !self.simulation_state.factory.power_grids.power_grids
-        //                             [usize::from(id.grid)]
-        //                         .is_placeholder
-        //                     },
-        //                 }
-        //             },
-        //             _ => true,
-        //         }));
-        // }
+        #[cfg(test)]
+        {
+            assert!(self
+                .world
+                .get_chunks()
+                .into_iter()
+                .flat_map(|chunk| chunk.get_entities())
+                .all(|e| match e {
+                    Entity::Assembler {
+                        ty,
+                        pos,
+                        modules,
+                        info,
+                    } => {
+                        match info {
+                            AssemblerInfo::UnpoweredNoRecipe => true,
+                            AssemblerInfo::Unpowered(recipe) => true,
+                            AssemblerInfo::PoweredNoRecipe(position) => true,
+                            AssemblerInfo::Powered {
+                                id,
+                                pole_position,
+                                weak_index,
+                            } => {
+                                !self.simulation_state.factory.power_grids.power_grids
+                                    [usize::from(id.grid)]
+                                .is_placeholder
+                            },
+                        }
+                    },
+                    _ => true,
+                }));
+        }
     }
 
     pub fn update(&mut self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) {

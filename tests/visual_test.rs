@@ -9,8 +9,6 @@ use rstest::rstest;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::mpsc::channel;
-use std::sync::mpsc::Receiver;
-use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::thread::sleep;
 use std::thread::spawn;
@@ -40,7 +38,7 @@ fn start_ui() -> (
 
     let gs_move = gs.clone();
     let ds_move = ds.clone();
-    let t = spawn(move || {
+    spawn(move || {
         let (send, recv) = channel();
         let sm = Arc::new(Mutex::new(ActionStateMachine::new(0, (1600.0, 1600.0))));
 
@@ -98,6 +96,7 @@ fn start_ui() -> (
 
     let ctx_lock = Mutex::new(ctx_recv.recv().unwrap());
 
+    // FIXME: When the last test finishes we SEGV?!?
     (ctx_lock, ds, gs)
 }
 
@@ -110,13 +109,9 @@ fn crashing_replays_visual(
         Arc<Mutex<GameState<u8, u8>>>,
     ),
 ) {
-    use std::{
-        fs::File,
-        io::Read,
-        sync::{mpsc::channel, Arc, Mutex},
-    };
+    use std::{fs::File, io::Read};
 
-    let im_running = start_ui.0.lock();
+    let _im_running = start_ui.0.lock();
     let gs = start_ui.2.clone();
 
     // Keep running for 30 seconds
