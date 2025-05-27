@@ -2,7 +2,7 @@ use crate::item::{IdxTrait, Item, WeakIdxTrait};
 
 use super::{InserterState, SushiInserterState};
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub struct BeltBeltInserter {
     state: InserterState,
 }

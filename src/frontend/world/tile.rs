@@ -296,7 +296,7 @@ fn new_chest_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 return;
             };
 
-            let size = data_store.lab_info[usize::from(*ty)].size;
+            let size = data_store.chest_tile_sizes[usize::from(*ty)];
 
             updates.push(new_possible_inserter_connection(*pos, size));
         }),
@@ -1283,8 +1283,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         if possible_items == PossibleItem::None {
             return Err(InstantiateInserterError::ItemConflict);
         }
-
-        dbg!(&possible_items);
 
         // For determining the filter we use this plan:
         // If a filter is specified, use that

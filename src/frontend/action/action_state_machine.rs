@@ -98,8 +98,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
            + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType> {
         input.try_iter().map(|input| {
-            dbg!(&input);
-
             let actions = match input {
                 Input::LeftClickPressed => {
                     match &self.state {

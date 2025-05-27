@@ -6,9 +6,9 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 use std::time::Instant;
 
+use parking_lot::Mutex;
 use std::io::Read;
 use std::mem;
-use std::sync::Mutex;
 
 use std::path::PathBuf;
 
@@ -162,7 +162,7 @@ impl<
         // Free up the memory, so we do not store two copies of the GameState
         mem::drop(self.starting_state);
 
-        *(game_state_out.lock().unwrap()) = game_state;
+        *(game_state_out.lock()) = game_state;
 
         loop {
             let this_ticks_actions: Vec<_> = actions
@@ -171,7 +171,7 @@ impl<
                 .map(|ra| ra.action)
                 .collect();
 
-            let mut game_state = game_state_out.lock().unwrap();
+            let mut game_state = game_state_out.lock();
 
             game_state.apply_actions(this_ticks_actions, data_store.borrow());
 

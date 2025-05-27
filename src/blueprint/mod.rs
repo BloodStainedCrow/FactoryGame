@@ -492,7 +492,10 @@ pub fn random_entity_to_place<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     filter: Some(filter),
                 }
             }),
-        (random_blueprint_offs(), (0u8..1))
+        (
+            random_blueprint_offs(),
+            (0u8..(data_store.lab_info.len().try_into().unwrap()))
+        )
             .prop_map(|(pos, ty)| { PlaceEntityType::Lab { pos, ty } }),
         // (random_blueprint_offs(), random_dir()).prop_map(|(pos, dir)| {
         //     PlaceEntityType::Splitter {

@@ -288,7 +288,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
         let old_inserter = self.inserters.inserters.remove(i);
         let removed = self.inserters.offsets.remove(i);
         // The offset after i (which has now shifted left to i)
-        self.inserters.offsets[i] += removed + 1;
+        if let Some(next_offs) = self.inserters.offsets.get_mut(i) {
+            *next_offs += removed + 1
+        }
 
         match old_inserter {
             Inserter::Out(inserter) => inserter.storage_id,

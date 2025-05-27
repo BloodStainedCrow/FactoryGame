@@ -16,10 +16,12 @@ use std::{
     sync::{
         atomic::AtomicU64,
         mpsc::{channel, Sender},
-        Arc, Mutex,
+        Arc,
     },
     thread,
 };
+
+use parking_lot::Mutex;
 
 use data::{factorio_1_1::get_raw_data_test, DataStore};
 use eframe::NativeOptions;
@@ -86,8 +88,7 @@ impl WeakIdxTrait for u16 {}
 impl IdxTrait for u8 {}
 impl IdxTrait for u16 {}
 
-#[cfg(test)]
-static DATA_STORE: std::sync::LazyLock<DataStore<u8, u8>> =
+pub static DATA_STORE: std::sync::LazyLock<DataStore<u8, u8>> =
     std::sync::LazyLock::new(|| get_raw_data_test().turn::<u8, u8>());
 
 pub trait NewWithDataStore {
@@ -170,8 +171,6 @@ fn run_integrated_server(
 
     match data_store {
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
-            let data_store = Arc::new(data_store);
-
             let (send, recv) = channel();
             let state_machine: Arc<Mutex<ActionStateMachine<_, _>>> = Arc::new(Mutex::new(
                 ActionStateMachine::new(0, (100.0 * CHUNK_SIZE_FLOAT, 100.0 * CHUNK_SIZE_FLOAT)),
@@ -210,6 +209,7 @@ fn run_integrated_server(
                 game.run(&m_data_store);
             });
 
+            let data_store = Arc::new(Mutex::new(data_store));
             return (
                 LoadedGame::ItemU8RecipeU8(LoadedGameSized {
                     state: game_state,
@@ -270,8 +270,6 @@ fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Se
 
     match data_store {
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
-            let data_store = Arc::new(data_store);
-
             let (send, recv) = channel();
             let state_machine: Arc<Mutex<ActionStateMachine<_, _>>> = Arc::new(Mutex::new(
                 ActionStateMachine::new(1, (100.0 * CHUNK_SIZE_FLOAT, 100.0 * CHUNK_SIZE_FLOAT)),
@@ -306,6 +304,7 @@ fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Se
                 game.run(&m_data_store);
             });
 
+            let data_store = Arc::new(Mutex::new(data_store));
             return (
                 LoadedGame::ItemU8RecipeU8(LoadedGameSized {
                     state: game_state,

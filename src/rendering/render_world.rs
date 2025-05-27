@@ -836,8 +836,16 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         direction,
                         id,
                         belt_pos,
-                    } => match id {
-                        BeltTileId::AnyBelt(index, phantom_dat) => todo!(),
+                    } => {
+                        match id {
+                            BeltTileId::AnyBelt(index, phantom_dat) => {
+                                ui.label("Belt");
+                                ui.label(format!("Any Belt {}", *index).as_str());
+                            },
+                        }
+                        ui.label(format!("Item: {:?}", game_state.simulation_state.factory.belts.get_pure_item(*id)).as_str());
+
+                        ui.label(format!("Inner: {:?}", game_state.simulation_state.factory.belts.inner.belt_belt_inserters).as_str());
                     },
                     crate::frontend::world::tile::Entity::Inserter {
                         pos,

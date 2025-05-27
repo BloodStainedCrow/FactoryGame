@@ -249,6 +249,7 @@ impl MultiLabStore {
     }
 
     // TODO: Ensure good compilation results (i.e. vectorization)
+    // FIXME: Use module modifiers
     pub fn update<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut self,
         power_mult: u8,

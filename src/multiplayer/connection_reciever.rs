@@ -1,8 +1,10 @@
 use std::{
     net::{TcpListener, TcpStream},
-    sync::{Arc, Mutex},
+    sync::Arc,
     thread,
 };
+
+use parking_lot::Mutex;
 
 pub type ConnectionList = Arc<Mutex<Vec<TcpStream>>>;
 
@@ -11,7 +13,7 @@ pub fn accept_continously(connections: ConnectionList) -> Result<(), std::io::Er
     thread::spawn(move || {
         for conn in listener.incoming() {
             match conn {
-                Ok(conn) => connections.lock().unwrap().push(conn),
+                Ok(conn) => connections.lock().push(conn),
                 Err(_) => todo!("Handle errors"),
             }
         }

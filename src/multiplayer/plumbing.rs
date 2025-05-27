@@ -3,9 +3,11 @@ use std::{
     marker::PhantomData,
     mem,
     net::TcpStream,
-    sync::{mpsc::Receiver, Arc, Mutex},
+    sync::{mpsc::Receiver, Arc},
     time::{Duration, Instant},
 };
+
+use parking_lot::Mutex;
 
 use log::{error, warn};
 
@@ -66,7 +68,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         // Get the actions from what the server sent us
         let pre_lock = Instant::now();
 
-        let mut state_machine = self.local_actions.lock().unwrap();
+        let mut state_machine = self.local_actions.lock();
 
         let mut local_actions: Vec<_> = state_machine
             .handle_inputs(&self.local_input, world, data_store)
@@ -121,7 +123,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         let recieved_actions: Vec<ActionType<_, _>> = self
             .client_connections
             .lock()
-            .unwrap()
             .iter()
             .flat_map(|mut conn| {
                 let start = Instant::now();
@@ -166,7 +167,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     ) {
         let actions: Vec<_> = actions.into_iter().collect();
         // Send the actions to the clients
-        for conn in self.client_connections.lock().unwrap().iter() {
+        for conn in self.client_connections.lock().iter() {
             postcard::to_io(&actions, conn).expect("tcp send failed");
         }
     }
@@ -190,7 +191,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
     ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
            + use<'a, 'b, 'c, ItemIdxType, RecipeIdxType> {
         let start = Instant::now();
-        let mut state_machine = self.local_actions.lock().unwrap();
+        let mut state_machine = self.local_actions.lock();
         if start.elapsed() > Duration::from_millis(10) {
             error!("Post lock {:?}", start.elapsed());
         }

@@ -1,7 +1,9 @@
 use std::{
-    sync::{atomic::AtomicU64, mpsc::Sender, Arc, Mutex},
+    sync::{atomic::AtomicU64, mpsc::Sender, Arc},
     time::{Duration, Instant},
 };
+
+use parking_lot::Mutex;
 
 use crate::{
     data::DataStore,
@@ -53,7 +55,7 @@ pub enum LoadedGame {
 pub struct LoadedGameSized<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub state: Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
     pub state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
-    pub data_store: Arc<DataStore<ItemIdxType, RecipeIdxType>>,
+    pub data_store: Arc<Mutex<DataStore<ItemIdxType, RecipeIdxType>>>,
     pub ui_action_sender: Sender<ActionType<ItemIdxType, RecipeIdxType>>,
 }
 
@@ -94,20 +96,20 @@ impl winit::application::ApplicationHandler for App {
                 if let Some(state) = &self.currently_loaded_game {
                     match &state.state {
                         LoadedGame::ItemU8RecipeU8(state) => save(
-                            &state.state.lock().unwrap(),
-                            state.data_store.checksum.clone(),
+                            &state.state.lock(),
+                            state.data_store.lock().checksum.clone(),
                         ),
                         LoadedGame::ItemU8RecipeU16(state) => save(
-                            &state.state.lock().unwrap(),
-                            state.data_store.checksum.clone(),
+                            &state.state.lock(),
+                            state.data_store.lock().checksum.clone(),
                         ),
                         LoadedGame::ItemU16RecipeU8(state) => save(
-                            &state.state.lock().unwrap(),
-                            state.data_store.checksum.clone(),
+                            &state.state.lock(),
+                            state.data_store.lock().checksum.clone(),
                         ),
                         LoadedGame::ItemU16RecipeU16(state) => save(
-                            &state.state.lock().unwrap(),
-                            state.data_store.checksum.clone(),
+                            &state.state.lock(),
+                            state.data_store.lock().checksum.clone(),
                         ),
                     }
                 }
@@ -197,15 +199,14 @@ impl winit::application::ApplicationHandler for App {
 
                                 match &loaded.state {
                                     LoadedGame::ItemU8RecipeU8(loaded_game_sized) => {
-                                        let game_state = loaded_game_sized.state.lock().unwrap();
-                                        let state_machine =
-                                            loaded_game_sized.state_machine.lock().unwrap();
+                                        let game_state = loaded_game_sized.state.lock();
+                                        let state_machine = loaded_game_sized.state_machine.lock();
                                         render_world(
                                             renderer,
                                             &game_state,
                                             &self.texture_atlas,
                                             &state_machine,
-                                            &loaded_game_sized.data_store,
+                                            &loaded_game_sized.data_store.lock(),
                                         )
                                     },
                                     LoadedGame::ItemU8RecipeU16(loaded_game_sized) => todo!(),

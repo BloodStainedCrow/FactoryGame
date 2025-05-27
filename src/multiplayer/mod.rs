@@ -1,9 +1,11 @@
 use std::{
     net::{IpAddr, TcpStream},
     ops::ControlFlow,
-    sync::{atomic::AtomicU64, mpsc::Receiver, Arc, Mutex},
+    sync::{atomic::AtomicU64, mpsc::Receiver, Arc},
     time::{Duration, Instant},
 };
+
+use parking_lot::Mutex;
 
 use log::trace;
 use plumbing::{Client, IntegratedServer, Server};
@@ -128,11 +130,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 inputs,
                 ui_actions,
             } => {
-                let replay = Replay::new(
-                    game_state.lock().as_ref().unwrap(),
-                    None,
-                    data_store.clone(),
-                );
+                let replay = Replay::new(&*game_state.lock(), None, data_store.clone());
                 Ok(Self::IntegratedServer(
                     game_state,
                     replay,
@@ -173,7 +171,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
         match self {
             Game::Client(game_state, game_state_update_handler, tick_counter) => {
                 game_state_update_handler.update::<&DataStore<ItemIdxType, RecipeIdxType>>(
-                    &mut game_state.lock().expect("Lock poison for update"),
+                    &mut game_state.lock(),
                     None,
                     data_store,
                 );
@@ -183,11 +181,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 game_state_update_handler.update(game_state, Some(replay), data_store)
             },
             Game::IntegratedServer(game_state, replay, game_state_update_handler, tick_counter) => {
-                game_state_update_handler.update(
-                    &mut game_state.lock().expect("Lock poison for update"),
-                    Some(replay),
-                    data_store,
-                );
+                game_state_update_handler.update(&mut game_state.lock(), Some(replay), data_store);
                 tick_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             },
         }

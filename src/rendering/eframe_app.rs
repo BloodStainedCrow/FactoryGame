@@ -1,8 +1,10 @@
 use std::{
     mem,
-    sync::{mpsc::Sender, Arc, LazyLock, Mutex},
+    sync::{mpsc::Sender, Arc, LazyLock},
     time::Instant,
 };
+
+use parking_lot::Mutex;
 
 use eframe::{
     egui::{CentralPanel, Event, PaintCallbackInfo, Shape},
@@ -101,8 +103,8 @@ impl eframe::App for App {
                             size, cb,
                         )));
 
-                        let game_state = loaded_game_sized.state.lock().unwrap();
-                        let mut state_machine = loaded_game_sized.state_machine.lock().unwrap();
+                        let game_state = loaded_game_sized.state.lock();
+                        let mut state_machine = loaded_game_sized.state_machine.lock();
 
                         let tick = game.tick.load(std::sync::atomic::Ordering::Relaxed);
 
@@ -111,7 +113,7 @@ impl eframe::App for App {
 
                         let mut now = Instant::now();
 
-                        mem::swap(&mut now, &mut *LAST_DRAW.lock().unwrap());
+                        mem::swap(&mut now, &mut *LAST_DRAW.lock());
 
                         let time_since_last_update = now.elapsed();
 
@@ -124,7 +126,7 @@ impl eframe::App for App {
                             &ui,
                             &mut state_machine,
                             &game_state,
-                            &loaded_game_sized.data_store,
+                            &loaded_game_sized.data_store.lock(),
                         );
 
                         for action in render_actions {
@@ -148,20 +150,20 @@ impl eframe::App for App {
         if let Some(state) = &self.currently_loaded_game {
             match &state.state {
                 LoadedGame::ItemU8RecipeU8(state) => save(
-                    &state.state.lock().unwrap(),
-                    state.data_store.checksum.clone(),
+                    &state.state.lock(),
+                    state.data_store.lock().checksum.clone(),
                 ),
                 LoadedGame::ItemU8RecipeU16(state) => save(
-                    &state.state.lock().unwrap(),
-                    state.data_store.checksum.clone(),
+                    &state.state.lock(),
+                    state.data_store.lock().checksum.clone(),
                 ),
                 LoadedGame::ItemU16RecipeU8(state) => save(
-                    &state.state.lock().unwrap(),
-                    state.data_store.checksum.clone(),
+                    &state.state.lock(),
+                    state.data_store.lock().checksum.clone(),
                 ),
                 LoadedGame::ItemU16RecipeU16(state) => save(
-                    &state.state.lock().unwrap(),
-                    state.data_store.checksum.clone(),
+                    &state.state.lock(),
+                    state.data_store.lock().checksum.clone(),
                 ),
             }
         }
@@ -174,7 +176,7 @@ struct Callback<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     texture_atlas: Arc<TextureAtlas>,
     state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
     game_state: Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
-    data_store: Arc<DataStore<ItemIdxType, RecipeIdxType>>,
+    data_store: Arc<Mutex<DataStore<ItemIdxType, RecipeIdxType>>>,
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> CallbackTrait
@@ -188,16 +190,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> CallbackTrait
     ) {
         let mut rend = self.raw_renderer.start_draw(render_pass);
 
-        let gamestate = self.game_state.lock().unwrap();
+        let gamestate = self.game_state.lock();
 
-        let state_machine = self.state_machine.lock().unwrap();
+        let state_machine = self.state_machine.lock();
 
         render_world(
             &mut rend,
             &gamestate,
             &self.texture_atlas,
             &state_machine,
-            &self.data_store,
+            &self.data_store.lock(),
         );
     }
 }
