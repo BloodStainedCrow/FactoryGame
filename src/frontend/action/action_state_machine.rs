@@ -16,7 +16,7 @@ use crate::{
             Position,
         },
     },
-    item::{IdxTrait, Recipe, WeakIdxTrait},
+    item::{IdxTrait, Item, Recipe, WeakIdxTrait},
 };
 
 use super::{place_tile::PositionInfo, ActionType, PLAYERID};
@@ -98,6 +98,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
            + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType> {
         input.try_iter().map(|input| {
+            dbg!(&input);
 
             let actions = match input {
                 Input::LeftClickPressed => {
@@ -236,7 +237,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                                                     self.current_mouse_pos,
                                                                 );
                                                             },
-                                PlaceEntityType::Chest { pos } => {*pos = Self::player_mouse_to_tile(
+                                PlaceEntityType::Chest { pos, .. } => {*pos = Self::player_mouse_to_tile(
                                                                 self.zoom_level,
                                                                 self.local_player_pos,
                                                                 self.current_mouse_pos,
@@ -305,7 +306,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 },
 
                 i @ Input::LeftClickReleased => {
-                    dbg!(i);
                     vec![]
                 },
             };
@@ -436,6 +436,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             self.local_player_pos,
                             self.current_mouse_pos,
                         ),
+                        ty: 0,
                     }));
                 vec![]
             },

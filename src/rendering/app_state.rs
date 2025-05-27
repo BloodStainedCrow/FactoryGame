@@ -31,6 +31,7 @@ use crate::{
         full_to_by_item, grid_size, num_recipes, sizes, storages_by_item, SingleItemStorages,
     },
 };
+use eframe::egui::mutex::Mutex;
 use itertools::Itertools;
 use log::{info, trace, warn};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
@@ -264,6 +265,7 @@ impl<RecipeIdxType: IdxTrait> StorageStorageInserterStore<RecipeIdxType> {
     }
 
     pub fn remove_ins<ItemIdxType: IdxTrait>(&mut self, item: Item<ItemIdxType>, index: usize) {
+        assert!(!self.holes[usize_from(item.id)].contains(&index));
         self.holes[usize_from(item.id)].push(index);
     }
 }
@@ -562,18 +564,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 self, pos, direction, in_mode, out_mode, data_store,
                             );
                         },
-                        crate::frontend::world::tile::PlaceEntityType::Chest { pos } => {
+                        crate::frontend::world::tile::PlaceEntityType::Chest { pos, ty } => {
                             info!("Trying to place chest at {pos:?}");
-                            // TODO: get size dynamically
-                            if !self.world.can_fit(pos, (1, 1), data_store) {
+                            if !self.world.can_fit(
+                                pos,
+                                data_store.chest_tile_sizes[usize::from(ty)],
+                                data_store,
+                            ) {
                                 warn!("Tried to place chest where it does not fit");
                                 continue;
                             }
 
                             self.world.add_entity(
-                                // FIXME: Chest type hardcoded
                                 Entity::Chest {
-                                    ty: 0,
+                                    ty,
                                     pos,
                                     item: None,
                                 },
@@ -1033,6 +1037,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             tech_progress,
         ));
 
+        trace!(
+            "{}",
+            self.statistics
+                .production
+                .total
+                .as_ref()
+                .unwrap()
+                .items_produced[0]
+        );
+
         self.current_tick += 1;
     }
 
@@ -1264,7 +1278,7 @@ mod tests {
     use crate::{
         assembler::AssemblerOnclickInfo,
         blueprint::{random_blueprint_strategy, random_position, Blueprint},
-        data::{get_raw_data_test, DataStore},
+        data::{factorio_1_1::get_raw_data_test, DataStore},
         frontend::{
             action::{
                 place_entity::{EntityPlaceOptions, PlaceEntityInfo},
@@ -1343,7 +1357,6 @@ mod tests {
     }
 
     proptest! {
-        // #![proptest_config(ProptestConfig::with_cases(1_000))]
         #[test]
         fn test_random_blueprint_does_not_crash(base_pos in random_position(), blueprint in random_blueprint_strategy::<u8, u8>(0..1_000, &DATA_STORE)) {
 
@@ -1442,7 +1455,7 @@ mod tests {
     fn bench_single_inserter(b: &mut Bencher) {
         let mut game_state = GameState::new(&DATA_STORE);
 
-        let mut rep = Replay::new(game_state.clone(), (*DATA_STORE).clone());
+        let mut rep = Replay::new(&game_state, None, (*DATA_STORE).clone());
 
         rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
             entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
@@ -1526,17 +1539,14 @@ mod tests {
 
         dbg!(game_state.current_tick);
 
-        // dbg!(&game_state.simulation_state.factory.belts);
-
         assert!(
-            dbg!(
-                game_state
-                    .statistics
-                    .production
-                    .total
-                    .unwrap()
-                    .items_produced
-            )[0] > 0
+            game_state
+                .statistics
+                .production
+                .total
+                .unwrap()
+                .items_produced[0]
+                > 0
         );
     }
 }

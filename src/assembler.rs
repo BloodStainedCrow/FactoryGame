@@ -71,6 +71,8 @@ pub struct FullAssemblerStore<RecipeIdxType: WeakIdxTrait> {
     pub assemblers_0_1: Box<[MultiAssemblerStore<RecipeIdxType, 0, 1>]>,
     pub assemblers_1_1: Box<[MultiAssemblerStore<RecipeIdxType, 1, 1>]>,
     pub assemblers_2_1: Box<[MultiAssemblerStore<RecipeIdxType, 2, 1>]>,
+    pub assemblers_3_1: Box<[MultiAssemblerStore<RecipeIdxType, 3, 1>]>,
+    pub assemblers_4_1: Box<[MultiAssemblerStore<RecipeIdxType, 4, 1>]>,
 }
 
 #[derive(Debug, Clone)]
@@ -110,11 +112,27 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
             .iter()
             .map(|r| MultiAssemblerStore::new(*r))
             .collect();
+        let assemblers_3_1 = data_store
+            .ing_out_num_to_recipe
+            .get(&(3, 1))
+            .unwrap()
+            .iter()
+            .map(|r| MultiAssemblerStore::new(*r))
+            .collect();
+        let assemblers_4_1 = data_store
+            .ing_out_num_to_recipe
+            .get(&(4, 1))
+            .unwrap()
+            .iter()
+            .map(|r| MultiAssemblerStore::new(*r))
+            .collect();
 
         Self {
             assemblers_0_1,
             assemblers_1_1,
             assemblers_2_1,
+            assemblers_3_1,
+            assemblers_4_1,
         }
     }
 
@@ -153,10 +171,28 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
             .map(|(a, b)| a.join(b, new_grid_id, data_store))
             .unzip();
 
+        let (assemblers_3_1, assemblers_3_1_updates): (Vec<_>, Vec<_>) = self
+            .assemblers_3_1
+            .into_vec()
+            .into_iter()
+            .zip(other.assemblers_3_1.into_vec())
+            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .unzip();
+
+        let (assemblers_4_1, assemblers_4_1_updates): (Vec<_>, Vec<_>) = self
+            .assemblers_4_1
+            .into_vec()
+            .into_iter()
+            .zip(other.assemblers_4_1.into_vec())
+            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .unzip();
+
         let ret = Self {
             assemblers_0_1: assemblers_0_1.into_boxed_slice(),
             assemblers_1_1: assemblers_1_1.into_boxed_slice(),
             assemblers_2_1: assemblers_2_1.into_boxed_slice(),
+            assemblers_3_1: assemblers_3_1.into_boxed_slice(),
+            assemblers_4_1: assemblers_4_1.into_boxed_slice(),
         };
 
         (
@@ -165,7 +201,9 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
                 .into_iter()
                 .flatten()
                 .chain(assemblers_1_1_updates.into_iter().flatten())
-                .chain(assemblers_2_1_updates.into_iter().flatten()),
+                .chain(assemblers_2_1_updates.into_iter().flatten())
+                .chain(assemblers_3_1_updates.into_iter().flatten())
+                .chain(assemblers_4_1_updates.into_iter().flatten()),
         )
     }
 
@@ -205,6 +243,26 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
                 );
 
                 self.assemblers_2_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .get_info(assembler_id.assembler_index, data_store)
+            },
+
+            (3, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_3_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]].recipe
+                );
+
+                self.assemblers_3_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .get_info(assembler_id.assembler_index, data_store)
+            },
+
+            (4, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_4_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]].recipe
+                );
+
+                self.assemblers_4_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
                     .get_info(assembler_id.assembler_index, data_store)
             },
 
@@ -766,15 +824,23 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 ),
             ),
         ) {
+            // FIXME: Remove the items from the ings at the start of the crafting process
+
             // TODO: Benchmark if this is okay
             let increase = increase.saturating_mul(speed_mod.into()) / 20;
 
-            let ing_mul = ings
+            let ing_mul: u8 = ings
                 .iter()
                 .zip(our_ings.iter())
-                .fold(1, |acc, (have, want)| acc * u16::from(**have >= *want));
-            let new_timer_output_space = timer.wrapping_add(increase * ing_mul);
-            let new_timer_output_full = timer.saturating_add(increase * ing_mul);
+                .fold(1, |acc, (have, want)| acc * u8::from(**have >= *want));
+            let ing_mul_for_two_crafts: u16 = ings
+                .iter()
+                .zip(our_ings.iter())
+                .fold(1, |acc, (have, want)| {
+                    acc * u16::from(**have >= (*want * 2))
+                });
+            let new_timer_output_space = timer.wrapping_add(increase * u16::from(ing_mul));
+            let new_timer_output_full = timer.saturating_add(increase * u16::from(ing_mul));
 
             let space_mul: u8 =
                 outputs
@@ -788,6 +854,12 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             let new_timer = new_timer_output_space * u16::from(space_mul)
                 + new_timer_output_full * (1 - u16::from(space_mul));
 
+            let timer_mul: u8 = u8::from(new_timer < *timer);
+
+            // if we have enough items for another craft keep the wrapped value, else clamp it to 0
+            let new_timer = u16::from(timer_mul) * (ing_mul_for_two_crafts * new_timer)
+                + (1 - u16::from(timer_mul)) * new_timer;
+
             let new_prod_timer = prod_timer.wrapping_add(
                 new_timer
                     .wrapping_sub(*timer)
@@ -795,14 +867,11 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                     / 100,
             );
 
-            let timer_mul: u8 = (new_timer < *timer).into();
             let prod_timer_mul: u8 = (new_prod_timer < *prod_timer).into();
 
             // Power calculation
             // We use power if any work was done
-            power = power
-                + base_power * u64::from(ing_mul * u16::from(space_mul)) * u64::from(power_mod)
-                    / 20;
+            power = power + base_power * u64::from(ing_mul * space_mul) * u64::from(power_mod) / 20;
 
             *timer = new_timer;
             *prod_timer = new_prod_timer;

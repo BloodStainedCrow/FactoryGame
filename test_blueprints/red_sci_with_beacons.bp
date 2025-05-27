@@ -280,6 +280,7 @@
                     x: 28,
                     y: 22,
                 ),
+                ty: 0,
             )),
         )),
         PlaceEntity((
@@ -476,6 +477,7 @@
                     x: 30,
                     y: 22,
                 ),
+                ty: 0,
             )),
         )),
         PlaceEntity((
@@ -484,6 +486,7 @@
                     x: 32,
                     y: 22,
                 ),
+                ty: 0,
             )),
         )),
         PlaceEntity((
@@ -492,6 +495,7 @@
                     x: 38,
                     y: 22,
                 ),
+                ty: 0,
             )),
         )),
         PlaceEntity((
@@ -500,6 +504,7 @@
                     x: 40,
                     y: 22,
                 ),
+                ty: 0,
             )),
         )),
         PlaceEntity((
@@ -873,6 +878,7 @@
         )),
         PlaceEntity((
             entities: Single(Chest(
+                ty: 0,
                 pos: (
                     x: 42,
                     y: 22,
@@ -881,6 +887,7 @@
         )),
                 PlaceEntity((
             entities: Single(Chest(
+                ty: 0,
                 pos: (
                     x: 48,
                     y: 22,
@@ -889,6 +896,7 @@
         )),
         PlaceEntity((
             entities: Single(Chest(
+                ty: 0,
                 pos: (
                     x: 50,
                     y: 22,
@@ -897,6 +905,7 @@
         )),
         PlaceEntity((
             entities: Single(Chest(
+                ty: 0,
                 pos: (
                     x: 52,
                     y: 22,
@@ -905,6 +914,7 @@
         )),
                                                 PlaceEntity((
             entities: Single(Chest(
+                ty: 0,
                 pos: (
                     x: 54,
                     y: 19,
@@ -913,6 +923,7 @@
         )),
         PlaceEntity((
             entities: Single(Chest(
+                ty: 0,
                 pos: (
                     x: 55,
                     y: 19,
@@ -921,6 +932,7 @@
         )),
         PlaceEntity((
             entities: Single(Chest(
+                ty: 0,
                 pos: (
                     x: 56,
                     y: 19,
@@ -929,6 +941,7 @@
         )),
         PlaceEntity((
             entities: Single(Chest(
+                ty: 0,
                 pos: (
                     x: 54,
                     y: 25,
@@ -937,6 +950,7 @@
         )),
         PlaceEntity((
             entities: Single(Chest(
+                ty: 0,
                 pos: (
                     x: 55,
                     y: 25,
@@ -945,6 +959,7 @@
         )),
         PlaceEntity((
             entities: Single(Chest(
+                ty: 0,
                 pos: (
                     x: 56,
                     y: 25,
@@ -1357,6 +1372,7 @@
         )),
         PlaceEntity((
             entities: Single(Chest(
+                ty: 0,
                 pos: (
                     x: 72,
                     y: 22,
@@ -1365,6 +1381,7 @@
         )),
         PlaceEntity((
             entities: Single(Chest(
+                ty: 0,
                 pos: (
                     x: 70,
                     y: 22,
@@ -1373,6 +1390,7 @@
         )),
         PlaceEntity((
             entities: Single(Chest(
+                ty: 0,
                 pos: (
                     x: 68,
                     y: 22,
@@ -1381,6 +1399,7 @@
         )),
                                         PlaceEntity((
             entities: Single(Chest(
+                ty: 0,
                 pos: (
                     x: 62,
                     y: 22,
@@ -1389,6 +1408,7 @@
         )),
         PlaceEntity((
             entities: Single(Chest(
+                ty: 0,
                 pos: (
                     x: 60,
                     y: 22,
@@ -1397,6 +1417,7 @@
         )),
         PlaceEntity((
             entities: Single(Chest(
+                ty: 0,
                 pos: (
                     x: 58,
                     y: 22,

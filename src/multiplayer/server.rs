@@ -1,5 +1,7 @@
 use std::{
-    borrow::BorrowMut,
+    borrow::{Borrow, BorrowMut},
+    fs::File,
+    io::Write,
     marker::PhantomData,
     time::{Duration, Instant},
 };
@@ -11,6 +13,7 @@ use crate::{
     frontend::{action::ActionType, world::tile::World},
     item::{IdxTrait, WeakIdxTrait},
     rendering::app_state::GameState,
+    replays::Replay,
 };
 
 trait ActionInterface<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>:
@@ -68,9 +71,10 @@ impl<
         }
     }
 
-    pub fn update(
+    pub fn update<DataStor: Borrow<DataStore<ItemIdxType, RecipeIdxType>> + serde::Serialize>(
         &mut self,
         game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
+        replay: Option<&mut Replay<ItemIdxType, RecipeIdxType, DataStor>>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         let start = Instant::now();
@@ -83,6 +87,23 @@ impl<
         let actions: Vec<_> = actions_iter.into_iter().collect();
         if start.elapsed() > Duration::from_millis(10) {
             error!("Got actions {:?}", start.elapsed());
+        }
+
+        if let Some(replay) = replay {
+            replay.append_actions(actions.iter().cloned());
+            replay.tick();
+
+            #[cfg(debug_assertions)]
+            {
+                let start = Instant::now();
+                // If we are in debug mode, save the replay to a file
+                let mut file = File::create("./last_replay.rep").expect("Could not open file");
+                let ser = bitcode::serialize(replay).unwrap();
+                dbg!(start.elapsed());
+                file.write_all(ser.as_slice())
+                    .expect("Could not write to file");
+                dbg!(start.elapsed());
+            }
         }
 
         game_state

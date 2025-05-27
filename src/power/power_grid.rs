@@ -812,6 +812,26 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 data_store,
             ),
 
+            (3, 1) => self.stores.assemblers_3_1
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+
+            (4, 1) => self.stores.assemblers_4_1
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+
             _ => unreachable!(),
         };
     }
@@ -862,6 +882,26 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             ),
 
             (2, 1) => self.stores.assemblers_2_1
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+
+            (3, 1) => self.stores.assemblers_3_1
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+
+            (4, 1) => self.stores.assemblers_4_1
                 [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
             .modify_modifiers(
                 id.assembler_index,
@@ -971,6 +1011,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 power_mod.into(),
                 data_store,
             ),
+            (3, 1) => self.stores.assemblers_3_1
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+            (4, 1) => self.stores.assemblers_4_1
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
 
             _ => unreachable!(),
         };
@@ -1024,6 +1082,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             .add_assembler(ty, modules, assembler_position, data_store),
 
             (2, 1) => self.stores.assemblers_2_1
+                [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
+            .add_assembler(ty, modules, assembler_position, data_store),
+
+            (3, 1) => self.stores.assemblers_3_1
+                [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
+            .add_assembler(ty, modules, assembler_position, data_store),
+            (4, 1) => self.stores.assemblers_4_1
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
             .add_assembler(ty, modules, assembler_position, data_store),
 
@@ -1086,6 +1151,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             (2, 1) => self.stores.assemblers_2_1
                 [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
             .remove_assembler_data(old_assembler_id.assembler_index as usize),
+            (3, 1) => self.stores.assemblers_3_1
+                [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
+            .remove_assembler_data(old_assembler_id.assembler_index as usize),
+            (4, 1) => self.stores.assemblers_4_1
+                [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
+            .remove_assembler_data(old_assembler_id.assembler_index as usize),
 
             _ => unreachable!(),
         };
@@ -1131,6 +1202,38 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             .add_assembler_with_data(
                 [10; 2],
                 [0; 2],
+                [0; 1],
+                0,
+                0,
+                base_power,
+                raw_power_mod,
+                raw_prod_mod,
+                base_speed,
+                raw_speed_mod,
+                pos,
+                data_store,
+            ),
+            (3, 1) => self.stores.assemblers_3_1
+                [data_store.recipe_to_ing_out_combo_idx[new_recipe.id.into()]]
+            .add_assembler_with_data(
+                [10; 3],
+                [0; 3],
+                [0; 1],
+                0,
+                0,
+                base_power,
+                raw_power_mod,
+                raw_prod_mod,
+                base_speed,
+                raw_speed_mod,
+                pos,
+                data_store,
+            ),
+            (4, 1) => self.stores.assemblers_4_1
+                [data_store.recipe_to_ing_out_combo_idx[new_recipe.id.into()]]
+            .add_assembler_with_data(
+                [10; 4],
+                [0; 4],
                 [0; 1],
                 0,
                 0,
@@ -1209,6 +1312,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             (2, 1) => self.stores.assemblers_2_1
                 [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
             .remove_assembler(assembler_id.assembler_index as usize),
+            (3, 1) => self.stores.assemblers_3_1
+                [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
+            .remove_assembler(assembler_id.assembler_index as usize),
+            (4, 1) => self.stores.assemblers_4_1
+                [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
+            .remove_assembler(assembler_id.assembler_index as usize),
 
             _ => unreachable!(),
         };
@@ -1248,6 +1357,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             .move_assembler(
                 index.into(),
                 &mut other_stores.assemblers_2_1
+                    [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]],
+                data_store,
+            ),
+            (3, 1) => self.stores.assemblers_3_1
+                [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
+            .move_assembler(
+                index.into(),
+                &mut other_stores.assemblers_3_1
+                    [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]],
+                data_store,
+            ),
+            (4, 1) => self.stores.assemblers_4_1
+                [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
+            .move_assembler(
+                index.into(),
+                &mut other_stores.assemblers_4_1
                     [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]],
                 data_store,
             ),
@@ -1505,7 +1630,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         let (
             (
                 (power_used_0_1, infos_0_1),
-                ((power_used_1_1, infos_1_1), (power_used_2_1, infos_2_1)),
+                ((power_used_1_1, infos_1_1), ((power_used_2_1, infos_2_1), ((power_used_3_1, infos_3_1), (power_used_4_1, infos_4_1)))),
             ),
             (lab_power_used, times_labs_used_science, tech_progress),
         ) = rayon::join(
@@ -1572,7 +1697,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         })
                             },
                             || {
-                                self.stores
+                                rayon::join(
+                                    || {
+                                        self.stores
                                     .assemblers_2_1
                                     .par_iter_mut()
                                     .map(|s| {
@@ -1599,6 +1726,61 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
 
                                         (acc_power + rhs_power, infos)
                                     })
+                                    },
+                                    || rayon::join(|| self.stores
+                                        .assemblers_3_1
+                                        .par_iter_mut()
+                                        .map(|s| {
+                                            s.update_branchless::<RecipeIdxType>(
+                                                self.last_power_mult,
+                                                &data_store.recipe_index_lookups,
+                                                &data_store.recipe_ings.ing3,
+                                                &data_store.recipe_outputs.out1,
+                                                &data_store.recipe_timers,
+                                            )
+                                        })
+                                        .map(|(power_used, times_ings_used, crafts_finished)| {
+                                            (power_used, SingleRecipeTickInfo {
+                                                full_crafts: times_ings_used as u64,
+                                                prod_crafts: crafts_finished.checked_sub(times_ings_used).expect("More ingredients used than crafts finished?!? Negative productivity?") as u64,
+                                            })
+                                        })
+                                        .fold_with((Watt(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
+                                            infos.push(info);
+    
+                                            (acc_power + rhs_power, infos)
+                                        }).reduce(|| (Watt(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
+                                            infos.extend_from_slice(&info);
+    
+                                            (acc_power + rhs_power, infos)
+                                        }), || self.stores
+                                        .assemblers_4_1
+                                        .par_iter_mut()
+                                        .map(|s| {
+                                            s.update_branchless::<RecipeIdxType>(
+                                                self.last_power_mult,
+                                                &data_store.recipe_index_lookups,
+                                                &data_store.recipe_ings.ing4,
+                                                &data_store.recipe_outputs.out1,
+                                                &data_store.recipe_timers,
+                                            )
+                                        })
+                                        .map(|(power_used, times_ings_used, crafts_finished)| {
+                                            (power_used, SingleRecipeTickInfo {
+                                                full_crafts: times_ings_used as u64,
+                                                prod_crafts: crafts_finished.checked_sub(times_ings_used).expect("More ingredients used than crafts finished?!? Negative productivity?") as u64,
+                                            })
+                                        })
+                                        .fold_with((Watt(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
+                                            infos.push(info);
+    
+                                            (acc_power + rhs_power, infos)
+                                        }).reduce(|| (Watt(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
+                                            infos.extend_from_slice(&info);
+    
+                                            (acc_power + rhs_power, infos)
+                                        })),
+                                )
                             },
                         )
                     },
@@ -1610,7 +1792,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             },
         );
 
-        let assembler_power_used = power_used_0_1 + power_used_1_1 + power_used_2_1;
+        let assembler_power_used = power_used_0_1 + power_used_1_1 + power_used_2_1 + power_used_3_1 + power_used_4_1;
 
         let beacon_power_used: Watt = self
             .num_beacons_of_type
@@ -1661,6 +1843,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             recipes_0_1: infos_0_1,
             recipes_1_1: infos_1_1,
             recipes_2_1: infos_2_1,
+            recipes_3_1: infos_3_1,
+            recipes_4_1: infos_4_1
         };
 
         (

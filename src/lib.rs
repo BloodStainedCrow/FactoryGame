@@ -21,7 +21,7 @@ use std::{
     thread,
 };
 
-use data::{get_raw_data_test, DataStore};
+use data::{factorio_1_1::get_raw_data_test, DataStore};
 use eframe::NativeOptions;
 use frontend::{
     action::action_state_machine::ActionStateMachine, input::Input, world::tile::CHUNK_SIZE_FLOAT,
@@ -61,7 +61,7 @@ pub mod bot_system;
 
 mod statistics;
 
-mod replays;
+pub mod replays;
 
 mod saving;
 
@@ -78,6 +78,8 @@ pub mod blueprint;
 mod network_graph;
 
 mod canonical;
+
+pub mod liquid;
 
 impl WeakIdxTrait for u8 {}
 impl WeakIdxTrait for u16 {}
@@ -190,14 +192,17 @@ fn run_integrated_server(
 
             let (ui_sender, ui_recv) = channel();
 
-            let mut game = Game::new(GameInitData::IntegratedServer {
-                game_state: game_state.clone(),
-                tick_counter: tick_counter.clone(),
-                info: ServerInfo { connections },
-                action_state_machine: state_machine.clone(),
-                inputs: recv,
-                ui_actions: ui_recv,
-            })
+            let mut game = Game::new(
+                GameInitData::IntegratedServer {
+                    game_state: game_state.clone(),
+                    tick_counter: tick_counter.clone(),
+                    info: ServerInfo { connections },
+                    action_state_machine: state_machine.clone(),
+                    inputs: recv,
+                    ui_actions: ui_recv,
+                },
+                &data_store,
+            )
             .unwrap();
 
             let m_data_store = data_store.clone();
@@ -233,14 +238,15 @@ fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
 
     match data_store {
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
-            let game_state = load()
-                .map(|save| save.game_state)
-                .unwrap_or_else(|| GameState::new(&data_store));
+            let game_state = load().map(|save| save.game_state).unwrap_or_else(|| {
+                // GameState::new(&data_store)
+                GameState::new_with_beacon_production(&data_store)
+            });
 
-            let mut game = Game::new(GameInitData::DedicatedServer(
-                game_state,
-                ServerInfo { connections },
-            ))
+            let mut game = Game::new(
+                GameInitData::DedicatedServer(game_state, ServerInfo { connections }),
+                &data_store,
+            )
             .unwrap();
 
             let data_store = Arc::new(data_store);
@@ -279,17 +285,20 @@ fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Se
 
             let (ui_sender, ui_recv) = channel();
 
-            let mut game = Game::new(GameInitData::Client {
-                game_state: game_state.clone(),
-                action_state_machine: state_machine.clone(),
-                inputs: recv,
-                tick_counter: tick_counter.clone(),
-                info: ClientConnectionInfo {
-                    ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
-                    port: 8080,
+            let mut game = Game::new(
+                GameInitData::Client {
+                    game_state: game_state.clone(),
+                    action_state_machine: state_machine.clone(),
+                    inputs: recv,
+                    tick_counter: tick_counter.clone(),
+                    info: ClientConnectionInfo {
+                        ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
+                        port: 8080,
+                    },
+                    ui_actions: ui_recv,
                 },
-                ui_actions: ui_recv,
-            })
+                &data_store,
+            )
             .unwrap();
 
             let m_data_store = data_store.clone();
@@ -451,69 +460,118 @@ pub fn simd(
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use std::{iter, rc::Rc};
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs::File,
+        iter,
+        os::unix::thread,
+        path::PathBuf,
+        rc::Rc,
+        sync::atomic::AtomicU64,
+        thread::{sleep, spawn},
+        time::Duration,
+    };
 
-//     use test::{black_box, Bencher};
+    use eframe::EventLoopBuilder;
+    use rstest::rstest;
+    use test::{black_box, Bencher};
 
-//     use crate::{
-//         data::get_raw_data_test,
-//         frontend::{action::ActionType, world::tile::World},
-//         rendering::app_state::{GameState, SimulationState},
-//         replays::{run_till_finished, Replay},
-//         TICKS_PER_SECOND_LOGIC,
-//     };
+    use crate::{
+        data::{factorio_1_1::get_raw_data_test, DataStore},
+        frontend::{
+            action::{action_state_machine::ActionStateMachine, ActionType},
+            world::{tile::World, Position},
+        },
+        rendering::{
+            app_state::{GameState, SimulationState},
+            window::{App, LoadedGameInfo, LoadedGameSized},
+        },
+        replays::{run_till_finished, Replay},
+        TICKS_PER_SECOND_LOGIC,
+    };
 
-//     #[bench]
-//     fn clone_empty_simulation(b: &mut Bencher) {
-//         let data_store = get_raw_data_test().process().assume_simple();
+    #[bench]
+    fn clone_empty_simulation(b: &mut Bencher) {
+        let data_store = get_raw_data_test().process().assume_simple();
 
-//         let game_state = GameState::new(&data_store);
+        let game_state = GameState::new(&data_store);
 
-//         let replay = Replay::new(game_state, Rc::new(data_store));
+        let replay = Replay::new(&game_state, None, Rc::new(data_store));
 
-//         b.iter(|| replay.clone());
-//     }
+        b.iter(|| replay.clone());
+    }
 
-//     #[bench]
-//     fn empty_simulation(b: &mut Bencher) {
-//         // 1 hour
-//         const NUM_TICKS: u64 = TICKS_PER_SECOND_LOGIC * 60 * 60;
+    #[bench]
+    fn empty_simulation(b: &mut Bencher) {
+        // 1 hour
+        const NUM_TICKS: u64 = TICKS_PER_SECOND_LOGIC * 60 * 60;
 
-//         let data_store = get_raw_data_test().process().assume_simple();
+        let data_store = get_raw_data_test().process().assume_simple();
 
-//         let game_state = GameState::new(&data_store);
+        let game_state = GameState::new(&data_store);
 
-//         let mut replay = Replay::new(game_state, Rc::new(data_store));
+        let mut replay = Replay::new(&game_state, None, Rc::new(data_store));
 
-//         for _ in 0..NUM_TICKS {
-//             replay.tick();
-//         }
+        for _ in 0..NUM_TICKS {
+            replay.tick();
+        }
 
-//         replay.finish();
+        replay.finish();
 
-//         b.iter(|| black_box(replay.clone().run().with(run_till_finished)));
-//     }
+        b.iter(|| black_box(replay.clone().run().with(run_till_finished)));
+    }
 
-//     #[bench]
-//     fn noop_actions_simulation(b: &mut Bencher) {
-//         // 1 hour
-//         const NUM_TICKS: u64 = TICKS_PER_SECOND_LOGIC * 60 * 60;
+    #[bench]
+    fn noop_actions_simulation(b: &mut Bencher) {
+        // 1 hour
+        const NUM_TICKS: u64 = TICKS_PER_SECOND_LOGIC * 60 * 60;
 
-//         let data_store = get_raw_data_test().process().assume_simple();
+        let data_store = get_raw_data_test().process().assume_simple();
 
-//         let game_state = GameState::new(&data_store);
+        let game_state = GameState::new(&data_store);
 
-//         let mut replay = Replay::new(game_state, Rc::new(data_store));
+        let mut replay = Replay::new(&game_state, None, Rc::new(data_store));
 
-//         for _ in 0..NUM_TICKS {
-//             replay.append_actions(iter::repeat(ActionType::Ping((100, 100))).take(5));
-//             replay.tick();
-//         }
+        for _ in 0..NUM_TICKS {
+            replay.append_actions(
+                iter::repeat(ActionType::Ping(Position { x: 100, y: 100 })).take(5),
+            );
+            replay.tick();
+        }
 
-//         replay.finish();
+        replay.finish();
 
-//         b.iter(|| replay.clone().run().with(run_till_finished));
-//     }
-// }
+        b.iter(|| replay.clone().run().with(run_till_finished));
+    }
+
+    #[rstest]
+    fn crashing_replays(#[files("crash_replays/*.rep")] path: PathBuf) {
+        use std::io::Read;
+
+        // Keep running for 30 seconds
+        const RUNTIME_AFTER_PRESUMED_CRASH: u64 = 30 * 60;
+
+        let mut file = File::open(&path).unwrap();
+
+        let mut v = Vec::with_capacity(file.metadata().unwrap().len() as usize);
+
+        file.read_to_end(&mut v).unwrap();
+
+        // TODO: For non u8 IdxTypes this will fail
+        let mut replay: Replay<u8, u8, DataStore<u8, u8>> = bitcode::deserialize(v.as_slice())
+            .expect(
+                format!("Test replay {path:?} did not deserialize, consider removing it.").as_str(),
+            );
+
+        replay.finish();
+
+        let running_replay = replay.run();
+
+        let (mut game_state_before_crash, data_store) = running_replay.with(run_till_finished);
+
+        for _ in 0..RUNTIME_AFTER_PRESUMED_CRASH {
+            game_state_before_crash.update(&data_store);
+        }
+    }
+}

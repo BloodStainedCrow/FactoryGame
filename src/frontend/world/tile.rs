@@ -35,8 +35,9 @@ pub const BELT_LEN_PER_TILE: u16 = 4;
 pub const CHUNK_SIZE: usize = 16;
 pub const CHUNK_SIZE_FLOAT: f32 = 16.0;
 
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum FloorTile {
+    #[default]
     Empty,
     Concrete,
     Water,
@@ -44,8 +45,12 @@ pub enum FloorTile {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Chunk<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    pub floor_tiles: [[FloorTile; CHUNK_SIZE]; CHUNK_SIZE],
+    pub floor_tiles: Option<[[FloorTile; CHUNK_SIZE]; CHUNK_SIZE]>,
     entities: Vec<Entity<ItemIdxType, RecipeIdxType>>,
+}
+
+fn is_default<T: Default + PartialEq>(val: &T) -> bool {
+    *val == T::default()
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -501,7 +506,7 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                                             todo!("Remove BeltBelt inserter");
                                         },
                                         AttachedInserter::StorageStorage { item, inserter } => {
-                                            // This migth return something at some point, and this will be a compiler error
+                                            // This might return something at some point, and this will be a compiler error
                                             let () = sim_state
                                                 .factory
                                                 .storage_storage_inserters
@@ -529,9 +534,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     #[must_use]
     pub fn new() -> Self {
         let mut grid = SparseGrid::new(1_000_000, 1_000_000);
-        #[cfg(test)]
+        #[cfg(debug_assertions)]
         const WORLDSIZE: usize = 200;
-        #[cfg(not(test))]
+        #[cfg(not(debug_assertions))]
         const WORLDSIZE: usize = 20000;
 
         for x in 50..400 {
@@ -540,7 +545,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     x,
                     y,
                     Chunk {
-                        floor_tiles: [[FloorTile::Empty; CHUNK_SIZE]; CHUNK_SIZE],
+                        floor_tiles: None,
                         entities: vec![],
                     },
                 );
@@ -579,7 +584,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
     pub fn set_floor_tile(&mut self, pos: Position, floor_tile: FloorTile) -> Result<(), ()> {
         if let Some(chunk) = self.get_chunk_for_tile_mut(pos) {
-            chunk.floor_tiles[pos.x % 16][pos.y % 16] = floor_tile;
+            chunk.floor_tiles.get_or_insert_default()[pos.x % 16][pos.y % 16] = floor_tile;
             Ok(())
         } else {
             Err(())
@@ -1956,6 +1961,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             .into_iter()
             .next();
 
+        let mut cascading_updates = vec![];
+
         if let Some(entity) = entity {
             let e_pos = entity.get_pos();
             let e_size = entity.get_size(data_store);
@@ -1999,6 +2006,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos],
                         )]
                         .remove_lab(pole_pos, idx, data_store);
+
+                        let lab_size = data_store.lab_info[usize::from(*ty)].size;
+
+                        cascading_updates.push(removal_of_possible_inserter_connection(
+                            *pos, lab_size, data_store,
+                        ));
                     } else {
                         // This was not connected, nothing to do
                     }
@@ -2099,7 +2112,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             },
                         );
 
-                        // FIXME: HARDCODED!
                         let assembler_size: (u16, u16) =
                             data_store.assembler_info[usize::from(ty)].size;
 
@@ -2322,8 +2334,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         let chest_removal_info = sim_state.factory.chests.stores
                             [usize_from(item.id)]
                         .remove_chest(*index, data_store);
+
+                        let chest_size = data_store.chest_tile_sizes[usize::from(*ty)];
+
+                        cascading_updates.push(removal_of_possible_inserter_connection(
+                            *pos, chest_size, data_store,
+                        ));
                     }
-                    // TODO: Remove inserters!
                 },
                 Entity::Roboport {
                     ty,
@@ -2363,68 +2380,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     },
                 },
             }
-
-            // Unattach inserters from self
-            self.mutate_entities_colliding_with(
-                inserter_search_area.0,
-                inserter_search_area.1,
-                data_store,
-                |e| {
-                    match e {
-                        Entity::Inserter {
-                            pos,
-                            direction,
-                            info: InserterInfo::NotAttached { .. },
-                            ..
-                        } => {
-                            // Nothing to do
-                        },
-                        Entity::Inserter {
-                            pos,
-                            direction,
-                            info,
-                            ..
-                        } => {
-                            let (start_pos, end_pos) =
-                                calculate_inserter_positions(*pos, *direction);
-
-                            if start_pos.contained_in(e_pos, (e_size.0.into(), e_size.1.into()))
-                                || end_pos.contained_in(e_pos, (e_size.0.into(), e_size.1.into()))
-                            {
-                                // This Inserter is connected to the entity we are removing!
-                                match info {
-                                    InserterInfo::NotAttached { start_pos, end_pos } => {
-                                        unreachable!()
-                                    },
-                                    InserterInfo::Attached {
-                                        info: attached_inserter,
-                                        ..
-                                    } => match attached_inserter {
-                                        AttachedInserter::BeltStorage { id, belt_pos } => {
-                                            sim_state.factory.belts.remove_inserter(*id, *belt_pos);
-                                        },
-                                        AttachedInserter::BeltBelt { item, inserter } => {
-                                            sim_state
-                                                .factory
-                                                .belts
-                                                .remove_belt_belt_inserter(*inserter);
-                                        },
-                                        AttachedInserter::StorageStorage { item, inserter } => {
-                                            sim_state
-                                                .factory
-                                                .storage_storage_inserters
-                                                .remove_ins(*item, *inserter);
-                                        },
-                                    },
-                                }
-                            }
-                        },
-
-                        _ => {},
-                    }
-                    ControlFlow::Continue(())
-                },
-            );
         } else {
             // Nothing to do
         }
@@ -2442,6 +2397,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     ),
                 )
             });
+
+        while let Some(update) = cascading_updates.pop() {
+            (update.update)(self, sim_state, &mut cascading_updates, data_store);
+        }
     }
 
     #[must_use]
@@ -2780,6 +2739,7 @@ pub enum PlaceEntityType<ItemIdxType: WeakIdxTrait> {
     },
     Chest {
         pos: Position,
+        ty: u8,
     },
     SolarPanel {
         pos: Position,
@@ -2920,7 +2880,7 @@ mod test {
         fn test_get_entity(position in random_position(), ent in random_entity_to_place(&DATA_STORE)) {
             let mut state = GameState::new(&DATA_STORE);
 
-            let mut rep = Replay::new(GameState::new(&DATA_STORE), &*DATA_STORE);
+            let mut rep = Replay::new(&state, None, &*DATA_STORE);
 
             rep.append_actions([ActionType::PlaceEntity(PlaceEntityInfo { entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(ent) })]);
 

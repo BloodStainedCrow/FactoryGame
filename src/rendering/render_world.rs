@@ -4,7 +4,7 @@ use crate::{
     assembler::AssemblerOnclickInfo,
     belt::{belt::Belt, splitter::SPLITTER_BELT_LEN, BeltTileId},
     blueprint::Blueprint,
-    data::DataStore,
+    data::{factorio_1_1::get_raw_data_test, DataStore},
     frontend::{
         action::{
             action_state_machine::{
@@ -91,7 +91,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     .wrapping_add_signed(y_offs.try_into().unwrap()),
             ) {
                 Some(chunk) => {
-                    for (x, row) in chunk.floor_tiles.iter().enumerate() {
+                    for (x, row) in chunk.floor_tiles.unwrap_or_default().iter().enumerate() {
                         for (y, tile) in row.iter().enumerate() {
                             match tile {
                                 crate::frontend::world::tile::FloorTile::Empty => tile_layer
@@ -551,7 +551,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         in_mode,
                         out_mode,
                     } => {},
-                    crate::frontend::world::tile::PlaceEntityType::Chest { pos } => {},
+                    crate::frontend::world::tile::PlaceEntityType::Chest { pos, ty } => {},
                     crate::frontend::world::tile::PlaceEntityType::SolarPanel { pos, ty } => {},
                     crate::frontend::world::tile::PlaceEntityType::Lab { pos, ty } => {},
                     crate::frontend::world::tile::PlaceEntityType::Beacon { pos, ty } => {},
@@ -632,11 +632,19 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
     let mut actions = vec![];
 
-    Window::new("BP").show(ctx, |ui| {
+    Window::new("BP").default_open(false).show(ctx, |ui| {
         let bp = Blueprint::from_area(&game_state.world, [1590..1700, 1590..1700], data_store);
 
         let mut s: String =
             ron::ser::to_string_pretty(&bp, ron::ser::PrettyConfig::default()).unwrap();
+        ui.text_edit_multiline(&mut s);
+    });
+
+    Window::new("RawData").default_open(false).show(ctx, |ui| {
+        let raw = get_raw_data_test();
+
+        let mut s: String =
+            ron::ser::to_string_pretty(&raw, ron::ser::PrettyConfig::default()).unwrap();
         ui.text_edit_multiline(&mut s);
     });
 
@@ -829,7 +837,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         id,
                         belt_pos,
                     } => match id {
-                        BeltTileId::AnyBelt(index, phantom_dat_) => todo!(),
+                        BeltTileId::AnyBelt(index, phantom_dat) => todo!(),
                     },
                     crate::frontend::world::tile::Entity::Inserter {
                         pos,
@@ -837,7 +845,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         info,
                         filter,
                     } => {
-                        ui.label("Assembler");
+                        ui.label("Inserter");
                         match info {
                             crate::frontend::world::tile::InserterInfo::NotAttached {
                                 start_pos,

@@ -9,6 +9,8 @@ use crate::{
 use static_assertions::const_assert;
 use strum::EnumIter;
 
+use std::cmp::min;
+
 pub mod belt_belt_inserter;
 pub mod belt_storage_inserter;
 pub mod storage_storage_inserter;
@@ -54,6 +56,65 @@ pub struct StorageID<RecipeIdxType: WeakIdxTrait> {
 
     // TODO: Do i want to make this generic?
     pub phantom: PhantomData<RecipeIdxType>,
+}
+
+pub const MAX_GRID_COUNT: usize = 2 << 15;
+pub const MAX_TIMES_AN_ITEM_CAN_APPEAR_IN_RECIPES: usize = 2 << 15;
+pub const RECIPE_OFFS: usize = 2 << 15;
+
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+struct FakeUnionStorage {
+    index: u32,
+    grid_or_static_flag: u16,
+    recipe_idx_with_this_item: u16,
+}
+
+impl FakeUnionStorage {
+    #[inline(always)]
+    fn into_inner_and_outer_indices(
+        self,
+        num_grids_total: usize,
+        num_recipes: usize,
+        grid_size: usize,
+    ) -> (usize, usize) {
+        let grid_offs = usize::from(self.grid_or_static_flag)
+            .checked_sub(MAX_GRID_COUNT)
+            .map(|_v| num_grids_total)
+            .unwrap_or(usize::from(self.grid_or_static_flag));
+        let static_id = usize::from(self.grid_or_static_flag).saturating_sub(MAX_GRID_COUNT);
+
+        let recipe_idx_with_this_item_or_single_kind_power_grid_kind =
+            usize::from(self.recipe_idx_with_this_item)
+                .checked_sub(MAX_TIMES_AN_ITEM_CAN_APPEAR_IN_RECIPES)
+                .map(|v| v + num_recipes)
+                .unwrap_or(usize::from(self.recipe_idx_with_this_item));
+
+        (
+            grid_offs * grid_size
+                + recipe_idx_with_this_item_or_single_kind_power_grid_kind
+                + static_id,
+            self.index as usize,
+        )
+    }
+
+    #[inline(always)]
+    fn into_inner_and_outer_indices_two(
+        self,
+        num_grids_total: usize,
+        num_recipes: usize,
+        grid_size: usize,
+    ) -> (usize, usize) {
+        let grid_offs = min(num_grids_total, usize::from(self.grid_or_static_flag));
+        let recipe_idx_with_this_item_or_single_kind_power_grid_kind =
+            usize::from(self.recipe_idx_with_this_item)
+                .checked_sub(RECIPE_OFFS)
+                .unwrap_or(usize::from(self.recipe_idx_with_this_item));
+
+        (
+            grid_offs * grid_size + recipe_idx_with_this_item_or_single_kind_power_grid_kind,
+            self.index as usize,
+        )
+    }
 }
 
 #[derive(

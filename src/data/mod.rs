@@ -7,321 +7,20 @@ use rand::random;
 use sha2::{Digest, Sha256};
 use strum::IntoEnumIterator;
 
+pub mod factorio_1_1;
+
 use crate::{
     assembler::TIMERTYPE,
-    frontend::world::tile::{AssemblerID, Dir},
-    inserter::{StaticID, Storage},
+    frontend::world::tile::Dir,
+    inserter::StaticID,
     item::{IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
-    power::{power_grid::PowerGridIdentifier, Joule, Watt},
+    power::{Joule, Watt},
 };
 
 type ItemString = String;
 type AssemblingMachineString = String;
 type InserterString = String;
 type EngineString = String;
-
-#[must_use]
-pub fn get_raw_data_test() -> RawDataStore {
-    RawDataStore {
-        recipes: vec![
-            RawRecipeData {
-                name: "factory_game::iron_ore_generation".to_string(),
-                display_name: "Generate Iron Ore from nothing".to_string(),
-                possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
-                ings: vec![].into_boxed_slice(),
-                output: vec![RawItemStack {
-                    item: "factory_game::iron_ore".to_string(),
-                    amount: 1,
-                }]
-                .into_boxed_slice(),
-                time_to_craft: 60,
-                is_intermediate: false,
-            },
-            RawRecipeData {
-                name: "factory_game::copper_ore_generation".to_string(),
-                display_name: "Generate Copper Ore from nothing".to_string(),
-                possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
-                ings: vec![].into_boxed_slice(),
-                output: vec![RawItemStack {
-                    item: "factory_game::copper_ore".to_string(),
-                    amount: 1,
-                }]
-                .into_boxed_slice(),
-                time_to_craft: 60,
-                is_intermediate: false,
-            },
-            RawRecipeData {
-                name: "factory_game::iron_smelting".to_string(),
-                display_name: "Smelt Iron Ore into Iron Plates".to_string(),
-                possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
-                ings: vec![RawItemStack {
-                    item: "factory_game::iron_ore".to_string(),
-                    amount: 1,
-                }]
-                .into_boxed_slice(),
-                output: vec![RawItemStack {
-                    item: "factory_game::iron_plate".to_string(),
-                    amount: 1,
-                }]
-                .into_boxed_slice(),
-                time_to_craft: 192,
-                is_intermediate: true,
-            },
-            RawRecipeData {
-                name: "factory_game::copper_smelting".to_string(),
-                display_name: "Smelt Copper Ore into Copper Plates".to_string(),
-                possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
-                ings: vec![RawItemStack {
-                    item: "factory_game::copper_ore".to_string(),
-                    amount: 1,
-                }]
-                .into_boxed_slice(),
-                output: vec![RawItemStack {
-                    item: "factory_game::copper_plate".to_string(),
-                    amount: 1,
-                }]
-                .into_boxed_slice(),
-                time_to_craft: 192,
-                is_intermediate: true,
-            },
-            RawRecipeData {
-                name: "factory_game::gears".to_string(),
-                display_name: "Gears".to_string(),
-                possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
-                ings: vec![RawItemStack {
-                    item: "factory_game::iron_plate".to_string(),
-                    amount: 2,
-                }]
-                .into_boxed_slice(),
-                output: vec![RawItemStack {
-                    item: "factory_game::gear".to_string(),
-                    amount: 1,
-                }]
-                .into_boxed_slice(),
-                time_to_craft: 30,
-
-                is_intermediate: true,
-            },
-            RawRecipeData {
-                name: "factory_game::red_science".to_string(),
-                display_name: "Automation Science".to_string(),
-                possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
-                ings: vec![
-                    RawItemStack {
-                        item: "factory_game::gear".to_string(),
-                        amount: 1,
-                    },
-                    RawItemStack {
-                        item: "factory_game::copper_plate".to_string(),
-                        amount: 1,
-                    },
-                ]
-                .into_boxed_slice(),
-                output: vec![RawItemStack {
-                    item: "factory_game::red_science".to_string(),
-                    amount: 1,
-                }]
-                .into_boxed_slice(),
-                time_to_craft: 300,
-
-                is_intermediate: true,
-            },
-        ],
-        items: vec![
-            RawItem {
-                name: "factory_game::iron_ore".to_string(),
-                display_name: "Iron Ore".to_string(),
-                stack_size: 100,
-                placed_as: None,
-                burnable_in: vec![].into_boxed_slice(),
-                science_data: None,
-                is_fluid: false,
-            },
-            RawItem {
-                name: "factory_game::copper_ore".to_string(),
-                display_name: "Copper Ore".to_string(),
-                stack_size: 100,
-                placed_as: None,
-                burnable_in: vec![].into_boxed_slice(),
-                science_data: None,
-                is_fluid: false,
-            },
-            RawItem {
-                name: "factory_game::iron_plate".to_string(),
-                display_name: "Iron Plate".to_string(),
-                stack_size: 100,
-                placed_as: None,
-                burnable_in: vec![].into_boxed_slice(),
-                science_data: None,
-                is_fluid: false,
-            },
-            RawItem {
-                name: "factory_game::copper_plate".to_string(),
-                display_name: "Copper Plate".to_string(),
-                stack_size: 100,
-                placed_as: None,
-                burnable_in: vec![].into_boxed_slice(),
-                science_data: None,
-                is_fluid: false,
-            },
-            RawItem {
-                name: "factory_game::gear".to_string(),
-                display_name: "Gear".to_string(),
-                stack_size: 50,
-                placed_as: None,
-                burnable_in: vec![].into_boxed_slice(),
-                science_data: None,
-                is_fluid: false,
-            },
-            RawItem {
-                name: "factory_game::red_science".to_string(),
-                display_name: "Automation Science Pack".to_string(),
-                stack_size: 200,
-                placed_as: None,
-                burnable_in: vec![].into_boxed_slice(),
-                science_data: Some(()),
-                is_fluid: false,
-            },
-        ],
-        machines: vec![
-            RawAssemblingMachine {
-                name: "factory_game::assembler1".to_string(),
-                display_name: "Assembling Machine".to_string(),
-                tile_size: (3, 3),
-                working_power_draw: Watt(150_000),
-                fluid_connection_offsets: vec![],
-                base_bonus_prod: 0,
-                base_speed: 10,
-                num_module_slots: 0,
-            },
-            RawAssemblingMachine {
-                name: "factory_game::assembler2".to_string(),
-                display_name: "Assembling Machine 2".to_string(),
-                tile_size: (3, 3),
-                working_power_draw: Watt(75_000),
-                fluid_connection_offsets: vec![],
-                base_bonus_prod: 0,
-                base_speed: 15,
-                num_module_slots: 2,
-            },
-            RawAssemblingMachine {
-                name: "factory_game::assembler3".to_string(),
-                display_name: "Assembling Machine 3".to_string(),
-                tile_size: (3, 3),
-                working_power_draw: Watt(375_000),
-                fluid_connection_offsets: vec![],
-                base_bonus_prod: 0,
-                base_speed: 25,
-                num_module_slots: 4,
-            },
-        ],
-        labs: vec![RawLab {
-            name: "factory_game::lab".to_string(),
-            display_name: "Lab".to_string(),
-            tile_size: (3, 3),
-            working_power_draw: Watt(60_000),
-            fluid_connection_offsets: vec![],
-            num_module_slots: 2,
-            base_bonus_prod: 0,
-            base_speed: 1,
-        }],
-        beacons: vec![RawBeacon {
-            name: "factory_game::beacon".to_string(),
-            display_name: "Beacon".to_string(),
-            tile_size: (3, 3),
-            working_power_draw: Watt(480_000),
-            num_module_slots: 2,
-            effectiveness: (1, 2),
-            effect_size: (9, 9),
-        }],
-        miners: vec![],
-        power_poles: vec![
-            RawPowerPole {
-                name: "factory_game::small_power_pole".to_string(),
-                display_name: "Small Power Pole".to_string(),
-                tile_size: (1, 1),
-                power_range: 2,
-                // TODO:
-                connection_range: 7,
-            },
-            RawPowerPole {
-                name: "factory_game::medium_power_pole".to_string(),
-                display_name: "Medium Power Pole".to_string(),
-                tile_size: (1, 1),
-                power_range: 3,
-                // TODO:
-                connection_range: 9,
-            },
-            RawPowerPole {
-                name: "factory_game::large_power_pole".to_string(),
-                display_name: "Large Power Pole".to_string(),
-                tile_size: (2, 2),
-                power_range: 1,
-                // TODO:
-                connection_range: 32,
-            },
-            RawPowerPole {
-                name: "factory_game::substation".to_string(),
-                display_name: "Substation".to_string(),
-                tile_size: (2, 2),
-                power_range: 8,
-                // TODO:
-                connection_range: 16,
-            },
-        ],
-        modules: vec![
-            RawModule {
-                name: "factory_game::speed_mod".to_string(),
-                display_name: "Speed Module".to_string(),
-                item: "factory_game::speed_mod".to_string(),
-                productivity_effect: 0,
-                speed_effect: 10,
-                power_effect: 14,
-                allowed_in: AllowedIn::AllIncludingBeacons,
-            },
-            RawModule {
-                name: "factory_game::prod_mod".to_string(),
-                display_name: "Productivity Module".to_string(),
-                item: "factory_game::prod_mod".to_string(),
-                productivity_effect: 10,
-                speed_effect: -3,
-                power_effect: 16,
-                allowed_in: AllowedIn::OnlyIntermediate,
-            },
-        ],
-
-        chests: vec![
-            RawChest {
-                name: "factory_game::wooden_chest".to_string(),
-                display_name: "Wooden Chest".to_string(),
-                tile_size: (1, 1),
-                number_of_slots: 16,
-            },
-            RawChest {
-                name: "factory_game::iron_chest".to_string(),
-                display_name: "Iron Chest".to_string(),
-                tile_size: (1, 1),
-                number_of_slots: 32,
-            },
-            RawChest {
-                name: "factory_game::steel_chest".to_string(),
-                display_name: "Steel Chest".to_string(),
-                tile_size: (1, 1),
-                number_of_slots: 48,
-            },
-        ],
-        technologies: vec![RawTechnology {
-            name: "factory_game::automation".to_string(),
-            display_name: "Automation".to_string(),
-            cost_of_single_research_unit: vec![RawItemStack {
-                item: "factory_game::red_science".to_string(),
-                amount: 1,
-            }],
-            num_units: 10,
-            precursors: vec![],
-        }],
-    }
-}
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct RawRecipeData {
@@ -488,7 +187,7 @@ enum RawEntity {
     Belt(()),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct AssemblerInfo {
     pub display_name: String,
 
@@ -501,7 +200,7 @@ pub struct AssemblerInfo {
     pub base_power_consumption: Watt,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct LabInfo {
     pub display_name: String,
 
@@ -514,7 +213,7 @@ pub struct LabInfo {
     pub base_power_consumption: Watt,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct BeaconInfo {
     pub display_name: String,
 
@@ -525,7 +224,7 @@ pub struct BeaconInfo {
     pub power_consumption: Watt,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct ModuleInfo {
     pub name: String,
 
@@ -534,7 +233,7 @@ pub struct ModuleInfo {
     pub power_mod: i8,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub checksum: String,
 
@@ -611,14 +310,14 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub technology_costs: Vec<(u64, Box<[ITEMCOUNTTYPE]>)>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct LazyPowerMachineInfo<ItemIdxType: WeakIdxTrait> {
     pub ingredient: Item<ItemIdxType>,
     pub power_per_item: Joule,
     pub max_power_per_tick: Joule,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct PowerPoleData {
     pub size: (u16, u16),
     pub power_range: u8,
@@ -653,7 +352,7 @@ struct RecipeIndexLookup {
     out: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct RecipeIngLookups {
     pub ing0: Vec<[ITEMCOUNTTYPE; 0]>,
     pub ing1: Vec<[ITEMCOUNTTYPE; 1]>,
@@ -662,7 +361,7 @@ pub struct RecipeIngLookups {
     pub ing4: Vec<[ITEMCOUNTTYPE; 4]>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct RecipeOutputLookups {
     pub out1: Vec<[ITEMCOUNTTYPE; 1]>,
     pub out2: Vec<[ITEMCOUNTTYPE; 2]>,
@@ -701,8 +400,11 @@ impl RawDataStore {
         // TODO: Stop cloning the item names
         let item_names = self.items.iter().map(|i| i.display_name.clone()).collect();
 
-        let mut ing_out_num_to_recipe: HashMap<(usize, usize), Vec<Recipe<RecipeIdxType>>> =
-            HashMap::new();
+        let mut ing_out_num_to_recipe: HashMap<(usize, usize), Vec<Recipe<RecipeIdxType>>> = (0
+            ..10)
+            .cartesian_product(1..5)
+            .map(|(ings, outputs)| ((ings, outputs), vec![]))
+            .collect();
         let mut recipe_to_ing_out_combo_idx = vec![];
 
         let item_lookup: HashMap<&str, ItemIdxType> = self
@@ -1231,7 +933,7 @@ impl RawDataStore {
             item_to_colour: self
                 .items
                 .iter()
-                .map(|item_name| Color32::from_rgb(random(), random(), random()))
+                .map(|item| Color32::from_rgb(random(), random(), random()))
                 .collect(),
 
             technology_costs,
@@ -1244,61 +946,5 @@ impl RawDataStore {
         hasher.update(postcard::to_allocvec(self).unwrap());
 
         hex::encode_upper(hasher.finalize())
-    }
-}
-
-impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> DataStore<ItemIdxType, RecipeIdxType> {
-    pub fn get_storage_id_for_assembler(
-        &self,
-        dir: ItemRecipeDir,
-        item: Item<ItemIdxType>,
-        assembler_id: AssemblerID<RecipeIdxType>,
-    ) -> Result<Storage<RecipeIdxType>, ()> {
-        let Some(storage_list_idx) =
-            self.recipe_item_to_storage_list_idx
-                .get(&(assembler_id.recipe, item, dir))
-        else {
-            return Err(());
-        };
-
-        // Ok(StorageID {
-        //     grid: assembler_id.grid,
-        //     storage_list_idx: *storage_list_idx,
-        //     machine_idx: assembler_id.assembler_index,
-
-        //     phantom: PhantomData,
-        // })
-        Ok(Storage::Assembler {
-            grid: assembler_id.grid,
-            recipe_idx_with_this_item: assembler_id.recipe.id,
-            index: assembler_id.assembler_index,
-        })
-    }
-
-    pub fn get_storage_id_for_lab_science(
-        &self,
-        grid: PowerGridIdentifier,
-        lab_idx: u16,
-    ) -> Storage<RecipeIdxType> {
-        // let num_entries_for_assemblers = self.recipe_item_to_storage_list_idx.len();
-        // let science_idx = self
-        //     .science_bottle_items
-        //     .iter()
-        //     .position(|i| *i == item)
-        //     .expect("Science item for lab is not in science list");
-
-        Storage::Lab {
-            grid,
-            index: lab_idx,
-        }
-        // StorageID {
-        //     grid,
-        //     storage_list_idx: (num_entries_for_assemblers + science_idx)
-        //         .try_into()
-        //         .expect("More than u16::MAX assemblers"),
-        //     machine_idx: lab_idx,
-
-        //     phantom: PhantomData,
-        // }
     }
 }

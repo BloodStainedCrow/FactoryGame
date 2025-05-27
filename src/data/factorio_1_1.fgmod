@@ -1,0 +1,490 @@
+(
+    recipes: [
+        (
+            name: "factory_game::iron_ore_generation",
+            display_name: "Generate Iron Ore from nothing",
+            possible_machines: [
+                "factory_game::assembler",
+            ],
+            ings: [],
+            output: [
+                (
+                    item: "factory_game::iron_ore",
+                    amount: 1,
+                ),
+            ],
+            time_to_craft: 60,
+            is_intermediate: false,
+        ),
+        (
+            name: "factory_game::copper_ore_generation",
+            display_name: "Generate Copper Ore from nothing",
+            possible_machines: [
+                "factory_game::assembler",
+            ],
+            ings: [],
+            output: [
+                (
+                    item: "factory_game::copper_ore",
+                    amount: 1,
+                ),
+            ],
+            time_to_craft: 60,
+            is_intermediate: false,
+        ),
+        (
+            name: "factory_game::iron_smelting",
+            display_name: "Smelt Iron Ore into Iron Plates",
+            possible_machines: [
+                "factory_game::assembler",
+            ],
+            ings: [
+                (
+                    item: "factory_game::iron_ore",
+                    amount: 1,
+                ),
+            ],
+            output: [
+                (
+                    item: "factory_game::iron_plate",
+                    amount: 1,
+                ),
+            ],
+            time_to_craft: 192,
+            is_intermediate: true,
+        ),
+        (
+            name: "factory_game::copper_smelting",
+            display_name: "Smelt Copper Ore into Copper Plates",
+            possible_machines: [
+                "factory_game::assembler",
+            ],
+            ings: [
+                (
+                    item: "factory_game::copper_ore",
+                    amount: 1,
+                ),
+            ],
+            output: [
+                (
+                    item: "factory_game::copper_plate",
+                    amount: 1,
+                ),
+            ],
+            time_to_craft: 192,
+            is_intermediate: true,
+        ),
+        (
+            name: "factory_game::gears",
+            display_name: "Gears",
+            possible_machines: [
+                "factory_game::assembler",
+            ],
+            ings: [
+                (
+                    item: "factory_game::iron_plate",
+                    amount: 2,
+                ),
+            ],
+            output: [
+                (
+                    item: "factory_game::gear",
+                    amount: 1,
+                ),
+            ],
+            time_to_craft: 30,
+            is_intermediate: true,
+        ),
+        (
+            name: "factory_game::red_science",
+            display_name: "Automation Science",
+            possible_machines: [
+                "factory_game::assembler",
+            ],
+            ings: [
+                (
+                    item: "factory_game::gear",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::copper_plate",
+                    amount: 1,
+                ),
+            ],
+            output: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+            ],
+            time_to_craft: 300,
+            is_intermediate: true,
+        ),
+        (
+            name: "factory_game::copper_wire",
+            display_name: "Copper Wire",
+            possible_machines: [
+                "factory_game::assembler",
+            ],
+            ings: [
+                (
+                    item: "factory_game::copper_plate",
+                    amount: 1,
+                ),
+            ],
+            output: [
+                (
+                    item: "factory_game::copper_wire",
+                    amount: 2,
+                ),
+            ],
+            time_to_craft: 30,
+            is_intermediate: true,
+        ),
+        (
+            name: "factory_game::green_chip",
+            display_name: "Green Chip",
+            possible_machines: [
+                "factory_game::assembler",
+            ],
+            ings: [
+                (
+                    item: "factory_game::copper_wire",
+                    amount: 3,
+                ),
+                (
+                    item: "factory_game::iron_plate",
+                    amount: 1,
+                ),
+            ],
+            output: [
+                (
+                    item: "factory_game::green_chip",
+                    amount: 1,
+                ),
+            ],
+            time_to_craft: 30,
+            is_intermediate: true,
+        ),
+        (
+            name: "factory_game::yellow_belt",
+            display_name: "Yellow Belt",
+            possible_machines: [
+                "factory_game::assembler",
+            ],
+            ings: [
+                (
+                    item: "factory_game::gear",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::iron_plate",
+                    amount: 1,
+                ),
+            ],
+            output: [
+                (
+                    item: "factory_game::yellow_belt",
+                    amount: 2,
+                ),
+            ],
+            time_to_craft: 30,
+            is_intermediate: false,
+        ),
+        (
+            name: "factory_game::inserter",
+            display_name: "Inserter",
+            possible_machines: [
+                "factory_game::assembler",
+            ],
+            ings: [
+                (
+                    item: "factory_game::green_chip",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::gear",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::iron_plate",
+                    amount: 1,
+                ),
+            ],
+            output: [
+                (
+                    item: "factory_game::inserter",
+                    amount: 1,
+                ),
+            ],
+            time_to_craft: 30,
+            is_intermediate: false,
+        ),
+        (
+            name: "factory_game::green_science",
+            display_name: "Green Science",
+            possible_machines: [
+                "factory_game::assembler",
+            ],
+            ings: [
+                (
+                    item: "factory_game::yellow_belt",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::inserter",
+                    amount: 1,
+                ),
+            ],
+            output: [
+                (
+                    item: "factory_game::green_science",
+                    amount: 1,
+                ),
+            ],
+            time_to_craft: 300,
+            is_intermediate: true,
+        ),
+    ],
+    items: [
+        (
+            name: "factory_game::iron_ore",
+            display_name: "Iron Ore",
+            stack_size: 100,
+            placed_as: None,
+            burnable_in: [],
+            science_data: None,
+            is_fluid: false,
+        ),
+        (
+            name: "factory_game::copper_ore",
+            display_name: "Copper Ore",
+            stack_size: 100,
+            placed_as: None,
+            burnable_in: [],
+            science_data: None,
+            is_fluid: false,
+        ),
+        (
+            name: "factory_game::iron_plate",
+            display_name: "Iron Plate",
+            stack_size: 100,
+            placed_as: None,
+            burnable_in: [],
+            science_data: None,
+            is_fluid: false,
+        ),
+        (
+            name: "factory_game::copper_plate",
+            display_name: "Copper Plate",
+            stack_size: 100,
+            placed_as: None,
+            burnable_in: [],
+            science_data: None,
+            is_fluid: false,
+        ),
+        (
+            name: "factory_game::gear",
+            display_name: "Gear",
+            stack_size: 50,
+            placed_as: None,
+            burnable_in: [],
+            science_data: None,
+            is_fluid: false,
+        ),
+        (
+            name: "factory_game::red_science",
+            display_name: "Automation Science Pack",
+            stack_size: 200,
+            placed_as: None,
+            burnable_in: [],
+            science_data: Some(()),
+            is_fluid: false,
+        ),
+        (
+            name: "factory_game::copper_wire",
+            display_name: "Copper Wire",
+            stack_size: 200,
+            placed_as: None,
+            burnable_in: [],
+            science_data: None,
+            is_fluid: false,
+        ),
+        (
+            name: "factory_game::green_chip",
+            display_name: "Green Chip",
+            stack_size: 200,
+            placed_as: None,
+            burnable_in: [],
+            science_data: None,
+            is_fluid: false,
+        ),
+        (
+            name: "factory_game::yellow_belt",
+            display_name: "Yellow Belt",
+            stack_size: 100,
+            placed_as: Some(Belt(())),
+            burnable_in: [],
+            science_data: None,
+            is_fluid: false,
+        ),
+        (
+            name: "factory_game::inserter",
+            display_name: "Inserter",
+            stack_size: 50,
+            placed_as: Some(Inserter("inserter")),
+            burnable_in: [],
+            science_data: None,
+            is_fluid: false,
+        ),
+        (
+            name: "factory_game::green_science",
+            display_name: "Green Science",
+            stack_size: 200,
+            placed_as: None,
+            burnable_in: [],
+            science_data: Some(()),
+            is_fluid: false,
+        ),
+    ],
+    machines: [
+        (
+            name: "factory_game::assembler1",
+            display_name: "Assembling Machine",
+            tile_size: (3, 3),
+            working_power_draw: (150000),
+            fluid_connection_offsets: [],
+            num_module_slots: 0,
+            base_bonus_prod: 0,
+            base_speed: 10,
+        ),
+        (
+            name: "factory_game::assembler2",
+            display_name: "Assembling Machine 2",
+            tile_size: (3, 3),
+            working_power_draw: (75000),
+            fluid_connection_offsets: [],
+            num_module_slots: 2,
+            base_bonus_prod: 0,
+            base_speed: 15,
+        ),
+        (
+            name: "factory_game::assembler3",
+            display_name: "Assembling Machine 3",
+            tile_size: (3, 3),
+            working_power_draw: (375000),
+            fluid_connection_offsets: [],
+            num_module_slots: 4,
+            base_bonus_prod: 0,
+            base_speed: 25,
+        ),
+    ],
+    labs: [
+        (
+            name: "factory_game::lab",
+            display_name: "Lab",
+            tile_size: (3, 3),
+            working_power_draw: (60000),
+            fluid_connection_offsets: [],
+            num_module_slots: 2,
+            base_bonus_prod: 0,
+            base_speed: 1,
+        ),
+    ],
+    beacons: [
+        (
+            name: "factory_game::beacon",
+            display_name: "Beacon",
+            tile_size: (3, 3),
+            working_power_draw: (480000),
+            num_module_slots: 2,
+            effectiveness: (1, 2),
+            effect_size: (9, 9),
+        ),
+    ],
+    miners: [],
+    power_poles: [
+        (
+            name: "factory_game::small_power_pole",
+            display_name: "Small Power Pole",
+            tile_size: (1, 1),
+            power_range: 2,
+            connection_range: 7,
+        ),
+        (
+            name: "factory_game::medium_power_pole",
+            display_name: "Medium Power Pole",
+            tile_size: (1, 1),
+            power_range: 3,
+            connection_range: 9,
+        ),
+        (
+            name: "factory_game::large_power_pole",
+            display_name: "Large Power Pole",
+            tile_size: (2, 2),
+            power_range: 1,
+            connection_range: 32,
+        ),
+        (
+            name: "factory_game::substation",
+            display_name: "Substation",
+            tile_size: (2, 2),
+            power_range: 8,
+            connection_range: 16,
+        ),
+    ],
+    modules: [
+        (
+            name: "factory_game::speed_mod",
+            display_name: "Speed Module",
+            item: "factory_game::speed_mod",
+            productivity_effect: 0,
+            speed_effect: 10,
+            power_effect: 14,
+            allowed_in: AllIncludingBeacons,
+        ),
+        (
+            name: "factory_game::prod_mod",
+            display_name: "Productivity Module",
+            item: "factory_game::prod_mod",
+            productivity_effect: 10,
+            speed_effect: -3,
+            power_effect: 16,
+            allowed_in: OnlyIntermediate,
+        ),
+    ],
+    chests: [
+        (
+            name: "factory_game::wooden_chest",
+            display_name: "Wooden Chest",
+            tile_size: (1, 1),
+            number_of_slots: 16,
+        ),
+        (
+            name: "factory_game::iron_chest",
+            display_name: "Iron Chest",
+            tile_size: (1, 1),
+            number_of_slots: 32,
+        ),
+        (
+            name: "factory_game::steel_chest",
+            display_name: "Steel Chest",
+            tile_size: (1, 1),
+            number_of_slots: 48,
+        ),
+    ],
+    technologies: [
+        (
+            name: "factory_game::automation",
+            display_name: "Automation",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 10,
+            precursors: [],
+        ),
+    ],
+)

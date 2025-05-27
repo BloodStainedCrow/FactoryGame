@@ -35,8 +35,9 @@ egui_extras = "0.31.1"
 egui_plot = "0.32.1"
 rand = "0.8.5"
 bitcode = { version = "0.6.6", features = ["serde"] }
-
-[dev-dependencies]
+egui = { version = "0.31.1", features = ["serde"] }
+flate2 = {version = "1.1.1", features = ["zlib-rs"]}
+rstest = "0.25.0"
 
 [lints.rust]
 # TODO:

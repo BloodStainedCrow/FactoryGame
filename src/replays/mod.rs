@@ -1,11 +1,23 @@
 use std::borrow::Borrow;
+use std::fs::{create_dir_all, File};
 use std::future::Future;
 use std::ops::ControlFlow;
 
+use std::sync::Arc;
+use std::time::Instant;
+
+use std::io::Read;
+use std::mem;
+use std::sync::Mutex;
+
+use std::path::PathBuf;
+
+use bitvec::ptr::Mut;
 use genawaiter::rc::{r#gen, Gen};
 use genawaiter::yield_;
 use genawaiter::GeneratorState::Complete;
 use genawaiter::GeneratorState::Yielded;
+use itertools::Itertools;
 
 use crate::{
     data::DataStore,
@@ -21,14 +33,17 @@ pub struct Replay<
     RecipeIdxType: WeakIdxTrait,
     DataStor: Borrow<DataStore<ItemIdxType, RecipeIdxType>>,
 > {
-    starting_state: GameState<ItemIdxType, RecipeIdxType>,
+    /// Compressed binary representation of the starting GameState
+    starting_state: Box<[u8]>,
     pub actions: Vec<ReplayAction<ItemIdxType, RecipeIdxType>>,
 
-    data_store: DataStor,
+    pub data_store: DataStor,
 
     current_timestep: u64,
 
     end_timestep: Option<u64>,
+
+    storage_location: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -43,13 +58,21 @@ impl<
         DataStor: Borrow<DataStore<ItemIdxType, RecipeIdxType>>,
     > Replay<ItemIdxType, RecipeIdxType, DataStor>
 {
-    pub fn new(game_state: GameState<ItemIdxType, RecipeIdxType>, data_store: DataStor) -> Self {
+    pub fn new(
+        game_state: &GameState<ItemIdxType, RecipeIdxType>,
+        storage_location: Option<PathBuf>,
+        data_store: DataStor,
+    ) -> Self {
+        let game_state_bytes = bitcode::serialize(game_state).unwrap();
+        dbg!(game_state_bytes.len());
         Self {
-            starting_state: game_state,
+            starting_state: game_state_bytes.into_boxed_slice(),
             actions: vec![],
             data_store,
             current_timestep: 0,
             end_timestep: None,
+
+            storage_location,
         }
     }
 
@@ -78,31 +101,36 @@ impl<
     pub fn run(
         self,
     ) -> ReplayViewer<
-        GameState<ItemIdxType, RecipeIdxType>,
-        impl Future<Output = GameState<ItemIdxType, RecipeIdxType>>,
+        (GameState<ItemIdxType, RecipeIdxType>, DataStor),
+        impl Future<Output = (GameState<ItemIdxType, RecipeIdxType>, DataStor)>,
     > {
         ReplayViewer {
             generator: r#gen!({
                 let data_store = self.data_store;
 
-                let mut game_state: GameState<ItemIdxType, RecipeIdxType> = self.starting_state;
                 let mut actions = self.actions.into_iter().peekable();
                 let mut current_timestep = 0;
+
+                let mut game_state: GameState<ItemIdxType, RecipeIdxType> =
+                    bitcode::deserialize(&*self.starting_state).unwrap();
+
+                // Free up the memory, so we do not store two copies of the GameState
+                mem::drop(self.starting_state);
 
                 loop {
                     let this_ticks_actions = actions
                         .by_ref()
-                        .take_while(|a| a.timestamp == current_timestep)
+                        .peeking_take_while(|a| a.timestamp == current_timestep)
                         .map(|ra| ra.action);
 
                     game_state.apply_actions(this_ticks_actions, data_store.borrow());
 
                     game_state.update(data_store.borrow());
 
-                    let game_state_opt: Option<GameState<ItemIdxType, RecipeIdxType>> =
-                        yield_!(game_state);
+                    // let game_state_opt: Option<GameState<ItemIdxType, RecipeIdxType>> =
+                    //     yield_!(game_state);
 
-                    game_state = game_state_opt.unwrap();
+                    // game_state = game_state_opt.unwrap();
 
                     if Some(current_timestep) == self.end_timestep {
                         break;
@@ -111,10 +139,83 @@ impl<
                     }
                 }
 
-                game_state
+                (game_state, data_store)
             }),
         }
     }
+
+    pub fn run_with(
+        self,
+        game_state_out: Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
+        on_tick: impl Fn(),
+    ) {
+        dbg!(&self.end_timestep);
+
+        let data_store = self.data_store;
+
+        let mut actions = self.actions.into_iter().peekable();
+        let mut current_timestep = 0;
+
+        let game_state: GameState<ItemIdxType, RecipeIdxType> =
+            bitcode::deserialize(&*self.starting_state).unwrap();
+
+        // Free up the memory, so we do not store two copies of the GameState
+        mem::drop(self.starting_state);
+
+        *(game_state_out.lock().unwrap()) = game_state;
+
+        loop {
+            let this_ticks_actions: Vec<_> = actions
+                .by_ref()
+                .peeking_take_while(|a| a.timestamp == current_timestep)
+                .map(|ra| ra.action)
+                .collect();
+
+            let mut game_state = game_state_out.lock().unwrap();
+
+            game_state.apply_actions(this_ticks_actions, data_store.borrow());
+
+            game_state.update(data_store.borrow());
+
+            on_tick();
+
+            // let game_state_opt: Option<GameState<ItemIdxType, RecipeIdxType>> =
+            //     yield_!(game_state);
+
+            // game_state = game_state_opt.unwrap();
+
+            if Some(current_timestep) == self.end_timestep {
+                break;
+            } else {
+                current_timestep += 1;
+            }
+        }
+    }
+
+    // fn save(&self) -> Result<(), ()>
+    // where
+    //     DataStor: serde::Serialize,
+    // {
+    //     match &self.storage_location {
+    //         Some(path) => {
+    //             // Ensure the folder exists
+    //             create_dir_all(path).unwrap();
+
+    //             let
+
+    //             let start = Instant::now();
+    //             // If we are in debug mode, save the replay to a file
+    //             let mut file = File::create(path).expect("Could not open file");
+    //             let ser = bitcode::serialize(self).unwrap();
+    //             dbg!(start.elapsed());
+    //             file.write_all(ser.as_slice())
+    //                 .expect("Could not write to file");
+    //             dbg!(start.elapsed());
+    //             Ok(())
+    //         },
+    //         None => Err(()),
+    //     }
+    // }
 }
 
 pub struct ReplayViewer<V, F: Future<Output = V>> {
@@ -122,7 +223,7 @@ pub struct ReplayViewer<V, F: Future<Output = V>> {
 }
 
 impl<V, F: Future<Output = V>> ReplayViewer<V, F> {
-    pub fn with(mut self, every_step: impl Fn(&V) -> ControlFlow<(), ()>) -> V {
+    pub fn with(mut self, mut every_step: impl FnMut(&V) -> ControlFlow<(), ()>) -> V {
         let mut gs = self.generator.resume_with(None);
 
         while let Yielded(v) = gs {

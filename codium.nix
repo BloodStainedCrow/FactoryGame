@@ -12,6 +12,7 @@ pkgs.mkShell {
       rust-lang.rust-analyzer
       vadimcn.vscode-lldb
       gruntfuggly.todo-tree
+      a5huynh.vscode-ron
     ];
   })
   ]);

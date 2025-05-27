@@ -17,27 +17,9 @@ use crate::{
 const ALWAYS_FULL: &'static [ITEMCOUNTTYPE] = &[0; u16::MAX as usize];
 const PANIC_ON_INSERT: &'static [ITEMCOUNTTYPE] = &[0; 0];
 
-const NUM_ITEMS: usize = 0;
-static NUM_GRIDS: usize = 0;
-const NUM_RECIPES: usize = 0;
-static NUM_MACHINES_OF_RECIPE: usize = 0;
-static NUMBER_OF_CHESTS: usize = 0;
-static NUMBER_OF_BOT_NETWORKS: usize = 0;
-
-type ItemSlot = ITEMCOUNTTYPE;
 type SingleGridStorage<'a, 'b> = (&'a [ITEMCOUNTTYPE], &'b mut [ITEMCOUNTTYPE]);
 pub type SingleItemStorages<'a, 'b> = &'a mut [SingleGridStorage<'b, 'b>]; //[SingleGridStorage; NUM_RECIPES * NUM_GRIDS];
 pub type FullStorages<'a, 'b> = Box<[SingleGridStorage<'a, 'b>]>; //[SingleGridStorage; NUM_ITEMS * NUM_RECIPES * NUM_GRIDS];
-
-type ChestStorages<'a> = &'a mut [ITEMCOUNTTYPE; NUMBER_OF_CHESTS];
-/// Provider, Requester, Storage
-const NUMBER_OF_DIFFERENT_CHEST_TYPES: usize = 3;
-type SingleBotNetworkChestStorage<'a> =
-    [&'a mut [ITEMCOUNTTYPE; NUMBER_OF_CHESTS]; NUMBER_OF_DIFFERENT_CHEST_TYPES];
-type BotNetworkStorages<'a> = [SingleBotNetworkChestStorage<'a>; NUMBER_OF_BOT_NETWORKS];
-
-// Ideally we could have Box<[SingleItem; NUM_ITEMS]>
-//          SingleItem = Box<[&mut [ITEMCOUNTTYPE]]>
 
 fn num_labs<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     item: Item<ItemIdxType>,
@@ -167,12 +149,13 @@ fn get_full_storage_index<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         Storage::Assembler {
             grid,
             recipe_idx_with_this_item: recipe,
-            index,
+            index: _,
         } => item_offs + usize::from(grid) * grid_size + usize_from(recipe),
-        Storage::Lab { grid, index } => item_offs + usize::from(grid) * grid_size + num_recipes,
-        Storage::Static { static_id, index } => {
-            item_offs + num_power_grids * grid_size + usize::from(static_id as u8)
-        },
+        Storage::Lab { grid, index: _ } => item_offs + usize::from(grid) * grid_size + num_recipes,
+        Storage::Static {
+            static_id,
+            index: _,
+        } => item_offs + num_power_grids * grid_size + usize::from(static_id as u8),
     };
 
     ret
@@ -215,24 +198,6 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         .into_iter()
                         .count()
                         - 1,
-                    "{:?}",
-                    {
-                        let mut r = Vec::from_iter(
-                            all_storages(grids, chest_store, data_store)
-                                .into_iter()
-                                .map(|v| {
-                                    let idx = get_full_storage_index(
-                                        v.0,
-                                        v.1,
-                                        num_power_grids,
-                                        data_store,
-                                    );
-                                    (v, idx)
-                                }),
-                        );
-                        r.sort_by_key(|v| v.1);
-                        r
-                    }
                 )
             },
             None => {
@@ -456,6 +421,209 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                                 grid,
                                 recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
                                     data_store.ing_out_num_to_recipe[&(2, 1)][recipe_id_2_1],
+                                    item_out,
+                                )],
+                                index: 0,
+                            },
+                            ALWAYS_FULL,
+                            outputs,
+                        ),
+                    ]
+                }),
+        )
+        .chain(
+            assembler_store
+                .assemblers_3_1
+                .iter_mut()
+                .enumerate()
+                .flat_map(move |(recipe_id_3_1, multi)| {
+                    let mut items_in = data_store.recipe_to_items[&multi.recipe].iter().filter_map(
+                        |(dir, item)| {
+                            if *dir == ItemRecipeDir::Ing {
+                                Some(item)
+                            } else {
+                                None
+                            }
+                        },
+                    );
+
+                    let item_in0 = *items_in.next().unwrap();
+                    let item_in1 = *items_in.next().unwrap();
+                    let item_in2 = *items_in.next().unwrap();
+
+                    let item_out = data_store.recipe_to_items[&multi.recipe]
+                        .iter()
+                        .filter_map(|(dir, item)| {
+                            if *dir == ItemRecipeDir::Out {
+                                Some(item)
+                            } else {
+                                None
+                            }
+                        })
+                        .nth(0)
+                        .copied()
+                        .unwrap();
+
+                    let (([ings0_max, ings1_max, ings2_max], [ings0, ings1, ings2]), [outputs]) =
+                        multi.get_all_mut();
+
+                    [
+                        (
+                            item_in0,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(3, 1)][recipe_id_3_1],
+                                    item_in0,
+                                )],
+                                index: 0,
+                            },
+                            ings0_max,
+                            ings0,
+                        ),
+                        (
+                            item_in1,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(3, 1)][recipe_id_3_1],
+                                    item_in1,
+                                )],
+                                index: 0,
+                            },
+                            ings1_max,
+                            ings1,
+                        ),
+                        (
+                            item_in2,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(3, 1)][recipe_id_3_1],
+                                    item_in2,
+                                )],
+                                index: 0,
+                            },
+                            ings2_max,
+                            ings2,
+                        ),
+                        (
+                            item_out,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(3, 1)][recipe_id_3_1],
+                                    item_out,
+                                )],
+                                index: 0,
+                            },
+                            ALWAYS_FULL,
+                            outputs,
+                        ),
+                    ]
+                }),
+        )
+        .chain(
+            assembler_store
+                .assemblers_4_1
+                .iter_mut()
+                .enumerate()
+                .flat_map(move |(recipe_id_4_1, multi)| {
+                    let mut items_in = data_store.recipe_to_items[&multi.recipe].iter().filter_map(
+                        |(dir, item)| {
+                            if *dir == ItemRecipeDir::Ing {
+                                Some(item)
+                            } else {
+                                None
+                            }
+                        },
+                    );
+
+                    let item_in0 = *items_in.next().unwrap();
+                    let item_in1 = *items_in.next().unwrap();
+                    let item_in2 = *items_in.next().unwrap();
+                    let item_in3 = *items_in.next().unwrap();
+
+                    let item_out = data_store.recipe_to_items[&multi.recipe]
+                        .iter()
+                        .filter_map(|(dir, item)| {
+                            if *dir == ItemRecipeDir::Out {
+                                Some(item)
+                            } else {
+                                None
+                            }
+                        })
+                        .nth(0)
+                        .copied()
+                        .unwrap();
+
+                    let (
+                        (
+                            [ings0_max, ings1_max, ings2_max, ings3_max],
+                            [ings0, ings1, ings2, ings3],
+                        ),
+                        [outputs],
+                    ) = multi.get_all_mut();
+
+                    [
+                        (
+                            item_in0,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(4, 1)][recipe_id_4_1],
+                                    item_in0,
+                                )],
+                                index: 0,
+                            },
+                            ings0_max,
+                            ings0,
+                        ),
+                        (
+                            item_in1,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(4, 1)][recipe_id_4_1],
+                                    item_in1,
+                                )],
+                                index: 0,
+                            },
+                            ings1_max,
+                            ings1,
+                        ),
+                        (
+                            item_in2,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(4, 1)][recipe_id_4_1],
+                                    item_in2,
+                                )],
+                                index: 0,
+                            },
+                            ings2_max,
+                            ings2,
+                        ),
+                        (
+                            item_in3,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(4, 1)][recipe_id_4_1],
+                                    item_in3,
+                                )],
+                                index: 0,
+                            },
+                            ings3_max,
+                            ings3,
+                        ),
+                        (
+                            item_out,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(4, 1)][recipe_id_4_1],
                                     item_out,
                                 )],
                                 index: 0,

@@ -5,7 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use log::{info, trace};
+use log::trace;
 use plumbing::{Client, IntegratedServer, Server};
 use server::{ActionSource, GameStateUpdateHandler, HandledActionConsumer};
 
@@ -18,6 +18,7 @@ use crate::{
     },
     item::{IdxTrait, WeakIdxTrait},
     rendering::app_state::GameState,
+    replays::Replay,
     TICKS_PER_SECOND_RUNSPEED,
 };
 
@@ -35,11 +36,13 @@ pub enum Game<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
     ),
     DedicatedServer(
         GameState<ItemIdxType, RecipeIdxType>,
+        Replay<ItemIdxType, RecipeIdxType, DataStore<ItemIdxType, RecipeIdxType>>,
         GameStateUpdateHandler<ItemIdxType, RecipeIdxType, Server<ItemIdxType, RecipeIdxType>>,
     ),
     /// Integrated Server is also how Singleplayer works
     IntegratedServer(
         Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
+        Replay<ItemIdxType, RecipeIdxType, DataStore<ItemIdxType, RecipeIdxType>>,
         GameStateUpdateHandler<
             ItemIdxType,
             RecipeIdxType,
@@ -84,7 +87,10 @@ pub enum ExitReason {
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdxType> {
-    pub fn new(init: GameInitData<ItemIdxType, RecipeIdxType>) -> Result<Self, std::io::Error> {
+    pub fn new(
+        init: GameInitData<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Result<Self, std::io::Error> {
         match init {
             GameInitData::Client {
                 game_state,
@@ -106,10 +112,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                     tick_counter,
                 ))
             },
-            GameInitData::DedicatedServer(game_state, info) => Ok(Self::DedicatedServer(
-                game_state,
-                GameStateUpdateHandler::new(Server::new(info)),
-            )),
+            GameInitData::DedicatedServer(game_state, info) => {
+                let replay = Replay::new(&game_state, None, data_store.clone());
+                Ok(Self::DedicatedServer(
+                    game_state,
+                    replay,
+                    GameStateUpdateHandler::new(Server::new(info)),
+                ))
+            },
             GameInitData::IntegratedServer {
                 game_state,
                 tick_counter,
@@ -117,16 +127,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 action_state_machine,
                 inputs,
                 ui_actions,
-            } => Ok(Self::IntegratedServer(
-                game_state,
-                GameStateUpdateHandler::new(IntegratedServer {
-                    local_actions: action_state_machine,
-                    local_input: inputs,
-                    server: Server::new(info),
-                    ui_actions,
-                }),
-                tick_counter,
-            )),
+            } => {
+                let replay = Replay::new(
+                    game_state.lock().as_ref().unwrap(),
+                    None,
+                    data_store.clone(),
+                );
+                Ok(Self::IntegratedServer(
+                    game_state,
+                    replay,
+                    GameStateUpdateHandler::new(IntegratedServer {
+                        local_actions: action_state_machine,
+                        local_input: inputs,
+                        server: Server::new(info),
+                        ui_actions,
+                    }),
+                    tick_counter,
+                ))
+            },
         }
     }
 
@@ -154,18 +172,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
     ) -> ControlFlow<ExitReason> {
         match self {
             Game::Client(game_state, game_state_update_handler, tick_counter) => {
-                game_state_update_handler.update(
+                game_state_update_handler.update::<&DataStore<ItemIdxType, RecipeIdxType>>(
                     &mut game_state.lock().expect("Lock poison for update"),
+                    None,
                     data_store,
                 );
                 tick_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             },
-            Game::DedicatedServer(game_state, game_state_update_handler) => {
-                game_state_update_handler.update(game_state, data_store)
+            Game::DedicatedServer(game_state, replay, game_state_update_handler) => {
+                game_state_update_handler.update(game_state, Some(replay), data_store)
             },
-            Game::IntegratedServer(game_state, game_state_update_handler, tick_counter) => {
+            Game::IntegratedServer(game_state, replay, game_state_update_handler, tick_counter) => {
                 game_state_update_handler.update(
                     &mut game_state.lock().expect("Lock poison for update"),
+                    Some(replay),
                     data_store,
                 );
                 tick_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

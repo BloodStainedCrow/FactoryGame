@@ -82,13 +82,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                     }),
                 }),
                 ActionType::PlaceEntity(PlaceEntityInfo {
-                    entities: EntityPlaceOptions::Single(PlaceEntityType::Chest { pos }),
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Chest { pos, ty }),
                 }) => ActionType::PlaceEntity(PlaceEntityInfo {
                     entities: EntityPlaceOptions::Single(PlaceEntityType::Chest {
                         pos: Position {
                             x: base_pos.x + pos.x,
                             y: base_pos.y + pos.y,
                         },
+                        ty: *ty,
                     }),
                 }),
                 ActionType::PlaceEntity(PlaceEntityInfo {
@@ -323,13 +324,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                         }),
                     })]
                 },
-                crate::frontend::world::tile::Entity::Chest { pos, .. } => {
+                crate::frontend::world::tile::Entity::Chest { pos, ty, .. } => {
                     vec![ActionType::PlaceEntity(PlaceEntityInfo {
                         entities: EntityPlaceOptions::Single(PlaceEntityType::Chest {
                             pos: Position {
                                 x: pos.x - base_pos.x,
                                 y: pos.y - base_pos.y,
                             },
+                            ty: *ty,
                         }),
                     })]
                 },
@@ -457,7 +459,12 @@ pub fn random_entity_to_place<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 ) -> impl Strategy<Value = PlaceEntityType<ItemIdxType>> {
     prop_oneof![
         random_blueprint_offs().prop_map(|pos| PlaceEntityType::Assembler { pos, ty: 0 }),
-        random_blueprint_offs().prop_map(|pos| PlaceEntityType::Chest { pos }),
+        (random_blueprint_offs(), 0..data_store.chest_num_slots.len()).prop_map(|(pos, ty)| {
+            PlaceEntityType::Chest {
+                pos,
+                ty: ty.try_into().unwrap(),
+            }
+        }),
         (
             random_blueprint_offs()
             // 0..(data_store.solar_panel_sizes.len().try_into().unwrap())
