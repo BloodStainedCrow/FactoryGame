@@ -1630,7 +1630,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         let (
             (
                 (power_used_0_1, infos_0_1),
-                ((power_used_1_1, infos_1_1), ((power_used_2_1, infos_2_1), ((power_used_3_1, infos_3_1), (power_used_4_1, infos_4_1)))),
+                (
+                    (power_used_1_1, infos_1_1),
+                    (
+                        (power_used_2_1, infos_2_1),
+                        ((power_used_3_1, infos_3_1), (power_used_4_1, infos_4_1)),
+                    ),
+                ),
             ),
             (lab_power_used, times_labs_used_science, tech_progress),
         ) = rayon::join(
@@ -1727,7 +1733,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                                         (acc_power + rhs_power, infos)
                                     })
                                     },
-                                    || rayon::join(|| self.stores
+                                    || {
+                                        rayon::join(
+                                            || {
+                                                self.stores
                                         .assemblers_3_1
                                         .par_iter_mut()
                                         .map(|s| {
@@ -1747,13 +1756,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                                         })
                                         .fold_with((Watt(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
                                             infos.push(info);
-    
+
                                             (acc_power + rhs_power, infos)
                                         }).reduce(|| (Watt(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
                                             infos.extend_from_slice(&info);
-    
+
                                             (acc_power + rhs_power, infos)
-                                        }), || self.stores
+                                        })
+                                            },
+                                            || {
+                                                self.stores
                                         .assemblers_4_1
                                         .par_iter_mut()
                                         .map(|s| {
@@ -1773,13 +1785,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                                         })
                                         .fold_with((Watt(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
                                             infos.push(info);
-    
+
                                             (acc_power + rhs_power, infos)
                                         }).reduce(|| (Watt(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
                                             infos.extend_from_slice(&info);
-    
+
                                             (acc_power + rhs_power, infos)
-                                        })),
+                                        })
+                                            },
+                                        )
+                                    },
                                 )
                             },
                         )
@@ -1792,7 +1807,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             },
         );
 
-        let assembler_power_used = power_used_0_1 + power_used_1_1 + power_used_2_1 + power_used_3_1 + power_used_4_1;
+        let assembler_power_used =
+            power_used_0_1 + power_used_1_1 + power_used_2_1 + power_used_3_1 + power_used_4_1;
 
         let beacon_power_used: Watt = self
             .num_beacons_of_type
@@ -1844,7 +1860,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             recipes_1_1: infos_1_1,
             recipes_2_1: infos_2_1,
             recipes_3_1: infos_3_1,
-            recipes_4_1: infos_4_1
+            recipes_4_1: infos_4_1,
         };
 
         (
