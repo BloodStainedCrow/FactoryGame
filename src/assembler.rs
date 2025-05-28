@@ -984,6 +984,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         i16,
         u8,
         i16,
+        u8,
         Position,
     ) {
         let data = self.remove_assembler_data_inner(index);
@@ -1000,6 +1001,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             data.8.into(),
             data.9.into(),
             data.10.into(),
+            data.11.into(),
         )
     }
 
@@ -1017,6 +1019,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         i16,
         u8,
         i16,
+        u8,
         Position,
     ) {
         debug_assert!(!self.holes.contains(&index));
@@ -1042,6 +1045,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             self.raw_bonus_productivity[index],
             self.base_speed[index],
             self.raw_speed_mod[index],
+            self.types[index],
             self.positions[index],
         );
         for ing in &mut self.ings {
@@ -1106,6 +1110,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             prod,
             base_speed,
             speed_mod,
+            ty,
             position,
             data_store,
         )
@@ -1121,7 +1126,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
         dest.add_assembler_with_data(
             data.0, data.1, data.2, data.3, data.4, data.5, data.6, data.7, data.8, data.9,
-            data.10, data_store,
+            data.10, data.11, data_store,
         )
     }
 
@@ -1137,6 +1142,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         bonus_productiviy: i16,
         base_speed: u8,
         speed_mod: i16,
+        ty: u8,
         position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> usize {
@@ -1184,6 +1190,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .try_into()
                 .expect("Value clamped already");
 
+            self.types[hole_index] = ty;
             self.positions[hole_index] = position;
             return hole_index;
         }
@@ -1342,6 +1349,16 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             self.len
         );
         self.positions.push(position);
+
+        self.types.reserve(1);
+        assert_eq!(
+            self.types.len(),
+            self.len,
+            "{:?}, {:?}",
+            self.types,
+            self.len
+        );
+        self.types.push(ty);
 
         self.len += 1;
         self.len - 1

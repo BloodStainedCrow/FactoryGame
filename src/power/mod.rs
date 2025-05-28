@@ -619,8 +619,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             let to_change: Vec<_> = pg
                 .beacon_affected_entities
                 .extract_if(|affected, _| match affected {
-                    BeaconAffectedEntity::Assembler { id } => id.grid != removed_id,
-                    BeaconAffectedEntity::Lab { grid, index: _ } => *grid != removed_id,
+                    BeaconAffectedEntity::Assembler { id } => id.grid == removed_id,
+                    BeaconAffectedEntity::Lab { grid, index: _ } => *grid == removed_id,
                 })
                 .collect();
 
