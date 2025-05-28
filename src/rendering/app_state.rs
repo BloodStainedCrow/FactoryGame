@@ -1425,6 +1425,11 @@ mod tests {
                     ..
                 }),
             }))) < actions.iter().position(|a| matches!(a, ActionType::SetRecipe(_))));
+            prop_assume!(actions.iter().position(|a| matches!(a, ActionType::PlaceEntity(PlaceEntityInfo {
+                entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler {
+                    ..
+                }),
+            }))) < actions.iter().position(|a| matches!(a, ActionType::AddModules { pos: Position { x: 24, y: 21 }, ..})));
 
             let mut game_state = GameState::new(&DATA_STORE);
 
