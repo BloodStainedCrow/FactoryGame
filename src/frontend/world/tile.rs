@@ -2003,17 +2003,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             let e_size = entity.get_size(data_store);
             let max_inserter_range = data_store.max_inserter_search_range;
 
-            let inserter_search_area = (
-                Position {
-                    x: pos.x - max_inserter_range as usize,
-                    y: pos.y - max_inserter_range as usize,
-                },
-                (
-                    2 * max_inserter_range as u16 + e_size.0 as u16,
-                    2 * max_inserter_range as u16 + e_size.1 as u16,
-                ),
-            );
-
             match entity {
                 Entity::Beacon {
                     pos,
@@ -2136,6 +2125,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
                                         id.assembler_index = index;
                                         id.grid = index_update.new_grid;
+                                    },
+                                    (Entity::Beacon { .. }, PowerGridEntity::Beacon { .. }) => {
+                                        // Do nothing. The beacon only stores the pole_position, which has not changed
                                     },
                                     (entity, power_grid_entity) => {
                                         unreachable!(
@@ -2340,6 +2332,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     } => {
                                         *pole_position = None;
                                     },
+                                    Entity::Beacon {
+                                        ty,
+                                        pos,
+                                        modules,
+                                        pole_position,
+                                    } => {
+                                        *pole_position = None;
+                                    },
 
                                     e => unreachable!("Tried to unpower {e:?}"),
                                 }
@@ -2419,7 +2419,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             // Nothing to do
         }
 
-        // TODO: Actually remove the entity!
+        // Actually remove the entity
         self.get_chunk_for_tile_mut(pos)
             .unwrap()
             .entities

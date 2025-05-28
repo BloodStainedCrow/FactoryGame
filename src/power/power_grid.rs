@@ -519,7 +519,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 } else {
                     affected_entities
                         .into_iter()
-                        .map(|e| (*e, effect))
+                        .map(|e| (*e, (-effect.0, -effect.1, -effect.2)))
                         .collect()
                 }
             },
@@ -613,10 +613,45 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 modules,
                 affected_entities,
             } => {
-                if self.last_power_mult >= MIN_BEACON_POWER_MULT {
-                    for effected_entity in affected_entities {}
+                let raw_effect: (i16, i16, i16) = modules
+                    .iter()
+                    .flatten()
+                    .map(|module_ty| {
+                        (
+                            data_store.module_info[*module_ty].speed_mod.into(),
+                            data_store.module_info[*module_ty].prod_mod.into(),
+                            data_store.module_info[*module_ty].power_mod.into(),
+                        )
+                    })
+                    .reduce(|acc, v| (acc.0 + v.0, acc.1 + v.1, acc.2 + v.2))
+                    .unwrap_or((0, 0, 0));
+
+                let raw_effect = (
+                    raw_effect.0 * data_store.beacon_info[usize::from(*ty)].effectiveness.0 as i16
+                        / data_store.beacon_info[usize::from(*ty)].effectiveness.1 as i16,
+                    raw_effect.1 * data_store.beacon_info[usize::from(*ty)].effectiveness.0 as i16
+                        / data_store.beacon_info[usize::from(*ty)].effectiveness.1 as i16,
+                    raw_effect.2 * data_store.beacon_info[usize::from(*ty)].effectiveness.0 as i16
+                        / data_store.beacon_info[usize::from(*ty)].effectiveness.1 as i16,
+                );
+
+                let effect = if self.last_power_mult >= MIN_BEACON_POWER_MULT {
+                    raw_effect
+                } else {
+                    (0, 0, raw_effect.2)
+                };
+
+                if effect.0 > 0 || effect.1 > 0 || effect.2 > 0 {
+                    for effected_entity in affected_entities {
+                        let old = self.beacon_affected_entities[effected_entity];
+
+                        *self.beacon_affected_entities.get_mut(effected_entity).expect("Beacon affected entities list did not include a beacons affected entity") = (old.0 - effect.0, old.1 - effect.1, old.2 - effect.2);
+
+                        // The effect on the other grids is already handled in  remove_pole
+                    }
                 }
-                todo!("Remove Beacon")
+
+                self.num_beacons_of_type[usize::from(*ty)] -= 1;
             },
         }
     }

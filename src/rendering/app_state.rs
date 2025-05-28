@@ -981,6 +981,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             },
                         }
                     },
+                    Entity::Beacon {
+                        ty,
+                        pos,
+                        modules,
+                        pole_position: Some((pole_pos, _)),
+                    } => {
+                        self.simulation_state
+                            .factory
+                            .power_grids
+                            .pole_pos_to_grid_id
+                            .get(pole_pos)
+                            .is_some()
+                    },
                     _ => true,
                 }));
         }
