@@ -952,7 +952,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             }
         }
 
-        #[cfg(test)]
+        #[cfg(debug_assertions)]
         {
             assert!(self
                 .world

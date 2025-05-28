@@ -283,6 +283,138 @@ fn new_lab_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     }
 }
 
+fn new_power_pole<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    pos: Position,
+    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
+    CascadingUpdate {
+        update: Box::new(move |world, sim_state, updates, data_store| {
+            let pole = world
+                .get_entities_colliding_with(pos, (1, 1), data_store)
+                .into_iter()
+                .next();
+
+            if let Some(Entity::PowerPole {
+                ty, pos: pole_pos, ..
+            }) = pole
+            {
+                let pole_pos = *pole_pos;
+
+                let grid_id = sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos];
+
+                let pole_size = data_store.power_pole_data[usize::from(*ty)].size;
+                let pole_power_range = data_store.power_pole_data[usize::from(*ty)].power_range;
+
+                world.mutate_entities_colliding_with(
+                    Position {
+                        x: pole_pos.x - pole_power_range as usize,
+                        y: pole_pos.y - pole_power_range as usize,
+                    },
+                    (
+                        (pole_power_range as u16) * 2 + pole_size.0,
+                        (pole_power_range as u16) * 2 + pole_size.1,
+                    ),
+                    data_store,
+                    |e| {
+                        match e {
+                            Entity::Assembler {
+                                ty,
+                                pos,
+                                modules,
+                                info: info @ AssemblerInfo::Unpowered(_),
+                            } => {
+                                let AssemblerInfo::Unpowered(recipe) = info else {
+                                    unreachable!();
+                                };
+
+                                let (new_id, weak_index) =
+                                    sim_state.factory.power_grids.power_grids[usize::from(grid_id)]
+                                        .add_assembler(
+                                            *ty, grid_id, *recipe, &modules, pole_pos, *pos,
+                                            data_store,
+                                        );
+
+                                *info = AssemblerInfo::Powered {
+                                    id: new_id,
+                                    pole_position: pole_pos,
+                                    weak_index,
+                                };
+
+                                updates.push(newly_working_assembler(*pos, data_store));
+                            },
+                            Entity::Assembler {
+                                info: info @ AssemblerInfo::UnpoweredNoRecipe,
+                                ..
+                            } => {
+                                *info = AssemblerInfo::PoweredNoRecipe(pole_pos);
+                            },
+                            Entity::Roboport {
+                                ty,
+                                pos,
+                                power_grid,
+                                network,
+                                id,
+                            } => todo!(),
+                            Entity::SolarPanel {
+                                pos,
+                                ty,
+                                pole_position: pole_position @ None,
+                            } => {
+                                let weak_index = sim_state.factory.power_grids.power_grids
+                                    [usize::from(grid_id)]
+                                .add_solar_panel(*pos, *ty, pole_pos, data_store);
+
+                                *pole_position = Some((pole_pos, weak_index));
+                            },
+                            Entity::Lab {
+                                pos,
+                                ty,
+                                modules,
+                                pole_position: pole_position @ None,
+                            } => {
+                                let (weak_index, index) = sim_state.factory.power_grids.power_grids
+                                    [usize::from(grid_id)]
+                                .add_lab(*pos, *ty, &modules, pole_pos, data_store);
+
+                                *pole_position = Some((pole_pos, weak_index, index));
+
+                                updates.push(new_lab_cascade(*pos, data_store));
+                            },
+                            Entity::Beacon {
+                                ty,
+                                pos,
+                                modules,
+                                pole_position: pole_position @ None,
+                            } => {
+                                let weak_index = sim_state.factory.power_grids.power_grids
+                                    [usize::from(grid_id)]
+                                .add_beacon(
+                                    *ty,
+                                    *pos,
+                                    pole_pos,
+                                    modules.clone(),
+                                    vec![],
+                                    data_store,
+                                );
+
+                                *pole_position = Some((pole_pos, weak_index));
+
+                                updates.push(new_powered_beacon_cascade(*pos, data_store));
+                            },
+                            e => {
+                                warn!("Entity {e:?} cannot accept power in start_powering_entity")
+                            },
+                        }
+                        ControlFlow::Continue(())
+                    },
+                );
+            } else {
+                warn!("Power pole disappeared, while new_power_pole was in the queue");
+            }
+        }),
+    }
+}
+
 fn new_chest_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
@@ -782,102 +914,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     .insert(chunk_pos);
 
                 // Handle Entities that are newly powered
-                let power_range = data_store.power_pole_data[ty as usize].power_range;
-
-                self.mutate_entities_colliding_with(
-                    Position {
-                        x: pos.x - power_range as usize,
-                        y: pos.y - power_range as usize,
-                    },
-                    ((2 * power_range + 1).into(), (2 * power_range + 1).into()),
-                    data_store,
-                    |e| {
-                        match e {
-                            Entity::Assembler {
-                                ty,
-                                pos,
-                                info,
-                                modules,
-                            } => match info {
-                                AssemblerInfo::UnpoweredNoRecipe => {
-                                    *info = AssemblerInfo::PoweredNoRecipe(pole_pos);
-                                },
-                                AssemblerInfo::Unpowered(recipe) => {
-                                    let (assembler_id, weak_index) =
-                                        sim_state.factory.power_grids.power_grids[grid as usize]
-                                            .add_assembler(
-                                                *ty, grid, *recipe, &modules, pole_pos, *pos,
-                                                data_store,
-                                            );
-                                    *info = AssemblerInfo::Powered {
-                                        id: assembler_id,
-                                        pole_position: pole_pos,
-                                        weak_index,
-                                    };
-
-                                    cascading_updates
-                                        .push(newly_working_assembler(*pos, data_store));
-                                },
-                                _ => {},
-                            },
-                            Entity::Roboport {
-                                ty,
-                                pos,
-                                power_grid: power_grid @ None,
-                                network,
-                                id,
-                            } => {
-                                *power_grid = Some(grid);
-                                todo!("Add Roboport to power grid")
-                            },
-                            Entity::SolarPanel {
-                                pos,
-                                ty,
-                                pole_position: pole_position @ None,
-                            } => {
-                                let idx = sim_state.factory.power_grids.power_grids
-                                    [usize::from(grid)]
-                                .add_solar_panel(*pos, *ty, pole_pos, data_store);
-
-                                *pole_position = Some((pole_pos, idx));
-                            },
-                            Entity::Lab {
-                                pos,
-                                ty,
-                                modules,
-                                pole_position: pole_position @ None,
-                            } => {
-                                let idx = sim_state.factory.power_grids.power_grids
-                                    [usize::from(grid)]
-                                .add_lab(*pos, *ty, modules, pole_pos, data_store);
-
-                                *pole_position = Some((pole_pos, idx.0, idx.1));
-
-                                cascading_updates.push(new_lab_cascade(*pos, data_store));
-                            },
-                            Entity::Beacon {
-                                pos: beacon_pos,
-                                ty,
-                                modules,
-                                pole_position: pole_position @ None,
-                            } => {
-                                let weak_index = sim_state.factory.power_grids.add_beacon(
-                                    *ty,
-                                    *beacon_pos,
-                                    pos,
-                                    modules.clone(),
-                                    [],
-                                    data_store,
-                                );
-                                *pole_position = Some((pos, weak_index));
-                                cascading_updates
-                                    .push(new_powered_beacon_cascade(*beacon_pos, data_store));
-                            },
-                            _ => {},
-                        }
-                        ControlFlow::Continue(())
-                    },
-                );
+                cascading_updates.push(new_power_pole(pole_pos, data_store));
             },
             Entity::Belt { id, direction, .. } => {
                 self.belt_lookup
