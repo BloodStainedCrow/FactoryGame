@@ -219,6 +219,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     }
 
     #[must_use]
+    #[profiling::function]
     pub fn join(
         mut self,
         other: Self,
@@ -455,6 +456,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         );
     }
 
+    #[profiling::function]
     pub fn remove_pole<'a>(
         &mut self,
         pole_pos: Position,
@@ -657,6 +659,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     }
 
     // The caller is responsible that the connected Entity is removed from self's graph
+    #[profiling::function]
     fn move_connected_entities<'a, 'b, 'c>(
         &'a mut self,
         other: &'b mut Self,
@@ -1451,6 +1454,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
 
     // FIXME: This is a huge, high branching function.
     // Make it simpler and more readable, and reduce repetition
+    #[profiling::function]
     fn extract_power(
         &mut self,
         goal_amount: Joule,
@@ -1658,6 +1662,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         min(old, to_extract)
     }
 
+    #[profiling::function]
     pub fn update(
         &mut self,
         solar_panel_production_amount: Watt,

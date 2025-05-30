@@ -1,7 +1,7 @@
 use std::u16;
 
 use itertools::Itertools;
-use rayon::iter::IndexedParallelIterator;
+use rayon::{iter::IndexedParallelIterator, slice::ParallelSliceMut};
 
 use crate::{
     assembler::FullAssemblerStore,
@@ -14,8 +14,8 @@ use crate::{
     split_arbitrary::split_arbitrary_mut_slice,
 };
 
-const ALWAYS_FULL: &'static [ITEMCOUNTTYPE] = &[0; u16::MAX as usize];
-const PANIC_ON_INSERT: &'static [ITEMCOUNTTYPE] = &[0; 0];
+pub const ALWAYS_FULL: &'static [ITEMCOUNTTYPE] = &[0; u16::MAX as usize];
+pub const PANIC_ON_INSERT: &'static [ITEMCOUNTTYPE] = &[0; 0];
 
 type SingleGridStorage<'a, 'b> = (&'a [ITEMCOUNTTYPE], &'b mut [ITEMCOUNTTYPE]);
 pub type SingleItemStorages<'a, 'b> = &'a mut [SingleGridStorage<'b, 'b>]; //[SingleGridStorage; NUM_RECIPES * NUM_GRIDS];
@@ -102,6 +102,7 @@ pub fn index<'a, 'b, RecipeIdxType: IdxTrait>(
     }
 }
 
+#[profiling::function]
 pub fn sizes<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &'a DataStore<ItemIdxType, RecipeIdxType>,
     num_grids_total: usize,
@@ -127,6 +128,7 @@ where
     split_arbitrary_mut_slice(storages, &sizes)
 }
 
+#[profiling::function]
 fn get_full_storage_index<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     item: Item<ItemIdxType>,
     storage: Storage<RecipeIdxType>,
@@ -161,6 +163,7 @@ fn get_full_storage_index<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     ret
 }
 
+#[profiling::function]
 pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     grids: &'a mut PowerGridStorage<ItemIdxType, RecipeIdxType>,
     chest_store: &'a mut FullChestStore<ItemIdxType>,
@@ -213,14 +216,19 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     let all_storages = all_storages(grids, chest_store, data_store);
 
-    let all_storages_sorted = all_storages
-        .into_iter()
-        .sorted_unstable_by_key(|v| get_full_storage_index(v.0, v.1, num_power_grids, data_store))
-        .map(|v| (v.2, v.3))
-        .collect();
+    let all_storages_sorted = {
+        profiling::scope!("Sort Storages");
+        let mut ret: Vec<_> = all_storages.into_iter().collect();
+
+        ret.sort_by_cached_key(|v| get_full_storage_index(v.0, v.1, num_power_grids, data_store));
+
+        // TODO: Collecting twice here seems wasteful
+        ret.into_iter().map(|v| (v.2, v.3)).collect()
+    };
     all_storages_sorted
 }
 
+#[profiling::function]
 fn all_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     grids: &'a mut PowerGridStorage<ItemIdxType, RecipeIdxType>,
     chest_store: &'a mut FullChestStore<ItemIdxType>,
@@ -246,6 +254,8 @@ fn all_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         .chain(all_chest_storages(chest_store));
     all_storages
 }
+
+#[profiling::function]
 fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     grid: PowerGridIdentifier,
     assembler_store: &'a mut FullAssemblerStore<RecipeIdxType>,
@@ -637,6 +647,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
     i
 }
 
+#[profiling::function]
 fn all_lab_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     grid: PowerGridIdentifier,
     lab_store: &'a mut MultiLabStore,
@@ -664,8 +675,10 @@ fn all_lab_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         })
 }
 
+#[profiling::function]
 fn all_lazy_power_machine_storages() {}
 
+#[profiling::function]
 fn all_chest_storages<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     chest_store: &'a mut FullChestStore<ItemIdxType>,
 ) -> impl IntoIterator<

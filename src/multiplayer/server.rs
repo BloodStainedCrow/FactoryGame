@@ -7,6 +7,7 @@ use std::{
 };
 
 use log::{error, info, trace, warn};
+use puffin_egui::puffin;
 
 use crate::{
     data::DataStore,
@@ -78,54 +79,49 @@ impl<
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         let start = Instant::now();
-        let actions_iter =
+        let actions_iter = {
+            profiling::scope!("Get Actions");
+
             self.action_interface
-                .get(game_state.current_tick, &game_state.world, data_store);
-        if start.elapsed() > Duration::from_millis(10) {
-            error!("Got action iter {:?}", start.elapsed());
-        }
+                .get(game_state.current_tick, &game_state.world, data_store)
+        };
+
         let actions: Vec<_> = actions_iter.into_iter().collect();
-        if start.elapsed() > Duration::from_millis(10) {
-            error!("Got actions {:?}", start.elapsed());
-        }
 
-        if let Some(replay) = replay {
-            replay.append_actions(actions.iter().cloned());
-            replay.tick();
+        {
+            profiling::scope!("Update Replay");
+            if let Some(replay) = replay {
+                replay.append_actions(actions.iter().cloned());
+                replay.tick();
 
-            #[cfg(debug_assertions)]
-            {
-                let start = Instant::now();
-                // If we are in debug mode, save the replay to a file
-                let mut file = File::create("./last_replay.rep").expect("Could not open file");
-                let ser = bitcode::serialize(replay).unwrap();
-                dbg!(start.elapsed());
-                file.write_all(ser.as_slice())
-                    .expect("Could not write to file");
-                dbg!(start.elapsed());
+                #[cfg(debug_assertions)]
+                {
+                    profiling::scope!("Serialize Replay to disk");
+                    // If we are in debug mode, save the replay to a file
+                    let mut file = File::create("./last_replay.rep").expect("Could not open file");
+                    let ser = bitcode::serialize(replay).unwrap();
+                    file.write_all(ser.as_slice())
+                        .expect("Could not write to file");
+                }
             }
         }
 
-        game_state
-            .borrow_mut()
-            .apply_actions(actions.clone(), data_store);
-        if start.elapsed() > Duration::from_millis(10) {
-            error!("Actions applied {:?}", start.elapsed());
+        {
+            profiling::scope!("Apply Actions");
+            game_state
+                .borrow_mut()
+                .apply_actions(actions.clone(), data_store);
         }
 
-        self.action_interface
-            .consume(game_state.current_tick, actions);
-        if start.elapsed() > Duration::from_millis(10) {
-            error!("Actions sent {:?}", start.elapsed());
+        {
+            profiling::scope!("Send Action Confirmations");
+            self.action_interface
+                .consume(game_state.current_tick, actions);
         }
 
-        game_state.borrow_mut().update(data_store);
-        if start.elapsed() > Duration::from_millis(16) {
-            error!("Update done {:?}", start.elapsed());
-        } else if start.elapsed() > Duration::from_millis(10) {
-            warn!("Update done {:?}", start.elapsed());
-        } else {
-            trace!("Update done {:?}", start.elapsed());
+        {
+            profiling::scope!("GameState Update");
+            game_state.borrow_mut().update(data_store);
         }
     }
 }

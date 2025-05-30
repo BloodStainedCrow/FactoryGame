@@ -96,6 +96,7 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
         }
     }
 
+    #[profiling::function]
     pub fn remove_node<'a>(
         &'a mut self,
         key: NodeKey,
@@ -117,7 +118,10 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
         self.key_map.remove_by_left(&key);
 
         // Use kosaraju_scc instead of tarjan_scc since tarjan_scc is recursive and will overflow the stack for huge power grids
-        let mut components = petgraph::algo::kosaraju_scc(&self.graph);
+        let mut components = {
+            profiling::scope!("Calculate Graph Components");
+            petgraph::algo::kosaraju_scc(&self.graph)
+        };
 
         // Pop the first component, (which will stay in this network)
         // TODO: It is probably good to have the largest component stay, but testing is required
@@ -135,46 +139,49 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
         // All remaining components (if any, will be turned into other networks)
         let move_to_another_network = components;
 
-        let new_networks = move_to_another_network.into_iter().map(|component| {
-            let connections: Vec<_> = component
-                .iter()
-                .map(|idx| self.graph.edges(*idx))
-                .flat_map(|edges| edges)
-                .map(|edge| (edge.source(), edge.target()))
-                .collect();
+        let new_networks = {
+            profiling::scope!("Build new networks");
+            move_to_another_network.into_iter().map(|component| {
+                let connections: Vec<_> = component
+                    .iter()
+                    .map(|idx| self.graph.edges(*idx))
+                    .flat_map(|edges| edges)
+                    .map(|edge| (edge.source(), edge.target()))
+                    .collect();
 
-            let mut new_graph = StableUnGraph::default();
+                let mut new_graph = StableUnGraph::default();
 
-            let new_indices: Vec<_> = component
-                .iter()
-                .map(|idx: &petgraph::prelude::NodeIndex| {
-                    new_graph.add_node(self.graph.remove_node(*idx).unwrap())
-                })
-                .collect();
+                let new_indices: Vec<_> = component
+                    .iter()
+                    .map(|idx: &petgraph::prelude::NodeIndex| {
+                        new_graph.add_node(self.graph.remove_node(*idx).unwrap())
+                    })
+                    .collect();
 
-            for (source, dest) in connections {
-                let source_idx_old = component.iter().position(|v| *v == source).unwrap();
-                let dest_idx_old = component.iter().position(|v| *v == dest).unwrap();
+                for (source, dest) in connections {
+                    let source_idx_old = component.iter().position(|v| *v == source).unwrap();
+                    let dest_idx_old = component.iter().position(|v| *v == dest).unwrap();
 
-                new_graph.add_edge(new_indices[source_idx_old], new_indices[dest_idx_old], ());
-            }
+                    new_graph.add_edge(new_indices[source_idx_old], new_indices[dest_idx_old], ());
+                }
 
-            let keys_in_this: Vec<_> = component
-                .iter()
-                .map(|old_node| self.key_map.get_by_right(old_node).unwrap().clone())
-                .collect();
+                let keys_in_this: Vec<_> = component
+                    .iter()
+                    .map(|old_node| self.key_map.get_by_right(old_node).unwrap().clone())
+                    .collect();
 
-            (
-                Network {
-                    graph: new_graph,
-                    key_map: component
-                        .into_iter()
-                        .map(|old_node| self.key_map.remove_by_right(&old_node).unwrap())
-                        .collect(),
-                },
-                keys_in_this,
-            )
-        });
+                (
+                    Network {
+                        graph: new_graph,
+                        key_map: component
+                            .into_iter()
+                            .map(|old_node| self.key_map.remove_by_right(&old_node).unwrap())
+                            .collect(),
+                    },
+                    keys_in_this,
+                )
+            })
+        };
 
         (
             node_info,
@@ -214,6 +221,7 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
             .unwrap()
     }
 
+    #[profiling::function]
     pub fn add_node_merging(
         &mut self,
         value: S,
@@ -264,6 +272,7 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
     }
 }
 
+#[profiling::function]
 fn join_graphs<NodeKey: Eq + Hash + Clone + Debug, T, S: Default>(
     first: &mut StableUnGraph<T, S>,
     first_map: &mut BiMap<NodeKey, petgraph::stable_graph::NodeIndex>,

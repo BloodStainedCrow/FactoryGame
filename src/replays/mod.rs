@@ -64,7 +64,6 @@ impl<
         data_store: DataStor,
     ) -> Self {
         let game_state_bytes = bitcode::serialize(game_state).unwrap();
-        dbg!(game_state_bytes.len());
         Self {
             starting_state: game_state_bytes.into_boxed_slice(),
             actions: vec![],

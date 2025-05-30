@@ -12,6 +12,7 @@ pub struct TechState {
 }
 
 impl TechState {
+    #[profiling::function]
     pub fn apply_progress(&mut self, tech_progress: u16) {
         // TODO:
         if tech_progress > 0 {

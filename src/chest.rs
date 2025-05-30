@@ -1,5 +1,6 @@
 use std::{cmp::min, u8};
 
+use rayon::iter::IndexedParallelIterator;
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
 use crate::{
@@ -17,8 +18,21 @@ pub struct FullChestStore<ItemIdxType: WeakIdxTrait> {
 }
 
 impl<ItemIdxType: IdxTrait> FullChestStore<ItemIdxType> {
-    pub fn update(&mut self) {
-        self.stores.par_iter_mut().for_each(|store| store.update());
+    #[profiling::function]
+    pub fn update<RecipeIdxType: IdxTrait>(
+        &mut self,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        self.stores
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(item_id, store)| {
+                profiling::scope!(
+                    "Chest Update",
+                    format!("Item: {}", data_store.item_names[item_id]).as_str()
+                );
+                store.update_simd()
+            });
     }
 }
 
@@ -106,7 +120,7 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         )
     }
 
-    pub fn update(&mut self) {
+    pub fn update_naive(&mut self) {
         for (inout, (storage, max_items)) in self
             .inout
             .iter_mut()
@@ -132,6 +146,29 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         }
     }
 
+    pub fn update_simd(&mut self) {
+        for (inout, (storage, max_items)) in self
+            .inout
+            .iter_mut()
+            .zip(self.storage.iter_mut().zip(self.max_items.iter().copied()))
+        {
+            let to_move = inout.abs_diff(CHEST_GOAL_AMOUNT);
+
+            let switch = u16::from(*inout >= CHEST_GOAL_AMOUNT);
+
+            let moved: i16 = (switch as i16 + (1 - switch as i16) * -1)
+                * (min(
+                    to_move as u16,
+                    (max_items - *storage) * switch + (1 - switch) * *storage,
+                ) as i16);
+
+            *inout = (*inout as u16).wrapping_sub_signed(moved) as u8;
+            *storage += moved as u16;
+
+            debug_assert!(*storage <= max_items);
+        }
+    }
+
     pub fn storage_list_slices(&mut self) -> (&[ITEMCOUNTTYPE], &mut [ITEMCOUNTTYPE]) {
         (
             self.max_insert
@@ -140,5 +177,70 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
                 .unwrap_or(MAX_INSERT_AMOUNT),
             self.inout.as_mut_slice(),
         )
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::cmp::min;
+
+    use proptest::prelude::Just;
+    use proptest::prelude::Strategy;
+    use proptest::prop_assert_eq;
+    use proptest::proptest;
+
+    use crate::chest::CHEST_GOAL_AMOUNT;
+    use crate::chest::ITEMCOUNTTYPE;
+
+    fn max_items_and_storage() -> impl Strategy<Value = (u16, u16)> {
+        (0..u16::MAX).prop_flat_map(|max_items| (Just(max_items), 0..max_items))
+    }
+
+    proptest! {
+
+
+        #[test]
+        fn simd_always_same_as_naive(inout in 0..ITEMCOUNTTYPE::MAX, (max_items, storage) in max_items_and_storage()) {
+            let to_move = inout.abs_diff(CHEST_GOAL_AMOUNT);
+
+            let mut storage_naive = storage;
+            let mut inout_naive = inout;
+
+            if inout_naive >= CHEST_GOAL_AMOUNT {
+                let moved: ITEMCOUNTTYPE = min(to_move as u16, max_items - storage)
+                    .try_into()
+                    .expect("since to_move was a ITEMCOUNTTYPE, this always fits");
+                inout_naive -= moved;
+                storage_naive += moved as u16;
+
+                debug_assert!(storage_naive <= max_items);
+            } else {
+                let moved: ITEMCOUNTTYPE = min(to_move as u16, storage)
+                    .try_into()
+                    .expect("since to_move was a ITEMCOUNTTYPE, this always fits");
+                inout_naive += moved;
+                storage_naive -= moved as u16;
+            }
+
+            let mut storage_simd = storage;
+            let mut inout_simd = inout;
+
+            let switch = u16::from(inout_simd >= CHEST_GOAL_AMOUNT);
+
+            let moved: i16 = (switch as i16 + (1 - switch as i16) * -1)
+                * (min(
+                    to_move as u16,
+                    (max_items - storage_simd) * switch + (1 - switch) * storage_simd,
+                ) as i16);
+
+            inout_simd = (inout_simd as u16).checked_sub_signed(moved).unwrap() as u8;
+            storage_simd = (storage_simd as u16).checked_add_signed(moved).unwrap();
+
+            debug_assert!(storage_simd <= max_items);
+
+            prop_assert_eq!(inout_naive, inout_simd, "inout");
+            prop_assert_eq!(storage_naive, storage_simd, "storage");
+        }
+
     }
 }

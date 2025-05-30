@@ -16,7 +16,7 @@ pub mod belt_storage_inserter;
 pub mod storage_storage_inserter;
 
 /// Time for a normal inserter to move in ticks
-pub(super) const MOVETIME: u8 = 30;
+pub(super) const MOVETIME: u8 = 2;
 const_assert!(MOVETIME < 64);
 
 // TODO: This could be minified using a union or similar,

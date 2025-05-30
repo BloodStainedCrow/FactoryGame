@@ -249,6 +249,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
     }
 
     /// Returns a list of power poles, which have their PowerGridId changed
+    #[profiling::function]
     pub fn add_pole(
         &mut self,
         pole_position: Position,
@@ -271,21 +272,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             self.pole_pos_to_grid_id.insert(pole_position, grid);
 
             if need_to_merge {
-                let poles_to_update: Vec<_> = connected_poles
-                    .iter()
-                    .copied()
-                    .filter_map(|pos| {
-                        (self.pole_pos_to_grid_id[&pos] != grid)
-                            .then_some(self.pole_pos_to_grid_id[&pos])
-                    })
-                    .unique()
-                    .flat_map(|merged_grid| {
-                        assert_ne!(merged_grid, grid);
-                        self.pole_pos_to_grid_id
-                            .iter()
-                            .filter_map(move |(k, v)| (*v == merged_grid).then_some(*k))
-                    })
-                    .collect();
+                let poles_to_update: Vec<_> = {
+                    profiling::scope!("Find poles_to_update");
+                    connected_poles
+                        .iter()
+                        .copied()
+                        .filter_map(|pos| {
+                            (self.pole_pos_to_grid_id[&pos] != grid)
+                                .then_some(self.pole_pos_to_grid_id[&pos])
+                        })
+                        .unique()
+                        .flat_map(|merged_grid| {
+                            assert_ne!(merged_grid, grid);
+                            self.pole_pos_to_grid_id
+                                .iter()
+                                .filter_map(move |(k, v)| (*v == merged_grid).then_some(*k))
+                        })
+                        .collect()
+                };
 
                 dbg!(&poles_to_update);
 
@@ -340,6 +344,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
     }
 
     /// Returns a list of power poles, which have their PowerGridId changed
+    #[profiling::function]
     pub fn remove_pole(
         &mut self,
         pole_position: Position,
@@ -354,14 +359,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         let (new_grids, delete_network, no_longer_connected_entity_positions, beacon_updates) =
             self.power_grids[old_id as usize].remove_pole(pole_position, data_store);
 
-        for beacon_update in beacon_updates {
-            match beacon_update.0 {
-                power_grid::BeaconAffectedEntity::Assembler { id } => {
-                    let grid = &mut self.power_grids[usize::from(id.grid)];
+        {
+            profiling::scope!("Apply Beacon updates");
+            for beacon_update in beacon_updates {
+                match beacon_update.0 {
+                    power_grid::BeaconAffectedEntity::Assembler { id } => {
+                        let grid = &mut self.power_grids[usize::from(id.grid)];
 
-                    grid.change_assembler_module_modifiers(id, beacon_update.1, data_store);
-                },
-                power_grid::BeaconAffectedEntity::Lab { grid, index } => todo!(),
+                        grid.change_assembler_module_modifiers(id, beacon_update.1, data_store);
+                    },
+                    power_grid::BeaconAffectedEntity::Lab { grid, index } => todo!(),
+                }
             }
         }
 
@@ -417,6 +425,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
     }
 
     #[must_use]
+    #[profiling::function]
     fn merge_power_grids(
         &mut self,
         kept_id: PowerGridIdentifier,
@@ -474,13 +483,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             (false, false) => vec![],
         };
 
-        for update in beacon_updates {
-            match update.0 {
-                power_grid::BeaconAffectedEntity::Assembler { id } => {
-                    self.power_grids[usize::from(id.grid)]
-                        .change_assembler_module_modifiers(id, update.1, data_store);
-                },
-                power_grid::BeaconAffectedEntity::Lab { grid, index } => todo!(),
+        {
+            profiling::scope!("Apply Beacon Updates");
+            for update in beacon_updates {
+                match update.0 {
+                    power_grid::BeaconAffectedEntity::Assembler { id } => {
+                        self.power_grids[usize::from(id.grid)]
+                            .change_assembler_module_modifiers(id, update.1, data_store);
+                    },
+                    power_grid::BeaconAffectedEntity::Lab { grid, index } => todo!(),
+                }
             }
         }
 
@@ -535,162 +547,167 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
 
         // Update Beacons when merging
         // FIXME: Seems like this is broken
-        for pg in self.power_grids.iter_mut() {
-            for (_, pg_entity) in pg.grid_graph.weak_components_mut() {
-                if let PowerGridEntity::Beacon {
-                    ty,
-                    modules,
-                    affected_entities,
-                } = pg_entity
-                {
-                    for affected_entity in affected_entities {
-                        match affected_entity {
-                            BeaconAffectedEntity::Assembler { id } => {
-                                if id.grid == removed_id {
-                                    let old_recipe = id.recipe;
-                                    let old_index = id.assembler_index;
+        {
+            profiling::scope!("Update Beacons when merging");
+            for pg in self.power_grids.iter_mut() {
+                for (_, pg_entity) in pg.grid_graph.weak_components_mut() {
+                    if let PowerGridEntity::Beacon {
+                        ty,
+                        modules,
+                        affected_entities,
+                    } = pg_entity
+                    {
+                        for affected_entity in affected_entities {
+                            match affected_entity {
+                                BeaconAffectedEntity::Assembler { id } => {
+                                    if id.grid == removed_id {
+                                        let old_recipe = id.recipe;
+                                        let old_index = id.assembler_index;
 
-                                    let new_id = updates
-                                        .iter()
-                                        .find(|u| {
-                                            if let PowerGridEntity::Assembler {
-                                                ty: _,
-                                                recipe,
-                                                index,
-                                            } = u.old_pg_entity
-                                            {
-                                                old_recipe == recipe && old_index == index
-                                            } else {
-                                                false
-                                            }
-                                        })
-                                        .expect("Could not find update for assembler");
+                                        let new_id = updates
+                                            .iter()
+                                            .find(|u| {
+                                                if let PowerGridEntity::Assembler {
+                                                    ty: _,
+                                                    recipe,
+                                                    index,
+                                                } = u.old_pg_entity
+                                                {
+                                                    old_recipe == recipe && old_index == index
+                                                } else {
+                                                    false
+                                                }
+                                            })
+                                            .expect("Could not find update for assembler");
 
-                                    let PowerGridEntity::Assembler {
-                                        ty: _,
-                                        recipe: _,
-                                        index,
-                                    } = new_id.new_pg_entity
-                                    else {
-                                        unreachable!();
-                                    };
+                                        let PowerGridEntity::Assembler {
+                                            ty: _,
+                                            recipe: _,
+                                            index,
+                                        } = new_id.new_pg_entity
+                                        else {
+                                            unreachable!();
+                                        };
 
-                                    *id = AssemblerID {
-                                        recipe: id.recipe,
-                                        grid: new_id.new_grid,
-                                        assembler_index: index,
-                                    };
-                                }
-                            },
-                            BeaconAffectedEntity::Lab { grid, index } => {
-                                if *grid == removed_id {
-                                    let old_index = *index;
+                                        *id = AssemblerID {
+                                            recipe: id.recipe,
+                                            grid: new_id.new_grid,
+                                            assembler_index: index,
+                                        };
+                                    }
+                                },
+                                BeaconAffectedEntity::Lab { grid, index } => {
+                                    if *grid == removed_id {
+                                        let old_index = *index;
 
-                                    let new_id = updates
-                                        .iter()
-                                        .find(|u| {
-                                            if let PowerGridEntity::Lab { ty: _, index } =
-                                                u.old_pg_entity
-                                            {
-                                                old_index == usize::from(index)
-                                            } else {
-                                                false
-                                            }
-                                        })
-                                        .expect("Could not find update for assembler");
+                                        let new_id = updates
+                                            .iter()
+                                            .find(|u| {
+                                                if let PowerGridEntity::Lab { ty: _, index } =
+                                                    u.old_pg_entity
+                                                {
+                                                    old_index == usize::from(index)
+                                                } else {
+                                                    false
+                                                }
+                                            })
+                                            .expect("Could not find update for assembler");
 
-                                    let PowerGridEntity::Lab {
-                                        ty: _,
-                                        index: new_index,
-                                    } = new_id.new_pg_entity
-                                    else {
-                                        unreachable!();
-                                    };
+                                        let PowerGridEntity::Lab {
+                                            ty: _,
+                                            index: new_index,
+                                        } = new_id.new_pg_entity
+                                        else {
+                                            unreachable!();
+                                        };
 
-                                    *grid = new_id.new_grid;
-                                    *index = new_index.into();
-                                }
-                            },
+                                        *grid = new_id.new_grid;
+                                        *index = new_index.into();
+                                    }
+                                },
+                            }
                         }
                     }
                 }
+
+                let to_change: Vec<_> = pg
+                    .beacon_affected_entities
+                    .extract_if(|affected, _| match affected {
+                        BeaconAffectedEntity::Assembler { id } => id.grid == removed_id,
+                        BeaconAffectedEntity::Lab { grid, index: _ } => *grid == removed_id,
+                    })
+                    .collect();
+
+                pg.beacon_affected_entities
+                    .extend(to_change.into_iter().map(|(mut k, v)| {
+                        match &mut k {
+                            BeaconAffectedEntity::Assembler { id } => {
+                                let old_recipe = id.recipe;
+                                let old_index = id.assembler_index;
+
+                                let new_id = updates
+                                    .iter()
+                                    .find(|u| {
+                                        if let PowerGridEntity::Assembler {
+                                            ty: _,
+                                            recipe,
+                                            index,
+                                        } = u.old_pg_entity
+                                        {
+                                            old_recipe == recipe && old_index == index
+                                        } else {
+                                            false
+                                        }
+                                    })
+                                    .expect("Could not find update for assembler");
+
+                                let PowerGridEntity::Assembler {
+                                    ty: _,
+                                    recipe: _,
+                                    index,
+                                } = new_id.new_pg_entity
+                                else {
+                                    unreachable!();
+                                };
+
+                                *id = AssemblerID {
+                                    recipe: id.recipe,
+                                    grid: new_id.new_grid,
+                                    assembler_index: index,
+                                };
+                            },
+                            BeaconAffectedEntity::Lab { grid, index } => {
+                                let old_index = *index;
+
+                                let new_id = updates
+                                    .iter()
+                                    .find(|u| {
+                                        if let PowerGridEntity::Lab { ty: _, index } =
+                                            u.old_pg_entity
+                                        {
+                                            old_index == usize::from(index)
+                                        } else {
+                                            false
+                                        }
+                                    })
+                                    .expect("Could not find update for assembler");
+
+                                let PowerGridEntity::Lab {
+                                    ty: _,
+                                    index: new_index,
+                                } = new_id.new_pg_entity
+                                else {
+                                    unreachable!();
+                                };
+
+                                *grid = new_id.new_grid;
+                                *index = new_index.into();
+                            },
+                        }
+
+                        (k, v)
+                    }))
             }
-
-            let to_change: Vec<_> = pg
-                .beacon_affected_entities
-                .extract_if(|affected, _| match affected {
-                    BeaconAffectedEntity::Assembler { id } => id.grid == removed_id,
-                    BeaconAffectedEntity::Lab { grid, index: _ } => *grid == removed_id,
-                })
-                .collect();
-
-            pg.beacon_affected_entities
-                .extend(to_change.into_iter().map(|(mut k, v)| {
-                    match &mut k {
-                        BeaconAffectedEntity::Assembler { id } => {
-                            let old_recipe = id.recipe;
-                            let old_index = id.assembler_index;
-
-                            let new_id = updates
-                                .iter()
-                                .find(|u| {
-                                    if let PowerGridEntity::Assembler {
-                                        ty: _,
-                                        recipe,
-                                        index,
-                                    } = u.old_pg_entity
-                                    {
-                                        old_recipe == recipe && old_index == index
-                                    } else {
-                                        false
-                                    }
-                                })
-                                .expect("Could not find update for assembler");
-
-                            let PowerGridEntity::Assembler {
-                                ty: _,
-                                recipe: _,
-                                index,
-                            } = new_id.new_pg_entity
-                            else {
-                                unreachable!();
-                            };
-
-                            *id = AssemblerID {
-                                recipe: id.recipe,
-                                grid: new_id.new_grid,
-                                assembler_index: index,
-                            };
-                        },
-                        BeaconAffectedEntity::Lab { grid, index } => {
-                            let old_index = *index;
-
-                            let new_id = updates
-                                .iter()
-                                .find(|u| {
-                                    if let PowerGridEntity::Lab { ty: _, index } = u.old_pg_entity {
-                                        old_index == usize::from(index)
-                                    } else {
-                                        false
-                                    }
-                                })
-                                .expect("Could not find update for assembler");
-
-                            let PowerGridEntity::Lab {
-                                ty: _,
-                                index: new_index,
-                            } = new_id.new_pg_entity
-                            else {
-                                unreachable!();
-                            };
-
-                            *grid = new_id.new_grid;
-                            *index = new_index.into();
-                        },
-                    }
-
-                    (k, v)
-                }))
         }
 
         #[cfg(debug_assertions)]
@@ -752,6 +769,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         Some(updates)
     }
 
+    #[profiling::function]
     pub fn update(
         &mut self,
         tech_state: &TechState,
@@ -769,13 +787,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                 },
             );
 
-        for update in beacon_updates {
-            match update.0 {
-                power_grid::BeaconAffectedEntity::Assembler { id } => {
-                    self.power_grids[usize::from(id.grid)]
-                        .change_assembler_module_modifiers(id, update.1, data_store);
-                },
-                power_grid::BeaconAffectedEntity::Lab { grid, index } => todo!(),
+        {
+            profiling::scope!("Propagate beacon modifier changes");
+            for update in beacon_updates {
+                match update.0 {
+                    power_grid::BeaconAffectedEntity::Assembler { id } => {
+                        self.power_grids[usize::from(id.grid)]
+                            .change_assembler_module_modifiers(id, update.1, data_store);
+                    },
+                    power_grid::BeaconAffectedEntity::Lab { grid, index } => todo!(),
+                }
             }
         }
 

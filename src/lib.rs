@@ -3,6 +3,7 @@
 #![feature(adt_const_params)]
 #![feature(array_try_map)]
 #![feature(never_type)]
+#![feature(mixed_integer_ops_unsigned_sub)]
 
 extern crate test;
 
@@ -49,6 +50,7 @@ pub mod belt;
 pub mod inserter;
 pub mod item;
 pub mod lab;
+pub mod mining_drill;
 pub mod power;
 pub mod research;
 
@@ -106,6 +108,8 @@ impl NewWithDataStore for u32 {
 }
 
 pub fn main() {
+    puffin::set_scopes_on(true);
+
     SimpleLogger::new()
         .with_level(log::LevelFilter::Warn)
         .env()
@@ -185,6 +189,7 @@ fn run_integrated_server(
                     // GameState::new_with_production(&data_store)
                     // GameState::new_with_beacon_production(&data_store)
                     // GameState::new_with_beacon_belt_production(&data_store)
+                    // GameState::new_with_lots_of_belts(&data_store)
                     GameState::new(&data_store)
                 }),
             ));
@@ -206,6 +211,7 @@ fn run_integrated_server(
 
             let m_data_store = data_store.clone();
             thread::spawn(move || {
+                profiling::register_thread!("Game Update Thread");
                 game.run(&m_data_store);
             });
 

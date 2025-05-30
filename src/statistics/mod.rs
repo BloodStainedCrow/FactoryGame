@@ -45,6 +45,7 @@ impl GenStatistics {
         }
     }
 
+    #[profiling::function]
     pub fn append_single_set_of_samples(&mut self, samples: (ProductionInfo, ResearchProgress)) {
         self.production.append_single_set_of_samples(samples.0);
         self.research.append_single_set_of_samples(samples.1 as u64);

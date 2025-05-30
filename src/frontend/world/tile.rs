@@ -67,7 +67,7 @@ impl Default for PlayerInfo {
         Self {
             pos: (100.0 * CHUNK_SIZE_FLOAT, 100.0 * CHUNK_SIZE_FLOAT),
             visible: false,
-            movement_speed: 1.0 / (TICKS_PER_SECOND_LOGIC as f32),
+            movement_speed: 10.0 / (TICKS_PER_SECOND_LOGIC as f32),
             inventory: Default::default(),
         }
     }
@@ -121,6 +121,7 @@ struct CascadingUpdate<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     >,
 }
 
+#[profiling::function]
 fn newly_instantiated_inserter_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
@@ -131,6 +132,7 @@ fn newly_instantiated_inserter_cascade<ItemIdxType: IdxTrait, RecipeIdxType: Idx
     }
 }
 
+#[profiling::function]
 fn instantiate_inserter_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -158,6 +160,7 @@ fn instantiate_inserter_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     }
 }
 
+#[profiling::function]
 fn new_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
     size: (u16, u16),
@@ -201,6 +204,7 @@ fn new_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType: IdxTra
     }
 }
 
+#[profiling::function]
 fn new_lab_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -283,6 +287,7 @@ fn new_lab_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     }
 }
 
+#[profiling::function]
 fn new_power_pole<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -415,6 +420,7 @@ fn new_power_pole<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     }
 }
 
+#[profiling::function]
 fn new_chest_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
@@ -435,6 +441,7 @@ fn new_chest_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     }
 }
 
+#[profiling::function]
 fn new_powered_beacon_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -510,6 +517,7 @@ fn new_powered_beacon_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     }
 }
 
+#[profiling::function]
 fn newly_working_assembler<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -592,6 +600,7 @@ fn newly_working_assembler<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     }
 }
 
+#[profiling::function]
 fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
     size: (u16, u16),
@@ -723,6 +732,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         }
     }
 
+    #[profiling::function]
     pub fn change_assembler_recipe(
         &mut self,
         sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
@@ -823,6 +833,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         }
     }
 
+    #[profiling::function]
     pub fn add_entity(
         &mut self,
         entity: Entity<ItemIdxType, RecipeIdxType>,
@@ -839,6 +850,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         let chunk_pos = self.get_chunk_pos_for_tile(pos);
 
         if self.get_chunk_for_tile_mut(pos).is_none() {
+            todo!();
             return Err(());
         }
 
@@ -1985,6 +1997,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     }
 
     // TODO: What does this return?
+    #[profiling::function]
     pub fn remove_entity_at(
         &mut self,
         pos: Position,
@@ -2096,168 +2109,173 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         no_longer_connected_entity_positions,
                     ) = sim_state.factory.power_grids.remove_pole(*pos, data_store);
 
-                    for index_update in machines_which_changed {
-                        self.mutate_entities_colliding_with(
-                            index_update.position,
-                            (1, 1),
-                            data_store,
-                            |e| {
-                                match (e, index_update.new_pg_entity.clone()) {
-                                    (
-                                        Entity::Assembler {
-                                            info:
-                                                AssemblerInfo::Powered {
-                                                    id,
-                                                    pole_position,
-                                                    weak_index,
-                                                },
-                                            ..
-                                        },
-                                        crate::power::power_grid::PowerGridEntity::Assembler {
-                                            ty,
-                                            recipe,
-                                            index,
-                                        },
-                                    ) => {
-                                        assert_eq!(id.recipe, recipe);
+                    {
+                        profiling::scope!("Apply Index updates");
+                        for index_update in machines_which_changed {
+                            self.mutate_entities_colliding_with(
+                                index_update.position,
+                                (1, 1),
+                                data_store,
+                                |e| {
+                                    match (e, index_update.new_pg_entity.clone()) {
+                                        (
+                                            Entity::Assembler {
+                                                info:
+                                                    AssemblerInfo::Powered {
+                                                        id,
+                                                        pole_position,
+                                                        weak_index,
+                                                    },
+                                                ..
+                                            },
+                                            crate::power::power_grid::PowerGridEntity::Assembler {
+                                                ty,
+                                                recipe,
+                                                index,
+                                            },
+                                        ) => {
+                                            assert_eq!(id.recipe, recipe);
 
-                                        assert_eq!(id.grid, old_id);
+                                            assert_eq!(id.grid, old_id);
 
-                                        id.assembler_index = index;
-                                        id.grid = index_update.new_grid;
-                                    },
-                                    (Entity::Beacon { .. }, PowerGridEntity::Beacon { .. }) => {
-                                        // Do nothing. The beacon only stores the pole_position, which has not changed
-                                    },
-                                    (entity, power_grid_entity) => {
-                                        unreachable!(
-                                            "Expected {power_grid_entity:?} found {entity:?}"
+                                            id.assembler_index = index;
+                                            id.grid = index_update.new_grid;
+                                        },
+                                        (Entity::Beacon { .. }, PowerGridEntity::Beacon { .. }) => {
+                                            // Do nothing. The beacon only stores the pole_position, which has not changed
+                                        },
+                                        (entity, power_grid_entity) => {
+                                            unreachable!(
+                                                "Expected {power_grid_entity:?} found {entity:?}"
+                                            )
+                                        },
+                                    }
+                                    ControlFlow::Break(())
+                                },
+                            );
+
+                            let assembler_size: (u16, u16) =
+                                data_store.assembler_info[usize::from(ty)].size;
+
+                            let inserter_search_area = (
+                                Position {
+                                    x: index_update.position.x - max_inserter_range as usize,
+                                    y: index_update.position.y - max_inserter_range as usize,
+                                },
+                                (
+                                    2 * max_inserter_range as u16 + assembler_size.0,
+                                    2 * max_inserter_range as u16 + assembler_size.1,
+                                ),
+                            );
+
+                            let new_storages: Vec<_> = match index_update.new_pg_entity {
+                                PowerGridEntity::Assembler { ty, recipe, index } => data_store
+                                    .recipe_to_items[&recipe]
+                                    .iter()
+                                    .map(|(_dir, item)| {
+                                        (
+                                            item,
+                                            Storage::Assembler {
+                                                grid: index_update.new_grid,
+                                                recipe_idx_with_this_item: data_store
+                                                    .recipe_to_translated_index[&(recipe, *item)],
+                                                index,
+                                            },
                                         )
-                                    },
-                                }
-                                ControlFlow::Break(())
-                            },
-                        );
+                                    })
+                                    .collect(),
+                                PowerGridEntity::Lab { index, ty } => todo!(),
+                                PowerGridEntity::LazyPowerProducer { item, index } => {
+                                    todo!("Expand Storage type")
+                                },
+                                PowerGridEntity::SolarPanel { .. } => {
+                                    vec![]
+                                },
+                                PowerGridEntity::Accumulator { .. } => {
+                                    vec![]
+                                },
+                                PowerGridEntity::Beacon { .. } => {
+                                    vec![]
+                                },
+                            };
 
-                        let assembler_size: (u16, u16) =
-                            data_store.assembler_info[usize::from(ty)].size;
-
-                        let inserter_search_area = (
-                            Position {
-                                x: index_update.position.x - max_inserter_range as usize,
-                                y: index_update.position.y - max_inserter_range as usize,
-                            },
-                            (
-                                2 * max_inserter_range as u16 + assembler_size.0,
-                                2 * max_inserter_range as u16 + assembler_size.1,
-                            ),
-                        );
-
-                        let new_storages: Vec<_> = match index_update.new_pg_entity {
-                            PowerGridEntity::Assembler { ty, recipe, index } => data_store
-                                .recipe_to_items[&recipe]
+                            assert!(new_storages
                                 .iter()
-                                .map(|(_dir, item)| {
-                                    (
-                                        item,
-                                        Storage::Assembler {
-                                            grid: index_update.new_grid,
-                                            recipe_idx_with_this_item: data_store
-                                                .recipe_to_translated_index[&(recipe, *item)],
-                                            index,
+                                .map(|(item, _storage)| item)
+                                .all_unique());
+
+                            self.mutate_entities_colliding_with(
+                                inserter_search_area.0,
+                                inserter_search_area.1,
+                                data_store,
+                                |e| {
+                                    match e {
+                                        Entity::Inserter {
+                                            pos,
+                                            direction,
+                                            info: InserterInfo::NotAttached { .. },
+                                            ..
+                                        } => {
+                                            // Nothing to do
                                         },
-                                    )
-                                })
-                                .collect(),
-                            PowerGridEntity::Lab { index, ty } => todo!(),
-                            PowerGridEntity::LazyPowerProducer { item, index } => {
-                                todo!("Expand Storage type")
-                            },
-                            PowerGridEntity::SolarPanel { .. } => {
-                                vec![]
-                            },
-                            PowerGridEntity::Accumulator { .. } => {
-                                vec![]
-                            },
-                            PowerGridEntity::Beacon { .. } => {
-                                vec![]
-                            },
-                        };
+                                        Entity::Inserter {
+                                            pos,
+                                            direction,
+                                            info,
+                                            ..
+                                        } => {
+                                            let (start_pos, end_pos) =
+                                                calculate_inserter_positions(*pos, *direction);
 
-                        assert!(new_storages
-                            .iter()
-                            .map(|(item, _storage)| item)
-                            .all_unique());
-
-                        self.mutate_entities_colliding_with(
-                            inserter_search_area.0,
-                            inserter_search_area.1,
-                            data_store,
-                            |e| {
-                                match e {
-                                    Entity::Inserter {
-                                        pos,
-                                        direction,
-                                        info: InserterInfo::NotAttached { .. },
-                                        ..
-                                    } => {
-                                        // Nothing to do
-                                    },
-                                    Entity::Inserter {
-                                        pos,
-                                        direction,
-                                        info,
-                                        ..
-                                    } => {
-                                        let (start_pos, end_pos) =
-                                            calculate_inserter_positions(*pos, *direction);
-
-                                        if start_pos
-                                            .contained_in(index_update.position, assembler_size)
-                                            || end_pos
+                                            if start_pos
                                                 .contained_in(index_update.position, assembler_size)
-                                        {
-                                            // This Inserter is connected to the entity we are removing!
-                                            match info {
-                                                InserterInfo::NotAttached {
-                                                    start_pos,
-                                                    end_pos,
-                                                } => {
-                                                    unreachable!()
-                                                },
-                                                InserterInfo::Attached {
-                                                    info: attached_inserter,
-                                                    ..
-                                                } => {
-                                                    match attached_inserter {
-                                                        AttachedInserter::BeltStorage {
-                                                            id,
-                                                            belt_pos,
-                                                        } => sim_state
-                                                            .factory
-                                                            .belts
-                                                            .remove_inserter(*id, *belt_pos),
-                                                        AttachedInserter::BeltBelt {
-                                                            item,
-                                                            inserter,
-                                                        } => todo!(),
-                                                        AttachedInserter::StorageStorage {
-                                                            ..
-                                                        } => {
-                                                            todo!()
-                                                        },
-                                                    }
-                                                    todo!();
-                                                },
+                                                || end_pos.contained_in(
+                                                    index_update.position,
+                                                    assembler_size,
+                                                )
+                                            {
+                                                // This Inserter is connected to the entity we are removing!
+                                                match info {
+                                                    InserterInfo::NotAttached {
+                                                        start_pos,
+                                                        end_pos,
+                                                    } => {
+                                                        unreachable!()
+                                                    },
+                                                    InserterInfo::Attached {
+                                                        info: attached_inserter,
+                                                        ..
+                                                    } => {
+                                                        match attached_inserter {
+                                                            AttachedInserter::BeltStorage {
+                                                                id,
+                                                                belt_pos,
+                                                            } => sim_state
+                                                                .factory
+                                                                .belts
+                                                                .remove_inserter(*id, *belt_pos),
+                                                            AttachedInserter::BeltBelt {
+                                                                item,
+                                                                inserter,
+                                                            } => todo!(),
+                                                            AttachedInserter::StorageStorage {
+                                                                ..
+                                                            } => {
+                                                                todo!()
+                                                            },
+                                                        }
+                                                        todo!();
+                                                    },
+                                                }
                                             }
-                                        }
-                                    },
+                                        },
 
-                                    _ => {},
-                                }
-                                ControlFlow::Continue(())
-                            },
-                        );
+                                        _ => {},
+                                    }
+                                    ControlFlow::Continue(())
+                                },
+                            );
+                        }
                     }
 
                     for unconnected_position in no_longer_connected_entity_positions {

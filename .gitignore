@@ -3,3 +3,6 @@
 *.temp
 stats.svg
 last_replay.rep
+perf.data
+perf.data.old
+flamegraph.svg

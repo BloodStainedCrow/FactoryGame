@@ -101,6 +101,7 @@ impl BeltBeltInserter {
         }
     }
 
+    #[profiling::function]
     pub fn update<LocType: Loc>(
         &mut self,
         loc_in: &mut LocType,
@@ -147,6 +148,7 @@ impl BeltBeltInserter {
         }
     }
 
+    #[profiling::function]
     pub fn update_instant<LocType: Loc>(&mut self, loc_in: &mut LocType, loc_out: &mut LocType) {
         if !loc_out.has_item() {
             let item = loc_in.try_take_item();

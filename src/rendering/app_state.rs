@@ -93,7 +93,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let file = File::open("test_blueprints/red_sci_with_beacons.bp").unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
 
-        for y_start in (0..100_000).step_by(6_000) {
+        for y_start in (0..200_000).step_by(6_000) {
             for y_pos in (1590..6000).step_by(10) {
                 for x_pos in (1590..3000).step_by(60) {
                     if rand::random::<u16>() == 0 {
@@ -144,6 +144,27 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         data_store,
                     );
                 }
+            }
+        }
+
+        ret
+    }
+
+    pub fn new_with_lots_of_belts(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+        let mut ret = Self {
+            current_tick: 0,
+            world: World::new(),
+            simulation_state: SimulationState::new(data_store),
+            statistics: GenStatistics::new(data_store),
+        };
+
+        let file = File::open("test_blueprints/lots_of_belts.bp").unwrap();
+        let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
+
+        for y_pos in (1600..3_000).step_by(3) {
+            ret.update(data_store);
+            for x_pos in (1600..3000).step_by(50) {
+                bp.apply(Position { x: x_pos, y: y_pos }, &mut ret, data_store);
             }
         }
 
@@ -212,6 +233,7 @@ impl<RecipeIdxType: IdxTrait> StorageStorageInserterStore<RecipeIdxType> {
         }
     }
 
+    #[profiling::function]
     fn update<'a, 'b, ItemIdxType: IdxTrait>(
         &mut self,
         full_storages: impl IndexedParallelIterator<Item = SingleItemStorages<'a, 'b>>,
@@ -226,6 +248,11 @@ impl<RecipeIdxType: IdxTrait> StorageStorageInserterStore<RecipeIdxType> {
             .zip(full_storages)
             .enumerate()
             .for_each(|(item_id, ((ins, holes), storages))| {
+                profiling::scope!(
+                    "StorageStorage Inserter Update",
+                    format!("Item: {}", data_store.item_names[item_id]).as_str()
+                );
+
                 let item = Item {
                     id: item_id.try_into().unwrap(),
                 };
@@ -293,16 +320,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
         }
     }
 
+    #[profiling::function]
     fn belt_update<'a>(&mut self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) {
         let num_grids_total = self.power_grids.power_grids.len();
-        let mut all_storages =
-            storages_by_item(&mut self.power_grids, &mut self.chests, data_store);
+        let mut all_storages = {
+            profiling::scope!("Generate all_storages list");
+            storages_by_item(&mut self.power_grids, &mut self.chests, data_store)
+        };
         let sizes: Vec<_> = sizes(data_store, num_grids_total).into_iter().collect();
         // dbg!(&all_storages);
         assert_eq!(sizes.len(), data_store.item_names.len());
-        let storages_by_item = full_to_by_item(&mut all_storages, &sizes);
-
-        let mut storages_by_item: Box<[_]> = storages_by_item.into_iter().collect();
+        let mut storages_by_item: Box<[_]> = {
+            profiling::scope!("Sort storages by item");
+            let storages_by_item = full_to_by_item(&mut all_storages, &sizes);
+            storages_by_item.into_iter().collect()
+        };
 
         self.storage_storage_inserters.update(
             storages_by_item.par_iter_mut().map(|v| &mut **v),
@@ -341,6 +373,7 @@ pub enum InstantiateInserterError {
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, RecipeIdxType> {
     #[allow(clippy::too_many_lines)]
+    #[profiling::function]
     pub fn apply_actions(
         &mut self,
         actions: impl IntoIterator<Item = impl Borrow<ActionType<ItemIdxType, RecipeIdxType>>>,
@@ -999,8 +1032,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         }
     }
 
+    #[profiling::function]
     pub fn update(&mut self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) {
-        self.simulation_state.factory.chests.update();
+        self.simulation_state.factory.chests.update(data_store);
 
         self.simulation_state.factory.belt_update(data_store);
 

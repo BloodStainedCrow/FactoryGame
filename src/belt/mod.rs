@@ -723,6 +723,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> InnerBeltStore<ItemIdxType,
     }
 
     // TODO: What does this return?
+    #[profiling::function]
     fn merge_smart_belts(&mut self, front: BeltId<ItemIdxType>, back: BeltId<ItemIdxType>) -> () {
         if front.item != back.item {
             todo!("Item mismatch. Do I want to error or panic?");
@@ -790,6 +791,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> InnerBeltStore<ItemIdxType,
     }
 
     // TODO: What does this return?
+    #[profiling::function]
     fn merge_sushi_belts(&mut self, front: usize, back: usize) {
         if front == back {
             todo!("Make circular");
@@ -1456,6 +1458,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
         );
     }
 
+    #[profiling::function]
     pub fn update<'a, 'b>(
         &mut self,
         num_grids_total: usize,
@@ -1484,58 +1487,76 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
                     let item = Item {
                         id: item_id.try_into().unwrap(),
                     };
+                    profiling::scope!(
+                        "Pure Belt Update",
+                        format!("Item: {}", data_store.item_names[item_id]).as_str()
+                    );
 
                     let grid_size = grid_size(item, data_store);
                     let num_recipes = num_recipes(item, data_store);
 
-                    for belt in &mut belt_store.belts {
-                        belt.update();
-                        belt.update_inserters(
-                            item_storages,
-                            num_grids_total,
-                            num_recipes,
-                            grid_size,
-                        );
+                    {
+                        profiling::scope!("Update Belt");
+                        for belt in &mut belt_store.belts {
+                            belt.update();
+                        }
+                    }
+                    {
+                        profiling::scope!("Update BeltStorageInserters");
+                        for belt in &mut belt_store.belts {
+                            belt.update_inserters(
+                                item_storages,
+                                num_grids_total,
+                                num_recipes,
+                                grid_size,
+                            );
+                        }
                     }
 
-                    for (ins, ((source, source_pos), (dest, dest_pos), cooldown, filter)) in
-                        pure_to_pure_inserters.iter_mut().flatten()
                     {
-                        let [source_loc, dest_loc] = if *source == *dest {
-                            assert_ne!(
-                                source_pos, dest_pos,
-                                "An inserter cannot take and drop off on the same tile"
-                            );
-                            // We are taking and placing onto the same belt
-                            let belt = &mut belt_store.belts[*source];
+                        profiling::scope!("Update PurePure Inserters");
+                        for (ins, ((source, source_pos), (dest, dest_pos), cooldown, filter)) in
+                            pure_to_pure_inserters.iter_mut().flatten()
+                        {
+                            let [source_loc, dest_loc] = if *source == *dest {
+                                assert_ne!(
+                                    source_pos, dest_pos,
+                                    "An inserter cannot take and drop off on the same tile"
+                                );
+                                // We are taking and placing onto the same belt
+                                let belt = &mut belt_store.belts[*source];
 
-                            belt.get_two([(*source_pos).into(), (*dest_pos).into()])
-                        } else {
-                            let [inp, out] =
-                                belt_store.belts.get_disjoint_mut([*source, *dest]).unwrap();
+                                belt.get_two([(*source_pos).into(), (*dest_pos).into()])
+                            } else {
+                                let [inp, out] =
+                                    belt_store.belts.get_disjoint_mut([*source, *dest]).unwrap();
 
-                            [inp.get_mut(*source_pos), out.get_mut(*dest_pos)]
-                        };
+                                [inp.get_mut(*source_pos), out.get_mut(*dest_pos)]
+                            };
 
-                        if *cooldown == 0 {
-                            ins.update_instant(source_loc, dest_loc);
-                        } else {
-                            ins.update(source_loc, dest_loc, *cooldown, (), |_| {
-                                filter
-                                    .map(|filter_item| filter_item == item)
-                                    .unwrap_or(true)
-                            });
-                        }
+                            if *cooldown == 0 {
+                                ins.update_instant(source_loc, dest_loc);
+                            } else {
+                                ins.update(source_loc, dest_loc, *cooldown, (), |_| {
+                                    filter
+                                        .map(|filter_item| filter_item == item)
+                                        .unwrap_or(true)
+                                });
+                            }
 
-                        let source_loc = *source_loc;
-                        let dest_loc = *dest_loc;
+                            let source_loc = *source_loc;
+                            let dest_loc = *dest_loc;
 
-                        if !source_loc {
-                            belt_store.belts[*source].update_first_free_pos(*source_pos);
-                        }
+                            {
+                                profiling::scope!("Update update_first_free_pos");
+                                if !source_loc {
+                                    belt_store.belts[*source].update_first_free_pos(*source_pos);
+                                }
 
-                        if dest_loc {
-                            belt_store.belts[*dest].remove_first_free_pos_maybe(*dest_pos);
+                                if dest_loc {
+                                    belt_store.belts[*dest].remove_first_free_pos_maybe(*dest_pos);
+                                }
+                            }
                         }
                     }
 
@@ -1546,11 +1567,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
                 },
             );
 
-        self.inner.sushi_belts.iter_mut().for_each(|sushi_belt| {
-            sushi_belt.update();
+        {
+            profiling::scope!("SushiBelt Update");
+            self.inner
+                .sushi_belts
+                .par_iter_mut()
+                .for_each(|sushi_belt| {
+                    sushi_belt.update();
+                });
+        }
 
-            // TODO: Update inserters!
-        });
+        // TODO: Update inserters!
     }
 
     pub fn get_splitter_belt_ids(

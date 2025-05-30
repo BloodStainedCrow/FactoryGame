@@ -648,6 +648,8 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         ui.text_edit_multiline(&mut s);
     });
 
+    puffin_egui::profiler_window(ctx);
+
     match &state_machine.state {
         crate::frontend::action::action_state_machine::ActionStateMachineState::Idle => {},
         crate::frontend::action::action_state_machine::ActionStateMachineState::Holding(

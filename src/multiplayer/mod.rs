@@ -151,16 +151,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
             spin_sleep_util::interval(Duration::from_secs(1) / TICKS_PER_SECOND_RUNSPEED as u32);
 
         loop {
-            let start = Instant::now();
-            update_interval.tick();
+            profiling::finish_frame!();
+            profiling::scope!("Update Loop");
 
-            trace!("Waited for {:?}", start.elapsed());
+            {
+                profiling::scope!("Wait");
+                update_interval.tick();
+            }
+
             match self.do_tick(data_store) {
                 ControlFlow::Continue(_) => {},
                 ControlFlow::Break(e) => return e,
             }
-
-            trace!("Full tick time: {:?}", start.elapsed());
         }
     }
 
@@ -181,7 +183,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 game_state_update_handler.update(game_state, Some(replay), data_store)
             },
             Game::IntegratedServer(game_state, replay, game_state_update_handler, tick_counter) => {
-                game_state_update_handler.update(&mut game_state.lock(), Some(replay), data_store);
+                game_state_update_handler.update(
+                    {
+                        profiling::scope!("Wait for GameState Lock");
+                        &mut game_state.lock()
+                    },
+                    Some(replay),
+                    data_store,
+                );
                 tick_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             },
         }
