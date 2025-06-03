@@ -3,11 +3,9 @@ use std::{
     fs::File,
     io::Write,
     marker::PhantomData,
-    time::{Duration, Instant},
+    time::Instant,
 };
 
-use log::{error, info, trace, warn};
-use puffin_egui::puffin;
 
 use crate::{
     data::DataStore,

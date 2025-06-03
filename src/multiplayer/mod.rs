@@ -2,12 +2,11 @@ use std::{
     net::{IpAddr, TcpStream},
     ops::ControlFlow,
     sync::{atomic::AtomicU64, mpsc::Receiver, Arc},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use parking_lot::Mutex;
 
-use log::trace;
 use plumbing::{Client, IntegratedServer, Server};
 use server::{ActionSource, GameStateUpdateHandler, HandledActionConsumer};
 

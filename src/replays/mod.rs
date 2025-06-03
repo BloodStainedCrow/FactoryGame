@@ -1,10 +1,8 @@
 use std::borrow::Borrow;
-use std::fs::{create_dir_all, File};
 use std::future::Future;
 use std::ops::ControlFlow;
 
 use std::sync::Arc;
-use std::time::Instant;
 
 use parking_lot::Mutex;
 use std::io::Read;
@@ -12,9 +10,7 @@ use std::mem;
 
 use std::path::PathBuf;
 
-use bitvec::ptr::Mut;
 use genawaiter::rc::{r#gen, Gen};
-use genawaiter::yield_;
 use genawaiter::GeneratorState::Complete;
 use genawaiter::GeneratorState::Yielded;
 use itertools::Itertools;

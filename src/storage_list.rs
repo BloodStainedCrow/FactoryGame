@@ -1,7 +1,7 @@
 use std::u16;
 
 use itertools::Itertools;
-use rayon::{iter::IndexedParallelIterator, slice::ParallelSliceMut};
+use rayon::iter::IndexedParallelIterator;
 use strum::IntoEnumIterator;
 
 use crate::{

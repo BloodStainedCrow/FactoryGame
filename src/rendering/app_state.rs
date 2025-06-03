@@ -34,7 +34,6 @@ use crate::{
         full_to_by_item, grid_size, num_recipes, sizes, storages_by_item, SingleItemStorages,
     },
 };
-use eframe::egui::mutex::Mutex;
 use itertools::Itertools;
 use log::{info, trace, warn};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};

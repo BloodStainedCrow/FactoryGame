@@ -27,7 +27,6 @@ use eframe::egui::{
     self, Align2, Color32, ComboBox, Context, CornerRadius, Label, Layout, ProgressBar, Stroke, Ui,
     Window,
 };
-use egui::{panel::Side, SidePanel, UiBuilder};
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
 use log::{info, trace, warn};
