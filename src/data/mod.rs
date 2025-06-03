@@ -237,7 +237,7 @@ pub struct ModuleInfo {
 pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub checksum: String,
 
-    pub max_entity_size: (usize, usize),
+    pub max_entity_size: (u16, u16),
 
     pub assembler_info: Vec<AssemblerInfo>,
     pub lab_info: Vec<LabInfo>,

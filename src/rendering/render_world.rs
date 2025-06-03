@@ -64,8 +64,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let player_pos = state_machine.local_player_pos;
 
     let player_chunk = (
-        (player_pos.0 / CHUNK_SIZE_FLOAT) as usize,
-        (player_pos.1 / CHUNK_SIZE_FLOAT) as usize,
+        (player_pos.0 / CHUNK_SIZE_FLOAT) as i32,
+        (player_pos.1 / CHUNK_SIZE_FLOAT) as i32,
     );
 
     for x_offs in -((num_tiles_across_screen / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
@@ -85,10 +85,12 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             match game_state.world.get_chunk(
                 player_chunk
                     .0
-                    .wrapping_add_signed(x_offs.try_into().unwrap()),
+                    .checked_add(x_offs.try_into().unwrap())
+                    .unwrap(),
                 player_chunk
                     .1
-                    .wrapping_add_signed(y_offs.try_into().unwrap()),
+                    .checked_add(y_offs.try_into().unwrap())
+                    .unwrap(),
             ) {
                 Some(chunk) => {
                     for (x, row) in chunk.floor_tiles.unwrap_or_default().iter().enumerate() {

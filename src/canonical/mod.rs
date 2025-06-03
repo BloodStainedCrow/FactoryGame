@@ -75,11 +75,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
                 let power_range = data_store.power_pole_data[usize::from(*ty)].power_range;
                 let tile_size = data_store.power_pole_data[usize::from(*ty)].size;
-                for x in (pos.x - usize::from(power_range))
-                    ..(pos.x + usize::from(tile_size.0) + usize::from(power_range))
+                for x in (pos.x - i32::from(power_range))
+                    ..(pos.x + i32::from(tile_size.0) + i32::from(power_range))
                 {
-                    for y in (pos.y - usize::from(power_range))
-                        ..(pos.y + usize::from(tile_size.1) + usize::from(power_range))
+                    for y in (pos.y - i32::from(power_range))
+                        ..(pos.y + i32::from(tile_size.1) + i32::from(power_range))
                     {
                         map.entry(Position { x, y }).or_insert(*pos);
                     }

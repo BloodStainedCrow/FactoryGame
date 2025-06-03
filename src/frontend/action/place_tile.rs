@@ -24,8 +24,8 @@ pub struct PlaceFloorTileGhostInfo {
 pub enum PositionInfo {
     Rect {
         pos: Position,
-        width: usize,
-        height: usize,
+        width: u32,
+        height: u32,
     },
     Single {
         pos: Position,

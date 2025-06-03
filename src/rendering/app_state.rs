@@ -448,15 +448,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     let num_items_needed = match place_floor_tile_by_hand_info.ghost_info.position {
                         PositionInfo::Rect { pos, width, height } => width * height,
                         PositionInfo::Single { pos } => 1,
-                        PositionInfo::List { ref positions } => positions.len(),
+                        PositionInfo::List { ref positions } => positions.len().try_into().unwrap(),
                     };
 
                     // TODO: Check player inventory for enough resources
 
                     match place_floor_tile_by_hand_info.ghost_info.position {
                         PositionInfo::Rect { pos, width, height } => {
-                            for x in pos.x..(pos.x + width) {
-                                for y in pos.y..(pos.y + height) {
+                            for x in pos.x..(pos.x + i32::try_from(width).unwrap()) {
+                                for y in pos.y..(pos.y + i32::try_from(height).unwrap()) {
                                     self.world.set_floor_tile(
                                         Position { x, y },
                                         place_floor_tile_by_hand_info.ghost_info.tile,
@@ -1192,8 +1192,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             } => {
                 self.world.mutate_entities_colliding_with(
                     Position {
-                        x: assembler_pos.x - usize::from(inserter_range),
-                        y: assembler_pos.y - usize::from(inserter_range),
+                        x: assembler_pos.x - i32::from(inserter_range),
+                        y: assembler_pos.y - i32::from(inserter_range),
                     },
                     (
                         (2 * inserter_range + size.0).into(),
@@ -1230,8 +1230,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             InserterUpdateInfo::NewBelt { pos: belt_pos } => {
                 self.world.mutate_entities_colliding_with(
                     Position {
-                        x: belt_pos.x - usize::from(inserter_range),
-                        y: belt_pos.y - usize::from(inserter_range),
+                        x: belt_pos.x - i32::from(inserter_range),
+                        y: belt_pos.y - i32::from(inserter_range),
                     },
                     (
                         (2 * inserter_range + 1).into(),
@@ -1267,8 +1267,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             } => {
                 self.world.mutate_entities_colliding_with(
                     Position {
-                        x: assembler_pos.x - usize::from(inserter_range),
-                        y: assembler_pos.y - usize::from(inserter_range),
+                        x: assembler_pos.x - i32::from(inserter_range),
+                        y: assembler_pos.y - i32::from(inserter_range),
                     },
                     (
                         (2 * inserter_range + size.0).into(),
@@ -1376,22 +1376,16 @@ pub fn calculate_inserter_positions(pos: Position, dir: Dir) -> (Position, Posit
     let start_pos = Position {
         x: pos
             .x
-            .checked_add_signed(dir.reverse().into_offset().0.into())
+            .checked_add(dir.reverse().into_offset().0.into())
             .unwrap(),
         y: pos
             .y
-            .checked_add_signed(dir.reverse().into_offset().1.into())
+            .checked_add(dir.reverse().into_offset().1.into())
             .unwrap(),
     };
     let end_pos = Position {
-        x: pos
-            .x
-            .checked_add_signed(dir.into_offset().0.into())
-            .unwrap(),
-        y: pos
-            .y
-            .checked_add_signed(dir.into_offset().1.into())
-            .unwrap(),
+        x: pos.x.checked_add(dir.into_offset().0.into()).unwrap(),
+        y: pos.y.checked_add(dir.into_offset().1.into()).unwrap(),
     };
 
     (start_pos, end_pos)

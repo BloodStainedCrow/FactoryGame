@@ -216,8 +216,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
         let mut bp = Self { actions: vec![] };
 
         let base_pos = Position {
-            x: area[0].start as usize,
-            y: area[1].start as usize,
+            x: i32::from(area[0].start),
+            y: i32::from(area[1].start),
         };
 
         let entities = world.get_entities_colliding_with(
@@ -543,14 +543,14 @@ pub fn random_item<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
 pub fn random_blueprint_offs() -> impl Strategy<Value = Position> {
     ((0u32..16), (0u32..16)).prop_map(|(x, y)| Position {
-        x: x as usize,
-        y: y as usize,
+        x: x as i32,
+        y: y as i32,
     })
 }
 
 pub fn random_position() -> impl Strategy<Value = Position> {
     ((1600u32..=1602u32), (1600u32..=1602u32)).prop_map(|(x, y)| Position {
-        x: x as usize,
-        y: y as usize,
+        x: x as i32,
+        y: y as i32,
     })
 }

@@ -542,8 +542,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         );
 
         Position {
-            x: mouse_pos.0 as usize,
-            y: mouse_pos.1 as usize,
+            x: mouse_pos.0 as i32,
+            y: mouse_pos.1 as i32,
         }
     }
 

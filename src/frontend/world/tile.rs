@@ -32,7 +32,7 @@ use super::{sparse_grid::SparseGrid, Position};
 
 pub const BELT_LEN_PER_TILE: u16 = 4;
 
-pub const CHUNK_SIZE: usize = 16;
+pub const CHUNK_SIZE: u16 = 16;
 pub const CHUNK_SIZE_FLOAT: f32 = 16.0;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -45,7 +45,7 @@ pub enum FloorTile {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Chunk<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    pub floor_tiles: Option<[[FloorTile; CHUNK_SIZE]; CHUNK_SIZE]>,
+    pub floor_tiles: Option<[[FloorTile; CHUNK_SIZE as usize]; CHUNK_SIZE as usize]>,
     entities: Vec<Entity<ItemIdxType, RecipeIdxType>>,
 }
 
@@ -77,7 +77,7 @@ impl Default for PlayerInfo {
 pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     // TODO: I don´t think I want FP
     pub players: Vec<PlayerInfo>,
-    chunks: SparseGrid<Chunk<ItemIdxType, RecipeIdxType>>,
+    chunks: SparseGrid<i32, Chunk<ItemIdxType, RecipeIdxType>>,
 
     belt_lookup: BeltIdLookup<ItemIdxType>,
     belt_recieving_input_directions: HashMap<Position, EnumMap<Dir, bool>>,
@@ -94,12 +94,12 @@ enum WorldUpdate {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct PowerGridConnectedDevicesLookup {
-    grid_to_chunks: BTreeMap<PowerGridIdentifier, BTreeSet<(usize, usize)>>,
+    grid_to_chunks: BTreeMap<PowerGridIdentifier, BTreeSet<(i32, i32)>>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct BeltIdLookup<ItemIdxType: WeakIdxTrait> {
-    belt_id_to_chunks: BTreeMap<BeltTileId<ItemIdxType>, BTreeSet<(usize, usize)>>,
+    belt_id_to_chunks: BTreeMap<BeltTileId<ItemIdxType>, BTreeSet<(i32, i32)>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -168,8 +168,8 @@ fn new_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType: IdxTra
     CascadingUpdate {
         update: Box::new(move |world, sim_state, updates, data_store| {
             let inserter_search_start_pos = Position {
-                x: pos.x - data_store.max_inserter_search_range as usize,
-                y: pos.y - data_store.max_inserter_search_range as usize,
+                x: pos.x - data_store.max_inserter_search_range as i32,
+                y: pos.y - data_store.max_inserter_search_range as i32,
             };
 
             let inserter_search_size = (
@@ -233,8 +233,8 @@ fn new_lab_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             updates.push(new_possible_inserter_connection(pos, size));
 
             let beacon_search_start_pos = Position {
-                x: pos.x - data_store.max_beacon_range.0 as usize,
-                y: pos.y - data_store.max_beacon_range.1 as usize,
+                x: pos.x - data_store.max_beacon_range.0 as i32,
+                y: pos.y - data_store.max_beacon_range.1 as i32,
             };
 
             let beacon_search_size = (
@@ -263,8 +263,8 @@ fn new_lab_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         if pos.overlap(
                             size,
                             Position {
-                                x: beacon_pos.x - beacon_offs_x as usize,
-                                y: beacon_pos.y - beacon_offs_y as usize,
+                                x: beacon_pos.x - beacon_offs_x as i32,
+                                y: beacon_pos.y - beacon_offs_y as i32,
                             },
                             (beacon_range_x, beacon_range_y),
                         ) {
@@ -312,8 +312,8 @@ fn new_power_pole<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                 world.mutate_entities_colliding_with(
                     Position {
-                        x: pole_pos.x - pole_power_range as usize,
-                        y: pole_pos.y - pole_power_range as usize,
+                        x: pole_pos.x - pole_power_range as i32,
+                        y: pole_pos.y - pole_power_range as i32,
                     },
                     (
                         (pole_power_range as u16) * 2 + pole_size.0,
@@ -473,8 +473,8 @@ fn new_powered_beacon_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
             for affected_entity in world.get_entities_colliding_with(
                 Position {
-                    x: pos.x - (range.0 as usize - size.0 as usize) / 2,
-                    y: pos.y - (range.1 as usize - size.1 as usize) / 2,
+                    x: pos.x - (range.0 as i32 - size.0 as i32) / 2,
+                    y: pos.y - (range.1 as i32 - size.1 as i32) / 2,
                 },
                 beacon_search_size,
                 data_store,
@@ -555,8 +555,8 @@ fn newly_working_assembler<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             updates.push(new_possible_inserter_connection(pos, size));
 
             let beacon_search_start_pos = Position {
-                x: pos.x - data_store.max_beacon_range.0 as usize,
-                y: pos.y - data_store.max_beacon_range.1 as usize,
+                x: pos.x - data_store.max_beacon_range.0 as i32,
+                y: pos.y - data_store.max_beacon_range.1 as i32,
             };
 
             let beacon_search_size = (
@@ -585,8 +585,8 @@ fn newly_working_assembler<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         if pos.overlap(
                             size,
                             Position {
-                                x: beacon_pos.x - beacon_offs_x as usize,
-                                y: beacon_pos.y - beacon_offs_y as usize,
+                                x: beacon_pos.x - beacon_offs_x as i32,
+                                y: beacon_pos.y - beacon_offs_y as i32,
                             },
                             (beacon_range_x, beacon_range_y),
                         ) {
@@ -614,8 +614,8 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
     CascadingUpdate {
         update: Box::new(move |world, sim_state, updates, data_store| {
             let inserter_search_start_pos = Position {
-                x: pos.x - data_store.max_inserter_search_range as usize,
-                y: pos.y - data_store.max_inserter_search_range as usize,
+                x: pos.x - data_store.max_inserter_search_range as i32,
+                y: pos.y - data_store.max_inserter_search_range as i32,
             };
 
             let inserter_search_size = (
@@ -679,14 +679,14 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeIdxType> {
     #[must_use]
     pub fn new() -> Self {
-        let mut grid = SparseGrid::new(1_000_000, 1_000_000);
+        let mut grid = SparseGrid::new();
         #[cfg(debug_assertions)]
-        const WORLDSIZE: usize = 200;
+        const WORLDSIZE_CHUNKS: i32 = 200;
         #[cfg(not(debug_assertions))]
-        const WORLDSIZE: usize = 20000;
+        const WORLDSIZE_CHUNKS: i32 = 20000;
 
         for x in 50..400 {
-            for y in 50..WORLDSIZE {
+            for y in 50..WORLDSIZE_CHUNKS {
                 grid.insert(
                     x,
                     y,
@@ -724,13 +724,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         self.chunks.occupied_entries().map(|(a, b)| b)
     }
 
-    pub fn get_chunk(&self, x: usize, y: usize) -> Option<&Chunk<ItemIdxType, RecipeIdxType>> {
+    pub fn get_chunk(&self, x: i32, y: i32) -> Option<&Chunk<ItemIdxType, RecipeIdxType>> {
         self.chunks.get(x, y)
     }
 
     pub fn set_floor_tile(&mut self, pos: Position, floor_tile: FloorTile) -> Result<(), ()> {
         if let Some(chunk) = self.get_chunk_for_tile_mut(pos) {
-            chunk.floor_tiles.get_or_insert_default()[pos.x % 16][pos.y % 16] = floor_tile;
+            chunk.floor_tiles.get_or_insert_default()
+                [usize::try_from(pos.x.rem_euclid(i32::from(CHUNK_SIZE))).unwrap()]
+                [usize::try_from(pos.y.rem_euclid(i32::from(CHUNK_SIZE))).unwrap()] = floor_tile;
             Ok(())
         } else {
             Err(())
@@ -1857,23 +1859,25 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
     #[must_use]
     pub fn get_chunk_for_tile(&self, pos: Position) -> Option<&Chunk<ItemIdxType, RecipeIdxType>> {
-        self.chunks.get(pos.x / CHUNK_SIZE, pos.y / CHUNK_SIZE)
+        self.chunks
+            .get(pos.x / i32::from(CHUNK_SIZE), pos.y / i32::from(CHUNK_SIZE))
     }
 
     fn get_chunk_for_tile_mut(
         &mut self,
         pos: Position,
     ) -> Option<&mut Chunk<ItemIdxType, RecipeIdxType>> {
-        self.chunks.get_mut(pos.x / CHUNK_SIZE, pos.y / CHUNK_SIZE)
+        self.chunks
+            .get_mut(pos.x / i32::from(CHUNK_SIZE), pos.y / i32::from(CHUNK_SIZE))
     }
 
-    fn get_chunk_pos_for_tile(&self, pos: Position) -> (usize, usize) {
-        (pos.x / CHUNK_SIZE, pos.y / CHUNK_SIZE)
+    fn get_chunk_pos_for_tile(&self, pos: Position) -> (i32, i32) {
+        (pos.x / i32::from(CHUNK_SIZE), pos.y / i32::from(CHUNK_SIZE))
     }
 
     fn get_chunk_mut(
         &mut self,
-        chunk: (usize, usize),
+        chunk: (i32, i32),
     ) -> Option<&mut Chunk<ItemIdxType, RecipeIdxType>> {
         self.chunks.get_mut(chunk.0, chunk.1)
     }
@@ -1887,8 +1891,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     ) -> Option<Position> {
         self.get_entities_colliding_with(
             Position {
-                x: entity_pos.x - usize::from(data_store.max_power_search_range as u16),
-                y: entity_pos.y - usize::from(data_store.max_power_search_range as u16),
+                x: entity_pos.x - i32::from(data_store.max_power_search_range),
+                y: entity_pos.y - i32::from(data_store.max_power_search_range),
             },
             (
                 2 * data_store.max_power_search_range as u16 + entity_size.0,
@@ -1916,8 +1920,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 if entity_pos.overlap(
                     entity_size,
                     Position {
-                        x: pos.x - usize::from(power_range),
-                        y: pos.y - usize::from(power_range),
+                        x: pos.x - i32::from(power_range),
+                        y: pos.y - i32::from(power_range),
                     },
                     (
                         2 * power_range + size.0 as u16,
@@ -1942,12 +1946,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
            + use<'a, 'b, ItemIdxType, RecipeIdxType> {
         let max_size = data_store.max_entity_size;
 
-        let bb_top_left = (pos.x - max_size.0, pos.y - max_size.1);
+        let bb_top_left = (pos.x - i32::from(max_size.0), pos.y - i32::from(max_size.1));
 
-        let bb_bottom_right = (pos.x + usize::from(size.0), pos.y + usize::from(size.1));
+        let bb_bottom_right = (pos.x + i32::from(size.0), pos.y + i32::from(size.1));
 
-        let chunk_range_x = (bb_top_left.0 / CHUNK_SIZE)..=(bb_bottom_right.0 / CHUNK_SIZE);
-        let chunk_range_y = (bb_top_left.1 / CHUNK_SIZE)..=(bb_bottom_right.1 / CHUNK_SIZE);
+        let chunk_range_x =
+            (bb_top_left.0 / i32::from(CHUNK_SIZE))..=(bb_bottom_right.0 / i32::from(CHUNK_SIZE));
+        let chunk_range_y =
+            (bb_top_left.1 / i32::from(CHUNK_SIZE))..=(bb_bottom_right.1 / i32::from(CHUNK_SIZE));
 
         debug_assert!(chunk_range_x.clone().count() >= 1);
         debug_assert!(chunk_range_y.clone().count() >= 1);
@@ -1974,12 +1980,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     ) {
         let max_size = data_store.max_entity_size;
 
-        let bb_top_left = (pos.x - max_size.0, pos.y - max_size.1);
+        let bb_top_left = (pos.x - i32::from(max_size.0), pos.y - i32::from(max_size.1));
 
-        let bb_bottom_right = (pos.x + usize::from(size.0), pos.y + usize::from(size.1));
+        let bb_bottom_right = (pos.x + i32::from(size.0), pos.y + i32::from(size.1));
 
-        let chunk_range_x = (bb_top_left.0 / CHUNK_SIZE)..=(bb_bottom_right.0 / CHUNK_SIZE);
-        let chunk_range_y = (bb_top_left.1 / CHUNK_SIZE)..=(bb_bottom_right.1 / CHUNK_SIZE);
+        let chunk_range_x =
+            (bb_top_left.0 / i32::from(CHUNK_SIZE))..=(bb_bottom_right.0 / i32::from(CHUNK_SIZE));
+        let chunk_range_y =
+            (bb_top_left.1 / i32::from(CHUNK_SIZE))..=(bb_bottom_right.1 / i32::from(CHUNK_SIZE));
 
         debug_assert!(chunk_range_x.clone().count() >= 1);
         debug_assert!(chunk_range_y.clone().count() >= 1);
@@ -1994,10 +2002,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     let e_pos = e.get_pos();
                     let e_size = e.get_size(data_store);
 
-                    if (pos.x + usize::from(size.0)) <= e_pos.x
-                        || (pos.y + usize::from(size.1)) <= e_pos.y
-                        || (pos.x) >= (e_pos.x + usize::from(e_size.0))
-                        || (pos.y) >= (e_pos.y + usize::from(e_size.1))
+                    if (pos.x + i32::from(size.0)) <= e_pos.x
+                        || (pos.y + i32::from(size.1)) <= e_pos.y
+                        || (pos.x) >= (e_pos.x + i32::from(e_size.0))
+                        || (pos.y) >= (e_pos.y + i32::from(e_size.1))
                     {
                         continue;
                     }
@@ -2174,8 +2182,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
                             let inserter_search_area = (
                                 Position {
-                                    x: index_update.position.x - max_inserter_range as usize,
-                                    y: index_update.position.y - max_inserter_range as usize,
+                                    x: index_update.position.x - i32::from(max_inserter_range),
+                                    y: index_update.position.y - i32::from(max_inserter_range),
                                 },
                                 (
                                     2 * max_inserter_range as u16 + assembler_size.0,
@@ -2500,8 +2508,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
            + use<'a, 'b, ItemIdxType, RecipeIdxType> {
         self.get_entities_colliding_with(
             Position {
-                x: pole_pos.x - usize::from(connection_range),
-                y: pole_pos.y - usize::from(connection_range),
+                x: pole_pos.x - i32::from(connection_range),
+                y: pole_pos.y - i32::from(connection_range),
             },
             (
                 2 * connection_range as u16 + pole_size.0 as u16,
@@ -2601,10 +2609,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
                 let e_pos = e.get_pos();
                 let e_size = e.get_size(data_store);
 
-                (pos.x + usize::from(size.0)) <= e_pos.x
-                    || (pos.y + usize::from(size.1)) <= e_pos.y
-                    || (pos.x) >= (e_pos.x + usize::from(e_size.0))
-                    || (pos.y) >= (e_pos.y + usize::from(e_size.1))
+                (pos.x + i32::from(size.0)) <= e_pos.x
+                    || (pos.y + i32::from(size.1)) <= e_pos.y
+                    || (pos.x) >= (e_pos.x + i32::from(e_size.0))
+                    || (pos.y) >= (e_pos.y + i32::from(e_size.1))
             })
     }
 
@@ -2926,8 +2934,8 @@ impl Add<Dir> for Position {
     fn add(self, rhs: Dir) -> Self::Output {
         let offs = rhs.into_offset();
         Self {
-            x: self.x.checked_add_signed(offs.0.into()).unwrap(),
-            y: self.y.checked_add_signed(offs.1.into()).unwrap(),
+            x: self.x.checked_add(offs.0.into()).unwrap(),
+            y: self.y.checked_add(offs.1.into()).unwrap(),
         }
     }
 }
@@ -2975,8 +2983,8 @@ mod test {
             let e_pos = e_pos.unwrap();
             let e_size = e_size.unwrap();
 
-            for x_pos in e_pos.x..(e_pos.x + (e_size.0 as usize)) {
-                for y_pos in e_pos.y..(e_pos.y + (e_size.1 as usize)) {
+            for x_pos in e_pos.x..(e_pos.x + (e_size.0 as i32)) {
+                for y_pos in e_pos.y..(e_pos.y + (e_size.1 as i32)) {
                     prop_assert_eq!(state.world.get_entities_colliding_with(Position { x: x_pos, y: y_pos }, (1, 1), &DATA_STORE).into_iter().count(), 1,  "test_pos = {:?}, world + {:?}", Position {x: x_pos, y: y_pos}, state.world.get_chunk_for_tile(position));
                 }
             }
