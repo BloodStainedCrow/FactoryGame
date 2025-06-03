@@ -491,7 +491,7 @@ mod tests {
             window::{App, LoadedGameInfo, LoadedGameSized},
         },
         replays::{run_till_finished, Replay},
-        TICKS_PER_SECOND_LOGIC,
+        DATA_STORE, TICKS_PER_SECOND_LOGIC,
     };
 
     #[bench]
@@ -576,5 +576,23 @@ mod tests {
         for _ in 0..RUNTIME_AFTER_PRESUMED_CRASH {
             game_state_before_crash.update(&data_store);
         }
+    }
+
+    #[bench]
+    fn bench_huge_red_sci(b: &mut Bencher) {
+        let mut game_state = GameState::new_with_beacon_red_production(&DATA_STORE);
+
+        b.iter(|| {
+            game_state.update(&DATA_STORE);
+        })
+    }
+
+    #[bench]
+    fn bench_huge_red_green_sci(b: &mut Bencher) {
+        let mut game_state = GameState::new_with_beacon_red_green_production(&DATA_STORE);
+
+        b.iter(|| {
+            game_state.update(&DATA_STORE);
+        })
     }
 }

@@ -85,6 +85,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     }
 
     pub fn new_with_beacon_production(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+        Self::new_with_beacon_red_green_production(data_store)
+    }
+
+    pub fn new_with_beacon_red_green_production(
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
         let mut ret = Self {
             current_tick: 0,
             world: World::new(),
