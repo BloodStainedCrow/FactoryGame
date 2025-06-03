@@ -46,6 +46,9 @@ puffin = "0.19"
 [patch.crates-io]
 puffin_egui = { git = "https://github.com/BloodStainedCrow/puffin" }
 puffin = { git = "https://github.com/BloodStainedCrow/puffin" }
+egui = { path = "../egui/crates/egui" }
+eframe = { path = "../egui/crates/eframe" }
+egui-wgpu = { path = "../egui/crates/egui-wgpu" }
 
 [lints.rust]
 # TODO:

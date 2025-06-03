@@ -16,7 +16,7 @@ use crate::{
             Position,
         },
     },
-    item::{IdxTrait, Item, Recipe, WeakIdxTrait},
+    item::{IdxTrait, Recipe, WeakIdxTrait},
 };
 
 use super::{place_tile::PositionInfo, ActionType, PLAYERID};
@@ -43,12 +43,13 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
 
 #[derive(Debug, PartialEq)]
 pub enum StatisticsPanel {
-    Production(usize),
+    Items(usize),
+    Fluids(usize),
 }
 
 impl Default for StatisticsPanel {
     fn default() -> Self {
-        Self::Production(2)
+        Self::Items(2)
     }
 }
 

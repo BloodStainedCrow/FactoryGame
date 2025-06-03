@@ -289,7 +289,7 @@
                     x: 34,
                     y: 21,
                 ),
-                ty: 2,
+                ty: 3,
             )),
         )),
         SetRecipe((
@@ -307,8 +307,6 @@
                 y: 21,
             ),
             modules: [
-                1,
-                1,
                 1,
                 1,
             ],
@@ -914,7 +912,7 @@
         )),
                                                 PlaceEntity((
             entities: Single(Chest(
-                ty: 0,
+                ty: 2,
                 pos: (
                     x: 54,
                     y: 19,
@@ -923,7 +921,7 @@
         )),
         PlaceEntity((
             entities: Single(Chest(
-                ty: 0,
+                ty: 2,
                 pos: (
                     x: 55,
                     y: 19,
@@ -932,37 +930,10 @@
         )),
         PlaceEntity((
             entities: Single(Chest(
-                ty: 0,
+                ty: 2,
                 pos: (
                     x: 56,
                     y: 19,
-                ),
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Chest(
-                ty: 0,
-                pos: (
-                    x: 54,
-                    y: 25,
-                ),
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Chest(
-                ty: 0,
-                pos: (
-                    x: 55,
-                    y: 25,
-                ),
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Chest(
-                ty: 0,
-                pos: (
-                    x: 56,
-                    y: 25,
                 ),
             )),
         )),
@@ -1142,7 +1113,7 @@
                     x: 64,
                     y: 21,
                 ),
-                ty: 2,
+                ty: 3,
             )),
         )),
         SetRecipe((
@@ -1160,8 +1131,6 @@
                 y: 21,
             ),
             modules: [
-                1,
-                1,
                 1,
                 1,
             ],
@@ -1768,40 +1737,6 @@ PlaceEntity((
                 filter: None,
             )),
         )),
-
-PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 54,
-                    y: 24,
-                ),
-                dir: South,
-                filter: None,
-            )),
-        )),
-
-PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 55,
-                    y: 24,
-                ),
-                dir: South,
-                filter: None,
-            )),
-        )),
-
-PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 56,
-                    y: 24,
-                ),
-                dir: South,
-                filter: None,
-            )),
-        )),
-
 PlaceEntity((
             entities: Single(Inserter(
                 pos: (

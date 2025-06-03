@@ -29,7 +29,7 @@ impl<RecipeIdxType: IdxTrait> StorageStorageInserter<RecipeIdxType> {
         Self {
             storage_id_in: in_id,
             storage_id_out: out_id,
-            state: InserterState::Empty,
+            state: InserterState::WaitingForSourceItems,
         }
     }
 
@@ -45,7 +45,7 @@ impl<RecipeIdxType: IdxTrait> StorageStorageInserter<RecipeIdxType> {
         // Try and find a faster implementation of similar logic
 
         match self.state {
-            InserterState::Empty => {
+            InserterState::WaitingForSourceItems => {
                 let (_max_insert, old) = index(
                     storages,
                     self.storage_id_in,
@@ -61,7 +61,7 @@ impl<RecipeIdxType: IdxTrait> StorageStorageInserter<RecipeIdxType> {
                     self.state = InserterState::FullAndMovingOut(movetime);
                 }
             },
-            InserterState::FullAndWaitingForSlot => {
+            InserterState::WaitingForSpaceInDestination => {
                 let (max_insert, old) = index(
                     storages,
                     self.storage_id_out,
@@ -82,7 +82,7 @@ impl<RecipeIdxType: IdxTrait> StorageStorageInserter<RecipeIdxType> {
                     self.state = InserterState::FullAndMovingOut(time - 1);
                 } else {
                     // TODO: Do I want to try inserting immediately?
-                    self.state = InserterState::FullAndWaitingForSlot;
+                    self.state = InserterState::WaitingForSpaceInDestination;
                 }
             },
             InserterState::EmptyAndMovingBack(time) => {
@@ -90,7 +90,7 @@ impl<RecipeIdxType: IdxTrait> StorageStorageInserter<RecipeIdxType> {
                     self.state = InserterState::EmptyAndMovingBack(time - 1);
                 } else {
                     // TODO: Do I want to try getting a new item immediately?
-                    self.state = InserterState::Empty;
+                    self.state = InserterState::WaitingForSourceItems;
                 }
             },
         }

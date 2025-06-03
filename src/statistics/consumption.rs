@@ -16,25 +16,24 @@ use crate::{
 use super::{recipe::RecipeTickInfo, IntoSeries};
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct ProductionInfo {
-    pub items_produced: Vec<u64>,
+pub struct ConsumptionInfo {
+    items_consumed: Vec<u64>,
 }
 
-impl ProductionInfo {
+impl ConsumptionInfo {
     pub fn from_recipe_info<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         info: &RecipeTickInfo,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         Self {
-            items_produced: data_store
-                .item_to_recipe_where_its_output
+            items_consumed: data_store
+                .item_to_recipe_count_where_its_ingredient
                 .iter()
                 .map(|values| {
                     values
                         .iter()
                         .map(|(recipe, amount)| {
-                            (info.num_crafts_finished[recipe.id.into()].full_crafts
-                                + info.num_crafts_finished[recipe.id.into()].prod_crafts)
+                            info.num_crafts_finished[recipe.id.into()].full_crafts
                                 * u64::from(*amount)
                         })
                         .sum()
@@ -44,14 +43,14 @@ impl ProductionInfo {
     }
 }
 
-impl Add<&ProductionInfo> for ProductionInfo {
-    type Output = ProductionInfo;
+impl Add<&ConsumptionInfo> for ConsumptionInfo {
+    type Output = ConsumptionInfo;
 
-    fn add(mut self, rhs: &ProductionInfo) -> Self::Output {
+    fn add(mut self, rhs: &ConsumptionInfo) -> Self::Output {
         for (s, rhs) in self
-            .items_produced
+            .items_consumed
             .iter_mut()
-            .zip(rhs.items_produced.iter())
+            .zip(rhs.items_consumed.iter())
         {
             *s += rhs;
         }
@@ -60,12 +59,12 @@ impl Add<&ProductionInfo> for ProductionInfo {
     }
 }
 
-impl AddAssign<&ProductionInfo> for ProductionInfo {
-    fn add_assign(&mut self, rhs: &ProductionInfo) {
+impl AddAssign<&ConsumptionInfo> for ConsumptionInfo {
+    fn add_assign(&mut self, rhs: &ConsumptionInfo) {
         for (s, rhs) in self
-            .items_produced
+            .items_consumed
             .iter_mut()
-            .zip(rhs.items_produced.iter())
+            .zip(rhs.items_consumed.iter())
         {
             *s += rhs;
         }
@@ -73,7 +72,7 @@ impl AddAssign<&ProductionInfo> for ProductionInfo {
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
-    IntoSeries<Item<ItemIdxType>, ItemIdxType, RecipeIdxType> for ProductionInfo
+    IntoSeries<Item<ItemIdxType>, ItemIdxType, RecipeIdxType> for ConsumptionInfo
 {
     fn into_series(
         values: &[Self],
@@ -84,7 +83,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             values
                 .iter()
                 .map(|info| {
-                    info.items_produced
+                    info.items_consumed
                         .iter()
                         .zip(data_store.item_names.iter())
                         .enumerate()
@@ -110,12 +109,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     }
 }
 
-impl NewWithDataStore for ProductionInfo {
+impl NewWithDataStore for ConsumptionInfo {
     fn new<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         data_store: impl Borrow<DataStore<ItemIdxType, RecipeIdxType>>,
     ) -> Self {
         Self {
-            items_produced: vec![0; data_store.borrow().item_names.len()],
+            items_consumed: vec![0; data_store.borrow().item_names.len()],
         }
     }
 }

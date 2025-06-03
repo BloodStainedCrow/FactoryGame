@@ -43,6 +43,7 @@ pub struct MultiAssemblerStore<
     /// Power Consumption in 5% increments
     /// i.e. 28 => 140% Crafting speed
     /// Maximum is 1275% x Base Power Consumption
+    // TODO: We could just store base_power_consumption * power_consumption_modifier instead of doing this calculation every tick
     power_consumption_modifier: Box<[u8]>,
 
     raw_speed_mod: Box<[i16]>,
@@ -757,18 +758,10 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         recipe_outputs: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
         times: &[TIMERTYPE],
     ) -> (Watt, u32, u32) {
-        // FIXME: These depend on which machine we are.
-        const POWER_DRAIN: Watt = Watt(2_500);
-        const POWER_CONSUMPTION: Watt = Watt(75_000);
-
         let (ing_idx, out_idx) = recipe_lookup[self.recipe.id.into()];
 
         let our_ings: &[ITEMCOUNTTYPE; NUM_INGS] = &recipe_ings[ing_idx];
         let our_outputs: &[ITEMCOUNTTYPE; NUM_OUTPUTS] = &recipe_outputs[out_idx];
-
-        // TODO: For SOME reason, this is actually faster if this is a u32.
-        // It is also better, since it allows possibly having more than u16::max assembers of a single recipe
-        let running: u32 = 0;
 
         let mut times_ings_used = 0;
         let mut num_finished_crafts = 0;
@@ -780,7 +773,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         //     return;
         // }
 
-        debug_assert!(power_mult <= MAX_POWER_MULT);
+        assert!(power_mult <= MAX_POWER_MULT);
 
         // FIXME:
         // assert_eq!(self.outputs.len(), self.timers.len());
@@ -805,6 +798,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
         let mut power = Watt(0);
 
+        // TODO: Benchmark if this is okay
         for (
             mut outputs,
             (mut ings, (timer, (prod_timer, (speed_mod, (bonus_prod, (base_power, power_mod)))))),
@@ -826,8 +820,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         ) {
             // FIXME: Remove the items from the ings at the start of the crafting process
 
-            // TODO: Benchmark if this is okay
-            let increase = increase.saturating_mul(speed_mod.into()) / 20;
+            let increase = (u32::from(increase) * u32::from(speed_mod) / 20) as u16;
 
             let ing_mul: u8 = ings
                 .iter()
@@ -861,10 +854,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 + (1 - u16::from(timer_mul)) * new_timer;
 
             let new_prod_timer = prod_timer.wrapping_add(
-                new_timer
-                    .wrapping_sub(*timer)
-                    .saturating_mul(bonus_prod as u16)
-                    / 100,
+                (u32::from(new_timer.wrapping_sub(*timer)) * (bonus_prod as u32) / 100) as u16,
             );
 
             let prod_timer_mul: u8 = (new_prod_timer < *prod_timer).into();
@@ -1397,7 +1387,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         self.combined_speed_mod[usize::from(index)] = ((self.raw_speed_mod[usize::from(index)]
             + 20)
             * i16::from(self.base_speed[usize::from(index)])
-            / 10)
+            / 20)
             .clamp(0, u8::MAX.into())
             .try_into()
             .expect("Values already clamped");

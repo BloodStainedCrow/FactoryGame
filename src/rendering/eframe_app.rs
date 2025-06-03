@@ -71,9 +71,35 @@ impl eframe::App for App {
             let painter = ui.painter();
 
             if let Some(game) = &self.currently_loaded_game {
-                // if !ctx.wants_keyboard_input() && !ctx.wants_pointer_input() {
+                // Only create game input actions if the ui does not currently want input
+                let wants_pointer = ctx.wants_pointer_input();
+                let wants_keyboard = ctx.wants_keyboard_input();
+
                 ui.input(|input_state| {
                     for event in &input_state.events {
+                        match event {
+                            Event::Copy
+                            | Event::Cut
+                            | Event::Paste(_)
+                            | Event::Text(_)
+                            | Event::Key { .. } => {
+                                if wants_keyboard {
+                                    continue;
+                                }
+                            },
+                            Event::PointerMoved(_)
+                            | Event::MouseMoved(_)
+                            | Event::PointerButton { .. }
+                            | Event::PointerGone
+                            | Event::Zoom(_)
+                            | Event::Touch { .. }
+                            | Event::MouseWheel { .. } => {
+                                if wants_pointer {
+                                    continue;
+                                }
+                            },
+                            _ => {},
+                        }
                         let input = if let Event::PointerMoved(dest) = event {
                             Ok(Input::MouseMove(
                                 dest.x / size.width(),
@@ -88,7 +114,6 @@ impl eframe::App for App {
                         }
                     }
                 });
-                // }
 
                 match &game.state {
                     LoadedGame::ItemU8RecipeU8(loaded_game_sized) => {

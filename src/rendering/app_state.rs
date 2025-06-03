@@ -26,7 +26,10 @@ use crate::{
     network_graph::WeakIndex,
     power::{power_grid::PowerGridIdentifier, PowerGridStorage},
     research::{ResearchProgress, TechState, Technology},
-    statistics::{production::ProductionInfo, recipe::RecipeTickInfo, GenStatistics},
+    statistics::{
+        consumption::ConsumptionInfo, production::ProductionInfo, recipe::RecipeTickInfo,
+        GenStatistics,
+    },
     storage_list::{
         full_to_by_item, grid_size, num_recipes, sizes, storages_by_item, SingleItemStorages,
     },
@@ -96,7 +99,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         for y_start in (0..200_000).step_by(6_000) {
             for y_pos in (1590..6000).step_by(10) {
                 for x_pos in (1590..3000).step_by(60) {
-                    if rand::random::<u16>() == 0 {
+                    if rand::random::<u16>() < 100 {
                         ret.update(data_store);
                     }
 
@@ -1081,6 +1084,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         self.statistics.append_single_set_of_samples((
             ProductionInfo::from_recipe_info(&recipe_tick_info, data_store),
+            ConsumptionInfo::from_recipe_info(&recipe_tick_info, data_store),
             tech_progress,
         ));
 

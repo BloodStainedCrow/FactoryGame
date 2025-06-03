@@ -97,7 +97,7 @@ impl BeltBeltInserter {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            state: InserterState::Empty,
+            state: InserterState::WaitingForSourceItems,
         }
     }
 
@@ -114,7 +114,7 @@ impl BeltBeltInserter {
         // Try and find a faster implementation of similar logic
 
         match self.state {
-            InserterState::Empty => {
+            InserterState::WaitingForSourceItems => {
                 if let Some(item) = loc_in.peek_item() {
                     if filter_test(item) {
                         loc_in.force_take_item();
@@ -122,7 +122,7 @@ impl BeltBeltInserter {
                     }
                 }
             },
-            InserterState::FullAndWaitingForSlot => {
+            InserterState::WaitingForSpaceInDestination => {
                 if !loc_out.has_item() {
                     loc_out.force_put_item(filter);
 
@@ -134,7 +134,7 @@ impl BeltBeltInserter {
                     self.state = InserterState::FullAndMovingOut(time - 1);
                 } else {
                     // TODO: Do I want to try inserting immediately?
-                    self.state = InserterState::FullAndWaitingForSlot;
+                    self.state = InserterState::WaitingForSpaceInDestination;
                 }
             },
             InserterState::EmptyAndMovingBack(time) => {
@@ -142,7 +142,7 @@ impl BeltBeltInserter {
                     self.state = InserterState::EmptyAndMovingBack(time - 1);
                 } else {
                     // TODO: Do I want to try getting a new item immediately?
-                    self.state = InserterState::Empty;
+                    self.state = InserterState::WaitingForSourceItems;
                 }
             },
         }

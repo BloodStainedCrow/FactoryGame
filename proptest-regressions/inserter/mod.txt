@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc a27a3dc53d7764e25eaa4974387a987dd428e75859b930d82490208fccf4a1a1 # shrinks to (item, num_grids, storage) = (Item { id: 0 }, 1, Lab { grid: 0, index: 0 })
+cc da0b9b95353896ab4b3c74e271842d68b773f18aa829b4f174a035584bd104e6 # shrinks to (item, num_grids, storage) = (Item { id: 0 }, 1, Static { index: 0, static_id: Chest })

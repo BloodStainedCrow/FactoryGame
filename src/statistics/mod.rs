@@ -1,6 +1,7 @@
 use std::{array, ops::AddAssign};
 
 use charts_rs::{LineChart, Series};
+use consumption::ConsumptionInfo;
 use production::ProductionInfo;
 
 use crate::{
@@ -10,6 +11,7 @@ use crate::{
     NewWithDataStore,
 };
 
+pub mod consumption;
 mod power;
 pub mod production;
 pub mod recipe;
@@ -24,7 +26,7 @@ pub const TIMESCALE_NAMES: [&'static str; NUM_DIFFERENT_TIMESCALES] =
     ["10 seconds", "1 minute", "1 hour"];
 
 pub const TIMESCALE_LEGEND: [fn(f64) -> String; NUM_DIFFERENT_TIMESCALES] = [
-    |t| format!("{:.0}s", dbg!(t / 60.0)),
+    |t| format!("{:.0}s", t / 60.0),
     |t| format!("{:.0}s", t),
     |t| format!("{:.0}m", t),
 ];
@@ -32,6 +34,7 @@ pub const TIMESCALE_LEGEND: [fn(f64) -> String; NUM_DIFFERENT_TIMESCALES] = [
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct GenStatistics {
     pub production: Timeline<ProductionInfo>,
+    pub consumption: Timeline<ConsumptionInfo>,
     research: Timeline<u64>,
 }
 
@@ -41,14 +44,19 @@ impl GenStatistics {
     ) -> Self {
         GenStatistics {
             production: Timeline::new(true, data_store),
+            consumption: Timeline::new(true, data_store),
             research: Timeline::new(true, data_store),
         }
     }
 
     #[profiling::function]
-    pub fn append_single_set_of_samples(&mut self, samples: (ProductionInfo, ResearchProgress)) {
+    pub fn append_single_set_of_samples(
+        &mut self,
+        samples: (ProductionInfo, ConsumptionInfo, ResearchProgress),
+    ) {
         self.production.append_single_set_of_samples(samples.0);
-        self.research.append_single_set_of_samples(samples.1 as u64);
+        self.consumption.append_single_set_of_samples(samples.1);
+        self.research.append_single_set_of_samples(samples.2 as u64);
     }
 
     pub fn get_chart<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(

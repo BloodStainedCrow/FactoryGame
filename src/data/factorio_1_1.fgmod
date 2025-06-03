@@ -378,6 +378,16 @@
             base_bonus_prod: 0,
             base_speed: 25,
         ),
+        (
+            name: "factory_game::electric_furnace",
+            display_name: "Electric Furnace",
+            tile_size: (3, 3),
+            working_power_draw: (180000),
+            fluid_connection_offsets: [],
+            num_module_slots: 2,
+            base_bonus_prod: 0,
+            base_speed: 40,
+        ),
     ],
     labs: [
         (

@@ -2,12 +2,13 @@ use std::u16;
 
 use itertools::Itertools;
 use rayon::{iter::IndexedParallelIterator, slice::ParallelSliceMut};
+use strum::IntoEnumIterator;
 
 use crate::{
     assembler::FullAssemblerStore,
     chest::FullChestStore,
     data::{DataStore, ItemRecipeDir},
-    inserter::Storage,
+    inserter::{StaticID, Storage},
     item::{usize_from, IdxTrait, Item, ITEMCOUNTTYPE},
     lab::MultiLabStore,
     power::{power_grid::PowerGridIdentifier, PowerGridStorage},
@@ -38,6 +39,16 @@ pub fn num_recipes<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         .len()
         + data_store.item_to_recipe_where_its_output[usize_from(item.id)].len();
     num_recipes
+}
+
+pub fn static_size<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+) -> usize {
+    StaticID::iter()
+        .map(|s| match s {
+            StaticID::Chest => data_store.item_names.len(),
+        })
+        .sum()
 }
 
 pub fn grid_size<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
