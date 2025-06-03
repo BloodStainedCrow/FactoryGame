@@ -9,15 +9,6 @@
                 ty: 2,
             )),
         )),
-        SetRecipe((
-            pos: (
-                x: 24,
-                y: 21,
-            ),
-            recipe: (
-                id: 0,
-            ),
-        )),
         AddModules(
             pos: (
                 x: 24,
@@ -295,24 +286,6 @@
                 0,
             ],
         ),
-        PlaceEntity((
-            entities: Single(Chest(
-                pos: (
-                    x: 28,
-                    y: 22,
-                ),
-                ty: 0
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                dir: East,
-                pos: (
-                    x: 27,
-                    y: 22,
-                ),
-            )),
-        )),
         PlaceEntity((
             entities: Single(SolarPanel(
                 ty: 0,

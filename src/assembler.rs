@@ -780,10 +780,12 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         // assert_eq!(self.input1.len(), self.timers.len());
         // assert!(self.outputs.len() % Simdtype::LEN == 0);
 
-        // TODO: This does not round correctly
-        let increase: TIMERTYPE = (TIMERTYPE::from(power_mult)
-            * (TIMERTYPE::MAX / TIMERTYPE::from(MAX_POWER_MULT)))
-            / times[self.recipe.id.into()];
+        // TODO: Is this amount of accuracy enough?
+        let increase: TIMERTYPE = (u32::from(power_mult) * u32::from(TIMERTYPE::MAX)
+            / u32::from(MAX_POWER_MULT)
+            / u32::from(times[self.recipe.id.into()]))
+        .try_into()
+        .unwrap_or(TIMERTYPE::MAX);
 
         // TODO: I don't think this holds anymore, now that we cannot bail early at 0 power_mult
         // debug_assert!(increase > 0);
@@ -956,6 +958,8 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         for out in &mut self.outputs {
             out[index] = ITEMCOUNTTYPE::MAX;
         }
+        self.timers[index] = 0;
+        self.prod_timers[index] = 0;
 
         ret
     }
@@ -1044,6 +1048,8 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         for out in &mut self.outputs {
             out[index] = ITEMCOUNTTYPE::MAX;
         }
+        self.timers[index] = 0;
+        self.prod_timers[index] = 0;
         self.base_power_consumption[index] = Watt(0);
 
         ret

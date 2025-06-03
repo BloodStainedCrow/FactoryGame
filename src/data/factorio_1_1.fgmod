@@ -242,7 +242,7 @@
                     amount: 1,
                 ),
             ],
-            time_to_craft: 300,
+            time_to_craft: 360,
             is_intermediate: true,
         ),
     ],

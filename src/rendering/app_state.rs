@@ -92,6 +92,37 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             statistics: GenStatistics::new(data_store),
         };
 
+        let file = File::open("test_blueprints/red_and_green.bp").unwrap();
+        let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
+
+        for y_start in (0..200_000).step_by(6_000) {
+            for y_pos in (1590..6000).step_by(40) {
+                for x_pos in (1590..3000).step_by(50) {
+                    bp.apply(
+                        Position {
+                            x: x_pos,
+                            y: y_start + y_pos,
+                        },
+                        &mut ret,
+                        data_store,
+                    );
+                }
+            }
+        }
+
+        ret
+    }
+
+    pub fn new_with_beacon_red_production(
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
+        let mut ret = Self {
+            current_tick: 0,
+            world: World::new(),
+            simulation_state: SimulationState::new(data_store),
+            statistics: GenStatistics::new(data_store),
+        };
+
         let file = File::open("test_blueprints/red_sci_with_beacons.bp").unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
 
@@ -189,7 +220,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         // bp.apply(Position { x: 1610, y: 1590 }, &mut ret, data_store);
         // bp.apply(Position { x: 1620, y: 1590 }, &mut ret, data_store);
         // bp.apply(Position { x: 1630, y: 1590 }, &mut ret, data_store);
-        // bp.apply(Position { x: 1640, y: 1590 }, &mut ret, data_store);
+
+        // bp.apply(Position { x: 1590, y: 1600 }, &mut ret, data_store);
+        // bp.apply(Position { x: 1600, y: 1600 }, &mut ret, data_store);
+        // bp.apply(Position { x: 1610, y: 1600 }, &mut ret, data_store);
+        // bp.apply(Position { x: 1620, y: 1600 }, &mut ret, data_store);
+        // bp.apply(Position { x: 1630, y: 1600 }, &mut ret, data_store);
+
+        // bp.apply(Position { x: 1590, y: 1610 }, &mut ret, data_store);
+        // bp.apply(Position { x: 1600, y: 1610 }, &mut ret, data_store);
+        // bp.apply(Position { x: 1610, y: 1610 }, &mut ret, data_store);
+        // bp.apply(Position { x: 1620, y: 1610 }, &mut ret, data_store);
+        // bp.apply(Position { x: 1630, y: 1610 }, &mut ret, data_store);
+
+        // bp.apply(Position { x: 1590, y: 1620 }, &mut ret, data_store);
+        // bp.apply(Position { x: 1600, y: 1620 }, &mut ret, data_store);
+        // bp.apply(Position { x: 1610, y: 1620 }, &mut ret, data_store);
+        // bp.apply(Position { x: 1620, y: 1620 }, &mut ret, data_store);
+        // bp.apply(Position { x: 1630, y: 1620 }, &mut ret, data_store);
 
         ret
     }
@@ -430,6 +478,33 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         },
                     }
                 },
+                ActionType::SetChestSlotLimit { pos, num_slots } => self
+                    .world
+                    .mutate_entities_colliding_with(pos, (1, 1), data_store, |e| {
+                        match e {
+                            Entity::Chest {
+                                ty,
+                                pos,
+                                item,
+                                slot_limit,
+                            } => {
+                                if let Some((item, index)) = item {
+                                    let removed_items = self.simulation_state.factory.chests.stores
+                                        [usize_from(item.id)]
+                                    .change_chest_size(
+                                        *index,
+                                        data_store.item_stack_sizes[usize_from(item.id)] as u16
+                                            * num_slots as u16,
+                                    );
+                                }
+                                *slot_limit = num_slots;
+                            },
+                            _ => {
+                                warn!("Tried to set slot limit on non chest");
+                            },
+                        }
+                        ControlFlow::Break(())
+                    }),
                 ActionType::PlaceEntity(place_entity_info) => match place_entity_info.entities {
                     crate::frontend::action::place_entity::EntityPlaceOptions::Single(
                         place_entity_type,
@@ -615,6 +690,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     ty,
                                     pos,
                                     item: None,
+                                    slot_limit: data_store.chest_num_slots[usize::from(ty)],
                                 },
                                 &mut self.simulation_state,
                                 data_store,

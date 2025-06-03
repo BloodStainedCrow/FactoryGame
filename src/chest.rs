@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::{cmp::min, u8};
 
 use rayon::iter::IndexedParallelIterator;
@@ -9,8 +10,6 @@ use crate::{
 };
 
 const CHEST_GOAL_AMOUNT: ITEMCOUNTTYPE = ITEMCOUNTTYPE::MAX / 2;
-
-const MAX_INSERT_AMOUNT: &'static [ITEMCOUNTTYPE] = &[ITEMCOUNTTYPE::MAX; 10_000_000];
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct FullChestStore<ItemIdxType: WeakIdxTrait> {
@@ -39,7 +38,7 @@ impl<ItemIdxType: IdxTrait> FullChestStore<ItemIdxType> {
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct MultiChestStore<ItemIdxType: WeakIdxTrait> {
     item: Item<ItemIdxType>,
-    max_insert: Option<Vec<ITEMCOUNTTYPE>>,
+    max_insert: Vec<ITEMCOUNTTYPE>,
     pub inout: Vec<ITEMCOUNTTYPE>,
     storage: Vec<u16>,
     // TODO: Any way to not have to store this a billion times?
@@ -56,7 +55,7 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
             item,
             inout: vec![],
             storage: vec![],
-            max_insert: None,
+            max_insert: vec![],
             max_items: vec![],
             holes: vec![],
         }
@@ -65,33 +64,26 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
     pub fn add_chest<RecipeIdxType: IdxTrait>(
         &mut self,
         ty: u8,
+        slot_limit: u8,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> usize {
         let stack_size = data_store.item_stack_sizes[usize_from(self.item.id)];
-        let num_stacks = data_store.chest_num_slots[usize::from(ty)];
+        assert!(slot_limit <= data_store.chest_num_slots[usize::from(ty)]);
+        let num_stacks = slot_limit;
         let max_items = u16::from(stack_size) * u16::from(num_stacks);
-
-        if max_items < u16::from(ITEMCOUNTTYPE::MAX) {
-            if self.max_insert.is_none() {
-                self.max_insert = Some(vec![ITEMCOUNTTYPE::MAX; self.max_items.len()]);
-            }
-        }
 
         if let Some(hole) = self.holes.pop() {
             self.inout[hole] = 0;
             self.storage[hole] = 0;
-            if let Ok(max_insert) = max_items.try_into() {
-                self.max_insert.as_mut().unwrap()[hole] = max_insert;
-            }
+            self.max_insert[hole] = max_items.try_into().unwrap_or(ITEMCOUNTTYPE::MAX);
 
             self.max_items[hole] = max_items.saturating_sub(u16::from(ITEMCOUNTTYPE::MAX));
             hole
         } else {
             self.inout.push(0);
             self.storage.push(0);
-            if let Ok(max_insert) = max_items.try_into() {
-                self.max_insert.as_mut().unwrap().push(max_insert);
-            }
+            self.max_insert
+                .push(max_items.try_into().unwrap_or(ITEMCOUNTTYPE::MAX));
 
             self.max_items
                 .push(max_items.saturating_sub(u16::from(ITEMCOUNTTYPE::MAX)));
@@ -109,7 +101,7 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         let items = self.inout[index] as u16 + self.storage[index];
         self.inout[index] = 0;
         self.storage[index] = 0;
-        self.storage[index] = 0;
+        self.max_items[index] = 0;
         items
     }
 
@@ -163,20 +155,52 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
                 ) as i16);
 
             *inout = (*inout as u16).wrapping_sub_signed(moved) as u8;
-            *storage += moved as u16;
+            *storage = (*storage).wrapping_add_signed(moved) as u16;
 
             debug_assert!(*storage <= max_items);
         }
     }
 
+    /// Returns the number of items no longer part of the box
+    pub fn change_chest_size(&mut self, index: usize, new_size: u16) -> u16 {
+        let removed_items = if new_size < max(self.max_items[index], self.max_insert[index] as u16)
+        {
+            let current_items = self.inout[index] as u16 + self.storage[index];
+
+            if current_items > new_size {
+                let items_to_remove = current_items - new_size;
+
+                if self.storage[index] >= items_to_remove {
+                    self.storage[index] -= items_to_remove
+                } else {
+                    self.inout[index] = self.inout[index]
+                        .checked_sub(
+                            items_to_remove
+                                .checked_sub(self.storage[index])
+                                .unwrap()
+                                .try_into()
+                                .unwrap(),
+                        )
+                        .unwrap();
+                    self.storage[index] = 0;
+                }
+
+                items_to_remove
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+
+        self.max_items[index] = new_size.saturating_sub(u16::from(ITEMCOUNTTYPE::MAX));
+        self.max_insert[index] = new_size.try_into().unwrap_or(ITEMCOUNTTYPE::MAX);
+
+        removed_items
+    }
+
     pub fn storage_list_slices(&mut self) -> (&[ITEMCOUNTTYPE], &mut [ITEMCOUNTTYPE]) {
-        (
-            self.max_insert
-                .as_ref()
-                .map(|v| v.as_slice())
-                .unwrap_or(MAX_INSERT_AMOUNT),
-            self.inout.as_mut_slice(),
-        )
+        (self.max_insert.as_slice(), self.inout.as_mut_slice())
     }
 }
 

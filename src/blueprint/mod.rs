@@ -187,6 +187,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                     },
                     modules: modules.clone(),
                 },
+                ActionType::SetChestSlotLimit { pos, num_slots } => ActionType::SetChestSlotLimit {
+                    pos: Position {
+                        x: base_pos.x + pos.x,
+                        y: base_pos.y + pos.y,
+                    },
+                    num_slots: *num_slots,
+                },
                 a => unreachable!("{:?}", a),
             }),
             data_store,

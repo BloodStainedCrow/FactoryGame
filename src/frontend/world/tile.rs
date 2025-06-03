@@ -153,7 +153,7 @@ fn instantiate_inserter_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     warn!("We seem to have instantiated the same inserter twice?!?");
                 },
                 Err(e) => {
-                    info!("try_instantiate_inserter failed at {:?}, with {e:?}", pos);
+                    // info!("try_instantiate_inserter failed at {:?}, with {e:?}", pos);
                 },
             }
         }),
@@ -407,7 +407,7 @@ fn new_power_pole<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 updates.push(new_powered_beacon_cascade(*pos, data_store));
                             },
                             e => {
-                                warn!("Entity {e:?} cannot accept power in start_powering_entity")
+                                // warn!("Entity {e:?} cannot accept power in start_powering_entity")
                             },
                         }
                         ControlFlow::Continue(())
@@ -426,7 +426,12 @@ fn new_chest_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
         update: Box::new(move |world, sim_state, updates, data_store| {
-            let Some(Entity::Chest { ty, pos, item: _ }) = world
+            let Some(Entity::Chest {
+                ty,
+                pos,
+                item: _,
+                slot_limit: _,
+            }) = world
                 .get_entities_colliding_with(pos, (1, 1), data_store)
                 .into_iter()
                 .next()
@@ -1017,6 +1022,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 ty,
                 pos,
                 item: None,
+                slot_limit: _,
             } => {
                 cascading_updates.push(new_chest_cascade(pos));
             },
@@ -1024,6 +1030,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 ty,
                 pos,
                 item: Some(_),
+                slot_limit: _,
             } => {
                 cascading_updates.push(new_chest_cascade(pos));
             },
@@ -1186,6 +1193,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     ty: _,
                     pos: _,
                     item: Some((item, index)),
+                    slot_limit: _
                 } => Some(InserterConnectionPossibility {
                     conn:  InserterConnection::Storage(Static::Done(Storage::Static {
                         static_id: StaticID::Chest,
@@ -1198,6 +1206,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     ty,
                     pos,
                     item: None,
+                    slot_limit: _
                 } => Some(InserterConnectionPossibility {
                     conn:  InserterConnection::Storage(Static::ToInstantiate),
                     inserter_item_hint: None,
@@ -1285,6 +1294,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     ty,
                     pos,
                     item: Some((item, index)),
+                    slot_limit: _
                 } => Some(InserterConnectionPossibility {
                     conn:  InserterConnection::Storage(Static::Done(Storage::Static {
                         static_id: StaticID::Chest,
@@ -1297,6 +1307,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     ty: _,
                     pos: _,
                     item: None,
+                    slot_limit: _
                 } => Some(InserterConnectionPossibility {
                     conn:  InserterConnection::Storage(Static::ToInstantiate),
                     inserter_item_hint: None,
@@ -1419,10 +1430,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     ty,
                                     pos: chest_pos,
                                     item,
+                                    slot_limit,
                                 } => {
                                     let index = simulation_state.factory.chests.stores
                                         [usize_from(determined_filter.id)]
-                                    .add_chest(*ty, data_store);
+                                    .add_chest(*ty, *slot_limit, data_store);
                                     *item = Some((determined_filter, index));
                                     instantiated.push(*chest_pos);
                                     storage = Some(Storage::Static {
@@ -1487,10 +1499,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     ty,
                                     pos: chest_pos,
                                     item,
+                                    slot_limit,
                                 } => {
                                     let index = simulation_state.factory.chests.stores
                                         [usize_from(determined_filter.id)]
-                                    .add_chest(*ty, data_store);
+                                    .add_chest(*ty, *slot_limit, data_store);
                                     *item = Some((determined_filter, index));
                                     instantiated.push(*chest_pos);
                                     storage = Some(Storage::Static {
@@ -1556,10 +1569,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     ty,
                                     pos: chest_pos,
                                     item,
+                                    slot_limit,
                                 } => {
                                     let index = simulation_state.factory.chests.stores
                                         [usize_from(determined_filter.id)]
-                                    .add_chest(*ty, data_store);
+                                    .add_chest(*ty, *slot_limit, data_store);
                                     *item = Some((determined_filter, index));
                                     instantiated.push(*chest_pos);
                                     storage = Some(Storage::Static {
@@ -1585,10 +1599,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     ty,
                                     pos: chest_pos,
                                     item: item @ None,
+                                    slot_limit,
                                 } => {
                                     let index = simulation_state.factory.chests.stores
                                         [usize_from(determined_filter.id)]
-                                    .add_chest(*ty, data_store);
+                                    .add_chest(*ty, *slot_limit, data_store);
                                     *item = Some((determined_filter, index));
                                     instantiated.push(*chest_pos);
                                     storage = Some(Storage::Static {
@@ -2382,7 +2397,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 } => todo!(),
                 Entity::Splitter { pos, direction, id } => todo!(),
 
-                Entity::Chest { ty, pos, item } => {
+                Entity::Chest {
+                    ty,
+                    pos,
+                    item,
+                    slot_limit,
+                } => {
                     if let Some((item, index)) = item {
                         let chest_removal_info = sim_state.factory.chests.stores
                             [usize_from(item.id)]
@@ -2686,6 +2706,7 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         ty: u8,
         pos: Position,
         item: Option<(Item<ItemIdxType>, usize)>,
+        slot_limit: u8,
     },
     Roboport {
         // This means at most 256 different types of Roboports can exist, should be fine

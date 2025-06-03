@@ -4,7 +4,7 @@ use crate::{
     assembler::AssemblerOnclickInfo,
     belt::{belt::Belt, splitter::SPLITTER_BELT_LEN, BeltTileId},
     blueprint::Blueprint,
-    data::{factorio_1_1::get_raw_data_test, DataStore},
+    data::{factorio_1_1::get_raw_data_test, DataStore, ItemRecipeDir},
     frontend::{
         action::{
             action_state_machine::{
@@ -383,7 +383,12 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 }
                                 // todo!()
                             },
-                            Entity::Chest { ty, pos, item } => {
+                            Entity::Chest {
+                                ty,
+                                pos,
+                                item,
+                                slot_limit: _,
+                            } => {
                                 entity_layer.draw_sprite(
                                     &texture_atlas.default,
                                     DrawInstance {
@@ -687,13 +692,13 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                         match info {
                             crate::frontend::world::tile::AssemblerInfo::UnpoweredNoRecipe => {
-                                ui.label("Assembler");
+                                ui.label(&data_store.assembler_info[usize::from(*ty)].display_name);
                                 if let Some(goal_recipe) = goal_recipe {
                                     actions.push(ActionType::SetRecipe(SetRecipeInfo { pos: *pos, recipe: goal_recipe }));
                                 }
                             },
                             crate::frontend::world::tile::AssemblerInfo::Unpowered(recipe) => {
-                                ui.label("Assembler");
+                                ui.label(&data_store.assembler_info[usize::from(*ty)].display_name);
                                 if let Some(goal_recipe) = goal_recipe {
                                     if goal_recipe != *recipe {
                                         actions.push(ActionType::SetRecipe(SetRecipeInfo { pos: *pos, recipe: goal_recipe }));
@@ -701,7 +706,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 }
                             },
                             crate::frontend::world::tile::AssemblerInfo::PoweredNoRecipe(grid) => {
-                                ui.label("Assembler");
+                                ui.label(&data_store.assembler_info[usize::from(*ty)].display_name);
                                 if let Some(goal_recipe) = goal_recipe {
                                     actions.push(ActionType::SetRecipe(SetRecipeInfo { pos: *pos, recipe: goal_recipe }));
                                 }
@@ -710,7 +715,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 id,
                                 pole_position, weak_index
                             } => {
-                                ui.label("Assembler");
+                                ui.label(&data_store.assembler_info[usize::from(*ty)].display_name);
 
 
                                 ui.label(format!("{:?}", *id));
@@ -723,6 +728,8 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                                 // TODO:
                                 // ui.label(data_store.recipe_names[usize_from(assembler_id.recipe.id)]);
+
+                                let time_per_recipe = data_store.recipe_timers[usize_from(id.recipe.id)] as f32;
 
                                 let AssemblerOnclickInfo {
                                     inputs,
@@ -745,18 +752,34 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 let prod_pb = ProgressBar::new(prod_timer_percentage).fill(Color32::ORANGE).show_percentage().corner_radius(CornerRadius::ZERO);
                                 ui.add(prod_pb);
 
+                                let crafting_speed = base_speed * (1.0 + speed_mod);
+                                let time_per_craft = time_per_recipe / crafting_speed;
+
                                 TableBuilder::new(ui).columns(Column::auto().resizable(false), inputs.len() + outputs.len()).body(|mut body| {
                                     body.row(5.0, |mut row| {
-                                        for (item, count) in inputs.iter().chain(outputs.iter()) {
+                                        for (item, count) in inputs.iter() {
+                                            let (_, _, count_in_recipe) = data_store.recipe_to_items_and_amounts[&id.recipe].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Ing && *item == *recipe_item).unwrap();
                                             row.col(|ui| {
                                                 ui.add(egui::Label::new(&data_store.item_names[usize_from(item.id)]).wrap_mode(egui::TextWrapMode::Extend));
                                                 ui.add(egui::Label::new(format!("{}", *count)).wrap_mode(egui::TextWrapMode::Extend));
+                                                ui.add(egui::Label::new(format!("{}/s", (*count_in_recipe as f32) / (time_per_craft / 60.0))).wrap_mode(egui::TextWrapMode::Extend));
+                                            });
+                                        }
+
+                                        for (item, count) in outputs.iter() {
+                                            let (_, _, count_in_recipe) = data_store.recipe_to_items_and_amounts[&id.recipe].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Out && *item == *recipe_item).unwrap();
+                                            row.col(|ui| {
+                                                ui.add(egui::Label::new(&data_store.item_names[usize_from(item.id)]).wrap_mode(egui::TextWrapMode::Extend));
+                                                ui.add(egui::Label::new(format!("{}", *count)).wrap_mode(egui::TextWrapMode::Extend));
+                                                ui.add(egui::Label::new(format!("{:.2}/s", (*count_in_recipe as f32) / (time_per_craft / 60.0) * (1.0 + prod_mod))).wrap_mode(egui::TextWrapMode::Extend));
                                             });
                                         }
                                     });
                                 });
 
-                                ui.label(format!("Crafting Speed: {:.2}({:+.0}%)", base_speed * (1.0 + speed_mod), speed_mod * 100.0));
+
+
+                                ui.label(format!("Crafting Speed: {:.2}({:+.0}%)", crafting_speed, speed_mod * 100.0));
                                 ui.label(format!("Productivity: {:.1}%", prod_mod * 100.0));
                                 ui.label(format!("Max Consumption: {}({:+.0}%)", Watt((base_power_consumption.0 as f64 * (1.0 + power_consumption_mod as f64)) as u64), power_consumption_mod * 100.0));
 
@@ -895,6 +918,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         ty,
                         pos,
                         item,
+                        slot_limit,
                     } => {
                         let Some((item, index)) = item else {
                             todo!()

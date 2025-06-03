@@ -27,6 +27,8 @@ pub enum ActionType<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     AddModules { pos: Position, modules: Vec<usize> },
     RemoveModules { pos: Position, indices: Vec<usize> },
 
+    SetChestSlotLimit { pos: Position, num_slots: u8 },
+
     Remove(Position),
 
     Ping(Position),
