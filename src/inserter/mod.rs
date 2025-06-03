@@ -67,7 +67,7 @@ pub const MAX_TIMES_AN_ITEM_CAN_APPEAR_IN_RECIPES: usize = u16::MAX as usize;
 pub const MAX_RECIPE_COUNT: usize = u16::MAX as usize;
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
-struct FakeUnionStorage {
+pub struct FakeUnionStorage {
     index: u32,
     grid_or_static_flag: u16,
     recipe_idx_with_this_item: u16,
@@ -75,7 +75,7 @@ struct FakeUnionStorage {
 
 impl FakeUnionStorage {
     #[inline(always)]
-    fn into_inner_and_outer_indices(
+    pub fn into_inner_and_outer_indices(
         self,
         num_grids_total: usize,
         grid_size: usize,
@@ -104,7 +104,7 @@ impl FakeUnionStorage {
         )
     }
 
-    fn from_storage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    pub fn from_storage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         item: Item<ItemIdxType>,
         storage: Storage<RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,

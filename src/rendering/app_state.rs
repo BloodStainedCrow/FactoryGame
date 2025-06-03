@@ -20,7 +20,7 @@ use crate::{
     },
     inserter::{
         belt_belt_inserter::BeltBeltInserter, storage_storage_inserter::StorageStorageInserter,
-        Storage, MOVETIME,
+        FakeUnionStorage, Storage, MOVETIME,
     },
     item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
     network_graph::WeakIndex,
@@ -271,18 +271,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SimulationState<ItemIdxType
 pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub power_grids: PowerGridStorage<ItemIdxType, RecipeIdxType>,
     pub belts: BeltStore<ItemIdxType, RecipeIdxType>,
-    pub storage_storage_inserters: StorageStorageInserterStore<RecipeIdxType>,
+    pub storage_storage_inserters: StorageStorageInserterStore,
     pub chests: FullChestStore<ItemIdxType>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct StorageStorageInserterStore<RecipeIdxType: WeakIdxTrait> {
-    pub inserters: Box<[Vec<StorageStorageInserter<RecipeIdxType>>]>,
+pub struct StorageStorageInserterStore {
+    pub inserters: Box<[Vec<StorageStorageInserter>]>,
     holes: Box<[Vec<usize>]>,
 }
 
-impl<RecipeIdxType: IdxTrait> StorageStorageInserterStore<RecipeIdxType> {
-    fn new<ItemIdxType: IdxTrait>(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+impl StorageStorageInserterStore {
+    fn new<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
         Self {
             inserters: vec![vec![]; data_store.item_names.len()].into_boxed_slice(),
             holes: vec![vec![]; data_store.item_names.len()].into_boxed_slice(),
@@ -290,7 +292,7 @@ impl<RecipeIdxType: IdxTrait> StorageStorageInserterStore<RecipeIdxType> {
     }
 
     #[profiling::function]
-    fn update<'a, 'b, ItemIdxType: IdxTrait>(
+    fn update<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut self,
         full_storages: impl IndexedParallelIterator<Item = SingleItemStorages<'a, 'b>>,
         num_grids_total: usize,
@@ -327,19 +329,25 @@ impl<RecipeIdxType: IdxTrait> StorageStorageInserterStore<RecipeIdxType> {
             });
     }
 
-    pub fn add_ins<ItemIdxType: IdxTrait>(
+    pub fn add_ins<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut self,
         item: Item<ItemIdxType>,
         start: Storage<RecipeIdxType>,
         dest: Storage<RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> usize {
         let idx = if let Some(hole_idx) = self.holes[usize_from(item.id)].pop() {
-            self.inserters[usize_from(item.id)][hole_idx] =
-                StorageStorageInserter::new(start, dest);
+            self.inserters[usize_from(item.id)][hole_idx] = StorageStorageInserter::new(
+                FakeUnionStorage::from_storage(item, start, data_store),
+                FakeUnionStorage::from_storage(item, dest, data_store),
+            );
 
             hole_idx
         } else {
-            self.inserters[usize_from(item.id)].push(StorageStorageInserter::new(start, dest));
+            self.inserters[usize_from(item.id)].push(StorageStorageInserter::new(
+                FakeUnionStorage::from_storage(item, start, data_store),
+                FakeUnionStorage::from_storage(item, dest, data_store),
+            ));
 
             self.inserters[usize_from(item.id)].len() - 1
         };

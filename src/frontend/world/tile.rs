@@ -1630,6 +1630,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     determined_filter,
                     start_storage,
                     dest_storage,
+                    data_store,
                 );
 
                 let Entity::Inserter { info, .. } = self
