@@ -31,6 +31,8 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
 
     pub statistics_panel_open: bool,
     pub statistics_panel: StatisticsPanel,
+    pub production_filters: Vec<bool>,
+    pub consumption_filters: Vec<bool>,
 
     current_mouse_pos: (f32, f32),
     current_held_keys: HashSet<Key>,
@@ -72,13 +74,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     ActionStateMachine<ItemIdxType, RecipeIdxType>
 {
     #[must_use]
-    pub fn new(my_player_id: PLAYERID, local_player_pos: (f32, f32)) -> Self {
+    pub fn new(
+        my_player_id: PLAYERID,
+        local_player_pos: (f32, f32),
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
         Self {
             my_player_id,
             local_player_pos,
 
             statistics_panel_open: false,
             statistics_panel: StatisticsPanel::default(),
+            production_filters: vec![true; data_store.item_names.len()],
+            consumption_filters: vec![true; data_store.item_names.len()],
 
             current_mouse_pos: (0.0, 0.0),
             current_held_keys: HashSet::new(),
@@ -535,9 +543,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         mouse_pos: (f32, f32),
     ) -> Position {
         let mouse_pos = (
-            ((mouse_pos.0 - 0.5) * (WIDTH_PER_LEVEL as f32))
+            ((mouse_pos.0) * (WIDTH_PER_LEVEL as f32))
                 .mul_add(zoom_level * zoom_level, player_pos.0),
-            ((mouse_pos.1 - 0.5) * (WIDTH_PER_LEVEL as f32))
+            ((mouse_pos.1) * (WIDTH_PER_LEVEL as f32))
                 .mul_add(zoom_level * zoom_level, player_pos.1),
         );
 

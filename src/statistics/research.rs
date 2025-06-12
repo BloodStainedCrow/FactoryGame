@@ -25,8 +25,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> IntoSeries<(), ItemIdxType,
         values: &[Self],
         filter: Option<impl Fn(()) -> bool>,
         _data_store: &crate::data::DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<Item = charts_rs::Series> {
-        iter::once(
+    ) -> impl IntoIterator<Item = (usize, charts_rs::Series)> {
+        iter::once((
+            0,
             (
                 "Research",
                 values
@@ -36,6 +37,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> IntoSeries<(), ItemIdxType,
                     .collect(),
             )
                 .into(),
-        )
+        ))
     }
 }

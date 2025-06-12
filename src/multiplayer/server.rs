@@ -6,7 +6,6 @@ use std::{
     time::Instant,
 };
 
-
 use crate::{
     data::DataStore,
     frontend::{action::ActionType, world::tile::World},

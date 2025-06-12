@@ -78,7 +78,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         values: &[Self],
         filter: Option<impl Fn(Item<ItemIdxType>) -> bool>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<Item = Series> {
+    ) -> impl IntoIterator<Item = (usize, Series)> {
         BTreeMap::from_iter(
             values
                 .iter()
@@ -104,8 +104,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 .into_iter()
                 .map(|(k, v)| (k.0, (k.1, v))),
         )
-        .into_values()
-        .map(|a| (a.0.as_str(), a.1.into_iter().map(|v| v as f32).collect()).into())
+        .into_iter()
+        .map(|(item_id, a)| {
+            (
+                item_id.try_into().unwrap(),
+                (a.0.as_str(), a.1.into_iter().map(|v| v as f32).collect()).into(),
+            )
+        })
     }
 }
 

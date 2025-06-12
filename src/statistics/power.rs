@@ -16,8 +16,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         values: &[Self],
         filter: Option<impl Fn(Item<ItemIdxType>) -> bool>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<Item = Series> {
-        iter::once(
+    ) -> impl IntoIterator<Item = (usize, Series)> {
+        iter::once((
+            0,
             (
                 "Power Satisfaction",
                 values
@@ -26,6 +27,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     .collect::<Vec<_>>(),
             )
                 .into(),
-        )
+        ))
     }
 }

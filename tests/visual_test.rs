@@ -40,7 +40,11 @@ fn start_ui() -> (
     let ds_move = ds.clone();
     spawn(move || {
         let (send, recv) = channel();
-        let sm = Arc::new(Mutex::new(ActionStateMachine::new(0, (1600.0, 1600.0))));
+        let sm = Arc::new(Mutex::new(ActionStateMachine::new(
+            0,
+            (1600.0, 1600.0),
+            &DATA_STORE,
+        )));
 
         let sm_move = sm.clone();
         let gs_move_move = gs_move.clone();

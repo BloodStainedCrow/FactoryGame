@@ -8,6 +8,8 @@ use crate::{
     storage_list::SingleItemStorages,
 };
 
+use crate::inserter::FakeUnionStorage;
+
 use super::{
     belt::{Belt, BeltLenType, ItemInfo, NoSpaceError},
     sushi::{SushiBelt, SushiInserterStore},
@@ -16,13 +18,13 @@ use super::{
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct SmartBelt<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+pub struct SmartBelt<ItemIdxType: WeakIdxTrait> {
     pub(super) is_circular: bool,
     pub(super) first_free_index: FreeIndex,
     /// Important, zero_index must ALWAYS be used using mod len
     pub(super) zero_index: BeltLenType,
     pub(super) locs: Box<[bool]>,
-    pub(super) inserters: InserterStore<RecipeIdxType>,
+    pub(super) inserters: InserterStore,
 
     pub(super) item: Item<ItemIdxType>,
 }
@@ -34,16 +36,16 @@ pub struct EmptyBelt {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct InserterStore<RecipeIdxType: WeakIdxTrait> {
-    pub(super) inserters: Vec<Inserter<RecipeIdxType>>,
+pub struct InserterStore {
+    pub(super) inserters: Vec<Inserter>,
     pub(super) offsets: Vec<u16>,
 }
 
 #[derive(Debug)]
-pub struct BeltInserterInfo<RecipeIdxType: WeakIdxTrait> {
+pub struct BeltInserterInfo {
     pub outgoing: bool,
     pub state: InserterState,
-    pub connection: Storage<RecipeIdxType>,
+    pub connection: FakeUnionStorage,
 }
 
 const MIN_INSERTER_SPACING: usize = 8;
@@ -56,7 +58,7 @@ pub(super) enum InserterAdditionError {
     ItemMismatch,
 }
 
-impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, RecipeIdxType> {
+impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
     #[must_use]
     pub fn new(len: u16, item: Item<ItemIdxType>) -> Self {
         Self {
@@ -77,7 +79,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
         usize::from((self.zero_index + pos) % self.get_len())
     }
 
-    pub(super) fn into_sushi_belt(self) -> SushiBelt<ItemIdxType, RecipeIdxType> {
+    pub(super) fn into_sushi_belt(self) -> SushiBelt<ItemIdxType> {
         let Self {
             is_circular,
             first_free_index,
@@ -182,11 +184,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
             .expect("Index out of bounds or same")
     }
 
-    pub fn change_inserter_storage_id(
-        &mut self,
-        old: Storage<RecipeIdxType>,
-        new: Storage<RecipeIdxType>,
-    ) {
+    pub fn change_inserter_storage_id(&mut self, old: FakeUnionStorage, new: FakeUnionStorage) {
         for inserter in &mut self.inserters.inserters {
             match inserter {
                 Inserter::Out(inserter) => {
@@ -203,7 +201,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
         }
     }
 
-    pub fn set_inserter_storage_id(&mut self, belt_pos: u16, new: Storage<RecipeIdxType>) {
+    pub fn set_inserter_storage_id(&mut self, belt_pos: u16, new: FakeUnionStorage) {
         let mut pos = 0;
 
         for (offset, inserter) in self
@@ -229,7 +227,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
     }
 
     #[must_use]
-    pub fn get_inserter_info_at(&self, belt_pos: u16) -> Option<BeltInserterInfo<RecipeIdxType>> {
+    pub fn get_inserter_info_at(&self, belt_pos: u16) -> Option<BeltInserterInfo> {
         let mut pos = 0;
 
         for (offset, inserter) in self
@@ -261,7 +259,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
         None
     }
 
-    pub fn remove_inserter(&mut self, pos: BeltLenType) -> Storage<RecipeIdxType> {
+    pub fn remove_inserter(&mut self, pos: BeltLenType) -> FakeUnionStorage {
         assert!(
             usize::from(pos) < self.locs.len(),
             "Bounds check {pos} >= {}",
@@ -308,7 +306,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
         &mut self,
         filter: Item<ItemIdxType>,
         index: u16,
-        storage_id: Storage<RecipeIdxType>,
+        storage_id: FakeUnionStorage,
     ) -> Result<(), InserterAdditionError> {
         assert!(
             usize::from(index) < self.locs.len(),
@@ -361,7 +359,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
         &mut self,
         filter: Item<ItemIdxType>,
         index: u16,
-        storage_id: Storage<RecipeIdxType>,
+        storage_id: FakeUnionStorage,
     ) -> Result<(), InserterAdditionError> {
         assert!(
             usize::from(index) < self.locs.len(),
@@ -408,7 +406,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SmartBelt<ItemIdxType, Reci
         Ok(())
     }
 
-    fn get_inserter(&self, index: u16) -> Option<&Inserter<RecipeIdxType>> {
+    fn get_inserter(&self, index: u16) -> Option<&Inserter> {
         let mut pos_after_last_inserter = 0;
 
         for (i, offset) in self.inserters.offsets.iter().enumerate() {
@@ -859,10 +857,10 @@ impl EmptyBelt {
         }
     }
 
-    pub fn into_smart_belt<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    pub fn into_smart_belt<ItemIdxType: IdxTrait>(
         self,
         item: Item<ItemIdxType>,
-    ) -> SmartBelt<ItemIdxType, RecipeIdxType> {
+    ) -> SmartBelt<ItemIdxType> {
         SmartBelt::new(self.len.into(), item)
     }
 
@@ -895,9 +893,7 @@ pub enum Side {
     BACK,
 }
 
-impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Belt<ItemIdxType>
-    for SmartBelt<ItemIdxType, RecipeIdxType>
-{
+impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
     fn add_length(&mut self, amount: BeltLenType, side: Side) -> BeltLenType {
         assert!(!self.is_circular);
         take_mut::take(self, |s| s.join_with_empty(EmptyBelt::new(amount), side));

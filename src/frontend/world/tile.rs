@@ -10,6 +10,7 @@ use strum::EnumIter;
 
 use itertools::Itertools;
 
+use crate::inserter::FakeUnionStorage;
 use crate::{
     belt::{
         splitter::SplitterDistributionMode, BeltBeltInserterAdditionInfo, BeltTileId,
@@ -45,7 +46,7 @@ pub enum FloorTile {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Chunk<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    pub floor_tiles: Option<[[FloorTile; CHUNK_SIZE as usize]; CHUNK_SIZE as usize]>,
+    pub floor_tiles: Option<Box<[[FloorTile; CHUNK_SIZE as usize]; CHUNK_SIZE as usize]>>,
     entities: Vec<Entity<ItemIdxType, RecipeIdxType>>,
 }
 
@@ -1198,7 +1199,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     slot_limit: _
                 } => Some(InserterConnectionPossibility {
                     conn:  InserterConnection::Storage(Static::Done(Storage::Static {
-                        static_id: StaticID::Chest,
+                        static_id: StaticID::Chest as u16,
                         index: *index,
                     })),
                     inserter_item_hint: None,
@@ -1299,7 +1300,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     slot_limit: _
                 } => Some(InserterConnectionPossibility {
                     conn:  InserterConnection::Storage(Static::Done(Storage::Static {
-                        static_id: StaticID::Chest,
+                        static_id: StaticID::Chest as u16,
                         index: *index,
                     })),
                     inserter_item_hint: None,
@@ -1441,7 +1442,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     instantiated.push(*chest_pos);
                                     storage = Some(Storage::Static {
                                         index,
-                                        static_id: StaticID::Chest,
+                                        static_id: StaticID::Chest as u16,
                                     })
                                 },
                                 _ => unreachable!(),
@@ -1459,7 +1460,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     determined_filter,
                     start_belt_id,
                     start_belt_pos - 1,
-                    dest_storage,
+                    FakeUnionStorage::from_storage_with_statics_at_zero(
+                        determined_filter,
+                        dest_storage,
+                        data_store,
+                    ),
                 ) {
                     Ok(()) => {},
                     Err(_) => {
@@ -1510,7 +1515,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     instantiated.push(*chest_pos);
                                     storage = Some(Storage::Static {
                                         index,
-                                        static_id: StaticID::Chest,
+                                        static_id: StaticID::Chest as u16,
                                     })
                                 },
                                 _ => unreachable!(),
@@ -1528,7 +1533,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     determined_filter,
                     dest_belt_id,
                     dest_belt_pos - 1,
-                    start_storage,
+                    FakeUnionStorage::from_storage_with_statics_at_zero(
+                        determined_filter,
+                        start_storage,
+                        data_store,
+                    ),
                 ) {
                     Ok(()) => {},
                     Err(_) => {
@@ -1580,7 +1589,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     instantiated.push(*chest_pos);
                                     storage = Some(Storage::Static {
                                         index,
-                                        static_id: StaticID::Chest,
+                                        static_id: StaticID::Chest as u16,
                                     });
                                 },
                                 _ => unreachable!(),
@@ -1610,7 +1619,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     instantiated.push(*chest_pos);
                                     storage = Some(Storage::Static {
                                         index,
-                                        static_id: StaticID::Chest,
+                                        static_id: StaticID::Chest as u16,
                                     });
                                 },
                                 _ => unreachable!(),
@@ -2714,7 +2723,7 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         // This means at most 256 different types of Chest can exist, should be fine :)
         ty: u8,
         pos: Position,
-        item: Option<(Item<ItemIdxType>, usize)>,
+        item: Option<(Item<ItemIdxType>, u32)>,
         slot_limit: u8,
     },
     Roboport {
@@ -2735,7 +2744,7 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         ty: u8,
         /// List of all the module slots of this assembler
         modules: Box<[Option<usize>]>,
-        pole_position: Option<(Position, WeakIndex, u16)>,
+        pole_position: Option<(Position, WeakIndex, u32)>,
     },
     Beacon {
         ty: u8,
@@ -2777,9 +2786,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
                 Dir::South => (2, 1),
                 Dir::West => (1, 2),
             },
-            Self::Chest { ty, .. } => data_store.chest_tile_sizes[*ty as usize],
+            Self::Chest { ty, .. } => data_store.chest_tile_sizes[usize::from(*ty)],
             Self::Roboport { .. } => (4, 4),
-            Self::SolarPanel { .. } => (3, 3),
+            Self::SolarPanel { ty, .. } => (
+                data_store.solar_panel_info[usize::from(*ty)].size[0],
+                data_store.solar_panel_info[usize::from(*ty)].size[1],
+            ),
             Self::Lab { ty, .. } => data_store.lab_info[usize::from(*ty)].size,
             Self::Beacon { ty, .. } => data_store.beacon_info[usize::from(*ty)].size,
         }
@@ -2904,7 +2916,7 @@ impl Dir {
 pub struct AssemblerID<RecipeIdxType: WeakIdxTrait> {
     pub recipe: Recipe<RecipeIdxType>,
     pub grid: PowerGridIdentifier,
-    pub assembler_index: u16,
+    pub assembler_index: u32,
 }
 #[derive(
     Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, PartialOrd, Ord, Hash,

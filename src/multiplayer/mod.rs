@@ -153,14 +153,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
             profiling::finish_frame!();
             profiling::scope!("Update Loop");
 
-            {
-                profiling::scope!("Wait");
-                update_interval.tick();
-            }
-
             match self.do_tick(data_store) {
                 ControlFlow::Continue(_) => {},
                 ControlFlow::Break(e) => return e,
+            }
+
+            {
+                profiling::scope!("Wait");
+                update_interval.tick();
             }
         }
     }

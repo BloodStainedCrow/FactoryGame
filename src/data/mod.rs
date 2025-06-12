@@ -94,6 +94,27 @@ struct RawBeacon {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+struct RawSolarPanel {
+    name: String,
+    display_name: String,
+    tile_size: (u8, u8),
+
+    // TODO:
+    output: Watt,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+struct RawAccumulator {
+    name: String,
+    display_name: String,
+    tile_size: (u8, u8),
+
+    charge: Joule,
+    max_charge_rate: Watt,
+    max_discharge_rate: Watt,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct RawFluidConnection {
     fluid_dir: ItemRecipeDir,
     offs: (u8, u8),
@@ -122,6 +143,8 @@ pub struct RawDataStore {
     modules: Vec<RawModule>,
     chests: Vec<RawChest>,
     technologies: Vec<RawTechnology>,
+    solar_panels: Vec<RawSolarPanel>,
+    accumulators: Vec<RawAccumulator>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -234,6 +257,30 @@ pub struct ModuleInfo {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
+pub struct SolarPanelInfo {
+    pub name: String,
+    pub size: [u16; 2],
+
+    pub power_output: SolarPanelOutputFunction,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
+pub enum SolarPanelOutputFunction {
+    Constant(Watt),
+    Lookup(Vec<Watt>),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
+pub struct AccumulatorInfo {
+    pub name: String,
+    pub size: [u16; 2],
+
+    pub max_charge: Joule,
+    pub max_charge_rate: Watt,
+    pub max_discharge_rate: Watt,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub checksum: String,
 
@@ -244,6 +291,8 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub beacon_info: Vec<BeaconInfo>,
     pub max_beacon_range: (u16, u16),
     pub module_info: Vec<ModuleInfo>,
+    pub solar_panel_info: Vec<SolarPanelInfo>,
+    pub accumulator_info: Vec<AccumulatorInfo>,
 
     /// In 5% steps
     pub min_power_mod: u8,
@@ -785,6 +834,31 @@ impl RawDataStore {
                     base_speed: m.base_speed,
                     base_prod: m.base_bonus_prod,
                     base_power_consumption: m.working_power_draw,
+                })
+                .collect(),
+
+            solar_panel_info: self
+                .solar_panels
+                .iter()
+                .map(|raw| {
+                    SolarPanelInfo {
+                        name: raw.display_name.clone(),
+                        size: [raw.tile_size.0.into(), raw.tile_size.1.into()],
+                        // FIXME:
+                        power_output: SolarPanelOutputFunction::Constant(raw.output),
+                    }
+                })
+                .collect(),
+
+            accumulator_info: self
+                .accumulators
+                .iter()
+                .map(|raw| AccumulatorInfo {
+                    name: raw.display_name.clone(),
+                    size: [raw.tile_size.0.into(), raw.tile_size.1.into()],
+                    max_charge: raw.charge,
+                    max_charge_rate: raw.max_charge_rate,
+                    max_discharge_rate: raw.max_discharge_rate,
                 })
                 .collect(),
 

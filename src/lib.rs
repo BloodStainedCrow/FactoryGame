@@ -142,7 +142,10 @@ pub fn main() {
 
     eframe::run_native(
         "FactoryGame",
-        NativeOptions::default(),
+        NativeOptions {
+            // depth_buffer: 32,
+            ..Default::default()
+        },
         Box::new(|cc| {
             let mut app = eframe_app::App::new(cc, sender);
 
@@ -176,9 +179,12 @@ fn run_integrated_server(
     match data_store {
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
             let (send, recv) = channel();
-            let state_machine: Arc<Mutex<ActionStateMachine<_, _>>> = Arc::new(Mutex::new(
-                ActionStateMachine::new(0, (100.0 * CHUNK_SIZE_FLOAT, 100.0 * CHUNK_SIZE_FLOAT)),
-            ));
+            let state_machine: Arc<Mutex<ActionStateMachine<_, _>>> =
+                Arc::new(Mutex::new(ActionStateMachine::new(
+                    0,
+                    (100.0 * CHUNK_SIZE_FLOAT, 100.0 * CHUNK_SIZE_FLOAT),
+                    &data_store,
+                )));
 
             let game_state = Arc::new(Mutex::new(
                 load().map(|save| save.game_state).unwrap_or_else(|| {
@@ -275,9 +281,12 @@ fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Se
     match data_store {
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
             let (send, recv) = channel();
-            let state_machine: Arc<Mutex<ActionStateMachine<_, _>>> = Arc::new(Mutex::new(
-                ActionStateMachine::new(1, (100.0 * CHUNK_SIZE_FLOAT, 100.0 * CHUNK_SIZE_FLOAT)),
-            ));
+            let state_machine: Arc<Mutex<ActionStateMachine<_, _>>> =
+                Arc::new(Mutex::new(ActionStateMachine::new(
+                    1,
+                    (100.0 * CHUNK_SIZE_FLOAT, 100.0 * CHUNK_SIZE_FLOAT),
+                    &data_store,
+                )));
 
             let game_state = Arc::new(Mutex::new(
                 load()

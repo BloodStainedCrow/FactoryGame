@@ -22,7 +22,7 @@ use crate::{
 use super::{
     app_state::{AppState, GameState},
     render_world::{render_ui, render_world},
-    texture_atlas,
+    texture_atlas, texture_atlas2,
     window::{LoadedGame, LoadedGameInfo},
     TextureAtlas,
 };
@@ -44,7 +44,7 @@ pub struct App {
 impl App {
     pub fn new(cc: &eframe::CreationContext, input_sender: Sender<Input>) -> Self {
         let render_state = cc.wgpu_render_state.as_ref().unwrap();
-        let atlas = Arc::new(texture_atlas());
+        let atlas = Arc::new(texture_atlas2());
 
         Self {
             raw_renderer: RawRenderer::new(
@@ -69,6 +69,8 @@ impl eframe::App for App {
 
         CentralPanel::default().show(ctx, |ui| {
             let painter = ui.painter();
+
+            let game_graphics_area = painter.clip_rect();
 
             if let Some(game) = &self.currently_loaded_game {
                 // Only create game input actions if the ui does not currently want input
@@ -101,9 +103,21 @@ impl eframe::App for App {
                             _ => {},
                         }
                         let input = if let Event::PointerMoved(dest) = event {
+                            let pos_normalized = [dest.x / size.width(), dest.y / size.height()];
+
+                            let ar = size.width() / size.height();
+
+                            if pos_normalized[0] < 0.0
+                                || pos_normalized[0] > 1.0
+                                || pos_normalized[1] < 0.0
+                                || pos_normalized[1] > 1.0
+                            {
+                                continue;
+                            }
+
                             Ok(Input::MouseMove(
-                                dest.x / size.width(),
-                                dest.y / size.height(),
+                                (pos_normalized[0] - 0.5),
+                                (pos_normalized[1] - 0.5) / ar,
                             ))
                         } else {
                             event.clone().try_into()
@@ -213,7 +227,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> CallbackTrait
         render_pass: &mut eframe::wgpu::RenderPass<'static>,
         callback_resources: &egui_wgpu::CallbackResources,
     ) {
-        let mut rend = self.raw_renderer.start_draw(render_pass);
+        let mut rend = self.raw_renderer.start_draw(
+            render_pass,
+            [
+                info.viewport_in_pixels().width_px as f32,
+                info.viewport_in_pixels().height_px as f32,
+            ],
+        );
 
         let gamestate = self.game_state.lock();
 

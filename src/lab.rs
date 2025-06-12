@@ -325,7 +325,7 @@ impl MultiLabStore {
         position: Position,
         modules: &[Option<usize>],
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> u16 {
+    ) -> u32 {
         let base_speed = data_store.lab_info[usize::from(ty)].base_speed;
         let base_prod = data_store.lab_info[usize::from(ty)].base_prod;
         let base_power = data_store.lab_info[usize::from(ty)].base_power_consumption;
@@ -409,10 +409,10 @@ impl MultiLabStore {
             self.positions.len() - 1
         };
 
-        idx.try_into().expect("More than u16::MAX Labs in a grid")
+        idx.try_into().expect("More than u32::MAX Labs in a grid")
     }
 
-    pub fn remove_lab(&mut self, index: u16) -> Box<[ITEMCOUNTTYPE]> {
+    pub fn remove_lab(&mut self, index: u32) -> Box<[ITEMCOUNTTYPE]> {
         let index = index as usize;
         self.holes.push(index);
 
@@ -434,7 +434,7 @@ impl MultiLabStore {
         ret
     }
 
-    pub fn move_lab(&mut self, index: u16, other: &mut Self) -> u16 {
+    pub fn move_lab(&mut self, index: u32, other: &mut Self) -> u32 {
         todo!();
         let index = index as usize;
         self.holes.push(index);
@@ -479,17 +479,18 @@ impl MultiLabStore {
         });
 
         idx.try_into()
-            .expect("More than u16::MAX Labs in a single grid")
+            .expect("More than u32::MAX Labs in a single grid")
     }
 
     pub fn modify_modifiers<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut self,
-        index: u16,
+        index: u32,
         speed: i16,
         prod: i16,
         power: i16,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
+        let index = index as usize;
         self.raw_speed_mod[usize::from(index)] = self.raw_speed_mod[usize::from(index)]
             .checked_add(speed)
             .expect("Over/Underflowed");

@@ -66,7 +66,7 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         ty: u8,
         slot_limit: u8,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> usize {
+    ) -> u32 {
         let stack_size = data_store.item_stack_sizes[usize_from(self.item.id)];
         assert!(slot_limit <= data_store.chest_num_slots[usize::from(ty)]);
         let num_stacks = slot_limit;
@@ -78,7 +78,7 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
             self.max_insert[hole] = max_items.try_into().unwrap_or(ITEMCOUNTTYPE::MAX);
 
             self.max_items[hole] = max_items.saturating_sub(u16::from(ITEMCOUNTTYPE::MAX));
-            hole
+            hole.try_into().unwrap()
         } else {
             self.inout.push(0);
             self.storage.push(0);
@@ -87,15 +87,16 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
 
             self.max_items
                 .push(max_items.saturating_sub(u16::from(ITEMCOUNTTYPE::MAX)));
-            self.inout.len() - 1
+            (self.inout.len() - 1).try_into().unwrap()
         }
     }
 
     pub fn remove_chest<RecipeIdxType: IdxTrait>(
         &mut self,
-        index: usize,
+        index: u32,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> u16 {
+        let index = index as usize;
         self.holes.push(index);
 
         let items = self.inout[index] as u16 + self.storage[index];
@@ -105,10 +106,10 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         items
     }
 
-    pub fn get_chest(&self, index: usize) -> (u16, u16) {
+    pub fn get_chest(&self, index: u32) -> (u16, u16) {
         (
-            self.storage[index] + u16::from(self.inout[index]),
-            self.max_items[index],
+            self.storage[index as usize] + u16::from(self.inout[index as usize]),
+            self.max_items[index as usize],
         )
     }
 
@@ -162,7 +163,9 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
     }
 
     /// Returns the number of items no longer part of the box
-    pub fn change_chest_size(&mut self, index: usize, new_size: u16) -> u16 {
+    pub fn change_chest_size(&mut self, index: u32, new_size: u16) -> u16 {
+        let index = index as usize;
+
         let removed_items = if new_size < max(self.max_items[index], self.max_insert[index] as u16)
         {
             let current_items = self.inout[index] as u16 + self.storage[index];

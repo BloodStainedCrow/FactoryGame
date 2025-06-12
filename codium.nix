@@ -5,6 +5,7 @@ in
 pkgs.mkShell {
   buildInputs = [
   ] ++ (with pkgs; [
+    bacon
 
     (vscode-with-extensions.override {
     vscode = vscodium;

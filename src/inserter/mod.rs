@@ -66,7 +66,7 @@ pub const MAX_GRID_COUNT: usize = u16::MAX as usize - 1;
 pub const MAX_TIMES_AN_ITEM_CAN_APPEAR_IN_RECIPES: usize = u16::MAX as usize;
 pub const MAX_RECIPE_COUNT: usize = u16::MAX as usize;
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct FakeUnionStorage {
     index: u32,
     grid_or_static_flag: u16,
@@ -93,7 +93,10 @@ impl FakeUnionStorage {
     }
 
     #[inline(always)]
-    fn into_inner_and_outer_indices_with_statics_at_zero(self, grid_size: usize) -> (usize, usize) {
+    pub fn into_inner_and_outer_indices_with_statics_at_zero(
+        self,
+        grid_size: usize,
+    ) -> (usize, usize) {
         let grid_offs = usize::from(self.grid_or_static_flag);
         let recipe_idx_with_this_item_or_single_kind_power_grid_kind =
             usize::from(self.recipe_idx_with_this_item);
@@ -136,13 +139,13 @@ impl FakeUnionStorage {
         }
     }
 
-    fn from_storage_with_statics_at_zero<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    pub fn from_storage_with_statics_at_zero<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         item: Item<ItemIdxType>,
         storage: Storage<RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         let grid_size: usize = grid_size(item, data_store);
-        let static_size: usize = static_size(data_store);
+        let static_size: usize = static_size(item, data_store);
 
         let grid_offset = static_size.div_ceil(grid_size);
 
@@ -172,7 +175,7 @@ impl FakeUnionStorage {
             Storage::Static { index, static_id } => Self {
                 index: u32::try_from(index).unwrap(),
                 grid_or_static_flag: 0,
-                recipe_idx_with_this_item: static_id as u16,
+                recipe_idx_with_this_item: static_id,
             },
         }
     }
@@ -185,16 +188,15 @@ pub enum Storage<RecipeIdxType: WeakIdxTrait> {
     Assembler {
         grid: PowerGridIdentifier,
         recipe_idx_with_this_item: RecipeIdxType,
-        // TODO:
-        index: u16,
+        index: u32,
     },
     Lab {
         grid: PowerGridIdentifier,
-        index: u16,
+        index: u32,
     },
     Static {
-        index: usize,
-        static_id: StaticID,
+        static_id: u16,
+        index: u32,
     },
 }
 
@@ -260,16 +262,16 @@ impl<RecipeIdxType: IdxTrait> Storage<RecipeIdxType> {
                 );
                 let outer = Into::<usize>::into(grid) * grid_size
                     + Into::<usize>::into(recipe_idx_with_this_item);
-                (outer, Into::<usize>::into(index))
+                (outer, index.try_into().unwrap())
             },
             Storage::Lab { grid, index } => {
                 let outer = Into::<usize>::into(grid) * grid_size + num_recipes;
-                (outer, Into::<usize>::into(index))
+                (outer, index.try_into().unwrap())
             },
             Storage::Static { static_id, index } => {
                 // debug_assert!(usize::from(static_id) < data_store.num_different_static_containers);
                 let outer = num_grids_total * grid_size + Into::<usize>::into(static_id as u8);
-                (outer, Into::<usize>::into(index))
+                (outer, index.try_into().unwrap())
             },
         }
     }
@@ -295,16 +297,16 @@ impl<RecipeIdxType: IdxTrait> Storage<RecipeIdxType> {
                 );
                 let outer = (Into::<usize>::into(grid) + grid_offset) * grid_size
                     + Into::<usize>::into(recipe_idx_with_this_item);
-                (outer, Into::<usize>::into(index))
+                (outer, index.try_into().unwrap())
             },
             Storage::Lab { grid, index } => {
                 let outer = (Into::<usize>::into(grid) + grid_offset) * grid_size + num_recipes;
-                (outer, Into::<usize>::into(index))
+                (outer, index.try_into().unwrap())
             },
             Storage::Static { static_id, index } => {
                 // debug_assert!(usize::from(static_id) < data_store.num_different_static_containers);
                 let outer = Into::<usize>::into(static_id as u8);
-                (outer, Into::<usize>::into(index))
+                (outer, index.try_into().unwrap())
             },
         }
     }
@@ -345,7 +347,7 @@ mod test {
 
     fn random_storage(num_grids: u16, num_recipes: u8) -> impl Strategy<Value = Storage<u8>> {
         prop_oneof![
-            (0..num_grids, 0..num_recipes, 0..u16::MAX).prop_map(
+            (0..num_grids, 0..num_recipes, 0..u32::MAX).prop_map(
                 |(grid, recipe_idx_with_this_item, index)| {
                     Storage::Assembler {
                         grid: grid.try_into().unwrap_or(PowerGridIdentifier::MAX),
@@ -354,7 +356,7 @@ mod test {
                     }
                 }
             ),
-            (0..num_grids, 0..u16::MAX).prop_map(|(grid, index)| {
+            (0..num_grids, 0..u32::MAX).prop_map(|(grid, index)| {
                 Storage::Lab {
                     grid: grid.try_into().unwrap_or(PowerGridIdentifier::MAX),
                     index,
@@ -362,7 +364,7 @@ mod test {
             }),
             (random_static(), 0..u16::MAX).prop_map(|(static_id, index)| {
                 Storage::Static {
-                    static_id,
+                    static_id: static_id as u16,
                     index: index.into(),
                 }
             })
@@ -414,7 +416,7 @@ mod test {
 
             let union_indices = storage_union.into_inner_and_outer_indices_with_statics_at_zero(grid_size);
 
-            let storage_indices = storage.into_inner_and_outer_indices_with_statics_at_zero(num_grids.into(), DATA_STORE.num_recipes_with_item[usize_from(item.id)], grid_size, static_size(&DATA_STORE));
+            let storage_indices = storage.into_inner_and_outer_indices_with_statics_at_zero(num_grids.into(), DATA_STORE.num_recipes_with_item[usize_from(item.id)], grid_size, static_size(item, &DATA_STORE));
 
             prop_assert_eq!(union_indices, storage_indices);
         }
