@@ -22,7 +22,7 @@ use crate::{
 use super::{
     app_state::{AppState, GameState},
     render_world::{render_ui, render_world},
-    texture_atlas, texture_atlas2,
+    texture_atlas,
     window::{LoadedGame, LoadedGameInfo},
     TextureAtlas,
 };
@@ -42,9 +42,10 @@ pub struct App {
 }
 
 impl App {
+    #[must_use]
     pub fn new(cc: &eframe::CreationContext, input_sender: Sender<Input>) -> Self {
         let render_state = cc.wgpu_render_state.as_ref().unwrap();
-        let atlas = Arc::new(texture_atlas2());
+        let atlas = Arc::new(texture_atlas());
 
         Self {
             raw_renderer: RawRenderer::new(

@@ -759,7 +759,7 @@ impl RawDataStore {
             .power_poles
             .iter()
             .map(|p| PowerPoleData {
-                size: (p.tile_size.0 as u16, p.tile_size.1 as u16),
+                size: (u16::from(p.tile_size.0), u16::from(p.tile_size.1)),
                 power_range: p.power_range,
                 connection_range: p.connection_range,
             })
@@ -962,7 +962,7 @@ impl RawDataStore {
             chest_tile_sizes: self
                 .chests
                 .iter()
-                .map(|chest| (chest.tile_size.0 as u16, chest.tile_size.1 as u16))
+                .map(|chest| (u16::from(chest.tile_size.0), u16::from(chest.tile_size.1)))
                 .collect(),
 
             recipe_to_translated_index: (0..self.recipes.len())

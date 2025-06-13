@@ -51,6 +51,7 @@ pub struct GameState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, RecipeIdxType> {
+    #[must_use]
     pub fn new(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         Self {
             current_tick: 0,
@@ -60,6 +61,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         }
     }
 
+    #[must_use]
     pub fn new_with_production(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         let mut ret = Self {
             current_tick: 0,
@@ -84,10 +86,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         ret
     }
 
+    #[must_use]
     pub fn new_with_beacon_production(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         Self::new_with_beacon_red_green_production(data_store)
     }
 
+    #[must_use]
     pub fn new_with_beacon_red_green_production(
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
@@ -122,6 +126,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         ret
     }
 
+    #[must_use]
     pub fn new_with_beacon_red_production(
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
@@ -157,6 +162,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         ret
     }
 
+    #[must_use]
     pub fn new_with_beacon_belt_production(
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
@@ -192,6 +198,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         ret
     }
 
+    #[must_use]
     pub fn new_with_lots_of_belts(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         let mut ret = Self {
             current_tick: 0,
@@ -260,6 +267,7 @@ pub struct SimulationState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrai
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SimulationState<ItemIdxType, RecipeIdxType> {
+    #[must_use]
     pub fn new(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         Self {
             tech_state: TechState {
@@ -327,7 +335,7 @@ impl StorageStorageInserterStore {
                     // Ideally we could replace inserter holes with placeholder that do not do anything, but I don't quite know how those would work.
                     .filter_map(|(i, v)| (!holes.contains(&i)).then_some(v))
                     .for_each(|ins| {
-                        ins.update(storages, MOVETIME, num_grids_total, num_recipes, grid_size)
+                        ins.update(storages, MOVETIME, num_grids_total, num_recipes, grid_size);
                     });
             });
     }
@@ -716,7 +724,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         crate::frontend::world::tile::PlaceEntityType::SolarPanel { pos, ty } => {
                             info!("Trying to place solar_panel at {pos:?}");
                             let size = data_store.solar_panel_info[usize::from(ty)].size;
-                            let size = (size[0], size[1]);
+                            let size = size.into();
 
                             if !self.world.can_fit(pos, size, data_store) {
                                 warn!("Tried to place solar_panel where it does not fit");

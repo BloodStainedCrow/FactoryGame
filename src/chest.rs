@@ -47,6 +47,7 @@ pub struct MultiChestStore<ItemIdxType: WeakIdxTrait> {
 }
 
 impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
+    #[must_use]
     pub fn new<RecipeIdxType: IdxTrait>(
         item: Item<ItemIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -99,7 +100,7 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         let index = index as usize;
         self.holes.push(index);
 
-        let items = self.inout[index] as u16 + self.storage[index];
+        let items = u16::from(self.inout[index]) + self.storage[index];
         self.inout[index] = 0;
         self.storage[index] = 0;
         self.max_items[index] = 0;
@@ -122,19 +123,19 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
             let to_move = inout.abs_diff(CHEST_GOAL_AMOUNT);
 
             if *inout >= CHEST_GOAL_AMOUNT {
-                let moved: ITEMCOUNTTYPE = min(to_move as u16, max_items - *storage)
+                let moved: ITEMCOUNTTYPE = min(u16::from(to_move), max_items - *storage)
                     .try_into()
                     .expect("since to_move was a ITEMCOUNTTYPE, this always fits");
                 *inout -= moved;
-                *storage += moved as u16;
+                *storage += u16::from(to_move);
 
                 debug_assert!(*storage <= max_items);
             } else {
-                let moved: ITEMCOUNTTYPE = min(to_move as u16, *storage)
+                let moved: ITEMCOUNTTYPE = min(u16::from(to_move), *storage)
                     .try_into()
                     .expect("since to_move was a ITEMCOUNTTYPE, this always fits");
                 *inout += moved;
-                *storage -= moved as u16;
+                *storage -= u16::from(to_move);
             }
         }
     }
@@ -151,11 +152,11 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
 
             let moved: i16 = (switch as i16 + (1 - switch as i16) * -1)
                 * (min(
-                    to_move as u16,
+                    u16::from(to_move),
                     (max_items - *storage) * switch + (1 - switch) * *storage,
                 ) as i16);
 
-            *inout = (*inout as u16).wrapping_sub_signed(moved) as u8;
+            *inout = (u16::from(*inout)).wrapping_sub_signed(moved) as u8;
             *storage = (*storage).wrapping_add_signed(moved) as u16;
 
             debug_assert!(*storage <= max_items);
@@ -174,7 +175,7 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
                 let items_to_remove = current_items - new_size;
 
                 if self.storage[index] >= items_to_remove {
-                    self.storage[index] -= items_to_remove
+                    self.storage[index] -= items_to_remove;
                 } else {
                     self.inout[index] = self.inout[index]
                         .checked_sub(
@@ -234,19 +235,19 @@ mod test {
             let mut inout_naive = inout;
 
             if inout_naive >= CHEST_GOAL_AMOUNT {
-                let moved: ITEMCOUNTTYPE = min(to_move as u16, max_items - storage)
+                let moved: ITEMCOUNTTYPE = min(u16::from(to_move), max_items - storage)
                     .try_into()
                     .expect("since to_move was a ITEMCOUNTTYPE, this always fits");
                 inout_naive -= moved;
-                storage_naive += moved as u16;
+                storage_naive += u16::from(moved);
 
                 debug_assert!(storage_naive <= max_items);
             } else {
-                let moved: ITEMCOUNTTYPE = min(to_move as u16, storage)
+                let moved: ITEMCOUNTTYPE = min(u16::from(to_move), storage)
                     .try_into()
                     .expect("since to_move was a ITEMCOUNTTYPE, this always fits");
                 inout_naive += moved;
-                storage_naive -= moved as u16;
+                storage_naive -= u16::from(moved);
             }
 
             let mut storage_simd = storage;

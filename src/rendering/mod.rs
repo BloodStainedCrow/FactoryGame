@@ -17,7 +17,7 @@ struct EntitySprite {
 }
 
 impl EntitySprite {
-    fn new_tiling(sprite: Sprite) -> Self {
+    const fn new_tiling(sprite: Sprite) -> Self {
         Self {
             sprite,
             aspect_ratio: 1.0,
@@ -26,7 +26,7 @@ impl EntitySprite {
         }
     }
 
-    fn new_scaled(sprite: Sprite, size: f32) -> Self {
+    const fn new_scaled(sprite: Sprite, size: f32) -> Self {
         Self {
             sprite,
             aspect_ratio: 1.0,
@@ -52,8 +52,8 @@ impl EntitySprite {
             DrawInstance {
                 position: [pos[0] + self.offset.0, pos[1] + self.offset.1],
                 size: [
-                    tile_size[0] as f32 * self.scaling.0,
-                    tile_size[1] as f32 * self.scaling.1,
+                    f32::from(tile_size[0]) * self.scaling.0,
+                    f32::from(tile_size[1]) * self.scaling.1,
                 ],
                 animation_frame,
             },
@@ -70,8 +70,8 @@ impl EntitySprite {
     ) {
         let other_pos = [pos[0] + underlying.offset.0, pos[1] + underlying.offset.1];
         let other_size = [
-            tile_size[0] as f32 * underlying.scaling.0,
-            tile_size[1] as f32 * underlying.scaling.1,
+            f32::from(tile_size[0]) * underlying.scaling.0,
+            f32::from(tile_size[1]) * underlying.scaling.1,
         ];
         let self_size = [self.scaling.0, self.scaling.1];
 
@@ -117,6 +117,7 @@ pub struct TextureAtlas {
     default: Sprite,
 }
 
+#[cfg(not(feature = "graphics"))]
 fn texture_atlas() -> TextureAtlas {
     let black = include_bytes!("temp_assets/outside_world.png");
     let black = image::load_from_memory(black).unwrap();
@@ -273,7 +274,8 @@ fn texture_atlas() -> TextureAtlas {
     }
 }
 
-fn texture_atlas2() -> TextureAtlas {
+#[cfg(feature = "graphics")]
+fn texture_atlas() -> TextureAtlas {
     let black = include_bytes!("temp_assets/outside_world.png");
     let black = image::load_from_memory(black).unwrap();
 
