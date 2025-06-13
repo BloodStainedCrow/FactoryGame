@@ -497,4 +497,19 @@
             precursors: [],
         ),
     ],
+    solar_panels: [
+        (
+            name: "factory_game::infinity_battery",
+            display_name: "Infinity Battery",
+            tile_size: (2, 2),
+            output: (100000000000),
+        ),
+        (
+            name: "factory_game::solar_panel",
+            display_name: "Solar Panel",
+            tile_size: (3, 3),
+            output: (60000),
+        ),
+    ],
+    accumulators: [],
 )

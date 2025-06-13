@@ -1,6 +1,7 @@
 use std::u16;
 
 use itertools::Itertools;
+use petgraph::data;
 use rayon::iter::IndexedParallelIterator;
 use strum::IntoEnumIterator;
 
@@ -8,15 +9,17 @@ use crate::{
     assembler::FullAssemblerStore,
     chest::FullChestStore,
     data::{DataStore, ItemRecipeDir},
-    inserter::{StaticID, Storage},
+    inserter::{FakeUnionStorage, StaticID, Storage},
     item::{usize_from, IdxTrait, Item, ITEMCOUNTTYPE},
     lab::MultiLabStore,
     power::{power_grid::PowerGridIdentifier, PowerGridStorage},
     split_arbitrary::split_arbitrary_mut_slice,
 };
 
-pub const ALWAYS_FULL: &'static [ITEMCOUNTTYPE] = &[0; u16::MAX as usize];
+// FIXME: We just yeet 10MB of RAM into  the wind here :/
+pub const ALWAYS_FULL: &'static [ITEMCOUNTTYPE] = &[0; 10_000_000];
 pub const PANIC_ON_INSERT: &'static [ITEMCOUNTTYPE] = &[0; 0];
+pub const PANIC_ON_INSERT_DATA: &'static [ITEMCOUNTTYPE] = &[0; 0];
 
 type SingleGridStorage<'a, 'b> = (&'a [ITEMCOUNTTYPE], &'b mut [ITEMCOUNTTYPE]);
 pub type SingleItemStorages<'a, 'b> = &'a mut [SingleGridStorage<'b, 'b>]; //[SingleGridStorage; NUM_RECIPES * NUM_GRIDS];
@@ -42,13 +45,15 @@ pub fn num_recipes<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 }
 
 pub fn static_size<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    item: Item<ItemIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> usize {
-    StaticID::iter()
-        .map(|s| match s {
-            StaticID::Chest => data_store.item_names.len(),
-        })
-        .sum()
+    let mut size = 0;
+
+    // Chests
+    size += 1;
+
+    size
 }
 
 pub fn grid_size<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
@@ -67,7 +72,11 @@ fn size_of_single_item_slice<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 ) -> usize {
     let num_different_static_containers = data_store.num_different_static_containers;
     let grid_size = grid_size(item, data_store);
-    num_grids_total * grid_size + num_different_static_containers
+    let static_size = static_size(item, data_store);
+
+    let first_grid_offs = static_size.div_ceil(grid_size);
+
+    (first_grid_offs + num_grids_total) * grid_size
 }
 
 pub fn index<'a, 'b, RecipeIdxType: IdxTrait>(
@@ -76,7 +85,10 @@ pub fn index<'a, 'b, RecipeIdxType: IdxTrait>(
     num_grids_total: usize,
     num_recipes: usize,
     grid_size: usize,
+    static_size: usize,
 ) -> (&'a ITEMCOUNTTYPE, &'a mut ITEMCOUNTTYPE) {
+    let first_grid_offs_in_grids = static_size.div_ceil(grid_size);
+
     match storage_id {
         Storage::Assembler {
             grid,
@@ -87,30 +99,44 @@ pub fn index<'a, 'b, RecipeIdxType: IdxTrait>(
                 usize_from(recipe_idx_with_this_item) < num_recipes,
                 "The recipe stored in an inserter needs to be translated!"
             );
-            let outer = &mut slice[Into::<usize>::into(grid) * grid_size
+            let outer = &mut slice[(first_grid_offs_in_grids + Into::<usize>::into(grid))
+                * grid_size
                 + Into::<usize>::into(recipe_idx_with_this_item)];
             (
-                &outer.0[Into::<usize>::into(index)],
-                &mut outer.1[Into::<usize>::into(index)],
+                &outer.0[usize::try_from(index).unwrap()],
+                &mut outer.1[usize::try_from(index).unwrap()],
             )
         },
         Storage::Lab { grid, index } => {
-            let outer = &mut slice[Into::<usize>::into(grid) * grid_size + num_recipes];
+            let outer = &mut slice
+                [(first_grid_offs_in_grids + Into::<usize>::into(grid)) * grid_size + num_recipes];
             (
-                &outer.0[Into::<usize>::into(index)],
-                &mut outer.1[Into::<usize>::into(index)],
+                &outer.0[usize::try_from(index).unwrap()],
+                &mut outer.1[usize::try_from(index).unwrap()],
             )
         },
         Storage::Static { static_id, index } => {
             // debug_assert!(usize::from(static_id) < data_store.num_different_static_containers);
-            let outer =
-                &mut slice[num_grids_total * grid_size + Into::<usize>::into(static_id as u8)];
+            let outer = &mut slice[Into::<usize>::into(static_id)];
             (
-                &outer.0[Into::<usize>::into(index)],
-                &mut outer.1[Into::<usize>::into(index)],
+                &outer.0[usize::try_from(index).unwrap()],
+                &mut outer.1[usize::try_from(index).unwrap()],
             )
         },
     }
+}
+
+pub fn index_fake_union<'a, 'b>(
+    slice: SingleItemStorages<'a, 'b>,
+    storage_id: FakeUnionStorage,
+    num_grids_total: usize,
+    num_recipes: usize,
+    grid_size: usize,
+) -> (&'a ITEMCOUNTTYPE, &'a mut ITEMCOUNTTYPE) {
+    let (outer, inner) = storage_id.into_inner_and_outer_indices_with_statics_at_zero(grid_size);
+
+    let subslice = &mut slice[outer];
+    (&subslice.0[inner], &mut subslice.1[inner])
 }
 
 #[profiling::function]
@@ -157,18 +183,23 @@ fn get_full_storage_index<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let num_recipes = num_recipes(item, data_store);
     let num_labs = num_labs(item, data_store);
     let grid_size = grid_size(item, data_store);
+    let static_size = static_size(item, data_store);
+
+    let first_grid_offs = static_size.div_ceil(grid_size);
 
     let ret = match storage {
         Storage::Assembler {
             grid,
             recipe_idx_with_this_item: recipe,
             index: _,
-        } => item_offs + usize::from(grid) * grid_size + usize_from(recipe),
-        Storage::Lab { grid, index: _ } => item_offs + usize::from(grid) * grid_size + num_recipes,
+        } => item_offs + (first_grid_offs + usize::from(grid)) * grid_size + usize_from(recipe),
+        Storage::Lab { grid, index: _ } => {
+            item_offs + (first_grid_offs + usize::from(grid)) * grid_size + num_recipes
+        },
         Storage::Static {
             static_id,
             index: _,
-        } => item_offs + num_power_grids * grid_size + usize::from(static_id as u8),
+        } => item_offs + usize::from(static_id),
     };
 
     ret
@@ -262,7 +293,7 @@ fn all_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 .into_iter()
                 .chain(all_lab_storages(grid_id, &mut grid.lab_stores, data_store))
         })
-        .chain(all_chest_storages(chest_store));
+        .chain(all_static_storages(chest_store, data_store));
     all_storages
 }
 
@@ -690,6 +721,64 @@ fn all_lab_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 fn all_lazy_power_machine_storages() {}
 
 #[profiling::function]
+fn all_static_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    chest_store: &'a mut FullChestStore<ItemIdxType>,
+    data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
+) -> impl IntoIterator<
+    Item = (
+        Item<ItemIdxType>,
+        Storage<RecipeIdxType>,
+        &'a [ITEMCOUNTTYPE],
+        &'a mut [ITEMCOUNTTYPE],
+    ),
+> + use<'a, 'b, ItemIdxType, RecipeIdxType> {
+    (0..data_store.item_names.len())
+        .zip(chest_store.stores.iter_mut())
+        .flat_map(|(id, chest)| {
+            let item = Item {
+                id: id.try_into().unwrap(),
+            };
+
+            let grid_size = grid_size(item, data_store);
+            let static_size = static_size(item, data_store);
+
+            let first_grid_offs_in_grids = static_size.div_ceil(grid_size);
+
+            let first_grid_offs = grid_size * first_grid_offs_in_grids;
+
+            let (max_insert, data) = chest.storage_list_slices();
+
+            std::iter::repeat(item)
+                .zip(
+                    std::iter::once((
+                        Storage::Static {
+                            static_id: crate::inserter::StaticID::Chest as u16,
+                            index: 0,
+                        },
+                        max_insert,
+                        data,
+                    ))
+                    .chain(
+                        std::iter::repeat_with(|| (PANIC_ON_INSERT, [].as_mut_slice()))
+                            .zip(StaticID::iter().count()..)
+                            .map(|((max, data), static_id)| {
+                                (
+                                    Storage::Static {
+                                        static_id: static_id.try_into().unwrap(),
+                                        index: 0,
+                                    },
+                                    max,
+                                    data,
+                                )
+                            }),
+                    )
+                    .take(first_grid_offs),
+                )
+                .map(|(item, (a, b, c))| (item, a, b, c))
+        })
+}
+
+#[profiling::function]
 fn all_chest_storages<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     chest_store: &'a mut FullChestStore<ItemIdxType>,
 ) -> impl IntoIterator<
@@ -714,7 +803,7 @@ fn all_chest_storages<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             (
                 item,
                 Storage::Static {
-                    static_id: crate::inserter::StaticID::Chest,
+                    static_id: crate::inserter::StaticID::Chest as u16,
                     index: 0,
                 },
                 max_insert,

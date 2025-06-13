@@ -4,13 +4,14 @@ use std::{
     mem,
 };
 
+use itertools::Itertools;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 
 use crate::{
     assembler::{AssemblerOnclickInfo, AssemblerRemovalInfo, FullAssemblerStore},
     data::{DataStore, LazyPowerMachineInfo},
     frontend::world::{tile::AssemblerID, Position},
-    item::{IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
+    item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
     lab::MultiLabStore,
     network_graph::{Network, WeakIndex},
     power::Joule,
@@ -38,15 +39,15 @@ pub enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
     Assembler {
         ty: u8,
         recipe: Recipe<RecipeIdxType>,
-        index: u16,
+        index: u32,
     },
     Lab {
         ty: u8,
-        index: u16,
+        index: u32,
     },
     LazyPowerProducer {
         item: Item<ItemIdxType>,
-        index: usize,
+        index: u32,
     },
     SolarPanel {
         ty: u8,
@@ -68,7 +69,7 @@ pub enum BeaconAffectedEntity<RecipeIdxType: WeakIdxTrait> {
     },
     Lab {
         grid: PowerGridIdentifier,
-        index: usize,
+        index: u32,
     },
 }
 
@@ -81,16 +82,24 @@ pub struct PowerGrid<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     steam_power_producers: SteamPowerProducerStore,
 
     // TODO: Currently there can only be a single type of solar panel and accumulator
-    num_solar_panels: u64,
-    main_accumulator_count: u64,
-    main_accumulator_charge: Joule,
+    num_solar_panels: Box<[u64]>,
+    pub main_accumulator_count: Box<[u64]>,
+    pub main_accumulator_charge: Box<[Joule]>,
     // unique_accumulators: Vec<UniqueAccumulator>,
     use_burnable_fuel_to_charge_accumulators: Option<BurnableFuelForAccumulators>,
 
     pub last_power_consumption: Watt,
+    pub last_produced_power: Watt,
+
+    pub last_ticks_max_power_production: Watt,
+
+    max_lazy_power: Watt,
 
     pub last_power_mult: u8,
-    pub power_history: Timeline<u32>,
+    pub power_mult_history: Timeline<u32>,
+    // FIXME: Not actually storing where the power consumption/production originates is not very useful :/
+    // pub power_consumption_history: Timeline<Watt>,
+    // pub power_production_history: Timeline<Watt>,
     pub is_placeholder: bool,
 
     pub num_assemblers_of_type: Box<[usize]>,
@@ -150,16 +159,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                     .map(|info| MultiLazyPowerProducer::new(info))
                     .collect(),
             },
-            num_solar_panels: 0,
-            main_accumulator_count: 0,
-            main_accumulator_charge: Joule(0),
+            num_solar_panels: vec![0; data_store.solar_panel_info.len()].into_boxed_slice(),
+            main_accumulator_count: vec![0; data_store.accumulator_info.len()].into_boxed_slice(),
+            main_accumulator_charge: vec![Joule(0); data_store.accumulator_info.len()]
+                .into_boxed_slice(),
             use_burnable_fuel_to_charge_accumulators: None,
 
             last_power_consumption: Watt(0),
+            last_produced_power: Watt(0),
+            max_lazy_power: Watt(0),
+
+            last_ticks_max_power_production: Watt(0),
 
             last_power_mult: MAX_POWER_MULT,
 
-            power_history: Timeline::new(false, data_store),
+            power_mult_history: Timeline::new(false, data_store),
 
             is_placeholder: false,
 
@@ -186,16 +200,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                     .map(|info| MultiLazyPowerProducer::new(info))
                     .collect(),
             },
-            num_solar_panels: 0,
-            main_accumulator_count: 0,
-            main_accumulator_charge: Joule(0),
+            num_solar_panels: vec![0; data_store.solar_panel_info.len()].into_boxed_slice(),
+            main_accumulator_count: vec![0; data_store.accumulator_info.len()].into_boxed_slice(),
+            main_accumulator_charge: vec![Joule(0); data_store.accumulator_info.len()]
+                .into_boxed_slice(),
             use_burnable_fuel_to_charge_accumulators: None,
 
             last_power_consumption: Watt(0),
+            last_produced_power: Watt(0),
+            max_lazy_power: Watt(0),
+
+            last_ticks_max_power_production: Watt(0),
 
             last_power_mult: MAX_POWER_MULT,
 
-            power_history: Timeline::new(false, data_store),
+            power_mult_history: Timeline::new(false, data_store),
 
             is_placeholder: true,
 
@@ -287,25 +306,45 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             }
         }
 
+        for (((self_charge, other_charge), self_count), other_count) in self
+            .main_accumulator_charge
+            .iter_mut()
+            .zip(other.main_accumulator_charge)
+            .zip(self.main_accumulator_count.iter().copied())
+            .zip(other.main_accumulator_count.iter().copied())
+        {
+            if self_count + other_count == 0 {
+                assert_eq!(*self_charge, Joule(0));
+                assert_eq!(other_charge, Joule(0));
+            } else {
+                *self_charge = (*self_charge * self_count + other_charge * other_count)
+                    / (self_count / other_count);
+            }
+        }
+
+        for (self_count, other_count) in
+            self.num_solar_panels.iter_mut().zip(other.num_solar_panels)
+        {
+            *self_count += other_count;
+        }
+
+        for (self_count, other_count) in self
+            .main_accumulator_count
+            .iter_mut()
+            .zip(other.main_accumulator_count)
+        {
+            *self_count += other_count;
+        }
+
         let ret = Self {
             stores: new_stores,
             lab_stores: new_labs,
             grid_graph: new_grid_graph,
             // TODO:
             steam_power_producers: self.steam_power_producers,
-            num_solar_panels: self.num_solar_panels + other.num_solar_panels,
-            main_accumulator_count: self.main_accumulator_count + other.main_accumulator_count,
-            main_accumulator_charge: if self.main_accumulator_count + other.main_accumulator_count
-                > 0
-            {
-                (self.main_accumulator_charge * self.main_accumulator_count
-                    + other.main_accumulator_charge * other.main_accumulator_count)
-                    / (self.main_accumulator_count + other.main_accumulator_count)
-            } else {
-                assert_eq!(Joule(0), self.main_accumulator_charge);
-                assert_eq!(Joule(0), other.main_accumulator_charge);
-                Joule(0)
-            },
+            num_solar_panels: self.num_solar_panels,
+            main_accumulator_count: self.main_accumulator_count,
+            main_accumulator_charge: self.main_accumulator_charge,
             use_burnable_fuel_to_charge_accumulators: match (
                 self.use_burnable_fuel_to_charge_accumulators,
                 other.use_burnable_fuel_to_charge_accumulators,
@@ -322,6 +361,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             },
 
             last_power_consumption: self.last_power_consumption + other.last_power_consumption,
+            last_produced_power: self.last_produced_power + other.last_produced_power,
+            last_ticks_max_power_production: self.last_ticks_max_power_production
+                + other.last_ticks_max_power_production,
+            max_lazy_power: self.max_lazy_power + other.max_lazy_power,
             last_power_mult: {
                 // TODO: Is this exploitable? Maybe? But even if it is, it is only exploitable in an annoying and relatively useless way I think
                 if self.last_power_consumption >= other.last_power_consumption {
@@ -330,11 +373,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                     other.last_power_mult
                 }
             },
-            power_history: {
+            power_mult_history: {
                 if self.last_power_consumption >= other.last_power_consumption {
-                    self.power_history
+                    self.power_mult_history
                 } else {
-                    other.power_history
+                    other.power_mult_history
                 }
             },
             is_placeholder: false,
@@ -366,8 +409,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     ) -> WeakIndex {
         assert!(!self.is_placeholder);
 
-        // FIXME: Respect the solar panel type
-        self.num_solar_panels += 1;
+        self.num_solar_panels[usize::from(ty)] += 1;
 
         self.grid_graph.add_weak_element(
             pole_connection,
@@ -383,11 +425,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     ) {
         assert!(!self.is_placeholder);
 
-        // FIXME: Respect the solar panel type
-        self.num_solar_panels -= 1;
+        let (_, PowerGridEntity::SolarPanel { ty }) = self
+            .grid_graph
+            .remove_weak_element(pole_connection, weak_idx)
+        else {
+            unreachable!()
+        };
 
-        self.grid_graph
-            .remove_weak_element(pole_connection, weak_idx);
+        self.num_solar_panels[usize::from(ty)] -= 1;
     }
 
     pub fn add_lab(
@@ -397,7 +442,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         modules: &[Option<usize>],
         pole_connection: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> (WeakIndex, u16) {
+    ) -> (WeakIndex, u32) {
         assert!(!self.is_placeholder);
 
         self.num_labs_of_type[usize::from(ty)] += 1;
@@ -603,12 +648,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 todo!("Remove LazyPowerProducer (Steam Engine)")
             },
             PowerGridEntity::SolarPanel { ty } => {
-                // FIXME: Respect ty
-                self.num_solar_panels -= 1;
+                self.num_solar_panels[usize::from(*ty)] -= 1;
             },
             PowerGridEntity::Accumulator { ty } => {
-                // FIXME: Respect ty
-                self.main_accumulator_count -= 1;
+                self.main_accumulator_count[usize::from(*ty)] -= 1;
             },
             PowerGridEntity::Beacon {
                 ty,
@@ -725,8 +768,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 },
                 PowerGridEntity::SolarPanel { ty } => {
                     // FIXME: Respect ty
-                    self.num_solar_panels -= 1;
-                    other.num_solar_panels += 1;
+                    self.num_solar_panels[usize::from(*ty)] -= 1;
+                    other.num_solar_panels[usize::from(*ty)] += 1;
 
                     (
                         connected_entity.0,
@@ -736,8 +779,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 },
                 PowerGridEntity::Accumulator { ty } => {
                     // FIXME: Respect ty
-                    self.main_accumulator_count -= 1;
-                    other.main_accumulator_count += 1;
+                    self.main_accumulator_count[usize::from(*ty)] -= 1;
+                    other.main_accumulator_count[usize::from(*ty)] += 1;
 
                     (
                         connected_entity.0,
@@ -955,7 +998,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
 
     pub fn add_module_to_lab(
         &mut self,
-        index: u16,
+        index: u32,
         module_kind: usize,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
@@ -976,7 +1019,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
 
     pub fn remove_module_from_lab(
         &mut self,
-        index: u16,
+        index: u32,
         module_kind: usize,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
@@ -1074,7 +1117,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
 
     pub fn change_lab_module_modifiers(
         &mut self,
-        index: u16,
+        index: u32,
         modifiers: (i16, i16, i16),
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
@@ -1183,19 +1226,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         ) {
             (0, 1) => self.stores.assemblers_0_1
                 [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
-            .remove_assembler_data(old_assembler_id.assembler_index as usize),
+            .remove_assembler_data(old_assembler_id.assembler_index),
             (1, 1) => self.stores.assemblers_1_1
                 [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
-            .remove_assembler_data(old_assembler_id.assembler_index as usize),
+            .remove_assembler_data(old_assembler_id.assembler_index),
             (2, 1) => self.stores.assemblers_2_1
                 [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
-            .remove_assembler_data(old_assembler_id.assembler_index as usize),
+            .remove_assembler_data(old_assembler_id.assembler_index),
             (3, 1) => self.stores.assemblers_3_1
                 [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
-            .remove_assembler_data(old_assembler_id.assembler_index as usize),
+            .remove_assembler_data(old_assembler_id.assembler_index),
             (4, 1) => self.stores.assemblers_4_1
                 [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
-            .remove_assembler_data(old_assembler_id.assembler_index as usize),
+            .remove_assembler_data(old_assembler_id.assembler_index),
 
             _ => unreachable!(),
         };
@@ -1349,19 +1392,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         ) {
             (0, 1) => self.stores.assemblers_0_1
                 [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
-            .remove_assembler(assembler_id.assembler_index as usize),
+            .remove_assembler(assembler_id.assembler_index),
             (1, 1) => self.stores.assemblers_1_1
                 [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
-            .remove_assembler(assembler_id.assembler_index as usize),
+            .remove_assembler(assembler_id.assembler_index),
             (2, 1) => self.stores.assemblers_2_1
                 [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
-            .remove_assembler(assembler_id.assembler_index as usize),
+            .remove_assembler(assembler_id.assembler_index),
             (3, 1) => self.stores.assemblers_3_1
                 [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
-            .remove_assembler(assembler_id.assembler_index as usize),
+            .remove_assembler(assembler_id.assembler_index),
             (4, 1) => self.stores.assemblers_4_1
                 [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
-            .remove_assembler(assembler_id.assembler_index as usize),
+            .remove_assembler(assembler_id.assembler_index),
 
             _ => unreachable!(),
         };
@@ -1373,9 +1416,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         &mut self,
         other_stores: &mut FullAssemblerStore<RecipeIdxType>,
         recipe: Recipe<RecipeIdxType>,
-        index: u16,
+        index: u32,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> usize {
+    ) -> u32 {
         match (
             data_store.recipe_num_ing_lookup[recipe.id.into()],
             data_store.recipe_num_out_lookup[recipe.id.into()],
@@ -1383,7 +1426,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             (0, 1) => self.stores.assemblers_0_1
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
             .move_assembler(
-                index.into(),
+                index,
                 &mut other_stores.assemblers_0_1
                     [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]],
                 data_store,
@@ -1391,7 +1434,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             (1, 1) => self.stores.assemblers_1_1
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
             .move_assembler(
-                index.into(),
+                index,
                 &mut other_stores.assemblers_1_1
                     [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]],
                 data_store,
@@ -1399,7 +1442,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             (2, 1) => self.stores.assemblers_2_1
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
             .move_assembler(
-                index.into(),
+                index,
                 &mut other_stores.assemblers_2_1
                     [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]],
                 data_store,
@@ -1407,7 +1450,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             (3, 1) => self.stores.assemblers_3_1
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
             .move_assembler(
-                index.into(),
+                index,
                 &mut other_stores.assemblers_3_1
                     [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]],
                 data_store,
@@ -1415,7 +1458,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             (4, 1) => self.stores.assemblers_4_1
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
             .move_assembler(
-                index.into(),
+                index,
                 &mut other_stores.assemblers_4_1
                     [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]],
                 data_store,
@@ -1428,29 +1471,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     fn move_lab(
         &mut self,
         other_stores: &mut MultiLabStore,
-        index: u16,
+        index: u32,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> u16 {
+    ) -> u32 {
         self.lab_stores.move_lab(index, other_stores)
     }
-
-    // TODO: Currently impossible because of Ing Generics
-    // fn do_for_assembler<T, ItemIdxType: IdxTrait>(
-    //     &mut self,
-    //     recipe: Recipe<RecipeIdxType>,
-    //     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    //     f: impl Fn(&mut MultiAssemblerStore<RecipeIdxType>) -> T,
-    // ) -> T {
-    //     match (
-    //         data_store.recipe_num_ing_lookup[recipe.id.into()],
-    //         data_store.recipe_num_out_lookup[recipe.id.into()],
-    //     ) {
-    //         (0, 1) => f(&mut self.stores.assemblers_0_1
-    //             [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]),
-
-    //         _ => unreachable!(),
-    //     }
-    // }
 
     // FIXME: This is a huge, high branching function.
     // Make it simpler and more readable, and reduce repetition
@@ -1458,15 +1483,54 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     fn extract_power(
         &mut self,
         goal_amount: Joule,
-        solar_panel_production_amount: Watt,
+        solar_panel_production_amounts: &[Watt],
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> u8 {
-        let solar_power = (solar_panel_production_amount * self.num_solar_panels).joules_per_tick();
+    ) -> Joule {
+        assert_eq!(
+            solar_panel_production_amounts.len(),
+            self.num_solar_panels.len()
+        );
+        let solar_power = self
+            .num_solar_panels
+            .iter()
+            .zip(solar_panel_production_amounts)
+            .map(|(a, b)| *b * *a)
+            .sum::<Watt>()
+            .joules_per_tick();
 
-        let max_charge_amount: Joule = max(
-            MAX_ACCUMULATOR_CHARGE_RATE.joules_per_tick(),
-            MAX_ACCUMULATOR_CHARGE - self.main_accumulator_charge,
-        ) * self.main_accumulator_count;
+        self.last_ticks_max_power_production = solar_power.watt_from_tick() + self.max_lazy_power;
+
+        if goal_amount == Joule(0) {
+            return Joule(0);
+        }
+
+        let max_charge_amount_per: Box<[Joule]> = self
+            .main_accumulator_count
+            .iter()
+            .zip(self.main_accumulator_charge.iter().copied())
+            .zip(
+                data_store
+                    .accumulator_info
+                    .iter()
+                    .map(|info| info.max_charge_rate),
+            )
+            .zip(
+                data_store
+                    .accumulator_info
+                    .iter()
+                    .map(|info| info.max_charge),
+            )
+            .map(
+                |(((count, charge), max_charge_rate), max_charge): (
+                    ((&u64, Joule), Watt),
+                    Joule,
+                )| {
+                    min(max_charge_rate.joules_per_tick(), max_charge - charge) * *count
+                },
+            )
+            .collect();
+        let max_charge_amount = max_charge_amount_per.iter().copied().sum();
+
         // + self
         //     .unique_accumulators
         //     .iter()
@@ -1484,7 +1548,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
 
             if remaining_solar >= max_charge_amount {
                 // We already have enough power, without using burnables.
-                self.charge_by(max_charge_amount);
+                self.charge_by(max_charge_amount, &max_charge_amount_per);
             } else if self
                 .use_burnable_fuel_to_charge_accumulators
                 .unwrap_or_default()
@@ -1499,12 +1563,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 assert!(actually_extracted <= still_needed);
                 assert!(actually_extracted + remaining_solar <= max_charge_amount);
 
-                self.charge_by(actually_extracted + remaining_solar);
+                self.charge_by(actually_extracted + remaining_solar, &max_charge_amount_per);
             } else {
                 // We only charge using solar
-                self.charge_by(remaining_solar);
+                self.charge_by(remaining_solar, &max_charge_amount_per);
             }
-            MAX_POWER_MULT
+            goal_amount
         } else {
             // Not enough solar
 
@@ -1527,27 +1591,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         // Not enough power!
                         let power_missing_to_discharge_from_accs = goal_amount - actually_extracted;
 
-                        let actually_discharged: Joule =
-                            self.extract_from_accumulators(power_missing_to_discharge_from_accs);
+                        let actually_discharged: Joule = self.extract_from_accumulators(
+                            power_missing_to_discharge_from_accs,
+                            data_store,
+                        );
 
                         assert!(actually_discharged + actually_extracted <= goal_amount);
 
-                        let power_mult = ((actually_discharged + actually_extracted)
-                            * MAX_POWER_MULT.into())
-                            / goal_amount;
-
-                        assert!(power_mult < MAX_POWER_MULT.into());
-
-                        return u8::try_from(power_mult).expect("We already asserted");
+                        return actually_discharged + actually_extracted;
                     },
-                    std::cmp::Ordering::Equal => return MAX_POWER_MULT,
+                    std::cmp::Ordering::Equal => return goal_amount,
                     std::cmp::Ordering::Greater => {
                         // Use remaining power for charging
                         let charge_amount = goal_amount - actually_extracted; // This will never underflow
 
-                        self.charge_by(charge_amount);
+                        self.charge_by(charge_amount, &max_charge_amount_per);
 
-                        return MAX_POWER_MULT;
+                        return goal_amount;
                     },
                 }
             }
@@ -1566,20 +1626,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                     // Not enough power!
                     let power_missing_to_discharge_from_accs = still_needed - actually_extracted;
 
-                    let actually_discharged =
-                        self.extract_from_accumulators(power_missing_to_discharge_from_accs);
+                    let actually_discharged = self.extract_from_accumulators(
+                        power_missing_to_discharge_from_accs,
+                        data_store,
+                    );
 
                     assert!(actually_discharged + actually_extracted + solar_power <= goal_amount);
 
-                    let power_mult = ((actually_discharged + actually_extracted + solar_power)
-                        * MAX_POWER_MULT.into())
-                        / goal_amount;
-
-                    assert!(power_mult < MAX_POWER_MULT.into());
-
-                    u8::try_from(power_mult).expect("We already asserted")
+                    actually_discharged + actually_extracted + solar_power
                 },
-                std::cmp::Ordering::Equal => MAX_POWER_MULT,
+                std::cmp::Ordering::Equal => goal_amount,
                 std::cmp::Ordering::Greater => {
                     unreachable!(
                         "We extracted more power than needed from burners, while disallowing charging?!"
@@ -1589,15 +1645,30 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         }
     }
 
-    fn charge_by(&mut self, amount: Joule) {
+    fn charge_by(&mut self, mut amount: Joule, max_charge_amount_per: &[Joule]) {
         assert!(
-            (MAX_ACCUMULATOR_CHARGE_RATE * self.main_accumulator_count).joules_per_tick() >= amount
+            max_charge_amount_per.iter().copied().sum::<Joule>() >= amount,
+            "Tried to charge the accumulators more than max amount"
         );
 
-        self.main_accumulator_charge = min(
-            self.main_accumulator_charge + amount,
-            MAX_ACCUMULATOR_CHARGE,
-        );
+        debug_assert!(max_charge_amount_per.is_sorted());
+
+        // Since we sort, we can simply go through the list sequentially
+        for ((charge, max_rate), num_left) in self
+            .main_accumulator_charge
+            .iter_mut()
+            .zip(max_charge_amount_per)
+            .zip((1..=max_charge_amount_per.len()).rev())
+            .sorted_by_key(|((_charge, max_rate), _num_left)| *max_rate)
+        {
+            // FIXME: This is integer division, so we lose some power here.
+            let charge_here: Joule = min(*max_rate, amount / u64::try_from(num_left).unwrap());
+            *charge = *charge + charge_here;
+            amount = amount - charge_here;
+        }
+
+        // Due to the integer div, this assert could fail
+        assert!(amount == Joule(0));
 
         // This is an algorithm for (kindof) handling accumulators with different charge from the "main pack"
         // while amount > MegaJoule(0) {
@@ -1644,28 +1715,52 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
 
     // TODO: currently all accumulators have the same power level. This means, adding accumulators will immediatly charge them to some degree/ tranfer power from others
     //       is that something I want?
-    fn extract_from_accumulators(&mut self, power_needed: Joule) -> Joule {
-        // only extract at most MAX_ACCUMULATOR_DISCHARGE_RATE
-        let to_extract = min(
-            power_needed,
-            (MAX_ACCUMULATOR_DISCHARGE_RATE * self.main_accumulator_count).joules_per_tick(),
-        );
-        assert!(
-            (MAX_ACCUMULATOR_DISCHARGE_RATE * self.main_accumulator_count).joules_per_tick()
-                >= to_extract
-        );
+    fn extract_from_accumulators(
+        &mut self,
+        mut power_needed: Joule,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Joule {
+        let originally_needed = power_needed;
+        let discharge_amount_per: Box<[Joule]> = self
+            .main_accumulator_count
+            .iter()
+            .zip(self.main_accumulator_charge.iter().copied())
+            .zip(
+                data_store
+                    .accumulator_info
+                    .iter()
+                    .map(|info| info.max_discharge_rate),
+            )
+            .map(
+                |((count, charge), max_discharge_rate): ((&u64, Joule), Watt)| {
+                    min(max_discharge_rate.joules_per_tick(), charge) * *count
+                },
+            )
+            .collect();
 
-        let old = self.main_accumulator_charge;
-        self.main_accumulator_charge =
-            Joule(self.main_accumulator_charge.0.saturating_sub(to_extract.0));
+        // Since we sort, we can simply go through the list sequentially
+        for ((charge, max_rate), num_left) in self
+            .main_accumulator_charge
+            .iter_mut()
+            .zip(discharge_amount_per)
+            .zip((1..=data_store.accumulator_info.len()).rev())
+            .sorted_by_key(|((charge, max_rate), num_left)| *max_rate)
+        {
+            // FIXME: This is integer division, so we lose some power here.
+            let discharge_from_here: Joule =
+                min(max_rate, power_needed / u64::try_from(num_left).unwrap());
+            assert!(*charge >= discharge_from_here);
+            *charge = *charge - discharge_from_here;
+            power_needed = power_needed - discharge_from_here;
+        }
 
-        min(old, to_extract)
+        originally_needed - power_needed
     }
 
     #[profiling::function]
     pub fn update(
         &mut self,
-        solar_panel_production_amount: Watt,
+        solar_panel_production_amounts: &[Watt],
         tech_state: &TechState,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
@@ -1689,10 +1784,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             || {
                 rayon::join(
                     || {
+                        profiling::scope!("assemblers_0_1 updates");
                         self.stores
                             .assemblers_0_1
                             .par_iter_mut()
                             .map(|s| {
+                                profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_names[usize_from(s.recipe.id)]).as_str());
                                 s.update_branchless::<RecipeIdxType>(
                                     self.last_power_mult,
                                     &data_store.recipe_index_lookups,
@@ -1720,10 +1817,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                     || {
                         rayon::join(
                             || {
+                                profiling::scope!("assemblers_1_1 updates");
                                 self.stores
                         .assemblers_1_1
                         .par_iter_mut()
                         .map(|s| {
+                            profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_names[usize_from(s.recipe.id)]).as_str());
                             s.update_branchless::<RecipeIdxType>(
                                 self.last_power_mult,
                                 &data_store.recipe_index_lookups,
@@ -1751,10 +1850,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                             || {
                                 rayon::join(
                                     || {
+                                        profiling::scope!("assemblers_2_1 updates");
                                         self.stores
                                     .assemblers_2_1
                                     .par_iter_mut()
                                     .map(|s| {
+                            profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_names[usize_from(s.recipe.id)]).as_str());
                                         s.update_branchless::<RecipeIdxType>(
                                             self.last_power_mult,
                                             &data_store.recipe_index_lookups,
@@ -1782,10 +1883,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                                     || {
                                         rayon::join(
                                             || {
+                                                profiling::scope!("assemblers_3_1 updates");
                                                 self.stores
                                         .assemblers_3_1
                                         .par_iter_mut()
                                         .map(|s| {
+                            profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_names[usize_from(s.recipe.id)]).as_str());
                                             s.update_branchless::<RecipeIdxType>(
                                                 self.last_power_mult,
                                                 &data_store.recipe_index_lookups,
@@ -1811,10 +1914,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                                         })
                                             },
                                             || {
+                                                profiling::scope!("assemblers_4_1 updates");
                                                 self.stores
                                         .assemblers_4_1
                                         .par_iter_mut()
                                         .map(|s| {
+                            profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_names[usize_from(s.recipe.id)]).as_str());
                                             s.update_branchless::<RecipeIdxType>(
                                                 self.last_power_mult,
                                                 &data_store.recipe_index_lookups,
@@ -1848,6 +1953,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 )
             },
             || {
+                profiling::scope!("Lab updates");
                 self.lab_stores
                     .update(self.last_power_mult, None, data_store)
             },
@@ -1871,8 +1977,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
 
         self.last_power_consumption = power_used.watt_from_tick();
 
-        let next_power_mult =
-            self.extract_power(power_used, solar_panel_production_amount, data_store);
+        let power_extracted =
+            self.extract_power(power_used, solar_panel_production_amounts, data_store);
+
+        assert!(power_extracted <= power_used);
+        let next_power_mult = if power_used == Joule(0) {
+            0
+        } else {
+            ((power_extracted.0 * MAX_POWER_MULT as u64) / power_used.0) as u8
+        };
+        assert!(next_power_mult <= MAX_POWER_MULT);
+
+        self.last_power_consumption = power_used.watt_from_tick();
+        self.last_produced_power = power_extracted.watt_from_tick();
 
         // TODO: Factorio just scales the beacon effect linearly
         let beacon_updates: Vec<(BeaconAffectedEntity<_>, (_, _, _))> = if next_power_mult
@@ -1896,7 +2013,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             vec![]
         };
 
-        self.power_history
+        self.power_mult_history
             .append_single_set_of_samples(next_power_mult.into());
 
         self.last_power_mult = next_power_mult;

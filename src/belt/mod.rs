@@ -13,6 +13,7 @@ use std::{
     mem, usize,
 };
 
+use crate::inserter::FakeUnionStorage;
 use crate::{
     data::DataStore,
     inserter::{
@@ -45,9 +46,9 @@ enum FreeIndex {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-enum Inserter<RecipeIdxType: WeakIdxTrait> {
-    Out(BeltStorageInserter<RecipeIdxType, { Dir::BeltToStorage }>),
-    In(BeltStorageInserter<RecipeIdxType, { Dir::StorageToBelt }>),
+enum Inserter {
+    Out(BeltStorageInserter<{ Dir::BeltToStorage }>),
+    In(BeltStorageInserter<{ Dir::StorageToBelt }>),
 }
 
 #[derive(
@@ -87,8 +88,8 @@ fn do_update_test_bools(items: &mut [bool]) {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct BeltStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    pub inner: InnerBeltStore<ItemIdxType, RecipeIdxType>,
+pub struct BeltStore<ItemIdxType: WeakIdxTrait> {
+    pub inner: InnerBeltStore<ItemIdxType>,
 
     any_belts: Vec<AnyBelt<ItemIdxType>>,
     any_belt_holes: Vec<usize>,
@@ -115,11 +116,11 @@ enum BeltGraphConnection<ItemIdxType: WeakIdxTrait> {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct InnerBeltStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    sushi_belts: Vec<SushiBelt<ItemIdxType, RecipeIdxType>>,
+pub struct InnerBeltStore<ItemIdxType: WeakIdxTrait> {
+    sushi_belts: Vec<SushiBelt<ItemIdxType>>,
     sushi_belt_holes: Vec<usize>,
 
-    smart_belts: Box<[MultiBeltStore<ItemIdxType, RecipeIdxType>]>,
+    smart_belts: Box<[MultiBeltStore<ItemIdxType>]>,
 
     pub belt_belt_inserters: BeltBeltInserterStore<ItemIdxType>,
 
@@ -232,11 +233,8 @@ pub struct BreakBeltResultInfo<ItemIdxType: WeakIdxTrait> {
     pub new_belt: Option<(BeltTileId<ItemIdxType>, Side)>,
 }
 
-impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> InnerBeltStore<ItemIdxType, RecipeIdxType> {
-    fn remove_smart_belt(
-        &mut self,
-        id: BeltId<ItemIdxType>,
-    ) -> SmartBelt<ItemIdxType, RecipeIdxType> {
+impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
+    fn remove_smart_belt(&mut self, id: BeltId<ItemIdxType>) -> SmartBelt<ItemIdxType> {
         self.smart_belts[usize_from(id.item.id)].remove_belt(id.index)
     }
 
@@ -244,8 +242,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> InnerBeltStore<ItemIdxType,
         &'a self,
         item: Item<ItemIdxType>,
         id: usize,
-    ) -> [impl IntoIterator<Item = BeltId<ItemIdxType>> + use<'a, ItemIdxType, RecipeIdxType>; 2]
-    {
+    ) -> [impl IntoIterator<Item = BeltId<ItemIdxType>> + use<'a, ItemIdxType>; 2] {
         let index_to_id = move |index| BeltId { item, index };
 
         let [input, output] = self.pure_splitters[usize_from(item.id)].get_splitter_belt_ids(id);
@@ -259,30 +256,25 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> InnerBeltStore<ItemIdxType,
     fn get_sushi_splitter_belt_ids<'a>(
         &'a self,
         id: usize,
-    ) -> [impl IntoIterator<Item = usize> + use<'a, ItemIdxType, RecipeIdxType>; 2] {
+    ) -> [impl IntoIterator<Item = usize> + use<'a, ItemIdxType>; 2] {
         [
             self.sushi_splitters[id].input_belts.iter().copied(),
             self.sushi_splitters[id].output_belts.iter().copied(),
         ]
     }
 
-    fn remove_sushi_belt(&mut self, id: usize) -> SushiBelt<ItemIdxType, RecipeIdxType> {
+    fn remove_sushi_belt(&mut self, id: usize) -> SushiBelt<ItemIdxType> {
         let mut temp = SushiBelt::new(1);
         mem::swap(&mut temp, &mut self.sushi_belts[id]);
+        self.sushi_belt_holes.push(id);
         temp
     }
 
-    fn get_smart(
-        &self,
-        smart_belt_id: BeltId<ItemIdxType>,
-    ) -> &SmartBelt<ItemIdxType, RecipeIdxType> {
+    fn get_smart(&self, smart_belt_id: BeltId<ItemIdxType>) -> &SmartBelt<ItemIdxType> {
         &self.smart_belts[usize_from(smart_belt_id.item.id)].belts[smart_belt_id.index]
     }
 
-    fn get_smart_mut(
-        &mut self,
-        smart_belt_id: BeltId<ItemIdxType>,
-    ) -> &mut SmartBelt<ItemIdxType, RecipeIdxType> {
+    fn get_smart_mut(&mut self, smart_belt_id: BeltId<ItemIdxType>) -> &mut SmartBelt<ItemIdxType> {
         &mut self.smart_belts[usize_from(smart_belt_id.item.id)].belts[smart_belt_id.index]
     }
 
@@ -290,21 +282,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> InnerBeltStore<ItemIdxType,
         &mut self,
         item: Item<ItemIdxType>,
         indices: [usize; N],
-    ) -> [&mut SmartBelt<ItemIdxType, RecipeIdxType>; N] {
+    ) -> [&mut SmartBelt<ItemIdxType>; N] {
         self.smart_belts[usize_from(item.id)]
             .belts
             .get_disjoint_mut(indices)
             .unwrap()
     }
 
-    fn get_sushi(&self, sushi_belt_id: usize) -> &SushiBelt<ItemIdxType, RecipeIdxType> {
+    fn get_sushi(&self, sushi_belt_id: usize) -> &SushiBelt<ItemIdxType> {
         &self.sushi_belts[sushi_belt_id]
     }
 
-    fn get_sushi_mut(
-        &mut self,
-        sushi_belt_id: usize,
-    ) -> &mut SushiBelt<ItemIdxType, RecipeIdxType> {
+    fn get_sushi_mut(&mut self, sushi_belt_id: usize) -> &mut SushiBelt<ItemIdxType> {
         &mut self.sushi_belts[sushi_belt_id]
     }
 
@@ -670,7 +659,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> InnerBeltStore<ItemIdxType,
         new_id
     }
 
-    fn add_sushi_belt(&mut self, belt: SushiBelt<ItemIdxType, RecipeIdxType>) -> usize {
+    fn add_sushi_belt(&mut self, belt: SushiBelt<ItemIdxType>) -> usize {
         let sushi_idx = if let Some(hole) = self.sushi_belt_holes.pop() {
             self.sushi_belts[hole] = belt;
             hole
@@ -682,7 +671,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> InnerBeltStore<ItemIdxType,
         sushi_idx
     }
 
-    fn add_belt(&mut self, belt: SmartBelt<ItemIdxType, RecipeIdxType>) -> BeltId<ItemIdxType> {
+    fn add_belt(&mut self, belt: SmartBelt<ItemIdxType>) -> BeltId<ItemIdxType> {
         let item = belt.item;
         let smart_idx = self.smart_belts[usize_from(belt.item.id)].add_belt(belt);
 
@@ -918,8 +907,10 @@ enum MakePureError {
     ErrorSushi,
 }
 
-impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, RecipeIdxType> {
-    pub fn new(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
+    pub fn new<RecipeIdxType: IdxTrait>(
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
         Self {
             inner: InnerBeltStore {
                 sushi_belts: vec![],
@@ -978,8 +969,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
             .filter_map(|(ins, item)| (matches!(ins, Inserter::In(_)).then_some(*item)))
             .all_equal_value();
 
-        fn check_incoming_edges<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-            store: &mut BeltStore<ItemIdxType, RecipeIdxType>,
+        fn check_incoming_edges<ItemIdxType: IdxTrait>(
+            store: &mut BeltStore<ItemIdxType>,
             tile_id: BeltTileId<ItemIdxType>,
             mut goal_item: Option<Item<ItemIdxType>>,
             incoming_edges: &[(NodeIndex, BeltGraphConnection<ItemIdxType>)],
@@ -1459,7 +1450,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
     }
 
     #[profiling::function]
-    pub fn update<'a, 'b>(
+    pub fn update<'a, 'b, RecipeIdxType: IdxTrait>(
         &mut self,
         num_grids_total: usize,
         storages_by_item: impl IndexedParallelIterator<Item = SingleItemStorages<'a, 'b>>,
@@ -1651,7 +1642,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
         }
     }
 
-    fn add_belt(&mut self, belt: SmartBelt<ItemIdxType, RecipeIdxType>) -> BeltTileId<ItemIdxType> {
+    fn add_belt(&mut self, belt: SmartBelt<ItemIdxType>) -> BeltTileId<ItemIdxType> {
         let id = self.inner.add_belt(belt);
 
         let new_id = self.add_smart_to_any_list(id);
@@ -1673,10 +1664,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
         new_id
     }
 
-    fn add_sushi_belt(
-        &mut self,
-        belt: SushiBelt<ItemIdxType, RecipeIdxType>,
-    ) -> BeltTileId<ItemIdxType> {
+    fn add_sushi_belt(&mut self, belt: SushiBelt<ItemIdxType>) -> BeltTileId<ItemIdxType> {
         let sushi_idx = self.inner.add_sushi_belt(belt);
 
         let new_id = self.add_sushi_to_any_list(sushi_idx);
@@ -1776,11 +1764,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
         filter: Item<ItemIdxType>,
         id: BeltTileId<ItemIdxType>,
         pos: BeltLenType,
-        storage_id: Storage<RecipeIdxType>,
+        storage_id: FakeUnionStorage,
     ) -> Result<(), SpaceOccupiedError> {
-        let handle_sushi_belt = |belt: &mut SushiBelt<ItemIdxType, RecipeIdxType>| {
-            belt.add_in_inserter(filter, pos, storage_id)
-        };
+        let handle_sushi_belt =
+            |belt: &mut SushiBelt<ItemIdxType>| belt.add_in_inserter(filter, pos, storage_id);
 
         match id {
             BeltTileId::AnyBelt(index, _) => {
@@ -1839,11 +1826,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
         filter: Item<ItemIdxType>,
         id: BeltTileId<ItemIdxType>,
         pos: BeltLenType,
-        storage_id: Storage<RecipeIdxType>,
+        storage_id: FakeUnionStorage,
     ) -> Result<(), SpaceOccupiedError> {
-        let handle_sushi_belt = |belt: &mut SushiBelt<ItemIdxType, RecipeIdxType>| {
-            belt.add_out_inserter(filter, pos, storage_id)
-        };
+        let handle_sushi_belt =
+            |belt: &mut SushiBelt<ItemIdxType>| belt.add_out_inserter(filter, pos, storage_id);
 
         match id {
             BeltTileId::AnyBelt(index, _) => {
@@ -1972,8 +1958,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
         &'a self,
         id: BeltTileId<ItemIdxType>,
     ) -> (
-        impl IntoIterator<Item = SushiInfo<ItemIdxType>> + Clone + use<'a, ItemIdxType, RecipeIdxType>,
-        impl IntoIterator<Item = SushiInfo<ItemIdxType>> + Clone + use<'a, ItemIdxType, RecipeIdxType>,
+        impl IntoIterator<Item = SushiInfo<ItemIdxType>> + Clone + use<'a, ItemIdxType>,
+        impl IntoIterator<Item = SushiInfo<ItemIdxType>> + Clone + use<'a, ItemIdxType>,
     ) {
         // FIXME: Consider splitters!!!!
         (
@@ -2194,7 +2180,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
         // TODO: Return the items so they are not lost?
     }
 
-    pub fn merge_belts(
+    pub fn merge_belts<RecipeIdxType: IdxTrait>(
         &mut self,
         front_tile_id: BeltTileId<ItemIdxType>,
         back_tile_id: BeltTileId<ItemIdxType>,
@@ -2388,15 +2374,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BeltStore<ItemIdxType, Reci
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct MultiBeltStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    pub belts: Vec<SmartBelt<ItemIdxType, RecipeIdxType>>,
+pub struct MultiBeltStore<ItemIdxType: WeakIdxTrait> {
+    pub belts: Vec<SmartBelt<ItemIdxType>>,
 
     pub holes: Vec<usize>,
 }
 
-impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Default
-    for MultiBeltStore<ItemIdxType, RecipeIdxType>
-{
+impl<ItemIdxType: IdxTrait> Default for MultiBeltStore<ItemIdxType> {
     fn default() -> Self {
         Self {
             belts: vec![],
@@ -2405,17 +2389,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Default
     }
 }
 
-impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> MultiBeltStore<ItemIdxType, RecipeIdxType> {
-    pub fn belts_mut(
-        &mut self,
-    ) -> impl IntoIterator<Item = &mut SmartBelt<ItemIdxType, RecipeIdxType>> {
+impl<ItemIdxType: IdxTrait> MultiBeltStore<ItemIdxType> {
+    pub fn belts_mut(&mut self) -> impl IntoIterator<Item = &mut SmartBelt<ItemIdxType>> {
         self.belts
             .iter_mut()
             .enumerate()
             .filter_map(|(i, b)| (!self.holes.contains(&i)).then_some(b))
     }
 
-    pub fn add_belt(&mut self, belt: SmartBelt<ItemIdxType, RecipeIdxType>) -> usize {
+    pub fn add_belt(&mut self, belt: SmartBelt<ItemIdxType>) -> usize {
         if let Some(hole) = self.holes.pop() {
             self.belts[hole] = belt;
             hole
@@ -2425,7 +2407,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> MultiBeltStore<ItemIdxType,
         }
     }
 
-    pub fn remove_belt(&mut self, belt: usize) -> SmartBelt<ItemIdxType, RecipeIdxType> {
+    pub fn remove_belt(&mut self, belt: usize) -> SmartBelt<ItemIdxType> {
         self.holes.push(belt);
 
         let mut temp = SmartBelt::new(1, self.belts[belt].item);

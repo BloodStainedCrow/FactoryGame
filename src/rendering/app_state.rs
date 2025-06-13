@@ -20,7 +20,7 @@ use crate::{
     },
     inserter::{
         belt_belt_inserter::BeltBeltInserter, storage_storage_inserter::StorageStorageInserter,
-        Storage, MOVETIME,
+        FakeUnionStorage, Storage, MOVETIME,
     },
     item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
     network_graph::WeakIndex,
@@ -51,6 +51,7 @@ pub struct GameState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, RecipeIdxType> {
+    #[must_use]
     pub fn new(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         Self {
             current_tick: 0,
@@ -60,6 +61,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         }
     }
 
+    #[must_use]
     pub fn new_with_production(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         let mut ret = Self {
             current_tick: 0,
@@ -84,10 +86,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         ret
     }
 
+    #[must_use]
     pub fn new_with_beacon_production(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         Self::new_with_beacon_red_green_production(data_store)
     }
 
+    #[must_use]
     pub fn new_with_beacon_red_green_production(
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
@@ -104,6 +108,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         for y_start in (0..200_000).step_by(6_000) {
             for y_pos in (1590..6000).step_by(40) {
                 for x_pos in (1590..3000).step_by(50) {
+                    while rand::random::<u16>() < u16::MAX / 200 {
+                        ret.update(data_store);
+                    }
                     bp.apply(
                         Position {
                             x: x_pos,
@@ -119,6 +126,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         ret
     }
 
+    #[must_use]
     pub fn new_with_beacon_red_production(
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
@@ -154,6 +162,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         ret
     }
 
+    #[must_use]
     pub fn new_with_beacon_belt_production(
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
@@ -167,7 +176,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let file = File::open("test_blueprints/red_sci_with_beacons_and_belts.bp").unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
 
-        for y_start in (0..10_000).step_by(6_000) {
+        for y_start in (0..60_000).step_by(6_000) {
             for y_pos in (1590..6000).step_by(10) {
                 for x_pos in (1590..3000).step_by(60) {
                     if rand::random::<u16>() == 0 {
@@ -189,6 +198,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         ret
     }
 
+    #[must_use]
     pub fn new_with_lots_of_belts(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         let mut ret = Self {
             current_tick: 0,
@@ -200,7 +210,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let file = File::open("test_blueprints/lots_of_belts.bp").unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
 
-        for y_pos in (1600..3_000).step_by(3) {
+        for y_pos in (1600..84_000).step_by(3) {
             ret.update(data_store);
             for x_pos in (1600..3000).step_by(50) {
                 bp.apply(Position { x: x_pos, y: y_pos }, &mut ret, data_store);
@@ -257,6 +267,7 @@ pub struct SimulationState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrai
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SimulationState<ItemIdxType, RecipeIdxType> {
+    #[must_use]
     pub fn new(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         Self {
             tech_state: TechState {
@@ -270,19 +281,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SimulationState<ItemIdxType
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub power_grids: PowerGridStorage<ItemIdxType, RecipeIdxType>,
-    pub belts: BeltStore<ItemIdxType, RecipeIdxType>,
-    pub storage_storage_inserters: StorageStorageInserterStore<RecipeIdxType>,
+    pub belts: BeltStore<ItemIdxType>,
+    pub storage_storage_inserters: StorageStorageInserterStore,
     pub chests: FullChestStore<ItemIdxType>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct StorageStorageInserterStore<RecipeIdxType: WeakIdxTrait> {
-    pub inserters: Box<[Vec<StorageStorageInserter<RecipeIdxType>>]>,
+pub struct StorageStorageInserterStore {
+    pub inserters: Box<[Vec<StorageStorageInserter>]>,
     holes: Box<[Vec<usize>]>,
 }
 
-impl<RecipeIdxType: IdxTrait> StorageStorageInserterStore<RecipeIdxType> {
-    fn new<ItemIdxType: IdxTrait>(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+impl StorageStorageInserterStore {
+    fn new<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
         Self {
             inserters: vec![vec![]; data_store.item_names.len()].into_boxed_slice(),
             holes: vec![vec![]; data_store.item_names.len()].into_boxed_slice(),
@@ -290,7 +303,7 @@ impl<RecipeIdxType: IdxTrait> StorageStorageInserterStore<RecipeIdxType> {
     }
 
     #[profiling::function]
-    fn update<'a, 'b, ItemIdxType: IdxTrait>(
+    fn update<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut self,
         full_storages: impl IndexedParallelIterator<Item = SingleItemStorages<'a, 'b>>,
         num_grids_total: usize,
@@ -322,24 +335,30 @@ impl<RecipeIdxType: IdxTrait> StorageStorageInserterStore<RecipeIdxType> {
                     // Ideally we could replace inserter holes with placeholder that do not do anything, but I don't quite know how those would work.
                     .filter_map(|(i, v)| (!holes.contains(&i)).then_some(v))
                     .for_each(|ins| {
-                        ins.update(storages, MOVETIME, num_grids_total, num_recipes, grid_size)
+                        ins.update(storages, MOVETIME, num_grids_total, num_recipes, grid_size);
                     });
             });
     }
 
-    pub fn add_ins<ItemIdxType: IdxTrait>(
+    pub fn add_ins<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut self,
         item: Item<ItemIdxType>,
         start: Storage<RecipeIdxType>,
         dest: Storage<RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> usize {
         let idx = if let Some(hole_idx) = self.holes[usize_from(item.id)].pop() {
-            self.inserters[usize_from(item.id)][hole_idx] =
-                StorageStorageInserter::new(start, dest);
+            self.inserters[usize_from(item.id)][hole_idx] = StorageStorageInserter::new(
+                FakeUnionStorage::from_storage_with_statics_at_zero(item, start, data_store),
+                FakeUnionStorage::from_storage_with_statics_at_zero(item, dest, data_store),
+            );
 
             hole_idx
         } else {
-            self.inserters[usize_from(item.id)].push(StorageStorageInserter::new(start, dest));
+            self.inserters[usize_from(item.id)].push(StorageStorageInserter::new(
+                FakeUnionStorage::from_storage_with_statics_at_zero(item, start, data_store),
+                FakeUnionStorage::from_storage_with_statics_at_zero(item, dest, data_store),
+            ));
 
             self.inserters[usize_from(item.id)].len() - 1
         };
@@ -704,17 +723,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         },
                         crate::frontend::world::tile::PlaceEntityType::SolarPanel { pos, ty } => {
                             info!("Trying to place solar_panel at {pos:?}");
-                            // TODO: get size dynamically
-                            if !self.world.can_fit(pos, (3, 3), data_store) {
+                            let size = data_store.solar_panel_info[usize::from(ty)].size;
+                            let size = size.into();
+
+                            if !self.world.can_fit(pos, size, data_store) {
                                 warn!("Tried to place solar_panel where it does not fit");
                                 continue;
                             }
 
-                            // FIXME: Hardcoded
                             let powered_by = self.world.is_powered_by(
                                 &self.simulation_state,
                                 pos,
-                                (3, 3),
+                                size,
                                 data_store,
                             );
 
@@ -1157,7 +1177,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             .simulation_state
             .factory
             .power_grids
-            .update(&self.simulation_state.tech_state, data_store);
+            .update(&self.simulation_state.tech_state, 0, data_store);
 
         self.simulation_state
             .tech_state
@@ -1399,10 +1419,9 @@ pub fn calculate_inserter_positions(pos: Position, dir: Dir) -> (Position, Posit
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, sync::LazyLock};
+    use std::fs::File;
 
     use crate::{
-        assembler::AssemblerOnclickInfo,
         blueprint::{random_blueprint_strategy, random_position, Blueprint},
         data::{factorio_1_1::get_raw_data_test, DataStore},
         frontend::{

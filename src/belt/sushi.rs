@@ -13,20 +13,21 @@ use super::{
     smart::{InserterStore, Side, SmartBelt, SpaceOccupiedError},
     FreeIndex, Inserter,
 };
+use crate::inserter::FakeUnionStorage;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub(super) struct SushiBelt<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+pub(super) struct SushiBelt<ItemIdxType: WeakIdxTrait> {
     pub(super) is_circular: bool,
     pub(super) locs: Box<[Option<Item<ItemIdxType>>]>,
     pub(super) first_free_index: FreeIndex,
     /// Important, zero_index must ALWAYS be used using mod len
     pub(super) zero_index: BeltLenType,
-    pub(super) inserters: SushiInserterStore<ItemIdxType, RecipeIdxType>,
+    pub(super) inserters: SushiInserterStore<ItemIdxType>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub(super) struct SushiInserterStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    pub(super) inserters: Vec<(Inserter<RecipeIdxType>, Item<ItemIdxType>)>,
+pub(super) struct SushiInserterStore<ItemIdxType: WeakIdxTrait> {
+    pub(super) inserters: Vec<(Inserter, Item<ItemIdxType>)>,
     pub(super) offsets: Vec<u16>,
 }
 
@@ -36,7 +37,7 @@ pub(super) enum SushiInfo<ItemIdxType: WeakIdxTrait> {
     Pure(Option<Item<ItemIdxType>>),
 }
 
-impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SushiBelt<ItemIdxType, RecipeIdxType> {
+impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
     pub fn new(len: BeltLenType) -> Self {
         Self {
             is_circular: false,
@@ -54,7 +55,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SushiBelt<ItemIdxType, Reci
         &mut self,
         filter: Item<ItemIdxType>,
         pos: BeltLenType,
-        storage_id: Storage<RecipeIdxType>,
+        storage_id: FakeUnionStorage,
     ) -> Result<(), SpaceOccupiedError> {
         assert!(
             usize::from(pos) < self.locs.len(),
@@ -100,7 +101,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SushiBelt<ItemIdxType, Reci
         &mut self,
         filter: Item<ItemIdxType>,
         pos: BeltLenType,
-        storage_id: Storage<RecipeIdxType>,
+        storage_id: FakeUnionStorage,
     ) -> Result<(), SpaceOccupiedError> {
         assert!(
             usize::from(pos) < self.locs.len(),
@@ -234,7 +235,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SushiBelt<ItemIdxType, Reci
         }
     }
 
-    pub fn into_smart_belt(self, item: Item<ItemIdxType>) -> SmartBelt<ItemIdxType, RecipeIdxType> {
+    pub fn into_smart_belt(self, item: Item<ItemIdxType>) -> SmartBelt<ItemIdxType> {
         let found_item = match self.locs.iter().copied().flatten().all_equal_value() {
             Ok(found_item) => {
                 assert_eq!(found_item, item);
@@ -452,9 +453,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SushiBelt<ItemIdxType, Reci
     }
 }
 
-impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Belt<ItemIdxType>
-    for SushiBelt<ItemIdxType, RecipeIdxType>
-{
+impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
     fn query_item(
         &self,
         pos: super::belt::BeltLenType,
@@ -508,6 +507,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Belt<ItemIdxType>
         BeltLenType::try_from(self.locs.len()).expect("Belt too long!")
     }
 
+    #[profiling::function]
     fn update(&mut self) {
         if self.query_item(0).is_none() {
             // Correctness: Since we always % len whenever we access using self.zero_index, we do not need to % len here

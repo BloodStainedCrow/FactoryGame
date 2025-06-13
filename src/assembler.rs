@@ -589,7 +589,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
     fn get_info<ItemIdxType: IdxTrait>(
         &self,
-        index: u16,
+        index: u32,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> AssemblerOnclickInfo<ItemIdxType> {
         let items = data_store.recipe_to_items.get(&self.recipe).unwrap();
@@ -790,23 +790,12 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         // TODO: I don't think this holds anymore, now that we cannot bail early at 0 power_mult
         // debug_assert!(increase > 0);
 
-        let ings_arr = ZipArray {
-            array: self.ings.each_mut().map(|r| r.iter_mut()),
-        };
-
-        let outputs_arr = ZipArray {
-            array: self.outputs.each_mut().map(|r| r.iter_mut()),
-        };
-
         let mut power = Watt(0);
 
-        // TODO: Benchmark if this is okay
-        for (
-            mut outputs,
-            (mut ings, (timer, (prod_timer, (speed_mod, (bonus_prod, (base_power, power_mod)))))),
-        ) in outputs_arr.zip(
-            ings_arr.zip(
-                self.timers.iter_mut().zip(
+        for (index, (timer, (prod_timer, (speed_mod, (bonus_prod, (base_power, power_mod)))))) in
+            self.timers
+                .iter_mut()
+                .zip(
                     self.prod_timers.iter_mut().zip(
                         self.combined_speed_mod.iter().copied().zip(
                             self.bonus_productivity.iter().copied().zip(
@@ -817,34 +806,32 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                             ),
                         ),
                     ),
-                ),
-            ),
-        ) {
-            // FIXME: Remove the items from the ings at the start of the crafting process
+                )
+                .enumerate()
+        {
+            // ~~Remove the items from the ings at the start of the crafting process~~
+            // We will do this as part of the frontend ui!
 
             let increase = (u32::from(increase) * u32::from(speed_mod) / 20) as u16;
 
-            let ing_mul: u8 = ings
-                .iter()
-                .zip(our_ings.iter())
-                .fold(1, |acc, (have, want)| acc * u8::from(**have >= *want));
-            let ing_mul_for_two_crafts: u16 = ings
-                .iter()
-                .zip(our_ings.iter())
-                .fold(1, |acc, (have, want)| {
-                    acc * u16::from(**have >= (*want * 2))
-                });
+            let mut ing_mul: u8 = 1;
+            for i in 0..NUM_INGS {
+                ing_mul *= u8::from(self.ings[i][index] >= our_ings[i]);
+            }
+
+            let mut ing_mul_for_two_crafts: u16 = 1;
+            for i in 0..NUM_INGS {
+                ing_mul_for_two_crafts *= u16::from(self.ings[i][index] >= our_ings[i] * 2);
+            }
+
             let new_timer_output_space = timer.wrapping_add(increase * u16::from(ing_mul));
             let new_timer_output_full = timer.saturating_add(increase * u16::from(ing_mul));
 
-            let space_mul: u8 =
-                outputs
-                    .iter()
-                    .zip(our_outputs.iter())
-                    .fold(1, |acc, (have, new_from_recipe)| {
-                        // TODO: 100 output amount hardcoded!!!!
-                        acc * u8::from((have.saturating_add(*new_from_recipe)) <= 100)
-                    });
+            let mut space_mul: u8 = 1;
+            for i in 0..NUM_OUTPUTS {
+                space_mul *=
+                    u8::from((self.outputs[i][index].saturating_add(our_outputs[i])) <= 100);
+            }
 
             let new_timer = new_timer_output_space * u16::from(space_mul)
                 + new_timer_output_full * (1 - u16::from(space_mul));
@@ -867,13 +854,12 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
             *timer = new_timer;
             *prod_timer = new_prod_timer;
-            outputs
-                .iter_mut()
-                .zip(our_outputs.iter())
-                .for_each(|(output, new)| **output += (timer_mul + prod_timer_mul) * new);
-            ings.iter_mut()
-                .zip(our_ings.iter())
-                .for_each(|(ing, used)| **ing -= timer_mul * used);
+            for i in 0..NUM_OUTPUTS {
+                self.outputs[i][index] += (timer_mul + prod_timer_mul) * our_outputs[i];
+            }
+            for i in 0..NUM_INGS {
+                self.ings[i][index] -= timer_mul * our_ings[i];
+            }
             times_ings_used += u32::from(timer_mul);
             num_finished_crafts += u32::from(timer_mul + prod_timer_mul);
         }
@@ -907,44 +893,41 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         self.ings.each_mut().map(|b| &mut **b)
     }
 
-    pub fn get_outputs_mut(&mut self, idx: usize) -> &mut [ITEMCOUNTTYPE] {
-        &mut self.outputs[idx]
+    pub fn get_outputs_mut(&mut self, idx: u32) -> &mut [ITEMCOUNTTYPE] {
+        &mut self.outputs[idx as usize]
     }
 
-    pub fn get_ings_mut(&mut self, idx: usize) -> &mut [ITEMCOUNTTYPE] {
-        &mut self.ings[idx]
+    pub fn get_ings_mut(&mut self, idx: u32) -> &mut [ITEMCOUNTTYPE] {
+        &mut self.ings[idx as usize]
     }
 
-    pub fn get_output_mut(
-        &mut self,
-        output_idx: usize,
-        index: usize,
-    ) -> Option<&mut ITEMCOUNTTYPE> {
-        if index < self.len {
-            Some(&mut self.outputs[output_idx][index])
+    pub fn get_output_mut(&mut self, output_idx: usize, index: u32) -> Option<&mut ITEMCOUNTTYPE> {
+        if (index as usize) < self.len {
+            Some(&mut self.outputs[output_idx][index as usize])
         } else {
             None
         }
     }
 
-    pub fn get_output(&self, output_idx: usize, index: usize) -> Option<&ITEMCOUNTTYPE> {
-        if index < self.len {
-            Some(&self.outputs[output_idx][index])
+    pub fn get_output(&self, output_idx: usize, index: u32) -> Option<&ITEMCOUNTTYPE> {
+        if (index as usize) < self.len {
+            Some(&self.outputs[output_idx][index as usize])
         } else {
             None
         }
     }
 
-    pub fn get_ing_mut(&mut self, input_idx: usize, index: usize) -> Option<&mut ITEMCOUNTTYPE> {
-        if index < self.len {
-            Some(&mut self.ings[input_idx][index])
+    pub fn get_ing_mut(&mut self, input_idx: usize, index: u32) -> Option<&mut ITEMCOUNTTYPE> {
+        if (index as usize) < self.len {
+            Some(&mut self.ings[input_idx][index as usize])
         } else {
             None
         }
     }
 
     /// The caller must make sure, that this index is not used in any other machine, since it will either crash/work on a nonexistant Assembler or be reused for another machine!
-    pub fn remove_assembler(&mut self, index: usize) -> AssemblerRemovalInfo {
+    pub fn remove_assembler(&mut self, index: u32) -> AssemblerRemovalInfo {
+        let index = index as usize;
         debug_assert!(!self.holes.contains(&index));
         self.holes.push(index);
 
@@ -966,7 +949,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
     pub fn remove_assembler_data(
         &mut self,
-        index: usize,
+        index: u32,
     ) -> (
         Vec<ITEMCOUNTTYPE>,
         Vec<ITEMCOUNTTYPE>,
@@ -1001,7 +984,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
     fn remove_assembler_data_inner(
         &mut self,
-        index: usize,
+        index: u32,
     ) -> (
         [ITEMCOUNTTYPE; NUM_INGS],
         [ITEMCOUNTTYPE; NUM_INGS],
@@ -1016,6 +999,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         u8,
         Position,
     ) {
+        let index = index as usize;
         debug_assert!(!self.holes.contains(&index));
         self.holes.push(index);
 
@@ -1061,7 +1045,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         modules: &[Option<usize>],
         position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> usize {
+    ) -> u32 {
         assert_eq!(
             modules.len(),
             data_store.assembler_info[usize::from(ty)].num_module_slots as usize
@@ -1114,10 +1098,10 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
     pub fn move_assembler<ItemIdxType: IdxTrait>(
         &mut self,
-        index: usize,
+        index: u32,
         dest: &mut Self,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> usize {
+    ) -> u32 {
         let data = self.remove_assembler_data_inner(index);
 
         dest.add_assembler_with_data(
@@ -1141,7 +1125,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         ty: u8,
         position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> usize {
+    ) -> u32 {
         let len = self.timers.len();
         // debug_assert!(len % Simdtype::LEN == 0);
 
@@ -1188,7 +1172,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
             self.types[hole_index] = ty;
             self.positions[hole_index] = position;
-            return hole_index;
+            return hole_index.try_into().unwrap();
         }
 
         if self.len == self.timers.len() {
@@ -1357,17 +1341,18 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         self.types.push(ty);
 
         self.len += 1;
-        self.len - 1
+        (self.len - 1).try_into().unwrap()
     }
 
     pub fn modify_modifiers<ItemIdxType: IdxTrait>(
         &mut self,
-        index: u16,
+        index: u32,
         speed: i16,
         prod: i16,
         power: i16,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
+        let index = index as usize;
         self.raw_speed_mod[usize::from(index)] = self.raw_speed_mod[usize::from(index)]
             .checked_add(speed)
             .expect("Over/Underflowed");

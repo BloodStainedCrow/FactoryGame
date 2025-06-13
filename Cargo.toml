@@ -46,9 +46,9 @@ puffin = "0.19"
 [patch.crates-io]
 puffin_egui = { git = "https://github.com/BloodStainedCrow/puffin" }
 puffin = { git = "https://github.com/BloodStainedCrow/puffin" }
-egui = { path = "../egui/crates/egui" }
-eframe = { path = "../egui/crates/eframe" }
-egui-wgpu = { path = "../egui/crates/egui-wgpu" }
+egui = { git = "https://github.com/BloodStainedCrow/egui", branch = "removeProfiling" }
+eframe = { git = "https://github.com/BloodStainedCrow/egui", branch = "removeProfiling" }
+egui-wgpu = { git = "https://github.com/BloodStainedCrow/egui", branch = "removeProfiling" }
 
 [lints.rust]
 # TODO:
@@ -62,6 +62,8 @@ unwrap_used = { level = "deny", priority = -1 }
 wildcard_enum_match_arm = { level = "deny", priority = -1 }
 match_same_arms = { level = "deny", priority = -1 }
 
+
+redundant_closure_for_method_calls = { level = "allow", priority = 1 }
 suboptimal_flops = { level = "allow", priority = 1 }
 module_name_repetitions = { level = "allow", priority = 1 }
 
@@ -82,3 +84,7 @@ incremental = true
 [profile.release]
 lto = true
 # codegen-units = 1
+
+[features]
+# Use Krastorio2 graphics. Since I have not properly added licensing information, I currently do not push them, therefore this feature is broken
+graphics = []

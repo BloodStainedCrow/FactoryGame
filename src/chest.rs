@@ -47,6 +47,7 @@ pub struct MultiChestStore<ItemIdxType: WeakIdxTrait> {
 }
 
 impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
+    #[must_use]
     pub fn new<RecipeIdxType: IdxTrait>(
         item: Item<ItemIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -66,7 +67,7 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         ty: u8,
         slot_limit: u8,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> usize {
+    ) -> u32 {
         let stack_size = data_store.item_stack_sizes[usize_from(self.item.id)];
         assert!(slot_limit <= data_store.chest_num_slots[usize::from(ty)]);
         let num_stacks = slot_limit;
@@ -78,7 +79,7 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
             self.max_insert[hole] = max_items.try_into().unwrap_or(ITEMCOUNTTYPE::MAX);
 
             self.max_items[hole] = max_items.saturating_sub(u16::from(ITEMCOUNTTYPE::MAX));
-            hole
+            hole.try_into().unwrap()
         } else {
             self.inout.push(0);
             self.storage.push(0);
@@ -87,28 +88,29 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
 
             self.max_items
                 .push(max_items.saturating_sub(u16::from(ITEMCOUNTTYPE::MAX)));
-            self.inout.len() - 1
+            (self.inout.len() - 1).try_into().unwrap()
         }
     }
 
     pub fn remove_chest<RecipeIdxType: IdxTrait>(
         &mut self,
-        index: usize,
+        index: u32,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> u16 {
+        let index = index as usize;
         self.holes.push(index);
 
-        let items = self.inout[index] as u16 + self.storage[index];
+        let items = u16::from(self.inout[index]) + self.storage[index];
         self.inout[index] = 0;
         self.storage[index] = 0;
         self.max_items[index] = 0;
         items
     }
 
-    pub fn get_chest(&self, index: usize) -> (u16, u16) {
+    pub fn get_chest(&self, index: u32) -> (u16, u16) {
         (
-            self.storage[index] + u16::from(self.inout[index]),
-            self.max_items[index],
+            self.storage[index as usize] + u16::from(self.inout[index as usize]),
+            self.max_items[index as usize],
         )
     }
 
@@ -121,19 +123,19 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
             let to_move = inout.abs_diff(CHEST_GOAL_AMOUNT);
 
             if *inout >= CHEST_GOAL_AMOUNT {
-                let moved: ITEMCOUNTTYPE = min(to_move as u16, max_items - *storage)
+                let moved: ITEMCOUNTTYPE = min(u16::from(to_move), max_items - *storage)
                     .try_into()
                     .expect("since to_move was a ITEMCOUNTTYPE, this always fits");
                 *inout -= moved;
-                *storage += moved as u16;
+                *storage += u16::from(to_move);
 
                 debug_assert!(*storage <= max_items);
             } else {
-                let moved: ITEMCOUNTTYPE = min(to_move as u16, *storage)
+                let moved: ITEMCOUNTTYPE = min(u16::from(to_move), *storage)
                     .try_into()
                     .expect("since to_move was a ITEMCOUNTTYPE, this always fits");
                 *inout += moved;
-                *storage -= moved as u16;
+                *storage -= u16::from(to_move);
             }
         }
     }
@@ -150,11 +152,11 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
 
             let moved: i16 = (switch as i16 + (1 - switch as i16) * -1)
                 * (min(
-                    to_move as u16,
+                    u16::from(to_move),
                     (max_items - *storage) * switch + (1 - switch) * *storage,
                 ) as i16);
 
-            *inout = (*inout as u16).wrapping_sub_signed(moved) as u8;
+            *inout = (u16::from(*inout)).wrapping_sub_signed(moved) as u8;
             *storage = (*storage).wrapping_add_signed(moved) as u16;
 
             debug_assert!(*storage <= max_items);
@@ -162,7 +164,9 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
     }
 
     /// Returns the number of items no longer part of the box
-    pub fn change_chest_size(&mut self, index: usize, new_size: u16) -> u16 {
+    pub fn change_chest_size(&mut self, index: u32, new_size: u16) -> u16 {
+        let index = index as usize;
+
         let removed_items = if new_size < max(self.max_items[index], self.max_insert[index] as u16)
         {
             let current_items = self.inout[index] as u16 + self.storage[index];
@@ -171,7 +175,7 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
                 let items_to_remove = current_items - new_size;
 
                 if self.storage[index] >= items_to_remove {
-                    self.storage[index] -= items_to_remove
+                    self.storage[index] -= items_to_remove;
                 } else {
                     self.inout[index] = self.inout[index]
                         .checked_sub(
@@ -231,19 +235,19 @@ mod test {
             let mut inout_naive = inout;
 
             if inout_naive >= CHEST_GOAL_AMOUNT {
-                let moved: ITEMCOUNTTYPE = min(to_move as u16, max_items - storage)
+                let moved: ITEMCOUNTTYPE = min(u16::from(to_move), max_items - storage)
                     .try_into()
                     .expect("since to_move was a ITEMCOUNTTYPE, this always fits");
                 inout_naive -= moved;
-                storage_naive += moved as u16;
+                storage_naive += u16::from(moved);
 
                 debug_assert!(storage_naive <= max_items);
             } else {
-                let moved: ITEMCOUNTTYPE = min(to_move as u16, storage)
+                let moved: ITEMCOUNTTYPE = min(u16::from(to_move), storage)
                     .try_into()
                     .expect("since to_move was a ITEMCOUNTTYPE, this always fits");
                 inout_naive += moved;
-                storage_naive -= moved as u16;
+                storage_naive -= u16::from(moved);
             }
 
             let mut storage_simd = storage;

@@ -1,8 +1,11 @@
-use std::{cmp::min, iter::successors};
+use std::{
+    cmp::{min, Ordering},
+    iter::successors,
+};
 
 use crate::{
     assembler::AssemblerOnclickInfo,
-    belt::{belt::Belt, splitter::SPLITTER_BELT_LEN, BeltTileId},
+    belt::{splitter::SPLITTER_BELT_LEN, BeltTileId},
     blueprint::Blueprint,
     data::{factorio_1_1::get_raw_data_test, DataStore, ItemRecipeDir},
     frontend::{
@@ -13,20 +16,20 @@ use crate::{
             set_recipe::SetRecipeInfo,
             ActionType,
         },
-        world::tile::{
-            AssemblerID, AssemblerInfo, Dir, Entity, BELT_LEN_PER_TILE, CHUNK_SIZE_FLOAT,
-        },
+        world::tile::{AssemblerInfo, Dir, Entity, BELT_LEN_PER_TILE, CHUNK_SIZE_FLOAT},
     },
     item::{usize_from, IdxTrait, Item, Recipe},
-    power::{power_grid::MAX_POWER_MULT, Watt},
+    power::{power_grid::MAX_POWER_MULT, Joule, Watt},
     statistics::{
         NUM_SAMPLES_AT_INTERVALS, NUM_X_AXIS_TICKS, RELATIVE_INTERVAL_MULTS, TIMESCALE_LEGEND,
     },
+    TICKS_PER_SECOND_LOGIC,
 };
 use eframe::egui::{
     self, Align2, Color32, ComboBox, Context, CornerRadius, Label, Layout, ProgressBar, Stroke, Ui,
     Window,
 };
+use egui::{RichText, ScrollArea, Sense, UiBuilder};
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
 use log::{info, trace, warn};
@@ -46,20 +49,23 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     state_machine: &ActionStateMachine<ItemIdxType, RecipeIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
-    let num_tiles_across_screen =
+    let ar = renderer.get_aspect_ratio();
+
+    let num_tiles_across_screen_horizontal =
         WIDTH_PER_LEVEL as f32 * state_machine.zoom_level * state_machine.zoom_level;
-    let tilesize: f32 = 1.0 / num_tiles_across_screen;
+    let num_tiles_across_screen_vertical = num_tiles_across_screen_horizontal / ar;
+    let tilesize: f32 = 1.0 / num_tiles_across_screen_horizontal;
 
-    let mut tile_layer = Layer::square_tile_grid(tilesize);
-    let mut entity_layer = Layer::square_tile_grid(tilesize);
+    let mut tile_layer = Layer::square_tile_grid(tilesize, ar);
+    let mut entity_layer = Layer::square_tile_grid(tilesize, ar);
 
-    let mut item_layer = Layer::square_tile_grid(tilesize);
+    let mut item_layer = Layer::square_tile_grid(tilesize, ar);
 
-    let mut player_layer = Layer::square_tile_grid(tilesize);
+    let mut player_layer = Layer::square_tile_grid(tilesize, ar);
 
-    let mut warning_layer = Layer::square_tile_grid(tilesize);
+    let mut warning_layer = Layer::square_tile_grid(tilesize, ar);
 
-    let range_layer = Layer::square_tile_grid(tilesize);
+    let range_layer = Layer::square_tile_grid(tilesize, ar);
 
     let player_pos = state_machine.local_player_pos;
 
@@ -68,18 +74,18 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         (player_pos.1 / CHUNK_SIZE_FLOAT) as i32,
     );
 
-    for x_offs in -((num_tiles_across_screen / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
-        ..=((num_tiles_across_screen / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
+    for x_offs in -((num_tiles_across_screen_horizontal / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
+        ..=((num_tiles_across_screen_horizontal / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
     {
         // TODO: Use different height (aspect ratio!)
-        for y_offs in -((num_tiles_across_screen / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
-            ..=((num_tiles_across_screen / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
+        for y_offs in -((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
+            ..=((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
         {
             let chunk_draw_offs = (
                 x_offs as f32 * CHUNK_SIZE_FLOAT - player_pos.0 % CHUNK_SIZE_FLOAT
-                    + (0.5 * num_tiles_across_screen),
+                    + (0.5 * num_tiles_across_screen_horizontal),
                 y_offs as f32 * CHUNK_SIZE_FLOAT - player_pos.1 % CHUNK_SIZE_FLOAT
-                    + (0.5 * num_tiles_across_screen),
+                    + (0.5 * num_tiles_across_screen_vertical),
             );
 
             match game_state.world.get_chunk(
@@ -93,7 +99,13 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     .unwrap(),
             ) {
                 Some(chunk) => {
-                    for (x, row) in chunk.floor_tiles.unwrap_or_default().iter().enumerate() {
+                    for (x, row) in chunk
+                        .floor_tiles
+                        .as_ref()
+                        .unwrap_or(&Box::new(Default::default()))
+                        .iter()
+                        .enumerate()
+                    {
                         for (y, tile) in row.iter().enumerate() {
                             match tile {
                                 crate::frontend::world::tile::FloorTile::Empty => tile_layer
@@ -108,17 +120,19 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             animation_frame: 0,
                                         },
                                     ),
-                                _ => tile_layer.draw_sprite(
-                                    &texture_atlas.default,
-                                    DrawInstance {
-                                        position: [
-                                            chunk_draw_offs.0 + x as f32,
-                                            chunk_draw_offs.1 + y as f32,
-                                        ],
-                                        size: [1.0, 1.0],
-                                        animation_frame: 0,
-                                    },
-                                ),
+                                _ => {
+                                    tile_layer.draw_sprite(
+                                        &texture_atlas.default,
+                                        DrawInstance {
+                                            position: [
+                                                chunk_draw_offs.0 + x as f32,
+                                                chunk_draw_offs.1 + y as f32,
+                                            ],
+                                            size: [1.0, 1.0],
+                                            animation_frame: 0,
+                                        },
+                                    );
+                                },
                             }
                         }
                     }
@@ -126,45 +140,81 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     for entity in chunk.get_entities() {
                         match entity {
                             crate::frontend::world::tile::Entity::Assembler {
-                                pos, info, ..
+                                ty,
+                                pos,
+                                info,
+                                ..
                             } => {
-                                entity_layer.draw_sprite(
-                                    &texture_atlas.assembler,
-                                    DrawInstance {
-                                        position: [
-                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                        ],
-                                        size: [3.0, 3.0],
-                                        animation_frame: 0,
-                                    },
-                                );
+                                let size: [u16; 2] = [
+                                    data_store.assembler_info[usize::from(*ty)].size.0,
+                                    data_store.assembler_info[usize::from(*ty)].size.1,
+                                ];
 
                                 match info {
                                     AssemblerInfo::UnpoweredNoRecipe
                                     | AssemblerInfo::Unpowered(_) => {
-                                        warning_layer.draw_sprite(
-                                            &texture_atlas.not_connected,
-                                            DrawInstance {
-                                                position: [
+                                        texture_atlas.not_connected.draw_centered_on(
+                                            &texture_atlas.assembler,
+                                            [
+                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                            ],
+                                            size,
+                                            0,
+                                            &mut warning_layer,
+                                        );
+
+                                        texture_atlas.assembler.draw(
+                                            [
+                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                            ],
+                                            size,
+                                            0,
+                                            &mut entity_layer,
+                                        );
+                                    },
+                                    AssemblerInfo::PoweredNoRecipe(pole_position) => {
+                                        let grid = game_state
+                                            .simulation_state
+                                            .factory
+                                            .power_grids
+                                            .pole_pos_to_grid_id[pole_position];
+
+                                        let last_power = game_state
+                                            .simulation_state
+                                            .factory
+                                            .power_grids
+                                            .power_grids[usize::from(grid)]
+                                        .last_power_mult;
+
+                                        if last_power == 0 {
+                                            texture_atlas.no_power.draw_centered_on(
+                                                &texture_atlas.assembler,
+                                                [
                                                     chunk_draw_offs.0 + (pos.x % 16) as f32,
                                                     chunk_draw_offs.1 + (pos.y % 16) as f32,
                                                 ],
-                                                size: [3.0, 3.0],
-                                                animation_frame: 0,
-                                            },
+                                                size,
+                                                0,
+                                                &mut warning_layer,
+                                            );
+                                        }
+
+                                        texture_atlas.assembler.draw(
+                                            [
+                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                            ],
+                                            size,
+                                            0,
+                                            &mut entity_layer,
                                         );
                                     },
-                                    AssemblerInfo::PoweredNoRecipe(pole_position)
-                                    | AssemblerInfo::Powered {
-                                        id:
-                                            AssemblerID {
-                                                recipe: _,
-                                                grid: _,
-                                                assembler_index: _,
-                                            },
+                                    AssemblerInfo::Powered {
+                                        id,
                                         pole_position,
-                                        weak_index: _,
+                                        weak_index,
                                     } => {
                                         let grid = game_state
                                             .simulation_state
@@ -180,18 +230,56 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         .last_power_mult;
 
                                         if last_power == 0 {
-                                            warning_layer.draw_sprite(
-                                                &texture_atlas.no_power,
-                                                DrawInstance {
-                                                    position: [
-                                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                                    ],
-                                                    size: [3.0, 3.0],
-                                                    animation_frame: 0,
-                                                },
+                                            texture_atlas.no_power.draw_centered_on(
+                                                &texture_atlas.assembler,
+                                                [
+                                                    chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                    chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                ],
+                                                size,
+                                                0,
+                                                &mut warning_layer,
                                             );
                                         }
+
+                                        let AssemblerOnclickInfo {
+                                            inputs,
+                                            outputs,
+                                            timer_percentage,
+                                            prod_timer_percentage,
+                                            base_speed,
+                                            speed_mod,
+                                            prod_mod,
+                                            power_consumption_mod,
+                                            base_power_consumption,
+                                        } = game_state
+                                            .simulation_state
+                                            .factory
+                                            .power_grids
+                                            .get_assembler_info(*id, data_store);
+
+                                        texture_atlas.assembler.draw(
+                                            [
+                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                            ],
+                                            size,
+                                            (timer_percentage
+                                                * (texture_atlas
+                                                    .assembler
+                                                    .sprite
+                                                    .texture
+                                                    .number_anim_frames
+                                                    as f32))
+                                                .floor()
+                                                as u32
+                                                % texture_atlas
+                                                    .assembler
+                                                    .sprite
+                                                    .texture
+                                                    .number_anim_frames,
+                                            &mut entity_layer,
+                                        );
                                     },
                                 }
                             },
@@ -276,7 +364,12 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 }
                             },
 
-                            Entity::Inserter { pos, direction, .. } => {
+                            Entity::Inserter {
+                                pos,
+                                direction,
+                                info,
+                                ..
+                            } => {
                                 entity_layer.draw_sprite(
                                     &texture_atlas.inserter[*direction],
                                     DrawInstance {
@@ -288,6 +381,27 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         animation_frame: 0,
                                     },
                                 );
+
+                                match info {
+                                    crate::frontend::world::tile::InserterInfo::NotAttached {
+                                        start_pos,
+                                        end_pos,
+                                    } => {},
+                                    crate::frontend::world::tile::InserterInfo::Attached {
+                                        start_pos,
+                                        end_pos,
+                                        info,
+                                    } => {
+                                        // match info {
+                                        //     crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => todo!(),
+                                        //     crate::frontend::world::tile::AttachedInserter::BeltBelt { item, inserter } => todo!(),
+                                        //     crate::frontend::world::tile::AttachedInserter::StorageStorage { item, inserter } => {
+                                        //         // let info = game_state.simulation_state.factory.storage_storage_inserters
+
+                                        //     },
+                                        // }
+                                    },
+                                }
                             },
 
                             Entity::PowerPole {
@@ -297,16 +411,16 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             } => {
                                 // TODO:
                                 // println!("Pole at {pos:?}, with grid: {grid_id}");
-                                entity_layer.draw_sprite(
-                                    &texture_atlas.assembler,
-                                    DrawInstance {
-                                        position: [
-                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                        ],
-                                        size: [1.0, 1.0],
-                                        animation_frame: 0,
-                                    },
+                                let size = data_store.power_pole_data[usize::from(*ty)].size;
+                                let size = [size.0, size.1];
+                                texture_atlas.power_pole.draw(
+                                    [
+                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                    ],
+                                    size,
+                                    0,
+                                    &mut entity_layer,
                                 );
                             },
 
@@ -391,19 +505,19 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 item,
                                 slot_limit: _,
                             } => {
-                                entity_layer.draw_sprite(
-                                    &texture_atlas.default,
-                                    DrawInstance {
-                                        position: [
-                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                        ],
-                                        size: [1.0, 1.0],
-                                        animation_frame: 0,
-                                    },
+                                let size = data_store.chest_tile_sizes[usize::from(*ty)];
+                                let size = [size.0, size.1];
+                                texture_atlas.chest.draw(
+                                    [
+                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                    ],
+                                    size,
+                                    0,
+                                    &mut entity_layer,
                                 );
                             },
-                            Entity::SolarPanel { pos, .. } => {
+                            Entity::SolarPanel { ty, pos, .. } => {
                                 entity_layer.draw_sprite(
                                     &texture_atlas.default,
                                     DrawInstance {
@@ -411,24 +525,69 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             chunk_draw_offs.0 + (pos.x % 16) as f32,
                                             chunk_draw_offs.1 + (pos.y % 16) as f32,
                                         ],
-                                        size: [3.0, 3.0],
+                                        size: data_store.solar_panel_info[usize::from(*ty)]
+                                            .size
+                                            .map(|v| v as f32),
                                         animation_frame: 0,
                                     },
                                 );
                             },
                             // TODO: Render if a lab is working!
-                            Entity::Lab { pos, .. } => {
-                                entity_layer.draw_sprite(
-                                    &texture_atlas.belt[Dir::North],
-                                    DrawInstance {
-                                        position: [
+                            Entity::Lab {
+                                ty,
+                                pos,
+                                pole_position,
+                                ..
+                            } => {
+                                let size = data_store.lab_info[usize::from(*ty)].size;
+                                let size = [size.0, size.1];
+
+                                texture_atlas.lab.draw(
+                                    [
+                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                    ],
+                                    size,
+                                    0,
+                                    &mut entity_layer,
+                                );
+
+                                if let Some((pole_pos, _, _)) = pole_position {
+                                    let grid = game_state
+                                        .simulation_state
+                                        .factory
+                                        .power_grids
+                                        .pole_pos_to_grid_id[pole_pos];
+
+                                    let last_power =
+                                        game_state.simulation_state.factory.power_grids.power_grids
+                                            [usize::from(grid)]
+                                        .last_power_mult;
+
+                                    if last_power == 0 {
+                                        texture_atlas.no_power.draw_centered_on(
+                                            &texture_atlas.lab,
+                                            [
+                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                            ],
+                                            size,
+                                            0,
+                                            &mut warning_layer,
+                                        );
+                                    }
+                                } else {
+                                    texture_atlas.not_connected.draw_centered_on(
+                                        &texture_atlas.lab,
+                                        [
                                             chunk_draw_offs.0 + (pos.x % 16) as f32,
                                             chunk_draw_offs.1 + (pos.y % 16) as f32,
                                         ],
-                                        size: [3.0, 3.0],
-                                        animation_frame: 0,
-                                    },
-                                );
+                                        size,
+                                        0,
+                                        &mut warning_layer,
+                                    );
+                                }
                             },
 
                             Entity::Beacon {
@@ -437,19 +596,17 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 modules,
                                 pole_position,
                             } => {
-                                let (size_x, size_y) =
-                                    data_store.beacon_info[usize::from(*ty)].size;
+                                let size = data_store.beacon_info[usize::from(*ty)].size;
+                                let size = [size.0, size.1];
 
-                                entity_layer.draw_sprite(
-                                    &texture_atlas.beacon,
-                                    DrawInstance {
-                                        position: [
-                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                        ],
-                                        size: [size_x.into(), size_y.into()],
-                                        animation_frame: 0,
-                                    },
+                                texture_atlas.beacon.draw(
+                                    [
+                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                    ],
+                                    size,
+                                    0,
+                                    &mut entity_layer,
                                 );
 
                                 if let Some((pole_pos, _)) = pole_position {
@@ -465,29 +622,27 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         .last_power_mult;
 
                                     if last_power == 0 {
-                                        warning_layer.draw_sprite(
-                                            &texture_atlas.no_power,
-                                            DrawInstance {
-                                                position: [
-                                                    chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                    chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                                ],
-                                                size: [size_x.into(), size_y.into()],
-                                                animation_frame: 0,
-                                            },
-                                        );
-                                    }
-                                } else {
-                                    warning_layer.draw_sprite(
-                                        &texture_atlas.not_connected,
-                                        DrawInstance {
-                                            position: [
+                                        texture_atlas.no_power.draw_centered_on(
+                                            &texture_atlas.beacon,
+                                            [
                                                 chunk_draw_offs.0 + (pos.x % 16) as f32,
                                                 chunk_draw_offs.1 + (pos.y % 16) as f32,
                                             ],
-                                            size: [size_x.into(), size_y.into()],
-                                            animation_frame: 0,
-                                        },
+                                            size,
+                                            0,
+                                            &mut warning_layer,
+                                        );
+                                    }
+                                } else {
+                                    texture_atlas.not_connected.draw_centered_on(
+                                        &texture_atlas.beacon,
+                                        [
+                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                        ],
+                                        size,
+                                        0,
+                                        &mut warning_layer,
                                     );
                                 }
 
@@ -531,19 +686,21 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 ) => match place_entity_type {
                     // TODO:
                     crate::frontend::world::tile::PlaceEntityType::Assembler { ty, pos } => {
-                        entity_layer.draw_sprite(
-                            &texture_atlas.assembler,
-                            DrawInstance {
-                                position: [
-                                    pos.x as f32 - state_machine.local_player_pos.0
-                                        + num_tiles_across_screen / 2.0,
-                                    pos.y as f32 - state_machine.local_player_pos.1
-                                        + num_tiles_across_screen / 2.0,
-                                ],
-                                size: [3.0, 3.0],
-                                animation_frame: 0,
-                            },
-                        )
+                        let size: [u16; 2] = [
+                            data_store.assembler_info[usize::from(*ty)].size.0,
+                            data_store.assembler_info[usize::from(*ty)].size.1,
+                        ];
+                        texture_atlas.assembler.draw(
+                            [
+                                pos.x as f32 - state_machine.local_player_pos.0
+                                    + num_tiles_across_screen_horizontal / 2.0,
+                                pos.y as f32 - state_machine.local_player_pos.1
+                                    + num_tiles_across_screen_vertical / 2.0,
+                            ],
+                            size,
+                            0,
+                            &mut entity_layer,
+                        );
                     },
                     crate::frontend::world::tile::PlaceEntityType::Inserter {
                         pos,
@@ -588,8 +745,10 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             &texture_atlas.player,
             DrawInstance {
                 position: [
-                    player.pos.0 - state_machine.local_player_pos.0 + num_tiles_across_screen / 2.0,
-                    player.pos.1 - state_machine.local_player_pos.1 + num_tiles_across_screen / 2.0,
+                    player.pos.0 - state_machine.local_player_pos.0
+                        + num_tiles_across_screen_horizontal / 2.0,
+                    player.pos.1 - state_machine.local_player_pos.1
+                        + num_tiles_across_screen_vertical / 2.0,
                 ],
                 size: [1.0, 2.0],
                 animation_frame: 0,
@@ -609,7 +768,10 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &texture_atlas.player,
         DrawInstance {
             // Always in the middle
-            position: [num_tiles_across_screen / 2.0, num_tiles_across_screen / 2.0],
+            position: [
+                num_tiles_across_screen_horizontal / 2.0,
+                num_tiles_across_screen_vertical / 2.0,
+            ],
             size: [1.0, 2.0],
             animation_frame: 0,
         },
@@ -808,14 +970,36 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                         ui.label(format!("Power Grid number: {}", grid_id));
 
-                        let pb = ProgressBar::new(pg.last_power_mult as f32 / 64.0);
-                        ui.add(pb);
+                        ui.columns_const(|[ui_consumption, ui_production, ui_storage]| {
+                            // Power Consumption
+                            ui_consumption.add(Label::new(RichText::new("Satisfaction").heading()).wrap_mode(egui::TextWrapMode::Extend));
+                            ui_consumption.add(ProgressBar::new(pg.last_produced_power.0 as f32 / pg.last_power_consumption.0 as f32).corner_radius(CornerRadius::ZERO).fill(if pg.last_power_mult == MAX_POWER_MULT {
+                                Color32::GREEN
+                            } else if pg.last_power_mult > MAX_POWER_MULT / 2 {
+                                Color32::YELLOW
+                            } else {
+                                Color32::RED
+                            }).text(RichText::new(format!("{}/{}", pg.last_produced_power, pg.last_power_consumption)).color(Color32::BLACK)));
+
+
+                            // Power Production
+                            ui_production.add(Label::new(RichText::new("Production").heading()).wrap_mode(egui::TextWrapMode::Extend));
+                            ui_production.add(ProgressBar::new(pg.last_produced_power.0 as f32 / pg.last_ticks_max_power_production.0 as f32).corner_radius(CornerRadius::ZERO).text(RichText::new(format!("{}/{}", pg.last_produced_power, pg.last_ticks_max_power_production)).color(Color32::BLACK)));
+
+
+                            // Power Storage
+                            let max_charge: Joule = pg.main_accumulator_count.iter().copied().zip(data_store.accumulator_info.iter().map(|info| info.max_charge)).map(|(count, charge)| charge * count).sum();
+                            let current_charge: Joule = pg.main_accumulator_count.iter().copied().zip(pg.main_accumulator_charge.iter().copied()).map(|(count, charge)| charge * count).sum();
+
+                            ui_storage.add(Label::new(RichText::new("Accumulator charge").heading()).wrap_mode(egui::TextWrapMode::Extend));
+                            ui_storage.add(ProgressBar::new(current_charge.0 as f32 / max_charge.0 as f32).corner_radius(CornerRadius::ZERO).text(RichText::new(format!("{}/{}", current_charge, max_charge)).color(Color32::BLACK)));
+                        });
 
                         let timescale = 1;
                         let max_value_at_timescale = (MAX_POWER_MULT as f64) * (RELATIVE_INTERVAL_MULTS[..=timescale].iter().copied().product::<usize>() as f64);
                         let num_samples = NUM_SAMPLES_AT_INTERVALS[timescale];
 
-                        let points = pg.power_history.get_series(timescale, data_store, Some(|_| true)).into_iter().map(|series| (series.name, series.data.into_iter()
+                        let points = pg.power_mult_history.get_series(timescale, data_store, Some(|_| true)).into_iter().map(|(_, series)| (series.name, series.data.into_iter()
                         .enumerate()
                         .map(|(i, v)| [i as f64, v.into()])
                         .collect::<Vec<_>>()));
@@ -1024,6 +1208,8 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 ui.radio_value(time_scale, 2, "1 Hour");
             });
 
+            let time_scale = *time_scale;
+
             match state_machine.statistics_panel {
                 StatisticsPanel::Items(scale) | StatisticsPanel::Fluids(scale) => {
                     let take_fluids =
@@ -1035,7 +1221,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         ui_consumption.heading("Consumption");
                         ui_consumption.separator();
 
-                        let prod_points: Vec<(String, usize, PlotPoints)> = game_state
+                        let prod_points: Vec<(String, usize, f32, PlotPoints)> = game_state
                             .statistics
                             .production
                             .get_series(
@@ -1046,26 +1232,53 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 }),
                             )
                             .into_iter()
-                            .enumerate()
-                            .map(|(i, series)| (series.name, i, series.data))
+                            .map(|(item_id, series)| (series.name, item_id, series.data))
                             .map(|(name, i, data)| {
                                 (
                                     name,
                                     i,
+                                    data.iter().copied().sum(),
                                     data.into_iter()
                                         .enumerate()
                                         .map(|(i, v)| [i as f64, v.into()])
                                         .collect(),
                                 )
                             })
-                            .filter(|(_, _, points): &(_, _, PlotPoints)| {
-                                points.points().iter().any(|p| p.y > 0.0)
-                            })
+                            .filter(|(_, _, sum, _): &(_, _, f32, _)| *sum > 0.0)
                             .collect();
-                        let lines = prod_points.into_iter().map(|(name, id, points)| {
-                            Line::new(name, points)
-                                .stroke(Stroke::new(2.0, data_store.item_to_colour[id]))
+
+                        let max_prod = prod_points
+                            .iter()
+                            .map(|v| v.2)
+                            .max_by(|a, b| {
+                                if a < b {
+                                    Ordering::Less
+                                } else {
+                                    Ordering::Greater
+                                }
+                            })
+                            .unwrap_or(0.0);
+
+                        let mut sum_list_prod: Vec<_> = prod_points
+                            .iter()
+                            .map(|v| (v.0.clone(), v.1, v.2))
+                            .collect();
+
+                        sum_list_prod.sort_by(|a, b| {
+                            if a.2 < b.2 {
+                                Ordering::Greater
+                            } else {
+                                Ordering::Less
+                            }
                         });
+
+                        let lines = prod_points
+                            .into_iter()
+                            .filter(|(_, id, _, _)| state_machine.production_filters[*id])
+                            .map(|(name, id, _sum, points)| {
+                                Line::new(name, points)
+                                    .stroke(Stroke::new(2.0, data_store.item_to_colour[id]))
+                            });
 
                         let ticks_per_value = RELATIVE_INTERVAL_MULTS[..=scale]
                             .iter()
@@ -1127,13 +1340,94 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             .allow_zoom([false, false])
                             .allow_drag([false, false])
                             .allow_scroll([false, false])
+                            .view_aspect(3.0)
                             .show(ui_production, |ui| {
                                 for line in lines {
                                     ui.line(line);
                                 }
                             });
 
-                        let cons_points: Vec<(String, usize, PlotPoints)> = game_state
+                        let ticks_total = (RELATIVE_INTERVAL_MULTS[..=time_scale]
+                            .iter()
+                            .copied()
+                            .product::<usize>()
+                            * NUM_SAMPLES_AT_INTERVALS[time_scale])
+                            as f32;
+
+                        let row_height = ui_production.spacing().interact_size.y;
+                        ScrollArea::vertical().id_salt("Prod List Scroll").show(
+                            ui_production,
+                            |ui| {
+                                TableBuilder::new(ui)
+                                    .id_salt("Production List")
+                                    .sense(Sense::click())
+                                    .column(Column::auto())
+                                    .column(Column::remainder())
+                                    .column(Column::auto())
+                                    .body(|body| {
+                                        body.rows(row_height, sum_list_prod.len(), |mut row| {
+                                            let idx = row.index();
+                                            row.col(|ui| {
+                                                if state_machine.production_filters
+                                                    [sum_list_prod[idx].1]
+                                                {
+                                                    ui.add(
+                                                        Label::new(egui::RichText::new(
+                                                            sum_list_prod[idx].0.as_str(),
+                                                        ))
+                                                        .extend(),
+                                                    );
+                                                } else {
+                                                    ui.add(
+                                                        Label::new(
+                                                            egui::RichText::new(
+                                                                sum_list_prod[idx].0.as_str(),
+                                                            )
+                                                            .strikethrough(),
+                                                        )
+                                                        .extend(),
+                                                    );
+                                                }
+                                            });
+                                            row.col(|ui| {
+                                                ui.add(
+                                                    ProgressBar::new(
+                                                        sum_list_prod[idx].2 / max_prod,
+                                                    )
+                                                    .fill(
+                                                        data_store.item_to_colour
+                                                            [sum_list_prod[idx].1],
+                                                    )
+                                                    .corner_radius(CornerRadius::ZERO),
+                                                );
+                                            });
+                                            row.col(|ui| {
+                                                ui.with_layout(
+                                                    Layout::right_to_left(egui::Align::Center),
+                                                    |ui| {
+                                                        ui.add(
+                                                            Label::new(format!(
+                                                                "{:.0}/m",
+                                                                sum_list_prod[idx].2 / ticks_total
+                                                                    * TICKS_PER_SECOND_LOGIC as f32
+                                                                    * 60.0
+                                                            ))
+                                                            .extend(),
+                                                        );
+                                                    },
+                                                );
+                                            });
+                                            if row.response().clicked() {
+                                                state_machine.production_filters
+                                                    [sum_list_prod[idx].1] = !state_machine
+                                                    .production_filters[sum_list_prod[idx].1];
+                                            }
+                                        });
+                                    });
+                            },
+                        );
+
+                        let cons_points: Vec<(String, usize, f32, PlotPoints)> = game_state
                             .statistics
                             .consumption
                             .get_series(
@@ -1144,26 +1438,53 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 }),
                             )
                             .into_iter()
-                            .enumerate()
-                            .map(|(i, series)| (series.name, i, series.data))
+                            .map(|(item_id, series)| (series.name, item_id, series.data))
                             .map(|(name, i, data)| {
                                 (
                                     name,
                                     i,
+                                    data.iter().copied().sum(),
                                     data.into_iter()
                                         .enumerate()
                                         .map(|(i, v)| [i as f64, v.into()])
                                         .collect(),
                                 )
                             })
-                            .filter(|(_, _, points): &(_, _, PlotPoints)| {
-                                points.points().iter().any(|p| p.y > 0.0)
-                            })
+                            .filter(|(_, _, sum, _): &(_, _, f32, _)| *sum > 0.0)
                             .collect();
-                        let lines = cons_points.into_iter().map(|(name, id, points)| {
-                            Line::new(name, points)
-                                .stroke(Stroke::new(2.0, data_store.item_to_colour[id]))
+
+                        let max_cons = cons_points
+                            .iter()
+                            .map(|v| v.2)
+                            .max_by(|a, b| {
+                                if a < b {
+                                    Ordering::Less
+                                } else {
+                                    Ordering::Greater
+                                }
+                            })
+                            .unwrap_or(0.0);
+
+                        let mut sum_list_cons: Vec<_> = cons_points
+                            .iter()
+                            .map(|v| (v.0.clone(), v.1, v.2))
+                            .collect();
+
+                        sum_list_cons.sort_by(|a, b| {
+                            if a.2 < b.2 {
+                                Ordering::Greater
+                            } else {
+                                Ordering::Less
+                            }
                         });
+
+                        let lines = cons_points
+                            .into_iter()
+                            .filter(|(_, id, _, _)| state_machine.consumption_filters[*id])
+                            .map(|(name, id, _sum, points)| {
+                                Line::new(name, points)
+                                    .stroke(Stroke::new(2.0, data_store.item_to_colour[id]))
+                            });
 
                         let ticks_per_value = RELATIVE_INTERVAL_MULTS[..=scale]
                             .iter()
@@ -1225,11 +1546,84 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             .allow_zoom([false, false])
                             .allow_drag([false, false])
                             .allow_scroll([false, false])
+                            .view_aspect(3.0)
                             .show(ui_consumption, |ui| {
                                 for line in lines {
                                     ui.line(line);
                                 }
                             });
+
+                        ScrollArea::vertical().id_salt("Cons List Scroll").show(
+                            ui_consumption,
+                            |ui| {
+                                TableBuilder::new(ui)
+                                    .id_salt("Consumption List")
+                                    .sense(Sense::click())
+                                    .column(Column::auto())
+                                    .column(Column::remainder())
+                                    .column(Column::auto())
+                                    .body(|body| {
+                                        body.rows(row_height, sum_list_cons.len(), |mut row| {
+                                            let idx = row.index();
+                                            row.col(|ui| {
+                                                if state_machine.consumption_filters
+                                                    [sum_list_cons[idx].1]
+                                                {
+                                                    ui.add(
+                                                        Label::new(egui::RichText::new(
+                                                            sum_list_cons[idx].0.as_str(),
+                                                        ))
+                                                        .extend(),
+                                                    );
+                                                } else {
+                                                    ui.add(
+                                                        Label::new(
+                                                            egui::RichText::new(
+                                                                sum_list_cons[idx].0.as_str(),
+                                                            )
+                                                            .strikethrough(),
+                                                        )
+                                                        .extend(),
+                                                    );
+                                                }
+                                            });
+                                            row.col(|ui| {
+                                                ui.add(
+                                                    ProgressBar::new(
+                                                        sum_list_cons[idx].2 / max_cons,
+                                                    )
+                                                    .fill(
+                                                        data_store.item_to_colour
+                                                            [sum_list_cons[idx].1],
+                                                    )
+                                                    .corner_radius(CornerRadius::ZERO),
+                                                );
+                                            });
+                                            row.col(|ui| {
+                                                ui.with_layout(
+                                                    Layout::right_to_left(egui::Align::Center),
+                                                    |ui| {
+                                                        ui.add(
+                                                            Label::new(format!(
+                                                                "{:.0}/m",
+                                                                sum_list_cons[idx].2 / ticks_total
+                                                                    * TICKS_PER_SECOND_LOGIC as f32
+                                                                    * 60.0
+                                                            ))
+                                                            .extend(),
+                                                        );
+                                                    },
+                                                );
+                                            });
+                                            if row.response().clicked() {
+                                                state_machine.consumption_filters
+                                                    [sum_list_cons[idx].1] = !state_machine
+                                                    .consumption_filters[sum_list_cons[idx].1];
+                                            }
+                                        });
+                                    });
+                            },
+                        );
                     });
                 },
             }

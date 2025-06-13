@@ -48,6 +48,20 @@ pub mod power_grid;
 )]
 pub struct Joule(pub u64);
 
+impl Display for Joule {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.0 > 1_000_000_000 {
+            write!(f, "{:.1}GJ", self.0 as f64 / 1_000_000_000.0)
+        } else if self.0 > 1_000_000 {
+            write!(f, "{:.1}MJ", self.0 as f64 / 1_000_000.0)
+        } else if self.0 > 1_000 {
+            write!(f, "{:.1}KJ", self.0 as f64 / 1_000.0)
+        } else {
+            write!(f, "{:.1}J", self.0 as f64)
+        }
+    }
+}
+
 impl Sum for Joule {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
         Self(iter.map(|mj| mj.0).sum())
@@ -606,7 +620,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                                                 if let PowerGridEntity::Lab { ty: _, index } =
                                                     u.old_pg_entity
                                                 {
-                                                    old_index == usize::from(index)
+                                                    old_index == index
                                                 } else {
                                                     false
                                                 }
@@ -685,7 +699,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                                         if let PowerGridEntity::Lab { ty: _, index } =
                                             u.old_pg_entity
                                         {
-                                            old_index == usize::from(index)
+                                            old_index == index
                                         } else {
                                             false
                                         }
@@ -773,12 +787,28 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
     pub fn update(
         &mut self,
         tech_state: &TechState,
+        current_time: u32,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (ResearchProgress, RecipeTickInfo) {
         let (research_progress, production_info, beacon_updates) = self
             .power_grids
             .par_iter_mut()
-            .map(|grid| grid.update(Watt(u64::MAX / (u16::MAX as u64)), tech_state, data_store))
+            .map(|grid| {
+                grid.update(
+                    &data_store
+                        .solar_panel_info
+                        .iter()
+                        .map(|info| match &info.power_output {
+                            crate::data::SolarPanelOutputFunction::Constant(output) => *output,
+                            crate::data::SolarPanelOutputFunction::Lookup(output) => {
+                                output[usize::try_from(current_time).unwrap()]
+                            },
+                        })
+                        .collect::<Box<[Watt]>>(),
+                    tech_state,
+                    data_store,
+                )
+            })
             .reduce(
                 || (0, RecipeTickInfo::new(data_store), vec![]),
                 |(acc_progress, infos, mut old_updates), (rhs_progress, info, new_updates)| {

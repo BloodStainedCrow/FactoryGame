@@ -2,7 +2,7 @@ use crate::power::Watt;
 
 use super::{
     AllowedIn, RawAssemblingMachine, RawBeacon, RawChest, RawDataStore, RawEntity, RawItem,
-    RawItemStack, RawLab, RawModule, RawPowerPole, RawRecipeData, RawTechnology,
+    RawItemStack, RawLab, RawModule, RawPowerPole, RawRecipeData, RawSolarPanel, RawTechnology,
 };
 
 const RAW_DATA_STR: &'static str = include_str!("factorio_1_1.fgmod");
@@ -10,6 +10,7 @@ const RAW_DATA_STR: &'static str = include_str!("factorio_1_1.fgmod");
 #[must_use]
 pub fn get_raw_data_test() -> RawDataStore {
     ron::from_str(RAW_DATA_STR).expect("RAW_DATA_STR invalid")
+    // get_raw_data_fn()
 }
 
 #[must_use]
@@ -232,7 +233,7 @@ pub fn get_raw_data_fn() -> RawDataStore {
                     amount: 1,
                 }]
                 .into_boxed_slice(),
-                time_to_craft: 300,
+                time_to_craft: 360,
 
                 is_intermediate: true,
             },
@@ -369,6 +370,16 @@ pub fn get_raw_data_fn() -> RawDataStore {
                 base_speed: 25,
                 num_module_slots: 4,
             },
+            RawAssemblingMachine {
+                name: "factory_game::electric_furnace".to_string(),
+                display_name: "Electric Furnace".to_string(),
+                tile_size: (3, 3),
+                working_power_draw: Watt(180000),
+                fluid_connection_offsets: [].to_vec(),
+                num_module_slots: 2,
+                base_bonus_prod: 0,
+                base_speed: 40,
+            },
         ],
         labs: vec![RawLab {
             name: "factory_game::lab".to_string(),
@@ -475,5 +486,22 @@ pub fn get_raw_data_fn() -> RawDataStore {
             num_units: 10,
             precursors: vec![],
         }],
+        solar_panels: vec![
+            RawSolarPanel {
+                name: "factory_game::infinity_battery".to_string(),
+                display_name: "Infinity Battery".to_string(),
+                tile_size: (2, 2),
+                // 1 Terrawatt should be enough for now
+                output: Watt(1_000_000_000_000),
+            },
+            RawSolarPanel {
+                name: "factory_game::solar_panel".to_string(),
+                display_name: "Solar Panel".to_string(),
+                tile_size: (3, 3),
+                // TODO: Non constant output
+                output: Watt(60_000),
+            },
+        ],
+        accumulators: vec![],
     }
 }

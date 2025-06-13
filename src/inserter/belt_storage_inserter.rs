@@ -1,11 +1,8 @@
 use std::marker::ConstParamTy;
 
-use crate::{
-    item::{IdxTrait, WeakIdxTrait},
-    storage_list::{index, SingleItemStorages},
-};
+use crate::storage_list::{index, index_fake_union, SingleItemStorages};
 
-use super::{InserterState, Storage};
+use super::{FakeUnionStorage, InserterState};
 
 #[derive(Debug, ConstParamTy, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 pub enum Dir {
@@ -14,8 +11,8 @@ pub enum Dir {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct BeltStorageInserter<RecipeIdxType: WeakIdxTrait, const DIR: Dir> {
-    pub storage_id: Storage<RecipeIdxType>,
+pub struct BeltStorageInserter<const DIR: Dir> {
+    pub storage_id: FakeUnionStorage,
     pub state: InserterState,
 }
 
@@ -27,9 +24,9 @@ pub struct BeltStorageInserter<RecipeIdxType: WeakIdxTrait, const DIR: Dir> {
 //       Luckily since inserter only have limited range (3 tiles or whatever) there is inherent locality in the accesses, if the MultiStores are somewhat spacially aligned.
 //       Though this could also lead to particularly poor access patterns if the belt/line of inserters is perpendicular to the stride pattern of the Multistore
 //       (maybe some quadtree weirdness could help?)
-impl<RecipeIdxType: IdxTrait, const DIR: Dir> BeltStorageInserter<RecipeIdxType, DIR> {
+impl<const DIR: Dir> BeltStorageInserter<DIR> {
     #[must_use]
-    pub const fn new(id: Storage<RecipeIdxType>) -> Self {
+    pub const fn new(id: FakeUnionStorage) -> Self {
         Self {
             storage_id: id,
             state: InserterState::WaitingForSourceItems,
@@ -37,7 +34,7 @@ impl<RecipeIdxType: IdxTrait, const DIR: Dir> BeltStorageInserter<RecipeIdxType,
     }
 }
 
-impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::BeltToStorage }> {
+impl BeltStorageInserter<{ Dir::BeltToStorage }> {
     pub fn update(
         &mut self,
         loc: &mut bool,
@@ -58,7 +55,7 @@ impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::BeltToSt
                 }
             },
             InserterState::WaitingForSpaceInDestination => {
-                let (max_insert, old) = index(
+                let (max_insert, old) = index_fake_union(
                     storages,
                     self.storage_id,
                     num_grids_total,
@@ -93,7 +90,7 @@ impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::BeltToSt
     }
 }
 
-impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::StorageToBelt }> {
+impl BeltStorageInserter<{ Dir::StorageToBelt }> {
     pub fn update(
         &mut self,
         loc: &mut bool,
@@ -109,7 +106,7 @@ impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::StorageT
 
         match self.state {
             InserterState::WaitingForSourceItems => {
-                let (_max_insert, old) = index(
+                let (_max_insert, old) = index_fake_union(
                     storages,
                     self.storage_id,
                     num_grids_total,

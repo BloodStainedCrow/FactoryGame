@@ -1,16 +1,16 @@
 use crate::{
     item::{IdxTrait, WeakIdxTrait},
-    storage_list::{index, SingleItemStorages},
+    storage_list::{index, index_fake_union, SingleItemStorages},
 };
 
-use super::{InserterState, Storage};
+use super::{FakeUnionStorage, InserterState, Storage};
 
 // FIXME: the storage_id cannot properly represent an index into multiple slices (which I have here, since
 // there are multiple lists of storages in the different MultiAssemblerStores (since multiple different recipes take for example Iron Plates))
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct StorageStorageInserter<RecipeIdxType: WeakIdxTrait> {
-    storage_id_in: Storage<RecipeIdxType>,
-    storage_id_out: Storage<RecipeIdxType>,
+pub struct StorageStorageInserter {
+    storage_id_in: FakeUnionStorage,
+    storage_id_out: FakeUnionStorage,
     state: InserterState,
 }
 
@@ -23,9 +23,9 @@ pub struct StorageStorageInserter<RecipeIdxType: WeakIdxTrait> {
 //       Luckily since inserter only have limited range (3 tiles or whatever) there is inherent locality in the accesses, if the MultiStores are somewhat spacially aligned.
 //       Though this could also lead to particularly poor access patterns if the belt/line of inserters is perpendicular to the stride pattern of the Multistore
 //       (maybe some weird quadtree weirdness could help?)
-impl<RecipeIdxType: IdxTrait> StorageStorageInserter<RecipeIdxType> {
+impl StorageStorageInserter {
     #[must_use]
-    pub const fn new(in_id: Storage<RecipeIdxType>, out_id: Storage<RecipeIdxType>) -> Self {
+    pub const fn new(in_id: FakeUnionStorage, out_id: FakeUnionStorage) -> Self {
         Self {
             storage_id_in: in_id,
             storage_id_out: out_id,
@@ -46,7 +46,7 @@ impl<RecipeIdxType: IdxTrait> StorageStorageInserter<RecipeIdxType> {
 
         match self.state {
             InserterState::WaitingForSourceItems => {
-                let (_max_insert, old) = index(
+                let (_max_insert, old) = index_fake_union(
                     storages,
                     self.storage_id_in,
                     num_grids_total,
@@ -62,7 +62,7 @@ impl<RecipeIdxType: IdxTrait> StorageStorageInserter<RecipeIdxType> {
                 }
             },
             InserterState::WaitingForSpaceInDestination => {
-                let (max_insert, old) = index(
+                let (max_insert, old) = index_fake_union(
                     storages,
                     self.storage_id_out,
                     num_grids_total,
