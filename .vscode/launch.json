@@ -32,6 +32,7 @@
                     "build",
                     "--bin=factory",
                     "--package=factory",
+                    "--feature=graphics",
                 ],
                 "filter": {
                     "name": "factory",
@@ -50,6 +51,7 @@
                     "build",
                     "--bin=factory",
                     "--package=factory",
+                    "--feature=graphics",
                 ],
                 "filter": {
                     "name": "factory",
@@ -69,6 +71,7 @@
                     "build",
                     "--bin=factory",
                     "--package=factory",
+                    "--feature=graphics",
                 ],
                 "filter": {
                     "name": "factory",
@@ -87,7 +90,8 @@
                     "test",
                     "--no-run",
                     "--bin=factory",
-                    "--package=factory"
+                    "--package=factory",
+                    "--feature=graphics",
                 ],
                 "filter": {
                     "name": "factory",
@@ -106,7 +110,8 @@
                     "test",
                     "--no-run",
                     "--test=test",
-                    "--package=factory"
+                    "--package=factory",
+                    "--feature=graphics",
                 ],
                 "filter": {
                     "name": "test",
