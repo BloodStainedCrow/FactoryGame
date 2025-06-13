@@ -790,22 +790,12 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         // TODO: I don't think this holds anymore, now that we cannot bail early at 0 power_mult
         // debug_assert!(increase > 0);
 
-        let ings_arr = ZipArray {
-            array: self.ings.each_mut().map(|r| r.iter_mut()),
-        };
-
-        let outputs_arr = ZipArray {
-            array: self.outputs.each_mut().map(|r| r.iter_mut()),
-        };
-
         let mut power = Watt(0);
 
-        for (
-            mut outputs,
-            (mut ings, (timer, (prod_timer, (speed_mod, (bonus_prod, (base_power, power_mod)))))),
-        ) in outputs_arr.zip(
-            ings_arr.zip(
-                self.timers.iter_mut().zip(
+        for (index, (timer, (prod_timer, (speed_mod, (bonus_prod, (base_power, power_mod)))))) in
+            self.timers
+                .iter_mut()
+                .zip(
                     self.prod_timers.iter_mut().zip(
                         self.combined_speed_mod.iter().copied().zip(
                             self.bonus_productivity.iter().copied().zip(
@@ -816,35 +806,32 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                             ),
                         ),
                     ),
-                ),
-            ),
-        ) {
+                )
+                .enumerate()
+        {
             // ~~Remove the items from the ings at the start of the crafting process~~
             // We will do this as part of the frontend ui!
 
             let increase = (u32::from(increase) * u32::from(speed_mod) / 20) as u16;
 
-            let ing_mul: u8 = ings
-                .iter()
-                .zip(our_ings.iter())
-                .fold(1, |acc, (have, want)| acc * u8::from(**have >= *want));
-            let ing_mul_for_two_crafts: u16 = ings
-                .iter()
-                .zip(our_ings.iter())
-                .fold(1, |acc, (have, want)| {
-                    acc * u16::from(**have >= (*want * 2))
-                });
+            let mut ing_mul: u8 = 1;
+            for i in 0..NUM_INGS {
+                ing_mul *= u8::from(self.ings[i][index] >= our_ings[i]);
+            }
+
+            let mut ing_mul_for_two_crafts: u16 = 1;
+            for i in 0..NUM_INGS {
+                ing_mul_for_two_crafts *= u16::from(self.ings[i][index] >= our_ings[i] * 2);
+            }
+
             let new_timer_output_space = timer.wrapping_add(increase * u16::from(ing_mul));
             let new_timer_output_full = timer.saturating_add(increase * u16::from(ing_mul));
 
-            let space_mul: u8 =
-                outputs
-                    .iter()
-                    .zip(our_outputs.iter())
-                    .fold(1, |acc, (have, new_from_recipe)| {
-                        // TODO: 100 output amount hardcoded!!!!
-                        acc * u8::from((have.saturating_add(*new_from_recipe)) <= 100)
-                    });
+            let mut space_mul: u8 = 1;
+            for i in 0..NUM_OUTPUTS {
+                space_mul *=
+                    u8::from((self.outputs[i][index].saturating_add(our_outputs[i])) <= 100);
+            }
 
             let new_timer = new_timer_output_space * u16::from(space_mul)
                 + new_timer_output_full * (1 - u16::from(space_mul));
@@ -867,13 +854,12 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
             *timer = new_timer;
             *prod_timer = new_prod_timer;
-            outputs
-                .iter_mut()
-                .zip(our_outputs.iter())
-                .for_each(|(output, new)| **output += (timer_mul + prod_timer_mul) * new);
-            ings.iter_mut()
-                .zip(our_ings.iter())
-                .for_each(|(ing, used)| **ing -= timer_mul * used);
+            for i in 0..NUM_OUTPUTS {
+                self.outputs[i][index] += (timer_mul + prod_timer_mul) * our_outputs[i];
+            }
+            for i in 0..NUM_INGS {
+                self.ings[i][index] -= timer_mul * our_ings[i];
+            }
             times_ings_used += u32::from(timer_mul);
             num_finished_crafts += u32::from(timer_mul + prod_timer_mul);
         }
