@@ -117,7 +117,7 @@ impl eframe::App for App {
                             }
 
                             Ok(Input::MouseMove(
-                                (pos_normalized[0] - 0.5),
+                                pos_normalized[0] - 0.5,
                                 (pos_normalized[1] - 0.5) / ar,
                             ))
                         } else {

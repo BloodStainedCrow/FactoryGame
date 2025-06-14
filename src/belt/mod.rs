@@ -19,7 +19,6 @@ use crate::{
     inserter::{
         belt_belt_inserter::BeltBeltInserter,
         belt_storage_inserter::{BeltStorageInserter, Dir},
-        Storage,
     },
     item::{usize_from, Item},
     storage_list::{grid_size, num_recipes, SingleItemStorages},

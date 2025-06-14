@@ -1,6 +1,5 @@
 use std::{
     cmp::{min, Ordering},
-    fmt::format,
     iter::successors,
     time::Duration,
 };
@@ -31,7 +30,7 @@ use eframe::egui::{
     self, Align2, Color32, ComboBox, Context, CornerRadius, Label, Layout, ProgressBar, Stroke, Ui,
     Window,
 };
-use egui::{RichText, ScrollArea, Sense, UiBuilder};
+use egui::{RichText, ScrollArea, Sense};
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
 use log::{info, trace, warn};

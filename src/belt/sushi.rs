@@ -4,7 +4,7 @@ use itertools::Itertools;
 
 use crate::{
     belt::belt::NoSpaceError,
-    inserter::{belt_storage_inserter::BeltStorageInserter, Storage},
+    inserter::belt_storage_inserter::BeltStorageInserter,
     item::{IdxTrait, Item, WeakIdxTrait},
 };
 

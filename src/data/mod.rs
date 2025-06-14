@@ -889,7 +889,7 @@ impl RawDataStore {
                     fluid_connections: m
                         .fluid_connection_offsets
                         .iter()
-                        .map(|(raw_conn)| {
+                        .map(|raw_conn| {
                             (
                                 FluidConnection {
                                     offset: [raw_conn.offset.0.into(), raw_conn.offset.1.into()],

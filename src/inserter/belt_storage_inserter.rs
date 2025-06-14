@@ -1,6 +1,6 @@
 use std::marker::ConstParamTy;
 
-use crate::storage_list::{index, index_fake_union, SingleItemStorages};
+use crate::storage_list::{index_fake_union, SingleItemStorages};
 
 use super::{FakeUnionStorage, InserterState};
 

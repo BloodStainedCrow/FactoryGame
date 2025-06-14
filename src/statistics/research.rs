@@ -1,9 +1,8 @@
 use std::iter;
 
 use crate::{
-    item::{IdxTrait, WeakIdxTrait},
+    item::IdxTrait,
     research::ResearchProgress,
-    NewWithDataStore,
 };
 
 use super::IntoSeries;

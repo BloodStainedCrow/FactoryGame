@@ -1,7 +1,6 @@
 use std::u16;
 
 use itertools::Itertools;
-use petgraph::data;
 use rayon::iter::IndexedParallelIterator;
 use strum::IntoEnumIterator;
 

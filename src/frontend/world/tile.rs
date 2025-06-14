@@ -5,7 +5,7 @@ use std::{
 };
 
 use enum_map::{Enum, EnumMap};
-use log::{info, warn};
+use log::warn;
 use strum::EnumIter;
 
 use itertools::Itertools;
@@ -2851,7 +2851,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::Lab { ty, .. } => data_store.lab_info[usize::from(*ty)].size,
             Self::Beacon { ty, .. } => data_store.beacon_info[usize::from(*ty)].size,
             Self::FluidTank { ty, .. } => data_store.fluid_tank_infos[usize::from(*ty)].size.into(),
-            Self::UndergroundPipe { ty, .. } => todo!(),
+            Self::UndergroundPipe {  .. } => todo!(),
         }
     }
 }
