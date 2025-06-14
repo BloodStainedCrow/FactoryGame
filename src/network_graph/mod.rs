@@ -136,7 +136,7 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
             );
         }
 
-        // All remaining components (if any, will be turned into other networks)
+        // All remaining components (if any), will be turned into other networks
         let move_to_another_network = components;
 
         let new_networks = {
@@ -174,8 +174,14 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
                     Network {
                         graph: new_graph,
                         key_map: component
-                            .into_iter()
-                            .map(|old_node| self.key_map.remove_by_right(&old_node).unwrap())
+                            .iter()
+                            .copied()
+                            .map(|old_node| {
+                                let (pos, _) = self.key_map.remove_by_right(&old_node).unwrap();
+                                let idx_old =
+                                    component.iter().position(|v| *v == old_node).unwrap();
+                                (pos, new_indices[idx_old])
+                            })
                             .collect(),
                     },
                     keys_in_this,
