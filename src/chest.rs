@@ -208,6 +208,29 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         }
     }
 
+    pub fn remove_items_from_chest(&mut self, index: u32, to_remove: u16) -> Result<(), u16> {
+        let index = index as usize;
+
+        let current_items = self.inout[index] as u16 + self.storage[index];
+
+        if current_items >= to_remove {
+            if self.storage[index] >= to_remove {
+                self.storage[index] -= to_remove;
+            } else {
+                self.inout[index] -= u8::try_from(to_remove - self.storage[index]).unwrap();
+                self.storage[index] = 0;
+            }
+
+            Ok(())
+        } else {
+            let missing = to_remove - current_items;
+            self.storage[index] = 0;
+            self.inout[index] = 0;
+
+            Err(missing)
+        }
+    }
+
     /// Returns the number of items no longer part of the box
     pub fn change_chest_size(&mut self, index: u32, new_size: u16) -> u16 {
         let index = index as usize;

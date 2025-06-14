@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::collections::HashMap;
 
 use itertools::Itertools;
@@ -357,6 +358,103 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
         Ok(())
     }
 
+    pub fn remove_fluid_box<RecipeIdxType: IdxTrait>(
+        &mut self,
+        fluid_box_position: Position,
+        chest_store: &mut FullChestStore<ItemIdxType>,
+        inserter_store: &mut StorageStorageInserterStore,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        let old_id = self
+            .fluid_box_pos_to_network_id
+            .remove(&fluid_box_position)
+            .unwrap();
+
+        let (new_systems, delete) = match old_id.fluid {
+            Some(fluid) => self.fluid_systems_with_fluid[fluid.into_usize()][old_id.index]
+                .as_mut()
+                .unwrap()
+                .remove_fluid_box(fluid_box_position, chest_store, inserter_store, data_store),
+            None => self.empty_fluid_systems[old_id.index]
+                .as_mut()
+                .unwrap()
+                .remove_fluid_box(fluid_box_position, chest_store, inserter_store, data_store),
+        };
+
+        if delete {
+            match old_id.fluid {
+                Some(fluid) => {
+                    self.fluid_systems_with_fluid[fluid.into_usize()][old_id.index] = None
+                },
+                None => self.empty_fluid_systems[old_id.index] = None,
+            }
+        }
+
+        for new_system in new_systems {
+            match new_system.state {
+                FluidSystemState::NoFluid => {
+                    let index = self.empty_fluid_systems.iter().position(Option::is_none);
+
+                    let new_index = if let Some(hole_idx) = index {
+                        assert!(self.empty_fluid_systems[hole_idx].is_none());
+                        self.empty_fluid_systems[hole_idx] = Some(new_system);
+                        hole_idx
+                    } else {
+                        self.empty_fluid_systems.push(Some(new_system));
+                        self.empty_fluid_systems.len() - 1
+                    };
+
+                    let new_id = FluidSystemId {
+                        fluid: None,
+                        index: new_index,
+                    };
+
+                    for pos in self.empty_fluid_systems[new_index]
+                        .as_ref()
+                        .unwrap()
+                        .graph
+                        .keys()
+                    {
+                        let old = self.fluid_box_pos_to_network_id.insert(*pos, new_id);
+                        assert_eq!(old, Some(old_id));
+                    }
+                },
+                FluidSystemState::HasFluid { fluid, chest_id: _ } => {
+                    let index = self.fluid_systems_with_fluid[fluid.into_usize()]
+                        .iter()
+                        .position(Option::is_none);
+
+                    let new_index = if let Some(hole_idx) = index {
+                        assert!(
+                            self.fluid_systems_with_fluid[fluid.into_usize()][hole_idx].is_none()
+                        );
+                        self.fluid_systems_with_fluid[fluid.into_usize()][hole_idx] =
+                            Some(new_system);
+                        hole_idx
+                    } else {
+                        self.fluid_systems_with_fluid[fluid.into_usize()].push(Some(new_system));
+                        self.fluid_systems_with_fluid[fluid.into_usize()].len() - 1
+                    };
+
+                    let new_id = FluidSystemId {
+                        fluid: Some(fluid),
+                        index: new_index,
+                    };
+
+                    for pos in self.fluid_systems_with_fluid[fluid.into_usize()][new_index]
+                        .as_ref()
+                        .unwrap()
+                        .graph
+                        .keys()
+                    {
+                        let old = self.fluid_box_pos_to_network_id.insert(*pos, new_id);
+                        assert_eq!(old, Some(old_id));
+                    }
+                },
+            }
+        }
+    }
+
     fn merge_fluid_system<RecipeIdxType: IdxTrait>(
         &mut self,
         kept_id: FluidSystemId<ItemIdxType>,
@@ -496,6 +594,60 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         }
 
         ret
+    }
+
+    fn new_from_graph(
+        graph: Network<Position, FluidBox, FluidSystemEntity>,
+        old_fluid: Option<Item<ItemIdxType>>,
+        fluid_level_to_distribute: &mut u16,
+        fluid_capacity_to_distribute: &mut u32,
+        chest_store: &mut FullChestStore<ItemIdxType>,
+    ) -> Self {
+        let new_capacity = graph
+            .nodes()
+            .into_iter()
+            .map(|fluid_box| fluid_box.capacity)
+            .sum::<u32>();
+
+        // TODO: Ensure this does not wrap
+        let our_share_of_fluid = u16::try_from(
+            u32::from(*fluid_level_to_distribute) * new_capacity / *fluid_capacity_to_distribute,
+        )
+        .unwrap();
+
+        // Clamp the fluid in this network to the capacity
+        let fluid_left_for_us =
+            u16::try_from(min(our_share_of_fluid.into(), new_capacity)).unwrap();
+        *fluid_level_to_distribute -= fluid_left_for_us;
+        *fluid_capacity_to_distribute -= new_capacity;
+
+        let new_fluid =
+            if fluid_left_for_us > 0 || graph.weak_components().into_iter().next().is_some() {
+                old_fluid
+            } else {
+                None
+            };
+
+        Self {
+            graph,
+            storage_capacity: new_capacity,
+            state: match new_fluid {
+                Some(fluid) => {
+                    // TODO: Use fluid atoms to increase max size
+                    let chest_id = chest_store.stores[fluid.into_usize()]
+                        .add_custom_chest(new_capacity.try_into().expect("Fluid system too large"));
+
+                    chest_store.stores[fluid.into_usize()]
+                        .add_items_to_chest(chest_id, fluid_left_for_us)
+                        .expect(
+                            "Adding the contents of two chests (and their sizes) should always fit",
+                        );
+
+                    FluidSystemState::HasFluid { fluid, chest_id }
+                },
+                None => FluidSystemState::NoFluid,
+            },
+        }
     }
 
     fn set_fluid(
@@ -695,7 +847,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
 
     fn join<RecipeIdxType: IdxTrait>(
         &mut self,
-        mut other: Self,
+        other: Self,
         new_fluid_box_position: Position,
         fluid_box_capacity: u32,
         connected_fluid_box_positions: impl IntoIterator<Item = Position>,
@@ -857,6 +1009,140 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
             ),
             other.graph,
         );
+    }
+
+    fn remove_fluid_box<RecipeIdxType: IdxTrait>(
+        &mut self,
+        fluid_box_position: Position,
+        chest_store: &mut FullChestStore<ItemIdxType>,
+        inserter_store: &mut StorageStorageInserterStore,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> (impl Iterator<Item = Self>, bool) {
+        let old_fluid = self.get_fluid();
+
+        let (removed_fluid_box, connections_to_remove, new_graphs) =
+            self.graph.remove_node(fluid_box_position);
+
+        let old_fluid_level = match self.state {
+            FluidSystemState::NoFluid => 0,
+            FluidSystemState::HasFluid { fluid, chest_id } => {
+                let (fluid_level, _max) =
+                    chest_store.stores[fluid.into_usize()].get_chest(chest_id);
+                fluid_level
+            },
+        };
+        let mut fluid_distribution = old_fluid_level;
+
+        for connection_to_remove in connections_to_remove {
+            let fluid = old_fluid.expect("If we have any connections we MUST have a fluid set");
+            match connection_to_remove {
+                FluidSystemEntity::OutgoingPump { inserter_id } => {
+                    inserter_store.remove_ins(fluid, inserter_id)
+                },
+                FluidSystemEntity::IncomingPump { inserter_id } => {
+                    inserter_store.remove_ins(fluid, inserter_id)
+                },
+                FluidSystemEntity::Input { inserter_id } => {
+                    inserter_store.remove_ins(fluid, inserter_id)
+                },
+                FluidSystemEntity::Output { inserter_id } => {
+                    inserter_store.remove_ins(fluid, inserter_id)
+                },
+            }
+        }
+
+        let new_grids: Vec<_> = new_graphs
+            .into_iter()
+            .flatten()
+            .map(|(graph, positions)| {
+                let new_system = Self::new_from_graph(
+                    graph,
+                    old_fluid,
+                    &mut fluid_distribution,
+                    &mut self.storage_capacity,
+                    chest_store,
+                );
+
+                match new_system.state {
+                    FluidSystemState::NoFluid => {},
+                    FluidSystemState::HasFluid { fluid, chest_id } => {
+                        let our_storage = Storage::Static {
+                            static_id: StaticID::Chest as u16,
+                            index: chest_id,
+                        };
+
+                        for connection in new_system.graph.weak_components() {
+                            match connection {
+                                FluidSystemEntity::OutgoingPump { inserter_id } => inserter_store
+                                    .update_inserter_src(
+                                        fluid,
+                                        *inserter_id,
+                                        our_storage,
+                                        data_store,
+                                    ),
+                                FluidSystemEntity::IncomingPump { inserter_id } => inserter_store
+                                    .update_inserter_dest(
+                                        fluid,
+                                        *inserter_id,
+                                        our_storage,
+                                        data_store,
+                                    ),
+                                FluidSystemEntity::Input { inserter_id } => inserter_store
+                                    .update_inserter_dest(
+                                        fluid,
+                                        *inserter_id,
+                                        our_storage,
+                                        data_store,
+                                    ),
+                                FluidSystemEntity::Output { inserter_id } => inserter_store
+                                    .update_inserter_src(
+                                        fluid,
+                                        *inserter_id,
+                                        our_storage,
+                                        data_store,
+                                    ),
+                            }
+                        }
+                    },
+                }
+
+                new_system
+            })
+            .collect();
+
+        self.storage_capacity -= removed_fluid_box.capacity;
+
+        let fluid_left_for_us =
+            u16::try_from(min(fluid_distribution.into(), self.storage_capacity)).unwrap();
+
+        if self.graph.nodes().into_iter().next().is_none() {
+            // We no longer exist
+            assert!(self.storage_capacity == 0);
+            assert!(fluid_left_for_us == 0);
+            match self.state {
+                FluidSystemState::NoFluid => {},
+                FluidSystemState::HasFluid { fluid, chest_id } => {
+                    let _ = chest_store.stores[fluid.into_usize()].remove_chest(chest_id);
+                },
+            }
+            return (new_grids.into_iter(), true);
+        }
+
+        match self.state {
+            FluidSystemState::NoFluid => {},
+            FluidSystemState::HasFluid { fluid, chest_id } => {
+                chest_store.stores[fluid.into_usize()]
+                    .remove_items_from_chest(chest_id, old_fluid_level - fluid_left_for_us);
+                assert!(fluid_left_for_us <= self.storage_capacity.try_into().unwrap());
+                let 0 = chest_store.stores[fluid.into_usize()]
+                    .change_chest_size(chest_id, self.storage_capacity.try_into().unwrap())
+                else {
+                    unreachable!();
+                };
+            },
+        }
+
+        (new_grids.into_iter(), false)
     }
 
     pub fn check_consistency<RecipeIdxType: IdxTrait>(

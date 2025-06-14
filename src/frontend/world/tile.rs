@@ -2064,7 +2064,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             let max_inserter_range = data_store.max_inserter_search_range;
 
             match entity {
-                Entity::FluidTank { .. } => {},
+                Entity::FluidTank { ty, pos, rotation } => {
+                    sim_state.factory.fluid_store.remove_fluid_box(
+                        *pos,
+                        &mut sim_state.factory.chests,
+                        &mut sim_state.factory.storage_storage_inserters,
+                        data_store,
+                    );
+                },
                 Entity::UndergroundPipe {
                     ty,
                     pos,
