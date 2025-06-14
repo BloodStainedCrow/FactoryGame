@@ -9,9 +9,9 @@ use super::{FakeUnionStorage, InserterState, Storage};
 // there are multiple lists of storages in the different MultiAssemblerStores (since multiple different recipes take for example Iron Plates))
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct StorageStorageInserter {
-    storage_id_in: FakeUnionStorage,
-    storage_id_out: FakeUnionStorage,
-    state: InserterState,
+    pub storage_id_in: FakeUnionStorage,
+    pub storage_id_out: FakeUnionStorage,
+    pub state: InserterState,
 }
 
 // This issue is less important then BeltStorage since these inserters are less common

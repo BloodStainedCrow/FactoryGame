@@ -173,4 +173,8 @@ impl<T: NewWithDataStore + Clone + for<'a> AddAssign<&'a T>> Timeline<T> {
     {
         T::into_series(&self.samples[timescale], filter, data_store)
     }
+
+    pub fn get_data_points(&self, timescale: usize) -> &[T] {
+        &self.samples[timescale]
+    }
 }

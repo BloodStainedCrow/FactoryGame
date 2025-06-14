@@ -237,6 +237,19 @@ pub fn get_raw_data_fn() -> RawDataStore {
 
                 is_intermediate: true,
             },
+            RawRecipeData {
+                name: "factory_game::water_generation".to_string(),
+                display_name: "Generate Water from nothing".to_string(),
+                possible_machines: vec!["factory_game::assembler".to_string()].into_boxed_slice(),
+                ings: vec![].into_boxed_slice(),
+                output: vec![RawItemStack {
+                    item: "factory_game::water".to_string(),
+                    amount: 1,
+                }]
+                .into_boxed_slice(),
+                time_to_craft: 5,
+                is_intermediate: true,
+            },
         ],
         items: vec![
             RawItem {
@@ -338,6 +351,15 @@ pub fn get_raw_data_fn() -> RawDataStore {
                 science_data: Some(()),
                 is_fluid: false,
             },
+            RawItem {
+                name: "factory_game::water".to_string(),
+                display_name: "Water".to_string(),
+                stack_size: 1,
+                placed_as: None,
+                burnable_in: vec![].into_boxed_slice(),
+                science_data: None,
+                is_fluid: true,
+            },
         ],
         machines: vec![
             RawAssemblingMachine {
@@ -346,6 +368,7 @@ pub fn get_raw_data_fn() -> RawDataStore {
                 tile_size: (3, 3),
                 working_power_draw: Watt(150_000),
                 fluid_connection_offsets: vec![],
+                fluid_connection_flowthrough: vec![],
                 base_bonus_prod: 0,
                 base_speed: 10,
                 num_module_slots: 0,
@@ -356,6 +379,7 @@ pub fn get_raw_data_fn() -> RawDataStore {
                 tile_size: (3, 3),
                 working_power_draw: Watt(75_000),
                 fluid_connection_offsets: vec![],
+                fluid_connection_flowthrough: vec![],
                 base_bonus_prod: 0,
                 base_speed: 15,
                 num_module_slots: 2,
@@ -366,6 +390,7 @@ pub fn get_raw_data_fn() -> RawDataStore {
                 tile_size: (3, 3),
                 working_power_draw: Watt(375_000),
                 fluid_connection_offsets: vec![],
+                fluid_connection_flowthrough: vec![],
                 base_bonus_prod: 0,
                 base_speed: 25,
                 num_module_slots: 4,
@@ -375,7 +400,8 @@ pub fn get_raw_data_fn() -> RawDataStore {
                 display_name: "Electric Furnace".to_string(),
                 tile_size: (3, 3),
                 working_power_draw: Watt(180000),
-                fluid_connection_offsets: [].to_vec(),
+                fluid_connection_offsets: vec![],
+                fluid_connection_flowthrough: vec![],
                 num_module_slots: 2,
                 base_bonus_prod: 0,
                 base_speed: 40,
@@ -503,5 +529,6 @@ pub fn get_raw_data_fn() -> RawDataStore {
             },
         ],
         accumulators: vec![],
+        fluid_tanks: vec![],
     }
 }

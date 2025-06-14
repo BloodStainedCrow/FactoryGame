@@ -243,6 +243,29 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         .into_iter()
                         .count()
                         - 1,
+                    "{:?}",
+                    {
+                        let mut storages: Vec<_> = all_storages(grids, chest_store, data_store)
+                            .into_iter()
+                            .map(|v| {
+                                (
+                                    get_full_storage_index(v.0, v.1, num_power_grids, data_store),
+                                    (v.0, v.1, v.2.len()),
+                                )
+                            })
+                            .collect();
+                        storages.sort_by_key(|v| {
+                            get_full_storage_index(v.1 .0, v.1 .1, num_power_grids, data_store)
+                        });
+
+                        for i in 0..max_index {
+                            if !storages.iter().any(|v| v.0 == i) {
+                                dbg!(i);
+                            }
+                        }
+
+                        storages
+                    }
                 )
             },
             None => {
@@ -745,6 +768,9 @@ fn all_static_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             let first_grid_offs_in_grids = static_size.div_ceil(grid_size);
 
             let first_grid_offs = grid_size * first_grid_offs_in_grids;
+
+            assert!(first_grid_offs >= static_size);
+            assert!(first_grid_offs % grid_size == 0);
 
             let (max_insert, data) = chest.storage_list_slices();
 

@@ -259,7 +259,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                                                 self.local_player_pos,
                                                                 self.current_mouse_pos,
                                                             );},
-                                PlaceEntityType::Beacon { ty, pos } => {*pos = Self::player_mouse_to_tile(
+                                PlaceEntityType::Beacon { ty: _, pos } => {*pos = Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.local_player_pos,
+                                    self.current_mouse_pos,
+                                );},
+                                PlaceEntityType::FluidTank { ty: _, pos, rotation: _  } => {*pos = Self::player_mouse_to_tile(
                                     self.zoom_level,
                                     self.local_player_pos,
                                     self.current_mouse_pos,
@@ -342,7 +347,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             self.current_mouse_pos,
                         ),
                         // TODO:
-                        ty: 0,
+                        ty: 4,
                     },
                 ));
                 vec![]
@@ -422,15 +427,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key6) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::Splitter {
+                    PlaceEntityType::FluidTank {
+                        ty: 0,
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
                             self.local_player_pos,
                             self.current_mouse_pos,
                         ),
-                        direction: Dir::North,
-                        in_mode: None,
-                        out_mode: None,
+                        rotation: Dir::North,
                     },
                 ));
                 vec![]

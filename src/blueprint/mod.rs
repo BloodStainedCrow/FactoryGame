@@ -395,6 +395,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                         },
                     ]
                 },
+                crate::frontend::world::tile::Entity::FluidTank { ty, pos, rotation } => todo!(),
+                crate::frontend::world::tile::Entity::UndergroundPipe {
+                    ty,
+                    pos,
+                    rotation,
+                    connection,
+                } => todo!(),
             };
 
             bp.actions.extend(actions);

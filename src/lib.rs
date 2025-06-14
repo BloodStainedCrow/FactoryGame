@@ -41,6 +41,8 @@ use rendering::{
 use saving::load;
 use simple_logger::SimpleLogger;
 
+use crate::item::Indexable;
+
 const TICKS_PER_SECOND_LOGIC: u64 = 60;
 
 const TICKS_PER_SECOND_RUNSPEED: u64 = 60;
@@ -90,6 +92,17 @@ impl WeakIdxTrait for u16 {}
 impl IdxTrait for u8 {}
 impl IdxTrait for u16 {}
 
+impl Indexable for u8 {
+    fn into_usize(self) -> usize {
+        self.into()
+    }
+}
+impl Indexable for u16 {
+    fn into_usize(self) -> usize {
+        self.into()
+    }
+}
+
 pub static DATA_STORE: std::sync::LazyLock<DataStore<u8, u8>> =
     std::sync::LazyLock::new(|| get_raw_data_test().turn::<u8, u8>());
 
@@ -99,11 +112,11 @@ pub trait NewWithDataStore {
     ) -> Self;
 }
 
-impl NewWithDataStore for u32 {
+impl<T: Default> NewWithDataStore for T {
     fn new<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         _data_store: impl Borrow<DataStore<ItemIdxType, RecipeIdxType>>,
     ) -> Self {
-        0
+        T::default()
     }
 }
 
@@ -191,10 +204,10 @@ fn run_integrated_server(
                     // GameState::new_with_bp(&data_store, "test_blueprints/red_and_green.bp")
                     // GameState::new_with_production(&data_store)
                     // GameState::new_with_beacon_red_production(&data_store)
-                    GameState::new_with_beacon_production(&data_store)
+                    // GameState::new_with_beacon_production(&data_store)
                     // GameState::new_with_beacon_belt_production(&data_store)
                     // GameState::new_with_lots_of_belts(&data_store)
-                    // GameState::new(&data_store)
+                    GameState::new(&data_store)
                 }),
             ));
 

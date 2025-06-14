@@ -30,6 +30,7 @@ use crate::{
 use std::fmt::Debug;
 
 use super::{sparse_grid::SparseGrid, Position};
+use crate::liquid::FluidSystemId;
 
 pub const BELT_LEN_PER_TILE: u16 = 4;
 
@@ -545,7 +546,7 @@ fn newly_working_assembler<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 .into_iter()
                 .next()
             else {
-                warn!("Assembler missing in new lab cascade");
+                warn!("Assembler missing in new assembler cascade");
                 return;
             };
 
@@ -1058,6 +1059,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 ref modules,
                 pole_position: None,
             } => {},
+            Entity::FluidTank { .. } => {},
+            Entity::UndergroundPipe {
+                ty,
+                pos,
+                rotation,
+                connection,
+            } => todo!(),
         };
 
         let chunk = self
@@ -1130,7 +1138,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             .into_iter()
             .next()
             .map(|e| match e {
-                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }  => None,
+                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }| Entity::FluidTank { .. } | Entity::UndergroundPipe { .. }   => None,
 
                 Entity::Roboport { ty, pos, power_grid, network, id } => {
                     // TODO:
@@ -1231,7 +1239,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             .into_iter()
             .next()
             .map(|e| match e {
-                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }  => None,
+                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }| Entity::FluidTank { .. } | Entity::UndergroundPipe { .. }  => None,
 
                 Entity::Roboport { ty, pos, power_grid, network, id } => {
                     // TODO:
@@ -1741,7 +1749,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     | Entity::Underground { .. }
                     | Entity::Splitter { .. }
                     | Entity::Chest { .. }
-                    | Entity::Beacon { .. } => {},
+                    | Entity::Beacon { .. }
+                    | Entity::FluidTank { .. }
+                    | Entity::UndergroundPipe { .. } => {},
                 }
             }
         }
@@ -1776,6 +1786,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     Entity::PowerPole { .. } => {},
                     Entity::Chest { .. } => {},
                     Entity::Roboport { .. } => {},
+                    Entity::FluidTank { .. } => {},
+                    Entity::UndergroundPipe { .. } => {},
                     Entity::Belt { id, belt_pos, .. }
                     | Entity::Underground { id, belt_pos, .. } => {
                         if *id == old_id && belt_pos_earliest <= *belt_pos {
@@ -1836,6 +1848,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     Entity::PowerPole { .. } => {},
                     Entity::Chest { .. } => {},
                     Entity::Roboport { .. } => {},
+                    Entity::FluidTank { .. } => {},
+                    Entity::UndergroundPipe { .. } => {},
                     Entity::Belt { id, belt_pos, .. }
                     | Entity::Underground { id, belt_pos, .. } => {
                         if *id == id_to_change {
@@ -2050,6 +2064,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             let max_inserter_range = data_store.max_inserter_search_range;
 
             match entity {
+                Entity::FluidTank { .. } => {},
+                Entity::UndergroundPipe {
+                    ty,
+                    pos,
+                    rotation,
+                    connection,
+                } => todo!(),
                 Entity::Beacon {
                     pos,
                     ty,
@@ -2424,7 +2445,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     if let Some((item, index)) = item {
                         let chest_removal_info = sim_state.factory.chests.stores
                             [usize_from(item.id)]
-                        .remove_chest(*index, data_store);
+                        .remove_chest(*index);
 
                         let chest_size = data_store.chest_tile_sizes[usize::from(*ty)];
 
@@ -2680,6 +2701,12 @@ pub enum UndergroundDir {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
+struct PipeConnection {
+    pipe_pos: Position,
+    connection_weak_index: WeakIndex,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Assembler {
         ty: u8,
@@ -2687,6 +2714,7 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         /// List of all the module slots of this assembler
         modules: Box<[Option<usize>]>,
         info: AssemblerInfo<RecipeIdxType>,
+        // fluid_connections: Vec<PipeConnection>,
     },
     PowerPole {
         // This means at most 256 different types of power poles can exist, should be fine :)
@@ -2753,6 +2781,25 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         modules: Box<[Option<usize>]>,
         pole_position: Option<(Position, WeakIndex)>,
     },
+    // Pipes are coded as fluid tanks with connections on all sides
+    FluidTank {
+        ty: u8,
+        pos: Position,
+        rotation: Dir,
+    },
+    UndergroundPipe {
+        ty: u8,
+        pos: Position,
+        rotation: Dir,
+
+        connection: Option<UndergroundPipeConnection<ItemIdxType>>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
+pub struct UndergroundPipeConnection<ItemIdxType: WeakIdxTrait> {
+    connected_pipe_pos: Position,
+    system_id: FluidSystemId<ItemIdxType>,
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeIdxType> {
@@ -2769,11 +2816,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::SolarPanel { pos, .. } => *pos,
             Self::Lab { pos, .. } => *pos,
             Self::Beacon { pos, .. } => *pos,
+            Self::FluidTank { pos, .. } => *pos,
+            Self::UndergroundPipe { pos, .. } => *pos,
         }
     }
 
     pub fn get_size(&self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> (u16, u16) {
-        // FIXME: Use data_store
+        // FIXME: Use data_store for everything
         match self {
             Self::Assembler { ty, .. } => data_store.assembler_info[usize::from(*ty)].size,
             Self::PowerPole { ty, .. } => data_store.power_pole_data[usize::from(*ty)].size,
@@ -2794,6 +2843,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             ),
             Self::Lab { ty, .. } => data_store.lab_info[usize::from(*ty)].size,
             Self::Beacon { ty, .. } => data_store.beacon_info[usize::from(*ty)].size,
+            Self::FluidTank { ty, .. } => data_store.fluid_tank_infos[usize::from(*ty)].size.into(),
+            Self::UndergroundPipe { ty, .. } => todo!(),
         }
     }
 }
@@ -2847,6 +2898,11 @@ pub enum PlaceEntityType<ItemIdxType: WeakIdxTrait> {
     Beacon {
         ty: u8,
         pos: Position,
+    },
+    FluidTank {
+        ty: u8,
+        pos: Position,
+        rotation: Dir,
     },
 }
 

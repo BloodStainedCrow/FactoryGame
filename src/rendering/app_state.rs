@@ -1,10 +1,11 @@
-use std::{borrow::Borrow, fs::File, ops::ControlFlow};
-
+use crate::data::AllowedFluidDirection;
+use crate::liquid::connection_logic::can_fluid_tanks_connect_to_single_connection;
+use crate::liquid::FluidConnectionDir;
 use crate::{
     belt::{belt::Belt, BeltBeltInserterInfo, BeltStore},
     blueprint::Blueprint,
     chest::{FullChestStore, MultiChestStore},
-    data::DataStore,
+    data::{DataStore, ItemRecipeDir},
     frontend::{
         action::{
             belt_placement::{handle_belt_placement, handle_splitter_placement},
@@ -23,22 +24,36 @@ use crate::{
         FakeUnionStorage, Storage, MOVETIME,
     },
     item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
+    liquid::connection_logic::can_fluid_tanks_connect,
     network_graph::WeakIndex,
     power::{power_grid::PowerGridIdentifier, PowerGridStorage},
     research::{ResearchProgress, TechState, Technology},
     statistics::{
         consumption::ConsumptionInfo, production::ProductionInfo, recipe::RecipeTickInfo,
-        GenStatistics,
+        GenStatistics, Timeline,
     },
     storage_list::{
         full_to_by_item, grid_size, num_recipes, sizes, storages_by_item, SingleItemStorages,
     },
 };
+use crate::{
+    item::Indexable,
+    liquid::{CannotMixFluidsError, FluidSystemStore},
+};
 use itertools::Itertools;
 use log::{info, trace, warn};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
+use std::iter;
+use std::{
+    borrow::Borrow,
+    fs::File,
+    ops::ControlFlow,
+    time::{Duration, Instant},
+};
 
 use crate::frontend::action::place_tile::PositionInfo;
+
+use std::ops::AddAssign;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct GameState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
@@ -48,6 +63,21 @@ pub struct GameState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub simulation_state: SimulationState<ItemIdxType, RecipeIdxType>,
 
     pub statistics: GenStatistics,
+
+    pub update_times: Timeline<UpdateTime>,
+    #[serde(skip)]
+    last_update_time: Option<Instant>,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+pub struct UpdateTime {
+    pub dur: Duration,
+}
+
+impl<'a> AddAssign<&'a UpdateTime> for UpdateTime {
+    fn add_assign(&mut self, rhs: &'a UpdateTime) {
+        self.dur += rhs.dur;
+    }
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, RecipeIdxType> {
@@ -58,6 +88,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             world: World::new(),
             simulation_state: SimulationState::new(data_store),
             statistics: GenStatistics::new(data_store),
+            update_times: Timeline::new(false, data_store),
+            last_update_time: None,
         }
     }
 
@@ -68,6 +100,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             world: World::new(),
             simulation_state: SimulationState::new(data_store),
             statistics: GenStatistics::new(data_store),
+            update_times: Timeline::new(false, data_store),
+            last_update_time: None,
         };
 
         let file = File::open("test_blueprints/red_sci.bp").unwrap();
@@ -100,28 +134,32 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             world: World::new(),
             simulation_state: SimulationState::new(data_store),
             statistics: GenStatistics::new(data_store),
+            update_times: Timeline::new(false, data_store),
+            last_update_time: None,
         };
 
         let file = File::open("test_blueprints/red_and_green.bp").unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
 
-        for y_start in (0..200_000).step_by(6_000) {
-            for y_pos in (1590..6000).step_by(40) {
-                for x_pos in (1590..3000).step_by(50) {
-                    while rand::random::<u16>() < u16::MAX / 200 {
-                        ret.update(data_store);
-                    }
-                    bp.apply(
-                        Position {
-                            x: x_pos,
-                            y: y_start + y_pos,
-                        },
-                        &mut ret,
-                        data_store,
-                    );
+        // for y_start in (0..200_000).step_by(6_000) {
+        // for y_pos in (1590..6000).step_by(40) {
+        for y_pos in (1590..200_000).step_by(40) {
+            for x_pos in (1590..3000).step_by(50) {
+                while rand::random::<u16>() < u16::MAX / 200 {
+                    ret.update(data_store);
                 }
+                bp.apply(
+                    Position {
+                        x: x_pos,
+                        // y: y_start + y_pos,
+                        y: y_pos,
+                    },
+                    &mut ret,
+                    data_store,
+                );
             }
         }
+        // }
 
         ret
     }
@@ -135,6 +173,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             world: World::new(),
             simulation_state: SimulationState::new(data_store),
             statistics: GenStatistics::new(data_store),
+            update_times: Timeline::new(false, data_store),
+            last_update_time: None,
         };
 
         let file = File::open("test_blueprints/red_sci_with_beacons.bp").unwrap();
@@ -171,6 +211,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             world: World::new(),
             simulation_state: SimulationState::new(data_store),
             statistics: GenStatistics::new(data_store),
+            update_times: Timeline::new(false, data_store),
+            last_update_time: None,
         };
 
         let file = File::open("test_blueprints/red_sci_with_beacons_and_belts.bp").unwrap();
@@ -205,6 +247,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             world: World::new(),
             simulation_state: SimulationState::new(data_store),
             statistics: GenStatistics::new(data_store),
+            update_times: Timeline::new(false, data_store),
+            last_update_time: None,
         };
 
         let file = File::open("test_blueprints/lots_of_belts.bp").unwrap();
@@ -226,6 +270,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             world: World::new(),
             simulation_state: SimulationState::new(data_store),
             statistics: GenStatistics::new(data_store),
+            update_times: Timeline::new(false, data_store),
+            last_update_time: None,
         };
 
         let file = File::open(bp_path).unwrap();
@@ -284,6 +330,8 @@ pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub belts: BeltStore<ItemIdxType>,
     pub storage_storage_inserters: StorageStorageInserterStore,
     pub chests: FullChestStore<ItemIdxType>,
+
+    pub fluid_store: FluidSystemStore<ItemIdxType>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -370,6 +418,27 @@ impl StorageStorageInserterStore {
         assert!(!self.holes[usize_from(item.id)].contains(&index));
         self.holes[usize_from(item.id)].push(index);
     }
+
+    pub fn update_inserter_src<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        &mut self,
+        item: Item<ItemIdxType>,
+        index: usize,
+        new_src: Storage<RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        self.inserters[item.into_usize()][index].storage_id_in =
+            FakeUnionStorage::from_storage_with_statics_at_zero(item, new_src, data_store);
+    }
+    pub fn update_inserter_dest<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        &mut self,
+        item: Item<ItemIdxType>,
+        index: usize,
+        new_dest: Storage<RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        self.inserters[item.into_usize()][index].storage_id_out =
+            FakeUnionStorage::from_storage_with_statics_at_zero(item, new_dest, data_store);
+    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -392,6 +461,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                     .map(|item| MultiChestStore::new(item, data_store))
                     .collect(),
             },
+
+            fluid_store: FluidSystemStore::new(data_store),
         }
     }
 
@@ -869,6 +940,242 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 data_store,
                             );
                         },
+                        crate::frontend::world::tile::PlaceEntityType::FluidTank {
+                            ty,
+                            pos,
+                            rotation,
+                        } => {
+                            let size = data_store.fluid_tank_infos[usize::from(ty)].size;
+                            // FIXME: Stop ignoring rotation
+                            if !self.world.can_fit(pos, size.into(), data_store) {
+                                warn!("Tried to place storage tank where it does not fit");
+                                continue;
+                            }
+
+                            // Get connecting entities:
+                            let connecting_fluid_box_positions = self
+                                .world
+                                .get_entities_colliding_with(
+                                    Position {
+                                        x: pos.x - 1,
+                                        y: pos.y - 1,
+                                    },
+                                    (size[0] + 2, size[1] + 2),
+                                    data_store,
+                                )
+                                .into_iter()
+                                .filter_map(|e| match e {
+                                    Entity::Assembler {
+                                        ty,
+                                        pos,
+                                        modules,
+                                        info,
+                                    } => {
+                                        // FIXME: Implement assembler flowthough
+                                        None
+                                    },
+                                    Entity::Lab {
+                                        pos,
+                                        ty,
+                                        modules,
+                                        pole_position,
+                                    } => {
+                                        // TODO: Do I want to support fluid science? Would be really easy
+                                        None
+                                    },
+
+                                    Entity::FluidTank {
+                                        ty: other_ty,
+                                        pos: other_pos,
+                                        rotation: other_rotation,
+                                    } => {
+                                        let we_can_connect = can_fluid_tanks_connect(
+                                            pos,
+                                            ty,
+                                            rotation,
+                                            *other_pos,
+                                            *other_ty,
+                                            *other_rotation,
+                                            data_store,
+                                        );
+
+                                        we_can_connect.then_some(*other_pos)
+                                    },
+                                    Entity::UndergroundPipe {
+                                        ty,
+                                        pos,
+                                        rotation,
+                                        connection: Some(conn),
+                                    } => todo!(),
+
+                                    Entity::UndergroundPipe {
+                                        ty,
+                                        pos,
+                                        rotation,
+                                        connection: None,
+                                    } => todo!(),
+
+                                    // TODO: There are some future entities which might need connections like mining drills
+                                    _ => None,
+                                });
+
+                            let in_out_connections = self
+                                .world
+                                .get_entities_colliding_with(
+                                    Position {
+                                        x: pos.x - 1,
+                                        y: pos.y - 1,
+                                    },
+                                    (size[0] + 2, size[1] + 2),
+                                    data_store,
+                                )
+                                .into_iter()
+                                .filter_map(|e| match e {
+                                    Entity::Assembler {
+                                        ty: assembler_ty,
+                                        pos: assembler_pos,
+                                        info:
+                                            AssemblerInfo::Powered {
+                                                id,
+                                                pole_position,
+                                                weak_index,
+                                            },
+                                        ..
+                                    } => {
+                                        let recipe_fluid_inputs: Vec<_> = data_store
+                                            .recipe_to_items[&id.recipe]
+                                            .iter()
+                                            .filter_map(|(dir, item)| {
+                                                (*dir == ItemRecipeDir::Ing
+                                                    && data_store.item_is_fluid[item.into_usize()])
+                                                .then_some(*item)
+                                            })
+                                            .collect();
+                                        let recipe_fluid_outputs: Vec<_> = data_store
+                                            .recipe_to_items[&id.recipe]
+                                            .iter()
+                                            .filter_map(|(dir, item)| {
+                                                (*dir == ItemRecipeDir::Out
+                                                    && data_store.item_is_fluid[item.into_usize()])
+                                                .then_some(*item)
+                                            })
+                                            .collect();
+
+                                        let fluid_pure_outputs: Vec<_> = data_store.assembler_info
+                                            [usize::from(*assembler_ty)]
+                                        .fluid_connections
+                                        .iter()
+                                        .filter(|(_conn, allowed)| {
+                                            *allowed
+                                                == AllowedFluidDirection::Single(ItemRecipeDir::Out)
+                                                || matches!(
+                                                    *allowed,
+                                                    AllowedFluidDirection::Both { .. }
+                                                )
+                                        })
+                                        .collect();
+
+                                        let fluid_pure_inputs: Vec<_> = data_store.assembler_info
+                                            [usize::from(*assembler_ty)]
+                                        .fluid_connections
+                                        .iter()
+                                        .filter(|(_conn, allowed)| {
+                                            *allowed
+                                                == AllowedFluidDirection::Single(ItemRecipeDir::Ing)
+                                                || matches!(
+                                                    *allowed,
+                                                    AllowedFluidDirection::Both { .. }
+                                                )
+                                        })
+                                        .collect();
+
+                                        // FIXME: FINISH IMPLEMENTING THIS
+
+                                        let all_connections_with_items = recipe_fluid_inputs
+                                            .into_iter()
+                                            .cycle()
+                                            .zip(fluid_pure_inputs)
+                                            .zip(iter::repeat(FluidConnectionDir::Output))
+                                            .chain(
+                                                recipe_fluid_outputs
+                                                    .into_iter()
+                                                    .cycle()
+                                                    .zip(fluid_pure_outputs)
+                                                    .zip(iter::repeat(FluidConnectionDir::Input)),
+                                            );
+
+                                        Some(all_connections_with_items.filter_map(
+                                            |((item, (fluid_conn, _allowed)), fluid_dir)| {
+                                                can_fluid_tanks_connect_to_single_connection(
+                                                    pos,
+                                                    ty,
+                                                    rotation,
+                                                    Position {
+                                                        x: assembler_pos.x
+                                                            + i32::from(fluid_conn.offset[0]),
+                                                        y: assembler_pos.y
+                                                            + i32::from(fluid_conn.offset[1]),
+                                                    },
+                                                    fluid_conn.dir,
+                                                    data_store,
+                                                )
+                                                .then_some((
+                                                    fluid_dir,
+                                                    item,
+                                                    Storage::Assembler {
+                                                        grid: id.grid,
+                                                        index: id.assembler_index,
+                                                        recipe_idx_with_this_item: data_store
+                                                            .recipe_to_translated_index
+                                                            [&(id.recipe, item)],
+                                                    },
+                                                    Box::new(|_weak_index: WeakIndex| {})
+                                                        as Box<dyn FnOnce(WeakIndex) -> ()>,
+                                                ))
+                                            },
+                                        ))
+                                    },
+                                    Entity::Lab {
+                                        pos,
+                                        ty,
+                                        modules,
+                                        pole_position,
+                                    } => {
+                                        // TODO: Do I want to support fluid science? Would be really easy
+                                        None
+                                    },
+
+                                    // TODO: There are some future entities which might need connections like mining drills
+                                    _ => None,
+                                })
+                                .flatten();
+
+                            let ret = self.simulation_state.factory.fluid_store.try_add_fluid_box(
+                                pos,
+                                data_store.fluid_tank_infos[usize::from(ty)].capacity,
+                                connecting_fluid_box_positions,
+                                in_out_connections,
+                                &mut self.simulation_state.factory.chests,
+                                &mut self.simulation_state.factory.storage_storage_inserters,
+                                data_store,
+                            );
+                            match ret {
+                                Ok(id) => {
+                                    self.world.add_entity(
+                                        Entity::FluidTank { pos, ty, rotation },
+                                        &mut self.simulation_state,
+                                        data_store,
+                                    );
+                                },
+                                Err(CannotMixFluidsError { items: [a, b] }) => {
+                                    warn!(
+                                        "Cannot connect systems containing {} and {}",
+                                        data_store.item_names[a.into_usize()],
+                                        data_store.item_names[b.into_usize()]
+                                    )
+                                },
+                            }
+                        },
                     },
                     crate::frontend::action::place_entity::EntityPlaceOptions::Multiple(vec) => {
                         todo!()
@@ -1200,6 +1507,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         );
 
         self.current_tick += 1;
+
+        let done_updating = Instant::now();
+
+        if let Some(last_update_time) = self.last_update_time {
+            self.update_times.append_single_set_of_samples(UpdateTime {
+                dur: done_updating - last_update_time,
+            });
+        }
+        self.last_update_time = Some(done_updating);
     }
 
     fn update_inserters(

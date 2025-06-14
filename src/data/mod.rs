@@ -55,6 +55,7 @@ struct RawAssemblingMachine {
     tile_size: (u8, u8),
     working_power_draw: Watt,
     fluid_connection_offsets: Vec<RawFluidConnection>,
+    fluid_connection_flowthrough: Vec<RawFluidFlowthrough>,
 
     num_module_slots: u8,
 
@@ -114,11 +115,23 @@ struct RawAccumulator {
     max_discharge_rate: Watt,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize, serde::Serialize)]
+pub enum AllowedFluidDirection {
+    Single(ItemRecipeDir),
+    Both { preferred: ItemRecipeDir },
+}
+
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 struct RawFluidConnection {
-    fluid_dir: ItemRecipeDir,
-    offs: (u8, u8),
+    allowed_fluid_directions: AllowedFluidDirection,
+    offset: (u8, u8),
     pipe_connection_direction: Dir,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+struct RawFluidFlowthrough {
+    fluid_dir: AllowedFluidDirection,
+    connections: Vec<((u8, u8), Dir)>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -145,6 +158,16 @@ pub struct RawDataStore {
     technologies: Vec<RawTechnology>,
     solar_panels: Vec<RawSolarPanel>,
     accumulators: Vec<RawAccumulator>,
+    fluid_tanks: Vec<RawFluidTank>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+struct RawFluidTank {
+    name: String,
+    display_name: String,
+    capacity: u32,
+    tile_size: (u8, u8),
+    connections: Vec<((u8, u8), Dir)>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -217,7 +240,9 @@ pub struct AssemblerInfo {
     pub size: (u16, u16),
     pub num_module_slots: u8,
 
-    /// Base Speed as a numerator and divisor. All module modifiers apply multiplicatively
+    pub fluid_connections: Vec<(FluidConnection, AllowedFluidDirection)>,
+
+    /// Base Speed. All module modifiers apply multiplicatively
     pub base_speed: u8,
     pub base_prod: u8,
     pub base_power_consumption: Watt,
@@ -298,6 +323,7 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub min_power_mod: u8,
 
     pub recipe_names: Vec<String>,
+    pub recipe_allowed_assembling_machines: Vec<Vec<u8>>,
 
     pub recipe_num_ing_lookup: Vec<usize>,
     pub recipe_num_out_lookup: Vec<usize>,
@@ -351,6 +377,8 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub chest_num_slots: Vec<u8>,
     pub chest_tile_sizes: Vec<(u16, u16)>,
 
+    pub fluid_tank_infos: Vec<FluidTankData>,
+
     pub recipe_to_translated_index:
         HashMap<(Recipe<RecipeIdxType>, Item<ItemIdxType>), RecipeIdxType>,
 
@@ -364,6 +392,22 @@ pub struct LazyPowerMachineInfo<ItemIdxType: WeakIdxTrait> {
     pub ingredient: Item<ItemIdxType>,
     pub power_per_item: Joule,
     pub max_power_per_tick: Joule,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
+pub struct FluidTankData {
+    pub size: [u16; 2],
+    /// Capacity in fluid units
+    pub capacity: u32,
+
+    pub fluid_connections: Vec<FluidConnection>,
+}
+
+/// These offset and directions are based on the entity facing north
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
+pub struct FluidConnection {
+    pub offset: [u16; 2],
+    pub dir: Dir,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
@@ -809,6 +853,27 @@ impl RawDataStore {
         DataStore {
             checksum,
 
+            recipe_allowed_assembling_machines: self
+                .recipes
+                .iter()
+                .map(|raw| {
+                    raw.possible_machines
+                        .iter()
+                        .map(|machine_string| {
+                            self.machines
+                                .iter()
+                                .position(|machine| machine.name == *machine_string)
+                                .expect(&format!(
+                                    "Could not find machine {} for recipe {}!",
+                                    machine_string, raw.name
+                                ))
+                                .try_into()
+                                .unwrap()
+                        })
+                        .collect()
+                })
+                .collect(),
+
             assembler_info: self
                 .machines
                 .iter()
@@ -820,6 +885,20 @@ impl RawDataStore {
                     base_speed: m.base_speed,
                     base_prod: m.base_bonus_prod,
                     base_power_consumption: m.working_power_draw,
+
+                    fluid_connections: m
+                        .fluid_connection_offsets
+                        .iter()
+                        .map(|(raw_conn)| {
+                            (
+                                FluidConnection {
+                                    offset: [raw_conn.offset.0.into(), raw_conn.offset.1.into()],
+                                    dir: raw_conn.pipe_connection_direction,
+                                },
+                                raw_conn.allowed_fluid_directions,
+                            )
+                        })
+                        .collect(),
                 })
                 .collect(),
 
@@ -1008,6 +1087,24 @@ impl RawDataStore {
                 .items
                 .iter()
                 .map(|item| Color32::from_rgb(random(), random(), random()))
+                .collect(),
+
+            fluid_tank_infos: self
+                .fluid_tanks
+                .into_iter()
+                .map(|tank| FluidTankData {
+                    // TODO: Sanity check the fluid connections
+                    size: [tank.tile_size.0.into(), tank.tile_size.1.into()],
+                    capacity: tank.capacity,
+                    fluid_connections: tank
+                        .connections
+                        .into_iter()
+                        .map(|conn| FluidConnection {
+                            dir: conn.1,
+                            offset: [conn.0 .0.into(), conn.0 .1.into()],
+                        })
+                        .collect(),
+                })
                 .collect(),
 
             technology_costs,

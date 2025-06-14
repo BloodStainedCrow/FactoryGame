@@ -1,6 +1,8 @@
 use std::{
     cmp::{min, Ordering},
+    fmt::format,
     iter::successors,
+    time::Duration,
 };
 
 use crate::{
@@ -648,6 +650,19 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                                 // TODO: Render modules
                             },
+                            Entity::FluidTank { ty, pos, rotation } => {
+                                let size = data_store.fluid_tank_infos[usize::from(*ty)].size;
+
+                                texture_atlas.beacon.draw(
+                                    [
+                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                    ],
+                                    size,
+                                    0,
+                                    &mut entity_layer,
+                                );
+                            },
 
                             e => todo!("{:?}", e),
                         }
@@ -719,6 +734,11 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     crate::frontend::world::tile::PlaceEntityType::SolarPanel { pos, ty } => {},
                     crate::frontend::world::tile::PlaceEntityType::Lab { pos, ty } => {},
                     crate::frontend::world::tile::PlaceEntityType::Beacon { pos, ty } => {},
+                    crate::frontend::world::tile::PlaceEntityType::FluidTank {
+                        ty,
+                        pos,
+                        rotation,
+                    } => {},
                 },
             }
         },
@@ -801,6 +821,15 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
     let mut actions = vec![];
 
+    Window::new("UPS").default_open(false).show(ctx, |ui| {
+        let points = &game_state.update_times.get_data_points(0)[0..30];
+        ui.label(format!(
+            "{:.1} UPS",
+            1.0 / (points.iter().map(|v| v.dur).sum::<Duration>() / points.len() as u32)
+                .as_secs_f32()
+        ));
+    });
+
     Window::new("BP").default_open(false).show(ctx, |ui| {
         let bp = Blueprint::from_area(&game_state.world, [1590..1700, 1590..1700], data_store);
 
@@ -846,7 +875,9 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         };
 
                         ComboBox::new("Recipe list", "Recipes").selected_text(goal_recipe.map(|recipe| data_store.recipe_names[usize_from(recipe.id)].as_str()).unwrap_or("Choose a recipe!")).show_ui(ui, |ui| {
-                            data_store.recipe_names.iter().enumerate().for_each(|(i, recipe_name)| {
+                            data_store.recipe_names.iter().enumerate().filter(|(i, recipe_name)| {
+                                    data_store.recipe_allowed_assembling_machines[*i].contains(ty)
+                                }).for_each(|(i, recipe_name)| {
                                 ui.selectable_value(&mut goal_recipe, Some(Recipe {id: i.try_into().unwrap()}), recipe_name);
                             });
                         });
@@ -1148,6 +1179,11 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     }
                     Entity::Beacon { pos, ty, modules, pole_position } => {
                         // TODO
+                    },
+                    Entity::FluidTank { ty, pos, rotation } => {
+                        let id = game_state.simulation_state.factory.fluid_store.fluid_box_pos_to_network_id[pos];
+
+                        ui.label(format!("{:?}", id));
                     }
                     _ => todo!(),
                 }
