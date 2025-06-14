@@ -516,6 +516,22 @@
             time_to_craft: 300,
             is_intermediate: true,
         ),
+        (
+            name: "factory_game::raw_oil_generatiom",
+            display_name: "Generate Raw Oil",
+            possible_machines: [
+                "factory_game::chemical_plant",
+            ],
+            ings: [],
+            output: [
+                (
+                    item: "factory_game::raw_oil",
+                    amount: 30,
+                ),
+            ],
+            time_to_craft: 30,
+            is_intermediate: true,
+        ),
         //(
         //    name: "factory_game::advanced_oil_processing",
         //    display_name: "Advanced Oil Processing",
