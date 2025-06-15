@@ -242,9 +242,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> CallbackTrait
 
         render_world(
             &mut rend,
-            &gamestate,
+            gamestate,
             &self.texture_atlas,
-            &state_machine,
+            state_machine,
             &self.data_store.lock(),
         );
     }

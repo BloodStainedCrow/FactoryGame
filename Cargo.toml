@@ -50,6 +50,9 @@ egui = { git = "https://github.com/BloodStainedCrow/egui", branch = "removeProfi
 eframe = { git = "https://github.com/BloodStainedCrow/egui", branch = "removeProfiling" }
 egui-wgpu = { git = "https://github.com/BloodStainedCrow/egui", branch = "removeProfiling" }
 
+# [patch."https://github.com/BloodStainedCrow/tilelib"]
+# tilelib = { path = "../tilelib" }
+
 [lints.rust]
 # TODO:
 # unsafe_code = "forbid"

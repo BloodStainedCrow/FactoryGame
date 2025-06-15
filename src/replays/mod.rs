@@ -40,6 +40,8 @@ pub struct Replay<
     end_timestep: Option<u64>,
 
     storage_location: Option<PathBuf>,
+
+    is_dummy: bool
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -68,6 +70,24 @@ impl<
             end_timestep: None,
 
             storage_location,
+
+            is_dummy: false,
+        }
+    }
+
+    pub fn new_dummy(
+        data_store: DataStor,
+    ) -> Self {
+        Self {
+            starting_state: Box::new([]),
+            actions: vec![],
+            data_store,
+            current_timestep: 0,
+            end_timestep: None,
+
+            storage_location: None,
+            
+            is_dummy: true,
         }
     }
 
@@ -82,6 +102,9 @@ impl<
         &mut self,
         actions: impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>,
     ) {
+        if self.is_dummy {
+            return;
+        }
         self.actions
             .extend(actions.into_iter().map(|a| ReplayAction {
                 timestamp: self.current_timestep,
@@ -99,6 +122,7 @@ impl<
         (GameState<ItemIdxType, RecipeIdxType>, DataStor),
         impl Future<Output = (GameState<ItemIdxType, RecipeIdxType>, DataStor)>,
     > {
+        assert!(!self.is_dummy);
         ReplayViewer {
             generator: r#gen!({
                 let data_store = self.data_store;

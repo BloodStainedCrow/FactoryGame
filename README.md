@@ -29,6 +29,7 @@ I was playing the above games and started being unable to expand due to performa
 - ~~Debug inserters~~
 - ~~Production Graphs~~
 - ~~Liquids~~
+- ~~Map View~~
 - Mining Drills
 - Place Steam Turbines
 - Splitters

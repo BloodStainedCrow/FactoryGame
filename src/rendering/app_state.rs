@@ -122,11 +122,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
     #[must_use]
     pub fn new_with_beacon_production(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
-        Self::new_with_beacon_red_green_production(data_store)
+        Self::new_with_beacon_red_green_production_many_grids(data_store)
     }
 
     #[must_use]
-    pub fn new_with_beacon_red_green_production(
+    pub fn new_with_beacon_red_green_production_many_grids(
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         let mut ret = Self {
@@ -141,60 +141,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let file = File::open("test_blueprints/red_and_green.bp").unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
 
-        // for y_start in (0..200_000).step_by(6_000) {
-        // for y_pos in (1590..6000).step_by(40) {
-        for y_pos in (1590..200_000).step_by(40) {
-            for x_pos in (1590..3000).step_by(50) {
-                while rand::random::<u16>() < u16::MAX / 200 {
-                    ret.update(data_store);
-                }
-                bp.apply(
-                    Position {
-                        x: x_pos,
-                        // y: y_start + y_pos,
-                        y: y_pos,
-                    },
-                    &mut ret,
-                    data_store,
-                );
-            }
-        }
-        // }
-
-        ret
-    }
-
-    #[must_use]
-    pub fn new_with_beacon_red_production(
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Self {
-        let mut ret = Self {
-            current_tick: 0,
-            world: World::new(),
-            simulation_state: SimulationState::new(data_store),
-            statistics: GenStatistics::new(data_store),
-            update_times: Timeline::new(false, data_store),
-            last_update_time: None,
-        };
-
-        let file = File::open("test_blueprints/red_sci_with_beacons.bp").unwrap();
-        let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
-
-        for y_start in (0..200_000).step_by(6_000) {
-            for y_pos in (1590..6000).step_by(10) {
-                for x_pos in (1590..3000).step_by(60) {
-                    if rand::random::<u16>() < 100 {
-                        ret.update(data_store);
+        for y_start in (0..24_000).step_by(4_000) {
+            for y_pos in (1590..4000).step_by(40) {
+                for x_start in (0..24_000).step_by(4_000) {
+                    for x_pos in (1590..4000).step_by(50) {
+                        while rand::random::<u16>() < u16::MAX / 200 {
+                            ret.update(data_store);
+                        }
+                        bp.apply(
+                            Position {
+                                x: x_start + x_pos,
+                                y: y_start + y_pos,
+                            },
+                            &mut ret,
+                            data_store,
+                        );
                     }
-
-                    bp.apply(
-                        Position {
-                            x: x_pos,
-                            y: y_start + y_pos,
-                        },
-                        &mut ret,
-                        data_store,
-                    );
                 }
             }
         }
@@ -254,7 +216,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let file = File::open("test_blueprints/lots_of_belts.bp").unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
 
-        for y_pos in (1600..84_000).step_by(3) {
+        for y_pos in (1600..60_000).step_by(3) {
             ret.update(data_store);
             for x_pos in (1600..3000).step_by(50) {
                 bp.apply(Position { x: x_pos, y: y_pos }, &mut ret, data_store);
