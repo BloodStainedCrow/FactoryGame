@@ -2,12 +2,14 @@ use std::{cmp::max, cmp::min, collections::BTreeMap, marker::PhantomData};
 
 // I will render bots as "particles" with a fixed size instanced gpu buffer
 // This is fine as long as we do not override bots, which are still flying
-const GOAL_ITEMS_PER_TICK: usize = 40000;
+const GOAL_ITEMS_PER_TICK: usize = 1_000_000_000 / 60 / 60;
 const BOT_HAND_SIZE: usize = 4;
-const BOT_SPEED: usize = 120 * 1000 / 60 / 60; // tiles / s
-const MAX_BASE_SIZE: usize = 3000;
-const AVG_TRIP_LENGTH: usize = 300;
-const MAX_BOT_TRAVEL_TIME_TICKS: usize = MAX_BASE_SIZE * 60 / BOT_SPEED;
+// Bot Speed 20
+// TODO: Is this accurate with the flat power consumption for distance?
+const BOT_SPEED: usize = 50; // tiles / s
+const MAX_TRIP_LENGTH: usize = 9_000_000 / 5_000;
+const AVG_TRIP_LENGTH: usize = 500;
+const MAX_BOT_TRAVEL_TIME_TICKS: usize = 9_000_000 / (5_000 * BOT_SPEED + 3_000) * 60;
 const AVG_BOT_TRAVEL_TIME_TICKS: usize = AVG_TRIP_LENGTH * 60 / BOT_SPEED;
 const AVG_NEW_BOTS_PER_TICK: usize = GOAL_ITEMS_PER_TICK / (BOT_HAND_SIZE);
 const REQUIRED_BOTS: usize = GOAL_ITEMS_PER_TICK * AVG_BOT_TRAVEL_TIME_TICKS / BOT_HAND_SIZE;
@@ -16,7 +18,7 @@ const REQUIRED_MEMORY_SEND_TO_GPU_PER_TICK: usize = AVG_NEW_BOTS_PER_TICK * (2 *
 const REQUIRED_PCI_BANDWIDTH_MBS: usize = REQUIRED_MEMORY_SEND_TO_GPU_PER_TICK * 60 / 1_000_000;
 const REQUIRED_VRAM: usize = REQUIRED_DRAW_SLOTS * (2 * 3 * (2 + 1));
 const REQUIRED_VRAM_MB: usize = REQUIRED_VRAM / 1_000_000;
-const OVERDRAW_RATIO: usize = MAX_BASE_SIZE / AVG_TRIP_LENGTH;
+const OVERDRAW_RATIO: usize = MAX_TRIP_LENGTH / AVG_TRIP_LENGTH;
 
 use log::info;
 
@@ -310,7 +312,7 @@ struct MultiStorageInfo {}
 
 enum BotUpdate<ItemIdxType: WeakIdxTrait> {
     DoGoal(BotGoal<ItemIdxType>),
-    // TODO: To allow removing of robotports I will need generational indices!
+    // TODO: To allow removing of roboports I will need generational indices!
     TryStartChargingAndContinue(u32, (f32, f32), BotGoal<ItemIdxType>),
     TryStartChargingAndEnter(u32, Joule, (f32, f32)),
     Enter(u32),
@@ -318,7 +320,7 @@ enum BotUpdate<ItemIdxType: WeakIdxTrait> {
 
 #[derive(Debug)]
 enum BotGoal<ItemIdxType: WeakIdxTrait> {
-    DepositItem {
+    TryDepositItem {
         current_charge: Joule,
         item: Item<ItemIdxType>,
         amount: ITEMCOUNTTYPE,
@@ -340,7 +342,7 @@ const MAX_ROBOPORT_CHARGE_RATE: Watt = Watt(2_000_000);
 const BOT_CHARGING_RATE: Watt = Watt(500_000);
 const BOT_MAX_CHARGE: Joule = Joule(3_000_000);
 
-const LOGIBOT_SPEED_CHARGED: f32 = 0.05;
+const LOGIBOT_SPEED_CHARGED: f32 = 3.0 / 60.0;
 const LOGIBOT_SPEED_EMPTY: f32 = LOGIBOT_SPEED_CHARGED / 5.0;
 
 const LOGIBOT_POWER_CONSUMPTION: Watt = Watt(63_750);
@@ -462,7 +464,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
             bot_movement_per_tick_empty,
             bot_power_consumption,
             storage_pos,
-            |charge| BotGoal::DepositItem {
+            |charge| BotGoal::TryDepositItem {
                 current_charge: charge,
                 item,
                 amount,
@@ -573,22 +575,29 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
         }
     }
 
+    // TODO: This should return a result and error if the storage was removed (But still return the position)
     fn get_storage_pos(&self, item: Item<ItemIdxType>, id: u16) -> (f32, f32) {
         todo!()
     }
 
+    // TODO: Handle Logibot types
     fn get_closest_roboport_with_free_slot_and_reserve_it(
         &mut self,
         pos: (f32, f32),
-    ) -> Option<u32> {
+    ) -> Option<(u32, (f32, f32))> {
         todo!()
     }
 
-    fn get_closest_roboport_with_idle_bot_and_take_it(&mut self, pos: (f32, f32)) -> Option<u32> {
+    // TODO: Handle Logibot types
+    fn get_closest_roboport_with_idle_bot_and_take_it(
+        &mut self,
+        pos: (f32, f32),
+    ) -> Option<(u32, (f32, f32))> {
         todo!()
     }
 
     // This is effectively a lookup into a voronoi texture!
+    // Except it is not, since this would lead to all robots flying to the same roboport :/
     fn get_closest_roboport(&self, pos: (f32, f32)) -> u32 {
         todo!()
     }
@@ -653,6 +662,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
         weak_idx
     }
 
+    // TODO: In order to ensure we never add/remove from a removed chest that was replaced in the meantime,
+    // only add removed slots after the last currently queued timer has elapsed.
+    // FIXME: This does not work for repeating jobs unless we check if the destination still exists when repushing.
+    // Instead we could use a "ref-counting" solution, and keep track of how many jobs target any requester_chest/provider or maybe even roboports
     fn remove_requester_chest(
         &mut self,
         roboport_id: RoboportId,
@@ -722,7 +735,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
 
         for update in done {
             match update {
-                BotUpdate::DoGoal(BotGoal::DepositItem {
+                BotUpdate::DoGoal(BotGoal::TryDepositItem {
                     current_charge,
                     item,
                     amount,
@@ -734,8 +747,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                             match self
                                 .get_closest_roboport_with_free_slot_and_reserve_it(current_bot_pos)
                             {
-                                Some(roboport_id) => {
-                                    let robotport_pos = self.get_roboport_position(roboport_id);
+                                Some((roboport_id, robotport_pos)) => {
                                     let (arrival_time, remaining_charge) =
                                         Self::path_result_keep_going_when_empty(
                                             current_bot_pos,
@@ -797,7 +809,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                                     self.bot_jobs
                                         .entry(self.current_tick + arrival_time as u32)
                                         .or_default()
-                                        .push(BotUpdate::DoGoal(BotGoal::DepositItem {
+                                        .push(BotUpdate::DoGoal(BotGoal::TryDepositItem {
                                             current_charge: rest_charge,
                                             item,
                                             amount,
@@ -843,7 +855,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                                         .push(BotUpdate::TryStartChargingAndContinue(
                                             recharge_roboport,
                                             recharge_position,
-                                            BotGoal::DepositItem {
+                                            BotGoal::TryDepositItem {
                                                 current_charge: BOT_MAX_CHARGE,
                                                 item,
                                                 amount,
@@ -872,6 +884,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                     }
                 },
                 BotUpdate::TryStartChargingAndEnter(idx, current_charge, charge_pos) => {
+                    // TODO: Handle the case where the roboport was removed?
+                    // Or do I want to loop through all jobs to avoid having to check on the hot path?
                     let charge_needed = BOT_MAX_CHARGE - current_charge;
                     if self.roboports[idx as usize].current_charge < charge_needed {
                         // Requeue charging later
@@ -952,7 +966,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                             charge_needed.0 as f32 / BOT_CHARGING_RATE.joules_per_tick().0 as f32;
 
                         let ((time, update), render) = match next_goal {
-                            BotGoal::DepositItem {
+                            BotGoal::TryDepositItem {
                                 current_charge: BOT_MAX_CHARGE,
                                 item,
                                 amount,
@@ -997,6 +1011,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                     }
                 },
                 BotUpdate::Enter(idx) => {
+                    // FIXME: This will break if an inserter fills up a roboport before the bot arrives and will panic!!
                     self.roboports[idx as usize].logibots_idle = self.roboports[idx as usize]
                         .logibots_idle
                         .checked_add(1)
@@ -1014,8 +1029,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
             let source_pos = self.get_storage_pos(item, source);
             let roboport = self.get_closest_roboport_with_idle_bot_and_take_it(source_pos);
 
-            if let Some(roboport) = roboport {
-                let roboport_pos = self.get_roboport_position(roboport);
+            if let Some((roboport_id, roboport_pos)) = roboport {
                 let ((time, update), render) = self.go_withdraw(
                     roboport_pos,
                     BOT_MAX_CHARGE,
@@ -1040,7 +1054,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
         // Add the new flying logibots to the particle draw buffer
 
         info!(
-            "Adding {} new logibot draw commandes to the draw queue",
+            "Adding {} new logibot draw commands to the draw queue",
             render_infos.len()
         );
 
@@ -1061,6 +1075,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
         (vec![todo!()], vec![todo!()])
     }
 
+    // FIXME: This assumes all roboports are connected to a single power network.
+    // TODO: This might be a case where the single tick delay of the power grid power_mult could lead to problems
     fn update_roboports(&mut self, last_power_mult: u8) -> Joule {
         let mut power_needed = Joule(0);
 
