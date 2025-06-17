@@ -41,7 +41,7 @@ pub struct Replay<
 
     storage_location: Option<PathBuf>,
 
-    is_dummy: bool
+    is_dummy: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -75,9 +75,7 @@ impl<
         }
     }
 
-    pub fn new_dummy(
-        data_store: DataStor,
-    ) -> Self {
+    pub fn new_dummy(data_store: DataStor) -> Self {
         Self {
             starting_state: Box::new([]),
             actions: vec![],
@@ -86,7 +84,7 @@ impl<
             end_timestep: None,
 
             storage_location: None,
-            
+
             is_dummy: true,
         }
     }

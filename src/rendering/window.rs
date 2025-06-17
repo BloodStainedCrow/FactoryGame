@@ -199,7 +199,7 @@ impl winit::application::ApplicationHandler for App {
 
                                 match &loaded.state {
                                     LoadedGame::ItemU8RecipeU8(loaded_game_sized) => {
-                                        let mut game_state = loaded_game_sized.state.lock();
+                                        let game_state = loaded_game_sized.state.lock();
                                         let state_machine = loaded_game_sized.state_machine.lock();
                                         render_world(
                                             renderer,

@@ -2063,8 +2063,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     chunk.entities[index as usize].get_map_color(data_store)
                 } else {
                     // This could be part of an entity in a different chunk
-                    let our_chunk_x = (pos.x / i32::from(CHUNK_SIZE));
-                    let our_chunk_y = (pos.y / i32::from(CHUNK_SIZE));
+                    let our_chunk_x = pos.x / i32::from(CHUNK_SIZE);
+                    let our_chunk_y = pos.y / i32::from(CHUNK_SIZE);
 
                     let chunk_range_x = ((pos.x - i32::from(data_store.max_entity_size.0))
                         / i32::from(CHUNK_SIZE))
@@ -2155,8 +2155,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     } else {
                         assert!(chunk.entities[(index as usize)..(index as usize + 1)].len() == 1);
                         {
-                            let e_pos = chunk.entities[(index as usize)].get_pos();
-                            let e_size = chunk.entities[(index as usize)].get_size(data_store);
+                            let e_pos = chunk.entities[index as usize].get_pos();
+                            let e_size = chunk.entities[index as usize].get_size(data_store);
 
                             assert!(pos.overlap(size, e_pos, (e_size.0.into(), e_size.1.into())))
                         }
