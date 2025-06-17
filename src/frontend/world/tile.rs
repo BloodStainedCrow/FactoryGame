@@ -2096,7 +2096,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     }
 
                     // TODO: Get floor color
-                    Color32::PURPLE
+                    Color32::BLUE
                 }
             })
             .unwrap_or(Color32::BLACK)
