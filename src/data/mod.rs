@@ -977,7 +977,7 @@ impl RawDataStore {
             min_power_mod: 4,
 
             // TODO:
-            max_entity_size: (4, 4),
+            max_entity_size: (5, 5),
 
             recipe_names: self
                 .recipes

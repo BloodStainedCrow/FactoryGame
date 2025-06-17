@@ -8,6 +8,8 @@ pub mod eframe_app;
 mod render_world;
 pub mod window;
 
+pub mod map_view;
+
 #[derive(Debug)]
 struct EntitySprite {
     pub sprite: Sprite,

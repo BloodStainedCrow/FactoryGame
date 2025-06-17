@@ -1,6 +1,7 @@
 use std::{
     cmp::{min, Ordering},
     iter::successors,
+    mem,
     time::Duration,
 };
 
@@ -17,10 +18,14 @@ use crate::{
             set_recipe::SetRecipeInfo,
             ActionType,
         },
-        world::tile::{AssemblerInfo, Dir, Entity, BELT_LEN_PER_TILE, CHUNK_SIZE_FLOAT},
+        world::{
+            tile::{AssemblerInfo, Dir, Entity, BELT_LEN_PER_TILE, CHUNK_SIZE_FLOAT},
+            Position,
+        },
     },
     item::{usize_from, IdxTrait, Item, Recipe},
     power::{power_grid::MAX_POWER_MULT, Joule, Watt},
+    rendering::map_view::{self, create_map_textures_if_needed, MapViewUpdate},
     statistics::{
         NUM_SAMPLES_AT_INTERVALS, NUM_X_AXIS_TICKS, RELATIVE_INTERVAL_MULTS, TIMESCALE_LEGEND,
     },
@@ -34,6 +39,7 @@ use egui::{RichText, ScrollArea, Sense};
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
 use log::{info, trace, warn};
+use parking_lot::MutexGuard;
 use tilelib::types::{DrawInstance, Layer, RendererTrait};
 
 use super::{app_state::GameState, TextureAtlas};
@@ -45,15 +51,27 @@ use super::{app_state::GameState, TextureAtlas};
 #[allow(clippy::too_many_lines)]
 pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     renderer: &mut impl RendererTrait,
-    game_state: &GameState<ItemIdxType, RecipeIdxType>,
+    mut game_state: MutexGuard<GameState<ItemIdxType, RecipeIdxType>>,
     texture_atlas: &TextureAtlas,
-    state_machine: &ActionStateMachine<ItemIdxType, RecipeIdxType>,
+    state_machine: MutexGuard<ActionStateMachine<ItemIdxType, RecipeIdxType>>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
+    let mut updates: Vec<_> = vec![];
+
+    mem::swap(&mut updates, &mut game_state.world.map_updates);
+
+    map_view::apply_updates(
+        updates.drain(..).map(|pos| MapViewUpdate {
+            pos,
+            color: game_state.world.get_entity_color(pos, data_store),
+        }),
+        renderer,
+    );
+
     let ar = renderer.get_aspect_ratio();
 
     let num_tiles_across_screen_horizontal =
-        WIDTH_PER_LEVEL as f32 * state_machine.zoom_level * state_machine.zoom_level;
+        WIDTH_PER_LEVEL as f32 * 1.5f32.powf(state_machine.zoom_level);
     let num_tiles_across_screen_vertical = num_tiles_across_screen_horizontal / ar;
     let tilesize: f32 = 1.0 / num_tiles_across_screen_horizontal;
 
@@ -75,10 +93,43 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         (player_pos.1 / CHUNK_SIZE_FLOAT) as i32,
     );
 
+    const SWITCH_TO_MAPVIEW: f32 = if cfg!(debug_assertions) { 200.0 } else { 500.0 };
+    if num_tiles_across_screen_horizontal > SWITCH_TO_MAPVIEW {
+        mem::drop(state_machine);
+
+        create_map_textures_if_needed(
+            &game_state.world,
+            renderer,
+            Position {
+                x: player_pos.0 as i32,
+                y: player_pos.1 as i32,
+            },
+            num_tiles_across_screen_horizontal as usize,
+            num_tiles_across_screen_vertical as usize,
+            data_store,
+        );
+        mem::drop(game_state);
+
+        map_view::render_map_view(
+            renderer,
+            Position {
+                x: player_pos.0 as i32,
+                y: player_pos.1 as i32,
+            },
+            num_tiles_across_screen_horizontal,
+            num_tiles_across_screen_vertical,
+            num_tiles_across_screen_horizontal as usize,
+            num_tiles_across_screen_vertical as usize,
+            tilesize,
+            ar,
+            player_pos,
+        );
+        return;
+    }
+
     for x_offs in -((num_tiles_across_screen_horizontal / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
         ..=((num_tiles_across_screen_horizontal / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
     {
-        // TODO: Use different height (aspect ratio!)
         for y_offs in -((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
             ..=((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
         {

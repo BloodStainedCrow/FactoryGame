@@ -548,9 +548,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     ) -> Position {
         let mouse_pos = (
             ((mouse_pos.0) * (WIDTH_PER_LEVEL as f32))
-                .mul_add(zoom_level * zoom_level, player_pos.0),
+                .mul_add(1.5f32.powf(zoom_level), player_pos.0),
             ((mouse_pos.1) * (WIDTH_PER_LEVEL as f32))
-                .mul_add(zoom_level * zoom_level, player_pos.1),
+                .mul_add(1.5f32.powf(zoom_level), player_pos.1),
         );
 
         Position {

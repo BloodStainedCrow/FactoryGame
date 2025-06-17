@@ -1,8 +1,4 @@
-use std::{
-    cmp::min,
-    collections::HashMap,
-    mem,
-};
+use std::{cmp::min, collections::HashMap, mem};
 
 use itertools::Itertools;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};

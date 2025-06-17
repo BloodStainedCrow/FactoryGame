@@ -203,9 +203,9 @@ impl winit::application::ApplicationHandler for App {
                                         let state_machine = loaded_game_sized.state_machine.lock();
                                         render_world(
                                             renderer,
-                                            &game_state,
+                                            game_state,
                                             &self.texture_atlas,
-                                            &state_machine,
+                                            state_machine,
                                             &loaded_game_sized.data_store.lock(),
                                         )
                                     },

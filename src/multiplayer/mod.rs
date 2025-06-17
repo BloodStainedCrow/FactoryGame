@@ -114,7 +114,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 ))
             },
             GameInitData::DedicatedServer(game_state, info) => {
+                #[cfg(debug_assertions)]
                 let replay = Replay::new(&game_state, None, data_store.clone());
+                #[cfg(not(debug_assertions))]
+                let replay = Replay::new_dummy(data_store.clone());
                 Ok(Self::DedicatedServer(
                     game_state,
                     replay,
@@ -129,7 +132,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 inputs,
                 ui_actions,
             } => {
+                #[cfg(debug_assertions)]
                 let replay = Replay::new(&*game_state.lock(), None, data_store.clone());
+                #[cfg(not(debug_assertions))]
+                let replay = Replay::new_dummy(data_store.clone());
                 Ok(Self::IntegratedServer(
                     game_state,
                     replay,
