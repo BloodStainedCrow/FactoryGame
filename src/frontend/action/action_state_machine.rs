@@ -338,6 +338,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     ActionStateMachineState::Holding(HeldObject::Tile(FloorTile::Concrete));
                 vec![]
             },
+            (
+                ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Assembler {
+                    pos,
+                    ty,
+                })),
+                Key::Key2,
+            ) => {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::Assembler {
+                        pos: *pos,
+                        ty: (*ty + 1) % data_store.assembler_info.len() as u8,
+                    },
+                ));
+                vec![]
+            },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key2) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::Assembler {
@@ -347,7 +362,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             self.current_mouse_pos,
                         ),
                         // TODO:
-                        ty: 4,
+                        ty: 0,
                     },
                 ));
                 vec![]
@@ -412,6 +427,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ));
                 vec![]
             },
+            (
+                ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::PowerPole {
+                    pos,
+                    ty,
+                })),
+                Key::Key5,
+            ) => {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::PowerPole {
+                        pos: *pos,
+                        ty: (*ty + 1) % data_store.power_pole_data.len() as u8,
+                    },
+                ));
+                vec![]
+            },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key5) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::PowerPole {
@@ -451,6 +481,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     }));
                 vec![]
             },
+            (
+                ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::SolarPanel {
+                    pos,
+                    ty,
+                })),
+                Key::Key8,
+            ) => {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::SolarPanel {
+                        pos: *pos,
+                        ty: (*ty + 1) % data_store.solar_panel_info.len() as u8,
+                    },
+                ));
+                vec![]
+            },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key8) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::SolarPanel {
@@ -465,15 +510,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 vec![]
             },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key9) => {
-                self.state =
-                    ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Lab {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::FluidTank {
+                        ty: 1,
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
                             self.local_player_pos,
                             self.current_mouse_pos,
                         ),
-                        ty: 0,
-                    }));
+                        rotation: Dir::North,
+                    },
+                ));
                 vec![]
             },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key0) => {
@@ -501,6 +548,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         pos: *pos,
                         dir: dir.turn_right(),
                         filter: *filter,
+                    },
+                ));
+                vec![]
+            },
+            (
+                ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::FluidTank {
+                    pos,
+                    ty,
+                    rotation,
+                })),
+                Key::R,
+            ) => {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::FluidTank {
+                        ty: *ty,
+                        pos: *pos,
+                        rotation: rotation.turn_right(),
                     },
                 ));
                 vec![]

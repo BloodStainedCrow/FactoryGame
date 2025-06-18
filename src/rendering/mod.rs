@@ -52,7 +52,10 @@ impl EntitySprite {
         layer.draw_sprite(
             &self.sprite,
             DrawInstance {
-                position: [pos[0] + self.offset.0, pos[1] + self.offset.1],
+                position: [
+                    pos[0] + (self.offset.0 * tile_size[0] as f32),
+                    pos[1] + (self.offset.1 * tile_size[1] as f32),
+                ],
                 size: [
                     f32::from(tile_size[0]) * self.scaling.0,
                     f32::from(tile_size[1]) * self.scaling.1,
@@ -115,6 +118,8 @@ pub struct TextureAtlas {
     power_pole: EntitySprite,
 
     lab: EntitySprite,
+
+    dark_square: Sprite,
 
     default: Sprite,
 }
@@ -217,6 +222,12 @@ fn texture_atlas() -> TextureAtlas {
     let beacon_dimensions = beacon.dimensions();
     let beacon = beacon.to_rgba8().into_vec();
 
+    let dark_square = include_bytes!("temp_assets/dark_square.png");
+    let dark_square = image::load_from_memory(dark_square).unwrap();
+
+    let dark_square_dimensions = dark_square.dimensions();
+    let dark_square = dark_square.to_rgba8().into_vec();
+
     TextureAtlas {
         outside_world: Sprite::new(Texture::new(1, black.clone(), black_dimensions)),
         blue: Sprite::new(Texture::new(1, blue, blue_dimensions)),
@@ -271,6 +282,8 @@ fn texture_atlas() -> TextureAtlas {
             belt_north,
             belt_north_dimensions,
         ))),
+
+        dark_square: Sprite::new(Texture::new(1, dark_square, dark_square_dimensions)),
 
         default: Sprite::new(Texture::default()),
     }
@@ -392,6 +405,12 @@ fn texture_atlas() -> TextureAtlas {
     let beacon_dimensions = beacon.dimensions();
     let beacon = beacon.to_rgba8().into_vec();
 
+    let dark_square = include_bytes!("temp_assets/dark_square.png");
+    let dark_square = image::load_from_memory(dark_square).unwrap();
+
+    let dark_square_dimensions = dark_square.dimensions();
+    let dark_square = dark_square.to_rgba8().into_vec();
+
     TextureAtlas {
         outside_world: Sprite::new(Texture::new(1, black.clone(), black_dimensions)),
         blue: Sprite::new(Texture::new(1, blue, blue_dimensions)),
@@ -441,6 +460,8 @@ fn texture_atlas() -> TextureAtlas {
         ),
 
         lab: EntitySprite::new_tiling(Sprite::new(Texture::new(1, lab, lab_dimensions))),
+
+        dark_square: Sprite::new(Texture::new(1, dark_square, dark_square_dimensions)),
 
         default: Sprite::new(Texture::default()),
     }

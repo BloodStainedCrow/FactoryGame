@@ -413,6 +413,7 @@ pub fn get_raw_data_fn() -> RawDataStore {
             tile_size: (3, 3),
             working_power_draw: Watt(60_000),
             fluid_connection_offsets: vec![],
+            fluid_connection_flowthrough: vec![],
             num_module_slots: 2,
             base_bonus_prod: 0,
             base_speed: 1,

@@ -395,13 +395,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                         },
                     ]
                 },
-                crate::frontend::world::tile::Entity::FluidTank { ty, pos, rotation } => todo!(),
-                crate::frontend::world::tile::Entity::UndergroundPipe {
-                    ty,
-                    pos,
-                    rotation,
-                    connection,
-                } => todo!(),
+                crate::frontend::world::tile::Entity::FluidTank { ty, pos, rotation } => {
+                    vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                        entities: EntityPlaceOptions::Single(PlaceEntityType::FluidTank {
+                            ty: *ty,
+                            pos: *pos,
+                            rotation: *rotation,
+                        }),
+                    })]
+                },
             };
 
             bp.actions.extend(actions);

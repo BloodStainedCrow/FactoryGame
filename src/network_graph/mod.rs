@@ -196,6 +196,92 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
         )
     }
 
+    #[profiling::function]
+    pub fn remove_edge<'a>(
+        &'a mut self,
+        a: NodeKey,
+        b: NodeKey,
+    ) -> Option<
+        impl IntoIterator<Item = (Self, impl IntoIterator<Item = NodeKey>)> + use<'a, NodeKey, S, W>,
+    > {
+        let Some(edge_index) = self.graph.find_edge(
+            *self.key_map.get_by_left(&a).unwrap(),
+            *self.key_map.get_by_left(&b).unwrap(),
+        ) else {
+            // There was no connection
+            return None;
+        };
+
+        assert!(self.graph.remove_edge(edge_index).is_some());
+
+        // Use kosaraju_scc instead of tarjan_scc since tarjan_scc is recursive and will overflow the stack for huge power grids
+        let mut components = {
+            profiling::scope!("Calculate Graph Components");
+            petgraph::algo::kosaraju_scc(&self.graph)
+        };
+
+        // Pop the first component, (which will stay in this network)
+        // TODO: It is probably good to have the largest component stay, but testing is required
+        components.sort_by_key(|v| -(v.len() as isize));
+
+        assert!(!components.is_empty());
+
+        // All remaining components (if any), will be turned into other networks
+        let move_to_another_network = components;
+
+        let new_networks = {
+            profiling::scope!("Build new networks");
+            move_to_another_network.into_iter().map(|component| {
+                let connections: Vec<_> = component
+                    .iter()
+                    .map(|idx| self.graph.edges(*idx))
+                    .flat_map(|edges| edges)
+                    .map(|edge| (edge.source(), edge.target()))
+                    .collect();
+
+                let mut new_graph = StableUnGraph::default();
+
+                let new_indices: Vec<_> = component
+                    .iter()
+                    .map(|idx: &petgraph::prelude::NodeIndex| {
+                        new_graph.add_node(self.graph.remove_node(*idx).unwrap())
+                    })
+                    .collect();
+
+                for (source, dest) in connections {
+                    let source_idx_old = component.iter().position(|v| *v == source).unwrap();
+                    let dest_idx_old = component.iter().position(|v| *v == dest).unwrap();
+
+                    new_graph.add_edge(new_indices[source_idx_old], new_indices[dest_idx_old], ());
+                }
+
+                let keys_in_this: Vec<_> = component
+                    .iter()
+                    .map(|old_node| self.key_map.get_by_right(old_node).unwrap().clone())
+                    .collect();
+
+                (
+                    Network {
+                        graph: new_graph,
+                        key_map: component
+                            .iter()
+                            .copied()
+                            .map(|old_node| {
+                                let (pos, _) = self.key_map.remove_by_right(&old_node).unwrap();
+                                let idx_old =
+                                    component.iter().position(|v| *v == old_node).unwrap();
+                                (pos, new_indices[idx_old])
+                            })
+                            .collect(),
+                    },
+                    keys_in_this,
+                )
+            })
+        };
+
+        Some(new_networks)
+    }
+
     pub fn add_weak_element(&mut self, key: NodeKey, value: W) -> WeakIndex {
         let weak_components = &mut self
             .graph

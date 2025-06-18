@@ -13,13 +13,16 @@ use crate::{
     frontend::{
         action::{
             action_state_machine::{
-                ActionStateMachine, ActionStateMachineState, StatisticsPanel, WIDTH_PER_LEVEL,
+                ActionStateMachine, ActionStateMachineState, HeldObject, StatisticsPanel,
+                WIDTH_PER_LEVEL,
             },
             set_recipe::SetRecipeInfo,
             ActionType,
         },
         world::{
-            tile::{AssemblerInfo, Dir, Entity, BELT_LEN_PER_TILE, CHUNK_SIZE_FLOAT},
+            tile::{
+                AssemblerInfo, Dir, Entity, PlaceEntityType, BELT_LEN_PER_TILE, CHUNK_SIZE_FLOAT,
+            },
             Position,
         },
     },
@@ -84,7 +87,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     let mut warning_layer = Layer::square_tile_grid(tilesize, ar);
 
-    let range_layer = Layer::square_tile_grid(tilesize, ar);
+    let mut range_layer = Layer::square_tile_grid(tilesize, ar);
 
     let player_pos = state_machine.local_player_pos;
 
@@ -474,6 +477,32 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     0,
                                     &mut entity_layer,
                                 );
+
+                                let power_range =
+                                    data_store.power_pole_data[usize::from(*ty)].power_range;
+
+                                if let ActionStateMachineState::Holding(HeldObject::Entity(e)) =
+                                    state_machine.state
+                                {
+                                    if e.cares_about_power() {
+                                        range_layer.draw_sprite(
+                                            &texture_atlas.dark_square,
+                                            DrawInstance {
+                                                position: [
+                                                    chunk_draw_offs.0 + (pos.x % 16) as f32
+                                                        - power_range as f32,
+                                                    chunk_draw_offs.1 + (pos.y % 16) as f32
+                                                        - power_range as f32,
+                                                ],
+                                                size: [
+                                                    power_range as f32 * 2.0 + size[0] as f32,
+                                                    power_range as f32 * 2.0 + size[1] as f32,
+                                                ],
+                                                animation_frame: 0,
+                                            },
+                                        );
+                                    }
+                                }
                             },
 
                             Entity::Splitter { pos, direction, id } => {
@@ -749,7 +778,6 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 crate::frontend::action::action_state_machine::HeldObject::Entity(
                     place_entity_type,
                 ) => match place_entity_type {
-                    // TODO:
                     crate::frontend::world::tile::PlaceEntityType::Assembler { ty, pos } => {
                         let size: [u16; 2] = [
                             data_store.assembler_info[usize::from(*ty)].size.0,
@@ -771,9 +799,76 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         pos,
                         dir,
                         filter,
-                    } => {},
-                    crate::frontend::world::tile::PlaceEntityType::Belt { pos, direction } => {},
-                    crate::frontend::world::tile::PlaceEntityType::PowerPole { pos, ty } => {},
+                    } => {
+                        let size: [u16; 2] = [1, 1];
+                        entity_layer.draw_sprite(
+                            &texture_atlas.inserter[*dir],
+                            DrawInstance {
+                                position: [
+                                    pos.x as f32 - state_machine.local_player_pos.0
+                                        + num_tiles_across_screen_horizontal / 2.0,
+                                    pos.y as f32 - state_machine.local_player_pos.1
+                                        + num_tiles_across_screen_vertical / 2.0,
+                                ],
+                                size: [size[0].into(), size[1].into()],
+                                animation_frame: 0,
+                            },
+                        );
+                    },
+                    crate::frontend::world::tile::PlaceEntityType::Belt { pos, direction } => {
+                        let size: [u16; 2] = [1, 1];
+                        entity_layer.draw_sprite(
+                            &texture_atlas.belt[*direction],
+                            DrawInstance {
+                                position: [
+                                    pos.x as f32 - state_machine.local_player_pos.0
+                                        + num_tiles_across_screen_horizontal / 2.0,
+                                    pos.y as f32 - state_machine.local_player_pos.1
+                                        + num_tiles_across_screen_vertical / 2.0,
+                                ],
+                                size: [size[0].into(), size[1].into()],
+                                animation_frame: 0,
+                            },
+                        );
+                    },
+                    crate::frontend::world::tile::PlaceEntityType::PowerPole { pos, ty } => {
+                        let size: [u16; 2] = [
+                            data_store.power_pole_data[usize::from(*ty)].size.0,
+                            data_store.power_pole_data[usize::from(*ty)].size.1,
+                        ];
+                        texture_atlas.power_pole.draw(
+                            [
+                                pos.x as f32 - state_machine.local_player_pos.0
+                                    + num_tiles_across_screen_horizontal / 2.0,
+                                pos.y as f32 - state_machine.local_player_pos.1
+                                    + num_tiles_across_screen_vertical / 2.0,
+                            ],
+                            size,
+                            0,
+                            &mut entity_layer,
+                        );
+
+                        let power_range = data_store.power_pole_data[usize::from(*ty)].power_range;
+
+                        range_layer.draw_sprite(
+                            &texture_atlas.dark_square,
+                            DrawInstance {
+                                position: [
+                                    (pos.x as f32 - power_range as f32)
+                                        - state_machine.local_player_pos.0
+                                        + num_tiles_across_screen_horizontal / 2.0,
+                                    (pos.y as f32 - power_range as f32)
+                                        - state_machine.local_player_pos.1
+                                        + num_tiles_across_screen_vertical / 2.0,
+                                ],
+                                size: [
+                                    power_range as f32 * 2.0 + size[0] as f32,
+                                    power_range as f32 * 2.0 + size[1] as f32,
+                                ],
+                                animation_frame: 0,
+                            },
+                        );
+                    },
                     crate::frontend::world::tile::PlaceEntityType::Splitter {
                         pos,
                         direction,
@@ -781,7 +876,22 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         out_mode,
                     } => {},
                     crate::frontend::world::tile::PlaceEntityType::Chest { pos, ty } => {},
-                    crate::frontend::world::tile::PlaceEntityType::SolarPanel { pos, ty } => {},
+                    crate::frontend::world::tile::PlaceEntityType::SolarPanel { pos, ty } => {
+                        let size = data_store.solar_panel_info[usize::from(*ty)].size;
+                        entity_layer.draw_sprite(
+                            &texture_atlas.default,
+                            DrawInstance {
+                                position: [
+                                    pos.x as f32 - state_machine.local_player_pos.0
+                                        + num_tiles_across_screen_horizontal / 2.0,
+                                    pos.y as f32 - state_machine.local_player_pos.1
+                                        + num_tiles_across_screen_vertical / 2.0,
+                                ],
+                                size: [size[0] as f32, size[1] as f32],
+                                animation_frame: 0,
+                            },
+                        );
+                    },
                     crate::frontend::world::tile::PlaceEntityType::Lab { pos, ty } => {},
                     crate::frontend::world::tile::PlaceEntityType::Beacon { pos, ty } => {},
                     crate::frontend::world::tile::PlaceEntityType::FluidTank {

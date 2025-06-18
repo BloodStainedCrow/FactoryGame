@@ -1,4 +1,5 @@
 use crate::data::AllowedFluidDirection;
+use crate::frontend::world::tile::PlaceEntityType;
 use crate::liquid::connection_logic::can_fluid_tanks_connect_to_single_connection;
 use crate::liquid::FluidConnectionDir;
 use crate::{
@@ -43,6 +44,7 @@ use crate::{
 use itertools::Itertools;
 use log::{info, trace, warn};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
+use std::collections::HashMap;
 use std::iter;
 use std::{
     borrow::Borrow,
@@ -914,15 +916,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 continue;
                             }
 
+                            let search_range =
+                                data_store.fluid_tank_infos[usize::from(ty)].max_search_range;
+
                             // Get connecting entities:
-                            let connecting_fluid_box_positions = self
+                            let mut connecting_fluid_box_positions: Vec<_> = self
                                 .world
                                 .get_entities_colliding_with(
                                     Position {
-                                        x: pos.x - 1,
-                                        y: pos.y - 1,
+                                        x: pos.x - i32::from(search_range),
+                                        y: pos.y - i32::from(search_range),
                                     },
-                                    (size[0] + 2, size[1] + 2),
+                                    (size[0] + 2 * search_range, size[1] + 2 * search_range),
                                     data_store,
                                 )
                                 .into_iter()
@@ -961,25 +966,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             data_store,
                                         );
 
-                                        we_can_connect.then_some(*other_pos)
+                                        we_can_connect
                                     },
-                                    Entity::UndergroundPipe {
-                                        ty,
-                                        pos,
-                                        rotation,
-                                        connection: Some(conn),
-                                    } => todo!(),
-
-                                    Entity::UndergroundPipe {
-                                        ty,
-                                        pos,
-                                        rotation,
-                                        connection: None,
-                                    } => todo!(),
 
                                     // TODO: There are some future entities which might need connections like mining drills
                                     _ => None,
-                                });
+                                })
+                                .collect();
 
                             let in_out_connections = self
                                 .world
@@ -1004,6 +997,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             },
                                         ..
                                     } => {
+                                        let assembler_size = data_store.assembler_info
+                                            [usize::from(*assembler_ty)]
+                                        .size;
+                                        let assembler_size = [assembler_size.0, assembler_size.1];
+
                                         let recipe_fluid_inputs: Vec<_> = data_store
                                             .recipe_to_items[&id.recipe]
                                             .iter()
@@ -1067,33 +1065,33 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             );
 
                                         Some(all_connections_with_items.filter_map(
-                                            |((item, (fluid_conn, _allowed)), fluid_dir)| {
+                                            move |((item, (fluid_conn, _allowed)), fluid_dir)| {
                                                 can_fluid_tanks_connect_to_single_connection(
                                                     pos,
                                                     ty,
                                                     rotation,
-                                                    Position {
-                                                        x: assembler_pos.x
-                                                            + i32::from(fluid_conn.offset[0]),
-                                                        y: assembler_pos.y
-                                                            + i32::from(fluid_conn.offset[1]),
-                                                    },
-                                                    fluid_conn.dir,
+                                                    *assembler_pos,
+                                                    *fluid_conn,
+                                                    // FIXME: Pass in the assemblers rotation
+                                                    Dir::North,
+                                                    assembler_size,
                                                     data_store,
                                                 )
-                                                .then_some((
-                                                    fluid_dir,
-                                                    item,
-                                                    Storage::Assembler {
-                                                        grid: id.grid,
-                                                        index: id.assembler_index,
-                                                        recipe_idx_with_this_item: data_store
-                                                            .recipe_to_translated_index
-                                                            [&(id.recipe, item)],
-                                                    },
-                                                    Box::new(|_weak_index: WeakIndex| {})
-                                                        as Box<dyn FnOnce(WeakIndex) -> ()>,
-                                                ))
+                                                .map(|(dest_conn, dest_conn_dir)| {
+                                                    (
+                                                        fluid_dir,
+                                                        item,
+                                                        Storage::Assembler {
+                                                            grid: id.grid,
+                                                            index: id.assembler_index,
+                                                            recipe_idx_with_this_item: data_store
+                                                                .recipe_to_translated_index
+                                                                [&(id.recipe, item)],
+                                                        },
+                                                        Box::new(|_weak_index: WeakIndex| {})
+                                                            as Box<dyn FnOnce(WeakIndex) -> ()>,
+                                                    )
+                                                })
                                             },
                                         ))
                                     },
@@ -1112,10 +1110,70 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 })
                                 .flatten();
 
+                            // TODO: Only keep the closest connection for each connection
+                            // connecting_fluid_box_positions.retain(
+                            //     |(dest_pos, conn_dir_of_destination)| {
+                            //         let mut current_pos = *dest_pos;
+
+                            //         loop {
+                            //             if current_pos.contained_in(pos, size.into()) {
+                            //                 return true;
+                            //             }
+
+                            //             if let Some(e) = self
+                            //                 .world
+                            //                 .get_entities_colliding_with(
+                            //                     current_pos,
+                            //                     (1, 1),
+                            //                     data_store,
+                            //                 )
+                            //                 .into_iter()
+                            //                 .next()
+                            //             {
+                            //                 match e {
+                            //                     Entity::FluidTank {
+                            //                         ty: found_ty,
+                            //                         pos: found_pos,
+                            //                         rotation: found_rotation,
+                            //                     } => {
+                            //                         if can_fluid_tanks_connect(
+                            //                             pos,
+                            //                             ty,
+                            //                             rotation,
+                            //                             *found_pos,
+                            //                             *found_ty,
+                            //                             *found_rotation,
+                            //                             data_store,
+                            //                         )
+                            //                         .is_some()
+                            //                         {
+                            //                             // The underground should connect with the found fluid tank instead
+                            //                             return false;
+                            //                         }
+                            //                     },
+                            //                     Entity::Assembler { ty: found_ty, pos: found_pos, modules: found_modules, info: found_info } => {
+                            //                         for conn in data_store.assembler_info[usize::from(*found_ty)].fluid_connections {
+                            //                             if can_fluid_tanks_connect_to_single_connection(pos, ty, rotation, *found_pos, conn.0, Dir::North, data_store.assembler_info[usize::from(*found_ty)].size.into(), data_store).is_some() {
+                            //                                 // The underground should connect with the found machine instead
+                            //                                 return false;
+                            //                             }
+                            //                         }
+                            //                     }
+                            //                     _ => {},
+                            //                 }
+                            //             }
+
+                            //             current_pos = current_pos + *conn_dir_of_destination;
+                            //         }
+                            //     },
+                            // );
+
+                            // TODO: Check if us connecting might break any already existing connections
+
                             let ret = self.simulation_state.factory.fluid_store.try_add_fluid_box(
                                 pos,
                                 data_store.fluid_tank_infos[usize::from(ty)].capacity,
-                                connecting_fluid_box_positions,
+                                connecting_fluid_box_positions.iter().map(|v| v.0),
                                 in_out_connections,
                                 &mut self.simulation_state.factory.chests,
                                 &mut self.simulation_state.factory.storage_storage_inserters,
@@ -1720,7 +1778,7 @@ mod tests {
         DATA_STORE,
     };
     use proptest::{
-        prelude::{Just, ProptestConfig, Strategy},
+        prelude::{Just, Strategy},
         prop_assert, prop_assert_eq, prop_assume, proptest,
     };
     use test::Bencher;

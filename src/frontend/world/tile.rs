@@ -1074,12 +1074,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 pole_position: None,
             } => {},
             Entity::FluidTank { .. } => {},
-            Entity::UndergroundPipe {
-                ty,
-                pos,
-                rotation,
-                connection,
-            } => todo!(),
         };
 
         for x_offs in 0..entity.get_size(data_store).0 {
@@ -1220,7 +1214,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             .into_iter()
             .next()
             .map(|e| match e {
-                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }| Entity::FluidTank { .. } | Entity::UndergroundPipe { .. }   => None,
+                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }| Entity::FluidTank { .. }  => None,
 
                 Entity::Roboport { ty, pos, power_grid, network, id } => {
                     // TODO:
@@ -1321,7 +1315,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             .into_iter()
             .next()
             .map(|e| match e {
-                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }| Entity::FluidTank { .. } | Entity::UndergroundPipe { .. }  => None,
+                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }| Entity::FluidTank { .. }  => None,
 
                 Entity::Roboport { ty, pos, power_grid, network, id } => {
                     // TODO:
@@ -1832,8 +1826,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     | Entity::Splitter { .. }
                     | Entity::Chest { .. }
                     | Entity::Beacon { .. }
-                    | Entity::FluidTank { .. }
-                    | Entity::UndergroundPipe { .. } => {},
+                    | Entity::FluidTank { .. } => {},
                 }
             }
         }
@@ -1869,7 +1862,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     Entity::Chest { .. } => {},
                     Entity::Roboport { .. } => {},
                     Entity::FluidTank { .. } => {},
-                    Entity::UndergroundPipe { .. } => {},
                     Entity::Belt { id, belt_pos, .. }
                     | Entity::Underground { id, belt_pos, .. } => {
                         if *id == old_id && belt_pos_earliest <= *belt_pos {
@@ -1931,7 +1923,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     Entity::Chest { .. } => {},
                     Entity::Roboport { .. } => {},
                     Entity::FluidTank { .. } => {},
-                    Entity::UndergroundPipe { .. } => {},
                     Entity::Belt { id, belt_pos, .. }
                     | Entity::Underground { id, belt_pos, .. } => {
                         if *id == id_to_change {
@@ -2252,12 +2243,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         data_store,
                     );
                 },
-                Entity::UndergroundPipe {
-                    ty,
-                    pos,
-                    rotation,
-                    connection,
-                } => todo!(),
                 Entity::Beacon {
                     pos,
                     ty,
@@ -2976,13 +2961,6 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         pos: Position,
         rotation: Dir,
     },
-    UndergroundPipe {
-        ty: u8,
-        pos: Position,
-        rotation: Dir,
-
-        connection: Option<UndergroundPipeConnection<ItemIdxType>>,
-    },
 }
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
@@ -3006,7 +2984,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::Lab { pos, .. } => *pos,
             Self::Beacon { pos, .. } => *pos,
             Self::FluidTank { pos, .. } => *pos,
-            Self::UndergroundPipe { pos, .. } => *pos,
         }
     }
 
@@ -3033,7 +3010,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::Lab { ty, .. } => data_store.lab_info[usize::from(*ty)].size,
             Self::Beacon { ty, .. } => data_store.beacon_info[usize::from(*ty)].size,
             Self::FluidTank { ty, .. } => data_store.fluid_tank_infos[usize::from(*ty)].size.into(),
-            Self::UndergroundPipe { .. } => todo!(),
         }
     }
 
@@ -3051,7 +3027,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::Lab { .. } => Color32::from_hex("#ff90bd").unwrap(),
             Self::Beacon { .. } => Color32::from_hex("#008192").unwrap(),
             Self::FluidTank { .. } => Color32::from_hex("b429ff").unwrap(),
-            Self::UndergroundPipe { .. } => todo!(),
+        }
+    }
+
+    pub fn cares_about_power(&self) -> bool {
+        match self {
+            Self::Assembler { .. } => true,
+            Self::PowerPole { .. } => true,
+            Self::Belt { .. } => false,
+            Self::Inserter { .. } => false,
+            Self::Underground { .. } => false,
+            Self::Splitter { .. } => false,
+            Self::Chest { .. } => false,
+            Self::Roboport { .. } => true,
+            Self::SolarPanel { .. } => true,
+            Self::Lab { .. } => true,
+            Self::Beacon { .. } => true,
+            Self::FluidTank { .. } => false,
         }
     }
 }
@@ -3111,6 +3103,25 @@ pub enum PlaceEntityType<ItemIdxType: WeakIdxTrait> {
         pos: Position,
         rotation: Dir,
     },
+}
+
+impl<ItemIdxType: IdxTrait> PlaceEntityType<ItemIdxType> {
+    pub fn cares_about_power(&self) -> bool {
+        match self {
+            Self::Assembler { .. } => true,
+            Self::PowerPole { .. } => true,
+            Self::Belt { .. } => false,
+            Self::Inserter { .. } => false,
+            // Self::Underground { .. } => false,
+            Self::Splitter { .. } => false,
+            Self::Chest { .. } => false,
+            // Self::Roboport { .. } => true,
+            Self::SolarPanel { .. } => true,
+            Self::Lab { .. } => true,
+            Self::Beacon { .. } => true,
+            Self::FluidTank { .. } => false,
+        }
+    }
 }
 
 #[derive(

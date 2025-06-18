@@ -517,7 +517,7 @@
             is_intermediate: true,
         ),
         (
-            name: "factory_game::raw_oil_generatiom",
+            name: "factory_game::raw_oil_generation",
             display_name: "Generate Raw Oil",
             possible_machines: [
                 "factory_game::chemical_plant",
@@ -817,6 +817,7 @@
                     ),
                     offset: (1, 0),
                     pipe_connection_direction: North,
+                    connection_type: Direct,
                 )
             ],
             fluid_connection_flowthrough: [],
@@ -836,6 +837,7 @@
                     ),
                     offset: (1, 0),
                     pipe_connection_direction: North,
+                    connection_type: Direct,
                 )
             ],
             fluid_connection_flowthrough: [],
@@ -866,6 +868,7 @@
                     ),
                     offset: (0, 0),
                     pipe_connection_direction: North,
+                    connection_type: Direct,
                 ),
                 (
                     allowed_fluid_directions: Single(
@@ -873,6 +876,7 @@
                     ),
                     offset: (2, 0),
                     pipe_connection_direction: North,
+                    connection_type: Direct,
                 ),
                 (
                     allowed_fluid_directions: Single(
@@ -880,6 +884,7 @@
                     ),
                     offset: (0, 2),
                     pipe_connection_direction: South,
+                    connection_type: Direct,
                 ),
                 (
                     allowed_fluid_directions: Single(
@@ -887,6 +892,7 @@
                     ),
                     offset: (2, 2),
                     pipe_connection_direction: South,
+                    connection_type: Direct,
                 ),
             ],
             fluid_connection_flowthrough: [],
@@ -906,6 +912,7 @@
                     ),
                     offset: (0, 0),
                     pipe_connection_direction: North,
+                    connection_type: Direct,
                 ),
                 (
                     allowed_fluid_directions: Single(
@@ -913,6 +920,7 @@
                     ),
                     offset: (2, 0),
                     pipe_connection_direction: North,
+                    connection_type: Direct,
                 ),
                 (
                     allowed_fluid_directions: Single(
@@ -920,6 +928,7 @@
                     ),
                     offset: (4, 0),
                     pipe_connection_direction: North,
+                    connection_type: Direct,
                 ),
                 (
                     allowed_fluid_directions: Single(
@@ -927,6 +936,7 @@
                     ),
                     offset: (1, 4),
                     pipe_connection_direction: South,
+                    connection_type: Direct,
                 ),
                 (
                     allowed_fluid_directions: Single(
@@ -934,6 +944,7 @@
                     ),
                     offset: (3, 4),
                     pipe_connection_direction: South,
+                    connection_type: Direct,
                 ),
             ],
             fluid_connection_flowthrough: [],
@@ -1073,10 +1084,23 @@
             tile_size: (1, 1),
             capacity: 100,
             connections: [
-                ((0, 0), North),
-                ((0, 0), South),
-                ((0, 0), East),
-                ((0, 0), West),
+                ((0, 0), North, Direct),
+                ((0, 0), South, Direct),
+                ((0, 0), East, Direct),
+                ((0, 0), West, Direct),
+            ],
+        ),
+        (
+            name: "factory_game::underground_pipe",
+            display_name: "Underground Pipe",
+            tile_size: (1, 1),
+            capacity: 100,
+            connections: [
+                ((0, 0), North, Direct),
+                ((0, 0), South, Underground (
+                    max_distance: 9,
+                    underground_allowed_kinds: ["default"]
+                )),
             ],
         ),
         (
@@ -1085,11 +1109,12 @@
             tile_size: (3, 3),
             capacity: 25000,
             connections: [
-                ((0, 0), North),
-                ((0, 0), East),
-                ((2, 2), South),
-                ((2, 2), West),
+                ((0, 0), North, Direct),
+                ((0, 0), East, Direct),
+                ((2, 2), South, Direct),
+                ((2, 2), West, Direct),
             ],
         )
+        
     ],
 )
