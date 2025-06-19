@@ -78,7 +78,7 @@ pub struct PowerGrid<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     steam_power_producers: SteamPowerProducerStore,
 
     // TODO: Currently there can only be a single type of solar panel and accumulator
-    num_solar_panels: Box<[u64]>,
+    pub num_solar_panels: Box<[u64]>,
     pub main_accumulator_count: Box<[u64]>,
     pub main_accumulator_charge: Box<[Joule]>,
     // unique_accumulators: Vec<UniqueAccumulator>,
@@ -416,14 +416,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     pub fn remove_solar_panel(
         &mut self,
         pole_connection: Position,
-        weak_idx: WeakIndex,
+        entity_pos: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         assert!(!self.is_placeholder);
 
         let (_, PowerGridEntity::SolarPanel { ty }) = self
             .grid_graph
-            .remove_weak_element(pole_connection, weak_idx)
+            .remove_weak_element_with_filter(pole_connection, |(pos, _)| *pos == entity_pos)
         else {
             unreachable!()
         };

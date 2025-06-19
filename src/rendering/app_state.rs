@@ -1,5 +1,4 @@
 use crate::data::AllowedFluidDirection;
-use crate::frontend::world::tile::PlaceEntityType;
 use crate::liquid::connection_logic::can_fluid_tanks_connect_to_single_connection;
 use crate::liquid::FluidConnectionDir;
 use crate::{
@@ -44,7 +43,6 @@ use crate::{
 use itertools::Itertools;
 use log::{info, trace, warn};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
-use std::collections::HashMap;
 use std::iter;
 use std::{
     borrow::Borrow,
@@ -221,6 +219,30 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         for y_pos in (1600..60_000).step_by(3) {
             ret.update(data_store);
             for x_pos in (1600..3000).step_by(50) {
+                bp.apply(Position { x: x_pos, y: y_pos }, &mut ret, data_store);
+            }
+        }
+
+        ret
+    }
+
+    #[must_use]
+    pub fn new_with_tons_of_solar(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+        let mut ret = Self {
+            current_tick: 0,
+            world: World::new(),
+            simulation_state: SimulationState::new(data_store),
+            statistics: GenStatistics::new(data_store),
+            update_times: Timeline::new(false, data_store),
+            last_update_time: None,
+        };
+
+        let file = File::open("test_blueprints/solar_farm.bp").unwrap();
+        let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
+
+        for y_pos in (1600..60_000).step_by(18) {
+            ret.update(data_store);
+            for x_pos in (1600..3000).step_by(18) {
                 bp.apply(Position { x: x_pos, y: y_pos }, &mut ret, data_store);
             }
         }
@@ -581,7 +603,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             }
 
                             let powered_by = self.world.is_powered_by(
-                                &self.simulation_state,
                                 pos,
                                 data_store.assembler_info[ty as usize].size,
                                 data_store,
@@ -766,12 +787,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 continue;
                             }
 
-                            let powered_by = self.world.is_powered_by(
-                                &self.simulation_state,
-                                pos,
-                                size,
-                                data_store,
-                            );
+                            let powered_by = self.world.is_powered_by(pos, size, data_store);
 
                             let powered_by = if let Some(pole_pos) = powered_by {
                                 let grid = self
@@ -784,19 +800,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     &mut self.simulation_state.factory.power_grids.power_grids
                                         [usize::from(grid)];
 
-                                let weak_idx = grid.add_solar_panel(pos, ty, pole_pos, data_store);
+                                // We do not store the weakindex, since a solar panel is fungible (if the type is the same)
+                                let _weak_idx = grid.add_solar_panel(pos, ty, pole_pos, data_store);
 
-                                Some((pole_pos, weak_idx))
+                                Some(pole_pos)
                             } else {
                                 None
                             };
 
                             self.world.add_entity(
-                                Entity::SolarPanel {
-                                    pos,
-                                    ty,
-                                    pole_position: powered_by,
-                                },
+                                Entity::SolarPanel { pos, ty },
                                 &mut self.simulation_state,
                                 data_store,
                             );
@@ -820,7 +833,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 .into_boxed_slice();
 
                             let powered_by = self.world.is_powered_by(
-                                &self.simulation_state,
                                 pos,
                                 data_store.lab_info[usize::from(ty)].size,
                                 data_store,
@@ -875,7 +887,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             .into_boxed_slice();
 
                             let powered_by = self.world.is_powered_by(
-                                &self.simulation_state,
                                 pos,
                                 data_store.beacon_info[usize::from(ty)].size,
                                 data_store,
@@ -960,9 +971,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             pos,
                                             ty,
                                             rotation,
-                                            *other_pos,
-                                            *other_ty,
-                                            *other_rotation,
+                                            other_pos,
+                                            other_ty,
+                                            other_rotation,
                                             data_store,
                                         );
 
@@ -998,7 +1009,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         ..
                                     } => {
                                         let assembler_size = data_store.assembler_info
-                                            [usize::from(*assembler_ty)]
+                                            [usize::from(assembler_ty)]
                                         .size;
                                         let assembler_size = [assembler_size.0, assembler_size.1];
 
@@ -1022,7 +1033,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             .collect();
 
                                         let fluid_pure_outputs: Vec<_> = data_store.assembler_info
-                                            [usize::from(*assembler_ty)]
+                                            [usize::from(assembler_ty)]
                                         .fluid_connections
                                         .iter()
                                         .filter(|(_conn, allowed)| {
@@ -1036,7 +1047,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         .collect();
 
                                         let fluid_pure_inputs: Vec<_> = data_store.assembler_info
-                                            [usize::from(*assembler_ty)]
+                                            [usize::from(assembler_ty)]
                                         .fluid_connections
                                         .iter()
                                         .filter(|(_conn, allowed)| {
@@ -1070,7 +1081,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                     pos,
                                                     ty,
                                                     rotation,
-                                                    *assembler_pos,
+                                                    assembler_pos,
                                                     *fluid_conn,
                                                     // FIXME: Pass in the assemblers rotation
                                                     Dir::North,
@@ -1889,7 +1900,7 @@ mod tests {
 
             prop_assume!(game_state.simulation_state.factory.power_grids.power_grids[usize::from(id.grid)].last_power_mult == MAX_POWER_MULT);
 
-            let info = game_state.simulation_state.factory.power_grids.power_grids[usize::from(id.grid)].get_assembler_info(*id, &DATA_STORE);
+            let info = game_state.simulation_state.factory.power_grids.power_grids[usize::from(id.grid)].get_assembler_info(id, &DATA_STORE);
 
             prop_assert!((info.power_consumption_mod - 0.7).abs() < 1.0e-6, "power_consumption_mod: {:?}", info.power_consumption_mod);
             prop_assert!((info.base_speed - 1.25).abs() < 1.0e-6, "base_speed: {:?}", info.base_speed);
@@ -1926,7 +1937,7 @@ mod tests {
 
             prop_assume!(game_state.simulation_state.factory.power_grids.power_grids[usize::from(id.grid)].last_power_mult == MAX_POWER_MULT);
 
-            let info = game_state.simulation_state.factory.power_grids.power_grids[usize::from(id.grid)].get_assembler_info(*id, &DATA_STORE);
+            let info = game_state.simulation_state.factory.power_grids.power_grids[usize::from(id.grid)].get_assembler_info(id, &DATA_STORE);
 
             prop_assert_eq!(info.base_power_consumption, Watt(375_000), "base_power_consumption: {:?}", info.base_power_consumption);
             prop_assert!((info.base_speed - 1.25).abs() < 1.0e-6, "base_speed: {:?}", info.base_speed);

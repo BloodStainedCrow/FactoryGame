@@ -4,6 +4,7 @@
 #![feature(array_try_map)]
 #![feature(never_type)]
 #![feature(mixed_integer_ops_unsigned_sub)]
+#![feature(impl_trait_in_bindings)]
 
 extern crate test;
 
@@ -207,7 +208,8 @@ fn run_integrated_server(
                     // GameState::new_with_beacon_production(&data_store)
                     // GameState::new_with_beacon_belt_production(&data_store)
                     // GameState::new_with_lots_of_belts(&data_store)
-                    GameState::new(&data_store)
+                    GameState::new_with_tons_of_solar(&data_store)
+                    // GameState::new(&data_store)
                 }),
             ));
 

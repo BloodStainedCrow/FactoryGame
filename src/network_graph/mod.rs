@@ -313,6 +313,28 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
             .unwrap()
     }
 
+    pub fn remove_weak_element_with_filter(
+        &mut self,
+        key: NodeKey,
+        filter: impl Fn(&W) -> bool,
+    ) -> W {
+        for weak_slot in self
+            .graph
+            .node_weight_mut(*self.key_map.get_by_left(&key).unwrap())
+            .unwrap()
+            .connected_weak_components
+            .iter_mut()
+        {
+            if let Some(weak_element) = weak_slot {
+                if filter(&weak_element) {
+                    return weak_slot.take().unwrap();
+                }
+            }
+        }
+
+        unreachable!()
+    }
+
     #[profiling::function]
     pub fn add_node_merging(
         &mut self,

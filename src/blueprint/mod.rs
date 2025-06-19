@@ -242,7 +242,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                                 x: pos.x - base_pos.x,
                                 y: pos.y - base_pos.y,
                             },
-                            ty: *ty,
+                            ty,
                         }),
                     }),
                     ActionType::AddModules {
@@ -270,7 +270,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                                 x: pos.x - base_pos.x,
                                 y: pos.y - base_pos.y,
                             },
-                            ty: *ty,
+                            ty,
                         }),
                     }),
                     ActionType::SetRecipe(SetRecipeInfo {
@@ -278,7 +278,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                             x: pos.x - base_pos.x,
                             y: pos.y - base_pos.y,
                         },
-                        recipe: *recipe,
+                        recipe,
                     }),
                     ActionType::AddModules {
                         pos: Position {
@@ -295,7 +295,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                                 x: pos.x - base_pos.x,
                                 y: pos.y - base_pos.y,
                             },
-                            ty: *ty,
+                            ty,
                         }),
                     })]
                 },
@@ -306,7 +306,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                                 x: pos.x - base_pos.x,
                                 y: pos.y - base_pos.y,
                             },
-                            direction: *direction,
+                            direction,
                         }),
                     })]
                 },
@@ -325,7 +325,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                                 x: pos.x - base_pos.x,
                                 y: pos.y - base_pos.y,
                             },
-                            dir: *direction,
+                            dir: direction,
                             filter: None,
                         }),
                     })]
@@ -337,7 +337,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                                 x: pos.x - base_pos.x,
                                 y: pos.y - base_pos.y,
                             },
-                            ty: *ty,
+                            ty,
                         }),
                     })]
                 },
@@ -351,7 +351,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                 crate::frontend::world::tile::Entity::SolarPanel { pos, ty, .. } => {
                     vec![ActionType::PlaceEntity(PlaceEntityInfo {
                         entities: EntityPlaceOptions::Single(PlaceEntityType::SolarPanel {
-                            ty: *ty,
+                            ty,
                             pos: Position {
                                 x: pos.x - base_pos.x,
                                 y: pos.y - base_pos.y,
@@ -362,7 +362,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                 crate::frontend::world::tile::Entity::Lab { pos, ty, .. } => {
                     vec![ActionType::PlaceEntity(PlaceEntityInfo {
                         entities: EntityPlaceOptions::Single(PlaceEntityType::Lab {
-                            ty: *ty,
+                            ty,
                             pos: Position {
                                 x: pos.x - base_pos.x,
                                 y: pos.y - base_pos.y,
@@ -379,7 +379,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                     vec![
                         ActionType::PlaceEntity(PlaceEntityInfo {
                             entities: EntityPlaceOptions::Single(PlaceEntityType::Beacon {
-                                ty: *ty,
+                                ty,
                                 pos: Position {
                                     x: pos.x - base_pos.x,
                                     y: pos.y - base_pos.y,
@@ -398,9 +398,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                 crate::frontend::world::tile::Entity::FluidTank { ty, pos, rotation } => {
                     vec![ActionType::PlaceEntity(PlaceEntityInfo {
                         entities: EntityPlaceOptions::Single(PlaceEntityType::FluidTank {
-                            ty: *ty,
-                            pos: *pos,
-                            rotation: *rotation,
+                            ty,
+                            pos,
+                            rotation,
                         }),
                     })]
                 },

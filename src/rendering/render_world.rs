@@ -20,9 +20,7 @@ use crate::{
             ActionType,
         },
         world::{
-            tile::{
-                AssemblerInfo, Dir, Entity, PlaceEntityType, BELT_LEN_PER_TILE, CHUNK_SIZE_FLOAT,
-            },
+            tile::{AssemblerInfo, Dir, Entity, BELT_LEN_PER_TILE, CHUNK_SIZE_FLOAT},
             Position,
         },
     },
@@ -1200,13 +1198,22 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         });
 
                         TableBuilder::new(ui).columns(Column::auto(), 2).body(|body| {
-                            body.rows(1.0, pg.num_assemblers_of_type.len(), |mut row| {
+                            body.rows(1.0, pg.num_assemblers_of_type.len() + pg.num_solar_panels.len(), |mut row| {
                                 let i = row.index();
-                                row.col(|ui| {
-                                    ui.add(Label::new(&data_store.assembler_info[i].display_name).extend());
 
-                                    });
-                                row.col(|ui| {ui.label(format!("{}", pg.num_assemblers_of_type[i]));});
+                                if i < pg.num_assemblers_of_type.len() {
+                                    row.col(|ui| {
+                                        ui.add(Label::new(&data_store.assembler_info[i].display_name).extend());
+    
+                                        });
+                                    row.col(|ui| {ui.label(format!("{}", pg.num_assemblers_of_type[i]));});
+                                } else {
+                                    row.col(|ui| {
+                                        ui.add(Label::new(&data_store.solar_panel_info[i].name).extend());
+    
+                                        });
+                                    row.col(|ui| {ui.label(format!("{}", pg.num_solar_panels[i]));});
+                                }
                             });
                         });
 
@@ -1334,7 +1341,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     Entity::Lab { pos, ty, modules, pole_position } => {
                         // TODO
                     },
-                    Entity::SolarPanel { pos, ty, pole_position } => {
+                    Entity::SolarPanel { pos, ty } => {
                         // TODO
                     }
                     Entity::Beacon { pos, ty, modules, pole_position } => {

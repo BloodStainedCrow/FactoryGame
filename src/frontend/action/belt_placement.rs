@@ -83,12 +83,12 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     .next()
                     .unwrap()
                 {
-                    Entity::Belt { id, .. } => *id,
+                    Entity::Belt { id, .. } => id,
                     Entity::Underground {
                         underground_dir: UndergroundDir::Entrance,
                         id,
                         ..
-                    } => *id,
+                    } => id,
                     Entity::Splitter { .. } => todo!("get the id from the simstate"),
                     _ => unreachable!(),
                 };
@@ -242,7 +242,7 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         id,
                         underground_dir: UndergroundDir::Exit,
                         ..
-                    } => *id,
+                    } => id,
                     Entity::Splitter { .. } => todo!(),
                     _ => unreachable!(),
                 };
@@ -282,7 +282,7 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         belt_pos,
                         underground_dir: UndergroundDir::Exit,
                         ..
-                    } => (*id, *belt_pos),
+                    } => (id, belt_pos),
                     Entity::Splitter { .. } => todo!(),
                     _ => unreachable!(),
                 };
@@ -343,7 +343,7 @@ fn handle_belt_breaking<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             let entity = game_state.world.get_entities_colliding_with(pos_which_might_break, (1,1), data_store).into_iter().next().unwrap();
 
             let (id,belt_pos_to_break_at) = match entity {
-                Entity::Belt { belt_pos, id, .. } => (*id, *belt_pos),
+                Entity::Belt { belt_pos, id, .. } => (id, belt_pos),
                 Entity::Underground { .. } => {
                     // Undergrounds cannot be curved, so this is not a problem
                     return;
@@ -459,9 +459,9 @@ fn get_belt_dir_for_sideloading<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         .into_iter()
         .next()
         .map(|e| match e {
-            Entity::Belt { direction, .. } => Some(*direction),
-            Entity::Underground { direction, .. } => Some(*direction),
-            Entity::Splitter { direction, .. } => Some(*direction),
+            Entity::Belt { direction, .. } => Some(direction),
+            Entity::Underground { direction, .. } => Some(direction),
+            Entity::Splitter { direction, .. } => Some(direction),
             _ => None,
         })
         .flatten()
@@ -477,13 +477,13 @@ fn get_belt_in_dir<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         .into_iter()
         .next()
         .map(|e| match e {
-            Entity::Belt { direction, .. } => Some(*direction),
+            Entity::Belt { direction, .. } => Some(direction),
             Entity::Underground {
                 direction,
                 underground_dir: UndergroundDir::Entrance,
                 ..
-            } => Some(*direction),
-            Entity::Splitter { direction, .. } => Some(*direction),
+            } => Some(direction),
+            Entity::Splitter { direction, .. } => Some(direction),
             _ => None,
         })
         .flatten()
@@ -499,13 +499,13 @@ fn get_belt_out_dir<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         .into_iter()
         .next()
         .map(|e| match e {
-            Entity::Belt { direction, .. } => Some(*direction),
+            Entity::Belt { direction, .. } => Some(direction),
             Entity::Underground {
                 direction,
                 underground_dir: UndergroundDir::Exit,
                 ..
-            } => Some(*direction),
-            Entity::Splitter { direction, .. } => Some(*direction),
+            } => Some(direction),
+            Entity::Splitter { direction, .. } => Some(direction),
             _ => None,
         })
         .flatten()
@@ -581,12 +581,12 @@ fn should_merge<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         .next()
                         .unwrap()
                     {
-                        Entity::Belt { id, .. } => Some(*id),
+                        Entity::Belt { id, .. } => Some(id),
                         Entity::Underground {
                             underground_dir: UndergroundDir::Entrance,
                             id,
                             ..
-                        } => Some(*id),
+                        } => Some(id),
                         Entity::Underground {
                             underground_dir: UndergroundDir::Exit,
                             ..
@@ -611,7 +611,7 @@ fn should_merge<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             .next()
                             .unwrap()
                         {
-                            Entity::Belt { id, .. } => Some(*id),
+                            Entity::Belt { id, .. } => Some(id),
                             Entity::Underground { .. } => None,
                             Entity::Splitter { .. } => None,
                             _ => unreachable!(),
@@ -665,7 +665,7 @@ fn should_sideload<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             .unwrap()
                         {
                             Entity::Belt { id, belt_pos, .. }
-                            | Entity::Underground { id, belt_pos, .. } => Some((*id, *belt_pos)),
+                            | Entity::Underground { id, belt_pos, .. } => Some((id, belt_pos)),
                             Entity::Splitter { .. } => None,
                             _ => unreachable!(),
                         }
@@ -911,11 +911,11 @@ mod test {
                 unreachable!()
             };
 
-            let items_at_intersection = state.simulation_state.factory.belts.get_item_iter(*id).into_iter().next().expect(&format!("{:?}", state.simulation_state.factory.belts.get_item_iter(*id).into_iter().collect::<Vec<_>>())).is_some();
+            let items_at_intersection = state.simulation_state.factory.belts.get_item_iter(id).into_iter().next().expect(&format!("{:?}", state.simulation_state.factory.belts.get_item_iter(id).into_iter().collect::<Vec<_>>())).is_some();
 
             prop_assert!(state.statistics.production.total.unwrap().items_produced.iter().copied().sum::<u64>() > 0);
 
-            prop_assert!(items_at_intersection, "{:?}, \n{:?}", state.simulation_state.factory.belts, state.simulation_state.factory.belts.get_item_iter(*id).into_iter().collect::<Vec<_>>());
+            prop_assert!(items_at_intersection, "{:?}, \n{:?}", state.simulation_state.factory.belts, state.simulation_state.factory.belts.get_item_iter(id).into_iter().collect::<Vec<_>>());
         }
 
         #[test]
@@ -956,7 +956,7 @@ mod test {
 
             prop_assume!(produced > 0, "{:?}", produced);
 
-            prop_assert!(dbg!(state.simulation_state.factory.belts.get_item_iter(*id_going_down).into_iter().next().unwrap()).is_some(),"down: {:?}\n, right:{:?}", state.simulation_state.factory.belts.get_item_iter(*id_going_down).into_iter().collect::<Vec<_>>(), state.simulation_state.factory.belts.get_item_iter(*id_going_right).into_iter().collect::<Vec<_>>());
+            prop_assert!(dbg!(state.simulation_state.factory.belts.get_item_iter(id_going_down).into_iter().next().unwrap()).is_some(),"down: {:?}\n, right:{:?}", state.simulation_state.factory.belts.get_item_iter(id_going_down).into_iter().collect::<Vec<_>>(), state.simulation_state.factory.belts.get_item_iter(id_going_right).into_iter().collect::<Vec<_>>());
         }
 
     }
