@@ -1409,6 +1409,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 },
                             }
                         },
+                        crate::frontend::world::tile::PlaceEntityType::MiningDrill {
+                            ty,
+                            pos,
+                            rotation,
+                        } => todo!("Place Mining Drill"),
                     },
                     crate::frontend::action::place_entity::EntityPlaceOptions::Multiple(vec) => {
                         todo!()

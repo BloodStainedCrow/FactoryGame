@@ -364,6 +364,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                     self.local_player_pos,
                                     self.current_mouse_pos,
                                 );},
+                                PlaceEntityType::MiningDrill { ty: _, pos, rotation: _  } => {*pos = Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.local_player_pos,
+                                    self.current_mouse_pos,
+                                );},
                             },
                         },
                         ActionStateMachineState::Decontructing(position, timer) =>{
@@ -429,8 +434,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
         match (&self.state, key) {
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key1) => {
-                self.state =
-                    ActionStateMachineState::Holding(HeldObject::Tile(FloorTile::Concrete));
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::MiningDrill {
+                        ty: 0,
+                        pos: Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.local_player_pos,
+                            self.current_mouse_pos,
+                        ),
+                        rotation: Dir::North,
+                    },
+                ));
                 vec![]
             },
             (

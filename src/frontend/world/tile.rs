@@ -1,10 +1,12 @@
 use std::{
-    cmp::min,
+    array,
+    cmp::{min, Ordering},
     collections::{BTreeMap, BTreeSet, HashMap},
     marker::PhantomData,
     ops::{Add, ControlFlow},
 };
 
+use eframe::wgpu::hal::auxil::db;
 use egui::Color32;
 
 use enum_map::{Enum, EnumMap};
@@ -12,6 +14,8 @@ use log::warn;
 use strum::EnumIter;
 
 use itertools::Itertools;
+
+use noise::{NoiseFn, OpenSimplex, Perlin, Simplex};
 
 use crate::{
     belt::{
@@ -57,6 +61,23 @@ pub struct Chunk<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub floor_tiles: Option<Box<[[FloorTile; CHUNK_SIZE as usize]; CHUNK_SIZE as usize]>>,
     chunk_tile_to_entity_into: Option<Box<[[u8; CHUNK_SIZE as usize]; CHUNK_SIZE as usize]>>,
     entities: Vec<Entity<ItemIdxType, RecipeIdxType>>,
+
+    // We box this here to not pay the RAM cost of storing ore for chunks which contain no ore at all, (which are most chunks)
+    // TODO: We could also use a HashMap for this, which is a bet positive for RAM usage, iff less than 1/(1 + HashMapOverhead) of the chunk is filled with ore (AFAIK 1/(1 + 0.75) ~= 57%)
+    // Is that the case for chunks which contain ore?
+    floor_ore: Option<Box<FloorOre<ItemIdxType>>>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+enum FloorOre<ItemIdxType: WeakIdxTrait> {
+    AllSame {
+        ore: Item<ItemIdxType>,
+        amounts: [[u32; CHUNK_SIZE as usize]; CHUNK_SIZE as usize],
+    },
+    Mixed {
+        // We Box this here to not increase the RAM consumption of chunks which only contain a single type of ore (which are most chunks with ore)
+        mixed_ores: Box<[[(Item<ItemIdxType>, u32); CHUNK_SIZE as usize]; CHUNK_SIZE as usize]>,
+    },
 }
 
 fn is_default<T: Default + PartialEq>(val: &T) -> bool {
@@ -692,14 +713,34 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeIdxType> {
     #[must_use]
     pub fn new() -> Self {
+        const ORE_THRESHHOLD: f64 = 0.80;
+        const ORE_DISTANCE_MULT: f64 = 1.0 / 100.0;
+
         let mut grid = SparseGrid::new();
         #[cfg(debug_assertions)]
         const WORLDSIZE_CHUNKS: i32 = 200;
         #[cfg(not(debug_assertions))]
         const WORLDSIZE_CHUNKS: i32 = 4000;
 
+        let noise = OpenSimplex::new(1);
+
         for x in 50..WORLDSIZE_CHUNKS {
             for y in 50..WORLDSIZE_CHUNKS {
+                let ore_noise: Vec<_> = (0..CHUNK_SIZE)
+                    .cartesian_product(0..CHUNK_SIZE)
+                    .map(|(x_offs, y_offs)| {
+                        (
+                            x * CHUNK_SIZE as i32 + x_offs as i32,
+                            y * CHUNK_SIZE as i32 + y_offs as i32,
+                        )
+                    })
+                    .map(|(x, y)| {
+                        (noise.get([x as f64 * ORE_DISTANCE_MULT, y as f64 * ORE_DISTANCE_MULT]))
+                    })
+                    .collect();
+
+                let has_ore = ore_noise.iter().any(|v| *v > ORE_THRESHHOLD);
+
                 grid.insert(
                     x,
                     y,
@@ -707,6 +748,25 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         floor_tiles: None,
                         chunk_tile_to_entity_into: None,
                         entities: vec![],
+
+                        floor_ore: if has_ore {
+                            Some(Box::new(FloorOre::AllSame {
+                                ore: Item {
+                                    id: ItemIdxType::try_from(0).unwrap(),
+                                },
+                                amounts: array::from_fn(|x| {
+                                    array::from_fn(|y| {
+                                        if ore_noise[x * CHUNK_SIZE as usize + y] > ORE_THRESHHOLD {
+                                            200
+                                        } else {
+                                            0
+                                        }
+                                    })
+                                }),
+                            }))
+                        } else {
+                            None
+                        },
                     },
                 );
             }
@@ -728,6 +788,38 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
             map_updates: None,
         }
+    }
+
+    pub fn get_ore_at_pos(&self, pos: Position) -> Option<(Item<ItemIdxType>, u32)> {
+        let chunk = self.get_chunk_for_tile(pos)?;
+
+        let ores = chunk.floor_ore.as_ref()?;
+
+        let x = (pos.x % CHUNK_SIZE as i32) as usize;
+        let y = (pos.y % CHUNK_SIZE as i32) as usize;
+
+        match &**ores {
+            FloorOre::AllSame { ore, amounts } => {
+                (amounts[x][y] > 0).then_some((*ore, amounts[x][y]))
+            },
+            FloorOre::Mixed { mixed_ores } => (mixed_ores[x][y].1 > 0).then_some(mixed_ores[x][y]),
+        }
+    }
+
+    pub fn get_ore_in_area(&self, pos: Position, size: [u16; 2]) -> Vec<(Item<ItemIdxType>, u32)> {
+        (pos.x..(pos.x + size[0] as i32))
+            .cartesian_product(pos.y..(pos.y + size[1] as i32))
+            .flat_map(|(x, y)| self.get_ore_at_pos(Position { x, y }))
+            .into_group_map()
+            .into_iter()
+            // FIXME: This will panic if ore patches are too rich
+            .flat_map(|(item, amounts)| {
+                let sum = amounts.iter().sum();
+                (sum > 0).then_some((item, sum))
+            })
+            // We need to sort in some way, since HashMap::into_iter() does not guarantee any order
+            .sorted_by_key(|(_, amount)| *amount)
+            .collect()
     }
 
     pub fn get_belt_possible_inputs(&mut self, pos: Position) -> &EnumMap<Dir, bool> {
@@ -2110,8 +2202,39 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         }
                     }
 
-                    // TODO: Get floor color
-                    Color32::BLUE
+                    if let Some(ore) = &chunk.floor_ore {
+                        match &**ore {
+                            FloorOre::AllSame { ore, amounts } => {
+                                if amounts
+                                    [usize::try_from(pos.x.rem_euclid(CHUNK_SIZE as i32)).unwrap()]
+                                    [usize::try_from(pos.y.rem_euclid(CHUNK_SIZE as i32)).unwrap()]
+                                    > 0
+                                {
+                                    // TODO ORE COLOR
+                                    Color32::LIGHT_BLUE
+                                } else {
+                                    // TODO: Get floor color
+                                    Color32::BLUE
+                                }
+                            },
+                            FloorOre::Mixed { mixed_ores } => {
+                                if mixed_ores
+                                    [usize::try_from(pos.x.rem_euclid(CHUNK_SIZE as i32)).unwrap()]
+                                    [usize::try_from(pos.y.rem_euclid(CHUNK_SIZE as i32)).unwrap()]
+                                .1 > 0
+                                {
+                                    // TODO ORE COLOR
+                                    Color32::LIGHT_BLUE
+                                } else {
+                                    // TODO: Get floor color
+                                    Color32::BLUE
+                                }
+                            },
+                        }
+                    } else {
+                        // TODO: Get floor color
+                        Color32::BLUE
+                    }
                 }
             })
             .unwrap_or(Color32::BLACK)
@@ -2735,6 +2858,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         size: (u16, u16),
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> bool {
+        // TODO: Make sure all chunks are generated
         self.get_entities_colliding_with(pos, (size.0 as u16, size.1 as u16), data_store)
             .into_iter()
             .next()
@@ -3000,6 +3124,12 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         pos: Position,
         rotation: Dir,
     },
+    // TODO:
+    // MiningDrill {
+    //     ty: u8,
+    //     pos: Position,
+    //     rotation: Dir,
+    // },
 }
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
@@ -3142,6 +3272,11 @@ pub enum PlaceEntityType<ItemIdxType: WeakIdxTrait> {
         pos: Position,
         rotation: Dir,
     },
+    MiningDrill {
+        ty: u8,
+        pos: Position,
+        rotation: Dir,
+    },
 }
 
 impl<ItemIdxType: IdxTrait> PlaceEntityType<ItemIdxType> {
@@ -3159,6 +3294,7 @@ impl<ItemIdxType: IdxTrait> PlaceEntityType<ItemIdxType> {
             Self::Lab { .. } => true,
             Self::Beacon { .. } => true,
             Self::FluidTank { .. } => false,
+            Self::MiningDrill { .. } => true,
         }
     }
 }

@@ -284,6 +284,7 @@ pub struct BeaconInfo {
     pub size: (u16, u16),
     pub num_module_slots: u8,
     pub effectiveness: (u8, u8),
+    // TODO: Currently mining range must be centered on the mining drill
     pub effect_range: (u16, u16),
     pub power_consumption: Watt,
 }
@@ -415,6 +416,19 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     pub technology_costs: Vec<(u64, Box<[ITEMCOUNTTYPE]>)>,
     // pub belt_info: Vec<BeltInfo>,
+    pub mining_drill_info: Vec<MiningDrillInfo>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
+pub struct MiningDrillInfo {
+    pub name: String,
+    pub size: [u16; 2],
+    // TODO: Currently mining range must be centered on the mining drill
+    pub mining_range: [u16; 2],
+    pub base_speed: u16,
+    // Fraction
+    pub resource_drain: (u8, u8),
+    // TODO: Allowed ore types
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
@@ -984,6 +998,15 @@ impl RawDataStore {
 
         DataStore {
             checksum,
+
+            // FIXME:
+            mining_drill_info: vec![MiningDrillInfo {
+                name: "Electric Mining Drill".to_string(),
+                size: [3, 3],
+                mining_range: [5, 5],
+                base_speed: 20,
+                resource_drain: (1, 1),
+            }],
 
             recipe_allowed_assembling_machines: self
                 .recipes

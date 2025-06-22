@@ -20,7 +20,7 @@ use crate::{
             ActionType,
         },
         world::{
-            tile::{AssemblerInfo, Dir, Entity, BELT_LEN_PER_TILE, CHUNK_SIZE_FLOAT},
+            tile::{AssemblerInfo, Dir, Entity, BELT_LEN_PER_TILE, CHUNK_SIZE, CHUNK_SIZE_FLOAT},
             Position,
         },
     },
@@ -144,7 +144,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     + (0.5 * num_tiles_across_screen_vertical),
             );
 
-            match game_state.world.get_chunk(
+            let (chunk_x, chunk_y) = (
                 player_chunk
                     .0
                     .checked_add(x_offs.try_into().unwrap())
@@ -153,7 +153,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     .1
                     .checked_add(y_offs.try_into().unwrap())
                     .unwrap(),
-            ) {
+            );
+
+            match game_state.world.get_chunk(chunk_x, chunk_y) {
                 Some(chunk) => {
                     for (x, row) in chunk
                         .floor_tiles
@@ -189,6 +191,27 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         },
                                     );
                                 },
+                            }
+
+                            if game_state
+                                .world
+                                .get_ore_at_pos(Position {
+                                    x: chunk_x * CHUNK_SIZE as i32 + x as i32,
+                                    y: chunk_y * CHUNK_SIZE as i32 + y as i32,
+                                })
+                                .is_some()
+                            {
+                                tile_layer.draw_sprite(
+                                    &texture_atlas.items[0],
+                                    DrawInstance {
+                                        position: [
+                                            chunk_draw_offs.0 + x as f32,
+                                            chunk_draw_offs.1 + y as f32,
+                                        ],
+                                        size: [1.0, 1.0],
+                                        animation_frame: 0,
+                                    },
+                                );
                             }
                         }
                     }
@@ -962,6 +985,54 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         pos,
                         rotation,
                     } => {},
+                    crate::frontend::world::tile::PlaceEntityType::MiningDrill {
+                        ty,
+                        pos,
+                        rotation,
+                    } => {
+                        // FIXME: Rotation
+                        let size = data_store.mining_drill_info[usize::from(*ty)].size;
+
+                        // TODO:
+                        texture_atlas.chest.draw(
+                            [
+                                pos.x as f32 - state_machine.local_player_pos.0
+                                    + num_tiles_across_screen_horizontal / 2.0,
+                                pos.y as f32 - state_machine.local_player_pos.1
+                                    + num_tiles_across_screen_vertical / 2.0,
+                            ],
+                            size,
+                            0,
+                            &mut entity_layer,
+                        );
+
+                        let mining_range =
+                            data_store.mining_drill_info[usize::from(*ty)].mining_range;
+
+                        range_layer.draw_sprite(
+                            &texture_atlas.dark_square,
+                            DrawInstance {
+                                position: [
+                                    (pos.x as f32 - ((mining_range[0] - size[0]) / 2) as f32)
+                                        - state_machine.local_player_pos.0
+                                        + num_tiles_across_screen_horizontal / 2.0,
+                                    (pos.y as f32 - ((mining_range[1] - size[1]) / 2) as f32)
+                                        - state_machine.local_player_pos.1
+                                        + num_tiles_across_screen_vertical / 2.0,
+                                ],
+                                size: [mining_range[0] as f32, mining_range[1] as f32],
+                                animation_frame: 0,
+                            },
+                        );
+
+                        dbg!(game_state.world.get_ore_in_area(
+                            Position {
+                                x: pos.x - ((mining_range[0] - size[0]) / 2) as i32,
+                                y: pos.y - ((mining_range[1] - size[1]) / 2) as i32
+                            },
+                            mining_range
+                        ));
+                    },
                 },
             }
         },
