@@ -20,7 +20,7 @@ struct PureDrillConcept<ItemIdxType: WeakIdxTrait> {
     output_inserter: Option<!>,
 }
 
-pub struct PureDrillStorage<ItemIdxType: WeakIdxTrait> {
+pub struct PureDrillStorageWithSharedOreTiles<ItemIdxType: WeakIdxTrait> {
     item: Item<ItemIdxType>,
     holes: Vec<usize>,
 
@@ -36,7 +36,7 @@ pub struct PureDrillStorage<ItemIdxType: WeakIdxTrait> {
     shared_sources: Vec<Vec<u32>>,
 }
 
-impl<ItemIdxType: IdxTrait> PureDrillStorage<ItemIdxType> {
+impl<ItemIdxType: IdxTrait> PureDrillStorageWithSharedOreTiles<ItemIdxType> {
     pub fn new<RecipeIdxType: IdxTrait>(
         item: Item<ItemIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -304,7 +304,6 @@ mod test {
         iter,
     };
 
-    use eframe::wgpu::hal::auxil::db;
     use itertools::Itertools;
     use proptest::{
         array::uniform5,
@@ -312,7 +311,7 @@ mod test {
         prop_assert, prop_assert_eq, proptest,
     };
 
-    use crate::mining_drill::calculate_threshholds;
+    use crate::mining_drill::with_shared_ore::calculate_threshholds;
 
     #[test]
     fn test_threshhold_empty() {

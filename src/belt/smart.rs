@@ -3,7 +3,7 @@ use std::iter::repeat;
 use log::info;
 
 use crate::{
-    inserter::{belt_storage_inserter::BeltStorageInserter, InserterState, Storage, MOVETIME},
+    inserter::{belt_storage_inserter::BeltStorageInserter, InserterState, MOVETIME},
     item::{IdxTrait, Item, WeakIdxTrait},
     storage_list::SingleItemStorages,
 };
@@ -204,6 +204,16 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
     pub fn set_inserter_storage_id(&mut self, belt_pos: u16, new: FakeUnionStorage) {
         let mut pos = 0;
 
+        dbg!(&new);
+
+        if new.grid_or_static_flag == 2 {
+            dbg!(&new);
+        }
+
+        if belt_pos == 143 {
+            dbg!(&new);
+        }
+
         for (offset, inserter) in self
             .inserters
             .offsets
@@ -220,9 +230,11 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
                         belt_storage_inserter.storage_id = new;
                     },
                 }
-            } else if pos >= belt_pos {
+                return;
+            } else if pos > belt_pos {
                 unreachable!()
             }
+            pos += 1;
         }
     }
 
@@ -313,6 +325,10 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             "Bounds check {index} >= {}",
             self.locs.len()
         );
+
+        if index == 143 {
+            dbg!(&storage_id);
+        }
 
         if filter != self.item {
             return Err(InserterAdditionError::ItemMismatch);
@@ -430,8 +446,6 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         num_recipes: usize,
         grid_size: usize,
     ) {
-        // FIXME: This has a critical bug. FreeIndex does not get set correctly,
-        // which could result in parts of the belt not working correctly
         debug_assert_eq!(self.inserters.inserters.len(), self.inserters.offsets.len());
         let mut items_mut_iter = Self::items_mut(&mut self.locs, self.zero_index);
 
@@ -528,6 +542,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         }
     }
 
+    // #[profiling::function]
     fn find_and_update_real_first_free_index(&mut self) -> Option<BeltLenType> {
         let new_free_index = match self.first_free_index {
             FreeIndex::FreeIndex(index) => {

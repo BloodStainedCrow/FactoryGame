@@ -42,6 +42,7 @@ parking_lot = "0.12.3"
 profiling = { version = "1.0.16", features = ["profile-with-puffin"] }
 puffin_egui = "0.29"
 puffin = "0.19"
+dhat = "0.3.3"
 
 [patch.crates-io]
 puffin_egui = { git = "https://github.com/BloodStainedCrow/puffin" }
@@ -49,6 +50,9 @@ puffin = { git = "https://github.com/BloodStainedCrow/puffin" }
 egui = { git = "https://github.com/BloodStainedCrow/egui", branch = "removeProfiling" }
 eframe = { git = "https://github.com/BloodStainedCrow/egui", branch = "removeProfiling" }
 egui-wgpu = { git = "https://github.com/BloodStainedCrow/egui", branch = "removeProfiling" }
+
+# [patch."https://github.com/BloodStainedCrow/tilelib"]
+# tilelib = { path = "../tilelib" }
 
 [lints.rust]
 # TODO:
@@ -88,3 +92,5 @@ lto = true
 [features]
 # Use Krastorio2 graphics. Since I have not properly added licensing information, I currently do not push them, therefore this feature is broken
 graphics = []
+# dhat-rs memory profiling (https://docs.rs/dhat/latest/dhat/)
+dhat-heap = []

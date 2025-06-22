@@ -276,6 +276,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         let mut connected_poles: Vec<_> = connected_poles.into_iter().collect();
 
         if let Some(first_connection) = connected_poles.last() {
+            // TODO: Choose this grid based on which is best for performance! (Maybe largest grid?)
             let grid = self.pole_pos_to_grid_id[first_connection];
 
             let need_to_merge = !connected_poles
@@ -343,6 +344,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                         connected_poles.is_empty(),
                         "Not all connected_poles ended up in final power grid!"
                     );
+
+                    assert!(storage_update_vec
+                        .iter()
+                        .map(|update| update.position)
+                        .all_unique());
                 }
 
                 Some((poles_to_update, storage_update_vec))

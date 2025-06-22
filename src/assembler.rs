@@ -1,4 +1,4 @@
-use std::{array, simd::Simd};
+use std::{array, i32, simd::Simd, u8};
 
 use itertools::Itertools;
 
@@ -21,6 +21,8 @@ pub type TIMERTYPE = u16;
 // FIXME: We store the same slice length n times!
 // TODO: Do I want to use SimdTypes for this?
 // TODO: Don´t clump update data and data for adding/removing assemblers together!
+
+// FIXME: Using Boxed slices here is probably the main contributor to the time usage for building large power grids, since this means reallocation whenever we add assemblers!
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MultiAssemblerStore<
     RecipeIdxType: WeakIdxTrait,
@@ -62,8 +64,8 @@ pub struct MultiAssemblerStore<
     prod_timers: Box<[TIMERTYPE]>,
 
     holes: Vec<usize>,
-    positions: Vec<Position>,
-    types: Vec<u8>,
+    positions: Box<[Position]>,
+    types: Box<[u8]>,
     len: usize,
 }
 
@@ -337,8 +339,8 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             base_power_consumption: vec![].into_boxed_slice(),
 
             holes: vec![],
-            positions: vec![],
-            types: vec![],
+            positions: vec![].into_boxed_slice(),
+            types: vec![].into_boxed_slice(),
             len: 0,
         }
     }
@@ -353,7 +355,29 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         Self,
         impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
     ) {
-        let old_len = self.positions.len();
+        #[cfg(debug_assertions)]
+        {
+            for (i, pos) in self.positions.iter().enumerate() {
+                assert_eq!(
+                    (self.holes.contains(&i) || i >= self.len),
+                    (pos.x == i32::MAX)
+                );
+            }
+
+            for (i, pos) in other.positions.iter().enumerate() {
+                assert_eq!(
+                    (other.holes.contains(&i) || i >= other.len),
+                    (pos.x == i32::MAX)
+                );
+            }
+        }
+
+        let old_len_stored = self.positions.len();
+
+        for i in self.len..old_len_stored {
+            self.holes.push(i);
+        }
+        self.len = old_len_stored;
 
         let new_ings_max: [Box<[u8]>; NUM_INGS] = self
             .ings_max_insert
@@ -365,6 +389,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                     o.into_vec()
                         .into_iter()
                         .enumerate()
+                        .take(other.len)
                         .filter(|(i, _)| !other.holes.contains(i))
                         .map(|(_, v)| v),
                 );
@@ -383,6 +408,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                     o.into_vec()
                         .into_iter()
                         .enumerate()
+                        .take(other.len)
                         .filter(|(i, _)| !other.holes.contains(i))
                         .map(|(_, v)| v),
                 );
@@ -400,6 +426,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                     o.into_vec()
                         .into_iter()
                         .enumerate()
+                        .take(other.len)
                         .filter(|(i, _)| !other.holes.contains(i))
                         .map(|(_, v)| v),
                 );
@@ -414,6 +441,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .into_vec()
                 .into_iter()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
@@ -425,6 +453,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .into_vec()
                 .into_iter()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
@@ -436,6 +465,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .into_vec()
                 .into_iter()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
@@ -447,6 +477,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .into_vec()
                 .into_iter()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
@@ -458,6 +489,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .into_vec()
                 .into_iter()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
@@ -469,6 +501,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .into_vec()
                 .into_iter()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
@@ -480,6 +513,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .into_vec()
                 .into_iter()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
@@ -491,6 +525,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .into_vec()
                 .into_iter()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
@@ -502,6 +537,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .into_vec()
                 .into_iter()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
@@ -513,39 +549,45 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .into_vec()
                 .into_iter()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
 
-        self.positions.extend(
+        let mut new_positions = self.positions.into_vec();
+        new_positions.extend(
             other
                 .positions
                 .iter()
                 .copied()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
 
-        self.types.extend(
+        let mut new_types = self.types.into_vec();
+        new_types.extend(
             other
                 .types
                 .iter()
                 .copied()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
 
-        let updates = other
-            .positions
-            .into_iter()
+        let updates = IntoIterator::into_iter(other.positions)
+            .take(other.len)
             .zip(other.types)
             .enumerate()
+            .take(other.len)
             .filter(move |(i, _)| !other.holes.contains(i))
             .enumerate()
-            .map(
-                move |(new_index_offs, (old_index, (pos, ty)))| IndexUpdateInfo {
+            .map(move |(new_index_offs, (old_index, (pos, ty)))| {
+                assert!(new_index_offs <= old_index);
+                IndexUpdateInfo {
                     position: pos,
                     old_pg_entity: PowerGridEntity::Assembler {
                         ty,
@@ -555,11 +597,49 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                     new_pg_entity: PowerGridEntity::Assembler {
                         ty,
                         recipe: self.recipe,
-                        index: (old_len + new_index_offs).try_into().unwrap(),
+                        index: (old_len_stored + new_index_offs).try_into().unwrap(),
                     },
                     new_grid: new_grid_id,
-                },
-            );
+                }
+            });
+
+        // #[cfg(debug_assertions)]
+        // let updates = {
+        //     let updates = updates.collect::<Vec<_>>();
+
+        //     assert_eq!(updates.len(), other.len - other.holes.len());
+
+        //     assert!(updates.iter().all(|update| {
+        //         let IndexUpdateInfo {
+        //             new_pg_entity: PowerGridEntity::Assembler { index, .. },
+        //             ..
+        //         } = update
+        //         else {
+        //             unreachable!()
+        //         };
+
+        //         !self.holes.contains(&(*index as usize))
+        //     }));
+
+        //     assert_eq!(
+        //         new_positions.len(),
+        //         old_len_stored + (other.len - other.holes.len())
+        //     );
+
+        //     assert!(updates.iter().all(|update| {
+        //         let IndexUpdateInfo {
+        //             new_pg_entity: PowerGridEntity::Assembler { index, .. },
+        //             ..
+        //         } = update
+        //         else {
+        //             unreachable!()
+        //         };
+
+        //         new_positions[*index as usize].x < i32::MAX
+        //     }));
+
+        //     updates
+        // };
 
         let ret = Self {
             recipe: self.recipe,
@@ -569,7 +649,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             timers: new_timers.into(),
             prod_timers: new_prod_timers.into(),
             holes: self.holes,
-            len: self.positions.len(),
+            len: new_positions.len(),
             base_speed: new_base_speed.into_boxed_slice(),
             combined_speed_mod: new_speed.into_boxed_slice(),
             bonus_productivity: new_prod.into_boxed_slice(),
@@ -580,9 +660,19 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             raw_power_consumption_modifier: new_raw_power_consumption_modifier.into_boxed_slice(),
 
             base_power_consumption: new_base_power_consumption.into_boxed_slice(),
-            positions: self.positions,
-            types: self.types,
+            positions: new_positions.into_boxed_slice(),
+            types: new_types.into_boxed_slice(),
         };
+
+        #[cfg(debug_assertions)]
+        {
+            for (i, pos) in ret.positions.iter().enumerate() {
+                assert_eq!(
+                    (ret.holes.contains(&i) || i >= ret.len),
+                    (pos.x == i32::MAX)
+                );
+            }
+        }
 
         (ret, updates)
     }
@@ -943,6 +1033,10 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         }
         self.timers[index] = 0;
         self.prod_timers[index] = 0;
+        self.positions[index] = Position {
+            x: i32::MAX,
+            y: i32::MAX,
+        };
 
         ret
     }
@@ -1035,6 +1129,10 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         self.timers[index] = 0;
         self.prod_timers[index] = 0;
         self.base_power_consumption[index] = Watt(0);
+        self.positions[index] = Position {
+            x: i32::MAX,
+            y: i32::MAX,
+        };
 
         ret
     }
@@ -1287,6 +1385,30 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 speed.resize(new_len, 0);
                 speed.into_boxed_slice()
             });
+
+            take_mut::take(&mut self.combined_speed_mod, |speed| {
+                let mut speed = speed.into_vec();
+                speed.resize(new_len, 0);
+                speed.into_boxed_slice()
+            });
+
+            take_mut::take(&mut self.positions, |pos| {
+                let mut pos = pos.into_vec();
+                pos.resize(
+                    new_len,
+                    Position {
+                        x: i32::MAX,
+                        y: i32::MAX,
+                    },
+                );
+                pos.into_boxed_slice()
+            });
+
+            take_mut::take(&mut self.types, |ty| {
+                let mut ty = ty.into_vec();
+                ty.resize(new_len, u8::MAX);
+                ty.into_boxed_slice()
+            });
         }
 
         for (output, new_val) in self.outputs.iter_mut().zip(out) {
@@ -1320,25 +1442,8 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             .try_into()
             .expect("Values already clamped");
 
-        self.positions.reserve(1);
-        assert_eq!(
-            self.positions.len(),
-            self.len,
-            "{:?}, {:?}",
-            self.positions,
-            self.len
-        );
-        self.positions.push(position);
-
-        self.types.reserve(1);
-        assert_eq!(
-            self.types.len(),
-            self.len,
-            "{:?}, {:?}",
-            self.types,
-            self.len
-        );
-        self.types.push(ty);
+        self.positions[self.len] = position;
+        self.types[self.len] = ty;
 
         self.len += 1;
         (self.len - 1).try_into().unwrap()

@@ -1,5 +1,6 @@
 use std::{marker::PhantomData, u16};
 
+use crate::item::Indexable;
 use crate::{
     data::DataStore,
     item::{IdxTrait, Item, Recipe, WeakIdxTrait},
@@ -68,9 +69,9 @@ pub const MAX_RECIPE_COUNT: usize = u16::MAX as usize;
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct FakeUnionStorage {
-    index: u32,
-    grid_or_static_flag: u16,
-    recipe_idx_with_this_item: u16,
+    pub index: u32,
+    pub grid_or_static_flag: u16,
+    pub recipe_idx_with_this_item: u16,
 }
 
 impl FakeUnionStorage {
@@ -154,15 +155,21 @@ impl FakeUnionStorage {
                 grid,
                 recipe_idx_with_this_item,
                 index,
-            } => Self {
-                index: u32::from(index),
-                grid_or_static_flag: u16::from(grid)
-                    .checked_add(u16::try_from(grid_offset).unwrap())
-                    .expect("Grid ID too high (would overflow the grid_or_static)"),
-                recipe_idx_with_this_item: u16::try_from(Into::<usize>::into(
-                    recipe_idx_with_this_item,
-                ))
-                .unwrap(),
+            } => {
+                assert!(
+                    dbg!(recipe_idx_with_this_item.into_usize())
+                        < data_store.num_recipes_with_item[item.into_usize()]
+                );
+                Self {
+                    index: u32::from(index),
+                    grid_or_static_flag: u16::from(grid)
+                        .checked_add(u16::try_from(grid_offset).unwrap())
+                        .expect("Grid ID too high (would overflow the grid_or_static)"),
+                    recipe_idx_with_this_item: u16::try_from(Into::<usize>::into(
+                        recipe_idx_with_this_item,
+                    ))
+                    .unwrap(),
+                }
             },
             Storage::Lab { grid, index } => Self {
                 index: u32::from(index),

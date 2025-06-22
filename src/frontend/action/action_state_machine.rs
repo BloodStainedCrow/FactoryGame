@@ -3,6 +3,7 @@ use std::{collections::HashSet, marker::PhantomData, sync::mpsc::Receiver};
 use log::warn;
 
 use crate::{
+    belt::splitter::SplitterDistributionMode,
     data::DataStore,
     frontend::{
         action::{
@@ -12,11 +13,11 @@ use crate::{
         },
         input::{Input, Key},
         world::{
-            tile::{Dir, Entity, FloorTile, PlaceEntityType, World},
+            tile::{AssemblerInfo, Dir, Entity, FloorTile, PlaceEntityType, World},
             Position,
         },
     },
-    item::{IdxTrait, Recipe, WeakIdxTrait},
+    item::{IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
 };
 
 use super::{place_tile::PositionInfo, ActionType, PLAYERID};
@@ -40,7 +41,26 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
 
     pub zoom_level: f32,
 
+    copy_info: Option<CopyInfo<ItemIdxType, RecipeIdxType>>,
+
     recipe: PhantomData<RecipeIdxType>,
+}
+
+#[derive(Debug)]
+pub enum CopyInfo<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+    Recipe {
+        recipe: Recipe<RecipeIdxType>,
+    },
+    ChestLimit {
+        num_slots: u8,
+    },
+    SplitterSetting {
+        distribution_mode: SplitterDistributionMode,
+    },
+    InserterSettings {
+        max_stack_size: Option<ITEMCOUNTTYPE>,
+        filter: Option<Item<ItemIdxType>>,
+    },
 }
 
 #[derive(Debug, PartialEq)]
@@ -94,6 +114,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
             zoom_level: 1.0,
 
+            copy_info: None,
+
             recipe: PhantomData,
         }
     }
@@ -108,89 +130,162 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
            + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType> {
         input.try_iter().map(|input| {
             let actions = match input {
-                Input::LeftClickPressed => {
-                    match &self.state {
-                        ActionStateMachineState::Idle => {
-                            // TODO: Check if we are hovering over something that can be opened
+                Input::LeftClickPressed { shift } => {
+                    if shift {
+                        if let Some(copy_info) = &self.copy_info {
                             let pos = Self::player_mouse_to_tile(
                                 self.zoom_level,
                                 self.local_player_pos,
                                 self.current_mouse_pos,
                             );
-
                             if let Some(e) = world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next() {
-                                self.state = ActionStateMachineState::Viewing(e.get_pos());
+                                match (e, copy_info) {
+                                    (Entity::Assembler { .. }, CopyInfo::Recipe { recipe }) => {
+                                        vec![ActionType::SetRecipe(SetRecipeInfo { pos, recipe: *recipe })]
+                                    },
+                                    (Entity::Chest { .. }, CopyInfo::ChestLimit { num_slots }) => {
+                                        vec![ActionType::SetChestSlotLimit { pos, num_slots: *num_slots }]
+                                    }
+                                    (Entity::Inserter { .. }, CopyInfo::InserterSettings { max_stack_size, filter }) => {
+                                        vec![todo!()]
+                                    }
+                                    (Entity::Splitter { .. }, CopyInfo::SplitterSetting { distribution_mode }) => todo!(),
+                                    (_, _) => {
+                                        vec![]
+                                    }
+                                }
+                            } else {
+                                vec![]
                             }
-
+                        } else {
                             vec![]
-                        },
-                        ActionStateMachineState::Holding(held_object) => {
-                            // TODO: Check if what we are trying to place would collide
+                        }
+                    } else {
+                        match &self.state {
+                            ActionStateMachineState::Idle => {
+                                // TODO: Check if we are hovering over something that can be opened
+                                let pos = Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.local_player_pos,
+                                    self.current_mouse_pos,
+                                );
 
-                            match held_object {
-                                HeldObject::Tile(floor_tile) => {
-                                    vec![ActionType::PlaceFloorTile(PlaceFloorTileByHandInfo {
-                                        ghost_info: PlaceFloorTileGhostInfo {
-                                            tile: *floor_tile,
-                                            position: PositionInfo::Single {
-                                                pos: Self::player_mouse_to_tile(
-                                                    self.zoom_level,
-                                                    self.local_player_pos,
-                                                    self.current_mouse_pos,
-                                                ),
+                                if let Some(e) = world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next() {
+                                    self.state = ActionStateMachineState::Viewing(e.get_pos());
+                                }
+
+                                vec![]
+                            },
+                            ActionStateMachineState::Holding(held_object) => {
+                                // TODO: Check if what we are trying to place would collide
+
+                                match held_object {
+                                    HeldObject::Tile(floor_tile) => {
+                                        vec![ActionType::PlaceFloorTile(PlaceFloorTileByHandInfo {
+                                            ghost_info: PlaceFloorTileGhostInfo {
+                                                tile: *floor_tile,
+                                                position: PositionInfo::Single {
+                                                    pos: Self::player_mouse_to_tile(
+                                                        self.zoom_level,
+                                                        self.local_player_pos,
+                                                        self.current_mouse_pos,
+                                                    ),
+                                                },
                                             },
-                                        },
-                                        player: (),
-                                    })]
-                                },
-                                HeldObject::Entity(place_entity_type) => {
-                                    vec![ActionType::PlaceEntity(PlaceEntityInfo {
-                                        entities: EntityPlaceOptions::Single(*place_entity_type),
-                                    })]
-                                },
-                            }
-                        },
-                        ActionStateMachineState::Viewing(Position { x, y }) => {
-                            let pos = Self::player_mouse_to_tile(
-                                self.zoom_level,
-                                self.local_player_pos,
-                                self.current_mouse_pos,
-                            );
+                                            player: (),
+                                        })]
+                                    },
+                                    HeldObject::Entity(place_entity_type) => {
+                                        vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                                            entities: EntityPlaceOptions::Single(*place_entity_type),
+                                        })]
+                                    },
+                                }
+                            },
+                            ActionStateMachineState::Viewing(Position { x, y }) => {
+                                let pos = Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.local_player_pos,
+                                    self.current_mouse_pos,
+                                );
 
-                            if let Some(e) = world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next() {
-                                self.state = ActionStateMachineState::Viewing(e.get_pos());
-                            }
+                                if let Some(e) = world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next() {
+                                    self.state = ActionStateMachineState::Viewing(e.get_pos());
+                                }
 
-                            vec![]
-                        },
-                        ActionStateMachineState::Decontructing(_, _) => {
-                            self.state = ActionStateMachineState::Idle;
-                            vec![]
+                                vec![]
+                            },
+                            ActionStateMachineState::Decontructing(_, _) => {
+                                self.state = ActionStateMachineState::Idle;
+                                vec![]
+                            }
                         }
                     }
                 },
-                Input::RightClickPressed => match &self.state {
-                    ActionStateMachineState::Idle => {
+                Input::RightClickPressed { shift} => {
+
+
+                    if shift {
                         let pos = Self::player_mouse_to_tile(
                             self.zoom_level,
                             self.local_player_pos,
                             self.current_mouse_pos,
                         );
-                        if world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next().is_some() {
-                            self.state = ActionStateMachineState::Decontructing(pos, 100);
+                        if let Some(e) = world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next() {
+                            match e {
+                                Entity::Assembler { ty, pos, modules, info } => match info {
+                                    AssemblerInfo::UnpoweredNoRecipe => {},
+                                    AssemblerInfo::Unpowered(recipe) => self.copy_info = Some(CopyInfo::Recipe { recipe: *recipe }),
+                                    AssemblerInfo::PoweredNoRecipe(position) => {},
+                                    AssemblerInfo::Powered { id, pole_position, weak_index } => self.copy_info = Some(CopyInfo::Recipe { recipe: id.recipe }),
+                                },
+                                Entity::PowerPole { ty, pos, connected_power_poles } => {},
+                                Entity::Belt { pos, direction, id, belt_pos } => {},
+                                Entity::Underground { pos, underground_dir, direction, id, belt_pos } => {},
+                                Entity::Splitter { pos, direction, id } => todo!(),
+                                Entity::Inserter { pos, direction, filter, info } => {
+                                    self.copy_info = Some(CopyInfo::InserterSettings { max_stack_size: None, filter: *filter });
+                                },
+                                Entity::Chest { ty, pos, item, slot_limit } => {
+                                    self.copy_info = Some(CopyInfo::ChestLimit { num_slots: *slot_limit });
+                                },
+                                Entity::Roboport { ty, pos, power_grid, network, id } => todo!(),
+                                Entity::SolarPanel { pos, ty, pole_position } => {},
+                                Entity::Lab { pos, ty, modules, pole_position } => {},
+                                Entity::Beacon { ty, pos, modules, pole_position } => {},
+                                Entity::FluidTank { ty, pos, rotation } => {},
+                            }
                         }
                         vec![]
-                    },
-                    ActionStateMachineState::Holding(_held_object) => {
-                        self.state = ActionStateMachineState::Idle;
-                        vec![]
-                    },
-                    ActionStateMachineState::Viewing(_) => {
-                        self.state = ActionStateMachineState::Idle;
-                        vec![]
-                    },
-                    ActionStateMachineState::Decontructing(_, _) => vec![],
-                },
+                    } else {
+                        match &self.state {
+                            ActionStateMachineState::Idle => {
+                                let pos = Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.local_player_pos,
+                                    self.current_mouse_pos,
+                                );
+                                if world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next().is_some() {
+                                    self.state = ActionStateMachineState::Decontructing(pos, 100);
+                                }
+                                vec![]
+                            },
+                            ActionStateMachineState::Holding(_held_object) => {
+                                self.state = ActionStateMachineState::Idle;
+                                vec![]
+                            },
+                            ActionStateMachineState::Viewing(_) => {
+                                self.state = ActionStateMachineState::Idle;
+                                vec![]
+                            },
+                            ActionStateMachineState::Decontructing(_, _) => vec![],
+                        }
+                    }
+
+                }
+
+
+                ,
                 Input::RightClickReleased => match &self.state {
                     ActionStateMachineState::Decontructing(_, _) => {
                         self.state = ActionStateMachineState::Idle;
@@ -259,7 +354,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                                                 self.local_player_pos,
                                                                 self.current_mouse_pos,
                                                             );},
-                                PlaceEntityType::Beacon { ty, pos } => {*pos = Self::player_mouse_to_tile(
+                                PlaceEntityType::Beacon { ty: _, pos } => {*pos = Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.local_player_pos,
+                                    self.current_mouse_pos,
+                                );},
+                                PlaceEntityType::FluidTank { ty: _, pos, rotation: _  } => {*pos = Self::player_mouse_to_tile(
                                     self.zoom_level,
                                     self.local_player_pos,
                                     self.current_mouse_pos,
@@ -331,6 +431,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key1) => {
                 self.state =
                     ActionStateMachineState::Holding(HeldObject::Tile(FloorTile::Concrete));
+                vec![]
+            },
+            (
+                ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Assembler {
+                    pos,
+                    ty,
+                })),
+                Key::Key2,
+            ) => {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::Assembler {
+                        pos: *pos,
+                        ty: (*ty + 1) % data_store.assembler_info.len() as u8,
+                    },
+                ));
                 vec![]
             },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key2) => {
@@ -407,6 +522,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ));
                 vec![]
             },
+            (
+                ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::PowerPole {
+                    pos,
+                    ty,
+                })),
+                Key::Key5,
+            ) => {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::PowerPole {
+                        pos: *pos,
+                        ty: (*ty + 1) % data_store.power_pole_data.len() as u8,
+                    },
+                ));
+                vec![]
+            },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key5) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::PowerPole {
@@ -422,15 +552,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key6) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::Splitter {
+                    PlaceEntityType::FluidTank {
+                        ty: 0,
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
                             self.local_player_pos,
                             self.current_mouse_pos,
                         ),
-                        direction: Dir::North,
-                        in_mode: None,
-                        out_mode: None,
+                        rotation: Dir::North,
                     },
                 ));
                 vec![]
@@ -447,6 +576,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     }));
                 vec![]
             },
+            (
+                ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::SolarPanel {
+                    pos,
+                    ty,
+                })),
+                Key::Key8,
+            ) => {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::SolarPanel {
+                        pos: *pos,
+                        ty: (*ty + 1) % data_store.solar_panel_info.len() as u8,
+                    },
+                ));
+                vec![]
+            },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key8) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::SolarPanel {
@@ -461,15 +605,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 vec![]
             },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key9) => {
-                self.state =
-                    ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Lab {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::FluidTank {
+                        ty: 1,
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
                             self.local_player_pos,
                             self.current_mouse_pos,
                         ),
-                        ty: 0,
-                    }));
+                        rotation: Dir::North,
+                    },
+                ));
                 vec![]
             },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key0) => {
@@ -497,6 +643,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         pos: *pos,
                         dir: dir.turn_right(),
                         filter: *filter,
+                    },
+                ));
+                vec![]
+            },
+            (
+                ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::FluidTank {
+                    pos,
+                    ty,
+                    rotation,
+                })),
+                Key::R,
+            ) => {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::FluidTank {
+                        ty: *ty,
+                        pos: *pos,
+                        rotation: rotation.turn_right(),
                     },
                 ));
                 vec![]
@@ -544,9 +707,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     ) -> Position {
         let mouse_pos = (
             ((mouse_pos.0) * (WIDTH_PER_LEVEL as f32))
-                .mul_add(zoom_level * zoom_level, player_pos.0),
+                .mul_add(1.5f32.powf(zoom_level), player_pos.0),
             ((mouse_pos.1) * (WIDTH_PER_LEVEL as f32))
-                .mul_add(zoom_level * zoom_level, player_pos.1),
+                .mul_add(1.5f32.powf(zoom_level), player_pos.1),
         );
 
         Position {

@@ -117,7 +117,7 @@ impl eframe::App for App {
                             }
 
                             Ok(Input::MouseMove(
-                                (pos_normalized[0] - 0.5),
+                                pos_normalized[0] - 0.5,
                                 (pos_normalized[1] - 0.5) / ar,
                             ))
                         } else {
@@ -242,9 +242,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> CallbackTrait
 
         render_world(
             &mut rend,
-            &gamestate,
+            gamestate,
             &self.texture_atlas,
-            &state_machine,
+            state_machine,
             &self.data_store.lock(),
         );
     }

@@ -1,4 +1,9 @@
-use std::{array, cmp::max, collections::HashMap};
+use std::{
+    array,
+    cmp::max,
+    collections::{BTreeSet, HashMap},
+    iter,
+};
 
 use eframe::egui::Color32;
 use itertools::Itertools;
@@ -55,6 +60,7 @@ struct RawAssemblingMachine {
     tile_size: (u8, u8),
     working_power_draw: Watt,
     fluid_connection_offsets: Vec<RawFluidConnection>,
+    fluid_connection_flowthrough: Vec<RawFluidFlowthrough>,
 
     num_module_slots: u8,
 
@@ -71,6 +77,7 @@ struct RawLab {
     tile_size: (u8, u8),
     working_power_draw: Watt,
     fluid_connection_offsets: Vec<RawFluidConnection>,
+    fluid_connection_flowthrough: Vec<RawFluidFlowthrough>,
 
     num_module_slots: u8,
 
@@ -114,11 +121,33 @@ struct RawAccumulator {
     max_discharge_rate: Watt,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize, serde::Serialize)]
+pub enum AllowedFluidDirection {
+    Single(ItemRecipeDir),
+    Both { preferred: ItemRecipeDir },
+}
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct RawFluidConnection {
-    fluid_dir: ItemRecipeDir,
-    offs: (u8, u8),
+    allowed_fluid_directions: AllowedFluidDirection,
+    offset: (u8, u8),
     pipe_connection_direction: Dir,
+    connection_type: RawPipeConnectionType,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub enum RawPipeConnectionType {
+    Direct,
+    Underground {
+        max_distance: u8,
+        underground_allowed_kinds: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+struct RawFluidFlowthrough {
+    fluid_dir: AllowedFluidDirection,
+    connections: Vec<((u8, u8), Dir, RawPipeConnectionType)>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -145,6 +174,16 @@ pub struct RawDataStore {
     technologies: Vec<RawTechnology>,
     solar_panels: Vec<RawSolarPanel>,
     accumulators: Vec<RawAccumulator>,
+    fluid_tanks: Vec<RawFluidTank>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+struct RawFluidTank {
+    name: String,
+    display_name: String,
+    capacity: u32,
+    tile_size: (u8, u8),
+    connections: Vec<((u8, u8), Dir, RawPipeConnectionType)>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -217,7 +256,9 @@ pub struct AssemblerInfo {
     pub size: (u16, u16),
     pub num_module_slots: u8,
 
-    /// Base Speed as a numerator and divisor. All module modifiers apply multiplicatively
+    pub fluid_connections: Vec<(FluidConnection, AllowedFluidDirection)>,
+
+    /// Base Speed. All module modifiers apply multiplicatively
     pub base_speed: u8,
     pub base_prod: u8,
     pub base_power_consumption: Watt,
@@ -280,6 +321,17 @@ pub struct AccumulatorInfo {
     pub max_discharge_rate: Watt,
 }
 
+type UndergroundGroupMask = u64;
+
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+pub enum PipeConnectionType {
+    Direct,
+    Underground {
+        max_distance: u8,
+        underground_group_mask: UndergroundGroupMask,
+    },
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub checksum: String,
@@ -298,6 +350,9 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub min_power_mod: u8,
 
     pub recipe_names: Vec<String>,
+    pub recipe_allowed_assembling_machines: Vec<Vec<u8>>,
+
+    pub recipe_is_intermediate: Vec<bool>,
 
     pub recipe_num_ing_lookup: Vec<usize>,
     pub recipe_num_out_lookup: Vec<usize>,
@@ -351,12 +406,30 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub chest_num_slots: Vec<u8>,
     pub chest_tile_sizes: Vec<(u16, u16)>,
 
+    pub fluid_tank_infos: Vec<FluidTankData>,
+
     pub recipe_to_translated_index:
         HashMap<(Recipe<RecipeIdxType>, Item<ItemIdxType>), RecipeIdxType>,
 
     pub item_to_colour: Vec<Color32>,
 
     pub technology_costs: Vec<(u64, Box<[ITEMCOUNTTYPE]>)>,
+    // pub belt_info: Vec<BeltInfo>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
+struct BeltInfo {
+    name: String,
+    has_underground: bool,
+    has_splitter: Option<BeltSplitterInfo>,
+    /// Fraction setting how often this kind of belt moves
+    speed: (u8, u8),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
+struct BeltSplitterInfo {
+    can_filter_item: bool,
+    can_prioritise_side: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
@@ -364,6 +437,24 @@ pub struct LazyPowerMachineInfo<ItemIdxType: WeakIdxTrait> {
     pub ingredient: Item<ItemIdxType>,
     pub power_per_item: Joule,
     pub max_power_per_tick: Joule,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
+pub struct FluidTankData {
+    pub size: [u16; 2],
+    /// Capacity in fluid units
+    pub capacity: u32,
+
+    pub fluid_connections: Vec<FluidConnection>,
+    pub max_search_range: u16,
+}
+
+/// These offset and directions are based on the entity facing north
+#[derive(Debug, Clone, Copy, serde::Serialize, serde:: Deserialize)]
+pub struct FluidConnection {
+    pub offset: [u16; 2],
+    pub dir: Dir,
+    pub kind: PipeConnectionType,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
@@ -445,6 +536,91 @@ impl RawDataStore {
     ) -> DataStore<ItemIdxType, RecipeIdxType> {
         let checksum = self.get_checksum();
         warn!("Parsing game data with checksum {}", checksum);
+
+        let pipe_connection_groups_map: Vec<_> = self
+            .machines
+            .iter()
+            .flat_map(|machine| {
+                machine
+                    .fluid_connection_flowthrough
+                    .iter()
+                    .flat_map(|flowthrough| {
+                        flowthrough
+                            .connections
+                            .iter()
+                            .flat_map(|v| match &v.2 {
+                                RawPipeConnectionType::Direct => None,
+                                RawPipeConnectionType::Underground {
+                                    max_distance,
+                                    underground_allowed_kinds,
+                                } => Some(underground_allowed_kinds.iter().cloned()),
+                            })
+                            .flatten()
+                    })
+                    .chain(
+                        machine
+                            .fluid_connection_offsets
+                            .iter()
+                            .flat_map(|connection| match &connection.connection_type {
+                                RawPipeConnectionType::Direct => None,
+                                RawPipeConnectionType::Underground {
+                                    max_distance,
+                                    underground_allowed_kinds,
+                                } => Some(underground_allowed_kinds.iter().cloned()),
+                            })
+                            .flatten(),
+                    )
+            })
+            .chain(self.labs.iter().flat_map(|labs| {
+                labs.fluid_connection_flowthrough
+                    .iter()
+                    .flat_map(|flowthrough| {
+                        flowthrough.connections.iter().flat_map(|v| match &v.2 {
+                            RawPipeConnectionType::Direct => None,
+                            RawPipeConnectionType::Underground {
+                                max_distance,
+                                underground_allowed_kinds,
+                            } => Some(underground_allowed_kinds.iter().cloned()),
+                        })
+                    })
+                    .chain(labs.fluid_connection_offsets.iter().flat_map(|connection| {
+                        match &connection.connection_type {
+                            RawPipeConnectionType::Direct => None,
+                            RawPipeConnectionType::Underground {
+                                max_distance,
+                                underground_allowed_kinds,
+                            } => Some(underground_allowed_kinds.iter().cloned()),
+                        }
+                    }))
+                    .flatten()
+            }))
+            .chain(self.fluid_tanks.iter().flat_map(|tank| {
+                tank.connections
+                    .iter()
+                    .flat_map(|v| match &v.2 {
+                        RawPipeConnectionType::Direct => None,
+                        RawPipeConnectionType::Underground {
+                            max_distance,
+                            underground_allowed_kinds,
+                        } => Some(underground_allowed_kinds.iter().cloned()),
+                    })
+                    .flatten()
+            }))
+            // We collect into a BTreeSet first, to ensure the order is deterministic (as opposed to a HashSet)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+
+        assert!(
+            pipe_connection_groups_map.iter().all(|v| !v.is_empty()),
+            "Empty Underground groups are not allowed"
+        );
+
+        assert!(
+            pipe_connection_groups_map.len() as u32 <= UndergroundGroupMask::BITS,
+            "Currently a maximum of {} is supported",
+            UndergroundGroupMask::BITS
+        );
 
         // TODO: Stop cloning the item names
         let item_names = self.items.iter().map(|i| i.display_name.clone()).collect();
@@ -809,6 +985,29 @@ impl RawDataStore {
         DataStore {
             checksum,
 
+            recipe_allowed_assembling_machines: self
+                .recipes
+                .iter()
+                .map(|raw| {
+                    raw.possible_machines
+                        .iter()
+                        .map(|machine_string| {
+                            self.machines
+                                .iter()
+                                .position(|machine| machine.name == *machine_string)
+                                .expect(&format!(
+                                    "Could not find machine {} for recipe {}!",
+                                    machine_string, raw.name
+                                ))
+                                .try_into()
+                                .unwrap()
+                        })
+                        .collect()
+                })
+                .collect(),
+
+            recipe_is_intermediate: self.recipes.iter().map(|raw| raw.is_intermediate).collect(),
+
             assembler_info: self
                 .machines
                 .iter()
@@ -820,6 +1019,42 @@ impl RawDataStore {
                     base_speed: m.base_speed,
                     base_prod: m.base_bonus_prod,
                     base_power_consumption: m.working_power_draw,
+
+                    fluid_connections: m
+                        .fluid_connection_offsets
+                        .iter()
+                        .map(|raw_conn| {
+                            (
+                                FluidConnection {
+                                    offset: [raw_conn.offset.0.into(), raw_conn.offset.1.into()],
+                                    dir: raw_conn.pipe_connection_direction,
+                                    kind: match &raw_conn.connection_type {
+                                        RawPipeConnectionType::Direct => PipeConnectionType::Direct,
+                                        RawPipeConnectionType::Underground {
+                                            max_distance,
+                                            underground_allowed_kinds,
+                                        } => PipeConnectionType::Underground {
+                                            max_distance: *max_distance,
+                                            underground_group_mask: pipe_connection_groups_map
+                                                .iter()
+                                                .chain(iter::repeat(&String::from("")))
+                                                .take(UndergroundGroupMask::BITS as usize)
+                                                .enumerate()
+                                                .map(|(i, group)| {
+                                                    if underground_allowed_kinds.contains(group) {
+                                                        1 << i
+                                                    } else {
+                                                        0
+                                                    }
+                                                })
+                                                .sum(),
+                                        },
+                                    },
+                                },
+                                raw_conn.allowed_fluid_directions,
+                            )
+                        })
+                        .collect(),
                 })
                 .collect(),
 
@@ -898,7 +1133,7 @@ impl RawDataStore {
             min_power_mod: 4,
 
             // TODO:
-            max_entity_size: (4, 4),
+            max_entity_size: (5, 5),
 
             recipe_names: self
                 .recipes
@@ -1008,6 +1243,63 @@ impl RawDataStore {
                 .items
                 .iter()
                 .map(|item| Color32::from_rgb(random(), random(), random()))
+                .collect(),
+
+            fluid_tank_infos: self
+                .fluid_tanks
+                .into_iter()
+                .map(|tank| {
+                    let max_search_range = tank
+                        .connections
+                        .iter()
+                        .map(|conn| match &conn.2 {
+                            RawPipeConnectionType::Direct => 1,
+                            RawPipeConnectionType::Underground {
+                                max_distance,
+                                underground_allowed_kinds,
+                            } => *max_distance,
+                        })
+                        .max()
+                        .expect("A fluid tank without connections is useless")
+                        .into();
+
+                    FluidTankData {
+                        // TODO: Sanity check the fluid connections
+                        size: [tank.tile_size.0.into(), tank.tile_size.1.into()],
+                        capacity: tank.capacity,
+                        fluid_connections: tank
+                            .connections
+                            .into_iter()
+                            .map(|conn| FluidConnection {
+                                dir: conn.1,
+                                offset: [conn.0 .0.into(), conn.0 .1.into()],
+                                kind: match conn.2 {
+                                    RawPipeConnectionType::Direct => PipeConnectionType::Direct,
+                                    RawPipeConnectionType::Underground {
+                                        max_distance,
+                                        underground_allowed_kinds,
+                                    } => PipeConnectionType::Underground {
+                                        max_distance,
+                                        underground_group_mask: pipe_connection_groups_map
+                                            .iter()
+                                            .chain(iter::repeat(&String::from("")))
+                                            .take(UndergroundGroupMask::BITS as usize)
+                                            .enumerate()
+                                            .map(|(i, group)| {
+                                                if underground_allowed_kinds.contains(group) {
+                                                    1 << i
+                                                } else {
+                                                    0
+                                                }
+                                            })
+                                            .sum(),
+                                    },
+                                },
+                            })
+                            .collect(),
+                        max_search_range,
+                    }
+                })
                 .collect(),
 
             technology_costs,

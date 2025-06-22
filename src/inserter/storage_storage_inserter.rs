@@ -1,17 +1,14 @@
-use crate::{
-    item::{IdxTrait, WeakIdxTrait},
-    storage_list::{index, index_fake_union, SingleItemStorages},
-};
+use crate::storage_list::{index_fake_union, SingleItemStorages};
 
-use super::{FakeUnionStorage, InserterState, Storage};
+use super::{FakeUnionStorage, InserterState};
 
 // FIXME: the storage_id cannot properly represent an index into multiple slices (which I have here, since
 // there are multiple lists of storages in the different MultiAssemblerStores (since multiple different recipes take for example Iron Plates))
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct StorageStorageInserter {
-    storage_id_in: FakeUnionStorage,
-    storage_id_out: FakeUnionStorage,
-    state: InserterState,
+    pub storage_id_in: FakeUnionStorage,
+    pub storage_id_out: FakeUnionStorage,
+    pub state: InserterState,
 }
 
 // This issue is less important then BeltStorage since these inserters are less common

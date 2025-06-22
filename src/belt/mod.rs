@@ -13,16 +13,18 @@ use std::{
     mem, usize,
 };
 
-use crate::inserter::FakeUnionStorage;
 use crate::{
     data::DataStore,
     inserter::{
         belt_belt_inserter::BeltBeltInserter,
         belt_storage_inserter::{BeltStorageInserter, Dir},
-        Storage,
     },
     item::{usize_from, Item},
     storage_list::{grid_size, num_recipes, SingleItemStorages},
+};
+use crate::{
+    inserter::{FakeUnionStorage, Storage},
+    item::Indexable,
 };
 use belt::{Belt, BeltLenType};
 use itertools::Itertools;
@@ -35,7 +37,7 @@ use petgraph::{
 };
 use rayon::iter::IntoParallelRefMutIterator;
 use rayon::iter::{IndexedParallelIterator, ParallelIterator};
-use smart::{InserterAdditionError, Side, SmartBelt, SpaceOccupiedError};
+use smart::{BeltInserterInfo, InserterAdditionError, Side, SmartBelt, SpaceOccupiedError};
 use splitter::{Splitter, SplitterDistributionMode, SushiSplitter};
 use sushi::{SushiBelt, SushiInfo};
 
@@ -722,7 +724,7 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
         let item = front.item;
 
         if front == back {
-            todo!("Make circular");
+            self.get_smart_mut(front).make_circular();
 
             return;
         }
@@ -784,6 +786,7 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
     fn merge_sushi_belts(&mut self, front: usize, back: usize) {
         if front == back {
             todo!("Make circular");
+            // self.get_sushi_mut(front).make_circular();
 
             return;
         }
@@ -2050,6 +2053,106 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         )
     }
 
+    pub fn get_inserter_info_at<RecipeIdxType: IdxTrait>(
+        &self,
+        belt: BeltTileId<ItemIdxType>,
+        belt_pos: u16,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Option<BeltInserterInfo> {
+        match belt {
+            BeltTileId::AnyBelt(idx, _) => match self.any_belts[idx] {
+                AnyBelt::Smart(belt_id) => self.inner.smart_belts[belt_id.item.into_usize()].belts
+                    [belt_id.index as usize]
+                    .get_inserter_info_at(belt_pos),
+                AnyBelt::Sushi(index) => {
+                    self.inner.sushi_belts[index].get_inserter_info_at(belt_pos)
+                },
+            },
+        }
+    }
+
+    pub fn get_inserter_item<RecipeIdxType: IdxTrait>(
+        &self,
+        belt: BeltTileId<ItemIdxType>,
+        belt_pos: u16,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Item<ItemIdxType> {
+        match belt {
+            BeltTileId::AnyBelt(idx, _) => match self.any_belts[idx] {
+                AnyBelt::Smart(belt_id) => belt_id.item,
+                AnyBelt::Sushi(index) => self.inner.sushi_belts[index].get_inserter_item(belt_pos),
+            },
+        }
+    }
+
+    pub fn update_belt_storage_inserter_src<RecipeIdxType: IdxTrait>(
+        &mut self,
+        belt: BeltTileId<ItemIdxType>,
+        belt_pos: u16,
+        src_item: Item<ItemIdxType>,
+        new_src: Storage<RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        match belt {
+            BeltTileId::AnyBelt(idx, _) => match self.any_belts[idx] {
+                AnyBelt::Smart(belt_id) => {
+                    assert_eq!(src_item, belt_id.item);
+                    self.inner.smart_belts[belt_id.item.into_usize()].belts[belt_id.index]
+                        .set_inserter_storage_id(
+                            belt_pos,
+                            FakeUnionStorage::from_storage_with_statics_at_zero(
+                                belt_id.item,
+                                new_src,
+                                data_store,
+                            ),
+                        );
+                },
+                AnyBelt::Sushi(index) => {
+                    self.inner.sushi_belts[index].set_inserter_storage_id(
+                        belt_pos,
+                        FakeUnionStorage::from_storage_with_statics_at_zero(
+                            src_item, new_src, data_store,
+                        ),
+                    );
+                },
+            },
+        }
+    }
+
+    pub fn update_belt_storage_inserter_dest<RecipeIdxType: IdxTrait>(
+        &mut self,
+        belt: BeltTileId<ItemIdxType>,
+        belt_pos: u16,
+        dest_item: Item<ItemIdxType>,
+        new_dest: Storage<RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        match belt {
+            BeltTileId::AnyBelt(idx, _) => match self.any_belts[idx] {
+                AnyBelt::Smart(belt_id) => {
+                    assert_eq!(dest_item, belt_id.item);
+                    self.inner.smart_belts[belt_id.item.into_usize()].belts[belt_id.index]
+                        .set_inserter_storage_id(
+                            belt_pos,
+                            FakeUnionStorage::from_storage_with_statics_at_zero(
+                                belt_id.item,
+                                new_dest,
+                                data_store,
+                            ),
+                        );
+                },
+                AnyBelt::Sushi(index) => {
+                    self.inner.sushi_belts[index].set_inserter_storage_id(
+                        belt_pos,
+                        FakeUnionStorage::from_storage_with_statics_at_zero(
+                            dest_item, new_dest, data_store,
+                        ),
+                    );
+                },
+            },
+        }
+    }
+
     pub fn add_belt_belt_inserter(
         &mut self,
         from: (BeltTileId<ItemIdxType>, u16),
@@ -2187,7 +2290,14 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (BeltTileId<ItemIdxType>, BeltLenType) {
         if front_tile_id == back_tile_id {
-            todo!("Make circular")
+            // Make them cicular
+            match front_tile_id {
+                BeltTileId::AnyBelt(idx, _) => match self.any_belts[idx] {
+                    AnyBelt::Smart(belt_id) => self.inner.merge_smart_belts(belt_id, belt_id),
+                    AnyBelt::Sushi(idx) => self.inner.merge_sushi_belts(idx, idx),
+                },
+            }
+            return (front_tile_id, self.get_len(front_tile_id));
         }
 
         let ret = match (front_tile_id, back_tile_id) {

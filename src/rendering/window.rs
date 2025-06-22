@@ -166,9 +166,13 @@ impl winit::application::ApplicationHandler for App {
                 button,
             } => {
                 let input = match (state, button) {
-                    (ElementState::Pressed, MouseButton::Left) => Input::LeftClickPressed,
+                    (ElementState::Pressed, MouseButton::Left) => {
+                        Input::LeftClickPressed { shift: false }
+                    },
                     (ElementState::Released, MouseButton::Left) => Input::LeftClickReleased,
-                    (ElementState::Pressed, MouseButton::Right) => Input::RightClickPressed,
+                    (ElementState::Pressed, MouseButton::Right) => {
+                        Input::RightClickPressed { shift: false }
+                    },
                     (ElementState::Released, MouseButton::Right) => Input::RightClickReleased,
                     v => todo!("{:?}", v),
                 };
@@ -203,9 +207,9 @@ impl winit::application::ApplicationHandler for App {
                                         let state_machine = loaded_game_sized.state_machine.lock();
                                         render_world(
                                             renderer,
-                                            &game_state,
+                                            game_state,
                                             &self.texture_atlas,
-                                            &state_machine,
+                                            state_machine,
                                             &loaded_game_sized.data_store.lock(),
                                         )
                                     },

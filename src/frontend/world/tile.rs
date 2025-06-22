@@ -1,16 +1,18 @@
 use std::{
+    cmp::min,
     collections::{BTreeMap, BTreeSet, HashMap},
     marker::PhantomData,
     ops::{Add, ControlFlow},
 };
 
+use egui::Color32;
+
 use enum_map::{Enum, EnumMap};
-use log::{info, warn};
+use log::warn;
 use strum::EnumIter;
 
 use itertools::Itertools;
 
-use crate::inserter::FakeUnionStorage;
 use crate::{
     belt::{
         splitter::SplitterDistributionMode, BeltBeltInserterAdditionInfo, BeltTileId,
@@ -26,10 +28,13 @@ use crate::{
     },
     TICKS_PER_SECOND_LOGIC,
 };
+use crate::{inserter::FakeUnionStorage, item::Indexable};
+use static_assertions::const_assert;
 
 use std::fmt::Debug;
 
 use super::{sparse_grid::SparseGrid, Position};
+use crate::liquid::FluidSystemId;
 
 pub const BELT_LEN_PER_TILE: u16 = 4;
 
@@ -44,9 +49,13 @@ pub enum FloorTile {
     Water,
 }
 
+// We rely on this, by storing entity indices as u8 in the chunk
+const_assert!(CHUNK_SIZE * CHUNK_SIZE - 1 <= u8::MAX as u16);
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Chunk<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub floor_tiles: Option<Box<[[FloorTile; CHUNK_SIZE as usize]; CHUNK_SIZE as usize]>>,
+    chunk_tile_to_entity_into: Option<Box<[[u8; CHUNK_SIZE as usize]; CHUNK_SIZE as usize]>>,
     entities: Vec<Entity<ItemIdxType, RecipeIdxType>>,
 }
 
@@ -85,6 +94,9 @@ pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     power_grid_lookup: PowerGridConnectedDevicesLookup,
 
     remaining_updates: Vec<WorldUpdate>,
+
+    #[serde(skip)]
+    pub map_updates: Option<Vec<Position>>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -545,7 +557,7 @@ fn newly_working_assembler<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 .into_iter()
                 .next()
             else {
-                warn!("Assembler missing in new lab cascade");
+                warn!("Assembler missing in new assembler cascade");
                 return;
             };
 
@@ -684,15 +696,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         #[cfg(debug_assertions)]
         const WORLDSIZE_CHUNKS: i32 = 200;
         #[cfg(not(debug_assertions))]
-        const WORLDSIZE_CHUNKS: i32 = 20000;
+        const WORLDSIZE_CHUNKS: i32 = 4000;
 
-        for x in 50..400 {
+        for x in 50..WORLDSIZE_CHUNKS {
             for y in 50..WORLDSIZE_CHUNKS {
                 grid.insert(
                     x,
                     y,
                     Chunk {
                         floor_tiles: None,
+                        chunk_tile_to_entity_into: None,
                         entities: vec![],
                     },
                 );
@@ -712,6 +725,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             },
 
             remaining_updates: vec![],
+
+            map_updates: None,
         }
     }
 
@@ -748,6 +763,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         new_recipe: Recipe<RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
+        let can_accept_prod = data_store.recipe_is_intermediate[new_recipe.into_usize()];
+
+        // FIXME: Remove Cheated modules
+        let cheated_modules = if can_accept_prod { Some(1) } else { Some(0) };
+
         let mut cascading_updates = vec![];
 
         self.mutate_entities_colliding_with(pos, (1, 1), data_store, |e| {
@@ -755,7 +775,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 Entity::Assembler {
                     ty,
                     pos,
-                    modules: _,
+                    modules,
                     info:
                         AssemblerInfo::Powered {
                             id,
@@ -763,6 +783,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             weak_index,
                         },
                 } => {
+                    for module_slot in modules.iter_mut() {
+                        *module_slot = cheated_modules;
+                    }
+
                     let assembler_size = data_store.assembler_info[usize::from(*ty)].size;
 
                     // Change assembler recipe
@@ -796,6 +820,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     modules,
                     info: info @ AssemblerInfo::PoweredNoRecipe(_),
                 } => {
+                    for module_slot in modules.iter_mut() {
+                        *module_slot = cheated_modules;
+                    }
+
                     let AssemblerInfo::PoweredNoRecipe(pole_position) = info else {
                         unreachable!();
                     };
@@ -819,15 +847,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     cascading_updates.push(newly_working_assembler(*pos, data_store));
                 },
                 Entity::Assembler {
+                    modules,
                     info: AssemblerInfo::Unpowered(recipe),
                     ..
                 } => {
+                    for module_slot in modules.iter_mut() {
+                        *module_slot = cheated_modules;
+                    }
                     *recipe = new_recipe;
                 },
                 Entity::Assembler {
+                    modules,
                     info: info @ AssemblerInfo::UnpoweredNoRecipe,
                     ..
                 } => {
+                    for module_slot in modules.iter_mut() {
+                        *module_slot = cheated_modules;
+                    }
                     *info = AssemblerInfo::Unpowered(new_recipe);
                 },
                 e => unreachable!("Called change recipe on non assembler: {e:?}"),
@@ -1058,13 +1094,85 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 ref modules,
                 pole_position: None,
             } => {},
+            Entity::FluidTank { .. } => {},
         };
+
+        if let Some(map_updates) = &mut self.map_updates {
+            for x_offs in 0..entity.get_size(data_store).0 {
+                for y_offs in 0..entity.get_size(data_store).1 {
+                    let e_pos = entity.get_pos();
+
+                    map_updates.push(Position {
+                        x: e_pos.x + i32::from(x_offs),
+                        y: e_pos.y + i32::from(y_offs),
+                    });
+                }
+            }
+        }
 
         let chunk = self
             .get_chunk_for_tile_mut(pos)
             .expect("Chunk outside the world!");
 
+        let map = if let Some(map) = &mut chunk.chunk_tile_to_entity_into {
+            map
+        } else {
+            chunk.chunk_tile_to_entity_into = Some(Box::new(
+                [[u8::MAX; CHUNK_SIZE as usize]; CHUNK_SIZE as usize],
+            ));
+            chunk.chunk_tile_to_entity_into.as_mut().unwrap()
+        };
+
+        let e_pos: Position = entity.get_pos();
+        let e_size = entity.get_size(data_store);
+
         chunk.entities.push(entity);
+
+        let index = u8::try_from(chunk.entities.len() - 1).expect("Into a chunk of size 16 x 16 we can fit at most 256 entitites. This assumes all entities are at least 1x1");
+
+        for x_offs in 0..e_size.0 {
+            for y_offs in 0..e_size.1 {
+                let x_in_chunk = usize::try_from((e_pos.x).rem_euclid(CHUNK_SIZE as i32)).unwrap();
+                let x = min(x_in_chunk + usize::from(x_offs), CHUNK_SIZE as usize - 1);
+                let y_in_chunk = usize::try_from((e_pos.y).rem_euclid(CHUNK_SIZE as i32)).unwrap();
+                let y = min(y_in_chunk + usize::from(y_offs), CHUNK_SIZE as usize - 1);
+
+                map[x][y] = index;
+            }
+        }
+
+        #[cfg(debug_assertions)]
+        for x_offs in 0..e_size.0 {
+            for y_offs in 0..e_size.1 {
+                assert!(self
+                    .get_entities_colliding_with(
+                        Position {
+                            x: e_pos.x + i32::from(x_offs),
+                            y: e_pos.y + i32::from(y_offs)
+                        },
+                        (1, 1),
+                        data_store
+                    )
+                    .into_iter()
+                    .next()
+                    .is_some());
+                assert!(
+                    self.get_entities_colliding_with(
+                        Position {
+                            x: e_pos.x + i32::from(x_offs),
+                            y: e_pos.y + i32::from(y_offs)
+                        },
+                        (1, 1),
+                        data_store
+                    )
+                    .into_iter()
+                    .next()
+                    .unwrap()
+                    .get_pos()
+                        == e_pos
+                );
+            }
+        }
 
         while let Some(update) = cascading_updates.pop() {
             (update.update)(self, sim_state, &mut cascading_updates, data_store);
@@ -1130,7 +1238,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             .into_iter()
             .next()
             .map(|e| match e {
-                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }  => None,
+                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }| Entity::FluidTank { .. }  => None,
 
                 Entity::Roboport { ty, pos, power_grid, network, id } => {
                     // TODO:
@@ -1231,7 +1339,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             .into_iter()
             .next()
             .map(|e| match e {
-                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }  => None,
+                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }| Entity::FluidTank { .. }  => None,
 
                 Entity::Roboport { ty, pos, power_grid, network, id } => {
                     // TODO:
@@ -1741,7 +1849,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     | Entity::Underground { .. }
                     | Entity::Splitter { .. }
                     | Entity::Chest { .. }
-                    | Entity::Beacon { .. } => {},
+                    | Entity::Beacon { .. }
+                    | Entity::FluidTank { .. } => {},
                 }
             }
         }
@@ -1776,6 +1885,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     Entity::PowerPole { .. } => {},
                     Entity::Chest { .. } => {},
                     Entity::Roboport { .. } => {},
+                    Entity::FluidTank { .. } => {},
                     Entity::Belt { id, belt_pos, .. }
                     | Entity::Underground { id, belt_pos, .. } => {
                         if *id == old_id && belt_pos_earliest <= *belt_pos {
@@ -1836,6 +1946,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     Entity::PowerPole { .. } => {},
                     Entity::Chest { .. } => {},
                     Entity::Roboport { .. } => {},
+                    Entity::FluidTank { .. } => {},
                     Entity::Belt { id, belt_pos, .. }
                     | Entity::Underground { id, belt_pos, .. } => {
                         if *id == id_to_change {
@@ -1947,6 +2058,65 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         })
     }
 
+    pub fn get_entity_color(
+        &self,
+        pos: Position,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Color32 {
+        let chunk = self.get_chunk_for_tile(pos);
+
+        chunk
+            .map(|chunk| {
+                let index = if let Some(map) = &chunk.chunk_tile_to_entity_into {
+                    map[usize::try_from(pos.x.rem_euclid(CHUNK_SIZE as i32)).unwrap()]
+                        [usize::try_from(pos.y.rem_euclid(CHUNK_SIZE as i32)).unwrap()]
+                } else {
+                    u8::MAX
+                };
+
+                if (index as usize) < chunk.entities.len() {
+                    chunk.entities[index as usize].get_map_color(data_store)
+                } else {
+                    // This could be part of an entity in a different chunk
+                    let our_chunk_x = pos.x / i32::from(CHUNK_SIZE);
+                    let our_chunk_y = pos.y / i32::from(CHUNK_SIZE);
+
+                    let chunk_range_x = ((pos.x - i32::from(data_store.max_entity_size.0))
+                        / i32::from(CHUNK_SIZE))
+                        ..=our_chunk_x;
+
+                    for chunk_x in chunk_range_x {
+                        let chunk_range_y = ((pos.y - i32::from(data_store.max_entity_size.1))
+                            / i32::from(CHUNK_SIZE))
+                            ..=our_chunk_y;
+                        for chunk_y in chunk_range_y {
+                            if chunk_x == our_chunk_x && chunk_y == our_chunk_y {
+                                continue;
+                            }
+
+                            if let Some(colliding) = self
+                                .get_chunk(chunk_x, chunk_y)
+                                .iter()
+                                .flat_map(|chunk| chunk.entities.iter())
+                                .find(|e| {
+                                    let e_pos = e.get_pos();
+                                    let e_size = e.get_size(data_store);
+
+                                    pos.contained_in(e_pos, (e_size.0.into(), e_size.1.into()))
+                                })
+                            {
+                                return colliding.get_map_color(data_store);
+                            }
+                        }
+                    }
+
+                    // TODO: Get floor color
+                    Color32::BLUE
+                }
+            })
+            .unwrap_or(Color32::BLACK)
+    }
+
     pub fn get_entities_colliding_with<'a, 'b>(
         &'a self,
         pos: Position,
@@ -1970,8 +2140,47 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
         chunk_range_x
             .cartesian_product(chunk_range_y)
-            .filter_map(|(chunk_x, chunk_y)| self.chunks.get(chunk_x, chunk_y))
-            .map(|chunk| chunk.entities.iter())
+            .filter_map(|(chunk_x, chunk_y)| {
+                self.chunks
+                    .get(chunk_x, chunk_y)
+                    .map(|c| (chunk_x, chunk_y, c))
+            })
+            .map(move |(chunk_x, chunk_y, chunk)| {
+                if size == (1, 1)
+                    && pos.x >= chunk_x * i32::from(CHUNK_SIZE)
+                    && pos.x < (chunk_x + 1) * i32::from(CHUNK_SIZE)
+                    && pos.y >= chunk_y * i32::from(CHUNK_SIZE)
+                    && pos.y < (chunk_y + 1) * i32::from(CHUNK_SIZE)
+                {
+                    let index = if let Some(map) = &chunk.chunk_tile_to_entity_into {
+                        map[usize::try_from(pos.x.rem_euclid(i32::from(CHUNK_SIZE))).unwrap()]
+                            [usize::try_from(pos.y.rem_euclid(i32::from(CHUNK_SIZE))).unwrap()]
+                    } else {
+                        u8::MAX
+                    };
+
+                    if index as usize >= chunk.entities.len() {
+                        debug_assert!(chunk.entities.iter().all(|e| {
+                            let e_pos = e.get_pos();
+                            let e_size = e.get_size(data_store);
+
+                            !pos.overlap(size, e_pos, (e_size.0.into(), e_size.1.into()))
+                        }));
+                        [].iter()
+                    } else {
+                        assert!(chunk.entities[(index as usize)..(index as usize + 1)].len() == 1);
+                        {
+                            let e_pos = chunk.entities[index as usize].get_pos();
+                            let e_size = chunk.entities[index as usize].get_size(data_store);
+
+                            assert!(pos.contained_in(e_pos, e_size))
+                        }
+                        chunk.entities[(index as usize)..(index as usize + 1)].iter()
+                    }
+                } else {
+                    chunk.entities.iter()
+                }
+            })
             .flatten()
             .filter(move |e| {
                 let e_pos = e.get_pos();
@@ -2050,6 +2259,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             let max_inserter_range = data_store.max_inserter_search_range;
 
             match entity {
+                Entity::FluidTank { ty, pos, rotation } => {
+                    sim_state.factory.fluid_store.remove_fluid_box(
+                        *pos,
+                        &mut sim_state.factory.chests,
+                        &mut sim_state.factory.storage_storage_inserters,
+                        data_store,
+                    );
+                },
                 Entity::Beacon {
                     pos,
                     ty,
@@ -2424,7 +2641,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     if let Some((item, index)) = item {
                         let chest_removal_info = sim_state.factory.chests.stores
                             [usize_from(item.id)]
-                        .remove_chest(*index, data_store);
+                        .remove_chest(*index);
 
                         let chest_size = data_store.chest_tile_sizes[usize::from(*ty)];
 
@@ -2471,23 +2688,40 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     },
                 },
             }
+
+            let chunk = self.get_chunk_for_tile_mut(e_pos).unwrap();
+            let old_idx = u8::try_from(
+                chunk
+                    .entities
+                    .iter()
+                    .position(|e| e.get_pos() == e_pos)
+                    .unwrap(),
+            )
+            .unwrap();
+
+            for outer in chunk.chunk_tile_to_entity_into.as_mut().unwrap().iter_mut() {
+                for v in outer.iter_mut() {
+                    match (*v).cmp(&old_idx) {
+                        std::cmp::Ordering::Less => {
+                            // We will not be moved by Vec::remove
+                        },
+                        std::cmp::Ordering::Equal => {
+                            // Remove it
+                            *v = u8::MAX;
+                        },
+                        std::cmp::Ordering::Greater => {
+                            // Vec::remove will move us one step to the left
+                            *v -= 1;
+                        },
+                    }
+                }
+            }
+
+            // Actually remove the entity
+            chunk.entities.remove(old_idx as usize);
         } else {
             // Nothing to do
         }
-
-        // Actually remove the entity
-        self.get_chunk_for_tile_mut(pos)
-            .unwrap()
-            .entities
-            .retain(|e| {
-                !pos.contained_in(
-                    e.get_pos(),
-                    (
-                        e.get_size(data_store).0.into(),
-                        e.get_size(data_store).1.into(),
-                    ),
-                )
-            });
 
         while let Some(update) = cascading_updates.pop() {
             (update.update)(self, sim_state, &mut cascading_updates, data_store);
@@ -2680,6 +2914,12 @@ pub enum UndergroundDir {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
+struct PipeConnection {
+    pipe_pos: Position,
+    connection_weak_index: WeakIndex,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Assembler {
         ty: u8,
@@ -2687,6 +2927,7 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         /// List of all the module slots of this assembler
         modules: Box<[Option<usize>]>,
         info: AssemblerInfo<RecipeIdxType>,
+        // fluid_connections: Vec<PipeConnection>,
     },
     PowerPole {
         // This means at most 256 different types of power poles can exist, should be fine :)
@@ -2753,6 +2994,18 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         modules: Box<[Option<usize>]>,
         pole_position: Option<(Position, WeakIndex)>,
     },
+    // Pipes are coded as fluid tanks with connections on all sides
+    FluidTank {
+        ty: u8,
+        pos: Position,
+        rotation: Dir,
+    },
+}
+
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
+pub struct UndergroundPipeConnection<ItemIdxType: WeakIdxTrait> {
+    connected_pipe_pos: Position,
+    system_id: FluidSystemId<ItemIdxType>,
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeIdxType> {
@@ -2769,11 +3022,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::SolarPanel { pos, .. } => *pos,
             Self::Lab { pos, .. } => *pos,
             Self::Beacon { pos, .. } => *pos,
+            Self::FluidTank { pos, .. } => *pos,
         }
     }
 
     pub fn get_size(&self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> (u16, u16) {
-        // FIXME: Use data_store
+        // FIXME: Use data_store for everything
         match self {
             Self::Assembler { ty, .. } => data_store.assembler_info[usize::from(*ty)].size,
             Self::PowerPole { ty, .. } => data_store.power_pole_data[usize::from(*ty)].size,
@@ -2794,6 +3048,41 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             ),
             Self::Lab { ty, .. } => data_store.lab_info[usize::from(*ty)].size,
             Self::Beacon { ty, .. } => data_store.beacon_info[usize::from(*ty)].size,
+            Self::FluidTank { ty, .. } => data_store.fluid_tank_infos[usize::from(*ty)].size.into(),
+        }
+    }
+
+    pub fn get_map_color(&self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Color32 {
+        match self {
+            Self::Assembler { .. } => Color32::from_hex("#0086c9").unwrap(),
+            Self::PowerPole { .. } => Color32::from_hex("#eeee29").unwrap(),
+            Self::Belt { .. } => Color32::from_hex("#faba00").unwrap(),
+            Self::Inserter { .. } => Color32::from_hex("#006192").unwrap(),
+            Self::Underground { .. } => Color32::from_hex("#faba00").unwrap(),
+            Self::Splitter { .. } => Color32::from_hex("#faba00").unwrap(),
+            Self::Chest { .. } => Color32::from_hex("#ccd8cc").unwrap(),
+            Self::Roboport { .. } => Color32::from_hex("#4888e8").unwrap(),
+            Self::SolarPanel { .. } => Color32::from_hex("#1f2124").unwrap(),
+            Self::Lab { .. } => Color32::from_hex("#ff90bd").unwrap(),
+            Self::Beacon { .. } => Color32::from_hex("#008192").unwrap(),
+            Self::FluidTank { .. } => Color32::from_hex("#b429ff").unwrap(),
+        }
+    }
+
+    pub fn cares_about_power(&self) -> bool {
+        match self {
+            Self::Assembler { .. } => true,
+            Self::PowerPole { .. } => true,
+            Self::Belt { .. } => false,
+            Self::Inserter { .. } => false,
+            Self::Underground { .. } => false,
+            Self::Splitter { .. } => false,
+            Self::Chest { .. } => false,
+            Self::Roboport { .. } => true,
+            Self::SolarPanel { .. } => true,
+            Self::Lab { .. } => true,
+            Self::Beacon { .. } => true,
+            Self::FluidTank { .. } => false,
         }
     }
 }
@@ -2848,6 +3137,30 @@ pub enum PlaceEntityType<ItemIdxType: WeakIdxTrait> {
         ty: u8,
         pos: Position,
     },
+    FluidTank {
+        ty: u8,
+        pos: Position,
+        rotation: Dir,
+    },
+}
+
+impl<ItemIdxType: IdxTrait> PlaceEntityType<ItemIdxType> {
+    pub fn cares_about_power(&self) -> bool {
+        match self {
+            Self::Assembler { .. } => true,
+            Self::PowerPole { .. } => true,
+            Self::Belt { .. } => false,
+            Self::Inserter { .. } => false,
+            // Self::Underground { .. } => false,
+            Self::Splitter { .. } => false,
+            Self::Chest { .. } => false,
+            // Self::Roboport { .. } => true,
+            Self::SolarPanel { .. } => true,
+            Self::Lab { .. } => true,
+            Self::Beacon { .. } => true,
+            Self::FluidTank { .. } => false,
+        }
+    }
 }
 
 #[derive(

@@ -1,6 +1,8 @@
 use std::{
     cmp::{min, Ordering},
     iter::successors,
+    mem,
+    time::Duration,
 };
 
 use crate::{
@@ -11,15 +13,20 @@ use crate::{
     frontend::{
         action::{
             action_state_machine::{
-                ActionStateMachine, ActionStateMachineState, StatisticsPanel, WIDTH_PER_LEVEL,
+                ActionStateMachine, ActionStateMachineState, HeldObject, StatisticsPanel,
+                WIDTH_PER_LEVEL,
             },
             set_recipe::SetRecipeInfo,
             ActionType,
         },
-        world::tile::{AssemblerInfo, Dir, Entity, BELT_LEN_PER_TILE, CHUNK_SIZE_FLOAT},
+        world::{
+            tile::{AssemblerInfo, Dir, Entity, BELT_LEN_PER_TILE, CHUNK_SIZE_FLOAT},
+            Position,
+        },
     },
     item::{usize_from, IdxTrait, Item, Recipe},
     power::{power_grid::MAX_POWER_MULT, Joule, Watt},
+    rendering::map_view::{self, create_map_textures_if_needed, MapViewUpdate},
     statistics::{
         NUM_SAMPLES_AT_INTERVALS, NUM_X_AXIS_TICKS, RELATIVE_INTERVAL_MULTS, TIMESCALE_LEGEND,
     },
@@ -29,10 +36,11 @@ use eframe::egui::{
     self, Align2, Color32, ComboBox, Context, CornerRadius, Label, Layout, ProgressBar, Stroke, Ui,
     Window,
 };
-use egui::{RichText, ScrollArea, Sense, UiBuilder};
+use egui::{RichText, ScrollArea, Sense};
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
 use log::{info, trace, warn};
+use parking_lot::MutexGuard;
 use tilelib::types::{DrawInstance, Layer, RendererTrait};
 
 use super::{app_state::GameState, TextureAtlas};
@@ -44,15 +52,30 @@ use super::{app_state::GameState, TextureAtlas};
 #[allow(clippy::too_many_lines)]
 pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     renderer: &mut impl RendererTrait,
-    game_state: &GameState<ItemIdxType, RecipeIdxType>,
+    mut game_state: MutexGuard<GameState<ItemIdxType, RecipeIdxType>>,
     texture_atlas: &TextureAtlas,
-    state_machine: &ActionStateMachine<ItemIdxType, RecipeIdxType>,
+    state_machine: MutexGuard<ActionStateMachine<ItemIdxType, RecipeIdxType>>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
+    let mut updates = Some(vec![]);
+
+    mem::swap(&mut updates, &mut game_state.world.map_updates);
+
+    map_view::apply_updates(
+        updates
+            .into_iter()
+            .flat_map(|v| v.into_iter())
+            .map(|pos| MapViewUpdate {
+                pos,
+                color: game_state.world.get_entity_color(pos, data_store),
+            }),
+        renderer,
+    );
+
     let ar = renderer.get_aspect_ratio();
 
     let num_tiles_across_screen_horizontal =
-        WIDTH_PER_LEVEL as f32 * state_machine.zoom_level * state_machine.zoom_level;
+        WIDTH_PER_LEVEL as f32 * 1.5f32.powf(state_machine.zoom_level);
     let num_tiles_across_screen_vertical = num_tiles_across_screen_horizontal / ar;
     let tilesize: f32 = 1.0 / num_tiles_across_screen_horizontal;
 
@@ -65,7 +88,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     let mut warning_layer = Layer::square_tile_grid(tilesize, ar);
 
-    let range_layer = Layer::square_tile_grid(tilesize, ar);
+    let mut range_layer = Layer::square_tile_grid(tilesize, ar);
 
     let player_pos = state_machine.local_player_pos;
 
@@ -74,10 +97,43 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         (player_pos.1 / CHUNK_SIZE_FLOAT) as i32,
     );
 
+    const SWITCH_TO_MAPVIEW: f32 = if cfg!(debug_assertions) { 200.0 } else { 500.0 };
+    if num_tiles_across_screen_horizontal > SWITCH_TO_MAPVIEW {
+        mem::drop(state_machine);
+
+        create_map_textures_if_needed(
+            &game_state.world,
+            renderer,
+            Position {
+                x: player_pos.0 as i32,
+                y: player_pos.1 as i32,
+            },
+            num_tiles_across_screen_horizontal as usize,
+            num_tiles_across_screen_vertical as usize,
+            data_store,
+        );
+        mem::drop(game_state);
+
+        map_view::render_map_view(
+            renderer,
+            Position {
+                x: player_pos.0 as i32,
+                y: player_pos.1 as i32,
+            },
+            num_tiles_across_screen_horizontal,
+            num_tiles_across_screen_vertical,
+            num_tiles_across_screen_horizontal as usize,
+            num_tiles_across_screen_vertical as usize,
+            tilesize,
+            ar,
+            player_pos,
+        );
+        return;
+    }
+
     for x_offs in -((num_tiles_across_screen_horizontal / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
         ..=((num_tiles_across_screen_horizontal / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
     {
-        // TODO: Use different height (aspect ratio!)
         for y_offs in -((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
             ..=((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
         {
@@ -341,8 +397,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 for item in items_iter {
                                     if let Some(item) = item {
                                         item_layer.draw_sprite(
-                                            // &texture_atlas.items[item.id.into()],
-                                            &texture_atlas.items[0],
+                                            &texture_atlas.items[item.id.into()],
+                                            // &texture_atlas.items[0],
                                             DrawInstance {
                                                 position: [
                                                     item_render_base_pos.0,
@@ -422,6 +478,32 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     0,
                                     &mut entity_layer,
                                 );
+
+                                let power_range =
+                                    data_store.power_pole_data[usize::from(*ty)].power_range;
+
+                                if let ActionStateMachineState::Holding(HeldObject::Entity(e)) =
+                                    state_machine.state
+                                {
+                                    if e.cares_about_power() {
+                                        range_layer.draw_sprite(
+                                            &texture_atlas.dark_square,
+                                            DrawInstance {
+                                                position: [
+                                                    chunk_draw_offs.0 + (pos.x % 16) as f32
+                                                        - power_range as f32,
+                                                    chunk_draw_offs.1 + (pos.y % 16) as f32
+                                                        - power_range as f32,
+                                                ],
+                                                size: [
+                                                    power_range as f32 * 2.0 + size[0] as f32,
+                                                    power_range as f32 * 2.0 + size[1] as f32,
+                                                ],
+                                                animation_frame: 0,
+                                            },
+                                        );
+                                    }
+                                }
                             },
 
                             Entity::Splitter { pos, direction, id } => {
@@ -648,6 +730,19 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                                 // TODO: Render modules
                             },
+                            Entity::FluidTank { ty, pos, rotation } => {
+                                let size = data_store.fluid_tank_infos[usize::from(*ty)].size;
+
+                                texture_atlas.beacon.draw(
+                                    [
+                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                    ],
+                                    size,
+                                    0,
+                                    &mut entity_layer,
+                                );
+                            },
 
                             e => todo!("{:?}", e),
                         }
@@ -684,7 +779,6 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 crate::frontend::action::action_state_machine::HeldObject::Entity(
                     place_entity_type,
                 ) => match place_entity_type {
-                    // TODO:
                     crate::frontend::world::tile::PlaceEntityType::Assembler { ty, pos } => {
                         let size: [u16; 2] = [
                             data_store.assembler_info[usize::from(*ty)].size.0,
@@ -706,19 +800,168 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         pos,
                         dir,
                         filter,
-                    } => {},
-                    crate::frontend::world::tile::PlaceEntityType::Belt { pos, direction } => {},
-                    crate::frontend::world::tile::PlaceEntityType::PowerPole { pos, ty } => {},
+                    } => {
+                        let size: [u16; 2] = [1, 1];
+                        entity_layer.draw_sprite(
+                            &texture_atlas.inserter[*dir],
+                            DrawInstance {
+                                position: [
+                                    pos.x as f32 - state_machine.local_player_pos.0
+                                        + num_tiles_across_screen_horizontal / 2.0,
+                                    pos.y as f32 - state_machine.local_player_pos.1
+                                        + num_tiles_across_screen_vertical / 2.0,
+                                ],
+                                size: [size[0].into(), size[1].into()],
+                                animation_frame: 0,
+                            },
+                        );
+                    },
+                    crate::frontend::world::tile::PlaceEntityType::Belt { pos, direction } => {
+                        let size: [u16; 2] = [1, 1];
+                        entity_layer.draw_sprite(
+                            &texture_atlas.belt[*direction],
+                            DrawInstance {
+                                position: [
+                                    pos.x as f32 - state_machine.local_player_pos.0
+                                        + num_tiles_across_screen_horizontal / 2.0,
+                                    pos.y as f32 - state_machine.local_player_pos.1
+                                        + num_tiles_across_screen_vertical / 2.0,
+                                ],
+                                size: [size[0].into(), size[1].into()],
+                                animation_frame: 0,
+                            },
+                        );
+                    },
+                    crate::frontend::world::tile::PlaceEntityType::PowerPole { pos, ty } => {
+                        let size: [u16; 2] = [
+                            data_store.power_pole_data[usize::from(*ty)].size.0,
+                            data_store.power_pole_data[usize::from(*ty)].size.1,
+                        ];
+                        texture_atlas.power_pole.draw(
+                            [
+                                pos.x as f32 - state_machine.local_player_pos.0
+                                    + num_tiles_across_screen_horizontal / 2.0,
+                                pos.y as f32 - state_machine.local_player_pos.1
+                                    + num_tiles_across_screen_vertical / 2.0,
+                            ],
+                            size,
+                            0,
+                            &mut entity_layer,
+                        );
+
+                        let power_range = data_store.power_pole_data[usize::from(*ty)].power_range;
+
+                        range_layer.draw_sprite(
+                            &texture_atlas.dark_square,
+                            DrawInstance {
+                                position: [
+                                    (pos.x as f32 - power_range as f32)
+                                        - state_machine.local_player_pos.0
+                                        + num_tiles_across_screen_horizontal / 2.0,
+                                    (pos.y as f32 - power_range as f32)
+                                        - state_machine.local_player_pos.1
+                                        + num_tiles_across_screen_vertical / 2.0,
+                                ],
+                                size: [
+                                    power_range as f32 * 2.0 + size[0] as f32,
+                                    power_range as f32 * 2.0 + size[1] as f32,
+                                ],
+                                animation_frame: 0,
+                            },
+                        );
+                    },
                     crate::frontend::world::tile::PlaceEntityType::Splitter {
                         pos,
                         direction,
                         in_mode,
                         out_mode,
                     } => {},
-                    crate::frontend::world::tile::PlaceEntityType::Chest { pos, ty } => {},
-                    crate::frontend::world::tile::PlaceEntityType::SolarPanel { pos, ty } => {},
-                    crate::frontend::world::tile::PlaceEntityType::Lab { pos, ty } => {},
-                    crate::frontend::world::tile::PlaceEntityType::Beacon { pos, ty } => {},
+                    crate::frontend::world::tile::PlaceEntityType::Chest { pos, ty } => {
+                        let size = data_store.chest_tile_sizes[usize::from(*ty)];
+                        let size = [size.0, size.1];
+                        texture_atlas.chest.draw(
+                            [
+                                pos.x as f32 - state_machine.local_player_pos.0
+                                    + num_tiles_across_screen_horizontal / 2.0,
+                                pos.y as f32 - state_machine.local_player_pos.1
+                                    + num_tiles_across_screen_vertical / 2.0,
+                            ],
+                            size,
+                            0,
+                            &mut entity_layer,
+                        );
+                    },
+                    crate::frontend::world::tile::PlaceEntityType::SolarPanel { pos, ty } => {
+                        let size = data_store.solar_panel_info[usize::from(*ty)].size;
+                        entity_layer.draw_sprite(
+                            &texture_atlas.default,
+                            DrawInstance {
+                                position: [
+                                    pos.x as f32 - state_machine.local_player_pos.0
+                                        + num_tiles_across_screen_horizontal / 2.0,
+                                    pos.y as f32 - state_machine.local_player_pos.1
+                                        + num_tiles_across_screen_vertical / 2.0,
+                                ],
+                                size: [size[0] as f32, size[1] as f32],
+                                animation_frame: 0,
+                            },
+                        );
+                    },
+                    crate::frontend::world::tile::PlaceEntityType::Lab { pos, ty } => {
+                        let size = data_store.lab_info[usize::from(*ty)].size;
+                        let size = [size.0, size.1];
+
+                        texture_atlas.lab.draw(
+                            [
+                                pos.x as f32 - state_machine.local_player_pos.0
+                                    + num_tiles_across_screen_horizontal / 2.0,
+                                pos.y as f32 - state_machine.local_player_pos.1
+                                    + num_tiles_across_screen_vertical / 2.0,
+                            ],
+                            size,
+                            0,
+                            &mut entity_layer,
+                        );
+                    },
+                    crate::frontend::world::tile::PlaceEntityType::Beacon { pos, ty } => {
+                        let size = data_store.beacon_info[usize::from(*ty)].size;
+                        let size = [size.0, size.1];
+
+                        texture_atlas.beacon.draw(
+                            [
+                                pos.x as f32 - state_machine.local_player_pos.0
+                                    + num_tiles_across_screen_horizontal / 2.0,
+                                pos.y as f32 - state_machine.local_player_pos.1
+                                    + num_tiles_across_screen_vertical / 2.0,
+                            ],
+                            size,
+                            0,
+                            &mut entity_layer,
+                        );
+
+                        let effect_range = data_store.beacon_info[usize::from(*ty)].effect_range;
+
+                        range_layer.draw_sprite(
+                            &texture_atlas.dark_square,
+                            DrawInstance {
+                                position: [
+                                    (pos.x as f32 - ((effect_range.0 - size[0]) / 2) as f32)
+                                        - state_machine.local_player_pos.0
+                                        + num_tiles_across_screen_horizontal / 2.0,
+                                    (pos.y as f32 - ((effect_range.1 - size[1]) / 2) as f32)
+                                        - state_machine.local_player_pos.1
+                                        + num_tiles_across_screen_vertical / 2.0,
+                                ],
+                                size: [effect_range.0 as f32, effect_range.1 as f32],
+                                animation_frame: 0,
+                            },
+                        );
+                    },
+                    crate::frontend::world::tile::PlaceEntityType::FluidTank {
+                        ty,
+                        pos,
+                        rotation,
+                    } => {},
                 },
             }
         },
@@ -781,11 +1024,11 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     renderer.draw(&tile_layer);
 
-    renderer.draw(&range_layer);
-
     renderer.draw(&entity_layer);
 
     renderer.draw(&item_layer);
+
+    renderer.draw(&range_layer);
 
     renderer.draw(&warning_layer);
 
@@ -800,6 +1043,15 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
     let mut actions = vec![];
+
+    Window::new("UPS").default_open(false).show(ctx, |ui| {
+        let points = &game_state.update_times.get_data_points(0)[0..30];
+        ui.label(format!(
+            "{:.1} UPS",
+            1.0 / (points.iter().map(|v| v.dur).sum::<Duration>() / points.len() as u32)
+                .as_secs_f32()
+        ));
+    });
 
     Window::new("BP").default_open(false).show(ctx, |ui| {
         let bp = Blueprint::from_area(&game_state.world, [1590..1700, 1590..1700], data_store);
@@ -846,12 +1098,12 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         };
 
                         ComboBox::new("Recipe list", "Recipes").selected_text(goal_recipe.map(|recipe| data_store.recipe_names[usize_from(recipe.id)].as_str()).unwrap_or("Choose a recipe!")).show_ui(ui, |ui| {
-                            data_store.recipe_names.iter().enumerate().for_each(|(i, recipe_name)| {
+                            data_store.recipe_names.iter().enumerate().filter(|(i, recipe_name)| {
+                                    data_store.recipe_allowed_assembling_machines[*i].contains(ty)
+                                }).for_each(|(i, recipe_name)| {
                                 ui.selectable_value(&mut goal_recipe, Some(Recipe {id: i.try_into().unwrap()}), recipe_name);
                             });
                         });
-
-                        // TODO: Render module slots
 
 
                         match info {
@@ -880,7 +1132,6 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 pole_position, weak_index
                             } => {
                                 ui.label(&data_store.assembler_info[usize::from(*ty)].display_name);
-
 
                                 ui.label(format!("{:?}", *id));
 
@@ -915,6 +1166,21 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 ui.add(main_pb);
                                 let prod_pb = ProgressBar::new(prod_timer_percentage).fill(Color32::ORANGE).show_percentage().corner_radius(CornerRadius::ZERO);
                                 ui.add(prod_pb);
+
+                                // Render module slots
+                                TableBuilder::new(ui).id_salt("Module Slots").columns(Column::auto(), modules.len()).body(|mut body| {
+                                    body.row(1.0, |mut row| {
+                                        for module in modules {
+                                            row.col(|ui| {
+                                                if let Some(module_id) = module {
+                                                    ui.label(&data_store.module_info[*module_id].name);
+                                                } else {
+                                                    ui.label("Empty Module Slot");
+                                                }
+                                            });
+                                        }
+                                    });
+                                });
 
                                 let crafting_speed = base_speed * (1.0 + speed_mod);
                                 let time_per_craft = time_per_recipe / crafting_speed;
@@ -1009,13 +1275,23 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         });
 
                         TableBuilder::new(ui).columns(Column::auto(), 2).body(|body| {
-                            body.rows(1.0, pg.num_assemblers_of_type.len(), |mut row| {
+                            body.rows(1.0, pg.num_assemblers_of_type.len() + pg.num_solar_panels_of_type.len(), |mut row| {
                                 let i = row.index();
-                                row.col(|ui| {
-                                    ui.add(Label::new(&data_store.assembler_info[i].display_name).extend());
 
-                                    });
-                                row.col(|ui| {ui.label(format!("{}", pg.num_assemblers_of_type[i]));});
+                                if i < pg.num_assemblers_of_type.len() {
+                                    row.col(|ui| {
+                                        ui.add(Label::new(&data_store.assembler_info[i].display_name).extend());
+
+                                        });
+                                    row.col(|ui| {ui.label(format!("{}", pg.num_assemblers_of_type[i]));});
+                                } else {
+                                    let i = i - pg.num_assemblers_of_type.len();
+                                    row.col(|ui| {
+                                        ui.add(Label::new(&data_store.solar_panel_info[i].name).extend());
+
+                                        });
+                                    row.col(|ui| {ui.label(format!("{}", pg.num_solar_panels_of_type[i]));});
+                                }
                             });
                         });
 
@@ -1078,6 +1354,12 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     belt_pos,
                                 } => {
                                     ui.label("BeltStorage");
+
+                                    ui.label(format!("belt_id: {:?}", *id));
+                                    ui.label(format!("belt_pos: {}", *belt_pos));
+
+                                    ui.label(format!("storage: {:?}", game_state.simulation_state.factory.belts.get_inserter_info_at(*id, *belt_pos, data_store).expect("No inserter at pos indicated in entity!")));
+
                                     // TODO:
                                 },
                                 crate::frontend::world::tile::AttachedInserter::BeltBelt {
@@ -1148,6 +1430,11 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     }
                     Entity::Beacon { pos, ty, modules, pole_position } => {
                         // TODO
+                    },
+                    Entity::FluidTank { ty, pos, rotation } => {
+                        let id = game_state.simulation_state.factory.fluid_store.fluid_box_pos_to_network_id[pos];
+
+                        ui.label(format!("{:?}", id));
                     }
                     _ => todo!(),
                 }

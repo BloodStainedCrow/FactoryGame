@@ -92,11 +92,27 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         }
     }
 
-    pub fn remove_chest<RecipeIdxType: IdxTrait>(
-        &mut self,
-        index: u32,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> u16 {
+    pub fn add_custom_chest(&mut self, max_items: u16) -> u32 {
+        if let Some(hole) = self.holes.pop() {
+            self.inout[hole] = 0;
+            self.storage[hole] = 0;
+            self.max_insert[hole] = max_items.try_into().unwrap_or(ITEMCOUNTTYPE::MAX);
+
+            self.max_items[hole] = max_items.saturating_sub(u16::from(ITEMCOUNTTYPE::MAX));
+            hole.try_into().unwrap()
+        } else {
+            self.inout.push(0);
+            self.storage.push(0);
+            self.max_insert
+                .push(max_items.try_into().unwrap_or(ITEMCOUNTTYPE::MAX));
+
+            self.max_items
+                .push(max_items.saturating_sub(u16::from(ITEMCOUNTTYPE::MAX)));
+            (self.inout.len() - 1).try_into().unwrap()
+        }
+    }
+
+    pub fn remove_chest(&mut self, index: u32) -> u16 {
         let index = index as usize;
         self.holes.push(index);
 
@@ -110,7 +126,7 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
     pub fn get_chest(&self, index: u32) -> (u16, u16) {
         (
             self.storage[index as usize] + u16::from(self.inout[index as usize]),
-            self.max_items[index as usize],
+            self.max_items[index as usize] + u16::from(self.max_insert[index as usize]),
         )
     }
 
@@ -160,6 +176,58 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
             *storage = (*storage).wrapping_add_signed(moved) as u16;
 
             debug_assert!(*storage <= max_items);
+        }
+    }
+
+    pub fn add_items_to_chest(&mut self, index: u32, new_items: u16) -> Result<(), u16> {
+        let index = index as usize;
+
+        let storage_size = self.max_items[index] + u16::from(self.max_insert[index]);
+        let current_items = self.inout[index] as u16 + self.storage[index];
+
+        if current_items + new_items > storage_size {
+            let not_inserted = (current_items + new_items) - storage_size;
+            self.storage[index] = self.max_items[index];
+            self.inout[index] = self.max_insert[index];
+
+            Err(not_inserted)
+        } else {
+            let free_in_storage = self.max_items[index] - self.storage[index];
+
+            if new_items > free_in_storage {
+                self.storage[index] = self.max_items[index];
+                self.inout[index] = self.inout[index]
+                    .checked_add(u8::try_from(new_items - free_in_storage).unwrap())
+                    .unwrap();
+                assert!(self.inout[index] <= self.max_insert[index]);
+            } else {
+                self.storage[index] += new_items;
+            }
+
+            Ok(())
+        }
+    }
+
+    pub fn remove_items_from_chest(&mut self, index: u32, to_remove: u16) -> Result<(), u16> {
+        let index = index as usize;
+
+        let current_items = self.inout[index] as u16 + self.storage[index];
+
+        if current_items >= to_remove {
+            if self.storage[index] >= to_remove {
+                self.storage[index] -= to_remove;
+            } else {
+                self.inout[index] -= u8::try_from(to_remove - self.storage[index]).unwrap();
+                self.storage[index] = 0;
+            }
+
+            Ok(())
+        } else {
+            let missing = to_remove - current_items;
+            self.storage[index] = 0;
+            self.inout[index] = 0;
+
+            Err(missing)
         }
     }
 
