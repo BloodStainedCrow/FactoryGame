@@ -20,9 +20,7 @@ use crate::{
             ActionType,
         },
         world::{
-            tile::{
-                AssemblerInfo, Dir, Entity, BELT_LEN_PER_TILE, CHUNK_SIZE_FLOAT,
-            },
+            tile::{AssemblerInfo, Dir, Entity, BELT_LEN_PER_TILE, CHUNK_SIZE_FLOAT},
             Position,
         },
     },
