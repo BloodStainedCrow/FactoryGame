@@ -20,6 +20,7 @@ use crate::{
     item::{IdxTrait, WeakIdxTrait},
     rendering::app_state::GameState,
     replays::Replay,
+    saving::save,
     TICKS_PER_SECOND_RUNSPEED,
 };
 
@@ -188,6 +189,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 game_state_update_handler.update(game_state, Some(replay), data_store)
             },
             Game::IntegratedServer(game_state, replay, game_state_update_handler, tick_counter) => {
+                #[cfg(debug_assertions)]
+                {
+                    profiling::scope!("Crash anticipation save to disk");
+                    save(&game_state.lock(), data_store.checksum.clone());
+                }
                 game_state_update_handler.update(
                     {
                         profiling::scope!("Wait for GameState Lock");

@@ -1,9 +1,8 @@
 use crate::data::AllowedFluidDirection;
-use crate::frontend::world::tile::PlaceEntityType;
 use crate::liquid::connection_logic::can_fluid_tanks_connect_to_single_connection;
 use crate::liquid::FluidConnectionDir;
 use crate::{
-    belt::{belt::Belt, BeltBeltInserterInfo, BeltStore},
+    belt::{BeltBeltInserterInfo, BeltStore},
     blueprint::Blueprint,
     chest::{FullChestStore, MultiChestStore},
     data::{DataStore, ItemRecipeDir},
@@ -44,7 +43,6 @@ use crate::{
 use itertools::Itertools;
 use log::{info, trace, warn};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
-use std::collections::HashMap;
 use std::iter;
 use std::{
     borrow::Borrow,
@@ -109,6 +107,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let file = File::open("test_blueprints/red_sci.bp").unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
 
+        puffin::set_scopes_on(false);
         for y_pos in (1590..30000).step_by(7) {
             for x_pos in (1590..3000).step_by(20) {
                 if rand::random::<u16>() < u16::MAX / 100 {
@@ -118,6 +117,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 bp.apply(Position { x: x_pos, y: y_pos }, &mut ret, data_store);
             }
         }
+        puffin::set_scopes_on(true);
 
         ret
     }
@@ -143,6 +143,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let file = File::open("test_blueprints/red_and_green.bp").unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
 
+        puffin::set_scopes_on(false);
         for y_start in (0..24_000).step_by(4_000) {
             for y_pos in (1590..4000).step_by(40) {
                 for x_start in (0..24_000).step_by(4_000) {
@@ -162,6 +163,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 }
             }
         }
+        puffin::set_scopes_on(true);
 
         ret
     }
@@ -182,7 +184,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let file = File::open("test_blueprints/red_sci_with_beacons_and_belts.bp").unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
 
-        for y_start in (0..60_000).step_by(6_000) {
+        puffin::set_scopes_on(false);
+        for y_start in (0..40_000).step_by(6_000) {
             for y_pos in (1590..6000).step_by(10) {
                 for x_pos in (1590..3000).step_by(60) {
                     if rand::random::<u16>() == 0 {
@@ -200,6 +203,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 }
             }
         }
+        puffin::set_scopes_on(true);
 
         ret
     }
@@ -218,12 +222,109 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let file = File::open("test_blueprints/lots_of_belts.bp").unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
 
+        puffin::set_scopes_on(false);
         for y_pos in (1600..60_000).step_by(3) {
             ret.update(data_store);
-            for x_pos in (1600..3000).step_by(50) {
+            bp.apply(Position { x: 1600, y: y_pos }, &mut ret, data_store);
+        }
+        puffin::set_scopes_on(true);
+
+        ret
+    }
+
+    #[must_use]
+    pub fn new_with_tons_of_solar(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+        let mut ret = Self {
+            current_tick: 0,
+            world: World::new(),
+            simulation_state: SimulationState::new(data_store),
+            statistics: GenStatistics::new(data_store),
+            update_times: Timeline::new(false, data_store),
+            last_update_time: None,
+        };
+
+        let file = File::open("test_blueprints/solar_farm.bp").unwrap();
+        let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
+
+        puffin::set_scopes_on(false);
+        for y_pos in (1600..30_000).step_by(18) {
+            for x_pos in (1600..30_000).step_by(18) {
                 bp.apply(Position { x: x_pos, y: y_pos }, &mut ret, data_store);
             }
         }
+        puffin::set_scopes_on(true);
+
+        ret
+    }
+
+    #[must_use]
+    pub fn new_eight_beacon_factory(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+        let mut ret = Self {
+            current_tick: 0,
+            world: World::new(),
+            simulation_state: SimulationState::new(data_store),
+            statistics: GenStatistics::new(data_store),
+            update_times: Timeline::new(false, data_store),
+            last_update_time: None,
+        };
+
+        let iron_ore = File::open("test_blueprints/iron_ore.bp").unwrap();
+        let iron_ore: Blueprint<ItemIdxType, RecipeIdxType> =
+            ron::de::from_reader(iron_ore).unwrap();
+
+        let iron_plate = File::open("test_blueprints/iron_plate.bp").unwrap();
+        let iron_plate: Blueprint<ItemIdxType, RecipeIdxType> =
+            ron::de::from_reader(iron_plate).unwrap();
+
+        let gears = File::open("test_blueprints/gears.bp").unwrap();
+        let gears: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(gears).unwrap();
+
+        let copper_ore = File::open("test_blueprints/copper_ore.bp").unwrap();
+        let copper_ore: Blueprint<ItemIdxType, RecipeIdxType> =
+            ron::de::from_reader(copper_ore).unwrap();
+
+        let copper_plate = File::open("test_blueprints/copper_plate.bp").unwrap();
+        let copper_plate: Blueprint<ItemIdxType, RecipeIdxType> =
+            ron::de::from_reader(copper_plate).unwrap();
+
+        puffin::set_scopes_on(false);
+        for y_pos in (1600..=1600).step_by(18) {
+            iron_ore.apply(Position { x: 1600, y: y_pos }, &mut ret, data_store);
+            iron_plate.apply(
+                Position {
+                    x: 1644,
+                    y: y_pos + 1,
+                },
+                &mut ret,
+                data_store,
+            );
+            gears.apply(
+                Position {
+                    x: 1699,
+                    y: y_pos - 3,
+                },
+                &mut ret,
+                data_store,
+            );
+
+            copper_ore.apply(
+                Position {
+                    x: 1600,
+                    y: y_pos + 10,
+                },
+                &mut ret,
+                data_store,
+            );
+            copper_plate.apply(
+                Position {
+                    x: 1644,
+                    y: y_pos + 11,
+                },
+                &mut ret,
+                data_store,
+            );
+        }
+        puffin::set_scopes_on(true);
 
         ret
     }
@@ -691,15 +792,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                                 // Handle storage updates
                                 for storage_update in storage_updates {
+                                    dbg!(&storage_update);
+                                    let mut entity_size = None;
                                     self.world.mutate_entities_colliding_with(storage_update.position, (1,1), data_store, |e| {
                                         match (e, storage_update.new_pg_entity.clone()) {
-                                            (Entity::Assembler { ty: _, pos: _, info: AssemblerInfo::Powered { id, pole_position: _, weak_index }, modules: _ }, crate::power::power_grid::PowerGridEntity::Assembler { ty: _, recipe, index }) => {
+                                            (Entity::Assembler { ty, pos: _, info: AssemblerInfo::Powered { id, pole_position: _, weak_index }, modules: _ }, crate::power::power_grid::PowerGridEntity::Assembler { ty: _, recipe, index }) => {
+                                                entity_size = Some(data_store.assembler_info[usize::from(*ty)].size);
+
                                                 assert_eq!(id.recipe, recipe);
                                                 id.grid = storage_update.new_grid;
                                                 id.assembler_index = index;
                                                 // FIXME: Store and update the weak_index
                                             },
-                                            (Entity::Lab { pos: _, ty: _, modules: _, pole_position: Some((_pole_pos, weak_idx, lab_store_index)) }, crate::power::power_grid::PowerGridEntity::Lab { ty: _, index: new_idx  }) => {
+                                            (Entity::Lab { pos: _, ty, modules: _, pole_position: Some((_pole_pos, weak_idx, lab_store_index)) }, crate::power::power_grid::PowerGridEntity::Lab { ty: _, index: new_idx  }) => {
+                                                entity_size = Some(data_store.lab_info[usize::from(*ty)].size);
+
+
                                                 *lab_store_index = new_idx;
                                                 // The weak index stays the same since it it still connected to the same power pole
                                             }
@@ -708,6 +816,111 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         }
                                         ControlFlow::Break(())
                                     });
+
+                                    // FIXME: Rotation
+                                    let e_size = entity_size.unwrap();
+
+                                    let inserter_range = data_store.max_inserter_search_range;
+
+                                    self.world.mutate_entities_colliding_with(
+                                        Position {
+                                            x: storage_update.position.x
+                                                - i32::from(inserter_range),
+                                            y: storage_update.position.y
+                                                - i32::from(inserter_range),
+                                        },
+                                        (
+                                            u16::from(inserter_range) * 2 + e_size.0,
+                                            u16::from(inserter_range) * 2 + e_size.1,
+                                        ),
+                                        data_store,
+                                        |e| {
+                                            match e {
+                                                Entity::Inserter {
+                                                    pos,
+                                                    direction,
+                                                    filter,
+                                                    info,
+                                                } => match info {
+                                                    InserterInfo::NotAttached { .. } => {},
+                                                    InserterInfo::Attached {
+                                                        start_pos,
+                                                        end_pos,
+                                                        info,
+                                                    } => {
+                                                        if start_pos.contained_in(
+                                                            storage_update.position,
+                                                            e_size,
+                                                        ) {
+                                                            match info {
+                                                                AttachedInserter::BeltStorage { id, belt_pos } => {
+                                                                    let new_storage = match storage_update.new_pg_entity {
+                                                                        crate::power::power_grid::PowerGridEntity::Assembler { ty, recipe, index } => Storage::Assembler { grid: storage_update.new_grid, recipe_idx_with_this_item: recipe.id, index },
+                                                                        crate::power::power_grid::PowerGridEntity::Lab { ty, index } => Storage::Lab { grid: storage_update.new_grid, index },
+                                                                        crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
+                                                                        crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
+                                                                        crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
+                                                                        crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
+                                                                    }.translate(self.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos, data_store), data_store);
+                                                                    self.simulation_state.factory.belts.update_belt_storage_inserter_src(*id, *belt_pos, self.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos, data_store), new_storage, data_store);
+                                                                },
+                                                                AttachedInserter::BeltBelt { .. } => {
+                                                                    unreachable!("A BeltBelt inserter should not be pointing at a machine")
+                                                                },
+                                                                AttachedInserter::StorageStorage { item, inserter } => {
+                                                                    let new_storage = match storage_update.new_pg_entity {
+                                                                        crate::power::power_grid::PowerGridEntity::Assembler { ty, recipe, index } => Storage::Assembler { grid: storage_update.new_grid, recipe_idx_with_this_item: recipe.id, index },
+                                                                        crate::power::power_grid::PowerGridEntity::Lab { ty, index } => Storage::Lab { grid: storage_update.new_grid, index },
+                                                                        crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
+                                                                        crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
+                                                                        crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
+                                                                        crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
+                                                                    }.translate(*item, data_store);
+                                                                    self.simulation_state.factory.storage_storage_inserters.update_inserter_src(*item, *inserter, new_storage, data_store);
+                                                                },
+                                                            }
+                                                        }
+
+                                                        if end_pos.contained_in(
+                                                            storage_update.position,
+                                                            e_size,
+                                                        ) {
+                                                            match info {
+                                                                AttachedInserter::BeltStorage { id, belt_pos } => {
+                                                                    let new_storage = match storage_update.new_pg_entity {
+                                                                        crate::power::power_grid::PowerGridEntity::Assembler { ty, recipe, index } => Storage::Assembler { grid: storage_update.new_grid, recipe_idx_with_this_item: recipe.id, index },
+                                                                        crate::power::power_grid::PowerGridEntity::Lab { ty, index } => Storage::Lab { grid: storage_update.new_grid, index },
+                                                                        crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
+                                                                        crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
+                                                                        crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
+                                                                        crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
+                                                                    }.translate(self.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos, data_store), data_store);
+                                                                    self.simulation_state.factory.belts.update_belt_storage_inserter_dest(*id, *belt_pos, self.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos, data_store), new_storage, data_store);
+                                                                },
+                                                                AttachedInserter::BeltBelt { item, inserter } => {
+                                                                    unreachable!("A BeltBelt inserter should not be pointing at a machine")
+                                                                },
+                                                                AttachedInserter::StorageStorage { item, inserter } => {
+                                                                    let new_storage = match storage_update.new_pg_entity {
+                                                                        crate::power::power_grid::PowerGridEntity::Assembler { ty, recipe, index } => Storage::Assembler { grid: storage_update.new_grid, recipe_idx_with_this_item: recipe.id, index },
+                                                                        crate::power::power_grid::PowerGridEntity::Lab { ty, index } => Storage::Lab { grid: storage_update.new_grid, index },
+                                                                        crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
+                                                                        crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
+                                                                        crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
+                                                                        crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
+                                                                    }.translate(*item, data_store);
+                                                                    self.simulation_state.factory.storage_storage_inserters.update_inserter_dest(*item, *inserter, new_storage, data_store);
+                                                                },
+                                                            }
+                                                        }
+                                                    },
+                                                },
+
+                                                _ => {},
+                                            }
+                                            ControlFlow::Continue(())
+                                        },
+                                    );
                                 }
                             } else {
                                 // No updates needed

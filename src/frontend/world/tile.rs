@@ -13,7 +13,6 @@ use strum::EnumIter;
 
 use itertools::Itertools;
 
-use crate::inserter::FakeUnionStorage;
 use crate::{
     belt::{
         splitter::SplitterDistributionMode, BeltBeltInserterAdditionInfo, BeltTileId,
@@ -29,6 +28,7 @@ use crate::{
     },
     TICKS_PER_SECOND_LOGIC,
 };
+use crate::{inserter::FakeUnionStorage, item::Indexable};
 use static_assertions::const_assert;
 
 use std::fmt::Debug;
@@ -96,7 +96,7 @@ pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     remaining_updates: Vec<WorldUpdate>,
 
     #[serde(skip)]
-    pub map_updates: Vec<Position>,
+    pub map_updates: Option<Vec<Position>>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -696,7 +696,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         #[cfg(debug_assertions)]
         const WORLDSIZE_CHUNKS: i32 = 200;
         #[cfg(not(debug_assertions))]
-        const WORLDSIZE_CHUNKS: i32 = 2500;
+        const WORLDSIZE_CHUNKS: i32 = 4000;
 
         for x in 50..WORLDSIZE_CHUNKS {
             for y in 50..WORLDSIZE_CHUNKS {
@@ -726,7 +726,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
             remaining_updates: vec![],
 
-            map_updates: vec![],
+            map_updates: None,
         }
     }
 
@@ -763,6 +763,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         new_recipe: Recipe<RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
+        let can_accept_prod = data_store.recipe_is_intermediate[new_recipe.into_usize()];
+
+        // FIXME: Remove Cheated modules
+        let cheated_modules = if can_accept_prod { Some(1) } else { Some(0) };
+
         let mut cascading_updates = vec![];
 
         self.mutate_entities_colliding_with(pos, (1, 1), data_store, |e| {
@@ -770,7 +775,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 Entity::Assembler {
                     ty,
                     pos,
-                    modules: _,
+                    modules,
                     info:
                         AssemblerInfo::Powered {
                             id,
@@ -778,6 +783,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             weak_index,
                         },
                 } => {
+                    for module_slot in modules.iter_mut() {
+                        *module_slot = cheated_modules;
+                    }
+
                     let assembler_size = data_store.assembler_info[usize::from(*ty)].size;
 
                     // Change assembler recipe
@@ -811,6 +820,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     modules,
                     info: info @ AssemblerInfo::PoweredNoRecipe(_),
                 } => {
+                    for module_slot in modules.iter_mut() {
+                        *module_slot = cheated_modules;
+                    }
+
                     let AssemblerInfo::PoweredNoRecipe(pole_position) = info else {
                         unreachable!();
                     };
@@ -834,15 +847,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     cascading_updates.push(newly_working_assembler(*pos, data_store));
                 },
                 Entity::Assembler {
+                    modules,
                     info: AssemblerInfo::Unpowered(recipe),
                     ..
                 } => {
+                    for module_slot in modules.iter_mut() {
+                        *module_slot = cheated_modules;
+                    }
                     *recipe = new_recipe;
                 },
                 Entity::Assembler {
+                    modules,
                     info: info @ AssemblerInfo::UnpoweredNoRecipe,
                     ..
                 } => {
+                    for module_slot in modules.iter_mut() {
+                        *module_slot = cheated_modules;
+                    }
                     *info = AssemblerInfo::Unpowered(new_recipe);
                 },
                 e => unreachable!("Called change recipe on non assembler: {e:?}"),
@@ -1076,13 +1097,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             Entity::FluidTank { .. } => {},
         };
 
-        for x_offs in 0..entity.get_size(data_store).0 {
-            for y_offs in 0..entity.get_size(data_store).1 {
-                let e_pos = entity.get_pos();
-                self.map_updates.push(Position {
-                    x: e_pos.x + i32::from(x_offs),
-                    y: e_pos.y + i32::from(y_offs),
-                });
+        if let Some(map_updates) = &mut self.map_updates {
+            for x_offs in 0..entity.get_size(data_store).0 {
+                for y_offs in 0..entity.get_size(data_store).1 {
+                    let e_pos = entity.get_pos();
+
+                    map_updates.push(Position {
+                        x: e_pos.x + i32::from(x_offs),
+                        y: e_pos.y + i32::from(y_offs),
+                    });
+                }
             }
         }
 
@@ -2149,7 +2173,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             let e_pos = chunk.entities[index as usize].get_pos();
                             let e_size = chunk.entities[index as usize].get_size(data_store);
 
-                            assert!(pos.overlap(size, e_pos, (e_size.0.into(), e_size.1.into())))
+                            assert!(pos.contained_in(e_pos, e_size))
                         }
                         chunk.entities[(index as usize)..(index as usize + 1)].iter()
                     }
@@ -2664,25 +2688,40 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     },
                 },
             }
+
+            let chunk = self.get_chunk_for_tile_mut(e_pos).unwrap();
+            let old_idx = u8::try_from(
+                chunk
+                    .entities
+                    .iter()
+                    .position(|e| e.get_pos() == e_pos)
+                    .unwrap(),
+            )
+            .unwrap();
+
+            for outer in chunk.chunk_tile_to_entity_into.as_mut().unwrap().iter_mut() {
+                for v in outer.iter_mut() {
+                    match (*v).cmp(&old_idx) {
+                        std::cmp::Ordering::Less => {
+                            // We will not be moved by Vec::remove
+                        },
+                        std::cmp::Ordering::Equal => {
+                            // Remove it
+                            *v = u8::MAX;
+                        },
+                        std::cmp::Ordering::Greater => {
+                            // Vec::remove will move us one step to the left
+                            *v -= 1;
+                        },
+                    }
+                }
+            }
+
+            // Actually remove the entity
+            chunk.entities.remove(old_idx as usize);
         } else {
             // Nothing to do
         }
-
-        todo!("Remove from the chunk_tile_to_index map");
-
-        // Actually remove the entity
-        self.get_chunk_for_tile_mut(pos)
-            .unwrap()
-            .entities
-            .retain(|e| {
-                !pos.contained_in(
-                    e.get_pos(),
-                    (
-                        e.get_size(data_store).0.into(),
-                        e.get_size(data_store).1.into(),
-                    ),
-                )
-            });
 
         while let Some(update) = cascading_updates.pop() {
             (update.update)(self, sim_state, &mut cascading_updates, data_store);
@@ -3026,7 +3065,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::SolarPanel { .. } => Color32::from_hex("#1f2124").unwrap(),
             Self::Lab { .. } => Color32::from_hex("#ff90bd").unwrap(),
             Self::Beacon { .. } => Color32::from_hex("#008192").unwrap(),
-            Self::FluidTank { .. } => Color32::from_hex("b429ff").unwrap(),
+            Self::FluidTank { .. } => Color32::from_hex("#b429ff").unwrap(),
         }
     }
 

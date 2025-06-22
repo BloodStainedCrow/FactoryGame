@@ -30,6 +30,35 @@ const MAX_ACCUMULATOR_DISCHARGE_RATE: Watt = Watt(300_000);
 
 const MAX_ACCUMULATOR_CHARGE: Joule = Joule(5_000_000);
 
+pub enum PowerGridEntityFIXME {
+    Assembler {
+        ty: u8,
+        recipe: Recipe<u8>,
+        index: u32,
+    },
+    Lab {
+        ty: u8,
+        index: u32,
+    },
+    LazyPowerProducer {
+        item: Item<u8>,
+        index: u32,
+    },
+    SolarPanel {
+        ty: u8,
+    },
+    Accumulator {
+        ty: u8,
+    },
+    Beacon {
+        ty: u8,
+        speed: i16,
+        prod: i16,
+        power: i16,
+        pos: Position,
+    },
+}
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Assembler {
@@ -78,7 +107,7 @@ pub struct PowerGrid<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     steam_power_producers: SteamPowerProducerStore,
 
     // TODO: Currently there can only be a single type of solar panel and accumulator
-    num_solar_panels: Box<[u64]>,
+    pub num_solar_panels_of_type: Box<[u64]>,
     pub main_accumulator_count: Box<[u64]>,
     pub main_accumulator_charge: Box<[Joule]>,
     // unique_accumulators: Vec<UniqueAccumulator>,
@@ -155,7 +184,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                     .map(|info| MultiLazyPowerProducer::new(info))
                     .collect(),
             },
-            num_solar_panels: vec![0; data_store.solar_panel_info.len()].into_boxed_slice(),
+            num_solar_panels_of_type: vec![0; data_store.solar_panel_info.len()].into_boxed_slice(),
             main_accumulator_count: vec![0; data_store.accumulator_info.len()].into_boxed_slice(),
             main_accumulator_charge: vec![Joule(0); data_store.accumulator_info.len()]
                 .into_boxed_slice(),
@@ -196,7 +225,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                     .map(|info| MultiLazyPowerProducer::new(info))
                     .collect(),
             },
-            num_solar_panels: vec![0; data_store.solar_panel_info.len()].into_boxed_slice(),
+            num_solar_panels_of_type: vec![0; data_store.solar_panel_info.len()].into_boxed_slice(),
             main_accumulator_count: vec![0; data_store.accumulator_info.len()].into_boxed_slice(),
             main_accumulator_charge: vec![Joule(0); data_store.accumulator_info.len()]
                 .into_boxed_slice(),
@@ -318,8 +347,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             }
         }
 
-        for (self_count, other_count) in
-            self.num_solar_panels.iter_mut().zip(other.num_solar_panels)
+        for (self_count, other_count) in self
+            .num_solar_panels_of_type
+            .iter_mut()
+            .zip(other.num_solar_panels_of_type)
         {
             *self_count += other_count;
         }
@@ -338,7 +369,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             grid_graph: new_grid_graph,
             // TODO:
             steam_power_producers: self.steam_power_producers,
-            num_solar_panels: self.num_solar_panels,
+            num_solar_panels_of_type: self.num_solar_panels_of_type,
             main_accumulator_count: self.main_accumulator_count,
             main_accumulator_charge: self.main_accumulator_charge,
             use_burnable_fuel_to_charge_accumulators: match (
@@ -405,7 +436,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     ) -> WeakIndex {
         assert!(!self.is_placeholder);
 
-        self.num_solar_panels[usize::from(ty)] += 1;
+        self.num_solar_panels_of_type[usize::from(ty)] += 1;
 
         self.grid_graph.add_weak_element(
             pole_connection,
@@ -428,7 +459,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             unreachable!()
         };
 
-        self.num_solar_panels[usize::from(ty)] -= 1;
+        self.num_solar_panels_of_type[usize::from(ty)] -= 1;
     }
 
     pub fn add_lab(
@@ -644,7 +675,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 todo!("Remove LazyPowerProducer (Steam Engine)")
             },
             PowerGridEntity::SolarPanel { ty } => {
-                self.num_solar_panels[usize::from(*ty)] -= 1;
+                self.num_solar_panels_of_type[usize::from(*ty)] -= 1;
             },
             PowerGridEntity::Accumulator { ty } => {
                 self.main_accumulator_count[usize::from(*ty)] -= 1;
@@ -764,8 +795,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 },
                 PowerGridEntity::SolarPanel { ty } => {
                     // FIXME: Respect ty
-                    self.num_solar_panels[usize::from(*ty)] -= 1;
-                    other.num_solar_panels[usize::from(*ty)] += 1;
+                    self.num_solar_panels_of_type[usize::from(*ty)] -= 1;
+                    other.num_solar_panels_of_type[usize::from(*ty)] += 1;
 
                     (
                         connected_entity.0,
@@ -1484,10 +1515,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     ) -> Joule {
         assert_eq!(
             solar_panel_production_amounts.len(),
-            self.num_solar_panels.len()
+            self.num_solar_panels_of_type.len()
         );
         let solar_power = self
-            .num_solar_panels
+            .num_solar_panels_of_type
             .iter()
             .zip(solar_panel_production_amounts)
             .map(|(a, b)| *b * *a)

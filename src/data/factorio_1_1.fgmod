@@ -1005,7 +1005,7 @@
             display_name: "Substation",
             tile_size: (2, 2),
             power_range: 8,
-            connection_range: 16,
+            connection_range: 17,
         ),
     ],
     modules: [

@@ -1,8 +1,5 @@
 use std::{
-    cmp::{min, Ordering},
-    iter::successors,
-    mem,
-    time::Duration,
+    cmp::{min, Ordering}, fmt::format, iter::successors, mem, time::Duration
 };
 
 use crate::{
@@ -59,15 +56,18 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     state_machine: MutexGuard<ActionStateMachine<ItemIdxType, RecipeIdxType>>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
-    let mut updates: Vec<_> = vec![];
+    let mut updates = Some(vec![]);
 
     mem::swap(&mut updates, &mut game_state.world.map_updates);
 
     map_view::apply_updates(
-        updates.drain(..).map(|pos| MapViewUpdate {
-            pos,
-            color: game_state.world.get_entity_color(pos, data_store),
-        }),
+        updates
+            .into_iter()
+            .flat_map(|v| v.into_iter())
+            .map(|pos| MapViewUpdate {
+                pos,
+                color: game_state.world.get_entity_color(pos, data_store),
+            }),
         renderer,
     );
 
@@ -396,8 +396,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 for item in items_iter {
                                     if let Some(item) = item {
                                         item_layer.draw_sprite(
-                                            // &texture_atlas.items[item.id.into()],
-                                            &texture_atlas.items[0],
+                                            &texture_atlas.items[item.id.into()],
+                                            // &texture_atlas.items[0],
                                             DrawInstance {
                                                 position: [
                                                     item_render_base_pos.0,
@@ -875,7 +875,21 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         in_mode,
                         out_mode,
                     } => {},
-                    crate::frontend::world::tile::PlaceEntityType::Chest { pos, ty } => {},
+                    crate::frontend::world::tile::PlaceEntityType::Chest { pos, ty } => {
+                        let size = data_store.chest_tile_sizes[usize::from(*ty)];
+                        let size = [size.0, size.1];
+                        texture_atlas.chest.draw(
+                            [
+                                pos.x as f32 - state_machine.local_player_pos.0
+                                    + num_tiles_across_screen_horizontal / 2.0,
+                                pos.y as f32 - state_machine.local_player_pos.1
+                                    + num_tiles_across_screen_vertical / 2.0,
+                            ],
+                            size,
+                            0,
+                            &mut entity_layer,
+                        );
+                    },
                     crate::frontend::world::tile::PlaceEntityType::SolarPanel { pos, ty } => {
                         let size = data_store.solar_panel_info[usize::from(*ty)].size;
                         entity_layer.draw_sprite(
@@ -892,8 +906,56 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             },
                         );
                     },
-                    crate::frontend::world::tile::PlaceEntityType::Lab { pos, ty } => {},
-                    crate::frontend::world::tile::PlaceEntityType::Beacon { pos, ty } => {},
+                    crate::frontend::world::tile::PlaceEntityType::Lab { pos, ty } => {
+                        let size = data_store.lab_info[usize::from(*ty)].size;
+                        let size = [size.0, size.1];
+
+                        texture_atlas.lab.draw(
+                            [
+                                pos.x as f32 - state_machine.local_player_pos.0
+                                    + num_tiles_across_screen_horizontal / 2.0,
+                                pos.y as f32 - state_machine.local_player_pos.1
+                                    + num_tiles_across_screen_vertical / 2.0,
+                            ],
+                            size,
+                            0,
+                            &mut entity_layer,
+                        );
+                    },
+                    crate::frontend::world::tile::PlaceEntityType::Beacon { pos, ty } => {
+                        let size = data_store.beacon_info[usize::from(*ty)].size;
+                        let size = [size.0, size.1];
+
+                        texture_atlas.beacon.draw(
+                            [
+                                pos.x as f32 - state_machine.local_player_pos.0
+                                    + num_tiles_across_screen_horizontal / 2.0,
+                                pos.y as f32 - state_machine.local_player_pos.1
+                                    + num_tiles_across_screen_vertical / 2.0,
+                            ],
+                            size,
+                            0,
+                            &mut entity_layer,
+                        );
+
+                        let effect_range = data_store.beacon_info[usize::from(*ty)].effect_range;
+
+                        range_layer.draw_sprite(
+                            &texture_atlas.dark_square,
+                            DrawInstance {
+                                position: [
+                                    (pos.x as f32 - ((effect_range.0 - size[0]) / 2) as f32)
+                                        - state_machine.local_player_pos.0
+                                        + num_tiles_across_screen_horizontal / 2.0,
+                                    (pos.y as f32 - ((effect_range.1 - size[1]) / 2) as f32)
+                                        - state_machine.local_player_pos.1
+                                        + num_tiles_across_screen_vertical / 2.0,
+                                ],
+                                size: [effect_range.0 as f32, effect_range.1 as f32],
+                                animation_frame: 0,
+                            },
+                        );
+                    },
                     crate::frontend::world::tile::PlaceEntityType::FluidTank {
                         ty,
                         pos,
@@ -961,11 +1023,11 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     renderer.draw(&tile_layer);
 
-    renderer.draw(&range_layer);
-
     renderer.draw(&entity_layer);
 
     renderer.draw(&item_layer);
+
+    renderer.draw(&range_layer);
 
     renderer.draw(&warning_layer);
 
@@ -1042,8 +1104,6 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             });
                         });
 
-                        // TODO: Render module slots
-
 
                         match info {
                             crate::frontend::world::tile::AssemblerInfo::UnpoweredNoRecipe => {
@@ -1071,7 +1131,6 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 pole_position, weak_index
                             } => {
                                 ui.label(&data_store.assembler_info[usize::from(*ty)].display_name);
-
 
                                 ui.label(format!("{:?}", *id));
 
@@ -1106,6 +1165,21 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 ui.add(main_pb);
                                 let prod_pb = ProgressBar::new(prod_timer_percentage).fill(Color32::ORANGE).show_percentage().corner_radius(CornerRadius::ZERO);
                                 ui.add(prod_pb);
+
+                                // Render module slots
+                                TableBuilder::new(ui).id_salt("Module Slots").columns(Column::auto(), modules.len()).body(|mut body| {
+                                    body.row(1.0, |mut row| {
+                                        for module in modules {
+                                            row.col(|ui| {
+                                                if let Some(module_id) = module {
+                                                    ui.label(&data_store.module_info[*module_id].name);
+                                                } else {
+                                                    ui.label("Empty Module Slot");
+                                                }
+                                            });
+                                        } 
+                                    });
+                                });
 
                                 let crafting_speed = base_speed * (1.0 + speed_mod);
                                 let time_per_craft = time_per_recipe / crafting_speed;
@@ -1200,13 +1274,23 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         });
 
                         TableBuilder::new(ui).columns(Column::auto(), 2).body(|body| {
-                            body.rows(1.0, pg.num_assemblers_of_type.len(), |mut row| {
+                            body.rows(1.0, pg.num_assemblers_of_type.len() + pg.num_solar_panels_of_type.len(), |mut row| {
                                 let i = row.index();
-                                row.col(|ui| {
-                                    ui.add(Label::new(&data_store.assembler_info[i].display_name).extend());
 
-                                    });
-                                row.col(|ui| {ui.label(format!("{}", pg.num_assemblers_of_type[i]));});
+                                if i < pg.num_assemblers_of_type.len() {
+                                    row.col(|ui| {
+                                        ui.add(Label::new(&data_store.assembler_info[i].display_name).extend());
+
+                                        });
+                                    row.col(|ui| {ui.label(format!("{}", pg.num_assemblers_of_type[i]));});
+                                } else {
+                                    let i = i - pg.num_assemblers_of_type.len();
+                                    row.col(|ui| {
+                                        ui.add(Label::new(&data_store.solar_panel_info[i].name).extend());
+
+                                        });
+                                    row.col(|ui| {ui.label(format!("{}", pg.num_solar_panels_of_type[i]));});
+                                }
                             });
                         });
 
@@ -1269,6 +1353,12 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     belt_pos,
                                 } => {
                                     ui.label("BeltStorage");
+
+                                    ui.label(format!("belt_id: {:?}", *id));
+                                    ui.label(format!("belt_pos: {}", *belt_pos));
+
+                                    ui.label(format!("storage: {:?}", game_state.simulation_state.factory.belts.get_inserter_info_at(*id, *belt_pos, data_store).expect("No inserter at pos indicated in entity!")));
+
                                     // TODO:
                                 },
                                 crate::frontend::world::tile::AttachedInserter::BeltBelt {

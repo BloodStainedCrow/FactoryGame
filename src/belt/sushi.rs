@@ -10,7 +10,7 @@ use crate::{
 
 use super::{
     belt::{Belt, BeltLenType},
-    smart::{InserterStore, Side, SmartBelt, SpaceOccupiedError},
+    smart::{BeltInserterInfo, InserterStore, Side, SmartBelt, SpaceOccupiedError},
     FreeIndex, Inserter,
 };
 use crate::inserter::FakeUnionStorage;
@@ -143,6 +143,93 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         Ok(())
     }
 
+    #[must_use]
+    pub fn get_inserter_info_at(&self, belt_pos: u16) -> Option<BeltInserterInfo> {
+        let mut pos = 0;
+
+        for (offset, inserter) in self
+            .inserters
+            .offsets
+            .iter()
+            .zip(self.inserters.inserters.iter())
+        {
+            pos += offset;
+            if pos == belt_pos {
+                return Some(match &inserter.0 {
+                    Inserter::Out(belt_storage_inserter) => BeltInserterInfo {
+                        outgoing: true,
+                        state: belt_storage_inserter.state,
+                        connection: belt_storage_inserter.storage_id,
+                    },
+                    Inserter::In(belt_storage_inserter) => BeltInserterInfo {
+                        outgoing: false,
+                        state: belt_storage_inserter.state,
+                        connection: belt_storage_inserter.storage_id,
+                    },
+                });
+            } else if pos > belt_pos {
+                return None;
+            }
+            pos += 1;
+        }
+
+        None
+    }
+
+    pub fn get_inserter_item(&self, belt_pos: u16) -> Item<ItemIdxType> {
+        assert!(
+            usize::from(belt_pos) < self.locs.len(),
+            "Bounds check {belt_pos} >= {}",
+            self.locs.len()
+        );
+
+        let mut pos_after_last_inserter = 0;
+        let mut i = 0;
+
+        for offset in &self.inserters.offsets {
+            let next_inserter_pos = pos_after_last_inserter + offset;
+
+            match next_inserter_pos.cmp(&belt_pos) {
+                std::cmp::Ordering::Greater => panic!("The belt did not have an inserter at position specified to remove inserter from"), // This is the index to insert at
+                std::cmp::Ordering::Equal => break,
+
+                std::cmp::Ordering::Less => {
+                    pos_after_last_inserter = next_inserter_pos + 1;
+                    i += 1;
+                },
+            }
+        }
+
+        self.inserters.inserters[i].1
+    }
+
+    pub fn set_inserter_storage_id(&mut self, belt_pos: u16, new: FakeUnionStorage) {
+        let mut pos = 0;
+
+        for (offset, inserter) in self
+            .inserters
+            .offsets
+            .iter()
+            .zip(self.inserters.inserters.iter_mut())
+        {
+            pos += offset;
+            if pos == belt_pos {
+                match &mut inserter.0 {
+                    Inserter::Out(belt_storage_inserter) => {
+                        belt_storage_inserter.storage_id = new;
+                    },
+                    Inserter::In(belt_storage_inserter) => {
+                        belt_storage_inserter.storage_id = new;
+                    },
+                }
+                return;
+            } else if pos >= belt_pos {
+                unreachable!()
+            }
+            pos += 1;
+        }
+    }
+
     pub fn remove_inserter(&mut self, pos: BeltLenType) {
         assert!(
             usize::from(pos) < self.locs.len(),
@@ -267,7 +354,11 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
                 })
                 .collect(),
             inserters: InserterStore {
-                inserters: inserters.into_iter().map(|(ins, _)| ins).collect(),
+                // FIXME: Some of these inserters might have a different item than what we are converting to. This will result in crashes and item transmutation
+                inserters: inserters.into_iter().map(|(ins, inserter_item)| {
+                    assert_eq!(item, inserter_item, "FIXME: We need to handle inserters which will never work again in smart belts");    
+                    ins
+                }).collect(),
                 offsets,
             },
             item,

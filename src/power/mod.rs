@@ -344,6 +344,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                         connected_poles.is_empty(),
                         "Not all connected_poles ended up in final power grid!"
                     );
+
+                    assert!(storage_update_vec
+                        .iter()
+                        .map(|update| update.position)
+                        .all_unique());
                 }
 
                 Some((poles_to_update, storage_update_vec))

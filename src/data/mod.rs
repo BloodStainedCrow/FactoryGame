@@ -352,6 +352,8 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub recipe_names: Vec<String>,
     pub recipe_allowed_assembling_machines: Vec<Vec<u8>>,
 
+    pub recipe_is_intermediate: Vec<bool>,
+
     pub recipe_num_ing_lookup: Vec<usize>,
     pub recipe_num_out_lookup: Vec<usize>,
     pub recipe_to_ing_out_combo_idx: Vec<usize>,
@@ -412,6 +414,22 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub item_to_colour: Vec<Color32>,
 
     pub technology_costs: Vec<(u64, Box<[ITEMCOUNTTYPE]>)>,
+    // pub belt_info: Vec<BeltInfo>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
+struct BeltInfo {
+    name: String,
+    has_underground: bool,
+    has_splitter: Option<BeltSplitterInfo>,
+    /// Fraction setting how often this kind of belt moves
+    speed: (u8, u8),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
+struct BeltSplitterInfo {
+    can_filter_item: bool,
+    can_prioritise_side: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
@@ -987,6 +1005,8 @@ impl RawDataStore {
                         .collect()
                 })
                 .collect(),
+
+            recipe_is_intermediate: self.recipes.iter().map(|raw| raw.is_intermediate).collect(),
 
             assembler_info: self
                 .machines
