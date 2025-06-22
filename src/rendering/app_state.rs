@@ -1133,7 +1133,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 data_store.fluid_tank_infos[usize::from(ty)].max_search_range;
 
                             // Get connecting entities:
-                            let mut connecting_fluid_box_positions: Vec<_> = self
+                            let connecting_fluid_box_positions: Vec<_> = self
                                 .world
                                 .get_entities_colliding_with(
                                     Position {

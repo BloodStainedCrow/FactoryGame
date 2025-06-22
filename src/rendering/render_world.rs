@@ -1,5 +1,8 @@
 use std::{
-    cmp::{min, Ordering}, fmt::format, iter::successors, mem, time::Duration
+    cmp::{min, Ordering},
+    iter::successors,
+    mem,
+    time::Duration,
 };
 
 use crate::{
@@ -18,7 +21,7 @@ use crate::{
         },
         world::{
             tile::{
-                AssemblerInfo, Dir, Entity, PlaceEntityType, BELT_LEN_PER_TILE, CHUNK_SIZE_FLOAT,
+                AssemblerInfo, Dir, Entity, BELT_LEN_PER_TILE, CHUNK_SIZE_FLOAT,
             },
             Position,
         },
@@ -1177,7 +1180,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                     ui.label("Empty Module Slot");
                                                 }
                                             });
-                                        } 
+                                        }
                                     });
                                 });
 

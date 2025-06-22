@@ -9,7 +9,7 @@ use crate::{
     chest::FullChestStore,
     data::{DataStore, ItemRecipeDir},
     inserter::{FakeUnionStorage, StaticID, Storage},
-    item::{usize_from, IdxTrait, Indexable, Item, ITEMCOUNTTYPE},
+    item::{usize_from, IdxTrait, Item, ITEMCOUNTTYPE},
     lab::MultiLabStore,
     power::{power_grid::PowerGridIdentifier, PowerGridStorage},
     split_arbitrary::split_arbitrary_mut_slice,

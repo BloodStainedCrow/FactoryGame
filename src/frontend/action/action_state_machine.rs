@@ -169,16 +169,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                     self.local_player_pos,
                                     self.current_mouse_pos,
                                 );
-    
+
                                 if let Some(e) = world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next() {
                                     self.state = ActionStateMachineState::Viewing(e.get_pos());
                                 }
-    
+
                                 vec![]
                             },
                             ActionStateMachineState::Holding(held_object) => {
                                 // TODO: Check if what we are trying to place would collide
-    
+
                                 match held_object {
                                     HeldObject::Tile(floor_tile) => {
                                         vec![ActionType::PlaceFloorTile(PlaceFloorTileByHandInfo {
@@ -208,11 +208,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                     self.local_player_pos,
                                     self.current_mouse_pos,
                                 );
-    
+
                                 if let Some(e) = world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next() {
                                     self.state = ActionStateMachineState::Viewing(e.get_pos());
                                 }
-    
+
                                 vec![]
                             },
                             ActionStateMachineState::Decontructing(_, _) => {
@@ -283,8 +283,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     }
 
                 }
-                
-                
+
+
                 ,
                 Input::RightClickReleased => match &self.state {
                     ActionStateMachineState::Decontructing(_, _) => {
