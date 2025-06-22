@@ -31,6 +31,7 @@ I was playing the above games and started being unable to expand due to performa
 - ~~Liquids~~
 - ~~Map View~~
 - Mining Drills
+- Fix Underground Pipe connection breaking/overlap
 - Place Steam Turbines
 - Splitters
 - Decide if I want beacons to match factorio behaviour or keep the hard switch on/off
