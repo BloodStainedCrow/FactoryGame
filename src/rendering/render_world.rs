@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     assembler::AssemblerOnclickInfo,
-    belt::{splitter::SPLITTER_BELT_LEN, BeltTileId},
+    belt::{belt::BeltLenType, splitter::SPLITTER_BELT_LEN, BeltTileId},
     blueprint::Blueprint,
     data::{factorio_1_1::get_raw_data_test, DataStore, ItemRecipeDir},
     frontend::{
@@ -193,9 +193,10 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 },
                             }
 
+                            // TODO: Get current ore
                             if game_state
                                 .world
-                                .get_ore_at_pos(Position {
+                                .get_original_ore_at_pos(Position {
                                     x: chunk_x * CHUNK_SIZE as i32 + x as i32,
                                     y: chunk_y * CHUNK_SIZE as i32 + y as i32,
                                 })
@@ -366,6 +367,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             crate::frontend::world::tile::Entity::Belt {
                                 pos,
                                 direction,
+                                ty,
                                 id,
                                 belt_pos,
                             } => {
@@ -388,6 +390,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     .belts
                                     .get_item_iter(*id)
                                     .into_iter()
+                                    .enumerate()
                                     .skip(
                                         (belt_pos
                                             .checked_sub(BELT_LEN_PER_TILE)
@@ -409,6 +412,25 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
                                 );
 
+                                let last_moved: BeltLenType = game_state
+                                    .simulation_state
+                                    .factory
+                                    .belts
+                                    .get_last_moved_pos(*id);
+
+                                let belt_progress: u8 = game_state
+                                    .simulation_state
+                                    .factory
+                                    .belts
+                                    .get_belt_progress(*ty);
+
+                                let offset_perc = belt_progress as f32 / 120.0;
+
+                                let slow_offset = (
+                                    item_render_offs.0 * (1.0 - offset_perc),
+                                    item_render_offs.1 * (1.0 - offset_perc),
+                                );
+
                                 // TODO: This needs to be positions correctly and take rotation into account
                                 let mut item_render_base_pos: (f32, f32) = (
                                     centered_on_tile.0 + f32::from(offs.0) * 0.5
@@ -417,16 +439,22 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         - 0.5 * (f32::from(offs.1) / f32::from(BELT_LEN_PER_TILE)),
                                 );
 
-                                for item in items_iter {
+                                for (belt_pos, item) in items_iter {
                                     if let Some(item) = item {
+                                        let draw_pos = if belt_pos < last_moved.into() {
+                                            [item_render_base_pos.0, item_render_base_pos.1]
+                                        } else {
+                                            [
+                                                item_render_base_pos.0 + slow_offset.0,
+                                                item_render_base_pos.1 + slow_offset.1,
+                                            ]
+                                        };
+
                                         item_layer.draw_sprite(
                                             &texture_atlas.items[item.id.into()],
                                             // &texture_atlas.items[0],
                                             DrawInstance {
-                                                position: [
-                                                    item_render_base_pos.0,
-                                                    item_render_base_pos.1,
-                                                ],
+                                                position: draw_pos,
                                                 size: [
                                                     1.0 / f32::from(BELT_LEN_PER_TILE),
                                                     1.0 / f32::from(BELT_LEN_PER_TILE),
@@ -839,7 +867,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             },
                         );
                     },
-                    crate::frontend::world::tile::PlaceEntityType::Belt { pos, direction } => {
+                    crate::frontend::world::tile::PlaceEntityType::Belt { pos, direction, ty } => {
                         let size: [u16; 2] = [1, 1];
                         entity_layer.draw_sprite(
                             &texture_atlas.belt[*direction],
@@ -898,6 +926,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         direction,
                         in_mode,
                         out_mode,
+
+                        ty,
                     } => {},
                     crate::frontend::world::tile::PlaceEntityType::Chest { pos, ty } => {
                         let size = data_store.chest_tile_sizes[usize::from(*ty)];
@@ -1025,7 +1055,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             },
                         );
 
-                        dbg!(game_state.world.get_ore_in_area(
+                        dbg!(game_state.world.get_original_ore_in_area(
                             Position {
                                 x: pos.x - ((mining_range[0] - size[0]) / 2) as i32,
                                 y: pos.y - ((mining_range[1] - size[1]) / 2) as i32
@@ -1392,6 +1422,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     crate::frontend::world::tile::Entity::Belt {
                         pos,
                         direction,
+                        ty,
                         id,
                         belt_pos,
                     } => {

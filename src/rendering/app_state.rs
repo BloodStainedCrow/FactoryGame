@@ -655,7 +655,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     .change_chest_size(
                                         *index,
                                         data_store.item_stack_sizes[usize_from(item.id)] as u16
-                                            * num_slots as u16,
+                                            * u16::from(num_slots),
                                     );
                                 }
                                 *slot_limit = num_slots;
@@ -728,13 +728,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             let ret = self.add_inserter(pos, dir, filter, data_store);
                             trace!("{:?}", ret);
                         },
-                        crate::frontend::world::tile::PlaceEntityType::Belt { pos, direction } => {
+                        crate::frontend::world::tile::PlaceEntityType::Belt {
+                            pos,
+                            direction,
+                            ty,
+                        } => {
                             if !self.world.can_fit(pos, (1, 1), data_store) {
                                 warn!("Tried to place belt where it does not fit");
                                 continue;
                             }
 
-                            handle_belt_placement(self, pos, direction, data_store);
+                            handle_belt_placement(self, pos, direction, ty, data_store);
 
                             self.update_inserters(InserterUpdateInfo::NewBelt { pos }, data_store);
                         },
@@ -942,9 +946,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             direction,
                             in_mode,
                             out_mode,
+
+                            ty,
                         } => {
                             let splitter = handle_splitter_placement(
-                                self, pos, direction, in_mode, out_mode, data_store,
+                                self, pos, direction, ty, in_mode, out_mode, data_store,
                             );
                         },
                         crate::frontend::world::tile::PlaceEntityType::Chest { pos, ty } => {
@@ -1734,16 +1740,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             tech_progress,
         ));
 
-        trace!(
-            "{}",
-            self.statistics
-                .production
-                .total
-                .as_ref()
-                .unwrap()
-                .items_produced[0]
-        );
-
         self.current_tick += 1;
 
         let done_updating = Instant::now();
@@ -2200,6 +2196,7 @@ mod tests {
                 crate::frontend::world::tile::PlaceEntityType::Belt {
                     pos: Position { x: 1, y: 4 },
                     direction: crate::frontend::world::tile::Dir::East,
+                    ty: 0,
                 },
             ),
         })]);
@@ -2209,6 +2206,7 @@ mod tests {
                 crate::frontend::world::tile::PlaceEntityType::Belt {
                     pos: Position { x: 2, y: 4 },
                     direction: crate::frontend::world::tile::Dir::East,
+                    ty: 0,
                 },
             ),
         })]);

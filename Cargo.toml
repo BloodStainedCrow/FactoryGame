@@ -43,7 +43,7 @@ profiling = { version = "1.0.16", features = ["profile-with-puffin"] }
 puffin_egui = "0.29"
 puffin = "0.19"
 dhat = "0.3.3"
-noise = "0.9.0"
+noise = { version = "0.9.0", features = ["std"] }
 
 [patch.crates-io]
 puffin_egui = { git = "https://github.com/BloodStainedCrow/puffin" }

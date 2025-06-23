@@ -27,6 +27,7 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
     splitter_pos: Position,
     splitter_direction: Dir,
+    splitter_ty: u8,
     in_mode: Option<SplitterDistributionMode>,
     out_mode: Option<SplitterDistributionMode>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -54,7 +55,7 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 .simulation_state
                 .factory
                 .belts
-                .add_empty_belt(SPLITTER_BELT_LEN);
+                .add_empty_belt(splitter_ty, SPLITTER_BELT_LEN);
             // Add Sideloading inserter
             game_state
                 .simulation_state
@@ -67,7 +68,7 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 .simulation_state
                 .factory
                 .belts
-                .add_empty_belt(SPLITTER_BELT_LEN);
+                .add_empty_belt(splitter_ty, SPLITTER_BELT_LEN);
             (id, SPLITTER_BELT_LEN)
         };
 
@@ -101,7 +102,7 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     .simulation_state
                     .factory
                     .belts
-                    .add_empty_belt(SPLITTER_BELT_LEN);
+                    .add_empty_belt(splitter_ty, SPLITTER_BELT_LEN);
                 (id, SPLITTER_BELT_LEN)
             }
         } else {
@@ -109,7 +110,7 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 .simulation_state
                 .factory
                 .belts
-                .add_empty_belt(SPLITTER_BELT_LEN);
+                .add_empty_belt(splitter_ty, SPLITTER_BELT_LEN);
             (id, SPLITTER_BELT_LEN)
         };
 
@@ -145,6 +146,7 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
     new_belt_pos: Position,
     new_belt_direction: Dir,
+    new_belt_ty: u8,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
     let front_pos = new_belt_pos + new_belt_direction;
@@ -161,6 +163,7 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 Entity::Belt {
                     pos: new_belt_pos,
                     direction: new_belt_direction,
+                    ty: new_belt_ty,
                     id,
                     belt_pos: result.belt_pos_of_segment,
                 },
@@ -176,7 +179,7 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 .simulation_state
                 .factory
                 .belts
-                .add_empty_belt(BELT_LEN_PER_TILE);
+                .add_empty_belt(new_belt_ty, BELT_LEN_PER_TILE);
             // Add Sideloading inserter
             game_state
                 .simulation_state
@@ -188,6 +191,7 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 Entity::Belt {
                     pos: new_belt_pos,
                     direction: new_belt_direction,
+                    ty: new_belt_ty,
                     id: new_belt,
                     belt_pos: BELT_LEN_PER_TILE,
                 },
@@ -200,11 +204,12 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 .simulation_state
                 .factory
                 .belts
-                .add_empty_belt(BELT_LEN_PER_TILE);
+                .add_empty_belt(new_belt_ty, BELT_LEN_PER_TILE);
             game_state.world.add_entity(
                 Entity::Belt {
                     pos: new_belt_pos,
                     direction: new_belt_direction,
+                    ty: new_belt_ty,
                     id,
                     belt_pos: BELT_LEN_PER_TILE,
                 },
@@ -763,6 +768,7 @@ mod test {
             place(PlaceEntityType::Belt {
                 pos: Position { x: 2, y: 1 },
                 direction: crate::frontend::world::tile::Dir::East,
+                ty: 0,
             }),
             place(PlaceEntityType::PowerPole {
                 pos: Position { x: 0, y: 2 },
@@ -784,18 +790,22 @@ mod test {
             place(PlaceEntityType::Belt {
                 pos: Position { x: 3, y: 1 },
                 direction: crate::frontend::world::tile::Dir::East,
+                ty: 0,
             }),
             place(PlaceEntityType::Belt {
                 pos: Position { x: 4, y: 0 },
                 direction: crate::frontend::world::tile::Dir::South,
+                ty: 0,
             }),
             place(PlaceEntityType::Belt {
                 pos: Position { x: 4, y: 1 },
                 direction: crate::frontend::world::tile::Dir::South,
+                ty: 0,
             }),
             place(PlaceEntityType::Belt {
                 pos: Position { x: 4, y: 2 },
                 direction: crate::frontend::world::tile::Dir::South,
+                ty: 0,
             }),
         ])
     }

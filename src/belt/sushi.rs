@@ -17,12 +17,16 @@ use crate::inserter::FakeUnionStorage;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub(super) struct SushiBelt<ItemIdxType: WeakIdxTrait> {
+    pub(super) ty: u8,
+
     pub(super) is_circular: bool,
     pub(super) locs: Box<[Option<Item<ItemIdxType>>]>,
     pub(super) first_free_index: FreeIndex,
     /// Important, zero_index must ALWAYS be used using mod len
     pub(super) zero_index: BeltLenType,
     pub(super) inserters: SushiInserterStore<ItemIdxType>,
+
+    pub last_moving_spot: BeltLenType,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -38,8 +42,10 @@ pub(super) enum SushiInfo<ItemIdxType: WeakIdxTrait> {
 }
 
 impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
-    pub fn new(len: BeltLenType) -> Self {
+    pub fn new(ty: u8, len: BeltLenType) -> Self {
         Self {
+            ty,
+
             is_circular: false,
             locs: vec![None; usize::from(len)].into_boxed_slice(),
             first_free_index: FreeIndex::FreeIndex(0),
@@ -48,6 +54,8 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
                 inserters: vec![],
                 offsets: vec![],
             },
+
+            last_moving_spot: len,
         }
     }
 
@@ -333,14 +341,20 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         };
 
         let Self {
+            ty,
+
             is_circular,
             locs,
             first_free_index,
             zero_index,
             inserters: SushiInserterStore { inserters, offsets },
+
+            last_moving_spot,
         } = self;
 
         SmartBelt {
+ty,
+
             is_circular,
             first_free_index,
             zero_index,
@@ -362,6 +376,8 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
                 offsets,
             },
             item,
+
+            last_moving_spot
         }
     }
 
@@ -420,6 +436,8 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         }
 
         let new_belt = Self {
+            ty: self.ty,
+
             is_circular: false,
             first_free_index: FreeIndex::OldFreeIndex(0),
             zero_index: 0,
@@ -428,6 +446,8 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
                 inserters: new_inserters,
                 offsets: new_offsets,
             },
+
+            last_moving_spot: self.last_moving_spot.saturating_sub(belt_pos_to_break_at),
         };
 
         Some(new_belt)
@@ -444,23 +464,32 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         // My guess is that splicing the one with the shorter tail (see Vec::splice) will be best
 
         let Self {
+            ty: ty_front,
+
             is_circular: _,
             first_free_index: front_first_free_index,
             zero_index: front_zero_index,
             locs: front_locs,
             inserters: front_inserters,
+            last_moving_spot: last_moving_spot_front,
         } = front;
 
         // Important, first_free_index must ALWAYS be used using mod len
         let front_zero_index = usize::from(front_zero_index) % front_locs.len();
 
         let Self {
+            ty: ty_back,
+
             is_circular: _,
             first_free_index: _back_first_free_index,
             zero_index: back_zero_index,
             locs: back_locs,
             inserters: mut back_inserters,
+            last_moving_spot: _,
         } = back;
+
+        assert_eq!(ty_front, ty_back);
+
         // Important, first_free_index must ALWAYS be used using mod len
         let back_zero_index = usize::from(back_zero_index) % back_locs.len();
 
@@ -498,15 +527,19 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         front_locs_vec.splice(insert_pos..insert_pos, back_loc_iter.copied());
 
         Self {
+            ty: ty_front,
+
             is_circular: false,
             first_free_index: new_first_free_index,
             zero_index: BeltLenType::try_from(front_zero_index).unwrap(),
             locs: front_locs_vec.into_boxed_slice(),
             inserters: new_inserters,
+
+            last_moving_spot: last_moving_spot_front,
         }
     }
 
-    fn find_and_update_real_first_free_index(&mut self) -> BeltLenType {
+    fn find_and_update_real_first_free_index(&mut self) -> Option<BeltLenType> {
         let new_free_index = match self.first_free_index {
             FreeIndex::FreeIndex(index) => index,
             FreeIndex::OldFreeIndex(index) => {
@@ -538,9 +571,18 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             },
         };
 
-        self.first_free_index = FreeIndex::FreeIndex(new_free_index);
+        if (new_free_index as usize) < self.locs.len() {
+            self.first_free_index = FreeIndex::FreeIndex(new_free_index);
+        } else {
+            self.first_free_index = FreeIndex::OldFreeIndex(new_free_index - 1);
+        }
+        debug_assert!(
+            (new_free_index as usize) == self.locs.len()
+                || self.query_item(new_free_index).is_none(),
+            "Free index not free {self:?}"
+        );
 
-        new_free_index
+        ((new_free_index as usize) < self.locs.len()).then_some(new_free_index)
     }
 }
 
@@ -604,6 +646,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
             // Correctness: Since we always % len whenever we access using self.zero_index, we do not need to % len here
             // TODO: This could overflow after usize::MAX ticks which is 9749040289 Years. Should be fine!
             self.zero_index += 1;
+            self.last_moving_spot = 0;
             match self.first_free_index {
                 FreeIndex::FreeIndex(0) | FreeIndex::OldFreeIndex(0) => {
                     if self.query_item(0).is_none() {
@@ -628,6 +671,13 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
         let first_free_index_real = self.find_and_update_real_first_free_index();
 
         let len = self.get_len();
+
+        self.last_moving_spot = first_free_index_real.unwrap_or(len);
+
+        let Some(first_free_index_real) = first_free_index_real else {
+            // All spots are filled
+            return;
+        };
 
         let slice = &mut self.locs;
 
@@ -747,11 +797,15 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
 
         take_mut::take(self, |slf| {
             let Self {
+                ty,
+
                 is_circular: _,
                 first_free_index,
                 zero_index,
                 locs,
                 mut inserters,
+
+                last_moving_spot,
             } = slf;
 
             // Important, first_free_index must ALWAYS be used using mod len
@@ -793,11 +847,15 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
             }
 
             Self {
+                ty,
+
                 is_circular: false,
                 first_free_index: new_empty,
                 zero_index: new_zero,
                 locs: locs.into_boxed_slice(),
                 inserters,
+
+                last_moving_spot,
             }
         });
 

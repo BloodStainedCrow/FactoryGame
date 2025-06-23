@@ -415,7 +415,7 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub item_to_colour: Vec<Color32>,
 
     pub technology_costs: Vec<(u64, Box<[ITEMCOUNTTYPE]>)>,
-    // pub belt_info: Vec<BeltInfo>,
+    pub belt_infos: Vec<BeltInfo>,
     pub mining_drill_info: Vec<MiningDrillInfo>,
 }
 
@@ -432,12 +432,12 @@ pub struct MiningDrillInfo {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
-struct BeltInfo {
-    name: String,
-    has_underground: bool,
-    has_splitter: Option<BeltSplitterInfo>,
-    /// Fraction setting how often this kind of belt moves
-    speed: (u8, u8),
+pub struct BeltInfo {
+    pub name: String,
+    pub has_underground: bool,
+    pub has_splitter: Option<BeltSplitterInfo>,
+    /// Setting how often this kind of belt moves
+    pub timer_increase: u8,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
@@ -998,6 +998,14 @@ impl RawDataStore {
 
         DataStore {
             checksum,
+
+            belt_infos: vec![BeltInfo {
+                name: "Transport Belt".to_string(),
+                has_underground: true,
+                has_splitter: None,
+                // 7.5 items per second (per side, same speed as yellow belt)
+                timer_increase: 45,
+            }],
 
             // FIXME:
             mining_drill_info: vec![MiningDrillInfo {

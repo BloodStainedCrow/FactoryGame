@@ -187,7 +187,6 @@ pub fn render_map_view(
             .count()
             - 1;
 
-        dbg!(idx);
         (
             TILE_SIZE_PIXELS[idx],
             TILE_PIXEL_TO_WORLD_TILE[idx],

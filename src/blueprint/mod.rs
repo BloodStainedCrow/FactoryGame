@@ -70,7 +70,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                     }),
                 }),
                 ActionType::PlaceEntity(PlaceEntityInfo {
-                    entities: EntityPlaceOptions::Single(PlaceEntityType::Belt { pos, direction }),
+                    entities:
+                        EntityPlaceOptions::Single(PlaceEntityType::Belt { pos, direction, ty }),
                 }) => ActionType::PlaceEntity(PlaceEntityInfo {
                     entities: EntityPlaceOptions::Single(PlaceEntityType::Belt {
                         pos: Position {
@@ -78,6 +79,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                             y: base_pos.y + pos.y,
                         },
                         direction: *direction,
+                        ty: *ty,
                     }),
                 }),
                 ActionType::PlaceEntity(PlaceEntityInfo {
@@ -120,6 +122,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                         EntityPlaceOptions::Single(PlaceEntityType::Splitter {
                             pos,
                             direction,
+                            ty,
                             in_mode,
                             out_mode,
                         }),
@@ -132,6 +135,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                         direction: *direction,
                         in_mode: *in_mode,
                         out_mode: *out_mode,
+                        ty: *ty,
                     }),
                 }),
                 ActionType::PlaceEntity(PlaceEntityInfo {
@@ -307,6 +311,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                                 y: pos.y - base_pos.y,
                             },
                             direction: *direction,
+
+                            // FIXME:
+                            ty: 0,
                         }),
                     })]
                 },
@@ -487,7 +494,10 @@ pub fn random_entity_to_place<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         .prop_map(|pos| PlaceEntityType::SolarPanel { pos, ty: 0 }),
         (random_blueprint_offs(), random_dir()).prop_map(|(pos, dir)| PlaceEntityType::Belt {
             pos,
-            direction: dir
+            direction: dir,
+
+            // TODO:
+            ty: 0,
         }),
         (random_blueprint_offs(), 0..data_store.power_pole_data.len()).prop_map(|(pos, ty)| {
             PlaceEntityType::PowerPole {

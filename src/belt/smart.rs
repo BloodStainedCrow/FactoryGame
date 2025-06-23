@@ -19,6 +19,8 @@ use super::{
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SmartBelt<ItemIdxType: WeakIdxTrait> {
+    pub(super) ty: u8,
+
     pub(super) is_circular: bool,
     pub(super) first_free_index: FreeIndex,
     /// Important, zero_index must ALWAYS be used using mod len
@@ -27,10 +29,14 @@ pub struct SmartBelt<ItemIdxType: WeakIdxTrait> {
     pub(super) inserters: InserterStore,
 
     pub(super) item: Item<ItemIdxType>,
+
+    pub last_moving_spot: BeltLenType,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default)]
 pub struct EmptyBelt {
+    ty: u8,
+
     is_circular: bool,
     pub len: u16,
 }
@@ -60,8 +66,10 @@ pub(super) enum InserterAdditionError {
 
 impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
     #[must_use]
-    pub fn new(len: u16, item: Item<ItemIdxType>) -> Self {
+    pub fn new(ty: u8, len: u16, item: Item<ItemIdxType>) -> Self {
         Self {
+            ty,
+
             is_circular: false,
             first_free_index: FreeIndex::FreeIndex(0),
             zero_index: 0,
@@ -72,6 +80,8 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             },
 
             item,
+
+            last_moving_spot: len,
         }
     }
 
@@ -81,15 +91,21 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
     pub(super) fn into_sushi_belt(self) -> SushiBelt<ItemIdxType> {
         let Self {
+            ty,
+
             is_circular,
             first_free_index,
             zero_index,
             locs,
             inserters: InserterStore { inserters, offsets },
             item,
+
+            last_moving_spot,
         } = self;
 
         SushiBelt {
+            ty,
+
             is_circular,
             locs: locs
                 .iter()
@@ -104,11 +120,14 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
                     .collect(),
                 offsets,
             },
+
+            last_moving_spot,
         }
     }
 
     pub fn make_circular(&mut self) {
         self.is_circular = true;
+        self.last_moving_spot = 0;
     }
 
     // pub fn get_take_item_fn<'a>(
@@ -650,24 +669,38 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         // My guess is that splicing the one with the shorter tail (see Vec::splice) will be best
 
         let Self {
+            ty: ty_front,
+
             is_circular: _,
             first_free_index: front_first_free_index,
             zero_index: front_zero_index,
             locs: front_locs,
             inserters: front_inserters,
             item,
+
+            last_moving_spot: last_moving_spot_front,
         } = front;
         // Important, first_free_index must ALWAYS be used using mod len
         let front_zero_index = usize::from(front_zero_index) % front_locs.len();
 
         let Self {
+            ty: ty_back,
+
             is_circular: _,
             first_free_index: _back_first_free_index,
             zero_index: back_zero_index,
             locs: back_locs,
             inserters: mut back_inserters,
             item,
+
+            last_moving_spot: _,
         } = back;
+
+        assert_eq!(
+            ty_front, ty_back,
+            "Belts can only merge if they are the same type!"
+        );
+
         // Important, first_free_index must ALWAYS be used using mod len
         let back_zero_index = usize::from(back_zero_index) % back_locs.len();
 
@@ -703,12 +736,16 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         front_locs_vec.extend(back_loc_iter.copied());
 
         Self {
+            ty: ty_front,
+
             is_circular: false,
             first_free_index: FreeIndex::OldFreeIndex(0),
             zero_index: 0,
             locs: front_locs_vec.into_boxed_slice(),
             inserters: new_inserters,
             item,
+
+            last_moving_spot: last_moving_spot_front,
         }
     }
 
@@ -720,13 +757,19 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         let len = self.get_len();
 
         let Self {
+            ty,
+
             is_circular: _,
             first_free_index,
             zero_index,
             locs,
             mut inserters,
             item,
+
+            last_moving_spot,
         } = self;
+
+        assert_eq!(ty, empty.ty);
 
         // Important, first_free_index must ALWAYS be used using mod len
         let zero_index = zero_index % len;
@@ -767,12 +810,19 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         }
 
         let mut new = Self {
+            ty,
+
             is_circular: false,
             first_free_index: new_empty,
             zero_index: new_zero,
             locs: locs.into_boxed_slice(),
             inserters,
             item,
+
+            last_moving_spot: match side {
+                Side::FRONT => 0,
+                Side::BACK => last_moving_spot,
+            },
         };
 
         new.find_and_update_real_first_free_index();
@@ -836,6 +886,8 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         }
 
         let new_belt = Self {
+            ty: self.ty,
+
             is_circular: false,
             first_free_index: FreeIndex::OldFreeIndex(0),
             zero_index: 0,
@@ -845,6 +897,8 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
                 offsets: new_offsets,
             },
             item: self.item,
+
+            last_moving_spot: self.last_moving_spot.saturating_sub(belt_pos_to_break_at),
         };
 
         Some(new_belt)
@@ -853,8 +907,10 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
 impl EmptyBelt {
     #[must_use]
-    pub const fn new(len: u16) -> Self {
+    pub const fn new(ty: u8, len: u16) -> Self {
         Self {
+            ty,
+
             is_circular: false,
             len,
         }
@@ -862,11 +918,15 @@ impl EmptyBelt {
 
     #[must_use]
     #[allow(clippy::needless_pass_by_value)]
-    pub const fn join(front: Self, back: Self) -> Self {
+    pub fn join(front: Self, back: Self) -> Self {
         assert!(!front.is_circular);
         assert!(!back.is_circular);
 
+        assert_eq!(front.ty, back.ty);
+
         Self {
+            ty: front.ty,
+
             is_circular: false,
             len: front.len + back.len,
         }
@@ -876,7 +936,7 @@ impl EmptyBelt {
         self,
         item: Item<ItemIdxType>,
     ) -> SmartBelt<ItemIdxType> {
-        SmartBelt::new(self.len.into(), item)
+        SmartBelt::new(self.ty, self.len.into(), item)
     }
 
     pub fn add_length(&mut self, amount: u16, side: Side) -> u16 {
@@ -892,6 +952,8 @@ impl EmptyBelt {
         let old_len = self.len;
         self.len = pos_to_break_at;
         Self {
+            ty: self.ty,
+
             is_circular: false,
             len: old_len - pos_to_break_at,
         }
@@ -911,7 +973,10 @@ pub enum Side {
 impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
     fn add_length(&mut self, amount: BeltLenType, side: Side) -> BeltLenType {
         assert!(!self.is_circular);
-        take_mut::take(self, |s| s.join_with_empty(EmptyBelt::new(amount), side));
+        let ty = self.ty;
+        take_mut::take(self, |s| {
+            s.join_with_empty(EmptyBelt::new(ty, amount), side)
+        });
         self.get_len()
     }
 
@@ -957,6 +1022,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
             // Correctness: Since we always % len whenever we access using self.zero_index, we do not need to % len here
             // TODO: This could overflow after usize::MAX ticks which is 9749040289 Years. Should be fine!
             self.zero_index += 1;
+            self.last_moving_spot = 0;
             match self.first_free_index {
                 FreeIndex::FreeIndex(0) | FreeIndex::OldFreeIndex(0) => {
                     if Belt::<ItemIdxType>::query_item(self, 0).is_none() {
@@ -980,6 +1046,8 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
         let first_free_index_real = self.find_and_update_real_first_free_index();
 
         let len = self.get_len();
+
+        self.last_moving_spot = first_free_index_real.unwrap_or(len);
 
         let Some(first_free_index_real) = first_free_index_real else {
             // All slots are full

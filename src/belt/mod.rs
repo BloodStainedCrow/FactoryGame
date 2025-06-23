@@ -130,6 +130,8 @@ pub struct InnerBeltStore<ItemIdxType: WeakIdxTrait> {
 
     sushi_splitters: Vec<SushiSplitter>,
     sushi_splitter_holes: Vec<usize>,
+
+    belt_update_timers: Box<[u8]>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -266,7 +268,7 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
     }
 
     fn remove_sushi_belt(&mut self, id: usize) -> SushiBelt<ItemIdxType> {
-        let mut temp = SushiBelt::new(1);
+        let mut temp = SushiBelt::new(0, 1);
         mem::swap(&mut temp, &mut self.sushi_belts[id]);
         self.sushi_belt_holes.push(id);
         temp
@@ -945,6 +947,8 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
 
                 sushi_splitters: vec![],
                 sushi_splitter_holes: vec![],
+
+                belt_update_timers: vec![0; data_store.belt_infos.len()].into_boxed_slice(),
             },
             any_belts: vec![],
             any_belt_holes: vec![],
@@ -1463,6 +1467,18 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
     {
         // TODO: Once every (maybe more or less) check a single belt and check if it still needs to be sushi
 
+        // Increase the belt timers
+        for (current_timer, increase) in self
+            .inner
+            .belt_update_timers
+            .iter_mut()
+            .zip(data_store.belt_infos.iter().map(|info| info.timer_increase))
+        {
+            *current_timer = (*current_timer)
+                .checked_add(increase)
+                .expect("Belt Timer wrapped!");
+        }
+
         // Update all the "Pure Belts"
         self.inner
             .smart_belts
@@ -1492,7 +1508,10 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     {
                         profiling::scope!("Update Belt");
                         for belt in &mut belt_store.belts {
-                            belt.update();
+                            // TODO: Avoid last minute decision making
+                            if self.inner.belt_update_timers[usize::from(belt.ty)] >= 120 {
+                                belt.update();
+                            }
                         }
                     }
                     {
@@ -1567,11 +1586,17 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                 .sushi_belts
                 .par_iter_mut()
                 .for_each(|sushi_belt| {
-                    sushi_belt.update();
+                    if self.inner.belt_update_timers[usize::from(sushi_belt.ty)] >= 120 {
+                        sushi_belt.update();
+                    }
                 });
         }
 
         // TODO: Update inserters!
+
+        for current_timer in self.inner.belt_update_timers.iter_mut() {
+            *current_timer %= 120;
+        }
     }
 
     pub fn get_splitter_belt_ids(
@@ -1656,8 +1681,8 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         new_id
     }
 
-    pub fn add_empty_belt(&mut self, len: u16) -> BeltTileId<ItemIdxType> {
-        let sushi_idx = self.inner.add_sushi_belt(SushiBelt::new(len));
+    pub fn add_empty_belt(&mut self, ty: u8, len: u16) -> BeltTileId<ItemIdxType> {
+        let sushi_idx = self.inner.add_sushi_belt(SushiBelt::new(ty, len));
 
         let new_id = self.add_sushi_to_any_list(sushi_idx);
 
@@ -2269,6 +2294,19 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         }
     }
 
+    pub fn get_belt_progress(&self, ty: u8) -> u8 {
+        self.inner.belt_update_timers[usize::from(ty)]
+    }
+
+    pub fn get_last_moved_pos(&self, id: BeltTileId<ItemIdxType>) -> BeltLenType {
+        match id {
+            BeltTileId::AnyBelt(index, _) => match &self.any_belts[index] {
+                AnyBelt::Smart(smart_belt) => self.inner.get_smart(*smart_belt).last_moving_spot,
+                AnyBelt::Sushi(sushi_belt) => self.inner.get_sushi(*sushi_belt).last_moving_spot,
+            },
+        }
+    }
+
     pub fn remove_any_belt(&mut self, index: usize) {
         match self.any_belts[index] {
             AnyBelt::Smart(belt_id) => {
@@ -2520,7 +2558,7 @@ impl<ItemIdxType: IdxTrait> MultiBeltStore<ItemIdxType> {
     pub fn remove_belt(&mut self, belt: usize) -> SmartBelt<ItemIdxType> {
         self.holes.push(belt);
 
-        let mut temp = SmartBelt::new(1, self.belts[belt].item);
+        let mut temp = SmartBelt::new(0, 1, self.belts[belt].item);
         temp.make_circular();
         mem::swap(&mut temp, &mut self.belts[belt]);
         temp

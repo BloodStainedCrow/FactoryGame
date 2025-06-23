@@ -240,7 +240,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                     AssemblerInfo::Powered { id, pole_position, weak_index } => self.copy_info = Some(CopyInfo::Recipe { recipe: id.recipe }),
                                 },
                                 Entity::PowerPole { ty, pos, connected_power_poles } => {},
-                                Entity::Belt { pos, direction, id, belt_pos } => {},
+                                Entity::Belt { pos, direction, ty, id, belt_pos } => {},
                                 Entity::Underground { pos, underground_dir, direction, id, belt_pos } => {},
                                 Entity::Splitter { pos, direction, id } => todo!(),
                                 Entity::Inserter { pos, direction, filter, info } => {
@@ -318,7 +318,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                                                     self.current_mouse_pos,
                                                                 );
                                                             },
-                                PlaceEntityType::Belt { pos, direction: _ } => {
+                                PlaceEntityType::Belt { pos, ty: _, direction: _ } => {
                                                                 *pos = Self::player_mouse_to_tile(
                                                                     self.zoom_level,
                                                                     self.local_player_pos,
@@ -332,7 +332,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                                                     self.current_mouse_pos,
                                                                 );
                                                             },
-                                PlaceEntityType::Splitter { pos, direction: _, in_mode: _, out_mode: _ } => {
+                                PlaceEntityType::Splitter { pos, direction: _, ty: _, in_mode: _, out_mode: _ } => {
                                                                 *pos = Self::player_mouse_to_tile(
                                                                     self.zoom_level,
                                                                     self.local_player_pos,
@@ -485,6 +485,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             self.current_mouse_pos,
                         ),
                         direction: Dir::North,
+                        ty: 0,
                     }));
                 vec![]
             },
@@ -492,6 +493,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Belt {
                     pos,
                     direction,
+                    ty,
                 })),
                 Key::R,
             ) => {
@@ -499,6 +501,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Belt {
                         pos: *pos,
                         direction: direction.turn_right(),
+                        ty: *ty,
                     }));
                 vec![]
             },
@@ -506,6 +509,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Splitter {
                     pos,
                     direction,
+                    ty,
+
                     in_mode,
                     out_mode,
                 })),
@@ -517,6 +522,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         direction: direction.turn_right(),
                         in_mode: *in_mode,
                         out_mode: *out_mode,
+                        ty: *ty,
                     },
                 ));
                 vec![]

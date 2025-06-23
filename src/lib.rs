@@ -205,11 +205,11 @@ fn run_integrated_server(
                     // GameState::new_with_production(&data_store)
                     // GameState::new_with_beacon_red_production(&data_store)
                     // GameState::new_with_beacon_production(&data_store)
-                    // GameState::new_with_beacon_belt_production(&data_store)
+                    GameState::new_with_beacon_belt_production(&data_store)
                     // GameState::new_with_lots_of_belts(&data_store)
                     // GameState::new_with_tons_of_solar(&data_store)
                     // GameState::new_eight_beacon_factory(&data_store)
-                    GameState::new(&data_store)
+                    // GameState::new(&data_store)
                 }),
             ));
 

@@ -39,6 +39,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 9,
                     y: 10,
@@ -48,6 +49,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 10,
                     y: 10,
@@ -57,6 +59,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 11,
                     y: 10,
@@ -66,6 +69,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 12,
                     y: 10,
@@ -75,6 +79,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 13,
                     y: 10,
@@ -84,6 +89,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 14,
                     y: 10,
@@ -93,6 +99,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 15,
                     y: 10,
@@ -102,6 +109,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 16,
                     y: 10,
@@ -111,6 +119,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 17,
                     y: 10,
@@ -120,6 +129,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 18,
                     y: 10,
@@ -129,6 +139,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 19,
                     y: 10,
@@ -138,6 +149,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 20,
                     y: 10,
@@ -147,6 +159,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 21,
                     y: 10,
@@ -156,6 +169,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 22,
                     y: 10,
@@ -165,6 +179,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 23,
                     y: 10,
@@ -174,6 +189,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 24,
                     y: 10,
@@ -183,6 +199,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 25,
                     y: 10,
@@ -192,6 +209,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 26,
                     y: 10,
@@ -201,6 +219,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 27,
                     y: 10,
@@ -210,6 +229,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 28,
                     y: 10,
@@ -219,6 +239,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 29,
                     y: 10,
@@ -228,6 +249,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 30,
                     y: 10,
@@ -237,6 +259,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 31,
                     y: 10,
@@ -246,6 +269,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 32,
                     y: 10,
@@ -255,6 +279,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 33,
                     y: 10,
@@ -264,6 +289,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 34,
                     y: 10,
@@ -273,6 +299,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 35,
                     y: 10,
@@ -282,6 +309,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 36,
                     y: 10,
@@ -291,6 +319,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 37,
                     y: 10,
@@ -300,6 +329,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 38,
                     y: 10,
@@ -309,6 +339,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 39,
                     y: 10,
@@ -318,6 +349,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 40,
                     y: 10,
@@ -327,6 +359,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 41,
                     y: 10,
@@ -336,6 +369,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 42,
                     y: 10,
@@ -345,6 +379,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 43,
                     y: 10,
@@ -354,6 +389,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 44,
                     y: 10,
@@ -363,6 +399,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 45,
                     y: 10,
@@ -372,6 +409,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 46,
                     y: 10,
@@ -381,6 +419,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 47,
                     y: 10,
@@ -390,6 +429,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 48,
                     y: 10,
@@ -399,6 +439,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 49,
                     y: 10,
@@ -408,6 +449,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 50,
                     y: 10,
@@ -417,6 +459,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 51,
                     y: 10,
@@ -426,6 +469,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 52,
                     y: 10,
@@ -435,6 +479,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 53,
                     y: 10,
@@ -444,6 +489,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 54,
                     y: 10,
@@ -453,6 +499,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 55,
                     y: 10,
@@ -462,6 +509,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 56,
                     y: 10,
@@ -471,6 +519,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 57,
                     y: 10,
@@ -480,6 +529,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 58,
                     y: 10,
@@ -489,6 +539,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 59,
                     y: 10,
@@ -498,6 +549,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 60,
                     y: 10,
@@ -507,6 +559,7 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
+ty: 0,
                 pos: (
                     x: 61,
                     y: 10,
