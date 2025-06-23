@@ -31,11 +31,13 @@ I was playing the above games and started being unable to expand due to performa
 - ~~Liquids~~
 - ~~Map View~~
 - Mining Drills
+- Underground belts
 - Fix Underground Pipe connection breaking/overlap
 - Place Steam Turbines
 - Splitters
+- Allow Belts of different types to connect to one another
 - Decide if I want beacons to match factorio behaviour or keep the hard switch on/off
-- Ore Generation
+- ~~Ore Generation~~
 - Add tile requirements for buildings/recipes (for offshore pump)
 - Bots
 - MAYBE: A canonical version of the simulation that can be used for diff testing (and as some weird documentation of the mechanics I suppose)
