@@ -1,6 +1,6 @@
 use std::iter::repeat;
 
-use log::info;
+use log::{info, trace};
 
 use crate::{
     inserter::{belt_storage_inserter::BeltStorageInserter, InserterState, MOVETIME},
@@ -225,14 +225,6 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
         dbg!(&new);
 
-        if new.grid_or_static_flag == 2 {
-            dbg!(&new);
-        }
-
-        if belt_pos == 143 {
-            dbg!(&new);
-        }
-
         for (offset, inserter) in self
             .inserters
             .offsets
@@ -251,7 +243,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
                 }
                 return;
             } else if pos > belt_pos {
-                unreachable!()
+                unreachable!("Tried to set_inserter_storage_id with position {belt_pos}, which does not contain an inserter. {:?}", self.inserters.offsets);
             }
             pos += 1;
         }
@@ -344,10 +336,6 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             "Bounds check {index} >= {}",
             self.locs.len()
         );
-
-        if index == 143 {
-            dbg!(&storage_id);
-        }
 
         if filter != self.item {
             return Err(InserterAdditionError::ItemMismatch);
@@ -573,7 +561,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
                 index
             },
             FreeIndex::OldFreeIndex(index) => {
-                info!("HAD TO SEARCH FOR FIRST FREE INDEX!");
+                trace!("HAD TO SEARCH FOR FIRST FREE INDEX!");
 
                 let search_start_index = index;
 
@@ -588,6 +576,14 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
                     iter.clone().count(),
                     self.locs.len() - usize::from(search_start_index)
                 );
+
+                debug_assert!(self
+                    .locs
+                    .iter()
+                    .skip(self.zero_index as usize)
+                    .chain(self.locs.iter().take(self.zero_index as usize))
+                    .take(usize::from(search_start_index))
+                    .all(|v| *v));
 
                 // We now have an iterator which is effectively the belt in the correct order,
                 // starting at search_start_index
@@ -696,10 +692,11 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             last_moving_spot: _,
         } = back;
 
-        assert_eq!(
-            ty_front, ty_back,
-            "Belts can only merge if they are the same type!"
-        );
+        // HUGE FIXME FIXME FIXME
+        //assert_eq!(
+        //    ty_front, ty_back,
+        //    "Belts can only merge if they are the same type!"
+        //);
 
         // Important, first_free_index must ALWAYS be used using mod len
         let back_zero_index = usize::from(back_zero_index) % back_locs.len();

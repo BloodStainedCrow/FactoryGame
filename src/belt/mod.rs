@@ -1954,9 +1954,23 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
 
                         self.inner.belt_belt_inserters.pure_to_sushi_inserters.len()
                     },
-                    (AnyBelt::Sushi(_), AnyBelt::Smart(_)) => unreachable!(
-                        "If a sushi belt sideloads onto a smart belt, it can never be pure"
-                    ),
+                    (AnyBelt::Sushi(source_idx), AnyBelt::Smart(dest_id)) => {
+                        self.inner
+                            .belt_belt_inserters
+                            .temp_sushi_to_smart_inserters
+                            .push((
+                                BeltBeltInserter::new(),
+                                ((*source_idx, 0), (*dest_id, dest.1), 0, None),
+                            ));
+
+                        self.inner
+                            .belt_belt_inserters
+                            .temp_sushi_to_smart_inserters
+                            .len()
+                    },
+                    // unreachable!(
+                    //     "If a sushi belt sideloads onto a smart belt, it can never be pure"
+                    // ),
                     (AnyBelt::Sushi(source_index), AnyBelt::Sushi(dest_index)) => {
                         self.inner
                             .belt_belt_inserters

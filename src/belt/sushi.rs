@@ -543,8 +543,6 @@ ty,
         let new_free_index = match self.first_free_index {
             FreeIndex::FreeIndex(index) => index,
             FreeIndex::OldFreeIndex(index) => {
-                // println!("HAD TO SEARCH FOR FIRST FREE INDEX!");
-
                 let search_start_index = index;
 
                 let mut iter = self

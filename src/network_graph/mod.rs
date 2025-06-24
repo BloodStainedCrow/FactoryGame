@@ -1,11 +1,11 @@
-use std::{fmt::Debug, iter::once, usize};
+use std::{cmp::max, fmt::Debug, iter::once, usize};
 
 use bimap::BiMap;
 use log::info;
 use petgraph::{
     algo::tarjan_scc,
     prelude::StableUnGraph,
-    visit::{EdgeRef, IntoNodeReferences},
+    visit::{EdgeRef, IntoEdgeReferences, IntoNodeReferences},
 };
 
 use std::hash::Hash;
@@ -320,7 +320,10 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
         node_key: NodeKey,
         connection_points: (NodeKey, impl IntoIterator<Item = NodeKey>),
         other: Self,
-    ) {
+    ) where
+        W: Debug,
+        S: Debug,
+    {
         let index = if let Some(index) = self.key_map.get_by_left(&node_key) {
             *index
         } else {
@@ -365,7 +368,7 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
 }
 
 #[profiling::function]
-fn join_graphs<NodeKey: Eq + Hash + Clone + Debug, T, S: Default>(
+fn join_graphs<NodeKey: Eq + Hash + Clone + Debug, T: Debug, S: Default>(
     first: &mut StableUnGraph<T, S>,
     first_map: &mut BiMap<NodeKey, petgraph::stable_graph::NodeIndex>,
     mut second: StableUnGraph<T, S>,
@@ -376,8 +379,28 @@ fn join_graphs<NodeKey: Eq + Hash + Clone + Debug, T, S: Default>(
     #[cfg(debug_assertions)]
     let second_components = petgraph::algo::tarjan_scc(&second).len();
 
+    // #[cfg(debug_assertions)]
+    let first_max_edge_count = first
+        .node_references()
+        .map(|n| first.edges(n.0).count())
+        .max();
+
+    // #[cfg(debug_assertions)]
+    let second_max_edge_count = second
+        .node_references()
+        .map(|n| second.edges(n.0).count())
+        .max();
+
     // Do the merging
+
+    // FIXME: Improve this algorithm
     let old_node_indices: Vec<_> = second.node_references().map(|r| r.0).collect();
+
+    // FIXME: Somehow, some network nodes end up with tens of thousands of edges, which results in a HUGE slowdown.
+    dbg!(second
+        .node_references()
+        .map(|n| (n, second.edges(n.0).count()))
+        .max_by_key(|n| n.1));
 
     let edges: Vec<Vec<_>> = old_node_indices
         .iter()
@@ -408,11 +431,12 @@ fn join_graphs<NodeKey: Eq + Hash + Clone + Debug, T, S: Default>(
                     S::default(),
                 );
             } else if edge.1 == *old_id {
-                first.add_edge(
-                    *new_id,
-                    new_node_indices[old_node_indices.iter().position(|i| *i == edge.0).unwrap()],
-                    S::default(),
-                );
+                // This will be added by the other direction
+                // first.add_edge(
+                //     *new_id,
+                //     new_node_indices[old_node_indices.iter().position(|i| *i == edge.0).unwrap()],
+                //     S::default(),
+                // );
             } else {
                 unreachable!()
             }
@@ -431,4 +455,12 @@ fn join_graphs<NodeKey: Eq + Hash + Clone + Debug, T, S: Default>(
             .zip(new_node_indices)
             .map(|(old, new)| (second_map.remove_by_right(old).unwrap().0, new)),
     );
+
+    assert_eq!(
+        first
+            .node_references()
+            .map(|n| first.edges(n.0).count())
+            .max(),
+        max(first_max_edge_count, second_max_edge_count)
+    )
 }

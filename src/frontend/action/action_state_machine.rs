@@ -13,7 +13,7 @@ use crate::{
         },
         input::{Input, Key},
         world::{
-            tile::{AssemblerInfo, Dir, Entity, FloorTile, PlaceEntityType, World},
+            tile::{AssemblerInfo, Dir, Entity, FloorTile, PlaceEntityType, UndergroundDir, World},
             Position,
         },
     },
@@ -161,7 +161,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             vec![]
                         }
                     } else {
-                        match &self.state {
+                        match &mut self.state {
                             ActionStateMachineState::Idle => {
                                 // TODO: Check if we are hovering over something that can be opened
                                 let pos = Self::player_mouse_to_tile(
@@ -196,9 +196,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                         })]
                                     },
                                     HeldObject::Entity(place_entity_type) => {
-                                        vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                                        let ret = vec![ActionType::PlaceEntity(PlaceEntityInfo {
                                             entities: EntityPlaceOptions::Single(*place_entity_type),
-                                        })]
+                                        })];
+
+                                        if let PlaceEntityType::Underground { underground_dir, .. } = place_entity_type {
+                                            match *underground_dir {
+                                                UndergroundDir::Entrance => *underground_dir = UndergroundDir::Exit,
+                                                UndergroundDir::Exit => *underground_dir = UndergroundDir::Entrance,
+                                            }
+
+                                            dbg!(underground_dir);
+                                        }
+
+                                        ret
                                     },
                                 }
                             },
@@ -241,7 +252,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 },
                                 Entity::PowerPole { ty, pos, connected_power_poles } => {},
                                 Entity::Belt { pos, direction, ty, id, belt_pos } => {},
-                                Entity::Underground { pos, underground_dir, direction, id, belt_pos } => {},
+                                Entity::Underground { pos, underground_dir, ty, direction, id, belt_pos } => {},
                                 Entity::Splitter { pos, direction, id } => todo!(),
                                 Entity::Inserter { pos, direction, filter, info } => {
                                     self.copy_info = Some(CopyInfo::InserterSettings { max_stack_size: None, filter: *filter });
@@ -325,6 +336,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                                                     self.current_mouse_pos,
                                                                 );
                                                             },
+                                                    PlaceEntityType::Underground { pos, ty: _, direction: _, underground_dir: _ } => {
+                                                        *pos = Self::player_mouse_to_tile(
+                                                            self.zoom_level,
+                                                            self.local_player_pos,
+                                                            self.current_mouse_pos,
+                                                        );
+                                                    },
                                 PlaceEntityType::PowerPole { pos, ty: _ } => {
                                                                 *pos = Self::player_mouse_to_tile(
                                                                     self.zoom_level,
@@ -520,9 +538,30 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     PlaceEntityType::Splitter {
                         pos: *pos,
                         direction: direction.turn_right(),
+                        ty: *ty,
                         in_mode: *in_mode,
                         out_mode: *out_mode,
+                    },
+                ));
+                vec![]
+            },
+            (
+                ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::Underground {
+                        pos,
+                        direction,
+                        ty,
+                        underground_dir,
+                    },
+                )),
+                Key::R,
+            ) => {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::Underground {
+                        pos: *pos,
+                        direction: direction.turn_right(),
                         ty: *ty,
+                        underground_dir: *underground_dir,
                     },
                 ));
                 vec![]
@@ -584,6 +623,42 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ));
                 vec![]
             },
+            (
+                ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::Underground {
+                        pos,
+                        direction,
+                        ty,
+                        underground_dir,
+                    },
+                )),
+                Key::Key7,
+            ) => {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::Underground {
+                        pos: *pos,
+                        direction: *direction,
+                        ty: dbg!((*ty + 1) % u8::try_from(data_store.belt_infos.len()).unwrap()),
+                        underground_dir: *underground_dir,
+                    },
+                ));
+                vec![]
+            },
+            // (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key7) => {
+            //     self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+            //         PlaceEntityType::Underground {
+            //             pos: Self::player_mouse_to_tile(
+            //                 self.zoom_level,
+            //                 self.local_player_pos,
+            //                 self.current_mouse_pos,
+            //             ),
+            //             ty: 0,
+            //             direction: Dir::North,
+            //             underground_dir: UndergroundDir::Entrance,
+            //         },
+            //     ));
+            //     vec![]
+            // },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key7) => {
                 self.state =
                     ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Chest {

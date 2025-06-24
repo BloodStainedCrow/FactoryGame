@@ -83,6 +83,25 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                     }),
                 }),
                 ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities:
+                        EntityPlaceOptions::Single(PlaceEntityType::Underground {
+                            pos,
+                            direction,
+                            ty,
+                            underground_dir,
+                        }),
+                }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Underground {
+                        pos: Position {
+                            x: base_pos.x + pos.x,
+                            y: base_pos.y + pos.y,
+                        },
+                        direction: *direction,
+                        ty: *ty,
+                        underground_dir: *underground_dir,
+                    }),
+                }),
+                ActionType::PlaceEntity(PlaceEntityInfo {
                     entities: EntityPlaceOptions::Single(PlaceEntityType::Chest { pos, ty }),
                 }) => ActionType::PlaceEntity(PlaceEntityInfo {
                     entities: EntityPlaceOptions::Single(PlaceEntityType::Chest {
@@ -303,7 +322,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                         }),
                     })]
                 },
-                crate::frontend::world::tile::Entity::Belt { pos, direction, .. } => {
+                crate::frontend::world::tile::Entity::Belt {
+                    pos, ty, direction, ..
+                } => {
                     vec![ActionType::PlaceEntity(PlaceEntityInfo {
                         entities: EntityPlaceOptions::Single(PlaceEntityType::Belt {
                             pos: Position {
@@ -311,9 +332,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                                 y: pos.y - base_pos.y,
                             },
                             direction: *direction,
-
-                            // FIXME:
-                            ty: 0,
+                            ty: *ty,
                         }),
                     })]
                 },
@@ -321,9 +340,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                     pos,
                     underground_dir,
                     direction,
-                    id,
-                    belt_pos,
-                } => todo!(),
+                    ty,
+                    ..
+                } => {
+                    vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                        entities: EntityPlaceOptions::Single(PlaceEntityType::Underground {
+                            pos: Position {
+                                x: pos.x - base_pos.x,
+                                y: pos.y - base_pos.y,
+                            },
+                            direction: *direction,
+                            ty: *ty,
+                            underground_dir: *underground_dir,
+                        }),
+                    })]
+                },
                 crate::frontend::world::tile::Entity::Splitter { pos, direction, id } => todo!(),
                 crate::frontend::world::tile::Entity::Inserter { pos, direction, .. } => {
                     vec![ActionType::PlaceEntity(PlaceEntityInfo {

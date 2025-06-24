@@ -471,6 +471,114 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 }
                             },
 
+                            crate::frontend::world::tile::Entity::Underground {
+                                pos,
+                                direction,
+                                ty,
+                                id,
+                                underground_dir,
+                                belt_pos,
+                            } => {
+                                entity_layer.draw_sprite(
+                                    &texture_atlas.belt[*direction],
+                                    DrawInstance {
+                                        position: [
+                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                        ],
+                                        size: [1.0, 1.0],
+                                        animation_frame: 0,
+                                    },
+                                );
+
+                                // Draw Items
+                                let items_iter = game_state
+                                    .simulation_state
+                                    .factory
+                                    .belts
+                                    .get_item_iter(*id)
+                                    .into_iter()
+                                    .enumerate()
+                                    .skip(
+                                        (belt_pos
+                                            .checked_sub(BELT_LEN_PER_TILE)
+                                            .expect("Belt idx wrapped?!?"))
+                                        .into(),
+                                    )
+                                    .take(BELT_LEN_PER_TILE.into());
+
+                                let offs = direction.into_offset();
+                                let item_render_offs = (
+                                    -f32::from(offs.0) / f32::from(BELT_LEN_PER_TILE),
+                                    -f32::from(offs.1) / f32::from(BELT_LEN_PER_TILE),
+                                );
+
+                                let centered_on_tile = (
+                                    chunk_draw_offs.0 + (pos.x % 16) as f32 + 0.5
+                                        - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
+                                    chunk_draw_offs.1 + (pos.y % 16) as f32 + 0.5
+                                        - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
+                                );
+
+                                let last_moved: BeltLenType = game_state
+                                    .simulation_state
+                                    .factory
+                                    .belts
+                                    .get_last_moved_pos(*id);
+
+                                let belt_progress: u8 = game_state
+                                    .simulation_state
+                                    .factory
+                                    .belts
+                                    .get_belt_progress(*ty);
+
+                                let offset_perc = belt_progress as f32 / 120.0;
+
+                                let slow_offset = (
+                                    item_render_offs.0 * (1.0 - offset_perc),
+                                    item_render_offs.1 * (1.0 - offset_perc),
+                                );
+
+                                // TODO: This needs to be positions correctly and take rotation into account
+                                let mut item_render_base_pos: (f32, f32) = (
+                                    centered_on_tile.0 + f32::from(offs.0) * 0.5
+                                        - 0.5 * (f32::from(offs.0) / f32::from(BELT_LEN_PER_TILE)),
+                                    centered_on_tile.1 + f32::from(offs.1) * 0.5
+                                        - 0.5 * (f32::from(offs.1) / f32::from(BELT_LEN_PER_TILE)),
+                                );
+
+                                for (belt_pos, item) in items_iter {
+                                    if let Some(item) = item {
+                                        let draw_pos = if belt_pos < last_moved.into() {
+                                            [item_render_base_pos.0, item_render_base_pos.1]
+                                        } else {
+                                            [
+                                                item_render_base_pos.0 + slow_offset.0,
+                                                item_render_base_pos.1 + slow_offset.1,
+                                            ]
+                                        };
+
+                                        item_layer.draw_sprite(
+                                            &texture_atlas.items[item.id.into()],
+                                            // &texture_atlas.items[0],
+                                            DrawInstance {
+                                                position: draw_pos,
+                                                size: [
+                                                    1.0 / f32::from(BELT_LEN_PER_TILE),
+                                                    1.0 / f32::from(BELT_LEN_PER_TILE),
+                                                ],
+                                                animation_frame: 0,
+                                            },
+                                        );
+                                    }
+
+                                    item_render_base_pos = (
+                                        item_render_base_pos.0 + item_render_offs.0,
+                                        item_render_base_pos.1 + item_render_offs.1,
+                                    );
+                                }
+                            },
+
                             Entity::Inserter {
                                 pos,
                                 direction,
@@ -883,6 +991,28 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             },
                         );
                     },
+                    crate::frontend::world::tile::PlaceEntityType::Underground {
+                        pos,
+                        direction,
+                        ty,
+                        underground_dir,
+                    } => {
+                        let size: [u16; 2] = [1, 1];
+                        // TODO:
+                        entity_layer.draw_sprite(
+                            &texture_atlas.belt[*direction],
+                            DrawInstance {
+                                position: [
+                                    pos.x as f32 - state_machine.local_player_pos.0
+                                        + num_tiles_across_screen_horizontal / 2.0,
+                                    pos.y as f32 - state_machine.local_player_pos.1
+                                        + num_tiles_across_screen_vertical / 2.0,
+                                ],
+                                size: [size[0].into(), size[1].into()],
+                                animation_frame: 0,
+                            },
+                        );
+                    },
                     crate::frontend::world::tile::PlaceEntityType::PowerPole { pos, ty } => {
                         let size: [u16; 2] = [
                             data_store.power_pole_data[usize::from(*ty)].size.0,
@@ -1155,7 +1285,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     });
 
     Window::new("BP").default_open(false).show(ctx, |ui| {
-        let bp = Blueprint::from_area(&game_state.world, [1590..1700, 1590..1700], data_store);
+        let bp = Blueprint::from_area(&game_state.world, [1590..3000, 1590..3000], data_store);
 
         let mut s: String =
             ron::ser::to_string_pretty(&bp, ron::ser::PrettyConfig::default()).unwrap();
@@ -1427,7 +1557,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         belt_pos,
                     } => {
                         match id {
-                            BeltTileId::AnyBelt(index, phantom_dat) => {
+                            BeltTileId::AnyBelt(index, _) => {
                                 ui.label("Belt");
                                 ui.label(format!("Any Belt {}", *index).as_str());
                             },
@@ -1435,6 +1565,31 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         ui.label(format!("Item: {:?}", game_state.simulation_state.factory.belts.get_pure_item(*id)).as_str());
 
                         ui.label(format!("Inner: {:?}", game_state.simulation_state.factory.belts.inner.belt_belt_inserters).as_str());
+
+                        ui.label(format!("Belt Pos: {:?}", *belt_pos));
+                    },
+                    crate::frontend::world::tile::Entity::Underground {
+                        pos,
+                        direction,
+                        ty,
+                        id,
+                        underground_dir,
+                        belt_pos,
+                    } => {
+                        match id {
+                            BeltTileId::AnyBelt(index, _) => {
+                                ui.label("Underground Belt");
+                                ui.label(format!("Any Belt {}", *index).as_str());
+                            },
+                        }
+                        ui.label(format!("Item: {:?}", game_state.simulation_state.factory.belts.get_pure_item(*id)).as_str());
+
+                        ui.label(format!("Inner: {:?}", game_state.simulation_state.factory.belts.inner.belt_belt_inserters).as_str());
+
+                        ui.label(format!("UndergroundDir: {:?}", *underground_dir));
+
+                        ui.label(format!("Belt Pos: {:?}", *belt_pos));
+
                     },
                     crate::frontend::world::tile::Entity::Inserter {
                         pos,

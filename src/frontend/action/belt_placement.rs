@@ -1,3 +1,5 @@
+use std::iter::successors;
+
 use strum::IntoEnumIterator;
 
 use crate::{
@@ -302,6 +304,395 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 // Do nothing
             }
         }
+    }
+}
+
+#[allow(unreachable_code)]
+pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
+    new_belt_pos: Position,
+    new_belt_direction: Dir,
+    new_belt_ty: u8,
+    new_underground_dir: UndergroundDir,
+    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+) {
+    let max_distance: u8 = data_store.belt_infos[usize::from(new_belt_ty)]
+        .has_underground
+        .expect("Tried to place underground of type without underground support")
+        .max_distance;
+
+    // Break front belt if necessary
+    match new_underground_dir {
+        UndergroundDir::Entrance => {
+            // Find (and break if necessary) the connecting underground
+            let first_underground =
+                successors(Some(new_belt_pos), |pos| Some(*pos + new_belt_direction))
+                    .skip(1)
+                    .take(max_distance.into())
+                    .find_map(|check_pos| {
+                        let e = game_state
+                            .world
+                            .get_entities_colliding_with(check_pos, (1, 1), data_store)
+                            .into_iter()
+                            .next();
+
+                        if let Some(Entity::Underground { ty, direction, .. }) = e {
+                            if *direction == new_belt_direction {
+                                // Only match with belts of the same type (this allows belt weaving)
+                                if *ty == new_belt_ty {
+                                    Some(e.unwrap())
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    });
+
+            let (self_id, self_len) = if let Some(e) = first_underground {
+                let Entity::Underground {
+                    pos,
+                    underground_dir,
+                    direction,
+                    ty,
+                    id,
+                    belt_pos,
+                } = e
+                else {
+                    unreachable!()
+                };
+
+                match underground_dir {
+                    UndergroundDir::Entrance => {
+                        // The first underground we found was another Entrance, so we do not need to connect, nor break anything
+
+                        let id = game_state
+                            .simulation_state
+                            .factory
+                            .belts
+                            .add_empty_belt(new_belt_ty, BELT_LEN_PER_TILE);
+                        game_state.world.add_entity(
+                            Entity::Underground {
+                                pos: new_belt_pos,
+                                direction: new_belt_direction,
+                                ty: new_belt_ty,
+                                underground_dir: new_underground_dir,
+                                id,
+                                belt_pos: BELT_LEN_PER_TILE,
+                            },
+                            &mut game_state.simulation_state,
+                            data_store,
+                        );
+                        (id, BELT_LEN_PER_TILE)
+                    },
+                    UndergroundDir::Exit => {
+                        todo!("Break its connection if necessary");
+
+                        todo!("Connect to the underground");
+                    },
+                }
+            } else {
+                let id = game_state
+                    .simulation_state
+                    .factory
+                    .belts
+                    .add_empty_belt(new_belt_ty, BELT_LEN_PER_TILE);
+                game_state.world.add_entity(
+                    Entity::Underground {
+                        pos: new_belt_pos,
+                        direction: new_belt_direction,
+                        ty: new_belt_ty,
+                        underground_dir: new_underground_dir,
+                        id,
+                        belt_pos: BELT_LEN_PER_TILE,
+                    },
+                    &mut game_state.simulation_state,
+                    data_store,
+                );
+                (id, BELT_LEN_PER_TILE)
+            };
+
+            // An underground Entrance cannot break any belt
+            // should_merge does not work if the entity at "front_pos" is not in the world yet
+            if let Some(id) = should_merge(game_state, new_belt_direction, new_belt_pos, data_store)
+            {
+                assert_eq!(self_id, id);
+                debug_assert!(should_sideload(
+                    game_state,
+                    new_belt_direction,
+                    new_belt_pos,
+                    data_store
+                )
+                .is_none());
+
+                let potentially_incoming_pos = new_belt_pos + new_belt_direction.reverse();
+
+                let back_id = match game_state
+                    .world
+                    .get_entities_colliding_with(potentially_incoming_pos, (1, 1), data_store)
+                    .into_iter()
+                    .next()
+                {
+                    Some(Entity::Belt { id, .. })
+                    | Some(Entity::Underground {
+                        id,
+                        underground_dir: UndergroundDir::Exit,
+                        ..
+                    }) => Some(*id),
+                    Some(Entity::Splitter { .. }) => todo!(),
+                    Some(_) => unreachable!(),
+                    None => None,
+                };
+
+                if let Some(back_id) = back_id {
+                    let (final_id, final_len) = merge_belts(
+                        &mut game_state.simulation_state,
+                        self_id,
+                        back_id,
+                        data_store,
+                    );
+                    game_state
+                        .world
+                        .modify_belt_pos(back_id, self_len.try_into().unwrap());
+
+                    if final_id == self_id {
+                        game_state.world.update_belt_id(back_id, final_id);
+                    } else {
+                        game_state.world.update_belt_id(self_id, final_id);
+                    }
+                    (final_id, final_len)
+                } else {
+                    (self_id, self_len)
+                }
+            } else if let Some((id, pos)) =
+                should_sideload(game_state, new_belt_direction, new_belt_pos, data_store)
+            {
+                unreachable!()
+            } else {
+                (self_id, self_len)
+            };
+        },
+        UndergroundDir::Exit => {
+            let front_pos = new_belt_pos + new_belt_direction;
+
+            handle_belt_breaking(game_state, front_pos, new_belt_direction, data_store);
+
+            // Handle front tile
+            let (self_id, self_len) = if let Some(id) =
+                should_merge(game_state, new_belt_direction, front_pos, data_store)
+            {
+                debug_assert!(should_sideload(
+                    game_state,
+                    new_belt_direction,
+                    front_pos,
+                    data_store
+                )
+                .is_none());
+                let result = lengthen(game_state, id, BELT_LEN_PER_TILE, Side::BACK);
+                game_state.world.add_entity(
+                    Entity::Underground {
+                        pos: new_belt_pos,
+                        underground_dir: new_underground_dir,
+                        direction: new_belt_direction,
+                        ty: new_belt_ty,
+                        id,
+                        belt_pos: result.belt_pos_of_segment,
+                    },
+                    &mut game_state.simulation_state,
+                    data_store,
+                );
+                (id, result.new_belt_len)
+            } else if let Some((id, pos)) =
+                should_sideload(game_state, new_belt_direction, front_pos, data_store)
+            {
+                // Add new belt
+                let new_belt = game_state
+                    .simulation_state
+                    .factory
+                    .belts
+                    .add_empty_belt(new_belt_ty, BELT_LEN_PER_TILE);
+                // Add Sideloading inserter
+                game_state
+                    .simulation_state
+                    .factory
+                    .belts
+                    .add_sideloading_inserter(new_belt, (id, pos));
+
+                game_state.world.add_entity(
+                    Entity::Underground {
+                        pos: new_belt_pos,
+                        underground_dir: new_underground_dir,
+                        direction: new_belt_direction,
+                        ty: new_belt_ty,
+                        id,
+                        belt_pos: BELT_LEN_PER_TILE,
+                    },
+                    &mut game_state.simulation_state,
+                    data_store,
+                );
+                (new_belt, BELT_LEN_PER_TILE)
+            } else {
+                let id = game_state
+                    .simulation_state
+                    .factory
+                    .belts
+                    .add_empty_belt(new_belt_ty, BELT_LEN_PER_TILE);
+                game_state.world.add_entity(
+                    Entity::Underground {
+                        pos: new_belt_pos,
+                        direction: new_belt_direction,
+                        ty: new_belt_ty,
+                        underground_dir: new_underground_dir,
+                        id,
+                        belt_pos: BELT_LEN_PER_TILE,
+                    },
+                    &mut game_state.simulation_state,
+                    data_store,
+                );
+                (id, BELT_LEN_PER_TILE)
+            };
+
+            // Handle side tiles
+            for dir in Dir::iter() {
+                if dir == new_belt_direction {
+                    // This is the front tile, which we already handled
+                    continue;
+                }
+                if dir == new_belt_direction.reverse() {
+                    // This is the back tile, which we do not care about for sideloading
+                    continue;
+                }
+
+                let potentially_incoming_pos = new_belt_pos + dir;
+
+                debug_assert!(
+                    should_merge(game_state, dir.reverse(), new_belt_pos, data_store).is_none()
+                );
+
+                if let Some((id, belt_pos)) =
+                    should_sideload(game_state, dir.reverse(), new_belt_pos, data_store)
+                {
+                    debug_assert_eq!(id, self_id);
+
+                    let (back_id, back_pos) = match game_state
+                        .world
+                        .get_entities_colliding_with(potentially_incoming_pos, (1, 1), data_store)
+                        .into_iter()
+                        .next()
+                        .unwrap()
+                    {
+                        Entity::Belt { id, belt_pos, .. }
+                        | Entity::Underground {
+                            id,
+                            belt_pos,
+                            underground_dir: UndergroundDir::Exit,
+                            ..
+                        } => (*id, *belt_pos),
+                        Entity::Splitter { .. } => todo!(),
+                        _ => unreachable!(),
+                    };
+
+                    // Add Sideloading inserter
+                    game_state
+                        .simulation_state
+                        .factory
+                        .belts
+                        .add_sideloading_inserter(back_id, (id, belt_pos));
+                }
+            }
+
+            let first_underground = successors(Some(new_belt_pos), |pos| {
+                Some(*pos + new_belt_direction.reverse())
+            })
+            .skip(1)
+            .take(max_distance.into())
+            .find_map(|check_pos| {
+                let e = game_state
+                    .world
+                    .get_entities_colliding_with(check_pos, (1, 1), data_store)
+                    .into_iter()
+                    .next();
+
+                if let Some(Entity::Underground { ty, direction, .. }) = e {
+                    if *direction == new_belt_direction {
+                        // Only match with belts of the same type (this allows belt weaving)
+                        if *ty == new_belt_ty {
+                            Some(e.unwrap())
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            });
+
+            if let Some(e) = first_underground {
+                let Entity::Underground {
+                    pos,
+                    underground_dir,
+                    direction,
+                    ty,
+                    id,
+                    belt_pos,
+                } = e
+                else {
+                    unreachable!()
+                };
+
+                match underground_dir {
+                    UndergroundDir::Entrance => {
+                        if *belt_pos == BELT_LEN_PER_TILE {
+                            // This is the end of the belt
+                            // no breaking necessary
+                        } else {
+                            todo!("Break its connection");
+                        }
+
+                        let entrance_id: BeltTileId<ItemIdxType> = *id;
+
+                        // Add the "underground" belt locs
+                        let res = lengthen(
+                            game_state,
+                            self_id,
+                            BELT_LEN_PER_TILE
+                                * u16::try_from(dbg!(
+                                    new_belt_pos.x.abs_diff(pos.x) + new_belt_pos.y.abs_diff(pos.y)
+                                ))
+                                .unwrap(),
+                            Side::BACK,
+                        );
+
+                        // Connect them together
+                        let (new_id, new_len) = merge_belts(
+                            &mut game_state.simulation_state,
+                            self_id,
+                            entrance_id,
+                            data_store,
+                        );
+
+                        if self_id != entrance_id {
+                            game_state
+                                .world
+                                .modify_belt_pos(entrance_id, res.new_belt_len.try_into().unwrap());
+                        }
+                        if new_id == self_id {
+                            game_state.world.update_belt_id(entrance_id, new_id);
+                        } else {
+                            game_state.world.update_belt_id(self_id, new_id);
+                        }
+                    },
+                    UndergroundDir::Exit => {
+                        // The first underground we found was another Exit, so we do not need to connect, nor break anything
+                    },
+                }
+            }
+        },
     }
 }
 

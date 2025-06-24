@@ -8,7 +8,9 @@ use crate::{
     data::{DataStore, ItemRecipeDir},
     frontend::{
         action::{
-            belt_placement::{handle_belt_placement, handle_splitter_placement},
+            belt_placement::{
+                handle_belt_placement, handle_splitter_placement, handle_underground_belt_placement,
+            },
             set_recipe::SetRecipeInfo,
             ActionType,
         },
@@ -268,61 +270,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             last_update_time: None,
         };
 
-        let iron_ore = File::open("test_blueprints/iron_ore.bp").unwrap();
-        let iron_ore: Blueprint<ItemIdxType, RecipeIdxType> =
-            ron::de::from_reader(iron_ore).unwrap();
-
-        let iron_plate = File::open("test_blueprints/iron_plate.bp").unwrap();
-        let iron_plate: Blueprint<ItemIdxType, RecipeIdxType> =
-            ron::de::from_reader(iron_plate).unwrap();
-
-        let gears = File::open("test_blueprints/gears.bp").unwrap();
-        let gears: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(gears).unwrap();
-
-        let copper_ore = File::open("test_blueprints/copper_ore.bp").unwrap();
-        let copper_ore: Blueprint<ItemIdxType, RecipeIdxType> =
-            ron::de::from_reader(copper_ore).unwrap();
-
-        let copper_plate = File::open("test_blueprints/copper_plate.bp").unwrap();
-        let copper_plate: Blueprint<ItemIdxType, RecipeIdxType> =
-            ron::de::from_reader(copper_plate).unwrap();
+        let red = File::open("test_blueprints/eight_beacon_red_sci_with_storage.bp").unwrap();
+        let red: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(red).unwrap();
 
         puffin::set_scopes_on(false);
-        for y_pos in (1600..=1600).step_by(18) {
-            iron_ore.apply(Position { x: 1600, y: y_pos }, &mut ret, data_store);
-            iron_plate.apply(
-                Position {
-                    x: 1644,
-                    y: y_pos + 1,
-                },
-                &mut ret,
-                data_store,
-            );
-            gears.apply(
-                Position {
-                    x: 1699,
-                    y: y_pos - 3,
-                },
-                &mut ret,
-                data_store,
-            );
-
-            copper_ore.apply(
-                Position {
-                    x: 1600,
-                    y: y_pos + 10,
-                },
-                &mut ret,
-                data_store,
-            );
-            copper_plate.apply(
-                Position {
-                    x: 1644,
-                    y: y_pos + 11,
-                },
-                &mut ret,
-                data_store,
-            );
+        for y_pos in (1600..=30_000).step_by(19) {
+            red.apply(Position { x: 1600, y: y_pos }, &mut ret, data_store);
         }
         puffin::set_scopes_on(true);
 
@@ -742,6 +695,28 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                             self.update_inserters(InserterUpdateInfo::NewBelt { pos }, data_store);
                         },
+                        crate::frontend::world::tile::PlaceEntityType::Underground {
+                            pos,
+                            direction,
+                            ty,
+                            underground_dir,
+                        } => {
+                            if !self.world.can_fit(pos, (1, 1), data_store) {
+                                warn!("Tried to place underground_belt where it does not fit");
+                                continue;
+                            }
+
+                            handle_underground_belt_placement(
+                                self,
+                                pos,
+                                direction,
+                                ty,
+                                underground_dir,
+                                data_store,
+                            );
+
+                            self.update_inserters(InserterUpdateInfo::NewBelt { pos }, data_store);
+                        },
                         crate::frontend::world::tile::PlaceEntityType::PowerPole {
                             pos: pole_pos,
                             ty,
@@ -796,7 +771,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                                 // Handle storage updates
                                 for storage_update in storage_updates {
-                                    dbg!(&storage_update);
                                     let mut entity_size = None;
                                     self.world.mutate_entities_colliding_with(storage_update.position, (1,1), data_store, |e| {
                                         match (e, storage_update.new_pg_entity.clone()) {
@@ -2231,7 +2205,7 @@ mod tests {
 
         dbg!(game_state.current_tick);
 
-        for _ in 0..60 {
+        for _ in 0..600 {
             game_state.update(&DATA_STORE);
         }
 

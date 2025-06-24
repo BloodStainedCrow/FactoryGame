@@ -434,14 +434,19 @@ pub struct MiningDrillInfo {
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct BeltInfo {
     pub name: String,
-    pub has_underground: bool,
+    pub has_underground: Option<BeltUndergroundInfo>,
     pub has_splitter: Option<BeltSplitterInfo>,
     /// Setting how often this kind of belt moves
     pub timer_increase: u8,
 }
 
+#[derive(Debug, Clone, Copy, serde::Serialize, serde:: Deserialize)]
+pub struct BeltUndergroundInfo {
+    pub max_distance: u8,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
-struct BeltSplitterInfo {
+pub struct BeltSplitterInfo {
     can_filter_item: bool,
     can_prioritise_side: bool,
 }
@@ -999,13 +1004,20 @@ impl RawDataStore {
         DataStore {
             checksum,
 
-            belt_infos: vec![BeltInfo {
-                name: "Transport Belt".to_string(),
-                has_underground: true,
-                has_splitter: None,
-                // 7.5 items per second (per side, same speed as yellow belt)
-                timer_increase: 45,
-            }],
+            belt_infos: vec![
+                BeltInfo {
+                    name: "Transport Belt".to_string(),
+                    has_underground: Some(BeltUndergroundInfo { max_distance: 6 }),
+                    has_splitter: None,
+                    timer_increase: 60 * 2,
+                },
+                BeltInfo {
+                    name: "Fast Transport Belt".to_string(),
+                    has_underground: Some(BeltUndergroundInfo { max_distance: 8 }),
+                    has_splitter: None,
+                    timer_increase: 60 * 2,
+                },
+            ],
 
             // FIXME:
             mining_drill_info: vec![MiningDrillInfo {

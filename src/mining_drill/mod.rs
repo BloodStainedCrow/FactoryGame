@@ -15,7 +15,7 @@ struct MiningDrillID {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct FullOreStore {
+pub struct FullOreStore {
     stores: Box<[SingleOreStore]>,
 }
 

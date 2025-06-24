@@ -3,13 +3,14 @@ use std::{
     cmp::{min, Ordering},
     collections::{BTreeMap, BTreeSet, HashMap},
     marker::PhantomData,
+    mem,
     ops::{Add, ControlFlow},
 };
 
 use egui::Color32;
 
 use enum_map::{Enum, EnumMap};
-use log::warn;
+use log::{info, warn};
 use strum::EnumIter;
 
 use itertools::Itertools;
@@ -119,6 +120,8 @@ pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     remaining_updates: Vec<WorldUpdate>,
 
+    to_instantiate: BTreeSet<Position>,
+
     #[serde(skip)]
     pub map_updates: Option<Vec<Position>>,
 }
@@ -216,23 +219,37 @@ fn instantiate_inserter_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
         update: Box::new(move |world, sim_state, updates, data_store| {
-            match world.try_instantiate_inserter(sim_state, pos, data_store) {
-                Ok(newly_instantiated) => {
-                    updates.push(newly_instantiated_inserter_cascade(pos));
-                    // FIXME: Size hardcoded
-                    updates.extend(
-                        newly_instantiated
-                            .into_iter()
-                            .map(|new_pos| new_possible_inserter_connection(new_pos, (10, 10))),
-                    );
-                },
-                Err(InstantiateInserterError::NotUnattachedInserter) => {
-                    warn!("We seem to have instantiated the same inserter twice?!?");
-                },
-                Err(e) => {
-                    // info!("try_instantiate_inserter failed at {:?}, with {e:?}", pos);
-                },
-            }
+            world.to_instantiate.insert(pos);
+
+            let mut tmp = BTreeSet::default();
+
+            mem::swap(&mut tmp, &mut world.to_instantiate);
+
+            tmp.retain(|pos| {
+                match world.try_instantiate_inserter(sim_state, *pos, data_store) {
+                    Ok(newly_instantiated) => {
+                        updates.push(newly_instantiated_inserter_cascade(*pos));
+                        // FIXME: Size hardcoded
+                        updates.extend(
+                            newly_instantiated
+                                .into_iter()
+                                .map(|new_pos| new_possible_inserter_connection(new_pos, (10, 10))),
+                        );
+
+                        false
+                    },
+                    Err(InstantiateInserterError::NotUnattachedInserter) => {
+                        warn!("We seem to have instantiated the same inserter twice?!?");
+                        false
+                    },
+                    Err(e) => {
+                        info!("try_instantiate_inserter failed at {:?}, with {e:?}", pos);
+                        true
+                    },
+                }
+            });
+
+            mem::swap(&mut tmp, &mut world.to_instantiate);
         }),
     }
 }
@@ -795,6 +812,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             },
 
             remaining_updates: vec![],
+
+            to_instantiate: BTreeSet::default(),
 
             map_updates: None,
         }
@@ -1701,6 +1720,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     start_pos,
                     end_pos,
                 };
+
+                self.belt_lookup
+                    .belt_id_to_chunks
+                    .entry(start_belt_id)
+                    .or_default()
+                    .insert((pos.x / CHUNK_SIZE as i32, pos.y / CHUNK_SIZE as i32));
             },
             (
                 InserterConnection::Storage(start_storage_untranslated),
@@ -1774,6 +1799,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     start_pos,
                     end_pos,
                 };
+
+                self.belt_lookup
+                    .belt_id_to_chunks
+                    .entry(dest_belt_id)
+                    .or_default()
+                    .insert((pos.x / CHUNK_SIZE as i32, pos.y / CHUNK_SIZE as i32));
             },
             (
                 InserterConnection::Storage(start_storage_untranslated),
@@ -2742,6 +2773,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     pos,
                     underground_dir,
                     direction,
+                    ty,
                     id,
                     belt_pos,
                 } => todo!(),
@@ -3062,6 +3094,7 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         pos: Position,
         underground_dir: UndergroundDir,
         direction: Dir,
+        ty: u8,
         id: BeltTileId<ItemIdxType>,
         belt_pos: u16,
     },
@@ -3235,6 +3268,12 @@ pub enum PlaceEntityType<ItemIdxType: WeakIdxTrait> {
         direction: Dir,
         ty: u8,
     },
+    Underground {
+        pos: Position,
+        direction: Dir,
+        ty: u8,
+        underground_dir: UndergroundDir,
+    },
     PowerPole {
         pos: Position,
         ty: u8,
@@ -3281,8 +3320,8 @@ impl<ItemIdxType: IdxTrait> PlaceEntityType<ItemIdxType> {
             Self::Assembler { .. } => true,
             Self::PowerPole { .. } => true,
             Self::Belt { .. } => false,
+            Self::Underground { .. } => false,
             Self::Inserter { .. } => false,
-            // Self::Underground { .. } => false,
             Self::Splitter { .. } => false,
             Self::Chest { .. } => false,
             // Self::Roboport { .. } => true,
