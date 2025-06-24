@@ -22,7 +22,7 @@ take_mut = "0.2.2"
 static_assertions = "1.1.0"
 itertools = "0.14.0"
 genawaiter = "0.99.1"
-petgraph = { version = "0.7.1", features = ["rayon", "serde", "serde-1", "serde_derive"] }
+petgraph = { version = "0.8.2", features = ["rayon", "serde", "serde-1", "serde_derive"] }
 sha2 = "0.10.8"
 hex = "0.4.3"
 postcard = { version = "1.1.1", features = ["use-std"] }
@@ -51,6 +51,7 @@ puffin = { git = "https://github.com/BloodStainedCrow/puffin" }
 egui = { git = "https://github.com/BloodStainedCrow/egui", branch = "removeProfiling" }
 eframe = { git = "https://github.com/BloodStainedCrow/egui", branch = "removeProfiling" }
 egui-wgpu = { git = "https://github.com/BloodStainedCrow/egui", branch = "removeProfiling" }
+petgraph = { path = "../petgraph" }
 
 # [patch."https://github.com/BloodStainedCrow/tilelib"]
 # tilelib = { path = "../tilelib" }

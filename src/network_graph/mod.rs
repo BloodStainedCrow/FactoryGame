@@ -1,11 +1,11 @@
-use std::{cmp::max, fmt::Debug, iter::once, usize};
+use std::{cmp::max, collections::HashMap, fmt::Debug, iter::once, usize};
 
 use bimap::BiMap;
 use log::info;
 use petgraph::{
     algo::tarjan_scc,
     prelude::StableUnGraph,
-    visit::{EdgeRef, IntoEdgeReferences, IntoNodeReferences},
+    visit::{EdgeRef, IntoNodeReferences},
 };
 
 use std::hash::Hash;
@@ -368,10 +368,10 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
 }
 
 #[profiling::function]
-fn join_graphs<NodeKey: Eq + Hash + Clone + Debug, T: Debug, S: Default>(
+fn join_graphs<NodeKey: Eq + Hash + Clone + Debug, T: Debug, S>(
     first: &mut StableUnGraph<T, S>,
     first_map: &mut BiMap<NodeKey, petgraph::stable_graph::NodeIndex>,
-    mut second: StableUnGraph<T, S>,
+    second: StableUnGraph<T, S>,
     mut second_map: BiMap<NodeKey, petgraph::stable_graph::NodeIndex>,
 ) {
     #[cfg(debug_assertions)]
@@ -393,54 +393,28 @@ fn join_graphs<NodeKey: Eq + Hash + Clone + Debug, T: Debug, S: Default>(
 
     // Do the merging
 
-    // FIXME: Improve this algorithm
-    let old_node_indices: Vec<_> = second.node_references().map(|r| r.0).collect();
+    let (nodes, edges) = second.into_nodes_edges();
 
-    // FIXME: Somehow, some network nodes end up with tens of thousands of edges, which results in a HUGE slowdown.
-    dbg!(second
-        .node_references()
-        .map(|n| (n, second.edges(n.0).count()))
-        .max_by_key(|n| n.1));
+    let old_to_new_map = HashMap::<_, _>::from_iter(nodes.map(|(old_idx, weight)| {
+        let new_idx = first.add_node(weight);
 
-    let edges: Vec<Vec<_>> = old_node_indices
-        .iter()
-        .map(|index| {
-            second
-                .edges(*index)
-                .map(|er| (er.source(), er.target()))
-                .collect()
-        })
-        .collect();
+        first_map.insert(
+            second_map
+                .remove_by_right(&old_idx)
+                .expect("Missing value in map")
+                .0,
+            new_idx,
+        );
 
-    let new_node_indices: Vec<_> = old_node_indices
-        .iter()
-        .map(|index| first.add_node(second.remove_node(*index).unwrap()))
-        .collect();
+        (old_idx, new_idx)
+    }));
 
-    for (old_id, (new_id, edges)) in old_node_indices
-        .iter()
-        .zip(new_node_indices.iter().zip(edges))
-    {
-        for edge in edges {
-            debug_assert!(edge.0 == *old_id || edge.1 == *old_id);
-
-            if edge.0 == *old_id {
-                first.add_edge(
-                    *new_id,
-                    new_node_indices[old_node_indices.iter().position(|i| *i == edge.1).unwrap()],
-                    S::default(),
-                );
-            } else if edge.1 == *old_id {
-                // This will be added by the other direction
-                // first.add_edge(
-                //     *new_id,
-                //     new_node_indices[old_node_indices.iter().position(|i| *i == edge.0).unwrap()],
-                //     S::default(),
-                // );
-            } else {
-                unreachable!()
-            }
-        }
+    for (_, old_source, old_dest, weight) in edges {
+        first.add_edge(
+            old_to_new_map[&old_source],
+            old_to_new_map[&old_dest],
+            weight,
+        );
     }
 
     #[cfg(debug_assertions)]
@@ -449,12 +423,12 @@ fn join_graphs<NodeKey: Eq + Hash + Clone + Debug, T: Debug, S: Default>(
         assert_eq!(final_components, first_components + second_components);
     }
 
-    first_map.extend(
-        old_node_indices
-            .iter()
-            .zip(new_node_indices)
-            .map(|(old, new)| (second_map.remove_by_right(old).unwrap().0, new)),
-    );
+    // first_map.extend(
+    //     old_node_indices
+    //         .iter()
+    //         .zip(new_node_indices)
+    //         .map(|(old, new)| (second_map.remove_by_right(old).unwrap().0, new)),
+    // );
 
     assert_eq!(
         first

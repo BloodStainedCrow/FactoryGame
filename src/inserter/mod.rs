@@ -157,7 +157,7 @@ impl FakeUnionStorage {
                 index,
             } => {
                 assert!(
-                    dbg!(recipe_idx_with_this_item.into_usize())
+                    recipe_idx_with_this_item.into_usize()
                         < data_store.num_recipes_with_item[item.into_usize()]
                 );
                 Self {

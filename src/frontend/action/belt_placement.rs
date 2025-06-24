@@ -389,9 +389,46 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                         (id, BELT_LEN_PER_TILE)
                     },
                     UndergroundDir::Exit => {
-                        todo!("Break its connection if necessary");
+                        if *belt_pos == game_state.simulation_state.factory.belts.get_len(*id) {
+                            // This is the start of the belt
+                            // no breaking necessary
+                        } else {
+                            todo!("Break its connection");
+                        }
 
-                        todo!("Connect to the underground");
+                        let exit_id: BeltTileId<ItemIdxType> = *id;
+
+                        // Add the "underground" belt locs
+                        let res = lengthen(
+                            game_state,
+                            *id,
+                            // Underground
+                            BELT_LEN_PER_TILE
+                                * u16::try_from(
+                                    new_belt_pos.x.abs_diff(pos.x) + new_belt_pos.y.abs_diff(pos.y),
+                                )
+                                .unwrap() + 
+                                // The newly placed tile itself
+                                BELT_LEN_PER_TILE,
+                            Side::FRONT,
+                        );
+
+                        dbg!(res);
+
+                        game_state.world.add_entity(
+                            Entity::Underground {
+                                pos: new_belt_pos,
+                                direction: new_belt_direction,
+                                ty: new_belt_ty,
+                                underground_dir: new_underground_dir,
+                                id: exit_id,
+                                belt_pos: res.new_belt_len,
+                            },
+                            &mut game_state.simulation_state,
+                            data_store,
+                        );
+
+                        (exit_id, res.new_belt_len)
                     },
                 }
             } else {
@@ -661,9 +698,9 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                             game_state,
                             self_id,
                             BELT_LEN_PER_TILE
-                                * u16::try_from(dbg!(
-                                    new_belt_pos.x.abs_diff(pos.x) + new_belt_pos.y.abs_diff(pos.y)
-                                ))
+                                * u16::try_from(
+                                    new_belt_pos.x.abs_diff(pos.x) + new_belt_pos.y.abs_diff(pos.y),
+                                )
                                 .unwrap(),
                             Side::BACK,
                         );
@@ -907,6 +944,7 @@ fn get_belt_out_dir<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         .flatten()
 }
 
+#[derive(Debug, Clone, Copy)]
 struct LengthenResult {
     belt_pos_of_segment: u16,
     new_belt_len: u16,
@@ -934,8 +972,8 @@ fn lengthen<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     .expect("TODO: This could fail even if the belt is not too long!"),
             );
             LengthenResult {
-                belt_pos_of_segment: new_len,
-                new_belt_len: amount,
+                belt_pos_of_segment: amount,
+                new_belt_len: new_len,
             }
         },
         Side::BACK => LengthenResult {

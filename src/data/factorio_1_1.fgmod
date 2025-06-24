@@ -468,7 +468,7 @@
                 ),
             ],
             time_to_craft: 960,
-            is_intermediate: false,
+            is_intermediate: true,
         ),
         (
             name: "factory_game::sulfur",

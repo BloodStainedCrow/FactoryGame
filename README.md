@@ -31,7 +31,7 @@ I was playing the above games and started being unable to expand due to performa
 - ~~Liquids~~
 - ~~Map View~~
 - Mining Drills
-- Underground belts
+- ~~Underground belts~~
 - Fix Underground Pipe connection breaking/overlap
 - Place Steam Turbines
 - Splitters

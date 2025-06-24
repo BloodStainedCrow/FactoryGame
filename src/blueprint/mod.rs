@@ -4,6 +4,7 @@ use proptest::{
     prelude::{prop, Just, Strategy},
     prop_oneof,
 };
+use tilelib::types::Layer;
 
 use crate::{
     data::DataStore,
@@ -20,7 +21,7 @@ use crate::{
         },
     },
     item::{IdxTrait, Item, Recipe, WeakIdxTrait},
-    rendering::app_state::GameState,
+    rendering::{app_state::GameState, TextureAtlas},
     replays::Replay,
 };
 
@@ -448,6 +449,53 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
         }
 
         bp
+    }
+
+    pub fn draw(&self, layer: &mut Layer, texture_atlas: &TextureAtlas) {
+        for action in &self.actions {
+            match action {
+                ActionType::PlaceFloorTile(place_floor_tile_by_hand_info) => todo!(),
+                ActionType::PlaceEntity(place_entity_info) => match &place_entity_info.entities {
+                    EntityPlaceOptions::Single(place_entity_type) => match place_entity_type {
+                        PlaceEntityType::Assembler { pos, ty } => todo!(),
+                        PlaceEntityType::Inserter { pos, dir, filter } => todo!(),
+                        PlaceEntityType::Belt { pos, direction, ty } => todo!(),
+                        PlaceEntityType::Underground {
+                            pos,
+                            direction,
+                            ty,
+                            underground_dir,
+                        } => todo!(),
+                        PlaceEntityType::PowerPole { pos, ty } => todo!(),
+                        PlaceEntityType::Splitter {
+                            pos,
+                            direction,
+                            ty,
+                            in_mode,
+                            out_mode,
+                        } => todo!(),
+                        PlaceEntityType::Chest { pos, ty } => todo!(),
+                        PlaceEntityType::SolarPanel { pos, ty } => todo!(),
+                        PlaceEntityType::Lab { pos, ty } => todo!(),
+                        PlaceEntityType::Beacon { ty, pos } => todo!(),
+                        PlaceEntityType::FluidTank { ty, pos, rotation } => todo!(),
+                        PlaceEntityType::MiningDrill { ty, pos, rotation } => todo!(),
+                    },
+                    EntityPlaceOptions::Multiple(place_entity_types) => todo!(),
+                },
+                ActionType::SetRecipe(set_recipe_info) => {
+                    // TODO
+                },
+                ActionType::Position(_, _) => unreachable!(),
+                ActionType::AddModules { pos, modules } => {
+                    // TODO
+                },
+                ActionType::RemoveModules { pos, indices } => {},
+                ActionType::SetChestSlotLimit { pos, num_slots } => {},
+                ActionType::Remove(position) => {},
+                ActionType::Ping(position) => unreachable!(),
+            }
+        }
     }
 }
 

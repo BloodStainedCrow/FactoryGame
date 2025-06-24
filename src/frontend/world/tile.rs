@@ -242,9 +242,13 @@ fn instantiate_inserter_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         warn!("We seem to have instantiated the same inserter twice?!?");
                         false
                     },
+                    Err(
+                        InstantiateInserterError::ItemConflict
+                        | InstantiateInserterError::PleaseSpecifyFilter,
+                    ) => true,
                     Err(e) => {
                         info!("try_instantiate_inserter failed at {:?}, with {e:?}", pos);
-                        true
+                        false
                     },
                 }
             });
@@ -740,7 +744,12 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                                 {
                                     match attached_inserter {
                                         AttachedInserter::BeltStorage { id, belt_pos } => {
-                                            todo!("Remove BeltStorage inserter");
+                                            sim_state.factory.belts.remove_inserter(*id, *belt_pos);
+
+                                            *info = InserterInfo::NotAttached {
+                                                start_pos: *start_pos,
+                                                end_pos: *end_pos,
+                                            };
                                         },
                                         AttachedInserter::BeltBelt { item, inserter } => {
                                             todo!("Remove BeltBelt inserter");

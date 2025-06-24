@@ -274,7 +274,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let red: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(red).unwrap();
 
         puffin::set_scopes_on(false);
-        for y_pos in (1600..=30_000).step_by(19) {
+        for y_pos in (1600..=30_000).step_by(20) {
             red.apply(Position { x: 1600, y: y_pos }, &mut ret, data_store);
         }
         puffin::set_scopes_on(true);
@@ -295,7 +295,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let file = File::open(bp_path).unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
 
-        bp.apply(Position { x: 1590, y: 1590 }, &mut ret, data_store);
+        for x in (0..60).map(|p| p * 15) {
+            bp.apply(
+                Position {
+                    x: 1590 + x,
+                    y: 1590,
+                },
+                &mut ret,
+                data_store,
+            );
+        }
         // bp.apply(Position { x: 1600, y: 1590 }, &mut ret, data_store);
         // bp.apply(Position { x: 1610, y: 1590 }, &mut ret, data_store);
         // bp.apply(Position { x: 1620, y: 1590 }, &mut ret, data_store);

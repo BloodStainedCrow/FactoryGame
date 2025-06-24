@@ -451,6 +451,141 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
         match (&self.state, key) {
+            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Q) => {
+                match world
+                    .get_entities_colliding_with(
+                        Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.local_player_pos,
+                            self.current_mouse_pos,
+                        ),
+                        (1, 1),
+                        data_store,
+                    )
+                    .into_iter()
+                    .next()
+                {
+                    Some(Entity::Assembler { ty, .. }) => {
+                        self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                            PlaceEntityType::Assembler {
+                                pos: Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.local_player_pos,
+                                    self.current_mouse_pos,
+                                ),
+                                ty: *ty,
+                            },
+                        ));
+                    },
+                    Some(Entity::Beacon { ty, .. }) => {
+                        self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                            PlaceEntityType::Beacon {
+                                pos: Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.local_player_pos,
+                                    self.current_mouse_pos,
+                                ),
+                                ty: *ty,
+                            },
+                        ));
+                    },
+                    Some(Entity::Belt { direction, ty, .. }) => {
+                        self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                            PlaceEntityType::Belt {
+                                pos: Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.local_player_pos,
+                                    self.current_mouse_pos,
+                                ),
+                                ty: *ty,
+                                direction: *direction,
+                            },
+                        ));
+                    },
+                    Some(Entity::Chest { ty, .. }) => {
+                        self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                            PlaceEntityType::Chest {
+                                pos: Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.local_player_pos,
+                                    self.current_mouse_pos,
+                                ),
+                                ty: *ty,
+                            },
+                        ));
+                    },
+                    Some(Entity::FluidTank { ty, pos, rotation }) => todo!(),
+                    Some(Entity::Inserter {
+                        direction, filter, ..
+                    }) => {
+                        self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                            PlaceEntityType::Inserter {
+                                pos: Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.local_player_pos,
+                                    self.current_mouse_pos,
+                                ),
+                                dir: *direction,
+                                filter: *filter,
+                            },
+                        ));
+                    },
+                    Some(Entity::Lab {
+                        pos,
+                        ty,
+                        modules,
+                        pole_position,
+                    }) => todo!(),
+                    Some(Entity::PowerPole { ty, .. }) => {
+                        self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                            PlaceEntityType::PowerPole {
+                                pos: Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.local_player_pos,
+                                    self.current_mouse_pos,
+                                ),
+                                ty: *ty,
+                            },
+                        ));
+                    },
+                    Some(Entity::Roboport {
+                        ty,
+                        pos,
+                        power_grid,
+                        network,
+                        id,
+                    }) => todo!(),
+                    Some(Entity::SolarPanel {
+                        pos,
+                        ty,
+                        pole_position,
+                    }) => todo!(),
+                    Some(Entity::Splitter { pos, direction, id }) => todo!(),
+                    Some(Entity::Underground {
+                        underground_dir,
+                        direction,
+                        ty,
+                        ..
+                    }) => {
+                        self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                            PlaceEntityType::Underground {
+                                pos: Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.local_player_pos,
+                                    self.current_mouse_pos,
+                                ),
+                                ty: *ty,
+                                direction: *direction,
+                                underground_dir: *underground_dir,
+                            },
+                        ));
+                    },
+                    None => {},
+                }
+
+                vec![]
+            },
+
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key1) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::MiningDrill {
@@ -609,18 +744,30 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ));
                 vec![]
             },
+            // (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key6) => {
+            //     self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+            //         PlaceEntityType::FluidTank {
+            //             ty: 0,
+            //             pos: Self::player_mouse_to_tile(
+            //                 self.zoom_level,
+            //                 self.local_player_pos,
+            //                 self.current_mouse_pos,
+            //             ),
+            //             rotation: Dir::North,
+            //         },
+            //     ));
+            //     vec![]
+            // },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key6) => {
-                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::FluidTank {
+                self.state =
+                    ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Chest {
                         ty: 0,
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
                             self.local_player_pos,
                             self.current_mouse_pos,
                         ),
-                        rotation: Dir::North,
-                    },
-                ));
+                    }));
                 vec![]
             },
             (
@@ -644,33 +791,33 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ));
                 vec![]
             },
-            // (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key7) => {
-            //     self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-            //         PlaceEntityType::Underground {
-            //             pos: Self::player_mouse_to_tile(
-            //                 self.zoom_level,
-            //                 self.local_player_pos,
-            //                 self.current_mouse_pos,
-            //             ),
-            //             ty: 0,
-            //             direction: Dir::North,
-            //             underground_dir: UndergroundDir::Entrance,
-            //         },
-            //     ));
-            //     vec![]
-            // },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key7) => {
-                self.state =
-                    ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Chest {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::Underground {
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
                             self.local_player_pos,
                             self.current_mouse_pos,
                         ),
                         ty: 0,
-                    }));
+                        direction: Dir::North,
+                        underground_dir: UndergroundDir::Entrance,
+                    },
+                ));
                 vec![]
             },
+            // (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key7) => {
+            //     self.state =
+            //         ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Chest {
+            //             pos: Self::player_mouse_to_tile(
+            //                 self.zoom_level,
+            //                 self.local_player_pos,
+            //                 self.current_mouse_pos,
+            //             ),
+            //             ty: 0,
+            //         }));
+            //     vec![]
+            // },
             (
                 ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::SolarPanel {
                     pos,
