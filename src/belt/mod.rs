@@ -13,6 +13,8 @@ use std::{
     mem, usize,
 };
 
+use crate::inserter::HAND_SIZE;
+
 use crate::{
     data::DataStore,
     inserter::{
@@ -1550,7 +1552,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                             if *cooldown == 0 {
                                 ins.update_instant(source_loc, dest_loc);
                             } else {
-                                ins.update(source_loc, dest_loc, *cooldown, (), |_| {
+                                ins.update(source_loc, dest_loc, *cooldown, HAND_SIZE, (), |_| {
                                     filter
                                         .map(|filter_item| filter_item == item)
                                         .unwrap_or(true)
@@ -1592,7 +1594,12 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                 });
         }
 
-        // TODO: Update inserters!
+        {
+            profiling::scope!("SushiBelt Inserter Update");
+            for sushi_belt in &mut self.inner.sushi_belts {
+                // TODO: Update inserters!
+            }
+        }
 
         for current_timer in self.inner.belt_update_timers.iter_mut() {
             *current_timer %= 120;
@@ -1822,13 +1829,6 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                                 now_sushi_belt
                                     .add_in_inserter(filter, pos, storage_id)
                                     .expect("We already became sushi, it should now work!");
-
-                                let AnyBelt::Sushi(sushi_belt_id) = &mut self.any_belts[index]
-                                else {
-                                    unreachable!();
-                                };
-                                let sushi_belt = self.inner.get_sushi_mut(*sushi_belt_id);
-                                debug_assert!(handle_sushi_belt(sushi_belt).is_ok());
                             },
                         }
                     },

@@ -2,6 +2,8 @@ use crate::item::{IdxTrait, Item, WeakIdxTrait};
 
 use super::{InserterState, SushiInserterState};
 
+use crate::item::ITEMCOUNTTYPE;
+
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub struct BeltBeltInserter {
     state: InserterState,
@@ -97,7 +99,7 @@ impl BeltBeltInserter {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            state: InserterState::WaitingForSourceItems,
+            state: InserterState::WaitingForSourceItems(0),
         }
     }
 
@@ -107,6 +109,7 @@ impl BeltBeltInserter {
         loc_in: &mut LocType,
         loc_out: &mut LocType,
         movetime: u8,
+        max_hand_size: ITEMCOUNTTYPE,
         filter: LocType::Item,
         filter_test: impl Fn(LocType::Item) -> bool,
     ) {
@@ -114,19 +117,28 @@ impl BeltBeltInserter {
         // Try and find a faster implementation of similar logic
 
         match self.state {
-            InserterState::WaitingForSourceItems => {
+            InserterState::WaitingForSourceItems(count) => {
                 if let Some(item) = loc_in.peek_item() {
                     if filter_test(item) {
                         loc_in.force_take_item();
-                        self.state = InserterState::FullAndMovingOut(movetime);
+
+                        if count + 1 == max_hand_size {
+                            self.state = InserterState::FullAndMovingOut(movetime);
+                        } else {
+                            self.state = InserterState::WaitingForSourceItems(count + 1);
+                        }
                     }
                 }
             },
-            InserterState::WaitingForSpaceInDestination => {
+            InserterState::WaitingForSpaceInDestination(count) => {
                 if !loc_out.has_item() {
                     loc_out.force_put_item(filter);
 
-                    self.state = InserterState::EmptyAndMovingBack(movetime);
+                    if count == 1 {
+                        self.state = InserterState::EmptyAndMovingBack(movetime);
+                    } else {
+                        self.state = InserterState::WaitingForSpaceInDestination(count - 1);
+                    }
                 }
             },
             InserterState::FullAndMovingOut(time) => {
@@ -134,7 +146,7 @@ impl BeltBeltInserter {
                     self.state = InserterState::FullAndMovingOut(time - 1);
                 } else {
                     // TODO: Do I want to try inserting immediately?
-                    self.state = InserterState::WaitingForSpaceInDestination;
+                    self.state = InserterState::WaitingForSpaceInDestination(max_hand_size);
                 }
             },
             InserterState::EmptyAndMovingBack(time) => {
@@ -142,7 +154,7 @@ impl BeltBeltInserter {
                     self.state = InserterState::EmptyAndMovingBack(time - 1);
                 } else {
                     // TODO: Do I want to try getting a new item immediately?
-                    self.state = InserterState::WaitingForSourceItems;
+                    self.state = InserterState::WaitingForSourceItems(0);
                 }
             },
         }

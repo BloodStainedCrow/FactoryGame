@@ -114,8 +114,6 @@ pub fn create_map_textures_if_needed<ItemIdxType: IdxTrait, RecipeIdxType: IdxTr
                     })
                     .collect();
 
-                dbg!(data.len());
-
                 data
             });
         }

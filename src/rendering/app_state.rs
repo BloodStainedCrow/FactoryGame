@@ -1,4 +1,5 @@
 use crate::data::AllowedFluidDirection;
+use crate::inserter::HAND_SIZE;
 use crate::liquid::connection_logic::can_fluid_tanks_connect_to_single_connection;
 use crate::liquid::FluidConnectionDir;
 use crate::{
@@ -190,7 +191,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         for y_start in (0..40_000).step_by(6_000) {
             for y_pos in (1590..6000).step_by(10) {
                 for x_pos in (1590..3000).step_by(60) {
-                    if rand::random::<u16>() == 0 {
+                    if rand::random::<u16>() < 128 {
                         ret.update(data_store);
                     }
 
@@ -410,7 +411,14 @@ impl StorageStorageInserterStore {
                     // Ideally we could replace inserter holes with placeholder that do not do anything, but I don't quite know how those would work.
                     .filter_map(|(i, v)| (!holes.contains(&i)).then_some(v))
                     .for_each(|ins| {
-                        ins.update(storages, MOVETIME, num_grids_total, num_recipes, grid_size);
+                        ins.update(
+                            storages,
+                            MOVETIME,
+                            HAND_SIZE,
+                            num_grids_total,
+                            num_recipes,
+                            grid_size,
+                        );
                     });
             });
     }

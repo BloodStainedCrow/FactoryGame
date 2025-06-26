@@ -1,4 +1,9 @@
-use crate::storage_list::{index_fake_union, SingleItemStorages};
+use std::cmp::min;
+
+use crate::{
+    item::ITEMCOUNTTYPE,
+    storage_list::{index_fake_union, SingleItemStorages},
+};
 
 use super::{FakeUnionStorage, InserterState};
 
@@ -26,7 +31,7 @@ impl StorageStorageInserter {
         Self {
             storage_id_in: in_id,
             storage_id_out: out_id,
-            state: InserterState::WaitingForSourceItems,
+            state: InserterState::WaitingForSourceItems(0),
         }
     }
 
@@ -34,6 +39,7 @@ impl StorageStorageInserter {
         &mut self,
         storages: SingleItemStorages,
         movetime: u8,
+        max_hand_size: ITEMCOUNTTYPE,
         num_grids_total: usize,
         num_recipes: usize,
         grid_size: usize,
@@ -42,7 +48,7 @@ impl StorageStorageInserter {
         // Try and find a faster implementation of similar logic
 
         match self.state {
-            InserterState::WaitingForSourceItems => {
+            InserterState::WaitingForSourceItems(count) => {
                 let (_max_insert, old) = index_fake_union(
                     storages,
                     self.storage_id_in,
@@ -51,14 +57,20 @@ impl StorageStorageInserter {
                     grid_size,
                 );
 
-                if *old > 0 {
-                    // There is an item in the machine
-                    *old -= 1;
+                let to_extract = min(max_hand_size - count, *old);
 
-                    self.state = InserterState::FullAndMovingOut(movetime);
+                if to_extract > 0 {
+                    // There is an item in the machine
+                    *old -= to_extract;
+
+                    if to_extract + count == max_hand_size {
+                        self.state = InserterState::FullAndMovingOut(movetime);
+                    } else {
+                        self.state = InserterState::WaitingForSourceItems(count + to_extract);
+                    }
                 }
             },
-            InserterState::WaitingForSpaceInDestination => {
+            InserterState::WaitingForSpaceInDestination(count) => {
                 let (max_insert, old) = index_fake_union(
                     storages,
                     self.storage_id_out,
@@ -67,11 +79,15 @@ impl StorageStorageInserter {
                     grid_size,
                 );
 
-                if *old < *max_insert {
-                    // There is space in the machine
-                    *old += 1;
+                let to_insert = min(count, *max_insert - *old);
 
-                    self.state = InserterState::EmptyAndMovingBack(movetime);
+                if to_insert > 0 {
+                    *old += to_insert;
+                    if to_insert == count {
+                        self.state = InserterState::EmptyAndMovingBack(movetime);
+                    } else {
+                        self.state = InserterState::WaitingForSpaceInDestination(count - to_insert);
+                    }
                 }
             },
             InserterState::FullAndMovingOut(time) => {
@@ -79,7 +95,7 @@ impl StorageStorageInserter {
                     self.state = InserterState::FullAndMovingOut(time - 1);
                 } else {
                     // TODO: Do I want to try inserting immediately?
-                    self.state = InserterState::WaitingForSpaceInDestination;
+                    self.state = InserterState::WaitingForSpaceInDestination(max_hand_size);
                 }
             },
             InserterState::EmptyAndMovingBack(time) => {
@@ -87,7 +103,7 @@ impl StorageStorageInserter {
                     self.state = InserterState::EmptyAndMovingBack(time - 1);
                 } else {
                     // TODO: Do I want to try getting a new item immediately?
-                    self.state = InserterState::WaitingForSourceItems;
+                    self.state = InserterState::WaitingForSourceItems(0);
                 }
             },
         }

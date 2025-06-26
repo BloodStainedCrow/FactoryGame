@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, u16};
 
-use crate::item::Indexable;
+use crate::item::{Indexable, ITEMCOUNTTYPE};
 use crate::{
     data::DataStore,
     item::{IdxTrait, Item, Recipe, WeakIdxTrait},
@@ -20,16 +20,20 @@ pub mod belt_storage_inserter;
 pub mod storage_storage_inserter;
 
 /// Time for a normal inserter to move in ticks
-pub(super) const MOVETIME: u8 = 0;
-const_assert!(MOVETIME < 64);
+pub(super) const MOVETIME: u8 = 120;
+// const_assert!(MOVETIME < 64);
+
+pub(super) const HAND_SIZE: u8 = 12;
+const_assert!(HAND_SIZE < 64);
 
 // TODO: This could be minified using a union or similar,
 // But since Inserters are the same size, whether this is 2 or 1 byte (atleast in a Vec of Structs)
 // I will leave this be for now.
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub enum InserterState {
-    WaitingForSourceItems,
-    WaitingForSpaceInDestination,
+    WaitingForSourceItems(ITEMCOUNTTYPE),
+    WaitingForSpaceInDestination(ITEMCOUNTTYPE),
+    // FIXME: Not storing the amount of items in hand, and instead relying on the handsize will result in spawning items from the void, if a new tech increases hand size limit!
     FullAndMovingOut(u8),
     EmptyAndMovingBack(u8),
 }

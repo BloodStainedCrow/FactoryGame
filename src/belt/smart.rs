@@ -8,13 +8,13 @@ use crate::{
     storage_list::SingleItemStorages,
 };
 
-use crate::inserter::FakeUnionStorage;
-
 use super::{
     belt::{Belt, BeltLenType, ItemInfo, NoSpaceError},
     sushi::{SushiBelt, SushiInserterStore},
     FreeIndex, Inserter,
 };
+use crate::inserter::FakeUnionStorage;
+use crate::inserter::HAND_SIZE;
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -446,6 +446,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         None
     }
 
+    #[inline(never)]
     pub fn update_inserters<'a, 'b>(
         &mut self,
         storages: SingleItemStorages<'a, 'b>,
@@ -481,6 +482,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
                             loc,
                             storages,
                             MOVETIME,
+                            HAND_SIZE,
                             num_grids_total,
                             num_recipes,
                             grid_size,
@@ -489,6 +491,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
                             loc,
                             storages,
                             MOVETIME,
+                            HAND_SIZE,
                             num_grids_total,
                             num_recipes,
                             grid_size,

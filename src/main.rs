@@ -1,6 +1,8 @@
 // #![feature(generic_const_exprs)]
-
+#![feature(portable_simd)]
 #![feature(iter_array_chunks)]
+
+use std::simd::{cmp::SimdPartialEq, Simd};
 
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]
@@ -338,6 +340,29 @@ mod test {
             (first, second, third)
         }
     }
+}
+
+pub fn find_first_free_pos(locs: &[u8]) -> usize {
+    let (_, locs_simd, _) = locs.as_simd();
+
+    let Some(simd_index) = locs_simd.into_iter().position(|v| any_zero_byte(*v)) else {
+        return locs.len();
+    };
+
+    for i in (simd_index * 32)..((simd_index + 1) * 32) {
+        if locs[i] == 0 {
+            return i;
+        }
+    }
+
+    return locs.len();
+}
+
+fn any_zero_byte(v: Simd<u8, 32>) -> bool {
+    const ZERO: Simd<u8, 32> = Simd::splat(0);
+
+    let eq = v.simd_eq(ZERO);
+    eq.any()
 }
 
 // trait SimdElem: Sized {

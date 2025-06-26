@@ -1009,13 +1009,13 @@ impl RawDataStore {
                     name: "Transport Belt".to_string(),
                     has_underground: Some(BeltUndergroundInfo { max_distance: 6 }),
                     has_splitter: None,
-                    timer_increase: 60 * 2,
+                    timer_increase: 45 * 2,
                 },
                 BeltInfo {
                     name: "Fast Transport Belt".to_string(),
                     has_underground: Some(BeltUndergroundInfo { max_distance: 8 }),
                     has_splitter: None,
-                    timer_increase: 60 * 2,
+                    timer_increase: 45 * 2,
                 },
             ],
 

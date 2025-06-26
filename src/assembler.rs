@@ -1178,7 +1178,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
         self.add_assembler_with_data(
             // TODO: Make the automatic insertion limit dependent on the speed of the machine and recipe
-            array::from_fn(|ing| 10),
+            array::from_fn(|ing| 20),
             array::from_fn(|_| 0),
             array::from_fn(|_| 0),
             0,
