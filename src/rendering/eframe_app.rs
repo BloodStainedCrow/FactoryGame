@@ -143,7 +143,7 @@ impl eframe::App for App {
                             size, cb,
                         )));
 
-                        let game_state = loaded_game_sized.state.lock();
+                        let mut game_state = loaded_game_sized.state.lock();
                         let mut state_machine = loaded_game_sized.state_machine.lock();
 
                         let tick = game.tick.load(std::sync::atomic::Ordering::Relaxed);
@@ -165,7 +165,7 @@ impl eframe::App for App {
                             ctx,
                             &ui,
                             &mut state_machine,
-                            &game_state,
+                            &mut game_state,
                             &loaded_game_sized.data_store.lock(),
                         );
 

@@ -1270,10 +1270,22 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     ctx: &Context,
     ui: &Ui,
     state_machine: &mut ActionStateMachine<ItemIdxType, RecipeIdxType>,
-    game_state: &GameState<ItemIdxType, RecipeIdxType>,
+    game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
     let mut actions = vec![];
+
+    Window::new("DEBUG USE WITH CARE")
+        .default_open(false)
+        .show(ctx, |ui| {
+            if ui.button("⚠️DEFRAGMENT GAMESTATE").clicked() {
+                let mut new_state = game_state.clone();
+
+                mem::swap(&mut new_state, game_state);
+
+                mem::drop(new_state);
+            }
+        });
 
     Window::new("UPS").default_open(false).show(ctx, |ui| {
         let points = &game_state.update_times.get_data_points(0)[0..30];
