@@ -76,6 +76,7 @@ module_name_repetitions = { level = "allow", priority = 1 }
 [profile.release-with-debug]
 inherits = "release"
 debug = true
+strip = false
 
 [profile.fast-compile]
 inherits = "dev"
@@ -88,7 +89,7 @@ incremental = true
 # codegen-backend = "cranelift"
 
 [profile.release]
-lto = true
+# lto = true
 # codegen-units = 1
 
 [features]

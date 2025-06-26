@@ -1,3 +1,7 @@
+// #![feature(generic_const_exprs)]
+
+#![feature(iter_array_chunks)]
+
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
@@ -11,6 +15,7 @@ fn main() {
 
 #[cfg(test)]
 mod test {
+    use itertools::Itertools;
     use rand::Rng;
     use std::{
         arch::x86_64::{
@@ -18,7 +23,7 @@ mod test {
             _mm256_movemask_epi8, _mm256_set1_epi8, _mm256_set_epi8, _mm256_setzero_si256,
             _mm256_storeu_si256,
         },
-        thread,
+        array, mem, thread,
         time::{Duration, Instant},
     };
 
@@ -145,20 +150,23 @@ mod test {
                 // }
 
                 // Load the next 32 items from the belt
-                let belt_vals = _mm256_loadu_si256(&belt[i] as *const bool as *const __m256i);
+                let belt_vals =
+                    _mm256_loadu_si256(belt.as_ptr().add(i) as *const bool as *const __m256i);
 
                 // Create a mask where each byte is 1 if belt[i] == 1, otherwise 0
                 let mask = _mm256_cmpeq_epi8(belt_vals, ones); // Compare to 1
 
-                let current_inserter_timers =
-                    _mm256_loadu_si256(&inserter_timers[i] as *const u8 as *const __m256i);
+                let current_inserter_timers = _mm256_loadu_si256(inserter_timers.as_ptr().add(i)
+                    as *const u8
+                    as *const __m256i);
 
                 let current_inserters_standing = _mm256_cmpeq_epi8(current_inserter_timers, zeroes);
 
                 // let current_inserters_
 
-                let current_inserter_hands =
-                    _mm256_loadu_si256(&inserter_hands[i] as *const u8 as *const __m256i);
+                let current_inserter_hands = _mm256_loadu_si256(inserter_hands.as_ptr().add(i)
+                    as *const u8
+                    as *const __m256i);
 
                 let inserter_hands_added = _mm256_add_epi8(current_inserter_hands, ones);
 
@@ -171,7 +179,7 @@ mod test {
                     _mm256_blendv_epi8(new_inserter_hands, zeroes, inserter_full_mask);
 
                 _mm256_storeu_si256(
-                    &mut inserter_hands[i] as *mut u8 as *mut __m256i,
+                    inserter_hands.as_mut_ptr().add(i) as *mut u8 as *mut __m256i,
                     final_inserter,
                 );
 
@@ -199,4 +207,153 @@ mod test {
             output.iter_mut().for_each(|o| *o *= 8);
         }
     }
+
+    pub fn test2(
+        belts: &mut [&mut [bool]],
+        hand_content: &mut [u8],
+        belt_id: &[u32],
+        belt_index: &[u16],
+    ) {
+        const ARR_LEN: usize = 1;
+
+        assert_eq!(hand_content.len(), belt_id.len());
+        assert_eq!(hand_content.len(), belt_index.len());
+
+        let mut iter = hand_content
+            .iter_mut()
+            .zip(belt_id.iter().zip(belt_index))
+            .array_chunks();
+
+        unsafe {
+            for (hands, belt_id, belt_index) in iter.map(|arr: [_; ARR_LEN]| split_array(arr)) {
+                // FIXME: Hack for type inferance
+                let mut hands: [_; ARR_LEN] = hands;
+                let belt_id: [_; ARR_LEN] = belt_id;
+                let belt_index: [_; ARR_LEN] = belt_index;
+
+                let belt_ptr = belts.as_mut_ptr();
+                let belts: [_; ARR_LEN] = belt_id.map(|id| belt_ptr.add(*id as usize));
+                let belt_positions: [&mut bool; ARR_LEN] = array::from_fn(|i| {
+                    let belt = (*belts[i]).as_mut_ptr();
+                    &mut (*belt.add(*belt_index[i] as usize))
+                });
+
+                let to_move: [bool; ARR_LEN] =
+                    array::from_fn(|i| (*hands[i] > 0) && *belt_positions[i]);
+
+                for ((hand, to_move), belt_position) in
+                    hands.iter_mut().zip(to_move).zip(belt_positions)
+                {
+                    **hand -= u8::from(to_move);
+                    *belt_position = to_move;
+                }
+            }
+        }
+    }
+
+    type BeltTransmuteType = u32;
+    pub fn update_non_overlapping_inserters(
+        belts: &mut [&mut [BeltTransmuteType]],
+        belt_first_free_sure: &mut [bool],
+        belt_first_free_pos: &[u16],
+        hand_content: &mut [u8],
+        belt_id: &[u32],
+        belt_index: &[u16],
+    ) {
+        assert_eq!(hand_content.len(), belt_id.len());
+        assert_eq!(hand_content.len(), belt_index.len());
+
+        unsafe {
+            for (hand, (belt_id, belt_index)) in
+                hand_content.iter_mut().zip(belt_id.iter().zip(belt_index))
+            {
+                let belt = belts.get_unchecked(*belt_id as usize);
+                let belt_position = {
+                    belt.get_unchecked(
+                        (*belt_index as usize) / size_of::<BeltTransmuteType>() * size_of::<bool>(),
+                    )
+                };
+
+                let belt_items = (*belt_position
+                    >> 8 * (*belt_index as usize % size_of::<BeltTransmuteType>()))
+                    as u8;
+
+                *hand -= u8::from(belt_items);
+            }
+
+            for (belt_id, belt_index) in belt_id.iter().zip(belt_index) {
+                let belt_ptr = belts.as_mut_ptr();
+                let belt = belt_ptr.add(*belt_id as usize);
+                let belt_position = {
+                    let belt = (*belt).as_mut_ptr();
+                    belt.add(
+                        (*belt_index as usize) / size_of::<BeltTransmuteType>() * size_of::<bool>(),
+                    )
+                };
+                *belt_position =
+                    u32::from(true) << 8 * (*belt_index as usize % size_of::<BeltTransmuteType>());
+
+                *belt_first_free_sure.get_unchecked_mut(*belt_id as usize) =
+                    !(*belt_first_free_pos.get_unchecked(*belt_id as usize) == *belt_index)
+                        && *belt_first_free_sure.get_unchecked(*belt_id as usize);
+            }
+        }
+    }
+
+    pub fn update_non_overlapping_inserters_pre_indexed(
+        belts: &mut [&mut BeltTransmuteType],
+        belt_first_free_pos: &[u16],
+        hand_content: &mut [u8],
+        belt_index: &[u16],
+    ) {
+        assert_eq!(hand_content.len(), belts.len());
+        assert_eq!(hand_content.len(), belt_index.len());
+
+        unsafe {
+            for (hand, (belt_position, belt_index)) in hand_content
+                .iter_mut()
+                .zip(belts.iter_mut().zip(belt_index))
+            {
+                let belt_items = (**belt_position
+                    >> 8 * (*belt_index as usize % size_of::<BeltTransmuteType>()))
+                    as u8;
+
+                *hand -= u8::from(belt_items);
+            }
+
+            for (belt_position, belt_index) in belts.iter_mut().zip(belt_index) {
+                **belt_position =
+                    u32::from(true) << 8 * (*belt_index as usize % size_of::<BeltTransmuteType>());
+            }
+        }
+    }
+
+    fn split_array<const N: usize, A, B, C>(arr: [(A, (B, C)); N]) -> ([A; N], [B; N], [C; N]) {
+        unsafe {
+            let first = array::from_fn(|idx| ((&arr[idx].0) as *const A).read());
+            let second = array::from_fn(|idx| ((&arr[idx].1 .0) as *const B).read());
+            let third = array::from_fn(|idx| ((&arr[idx].1 .1) as *const C).read());
+
+            mem::forget(arr);
+            (first, second, third)
+        }
+    }
 }
+
+// trait SimdElem: Sized {
+//     const SIZE: usize = size_of::<Self>();
+// }
+
+// const OPTIMAL_SIMD_SIZE_BYTES: usize = 64;
+// struct Simd<T: SimdElem, const N: usize = { OPTIMAL_SIMD_SIZE_BYTES / T::SIZE }> {
+//     v: [T; N],
+// }
+
+// impl SimdElem for u32 {}
+// impl SimdElem for u16 {}
+
+// type Test1 = Simd<u32>;
+// type Test2 = Simd<u16>;
+
+// const ORIG: Test2 = todo!();
+// const TEST: Simd<u16, 100> = ORIG;
