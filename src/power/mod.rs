@@ -283,9 +283,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                 .max_by_key(|grid_id| {
                     self.power_grids[usize::from(*grid_id)]
                         .grid_graph
-                        .nodes()
-                        .into_iter()
-                        .count()
+                        .node_count()
                 })
                 .unwrap();
 

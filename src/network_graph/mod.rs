@@ -47,6 +47,10 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
         }
     }
 
+    pub fn node_count(&self) -> usize {
+        self.graph.node_count()
+    }
+
     pub fn keys(&self) -> impl IntoIterator<Item = &NodeKey> {
         self.key_map.iter().map(|v| v.0)
     }
