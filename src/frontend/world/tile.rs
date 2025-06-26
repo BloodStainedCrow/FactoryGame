@@ -1523,14 +1523,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         Some(item) => Some(vec![item]),
                         None => None,
                     },
-                    possible_item_list: match simulation_state
-                        .factory
-                        .belts
-                        .get_pure_item(BeltTileId::AnyBelt(*id, PhantomData))
-                    {
-                        Some(item) => PossibleItem::List(vec![item]),
-                        None => PossibleItem::All,
-                    },
+                    possible_item_list: PossibleItem::All,
                 }),
                 Entity::Splitter { pos, direction, id } => todo!(),
                 Entity::Chest {
@@ -1574,8 +1567,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             &start_conn.possible_item_list,
             &dest_conn.possible_item_list,
         ) {
-            (PossibleItem::All, i) => i.clone(),
-            (i, PossibleItem::All) => i.clone(),
+            (PossibleItem::All, i) | (i, PossibleItem::All) => i.clone(),
             (PossibleItem::List(a), PossibleItem::List(b)) => {
                 PossibleItem::List(a.iter().copied().filter(|v| b.contains(v)).collect())
             },
