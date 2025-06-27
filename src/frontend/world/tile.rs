@@ -789,7 +789,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         #[cfg(debug_assertions)]
         const WORLDSIZE_CHUNKS: i32 = 200;
         #[cfg(not(debug_assertions))]
-        const WORLDSIZE_CHUNKS: i32 = 4000;
+        const WORLDSIZE_CHUNKS: i32 = 8000;
 
         let noise = Simplex::new(1);
 

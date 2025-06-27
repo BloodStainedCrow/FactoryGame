@@ -924,6 +924,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                 sushi_belt_holes: vec![],
                 smart_belts: vec![
                     MultiBeltStore {
+                        belt_ty: vec![],
                         belts: vec![],
                         holes: vec![]
                     };
@@ -1509,9 +1510,9 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
 
                     {
                         profiling::scope!("Update Belt");
-                        for belt in &mut belt_store.belts {
+                        for (belt, ty) in belt_store.belts.iter_mut().zip(&belt_store.belt_ty) {
                             // TODO: Avoid last minute decision making
-                            if self.inner.belt_update_timers[usize::from(belt.ty)] >= 120 {
+                            if self.inner.belt_update_timers[usize::from(*ty)] >= 120 {
                                 belt.update();
                             }
                         }
@@ -2537,6 +2538,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct MultiBeltStore<ItemIdxType: WeakIdxTrait> {
+    pub belt_ty: Vec<u8>,
     pub belts: Vec<SmartBelt<ItemIdxType>>,
 
     pub holes: Vec<usize>,
@@ -2545,6 +2547,7 @@ pub struct MultiBeltStore<ItemIdxType: WeakIdxTrait> {
 impl<ItemIdxType: IdxTrait> Default for MultiBeltStore<ItemIdxType> {
     fn default() -> Self {
         Self {
+            belt_ty: vec![],
             belts: vec![],
             holes: vec![],
         }
@@ -2561,9 +2564,11 @@ impl<ItemIdxType: IdxTrait> MultiBeltStore<ItemIdxType> {
 
     pub fn add_belt(&mut self, belt: SmartBelt<ItemIdxType>) -> usize {
         if let Some(hole) = self.holes.pop() {
+            self.belt_ty[hole] = belt.ty;
             self.belts[hole] = belt;
             hole
         } else {
+            self.belt_ty.push(belt.ty);
             self.belts.push(belt);
             self.belts.len() - 1
         }

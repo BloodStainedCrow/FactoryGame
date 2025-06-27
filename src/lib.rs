@@ -604,8 +604,20 @@ mod tests {
 
     #[bench]
     fn bench_huge_red_green_sci(b: &mut Bencher) {
-        let mut game_state =
-            GameState::new_with_beacon_red_green_production_many_grids(&DATA_STORE);
+        let game_state = GameState::new_with_beacon_red_green_production_many_grids(&DATA_STORE);
+
+        let mut game_state = game_state.clone();
+
+        b.iter(|| {
+            game_state.update(&DATA_STORE);
+        })
+    }
+
+    #[bench]
+    fn bench_12_beacon_red(b: &mut Bencher) {
+        let game_state = GameState::new_with_beacon_belt_production(&DATA_STORE);
+
+        let mut game_state = game_state.clone();
 
         b.iter(|| {
             game_state.update(&DATA_STORE);

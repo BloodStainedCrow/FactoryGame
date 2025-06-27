@@ -188,7 +188,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
 
         puffin::set_scopes_on(false);
-        for y_start in (0..40_000).step_by(6_000) {
+        for y_start in (0..100_000).step_by(6_000) {
             for y_pos in (1590..6000).step_by(10) {
                 for x_pos in (1590..3000).step_by(60) {
                     if rand::random::<u16>() < 128 {

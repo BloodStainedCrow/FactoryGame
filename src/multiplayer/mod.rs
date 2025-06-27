@@ -1,4 +1,5 @@
 use std::{
+    env,
     net::{IpAddr, TcpStream},
     ops::ControlFlow,
     sync::{atomic::AtomicU64, mpsc::Receiver, Arc},
@@ -165,7 +166,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 ControlFlow::Break(e) => return e,
             }
 
-            {
+            if !env::var("ZOOM").is_ok() {
                 profiling::scope!("Wait");
                 update_interval.tick();
             }
