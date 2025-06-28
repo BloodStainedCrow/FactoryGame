@@ -1515,11 +1515,6 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                             if self.inner.belt_update_timers[usize::from(*ty)] >= 120 {
                                 belt.update();
                             }
-                        }
-                    }
-                    {
-                        profiling::scope!("Update BeltStorageInserters");
-                        for belt in &mut belt_store.belts {
                             belt.update_inserters(
                                 item_storages,
                                 num_grids_total,
@@ -1527,7 +1522,14 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                                 grid_size,
                             );
                         }
+                        
                     }
+                    // {
+                    //     profiling::scope!("Update BeltStorageInserters");
+                    //     for belt in &mut belt_store.belts {
+                            
+                    //     }
+                    // }
 
                     {
                         profiling::scope!("Update PurePure Inserters");
