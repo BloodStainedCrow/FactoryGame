@@ -3098,6 +3098,7 @@ checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
 [[package]]
 name = "petgraph"
 version = "0.8.2"
+source = "git+https://github.com/BloodStainedCrow/petgraph#cfa95900ce202a8757dbf340432e74861fff16f2"
 dependencies = [
  "fixedbitset",
  "hashbrown",
