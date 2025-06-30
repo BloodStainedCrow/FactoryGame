@@ -7,7 +7,7 @@ use crate::{
     item::ITEMCOUNTTYPE,
     storage_list::{index_fake_union, SingleItemStorages},
 };
-use log::info;
+use log::{info, trace};
 use std::{cmp::min, iter};
 
 const MAX_MOVE_TIME: usize = 120;
@@ -28,7 +28,7 @@ struct InserterId(u16);
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct StorageStorageInserterStoreFrontend {
     lookup: HashMap<(FakeUnionStorage, FakeUnionStorage, InserterId), (u32, InserterState)>,
-    // next_tick: NextTick,
+    next_tick: NextTick,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -44,13 +44,13 @@ impl StorageStorageInserterStoreFrontend {
     pub fn new() -> Self {
         Self {
             lookup: HashMap::default(),
-            // next_tick: NextTick {
-            //     time: 0,
-            //     waiting_for_item: vec![],
-            //     waiting_for_item_result: vec![],
-            //     waiting_for_space: vec![],
-            //     waiting_for_space_result: vec![],
-            // },
+            next_tick: NextTick {
+                time: 0,
+                waiting_for_item: vec![],
+                waiting_for_item_result: vec![],
+                waiting_for_space: vec![],
+                waiting_for_space_result: vec![],
+            },
         }
     }
 
@@ -94,9 +94,17 @@ impl StorageStorageInserterStoreFrontend {
         &mut self,
         to_find: &Vec<(FakeUnionStorage, FakeUnionStorage, InserterId)>,
         store: &StorageStorageInserterStore,
+        do_next_tick_storing: bool,
         current_time: u32,
     ) -> HashMap<(FakeUnionStorage, FakeUnionStorage, InserterId), InserterState> {
         let num_to_find = to_find.len();
+
+        assert!(
+            self.next_tick.waiting_for_item.len() >= self.next_tick.waiting_for_item_result.len()
+        );
+        assert!(
+            self.next_tick.waiting_for_space.len() >= self.next_tick.waiting_for_space_result.len()
+        );
 
         info!(
             "Frontend requested info for {} Inserters on tick {}",
@@ -177,6 +185,56 @@ impl StorageStorageInserterStoreFrontend {
 
         let sizes = store.get_list_sizes();
 
+        if self.next_tick.time == current_time {
+            // We know only one tick has passed!
+
+            waiting_for_item.retain(|to_find| {
+                if self.next_tick.waiting_for_item.contains(to_find) {
+                    if let Some(ins) = self.next_tick.waiting_for_item_result.iter().find(|ins| {
+                        ins.storage_id_in == to_find.0
+                            && ins.storage_id_out == to_find.1
+                            && ins.id == to_find.2
+                    }) {
+                        // TODO: Do I want to remove this inserter from next_tick result list?
+                        ret.insert(
+                            *to_find,
+                            InserterState::WaitingForSourceItems(ins.current_hand),
+                        );
+                    } else {
+                        let to_remove = moving_out[MOVETIME as usize - 1].iter().position(|v| v == to_find).expect("Inserter with last state being WaitingForSourceItems not in moving_out list?");
+                        moving_out[MOVETIME as usize - 1].swap_remove(to_remove);
+                        ret.insert(*to_find, InserterState::FullAndMovingOut(MOVETIME));
+                    }
+                    false
+                } else {
+                    true
+                }
+            });
+
+            waiting_for_space.retain(|to_find| {
+                if self.next_tick.waiting_for_space.contains(to_find) {
+                    if let Some(ins) = self.next_tick.waiting_for_space_result.iter().find(|ins| {
+                        ins.storage_id_in == to_find.0
+                            && ins.storage_id_out == to_find.1
+                            && ins.id == to_find.2
+                    }) {
+                        // TODO: Do I want to remove this inserter from next_tick result list?
+                        ret.insert(
+                            *to_find,
+                            InserterState::WaitingForSpaceInDestination(ins.current_hand),
+                        );
+                    } else {
+                        let to_remove = moving_in[MOVETIME as usize - 1].iter().position(|v| v == to_find).expect("Inserter with last state being WaitingForSpaceInDestination not in moving_in list?");
+                        moving_in[MOVETIME as usize - 1].swap_remove(to_remove);
+                        ret.insert(*to_find, InserterState::EmptyAndMovingBack(MOVETIME));
+                    }
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+
         for (i, _) in sizes.into_iter().enumerate().sorted_by_key(|v| v.0) {
             const MOVING_OUT_END: usize = MAX_MOVE_TIME + 1;
             const WATING_FOR_SPACE: usize = MOVING_OUT_END;
@@ -235,31 +293,42 @@ impl StorageStorageInserterStoreFrontend {
             }));
         }
 
-        // let mut waiting_for_item = vec![];
-        // let mut waiting_for_space = vec![];
+        let mut waiting_for_item = vec![];
+        let mut waiting_for_space = vec![];
 
-        // for (k, v) in ret.iter() {
-        //     let next_possible_states = get_possible_new_states(*v, MOVETIME, HAND_SIZE);
+        for (k, v) in ret.iter() {
+            let next_possible_states = get_possible_new_states(*v, MOVETIME, HAND_SIZE);
 
-        //     if matches!(*v, InserterState::WaitingForSourceItems(_)) {
-        //         waiting_for_item.push(*k);
-        //     } else if matches!(*v, InserterState::WaitingForSpaceInDestination(_)) {
-        //         waiting_for_space.push(*k);
-        //     }
-        // }
+            if matches!(*v, InserterState::WaitingForSourceItems(_)) {
+                waiting_for_item.push(*k);
+            } else if matches!(*v, InserterState::WaitingForSpaceInDestination(_)) {
+                waiting_for_space.push(*k);
+            }
+        }
 
-        // self.next_tick = NextTick {
-        //     time: current_time + 1,
-        //     waiting_for_item,
-        //     waiting_for_item_result: vec![],
-        //     waiting_for_space,
-        //     waiting_for_space_result: vec![],
-        // };
+        if do_next_tick_storing {
+            self.next_tick = NextTick {
+                time: current_time + 1,
+                waiting_for_item,
+                waiting_for_item_result: vec![],
+                waiting_for_space,
+                waiting_for_space_result: vec![],
+            };
+        } else {
+            self.next_tick = NextTick {
+                time: 0,
+                waiting_for_item: vec![],
+                waiting_for_item_result: vec![],
+                waiting_for_space: vec![],
+                waiting_for_space_result: vec![],
+            };
+        }
 
         assert_eq!(
             ret.len(),
             num_to_find,
-            "We were unable to find an inserter for some request"
+            "Expected to find {num_to_find} Inserters, found {}",
+            ret.len()
         );
 
         self.lookup.extend(
@@ -451,28 +520,19 @@ impl StorageStorageInserterStore {
     }
 
     #[profiling::function]
+    #[inline(never)]
     pub fn update(
         &mut self,
-        // frontend: &mut StorageStorageInserterStoreFrontend,
+        frontend: &mut StorageStorageInserterStoreFrontend,
         storages: SingleItemStorages,
         grid_size: usize,
-        // current_tick: u32,
+        current_tick: u32,
     ) {
         let old_len: usize = self.get_list_sizes().iter().sum();
 
         assert!(self.current_tick < MAX_MOVE_TIME);
 
         let now_moving = self.waiting_for_item.extract_if(.., |inserter| {
-            // if frontend.next_tick.time == current_tick
-            //     && frontend.next_tick.waiting_for_item.iter().any(|v| {
-            //         v.0 == inserter.storage_id_in
-            //             && v.1 == inserter.storage_id_out
-            //             && v.2 == inserter.id
-            //     })
-            // {
-            //     frontend.next_tick.waiting_for_item_result.push(*inserter);
-            // }
-
             let (_max_insert, old) = index_fake_union(storages, inserter.storage_id_in, grid_size);
 
             let to_extract = min(inserter.max_hand_size - inserter.current_hand, *old);
@@ -481,7 +541,20 @@ impl StorageStorageInserterStore {
 
             inserter.current_hand += to_extract;
 
-            inserter.current_hand == inserter.max_hand_size
+            let extract = inserter.current_hand == inserter.max_hand_size;
+
+            if !extract
+                && frontend.next_tick.time == current_tick
+                && frontend.next_tick.waiting_for_item.iter().any(|v| {
+                    v.0 == inserter.storage_id_in
+                        && v.1 == inserter.storage_id_out
+                        && v.2 == inserter.id
+                })
+            {
+                frontend.next_tick.waiting_for_item_result.push(*inserter);
+            }
+
+            extract
         });
 
         // TODO: constant movetime
@@ -491,16 +564,6 @@ impl StorageStorageInserterStore {
         let now_moving_back = self
             .waiting_for_space_in_destination
             .extract_if(.., |inserter| {
-                // if frontend.next_tick.time == current_tick
-                //     && frontend.next_tick.waiting_for_space.iter().any(|v| {
-                //         v.0 == inserter.storage_id_in
-                //             && v.1 == inserter.storage_id_out
-                //             && v.2 == inserter.id
-                //     })
-                // {
-                //     frontend.next_tick.waiting_for_space_result.push(*inserter);
-                // }
-
                 let (max_insert, old) =
                     index_fake_union(storages, inserter.storage_id_out, grid_size);
 
@@ -510,7 +573,19 @@ impl StorageStorageInserterStore {
 
                 inserter.current_hand -= to_insert;
 
-                inserter.current_hand == 0
+                let extract = inserter.current_hand == 0;
+
+                if !extract
+                    && frontend.next_tick.time == current_tick
+                    && frontend.next_tick.waiting_for_space.iter().any(|v| {
+                        v.0 == inserter.storage_id_in
+                            && v.1 == inserter.storage_id_out
+                            && v.2 == inserter.id
+                    })
+                {
+                    frontend.next_tick.waiting_for_space_result.push(*inserter);
+                }
+                extract
             });
 
         // TODO: constant movetime
@@ -566,6 +641,11 @@ impl StorageStorageInserterStore {
             _ => unreachable!(),
         };
 
+        trace!(
+            "Having to search {} inserters for rendering",
+            search_list.len()
+        );
+
         for inserter in search_list {
             to_find.retain(|to_find| {
                 if to_find.0 == inserter.storage_id_in
@@ -591,8 +671,15 @@ impl StorageStorageInserterStore {
 
 #[cfg(test)]
 mod test {
+    const NUM_INSERTERS: usize = 2_000_000;
+    const NUM_ITEMS: usize = 1;
+    const NUM_VISIBLE: usize = 1000;
+
+    use std::array;
+
     use itertools::Itertools;
     use rand::{random, seq::SliceRandom};
+    use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
     use test::Bencher;
 
     use crate::inserter::{
@@ -604,79 +691,100 @@ mod test {
 
     #[bench]
     fn bench_update_storage_storage_inserter_store_buckets(b: &mut Bencher) {
-        const NUM_INSERTERS: usize = 5_000_000;
-        let mut store = StorageStorageInserterStore::new();
+        let mut store: [_; NUM_ITEMS] = array::from_fn(|_| StorageStorageInserterStore::new());
+        let mut frontend: [_; NUM_ITEMS] =
+            array::from_fn(|_| StorageStorageInserterStoreFrontend::new());
 
         let max_insert = vec![200u8; NUM_INSERTERS];
-        let mut storages_in = vec![200u8; NUM_INSERTERS];
-        let mut storages_out = vec![0u8; NUM_INSERTERS];
+        let mut storages_in: [_; NUM_ITEMS] = array::from_fn(|_| vec![200u8; NUM_INSERTERS]);
+        let mut storages_out: [_; NUM_ITEMS] = array::from_fn(|_| vec![0u8; NUM_INSERTERS]);
 
-        let mut values = (0..(NUM_INSERTERS as u32)).collect_vec();
-        values.shuffle(&mut rand::thread_rng());
+        let mut current_tick = 0;
 
-        for i in values {
-            if random::<u16>() < 1 {
-                store.update(
-                    &mut [
-                        (max_insert.as_slice(), storages_in.as_mut_slice()),
-                        (max_insert.as_slice(), storages_out.as_mut_slice()),
-                    ],
-                    10,
-                );
+        for item in 0..NUM_ITEMS {
+            let mut values = (0..(NUM_INSERTERS as u32)).collect_vec();
+            values.shuffle(&mut rand::thread_rng());
+            for i in values {
+                if random::<u16>() < 1 {
+                    store[item].update(
+                        &mut frontend[item],
+                        &mut [
+                            (max_insert.as_slice(), storages_in[item].as_mut_slice()),
+                            (max_insert.as_slice(), storages_out[item].as_mut_slice()),
+                        ],
+                        10,
+                        current_tick,
+                    );
 
-                if storages_in[0] < 20 {
-                    storages_in = vec![200u8; NUM_INSERTERS];
-                    storages_out = vec![0u8; NUM_INSERTERS];
+                    if storages_in[item][0] < 20 {
+                        storages_in[item] = vec![200u8; NUM_INSERTERS];
+                        storages_out[item] = vec![0u8; NUM_INSERTERS];
+                    }
+
+                    dbg!(store[item].get_list_sizes());
+                    dbg!(store[item].get_list_sizes().iter().sum::<usize>());
+
+                    current_tick += 1;
                 }
 
-                dbg!(store.get_list_sizes());
-                dbg!(store.get_list_sizes().iter().sum::<usize>());
+                store[item].add_inserter(
+                    FakeUnionStorage {
+                        index: i,
+                        grid_or_static_flag: 0,
+                        recipe_idx_with_this_item: 0,
+                    },
+                    FakeUnionStorage {
+                        index: i,
+                        grid_or_static_flag: 0,
+                        recipe_idx_with_this_item: 1,
+                    },
+                    1,
+                );
             }
-
-            store.add_inserter(
-                FakeUnionStorage {
-                    index: i,
-                    grid_or_static_flag: 0,
-                    recipe_idx_with_this_item: 0,
-                },
-                FakeUnionStorage {
-                    index: i,
-                    grid_or_static_flag: 0,
-                    recipe_idx_with_this_item: 1,
-                },
-                1,
-            );
         }
 
-        storages_in = vec![200u8; NUM_INSERTERS];
-        storages_out = vec![0u8; NUM_INSERTERS];
+        storages_in = array::from_fn(|_| vec![200u8; NUM_INSERTERS]);
+        storages_out = array::from_fn(|_| vec![0u8; NUM_INSERTERS]);
 
         let mut num_iter = 0;
 
         b.iter(|| {
             // for _ in 0..10 {
-            if storages_in[0] < 20 {
-                storages_in = vec![200u8; NUM_INSERTERS];
-                storages_out = vec![0u8; NUM_INSERTERS];
-            }
-            store.update(
-                &mut [
-                    (max_insert.as_slice(), storages_in.as_mut_slice()),
-                    (max_insert.as_slice(), storages_out.as_mut_slice()),
-                ],
-                10,
-            );
+            storages_in
+                .par_iter_mut()
+                .zip(
+                    storages_out
+                        .par_iter_mut()
+                        .zip(store.par_iter_mut().zip(frontend.par_iter_mut())),
+                )
+                .for_each(|(storage_in, (storage_out, (store, frontend)))| {
+                    if storage_in[0] < 20 {
+                        *storage_in = vec![200u8; NUM_INSERTERS];
+                        *storage_out = vec![0u8; NUM_INSERTERS];
+                    }
+                    store.update(
+                        frontend,
+                        &mut [
+                            (max_insert.as_slice(), storage_in.as_mut_slice()),
+                            (max_insert.as_slice(), storage_out.as_mut_slice()),
+                        ],
+                        10,
+                        current_tick,
+                    );
+                });
+
             // }
             num_iter += 1;
+            current_tick += 1;
         });
 
-        dbg!(&storages_in[0..10], &storages_out[0..10], num_iter);
+        dbg!(&storages_in[0][0..10], &storages_out[0][0..10], num_iter);
     }
 
     #[bench]
-    fn bench_storage_storage_inserter_store_find_batched(b: &mut Bencher) {
-        const NUM_INSERTERS: usize = 5_000_000;
-        const NUM_VISIBLE: usize = 100;
+    fn bench_storage_storage_inserter_store_find_batched_with_next_tick_optimization(
+        b: &mut Bencher,
+    ) {
         let mut store = StorageStorageInserterStore::new();
 
         let mut frontend = StorageStorageInserterStoreFrontend::new();
@@ -688,14 +796,18 @@ mod test {
         let mut values = (0..(NUM_INSERTERS as u32)).collect_vec();
         values.shuffle(&mut rand::thread_rng());
 
+        let mut current_time: u32 = 0;
+
         for i in values {
             if random::<u16>() < 10 {
                 store.update(
+                    &mut frontend,
                     &mut [
                         (max_insert.as_slice(), storages_in.as_mut_slice()),
                         (max_insert.as_slice(), storages_out.as_mut_slice()),
                     ],
                     10,
+                    current_time,
                 );
 
                 if storages_in[0] < 20 {
@@ -703,7 +815,6 @@ mod test {
                     storages_out = vec![0u8; NUM_INSERTERS];
                 }
 
-                dbg!(store.get_list_sizes());
                 dbg!(store.get_list_sizes().iter().sum::<usize>());
             }
 
@@ -726,8 +837,6 @@ mod test {
 
         storages_in = vec![200u8; NUM_INSERTERS];
         storages_out = vec![0u8; NUM_INSERTERS];
-
-        let mut current_time: u32 = 0;
 
         let to_find: Vec<u32> = (0..(NUM_VISIBLE as u32)).collect();
 
@@ -753,20 +862,123 @@ mod test {
             .collect();
 
         b.iter(|| {
-            let ret = frontend.get_info_batched(&to_find, &store, current_time);
-
-            dbg!(ret.len());
+            let ret = frontend.get_info_batched(&to_find, &store, true, current_time);
 
             if storages_in[0] < 20 {
                 storages_in = vec![200u8; NUM_INSERTERS];
                 storages_out = vec![0u8; NUM_INSERTERS];
             }
             store.update(
+                &mut frontend,
                 &mut [
                     (max_insert.as_slice(), storages_in.as_mut_slice()),
                     (max_insert.as_slice(), storages_out.as_mut_slice()),
                 ],
                 10,
+                current_time,
+            );
+
+            current_time += 1;
+        });
+
+        dbg!(&storages_in[0..10], &storages_out[0..10], current_time);
+    }
+
+    #[bench]
+    fn bench_storage_storage_inserter_store_find_batched_without_next_tick_optimization(
+        b: &mut Bencher,
+    ) {
+        let mut store = StorageStorageInserterStore::new();
+
+        let mut frontend = StorageStorageInserterStoreFrontend::new();
+
+        let max_insert = vec![200u8; NUM_INSERTERS];
+        let mut storages_in = vec![200u8; NUM_INSERTERS];
+        let mut storages_out = vec![0u8; NUM_INSERTERS];
+
+        let mut values = (0..(NUM_INSERTERS as u32)).collect_vec();
+        values.shuffle(&mut rand::thread_rng());
+
+        let mut current_time: u32 = 0;
+
+        for i in values {
+            if random::<u16>() < 10 {
+                store.update(
+                    &mut frontend,
+                    &mut [
+                        (max_insert.as_slice(), storages_in.as_mut_slice()),
+                        (max_insert.as_slice(), storages_out.as_mut_slice()),
+                    ],
+                    10,
+                    current_time,
+                );
+
+                if storages_in[0] < 20 {
+                    storages_in = vec![200u8; NUM_INSERTERS];
+                    storages_out = vec![0u8; NUM_INSERTERS];
+                }
+
+                dbg!(store.get_list_sizes().iter().sum::<usize>());
+            }
+
+            let id = store.add_inserter(
+                FakeUnionStorage {
+                    index: i,
+                    grid_or_static_flag: 0,
+                    recipe_idx_with_this_item: 0,
+                },
+                FakeUnionStorage {
+                    index: i,
+                    grid_or_static_flag: 0,
+                    recipe_idx_with_this_item: 1,
+                },
+                1,
+            );
+
+            assert_eq!(id, InserterId(0));
+        }
+
+        storages_in = vec![200u8; NUM_INSERTERS];
+        storages_out = vec![0u8; NUM_INSERTERS];
+
+        let to_find: Vec<u32> = (0..(NUM_VISIBLE as u32)).collect();
+
+        // let to_find = vec![0u16];
+
+        let to_find: Vec<_> = to_find
+            .into_iter()
+            .map(|i| {
+                (
+                    FakeUnionStorage {
+                        index: i.into(),
+                        grid_or_static_flag: 0,
+                        recipe_idx_with_this_item: 0,
+                    },
+                    FakeUnionStorage {
+                        index: i.into(),
+                        grid_or_static_flag: 0,
+                        recipe_idx_with_this_item: 1,
+                    },
+                    InserterId(0),
+                )
+            })
+            .collect();
+
+        b.iter(|| {
+            let ret = frontend.get_info_batched(&to_find, &store, false, current_time);
+
+            if storages_in[0] < 20 {
+                storages_in = vec![200u8; NUM_INSERTERS];
+                storages_out = vec![0u8; NUM_INSERTERS];
+            }
+            store.update(
+                &mut frontend,
+                &mut [
+                    (max_insert.as_slice(), storages_in.as_mut_slice()),
+                    (max_insert.as_slice(), storages_out.as_mut_slice()),
+                ],
+                10,
+                current_time,
             );
 
             current_time += 1;

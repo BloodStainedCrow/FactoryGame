@@ -2251,7 +2251,7 @@ mod tests {
 
     #[bench]
     fn bench_update_storage_storage_inserter_store_naive(b: &mut Bencher) {
-        const NUM_INSERTERS: usize = 5_000_000;
+        const NUM_INSERTERS: usize = 2_000_000;
         let mut store = StorageStorageInserterStore::new(&DATA_STORE);
 
         let max_insert = vec![200u8; NUM_INSERTERS];
@@ -2259,10 +2259,10 @@ mod tests {
         let mut storages_out = vec![0u8; NUM_INSERTERS];
 
         let mut values = (0..(NUM_INSERTERS as u32)).collect_vec();
-        values.shuffle(&mut rand::thread_rng());
+        // values.shuffle(&mut rand::thread_rng());
 
         for i in values {
-            if random::<u16>() < 1 {
+            if random::<u16>() < 50 {
                 store.update(
                     vec![[
                         (max_insert.as_slice(), storages_in.as_mut_slice()),
