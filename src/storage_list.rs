@@ -128,8 +128,6 @@ pub fn index<'a, 'b, RecipeIdxType: IdxTrait>(
 pub fn index_fake_union<'a, 'b>(
     slice: SingleItemStorages<'a, 'b>,
     storage_id: FakeUnionStorage,
-    num_grids_total: usize,
-    num_recipes: usize,
     grid_size: usize,
 ) -> (&'a ITEMCOUNTTYPE, &'a mut ITEMCOUNTTYPE) {
     let (outer, inner) = storage_id.into_inner_and_outer_indices_with_statics_at_zero(grid_size);

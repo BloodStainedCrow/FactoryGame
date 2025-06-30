@@ -1982,10 +1982,12 @@ mod tests {
         replays::Replay,
         DATA_STORE,
     };
+    use itertools::Itertools;
     use proptest::{
         prelude::{Just, Strategy},
         prop_assert, prop_assert_eq, prop_assume, proptest,
     };
+    use rayon::iter::{IntoParallelIterator, IntoParallelRefMutIterator};
     use test::Bencher;
 
     fn beacon_test_val() -> impl Strategy<Value = Vec<ActionType<u8, u8>>> {
@@ -2241,5 +2243,84 @@ mod tests {
                 .items_produced[0]
                 > 0
         );
+    }
+
+    use crate::rendering::app_state::FakeUnionStorage;
+    use crate::rendering::app_state::StorageStorageInserterStore;
+    use rand::{random, seq::SliceRandom};
+
+    #[bench]
+    fn bench_update_storage_storage_inserter_store_naive(b: &mut Bencher) {
+        const NUM_INSERTERS: usize = 5_000_000;
+        let mut store = StorageStorageInserterStore::new(&DATA_STORE);
+
+        let max_insert = vec![200u8; NUM_INSERTERS];
+        let mut storages_in = vec![200u8; NUM_INSERTERS];
+        let mut storages_out = vec![0u8; NUM_INSERTERS];
+
+        let mut values = (0..(NUM_INSERTERS as u32)).collect_vec();
+        values.shuffle(&mut rand::thread_rng());
+
+        for i in values {
+            if random::<u16>() < 1 {
+                store.update(
+                    vec![[
+                        (max_insert.as_slice(), storages_in.as_mut_slice()),
+                        (max_insert.as_slice(), storages_out.as_mut_slice()),
+                    ]
+                    .as_mut_slice()]
+                    .into_par_iter(),
+                    10,
+                    &DATA_STORE,
+                );
+
+                if storages_in[0] < 20 {
+                    storages_in = vec![200u8; NUM_INSERTERS];
+                    storages_out = vec![0u8; NUM_INSERTERS];
+                }
+            }
+
+            store.add_ins(
+                crate::item::Item {
+                    id: 0usize.try_into().unwrap(),
+                },
+                crate::inserter::Storage::Static {
+                    static_id: 0,
+                    index: i,
+                },
+                crate::inserter::Storage::Static {
+                    static_id: 1,
+                    index: i,
+                },
+                &DATA_STORE,
+            );
+        }
+
+        storages_in = vec![200u8; NUM_INSERTERS];
+        storages_out = vec![0u8; NUM_INSERTERS];
+
+        let mut num_iter = 0;
+
+        b.iter(|| {
+            // for _ in 0..10 {
+            if storages_in[0] < 20 {
+                storages_in = vec![200u8; NUM_INSERTERS];
+                storages_out = vec![0u8; NUM_INSERTERS];
+            }
+            store.update(
+                vec![[
+                    (max_insert.as_slice(), storages_in.as_mut_slice()),
+                    (max_insert.as_slice(), storages_out.as_mut_slice()),
+                ]
+                .as_mut_slice()]
+                .into_par_iter(),
+                0,
+                &DATA_STORE,
+            );
+            // }
+            num_iter += 1;
+        });
+
+        dbg!(&storages_in[0..10], &storages_out[0..10], num_iter);
     }
 }

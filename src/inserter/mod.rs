@@ -18,18 +18,19 @@ use crate::item::usize_from;
 pub mod belt_belt_inserter;
 pub mod belt_storage_inserter;
 pub mod storage_storage_inserter;
+pub mod storage_storage_with_buckets;
 
 /// Time for a normal inserter to move in ticks
-pub(super) const MOVETIME: u8 = 120;
+pub(super) const MOVETIME: u8 = 11;
 // const_assert!(MOVETIME < 64);
 
-pub(super) const HAND_SIZE: u8 = 12;
+pub(super) const HAND_SIZE: u8 = 1;
 const_assert!(HAND_SIZE < 64);
 
 // TODO: This could be minified using a union or similar,
 // But since Inserters are the same size, whether this is 2 or 1 byte (atleast in a Vec of Structs)
 // I will leave this be for now.
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub enum InserterState {
     WaitingForSourceItems(ITEMCOUNTTYPE),
     WaitingForSpaceInDestination(ITEMCOUNTTYPE),
@@ -71,7 +72,7 @@ pub const MAX_GRID_COUNT: usize = u16::MAX as usize - 1;
 pub const MAX_TIMES_AN_ITEM_CAN_APPEAR_IN_RECIPES: usize = u16::MAX as usize;
 pub const MAX_RECIPE_COUNT: usize = u16::MAX as usize;
 
-#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub struct FakeUnionStorage {
     pub index: u32,
     pub grid_or_static_flag: u16,

@@ -1506,7 +1506,7 @@ impl<T: Iterator, const N: usize> Iterator for ZipArray<T, N> {
     }
 }
 
-mod arrays {
+pub mod arrays {
     use std::{convert::TryInto, marker::PhantomData};
 
     use serde::{
