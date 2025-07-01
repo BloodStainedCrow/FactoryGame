@@ -1,5 +1,9 @@
 use crate::data::AllowedFluidDirection;
-use crate::inserter::HAND_SIZE;
+use crate::inserter::storage_storage_with_buckets::InserterIdentifier;
+use crate::inserter::storage_storage_with_buckets::{
+    BucketedStorageStorageInserterStore, BucketedStorageStorageInserterStoreFrontend, InserterId,
+};
+use crate::inserter::{InserterState, HAND_SIZE};
 use crate::liquid::connection_logic::can_fluid_tanks_connect_to_single_connection;
 use crate::liquid::FluidConnectionDir;
 use crate::LoadedGameInfo;
@@ -48,6 +52,7 @@ use crate::{
 use itertools::Itertools;
 use log::{info, trace, warn};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
+use std::collections::HashMap;
 use std::iter;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
@@ -410,8 +415,12 @@ pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct StorageStorageInserterStore {
-    pub inserters: Box<[Vec<StorageStorageInserter>]>,
-    holes: Box<[Vec<usize>]>,
+    pub inserters: Box<
+        [(
+            BucketedStorageStorageInserterStoreFrontend,
+            BucketedStorageStorageInserterStore,
+        )],
+    >,
 }
 
 impl StorageStorageInserterStore {
@@ -419,9 +428,31 @@ impl StorageStorageInserterStore {
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         Self {
-            inserters: vec![vec![]; data_store.item_names.len()].into_boxed_slice(),
-            holes: vec![vec![]; data_store.item_names.len()].into_boxed_slice(),
+            inserters: vec![
+                (
+                    BucketedStorageStorageInserterStoreFrontend::new(),
+                    BucketedStorageStorageInserterStore::new()
+                );
+                data_store.item_names.len()
+            ]
+            .into_boxed_slice(),
         }
+    }
+
+    #[profiling::function]
+    pub fn get_info_batched<ItemIdxType: IdxTrait>(
+        &mut self,
+        item: Item<ItemIdxType>,
+        ids: impl IntoIterator<Item = InserterIdentifier>,
+        current_tick: u32,
+    ) -> HashMap<InserterIdentifier, InserterState> {
+        let info = self.inserters[item.into_usize()].0.get_info_batched(
+            ids,
+            &self.inserters[item.into_usize()].1,
+            true,
+            current_tick,
+        );
+        info
     }
 
     #[profiling::function]
@@ -429,16 +460,16 @@ impl StorageStorageInserterStore {
         &mut self,
         full_storages: impl IndexedParallelIterator<Item = SingleItemStorages<'a, 'b>>,
         num_grids_total: usize,
+        current_tick: u32,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) where
         'b: 'a,
     {
         self.inserters
             .par_iter_mut()
-            .zip(self.holes.par_iter_mut())
             .zip(full_storages)
             .enumerate()
-            .for_each(|(item_id, ((ins, holes), storages))| {
+            .for_each(|(item_id, ((frontend, ins_store), storages))| {
                 profiling::scope!(
                     "StorageStorage Inserter Update",
                     format!("Item: {}", data_store.item_names[item_id]).as_str()
@@ -451,21 +482,7 @@ impl StorageStorageInserterStore {
                 let grid_size = grid_size(item, data_store);
                 let num_recipes = num_recipes(item, data_store);
 
-                ins.iter_mut()
-                    .enumerate()
-                    // FIXME: This is awful!
-                    // Ideally we could replace inserter holes with placeholder that do not do anything, but I don't quite know how those would work.
-                    .filter_map(|(i, v)| (!holes.contains(&i)).then_some(v))
-                    .for_each(|ins| {
-                        ins.update(
-                            storages,
-                            MOVETIME,
-                            HAND_SIZE,
-                            num_grids_total,
-                            num_recipes,
-                            grid_size,
-                        );
-                    });
+                ins_store.update(frontend, storages, grid_size, current_tick);
             });
     }
 
@@ -475,50 +492,54 @@ impl StorageStorageInserterStore {
         start: Storage<RecipeIdxType>,
         dest: Storage<RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> usize {
-        let idx = if let Some(hole_idx) = self.holes[usize_from(item.id)].pop() {
-            self.inserters[usize_from(item.id)][hole_idx] = StorageStorageInserter::new(
-                FakeUnionStorage::from_storage_with_statics_at_zero(item, start, data_store),
-                FakeUnionStorage::from_storage_with_statics_at_zero(item, dest, data_store),
-            );
+    ) -> InserterIdentifier {
+        let source = FakeUnionStorage::from_storage_with_statics_at_zero(item, start, data_store);
+        let dest = FakeUnionStorage::from_storage_with_statics_at_zero(item, dest, data_store);
 
-            hole_idx
-        } else {
-            self.inserters[usize_from(item.id)].push(StorageStorageInserter::new(
-                FakeUnionStorage::from_storage_with_statics_at_zero(item, start, data_store),
-                FakeUnionStorage::from_storage_with_statics_at_zero(item, dest, data_store),
-            ));
+        let id: InserterId = self.inserters[item.into_usize()]
+            .1
+            .add_inserter(source, dest, HAND_SIZE);
 
-            self.inserters[usize_from(item.id)].len() - 1
-        };
-
-        idx
+        InserterIdentifier { source, dest, id }
     }
 
-    pub fn remove_ins<ItemIdxType: IdxTrait>(&mut self, item: Item<ItemIdxType>, index: usize) {
-        assert!(!self.holes[usize_from(item.id)].contains(&index));
-        self.holes[usize_from(item.id)].push(index);
+    pub fn remove_ins<ItemIdxType: IdxTrait>(
+        &mut self,
+        item: Item<ItemIdxType>,
+        id: InserterIdentifier,
+    ) {
+        let inserter = self.inserters[item.into_usize()]
+            .1
+            .remove_inserter(id.source, id.dest, id.id);
+        // TODO: Handle what happens with the items
     }
 
+    #[profiling::function]
     pub fn update_inserter_src<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut self,
         item: Item<ItemIdxType>,
-        index: usize,
+        id: InserterIdentifier,
         new_src: Storage<RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        self.inserters[item.into_usize()][index].storage_id_in =
-            FakeUnionStorage::from_storage_with_statics_at_zero(item, new_src, data_store);
+        self.inserters[item.into_usize()].1.update_inserter_src(
+            id,
+            FakeUnionStorage::from_storage_with_statics_at_zero(item, new_src, data_store),
+        );
     }
+
+    #[profiling::function]
     pub fn update_inserter_dest<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut self,
         item: Item<ItemIdxType>,
-        index: usize,
+        id: InserterIdentifier,
         new_dest: Storage<RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        self.inserters[item.into_usize()][index].storage_id_out =
-            FakeUnionStorage::from_storage_with_statics_at_zero(item, new_dest, data_store);
+        self.inserters[item.into_usize()].1.update_inserter_dest(
+            id,
+            FakeUnionStorage::from_storage_with_statics_at_zero(item, new_dest, data_store),
+        );
     }
 }
 
@@ -548,7 +569,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
     }
 
     #[profiling::function]
-    fn belt_update<'a>(&mut self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) {
+    fn belt_update<'a>(
+        &mut self,
+        current_tick: u32,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
         let num_grids_total = self.power_grids.power_grids.len();
         let mut all_storages = {
             profiling::scope!("Generate all_storages list");
@@ -566,6 +591,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
         self.storage_storage_inserters.update(
             storages_by_item.par_iter_mut().map(|v| &mut **v),
             num_grids_total,
+            current_tick,
             data_store,
         );
 
@@ -1733,7 +1759,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     pub fn update(&mut self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) {
         self.simulation_state.factory.chests.update(data_store);
 
-        self.simulation_state.factory.belt_update(data_store);
+        self.simulation_state
+            .factory
+            // We can downcast here, since this could only cause graphical weirdness for a couple frame every ~2 years of playtime
+            .belt_update(self.current_tick as u32, data_store);
 
         // TODO: Do I want this, or just do it in the belt_update
         //self.simulation_state
@@ -2312,6 +2341,8 @@ mod tests {
         let mut values = (0..(NUM_INSERTERS as u32)).collect_vec();
         // values.shuffle(&mut rand::thread_rng());
 
+        let mut current_time = 0;
+
         for i in values {
             if random::<u16>() < 50 {
                 store.update(
@@ -2322,6 +2353,7 @@ mod tests {
                     .as_mut_slice()]
                     .into_par_iter(),
                     10,
+                    current_time,
                     &DATA_STORE,
                 );
 
@@ -2329,6 +2361,8 @@ mod tests {
                     storages_in = vec![200u8; NUM_INSERTERS];
                     storages_out = vec![0u8; NUM_INSERTERS];
                 }
+
+                current_time += 1;
             }
 
             store.add_ins(
@@ -2366,10 +2400,12 @@ mod tests {
                 .as_mut_slice()]
                 .into_par_iter(),
                 0,
+                num_iter,
                 &DATA_STORE,
             );
             // }
             num_iter += 1;
+            current_time += 1;
         });
 
         dbg!(&storages_in[0..10], &storages_out[0..10], num_iter);

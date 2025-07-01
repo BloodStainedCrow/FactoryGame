@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use itertools::Itertools;
 use log::warn;
 
+use crate::inserter::storage_storage_with_buckets::InserterIdentifier;
 use crate::item::Indexable;
 use crate::{
     chest::FullChestStore,
@@ -646,10 +647,10 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 enum FluidSystemEntity {
-    OutgoingPump { inserter_id: usize },
-    IncomingPump { inserter_id: usize },
-    Input { inserter_id: usize },
-    Output { inserter_id: usize },
+    OutgoingPump { inserter_id: InserterIdentifier },
+    IncomingPump { inserter_id: InserterIdentifier },
+    Input { inserter_id: InserterIdentifier },
+    Output { inserter_id: InserterIdentifier },
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]

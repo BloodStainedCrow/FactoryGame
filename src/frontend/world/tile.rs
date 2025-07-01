@@ -23,7 +23,7 @@ use crate::{
         SplitterTileId,
     },
     data::{DataStore, ItemRecipeDir},
-    inserter::{StaticID, Storage, MOVETIME},
+    inserter::{storage_storage_with_buckets::InserterIdentifier, StaticID, Storage, MOVETIME},
     item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
     network_graph::WeakIndex,
     power::power_grid::{BeaconAffectedEntity, PowerGridEntity, PowerGridIdentifier},
@@ -3035,7 +3035,8 @@ pub enum AttachedInserter<ItemIdxType: WeakIdxTrait> {
     },
     StorageStorage {
         item: Item<ItemIdxType>,
-        inserter: usize,
+        // TODO: Do I want to store this Identifier of calculate it on demand to save RAM?
+        inserter: InserterIdentifier,
     },
 }
 

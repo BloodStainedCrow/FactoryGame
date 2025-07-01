@@ -21,10 +21,10 @@ pub mod storage_storage_inserter;
 pub mod storage_storage_with_buckets;
 
 /// Time for a normal inserter to move in ticks
-pub(super) const MOVETIME: u8 = 11;
+pub(super) const MOVETIME: u8 = 110;
 // const_assert!(MOVETIME < 64);
 
-pub(super) const HAND_SIZE: u8 = 1;
+pub(super) const HAND_SIZE: u8 = 12;
 const_assert!(HAND_SIZE < 64);
 
 // TODO: This could be minified using a union or similar,

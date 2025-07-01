@@ -131,6 +131,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         return;
     }
 
+    // let mut storage_storage_inserter_batch = vec![];
+
     for x_offs in -((num_tiles_across_screen_horizontal / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
         ..=((num_tiles_across_screen_horizontal / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
     {
@@ -1642,7 +1644,6 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     ui.label("StorageStorage");
                                     ui.label(&data_store.item_names[usize_from(item.id)]);
 
-                                    ui.label(format!("{:?}", game_state.simulation_state.factory.storage_storage_inserters.inserters[usize_from(item.id)][*inserter]));
                                     // TODO:
                                 },
                             },
