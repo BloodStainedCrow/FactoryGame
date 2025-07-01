@@ -535,82 +535,113 @@ impl BucketedStorageStorageInserterStore {
 
         assert!(self.current_tick < MAX_MOVE_TIME);
 
-        let now_moving = self.waiting_for_item.extract_if(.., |inserter| {
-            let (_max_insert, old) = index_fake_union(storages, inserter.storage_id_in, grid_size);
+        {
+            profiling::scope!("Try taking Items from inventories");
+            let now_moving = self.waiting_for_item.extract_if(.., |inserter| {
+                let (_max_insert, old) =
+                    index_fake_union(storages, inserter.storage_id_in, grid_size);
 
-            let to_extract = min(inserter.max_hand_size - inserter.current_hand, *old);
+                let to_extract = min(inserter.max_hand_size - inserter.current_hand, *old);
 
-            *old -= to_extract;
+                *old -= to_extract;
 
-            inserter.current_hand += to_extract;
+                inserter.current_hand += to_extract;
 
-            let extract = inserter.current_hand == inserter.max_hand_size;
-
-            if !extract
-                && frontend.next_tick.time == current_tick
-                && frontend.next_tick.waiting_for_item.iter().any(|v| {
-                    v.source == inserter.storage_id_in
-                        && v.dest == inserter.storage_id_out
-                        && v.id == inserter.id
-                })
-            {
-                frontend.next_tick.waiting_for_item_result.push(*inserter);
-            }
-
-            extract
-        });
-
-        // TODO: constant movetime
-        self.full_and_moving_out[(self.current_tick + MOVETIME as usize) % MAX_MOVE_TIME]
-            .extend(now_moving);
-
-        let now_moving_back = self
-            .waiting_for_space_in_destination
-            .extract_if(.., |inserter| {
-                let (max_insert, old) =
-                    index_fake_union(storages, inserter.storage_id_out, grid_size);
-
-                let to_insert = min(inserter.current_hand, *max_insert - *old);
-
-                *old += to_insert;
-
-                inserter.current_hand -= to_insert;
-
-                let extract = inserter.current_hand == 0;
+                let extract = inserter.current_hand == inserter.max_hand_size;
 
                 if !extract
                     && frontend.next_tick.time == current_tick
-                    && frontend.next_tick.waiting_for_space.iter().any(|v| {
+                    && frontend.next_tick.waiting_for_item.iter().any(|v| {
                         v.source == inserter.storage_id_in
                             && v.dest == inserter.storage_id_out
                             && v.id == inserter.id
                     })
                 {
-                    frontend.next_tick.waiting_for_space_result.push(*inserter);
+                    frontend.next_tick.waiting_for_item_result.push(*inserter);
                 }
+
                 extract
             });
 
-        // TODO: constant movetime
-        self.empty_and_moving_back[(self.current_tick + MOVETIME as usize) % MAX_MOVE_TIME]
-            .extend(now_moving_back);
+            // TODO: constant movetime
+            self.full_and_moving_out[(self.current_tick + MOVETIME as usize) % MAX_MOVE_TIME]
+                .extend(now_moving);
+        }
 
-        // if self.empty_and_moving_back[self.current_tick].len() < self.waiting_for_item.len() {
-        self.waiting_for_item
-            .extend_from_slice(&self.empty_and_moving_back[self.current_tick]);
-        self.empty_and_moving_back[self.current_tick].clear();
-        // } else {
-        //     self.empty_and_moving_back[self.current_tick]
-        //         .splice(0..0, self.waiting_for_item.drain(..));
-        //     mem::swap(
-        //         &mut self.empty_and_moving_back[self.current_tick],
-        //         &mut self.waiting_for_item,
-        //     );
-        // }
+        {
+            profiling::scope!("Try puttin Items into inventories");
+            let now_moving_back =
+                self.waiting_for_space_in_destination
+                    .extract_if(.., |inserter| {
+                        let (max_insert, old) =
+                            index_fake_union(storages, inserter.storage_id_out, grid_size);
 
-        self.waiting_for_space_in_destination
-            .extend_from_slice(&self.full_and_moving_out[self.current_tick]);
-        self.full_and_moving_out[self.current_tick].clear();
+                        let to_insert = min(inserter.current_hand, *max_insert - *old);
+
+                        *old += to_insert;
+
+                        inserter.current_hand -= to_insert;
+
+                        let extract = inserter.current_hand == 0;
+
+                        if !extract
+                            && frontend.next_tick.time == current_tick
+                            && frontend.next_tick.waiting_for_space.iter().any(|v| {
+                                v.source == inserter.storage_id_in
+                                    && v.dest == inserter.storage_id_out
+                                    && v.id == inserter.id
+                            })
+                        {
+                            frontend.next_tick.waiting_for_space_result.push(*inserter);
+                        }
+                        extract
+                    });
+
+            // TODO: constant movetime
+            self.empty_and_moving_back[(self.current_tick + MOVETIME as usize) % MAX_MOVE_TIME]
+                .extend(now_moving_back);
+        }
+
+        {
+            profiling::scope!("Advance time moving back");
+            if dbg!(self.empty_and_moving_back[self.current_tick].len())
+                < dbg!(self.waiting_for_item.len())
+            {
+                self.waiting_for_item
+                    .extend_from_slice(&self.empty_and_moving_back[self.current_tick]);
+                self.empty_and_moving_back[self.current_tick].clear();
+            } else {
+                // self.empty_and_moving_back[self.current_tick]
+                //     .splice(0..0, self.waiting_for_item.drain(..));
+                self.empty_and_moving_back[self.current_tick]
+                    .extend_from_slice(&self.waiting_for_item);
+                self.waiting_for_item.clear();
+                mem::swap(
+                    &mut self.empty_and_moving_back[self.current_tick],
+                    &mut self.waiting_for_item,
+                );
+            }
+        }
+
+        {
+            profiling::scope!("Advance time moving out");
+            if self.full_and_moving_out[self.current_tick].len()
+                < self.waiting_for_space_in_destination.len()
+            {
+                self.waiting_for_space_in_destination
+                    .extend_from_slice(&self.full_and_moving_out[self.current_tick]);
+                self.full_and_moving_out[self.current_tick].clear();
+            } else {
+                // self.full_and_moving_out[self.current_tick].splice(0..0, self.waiting_for_space_in_destination.drain(..));
+                self.full_and_moving_out[self.current_tick]
+                    .extend_from_slice(&self.waiting_for_space_in_destination);
+                self.waiting_for_space_in_destination.clear();
+                mem::swap(
+                    &mut self.full_and_moving_out[self.current_tick],
+                    &mut self.waiting_for_space_in_destination,
+                );
+            }
+        }
 
         self.current_tick = (self.current_tick + 1) % MAX_MOVE_TIME;
 
@@ -810,11 +841,6 @@ mod test {
                         storages_in[item] = vec![200u8; NUM_INSERTERS];
                         storages_out[item] = vec![0u8; NUM_INSERTERS];
                     }
-
-                    dbg!(store[item].get_list_sizes());
-                    dbg!(store[item].get_list_sizes().iter().sum::<usize>());
-
-                    current_tick += 1;
                 }
 
                 store[item].add_inserter(
@@ -904,8 +930,6 @@ mod test {
                     storages_in = vec![200u8; NUM_INSERTERS];
                     storages_out = vec![0u8; NUM_INSERTERS];
                 }
-
-                dbg!(store.get_list_sizes().iter().sum::<usize>());
             }
 
             let id = store.add_inserter(
@@ -1006,8 +1030,6 @@ mod test {
                     storages_in = vec![200u8; NUM_INSERTERS];
                     storages_out = vec![0u8; NUM_INSERTERS];
                 }
-
-                dbg!(store.get_list_sizes().iter().sum::<usize>());
             }
 
             let id = store.add_inserter(
@@ -1054,7 +1076,6 @@ mod test {
         b.iter(|| {
             let ret =
                 frontend.get_info_batched(to_find.iter().copied(), &store, false, current_time);
-            dbg!(ret.len());
 
             if storages_in[0] < 20 {
                 storages_in = vec![200u8; NUM_INSERTERS];
