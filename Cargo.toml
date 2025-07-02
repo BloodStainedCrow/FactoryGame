@@ -52,6 +52,7 @@ puffin = { git = "https://github.com/BloodStainedCrow/puffin" }
 egui = { git = "https://github.com/BloodStainedCrow/egui", branch = "removeProfiling" }
 eframe = { git = "https://github.com/BloodStainedCrow/egui", branch = "removeProfiling" }
 egui-wgpu = { git = "https://github.com/BloodStainedCrow/egui", branch = "removeProfiling" }
+
 petgraph = { git = "https://github.com/petgraph/petgraph" }
 
 # [patch."https://github.com/BloodStainedCrow/tilelib"]
