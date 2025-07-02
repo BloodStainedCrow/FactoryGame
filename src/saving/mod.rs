@@ -7,13 +7,14 @@ use std::{
     path::PathBuf,
 };
 
+use bitcode::{Encode, __private::Encoder};
 use directories::ProjectDirs;
 use log::error;
 use ron::ser::PrettyConfig;
 
 use crate::{item::IdxTrait, rendering::app_state::GameState};
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Encode, serde::Deserialize, serde::Serialize)]
 pub struct SaveGame<
     ItemIdxType: IdxTrait,
     RecipeIdxType: IdxTrait,
@@ -57,10 +58,12 @@ pub fn save<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         }
     }
 
+    let temp_file_dir = dir.data_dir().join("tmp.save");
     let save_file_dir = dir.data_dir().join("save.save");
 
-    let mut file = File::create(save_file_dir).expect("Could not open file");
+    let mut file = File::create(&temp_file_dir).expect("Could not open file");
 
+    // FIXME: What to do, if the size of the Save in memory + on disk exceeds RAM?
     let res = bitcode::serialize(&SaveGame {
         checksum,
         game_state,
@@ -70,6 +73,8 @@ pub fn save<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     .unwrap();
 
     file.write_all(&res).expect("Could not write to file");
+
+    std::fs::rename(temp_file_dir, save_file_dir).expect("Could not rename tmp save file!");
 }
 
 /// # Panics

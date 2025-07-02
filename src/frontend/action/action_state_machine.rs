@@ -1,4 +1,4 @@
-use std::{collections::HashSet, marker::PhantomData, sync::mpsc::Receiver};
+use std::{collections::HashSet, marker::PhantomData, num::NonZero, sync::mpsc::Receiver};
 
 use log::warn;
 
@@ -58,6 +58,7 @@ pub enum CopyInfo<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         distribution_mode: SplitterDistributionMode,
     },
     InserterSettings {
+        user_movetime: Option<NonZero<u16>>,
         max_stack_size: Option<ITEMCOUNTTYPE>,
         filter: Option<Item<ItemIdxType>>,
     },
@@ -146,8 +147,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                     (Entity::Chest { .. }, CopyInfo::ChestLimit { num_slots }) => {
                                         vec![ActionType::SetChestSlotLimit { pos, num_slots: *num_slots }]
                                     }
-                                    (Entity::Inserter { .. }, CopyInfo::InserterSettings { max_stack_size, filter }) => {
-                                        vec![todo!()]
+                                    (Entity::Inserter { .. }, CopyInfo::InserterSettings { user_movetime, max_stack_size, filter }) => {
+                                        // TODO: Add the rest
+                                        vec![ActionType::OverrideInserterMovetime { pos, new_movetime: *user_movetime }]
                                     }
                                     (Entity::Splitter { .. }, CopyInfo::SplitterSetting { distribution_mode }) => todo!(),
                                     (_, _) => {
@@ -254,8 +256,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 Entity::Belt { pos, direction, ty, id, belt_pos } => {},
                                 Entity::Underground { pos, underground_dir, ty, direction, id, belt_pos } => {},
                                 Entity::Splitter { pos, direction, id } => todo!(),
-                                Entity::Inserter { pos, direction, filter, info } => {
-                                    self.copy_info = Some(CopyInfo::InserterSettings { max_stack_size: None, filter: *filter });
+                                Entity::Inserter { ty, user_movetime, type_movetime, pos, direction, filter, info } => {
+                                    self.copy_info = Some(CopyInfo::InserterSettings { max_stack_size: None, filter: *filter, user_movetime: *user_movetime });
                                 },
                                 Entity::Chest { ty, pos, item, slot_limit } => {
                                     self.copy_info = Some(CopyInfo::ChestLimit { num_slots: *slot_limit });

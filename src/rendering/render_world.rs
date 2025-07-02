@@ -1606,6 +1606,10 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                     },
                     crate::frontend::world::tile::Entity::Inserter {
+                        ty,
+                        user_movetime,
+                        type_movetime,
+
                         pos,
                         direction,
                         info,
@@ -1640,13 +1644,29 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     ui.label("BeltBelt");
                                     // TODO:
                                 },
-                                crate::frontend::world::tile::AttachedInserter::StorageStorage { item, inserter, .. } => {
+                                crate::frontend::world::tile::AttachedInserter::StorageStorage { item,  .. } => {
                                     ui.label("StorageStorage");
                                     ui.label(&data_store.item_names[usize_from(item.id)]);
 
                                     // TODO:
                                 },
                             },
+                        }
+
+                        let mut movetime_overridden = user_movetime.is_some();
+
+                        ui.checkbox(&mut movetime_overridden, "Override Swing Time");
+
+                        if movetime_overridden {
+                            let mut movetime = user_movetime.map(|v| v.into()).unwrap_or(*type_movetime);
+
+                            ui.add(egui::Slider::new(&mut movetime, (*type_movetime)..=u16::MAX).text("Ticks per half swing"));
+
+                            if *user_movetime != Some(movetime.try_into().unwrap()) {
+                                actions.push(ActionType::OverrideInserterMovetime { pos: *pos, new_movetime: Some(movetime.try_into().unwrap()) });
+                            }
+                        } else if movetime_overridden != user_movetime.is_some() {
+                            actions.push(ActionType::OverrideInserterMovetime { pos: *pos, new_movetime: None });
                         }
                     },
                     Entity::Splitter { .. } => {

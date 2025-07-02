@@ -18,6 +18,8 @@ use crate::{
 
 pub mod connection_logic;
 
+const FLUID_INSERTER_MOVETIME: u16 = 1;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct FluidSystemId<ItemIdxType: WeakIdxTrait> {
     pub fluid: Option<Item<ItemIdxType>>,
@@ -806,6 +808,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
     ) -> WeakIndex {
         let inserter_id = inserter_store.add_ins(
             fluid,
+            FLUID_INSERTER_MOVETIME,
             crate::inserter::Storage::Static {
                 static_id: StaticID::Chest as u16,
                 index: self.get_chest_id().unwrap(),
@@ -832,6 +835,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
     ) -> WeakIndex {
         let inserter_id = inserter_store.add_ins(
             fluid,
+            FLUID_INSERTER_MOVETIME,
             source,
             crate::inserter::Storage::Static {
                 static_id: StaticID::Chest as u16,
@@ -860,6 +864,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
     ) -> (WeakIndex, WeakIndex) {
         let inserter_id = inserter_store.add_ins(
             self.get_fluid().unwrap(),
+            FLUID_INSERTER_MOVETIME,
             crate::inserter::Storage::Static {
                 static_id: StaticID::Chest as u16,
                 index: self.get_chest_id().unwrap(),
@@ -900,6 +905,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         let _inserter_removal_info: () = inserter_store.remove_ins(
             self.get_fluid()
                 .expect("Fluid Networks without a set fluid cannot have outputs"),
+            FLUID_INSERTER_MOVETIME,
             inserter_id,
         );
     }
@@ -920,6 +926,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         let _inserter_removal_info: () = inserter_store.remove_ins(
             self.get_fluid()
                 .expect("Fluid Networks without a set fluid cannot have inputs"),
+            FLUID_INSERTER_MOVETIME,
             inserter_id,
         );
     }
@@ -1067,6 +1074,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                         FluidSystemEntity::OutgoingPump { inserter_id } => inserter_store
                             .update_inserter_src(
                                 fluid,
+                                FLUID_INSERTER_MOVETIME,
                                 *inserter_id,
                                 Storage::Static {
                                     static_id: StaticID::Chest as u16,
@@ -1077,6 +1085,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                         FluidSystemEntity::IncomingPump { inserter_id } => inserter_store
                             .update_inserter_dest(
                                 fluid,
+                                FLUID_INSERTER_MOVETIME,
                                 *inserter_id,
                                 Storage::Static {
                                     static_id: StaticID::Chest as u16,
@@ -1087,6 +1096,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                         FluidSystemEntity::Input { inserter_id } => inserter_store
                             .update_inserter_dest(
                                 fluid,
+                                FLUID_INSERTER_MOVETIME,
                                 *inserter_id,
                                 Storage::Static {
                                     static_id: StaticID::Chest as u16,
@@ -1097,6 +1107,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                         FluidSystemEntity::Output { inserter_id } => inserter_store
                             .update_inserter_src(
                                 fluid,
+                                FLUID_INSERTER_MOVETIME,
                                 *inserter_id,
                                 Storage::Static {
                                     static_id: StaticID::Chest as u16,
@@ -1148,16 +1159,16 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
             let fluid = old_fluid.expect("If we have any connections we MUST have a fluid set");
             match connection_to_remove {
                 FluidSystemEntity::OutgoingPump { inserter_id } => {
-                    inserter_store.remove_ins(fluid, inserter_id)
+                    inserter_store.remove_ins(fluid, FLUID_INSERTER_MOVETIME, inserter_id)
                 },
                 FluidSystemEntity::IncomingPump { inserter_id } => {
-                    inserter_store.remove_ins(fluid, inserter_id)
+                    inserter_store.remove_ins(fluid, FLUID_INSERTER_MOVETIME, inserter_id)
                 },
                 FluidSystemEntity::Input { inserter_id } => {
-                    inserter_store.remove_ins(fluid, inserter_id)
+                    inserter_store.remove_ins(fluid, FLUID_INSERTER_MOVETIME, inserter_id)
                 },
                 FluidSystemEntity::Output { inserter_id } => {
-                    inserter_store.remove_ins(fluid, inserter_id)
+                    inserter_store.remove_ins(fluid, FLUID_INSERTER_MOVETIME, inserter_id)
                 },
             }
         }
@@ -1187,6 +1198,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                                 FluidSystemEntity::OutgoingPump { inserter_id } => inserter_store
                                     .update_inserter_src(
                                         fluid,
+                                        FLUID_INSERTER_MOVETIME,
                                         *inserter_id,
                                         our_storage,
                                         data_store,
@@ -1194,6 +1206,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                                 FluidSystemEntity::IncomingPump { inserter_id } => inserter_store
                                     .update_inserter_dest(
                                         fluid,
+                                        FLUID_INSERTER_MOVETIME,
                                         *inserter_id,
                                         our_storage,
                                         data_store,
@@ -1201,6 +1214,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                                 FluidSystemEntity::Input { inserter_id } => inserter_store
                                     .update_inserter_dest(
                                         fluid,
+                                        FLUID_INSERTER_MOVETIME,
                                         *inserter_id,
                                         our_storage,
                                         data_store,
@@ -1208,6 +1222,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                                 FluidSystemEntity::Output { inserter_id } => inserter_store
                                     .update_inserter_src(
                                         fluid,
+                                        FLUID_INSERTER_MOVETIME,
                                         *inserter_id,
                                         our_storage,
                                         data_store,
@@ -1305,6 +1320,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                                 FluidSystemEntity::OutgoingPump { inserter_id } => inserter_store
                                     .update_inserter_src(
                                         fluid,
+                                        FLUID_INSERTER_MOVETIME,
                                         *inserter_id,
                                         our_storage,
                                         data_store,
@@ -1312,6 +1328,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                                 FluidSystemEntity::IncomingPump { inserter_id } => inserter_store
                                     .update_inserter_dest(
                                         fluid,
+                                        FLUID_INSERTER_MOVETIME,
                                         *inserter_id,
                                         our_storage,
                                         data_store,
@@ -1319,6 +1336,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                                 FluidSystemEntity::Input { inserter_id } => inserter_store
                                     .update_inserter_dest(
                                         fluid,
+                                        FLUID_INSERTER_MOVETIME,
                                         *inserter_id,
                                         our_storage,
                                         data_store,
@@ -1326,6 +1344,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                                 FluidSystemEntity::Output { inserter_id } => inserter_store
                                     .update_inserter_src(
                                         fluid,
+                                        FLUID_INSERTER_MOVETIME,
                                         *inserter_id,
                                         our_storage,
                                         data_store,

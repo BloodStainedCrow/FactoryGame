@@ -27,10 +27,7 @@ use crate::{
             Position,
         },
     },
-    inserter::{
-        belt_belt_inserter::BeltBeltInserter, storage_storage_inserter::StorageStorageInserter,
-        FakeUnionStorage, Storage, MOVETIME,
-    },
+    inserter::{belt_belt_inserter::BeltBeltInserter, FakeUnionStorage, Storage, MOVETIME},
     item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
     liquid::connection_logic::can_fluid_tanks_connect,
     network_graph::WeakIndex,
@@ -52,7 +49,7 @@ use crate::{
 use itertools::Itertools;
 use log::{info, trace, warn};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::iter;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
@@ -175,7 +172,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             last_update_time: None,
         };
 
-        let file = File::open("test_blueprints/red_and_green.bp").unwrap();
+        let file = File::open("test_blueprints/red_and_green_with_clocking.bp").unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
 
         puffin::set_scopes_on(false);
@@ -347,16 +344,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let file = File::open(bp_path).unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
 
-        for x in (0..60).map(|p| p * 15) {
-            bp.apply(
-                Position {
-                    x: 1590 + x,
-                    y: 1590,
-                },
-                &mut ret,
-                data_store,
-            );
-        }
+        // for x in (0..60).map(|p| p * 15) {
+        bp.apply(
+            Position {
+                // x: 1590 + x,
+                x: 1590,
+                y: 1590,
+            },
+            &mut ret,
+            data_store,
+        );
+        // }
         // bp.apply(Position { x: 1600, y: 1590 }, &mut ret, data_store);
         // bp.apply(Position { x: 1610, y: 1590 }, &mut ret, data_store);
         // bp.apply(Position { x: 1620, y: 1590 }, &mut ret, data_store);
@@ -416,10 +414,13 @@ pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct StorageStorageInserterStore {
     pub inserters: Box<
-        [(
-            BucketedStorageStorageInserterStoreFrontend,
-            BucketedStorageStorageInserterStore,
-        )],
+        [BTreeMap<
+            u16,
+            (
+                BucketedStorageStorageInserterStoreFrontend,
+                BucketedStorageStorageInserterStore,
+            ),
+        >],
     >,
 }
 
@@ -428,14 +429,7 @@ impl StorageStorageInserterStore {
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         Self {
-            inserters: vec![
-                (
-                    BucketedStorageStorageInserterStoreFrontend::new(),
-                    BucketedStorageStorageInserterStore::new()
-                );
-                data_store.item_names.len()
-            ]
-            .into_boxed_slice(),
+            inserters: vec![BTreeMap::new(); data_store.item_names.len()].into_boxed_slice(),
         }
     }
 
@@ -443,15 +437,15 @@ impl StorageStorageInserterStore {
     pub fn get_info_batched<ItemIdxType: IdxTrait>(
         &mut self,
         item: Item<ItemIdxType>,
+        movetime: u16,
         ids: impl IntoIterator<Item = InserterIdentifier>,
         current_tick: u32,
     ) -> HashMap<InserterIdentifier, InserterState> {
-        let info = self.inserters[item.into_usize()].0.get_info_batched(
-            ids,
-            &self.inserters[item.into_usize()].1,
-            true,
-            current_tick,
-        );
+        let (front, back) = self.inserters[item.into_usize()]
+            .get_mut(&movetime)
+            .unwrap();
+
+        let info = front.get_info_batched(ids, &back, true, current_tick);
         info
     }
 
@@ -469,7 +463,7 @@ impl StorageStorageInserterStore {
             .par_iter_mut()
             .zip(full_storages)
             .enumerate()
-            .for_each(|(item_id, ((frontend, ins_store), storages))| {
+            .for_each(|(item_id, (map, storages))| {
                 profiling::scope!(
                     "StorageStorage Inserter Update",
                     format!("Item: {}", data_store.item_names[item_id]).as_str()
@@ -482,13 +476,20 @@ impl StorageStorageInserterStore {
                 let grid_size = grid_size(item, data_store);
                 let num_recipes = num_recipes(item, data_store);
 
-                ins_store.update(frontend, storages, grid_size, current_tick);
+                for (frontend, ins_store) in map.values_mut() {
+                    if item.into_usize() == 1 && ins_store.movetime == 160 {
+                        // dbg!(&ins_store);
+                    }
+
+                    ins_store.update(frontend, storages, grid_size, current_tick);
+                }
             });
     }
 
     pub fn add_ins<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut self,
         item: Item<ItemIdxType>,
+        movetime: u16,
         start: Storage<RecipeIdxType>,
         dest: Storage<RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -497,6 +498,13 @@ impl StorageStorageInserterStore {
         let dest = FakeUnionStorage::from_storage_with_statics_at_zero(item, dest, data_store);
 
         let id: InserterId = self.inserters[item.into_usize()]
+            .entry(movetime)
+            .or_insert_with(|| {
+                (
+                    BucketedStorageStorageInserterStoreFrontend::new(),
+                    BucketedStorageStorageInserterStore::new(movetime),
+                )
+            })
             .1
             .add_inserter(source, dest, HAND_SIZE);
 
@@ -506,40 +514,86 @@ impl StorageStorageInserterStore {
     pub fn remove_ins<ItemIdxType: IdxTrait>(
         &mut self,
         item: Item<ItemIdxType>,
+        movetime: u16,
         id: InserterIdentifier,
     ) {
         let inserter = self.inserters[item.into_usize()]
+            .get_mut(&movetime)
+            .unwrap()
             .1
             .remove_inserter(id.source, id.dest, id.id);
         // TODO: Handle what happens with the items
+    }
+
+    #[must_use]
+    pub fn change_movetime<ItemIdxType: IdxTrait>(
+        &mut self,
+        item: Item<ItemIdxType>,
+        old_movetime: u16,
+        new_movetime: u16,
+        id: InserterIdentifier,
+    ) -> InserterIdentifier {
+        // FIXME: This does not preserve the inserter state at all!
+        let inserter = self.inserters[item.into_usize()]
+            .get_mut(&old_movetime)
+            .unwrap()
+            .1
+            .remove_inserter(id.source, id.dest, id.id);
+
+        let inner_id: InserterId = self.inserters[item.into_usize()]
+            .entry(new_movetime)
+            .or_insert_with(|| {
+                (
+                    BucketedStorageStorageInserterStoreFrontend::new(),
+                    BucketedStorageStorageInserterStore::new(new_movetime),
+                )
+            })
+            .1
+            .add_inserter(id.source, id.dest, inserter.max_hand_size);
+
+        InserterIdentifier {
+            source: id.source,
+            dest: id.dest,
+            id: inner_id,
+        }
     }
 
     #[profiling::function]
     pub fn update_inserter_src<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut self,
         item: Item<ItemIdxType>,
+        movetime: u16,
         id: InserterIdentifier,
         new_src: Storage<RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        self.inserters[item.into_usize()].1.update_inserter_src(
-            id,
-            FakeUnionStorage::from_storage_with_statics_at_zero(item, new_src, data_store),
-        );
+        self.inserters[item.into_usize()]
+            .get_mut(&movetime)
+            .unwrap()
+            .1
+            .update_inserter_src(
+                id,
+                FakeUnionStorage::from_storage_with_statics_at_zero(item, new_src, data_store),
+            );
     }
 
     #[profiling::function]
     pub fn update_inserter_dest<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut self,
         item: Item<ItemIdxType>,
+        movetime: u16,
         id: InserterIdentifier,
         new_dest: Storage<RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        self.inserters[item.into_usize()].1.update_inserter_dest(
-            id,
-            FakeUnionStorage::from_storage_with_statics_at_zero(item, new_dest, data_store),
-        );
+        self.inserters[item.into_usize()]
+            .get_mut(&movetime)
+            .unwrap()
+            .1
+            .update_inserter_dest(
+                id,
+                FakeUnionStorage::from_storage_with_statics_at_zero(item, new_dest, data_store),
+            );
     }
 }
 
@@ -713,6 +767,59 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         }
                         ControlFlow::Break(())
                     }),
+                ActionType::OverrideInserterMovetime { pos, new_movetime } => self
+                    .world
+                    .mutate_entities_colliding_with(pos, (1, 1), data_store, |e| {
+                        match e {
+                            Entity::Inserter {
+                                user_movetime,
+                                type_movetime,
+                                info,
+                                ..
+                            } => {
+                                match info {
+                                    InserterInfo::NotAttached { start_pos, end_pos } => {},
+                                    InserterInfo::Attached {
+                                        start_pos,
+                                        end_pos,
+                                        info,
+                                    } => match info {
+                                        AttachedInserter::BeltStorage { id, belt_pos } => todo!(),
+                                        AttachedInserter::BeltBelt { item, inserter } => todo!(),
+                                        AttachedInserter::StorageStorage { item, inserter } => {
+                                            let old_movetime = user_movetime
+                                                .map(|v| v.into())
+                                                .unwrap_or(*type_movetime);
+
+                                            let new_movetime = new_movetime
+                                                .map(|v| v.into())
+                                                .unwrap_or(*type_movetime);
+
+                                            if old_movetime != new_movetime {
+                                                let new_id = self
+                                                    .simulation_state
+                                                    .factory
+                                                    .storage_storage_inserters
+                                                    .change_movetime(
+                                                        *item,
+                                                        old_movetime,
+                                                        new_movetime.into(),
+                                                        *inserter,
+                                                    );
+
+                                                *inserter = new_id;
+                                            }
+                                        },
+                                    },
+                                }
+                                *user_movetime = new_movetime;
+                            },
+                            _ => {
+                                warn!("Tried to set Inserter Settings on non inserter");
+                            },
+                        }
+                        ControlFlow::Break(())
+                    }),
                 ActionType::PlaceEntity(place_entity_info) => match place_entity_info.entities {
                     crate::frontend::action::place_entity::EntityPlaceOptions::Single(
                         place_entity_type,
@@ -772,7 +879,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             dir,
                             filter,
                         } => {
-                            let ret = self.add_inserter(pos, dir, filter, data_store);
+                            // TODO: Add ty
+                            let ret = self.add_inserter(0, pos, dir, filter, data_store);
                             trace!("{:?}", ret);
                         },
                         crate::frontend::world::tile::PlaceEntityType::Belt {
@@ -909,6 +1017,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         |e| {
                                             match e {
                                                 Entity::Inserter {
+                                                    ty,
+                                                    user_movetime,
+                                                    type_movetime,
+
                                                     pos,
                                                     direction,
                                                     filter,
@@ -948,7 +1060,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
                                                                     }.translate(*item, data_store);
-                                                                    self.simulation_state.factory.storage_storage_inserters.update_inserter_src(*item, *inserter, new_storage, data_store);
+
+                                                                    let movetime = user_movetime.map(|v| v.into()).unwrap_or(*type_movetime);
+
+                                                                    self.simulation_state.factory.storage_storage_inserters.update_inserter_src(*item, movetime, *inserter, new_storage, data_store);
                                                                 },
                                                             }
                                                         }
@@ -981,7 +1096,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
                                                                     }.translate(*item, data_store);
-                                                                    self.simulation_state.factory.storage_storage_inserters.update_inserter_dest(*item, *inserter, new_storage, data_store);
+                                                                    let movetime = user_movetime.map(|v| v.into()).unwrap_or(*type_movetime);
+
+                                                                    self.simulation_state.factory.storage_storage_inserters.update_inserter_dest(*item, movetime, *inserter, new_storage, data_store);
                                                                 },
                                                             }
                                                         }
@@ -1850,6 +1967,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     |e| {
                         match e {
                             Entity::Inserter {
+                                ty,
+                                user_movetime,
+                                type_movetime,
+
                                 pos,
                                 direction,
                                 info,
@@ -1888,6 +2009,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     |e| {
                         match e {
                             Entity::Inserter {
+                                ty,
+                                user_movetime,
+                                type_movetime,
+
                                 pos,
                                 direction,
                                 info,
@@ -1925,6 +2050,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     |e| {
                         match e {
                             Entity::Inserter {
+                                ty,
+                                user_movetime,
+                                type_movetime,
+
                                 pos,
                                 direction,
                                 info,
@@ -1991,6 +2120,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
     fn add_inserter(
         &mut self,
+        ty: u8,
         pos: Position,
         dir: Dir,
         filter: Option<Item<ItemIdxType>>,
@@ -2005,6 +2135,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         self.world.add_entity(
             Entity::Inserter {
+                ty,
+                user_movetime: None,
+                type_movetime: MOVETIME as u16,
+
                 pos,
                 direction: dir,
                 filter,
@@ -2056,6 +2190,7 @@ mod tests {
                 Position,
             },
         },
+        inserter::MOVETIME,
         item::Recipe,
         power::{power_grid::MAX_POWER_MULT, Watt},
         rendering::app_state::GameState,
@@ -2329,85 +2464,86 @@ mod tests {
     use crate::rendering::app_state::StorageStorageInserterStore;
     use rand::{random, seq::SliceRandom};
 
-    #[bench]
-    fn bench_update_storage_storage_inserter_store_naive(b: &mut Bencher) {
-        const NUM_INSERTERS: usize = 2_000_000;
-        let mut store = StorageStorageInserterStore::new(&DATA_STORE);
+    // #[bench]
+    // fn bench_update_storage_storage_inserter_store_naive(b: &mut Bencher) {
+    //     const NUM_INSERTERS: usize = 2_000_000;
+    //     let mut store = StorageStorageInserterStore::new(&DATA_STORE);
 
-        let max_insert = vec![200u8; NUM_INSERTERS];
-        let mut storages_in = vec![200u8; NUM_INSERTERS];
-        let mut storages_out = vec![0u8; NUM_INSERTERS];
+    //     let max_insert = vec![200u8; NUM_INSERTERS];
+    //     let mut storages_in = vec![200u8; NUM_INSERTERS];
+    //     let mut storages_out = vec![0u8; NUM_INSERTERS];
 
-        let mut values = (0..(NUM_INSERTERS as u32)).collect_vec();
-        // values.shuffle(&mut rand::thread_rng());
+    //     let mut values = (0..(NUM_INSERTERS as u32)).collect_vec();
+    //     // values.shuffle(&mut rand::thread_rng());
 
-        let mut current_time = 0;
+    //     let mut current_time = 0;
 
-        for i in values {
-            if random::<u16>() < 50 {
-                store.update(
-                    vec![[
-                        (max_insert.as_slice(), storages_in.as_mut_slice()),
-                        (max_insert.as_slice(), storages_out.as_mut_slice()),
-                    ]
-                    .as_mut_slice()]
-                    .into_par_iter(),
-                    10,
-                    current_time,
-                    &DATA_STORE,
-                );
+    //     for i in values {
+    //         if random::<u16>() < 50 {
+    //             store.update(
+    //                 vec![[
+    //                     (max_insert.as_slice(), storages_in.as_mut_slice()),
+    //                     (max_insert.as_slice(), storages_out.as_mut_slice()),
+    //                 ]
+    //                 .as_mut_slice()]
+    //                 .into_par_iter(),
+    //                 10,
+    //                 current_time,
+    //                 &DATA_STORE,
+    //             );
 
-                if storages_in[0] < 20 {
-                    storages_in = vec![200u8; NUM_INSERTERS];
-                    storages_out = vec![0u8; NUM_INSERTERS];
-                }
+    //             if storages_in[0] < 20 {
+    //                 storages_in = vec![200u8; NUM_INSERTERS];
+    //                 storages_out = vec![0u8; NUM_INSERTERS];
+    //             }
 
-                current_time += 1;
-            }
+    //             current_time += 1;
+    //         }
 
-            store.add_ins(
-                crate::item::Item {
-                    id: 0usize.try_into().unwrap(),
-                },
-                crate::inserter::Storage::Static {
-                    static_id: 0,
-                    index: i,
-                },
-                crate::inserter::Storage::Static {
-                    static_id: 1,
-                    index: i,
-                },
-                &DATA_STORE,
-            );
-        }
+    //         store.add_ins(
+    //             crate::item::Item {
+    //                 id: 0usize.try_into().unwrap(),
+    //             },
+    //             MOVETIME,
+    //             crate::inserter::Storage::Static {
+    //                 static_id: 0,
+    //                 index: i,
+    //             },
+    //             crate::inserter::Storage::Static {
+    //                 static_id: 1,
+    //                 index: i,
+    //             },
+    //             &DATA_STORE,
+    //         );
+    //     }
 
-        storages_in = vec![200u8; NUM_INSERTERS];
-        storages_out = vec![0u8; NUM_INSERTERS];
+    //     storages_in = vec![200u8; NUM_INSERTERS];
+    //     storages_out = vec![0u8; NUM_INSERTERS];
 
-        let mut num_iter = 0;
+    //     let mut num_iter = 0;
 
-        b.iter(|| {
-            // for _ in 0..10 {
-            if storages_in[0] < 20 {
-                storages_in = vec![200u8; NUM_INSERTERS];
-                storages_out = vec![0u8; NUM_INSERTERS];
-            }
-            store.update(
-                vec![[
-                    (max_insert.as_slice(), storages_in.as_mut_slice()),
-                    (max_insert.as_slice(), storages_out.as_mut_slice()),
-                ]
-                .as_mut_slice()]
-                .into_par_iter(),
-                0,
-                num_iter,
-                &DATA_STORE,
-            );
-            // }
-            num_iter += 1;
-            current_time += 1;
-        });
+    //     b.iter(|| {
+    //         // for _ in 0..10 {
+    //         if storages_in[0] < 20 {
+    //             storages_in = vec![200u8; NUM_INSERTERS];
+    //             storages_out = vec![0u8; NUM_INSERTERS];
+    //         }
+    //         store.update(
+    //             vec![[
+    //                 (max_insert.as_slice(), storages_in.as_mut_slice()),
+    //                 (max_insert.as_slice(), storages_out.as_mut_slice()),
+    //             ]
+    //             .as_mut_slice()]
+    //             .into_par_iter(),
+    //             0,
+    //             num_iter,
+    //             &DATA_STORE,
+    //         );
+    //         // }
+    //         num_iter += 1;
+    //         current_time += 1;
+    //     });
 
-        dbg!(&storages_in[0..10], &storages_out[0..10], num_iter);
-    }
+    //     dbg!(&storages_in[0..10], &storages_out[0..10], num_iter);
+    // }
 }

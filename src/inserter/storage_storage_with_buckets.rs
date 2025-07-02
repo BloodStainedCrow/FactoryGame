@@ -11,20 +11,22 @@ use crate::{
 use log::{info, trace};
 use std::{cmp::min, iter};
 
-const MAX_MOVE_TIME: usize = 120;
+const NUM_BUCKETS: usize = 120;
+const MAX_MOVE_TIME: usize = NUM_BUCKETS * u8::MAX as usize;
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub struct Inserter {
     pub storage_id_in: FakeUnionStorage,
     pub storage_id_out: FakeUnionStorage,
-    max_hand_size: ITEMCOUNTTYPE,
-    current_hand: ITEMCOUNTTYPE,
-    id: InserterId,
+    pub max_hand_size: ITEMCOUNTTYPE,
+    pub current_hand: ITEMCOUNTTYPE,
+    pub remaining_loops: u8,
+    pub id: InserterId,
 }
 
-// This means at most u16::MAX inserters connecting any pair of Storages, that seems plenty
+// This means at most u8::MAX inserters connecting any pair of Storages, that seems plenty
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
-pub struct InserterId(u16);
+pub struct InserterId(u8);
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BucketedStorageStorageInserterStoreFrontend {
@@ -32,7 +34,7 @@ pub struct BucketedStorageStorageInserterStoreFrontend {
     next_tick: NextTick,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 struct NextTick {
     time: u32,
     waiting_for_item: Vec<InserterIdentifier>,
@@ -117,8 +119,8 @@ impl BucketedStorageStorageInserterStoreFrontend {
 
         let mut waiting_for_item = vec![];
         let mut waiting_for_space = vec![];
-        let mut moving_out: [_; MAX_MOVE_TIME] = array::from_fn(|_| vec![]);
-        let mut moving_in: [_; MAX_MOVE_TIME] = array::from_fn(|_| vec![]);
+        let mut moving_out: [_; NUM_BUCKETS] = array::from_fn(|_| vec![]);
+        let mut moving_in: [_; NUM_BUCKETS] = array::from_fn(|_| vec![]);
 
         {
             profiling::scope!("Build Search Lists");
@@ -240,10 +242,10 @@ impl BucketedStorageStorageInserterStoreFrontend {
         }
 
         for (i, _) in sizes.into_iter().enumerate().sorted_by_key(|v| v.0) {
-            const MOVING_OUT_END: usize = MAX_MOVE_TIME + 1;
+            const MOVING_OUT_END: usize = NUM_BUCKETS + 1;
             const WATING_FOR_SPACE: usize = MOVING_OUT_END;
             const MOVING_IN: usize = MOVING_OUT_END + 1;
-            const MOVING_IN_END: usize = MOVING_OUT_END + 1 + MAX_MOVE_TIME;
+            const MOVING_IN_END: usize = MOVING_OUT_END + 1 + NUM_BUCKETS;
 
             let search_list = match i {
                 0 => &mut waiting_for_item,
@@ -301,8 +303,6 @@ impl BucketedStorageStorageInserterStoreFrontend {
         let mut waiting_for_space = vec![];
 
         for (k, v) in ret.iter() {
-            let next_possible_states = get_possible_new_states(*v, MOVETIME, HAND_SIZE);
-
             if matches!(*v, InserterState::WaitingForSourceItems(_)) {
                 waiting_for_item.push(*k);
             } else if matches!(*v, InserterState::WaitingForSpaceInDestination(_)) {
@@ -409,20 +409,25 @@ fn get_possible_new_states(
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BucketedStorageStorageInserterStore {
-    id_lookup: HashMap<(FakeUnionStorage, FakeUnionStorage), u16>,
+    pub movetime: u16,
+
+    id_lookup: HashMap<(FakeUnionStorage, FakeUnionStorage), u8>,
 
     current_tick: usize,
     waiting_for_item: Vec<Inserter>,
     waiting_for_space_in_destination: Vec<Inserter>,
     #[serde(with = "arrays")]
-    full_and_moving_out: [Vec<Inserter>; MAX_MOVE_TIME],
+    full_and_moving_out: [Vec<Inserter>; NUM_BUCKETS],
     #[serde(with = "arrays")]
-    empty_and_moving_back: [Vec<Inserter>; MAX_MOVE_TIME],
+    empty_and_moving_back: [Vec<Inserter>; NUM_BUCKETS],
 }
 
 impl BucketedStorageStorageInserterStore {
-    pub fn new() -> Self {
+    pub fn new(movetime: u16) -> Self {
+        assert!((movetime as usize) < MAX_MOVE_TIME);
+
         Self {
+            movetime,
             id_lookup: HashMap::new(),
             waiting_for_item: vec![],
             full_and_moving_out: array::from_fn(|_| vec![]),
@@ -448,13 +453,14 @@ impl BucketedStorageStorageInserterStore {
             max_hand_size,
             current_hand: 0,
             id: new_id,
+            remaining_loops: 0,
         });
 
         match (*id).checked_add(1) {
             Some(next_id) => {
                 *id = next_id;
             },
-            None => todo!("A pair of storages has u16::MAX inserter between them! (Or a lot of ids were lost due to removals)"),
+            None => todo!("A pair of storages has u8::MAX inserter between them! (Or a lot of ids were lost due to removals)"),
             // None => {
             //     // FIXME FIXME FIXME
             // },
@@ -533,19 +539,26 @@ impl BucketedStorageStorageInserterStore {
     ) {
         let old_len: usize = self.get_list_sizes().iter().sum();
 
-        assert!(self.current_tick < MAX_MOVE_TIME);
+        assert!(self.current_tick < NUM_BUCKETS);
 
         {
             profiling::scope!("Try taking Items from inventories");
             let now_moving = self.waiting_for_item.extract_if(.., |inserter| {
+                if inserter.remaining_loops > 0 {
+                    inserter.remaining_loops -= 1;
+                    return true;
+                }
+
                 let (_max_insert, old) =
                     index_fake_union(storages, inserter.storage_id_in, grid_size);
 
                 let to_extract = min(inserter.max_hand_size - inserter.current_hand, *old);
 
-                *old -= to_extract;
+                if to_extract > 0 {
+                    *old -= to_extract;
 
-                inserter.current_hand += to_extract;
+                    inserter.current_hand += to_extract;
+                }
 
                 let extract = inserter.current_hand == inserter.max_hand_size;
 
@@ -560,27 +573,48 @@ impl BucketedStorageStorageInserterStore {
                     frontend.next_tick.waiting_for_item_result.push(*inserter);
                 }
 
+                if extract {
+                    inserter.remaining_loops = (self.movetime / NUM_BUCKETS as u16) as u8;
+                }
+
                 extract
             });
 
-            // TODO: constant movetime
-            self.full_and_moving_out[(self.current_tick + MOVETIME as usize) % MAX_MOVE_TIME]
-                .extend(now_moving);
+            for ins in now_moving {
+                // FIXME: I am sure there are some off by one errors in here
+                if ins.remaining_loops == 0 {
+                    self.full_and_moving_out[(self.current_tick
+                        + (self.movetime as usize % NUM_BUCKETS))
+                        % NUM_BUCKETS]
+                        .push(ins);
+                } else {
+                    self.empty_and_moving_back
+                        [(self.current_tick + (NUM_BUCKETS - 1)) % NUM_BUCKETS]
+                        .push(ins);
+                }
+            }
         }
 
         {
-            profiling::scope!("Try puttin Items into inventories");
+            profiling::scope!("Try putting Items into inventories");
             let now_moving_back =
                 self.waiting_for_space_in_destination
                     .extract_if(.., |inserter| {
+                        if inserter.remaining_loops > 0 {
+                            inserter.remaining_loops -= 1;
+                            return true;
+                        }
+
                         let (max_insert, old) =
                             index_fake_union(storages, inserter.storage_id_out, grid_size);
 
                         let to_insert = min(inserter.current_hand, *max_insert - *old);
 
-                        *old += to_insert;
+                        if to_insert > 0 {
+                            *old += to_insert;
 
-                        inserter.current_hand -= to_insert;
+                            inserter.current_hand -= to_insert;
+                        }
 
                         let extract = inserter.current_hand == 0;
 
@@ -594,19 +628,31 @@ impl BucketedStorageStorageInserterStore {
                         {
                             frontend.next_tick.waiting_for_space_result.push(*inserter);
                         }
+
+                        if extract {
+                            inserter.remaining_loops = (self.movetime / NUM_BUCKETS as u16) as u8;
+                        }
+
                         extract
                     });
 
-            // TODO: constant movetime
-            self.empty_and_moving_back[(self.current_tick + MOVETIME as usize) % MAX_MOVE_TIME]
-                .extend(now_moving_back);
+            for ins in now_moving_back {
+                // FIXME: I am sure there are some off by one errors in here
+                if ins.remaining_loops == 0 {
+                    self.empty_and_moving_back[(self.current_tick
+                        + (self.movetime as usize % NUM_BUCKETS))
+                        % NUM_BUCKETS]
+                        .push(ins);
+                } else {
+                    self.full_and_moving_out[(self.current_tick + (NUM_BUCKETS - 1)) % NUM_BUCKETS]
+                        .push(ins);
+                }
+            }
         }
 
         {
             profiling::scope!("Advance time moving back");
-            if dbg!(self.empty_and_moving_back[self.current_tick].len())
-                < dbg!(self.waiting_for_item.len())
-            {
+            if self.empty_and_moving_back[self.current_tick].len() < self.waiting_for_item.len() {
                 self.waiting_for_item
                     .extend_from_slice(&self.empty_and_moving_back[self.current_tick]);
                 self.empty_and_moving_back[self.current_tick].clear();
@@ -643,7 +689,7 @@ impl BucketedStorageStorageInserterStore {
             }
         }
 
-        self.current_tick = (self.current_tick + 1) % MAX_MOVE_TIME;
+        self.current_tick = (self.current_tick + 1) % NUM_BUCKETS;
 
         assert_eq!(old_len, self.get_list_sizes().iter().sum::<usize>());
     }
@@ -665,21 +711,21 @@ impl BucketedStorageStorageInserterStore {
         to_find: &mut Vec<InserterIdentifier>,
         search_in: usize,
     ) -> HashMap<InserterIdentifier, Inserter> {
-        const MOVING_OUT_END: usize = MAX_MOVE_TIME + 1;
+        const MOVING_OUT_END: usize = NUM_BUCKETS + 1;
         const WATING_FOR_SPACE: usize = MOVING_OUT_END;
         const MOVING_IN: usize = MOVING_OUT_END + 1;
-        const MOVING_IN_END: usize = MOVING_OUT_END + 1 + MAX_MOVE_TIME;
+        const MOVING_IN_END: usize = MOVING_OUT_END + 1 + NUM_BUCKETS;
 
         let mut ret = HashMap::new();
 
         let search_list = match search_in {
             0 => &self.waiting_for_item,
             n @ 1..MOVING_OUT_END => {
-                &self.full_and_moving_out[(n - 1 + self.current_tick) % MAX_MOVE_TIME]
+                &self.full_and_moving_out[(n - 1 + self.current_tick) % NUM_BUCKETS]
             },
             WATING_FOR_SPACE => &self.waiting_for_space_in_destination,
             n @ MOVING_IN..MOVING_IN_END => {
-                &self.empty_and_moving_back[(n - MOVING_IN + self.current_tick) % MAX_MOVE_TIME]
+                &self.empty_and_moving_back[(n - MOVING_IN + self.current_tick) % NUM_BUCKETS]
             },
 
             _ => unreachable!(),
@@ -812,7 +858,7 @@ mod test {
     #[bench]
     fn bench_update_storage_storage_inserter_store_buckets(b: &mut Bencher) {
         let mut store: [_; NUM_ITEMS] =
-            array::from_fn(|_| BucketedStorageStorageInserterStore::new());
+            array::from_fn(|_| BucketedStorageStorageInserterStore::new(120));
         let mut frontend: [_; NUM_ITEMS] =
             array::from_fn(|_| BucketedStorageStorageInserterStoreFrontend::new());
 
@@ -901,7 +947,7 @@ mod test {
     fn bench_storage_storage_inserter_store_find_batched_with_next_tick_optimization(
         b: &mut Bencher,
     ) {
-        let mut store = BucketedStorageStorageInserterStore::new();
+        let mut store = BucketedStorageStorageInserterStore::new(120);
 
         let mut frontend = BucketedStorageStorageInserterStoreFrontend::new();
 
@@ -1001,7 +1047,7 @@ mod test {
     fn bench_storage_storage_inserter_store_find_batched_without_next_tick_optimization(
         b: &mut Bencher,
     ) {
-        let mut store = BucketedStorageStorageInserterStore::new();
+        let mut store = BucketedStorageStorageInserterStore::new(120);
 
         let mut frontend = BucketedStorageStorageInserterStoreFrontend::new();
 

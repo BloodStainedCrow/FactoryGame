@@ -61,6 +61,25 @@
             "args": [],
             "cwd": "${workspaceFolder}",
             "env": { "RUST_LOG": "info" }
+        },{
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'factory' without tick wait",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=factory",
+                    "--package=factory",
+                    "--features=graphics",
+                ],
+                "filter": {
+                    "name": "factory",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "env": { "ZOOM": "true" }
         },
         {
             "type": "lldb",

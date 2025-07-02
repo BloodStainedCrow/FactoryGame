@@ -1,3 +1,5 @@
+use std::num::NonZero;
+
 use place_entity::PlaceEntityInfo;
 use place_tile::PlaceFloorTileByHandInfo;
 use set_recipe::SetRecipeInfo;
@@ -22,12 +24,26 @@ pub enum ActionType<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     SetRecipe(SetRecipeInfo<RecipeIdxType>),
 
+    OverrideInserterMovetime {
+        pos: Position,
+        new_movetime: Option<NonZero<u16>>,
+    },
+
     Position(PLAYERID, (f32, f32)),
 
-    AddModules { pos: Position, modules: Vec<usize> },
-    RemoveModules { pos: Position, indices: Vec<usize> },
+    AddModules {
+        pos: Position,
+        modules: Vec<usize>,
+    },
+    RemoveModules {
+        pos: Position,
+        indices: Vec<usize>,
+    },
 
-    SetChestSlotLimit { pos: Position, num_slots: u8 },
+    SetChestSlotLimit {
+        pos: Position,
+        num_slots: u8,
+    },
 
     Remove(Position),
 

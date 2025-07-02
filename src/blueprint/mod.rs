@@ -218,6 +218,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                     },
                     num_slots: *num_slots,
                 },
+                ActionType::OverrideInserterMovetime { pos, new_movetime } => {
+                    ActionType::OverrideInserterMovetime {
+                        pos: Position {
+                            x: base_pos.x + pos.x,
+                            y: base_pos.y + pos.y,
+                        },
+                        new_movetime: *new_movetime,
+                    }
+                },
                 a => unreachable!("{:?}", a),
             }),
             data_store,
@@ -357,8 +366,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                     })]
                 },
                 crate::frontend::world::tile::Entity::Splitter { pos, direction, id } => todo!(),
-                crate::frontend::world::tile::Entity::Inserter { pos, direction, .. } => {
-                    vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                crate::frontend::world::tile::Entity::Inserter {
+                    
+                    user_movetime,
+                    pos,
+                    direction,
+                    ..
+                } => {
+                    let mut ret = vec![ActionType::PlaceEntity(PlaceEntityInfo {
                         entities: EntityPlaceOptions::Single(PlaceEntityType::Inserter {
                             pos: Position {
                                 x: pos.x - base_pos.x,
@@ -367,7 +382,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                             dir: *direction,
                             filter: None,
                         }),
-                    })]
+                    })];
+
+                    if let Some(user_movetime) = *user_movetime {
+                        ret.push(ActionType::OverrideInserterMovetime {
+                            pos: Position {
+                                x: pos.x - base_pos.x,
+                                y: pos.y - base_pos.y,
+                            },
+                            new_movetime: Some(user_movetime),
+                        });
+                    }
+
+                    ret
                 },
                 crate::frontend::world::tile::Entity::Chest { pos, ty, .. } => {
                     vec![ActionType::PlaceEntity(PlaceEntityInfo {
@@ -492,6 +519,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                 },
                 ActionType::RemoveModules { pos, indices } => {},
                 ActionType::SetChestSlotLimit { pos, num_slots } => {},
+                ActionType::OverrideInserterMovetime { .. } => {},
                 ActionType::Remove(position) => {},
                 ActionType::Ping(position) => unreachable!(),
             }

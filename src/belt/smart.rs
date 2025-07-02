@@ -1,6 +1,6 @@
 use std::iter::repeat;
 
-use log::{info, trace};
+use log::trace;
 
 use crate::{
     inserter::{belt_storage_inserter::BeltStorageInserter, InserterState, MOVETIME},

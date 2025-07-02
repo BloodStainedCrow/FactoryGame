@@ -1,9 +1,9 @@
 use std::{
-    array,
-    cmp::{min, Ordering},
+    cmp::min,
     collections::{BTreeMap, BTreeSet, HashMap},
     marker::PhantomData,
     mem,
+    num::NonZero,
     ops::{Add, ControlFlow},
 };
 
@@ -15,7 +15,7 @@ use strum::EnumIter;
 
 use itertools::Itertools;
 
-use noise::{NoiseFn, OpenSimplex, Perlin, Simplex};
+use noise::{NoiseFn, Simplex};
 
 use crate::{
     belt::{
@@ -286,6 +286,7 @@ fn new_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType: IdxTra
                             direction: _inserter_dir,
                             filter: _inserter_filter,
                             info: InserterInfo::NotAttached { start_pos, end_pos },
+                            ..
                         } => {
                             if start_pos.contained_in(pos, size) || end_pos.contained_in(pos, size)
                             {
@@ -728,6 +729,10 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                 |e| {
                     match e {
                         Entity::Inserter {
+                            ty,
+                            user_movetime,
+                            type_movetime,
+
                             pos: inserter_pos,
                             direction: _inserter_dir,
                             filter: _inserter_filter,
@@ -755,11 +760,15 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                                             todo!("Remove BeltBelt inserter");
                                         },
                                         AttachedInserter::StorageStorage { item, inserter } => {
+                                            let movetime = user_movetime
+                                                .map(|v| v.into())
+                                                .unwrap_or(*type_movetime);
+
                                             // This might return something at some point, and this will be a compiler error
                                             let () = sim_state
                                                 .factory
                                                 .storage_storage_inserters
-                                                .remove_ins(*item, *inserter);
+                                                .remove_ins(*item, movetime, *inserter);
 
                                             *info = InserterInfo::NotAttached {
                                                 start_pos: *start_pos,
@@ -1336,6 +1345,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         }
 
         let Some(Entity::Inserter {
+            ty,
+            user_movetime,
+            type_movetime,
+
             pos: _pos,
             direction,
             info: InserterInfo::NotAttached { start_pos, end_pos },
@@ -1347,6 +1360,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         else {
             return Err(InstantiateInserterError::NotUnattachedInserter);
         };
+
+        let movetime = user_movetime.map(|v| v.into()).unwrap_or(*type_movetime);
 
         let start_conn: Option<InserterConnectionPossibility<ItemIdxType, RecipeIdxType>> = self
             .get_entities_colliding_with(*start_pos, (1, 1), data_store)
@@ -1864,6 +1879,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
                 let index = simulation_state.factory.storage_storage_inserters.add_ins(
                     determined_filter,
+                    movetime,
                     start_storage,
                     dest_storage,
                     data_store,
@@ -2796,6 +2812,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     ..
                 } => {},
                 Entity::Inserter {
+                    ty,
+                    user_movetime,
+                    type_movetime,
                     pos,
                     direction,
                     info:
@@ -2812,10 +2831,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         sim_state.factory.belts.remove_belt_belt_inserter(*inserter);
                     },
                     AttachedInserter::StorageStorage { item, inserter } => {
-                        sim_state
-                            .factory
-                            .storage_storage_inserters
-                            .remove_ins(*item, *inserter);
+                        sim_state.factory.storage_storage_inserters.remove_ins(
+                            *item,
+                            user_movetime.map(|v| v.into()).unwrap_or(*type_movetime),
+                            *inserter,
+                        );
                     },
                 },
             }
@@ -3089,6 +3109,10 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         id: SplitterTileId,
     },
     Inserter {
+        ty: u8,
+        user_movetime: Option<NonZero<u16>>,
+        type_movetime: u16,
+
         pos: Position,
         direction: Dir,
         filter: Option<Item<ItemIdxType>>,
