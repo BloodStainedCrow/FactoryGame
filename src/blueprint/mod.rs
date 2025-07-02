@@ -367,7 +367,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                 },
                 crate::frontend::world::tile::Entity::Splitter { pos, direction, id } => todo!(),
                 crate::frontend::world::tile::Entity::Inserter {
-                    
                     user_movetime,
                     pos,
                     direction,
