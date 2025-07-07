@@ -5,6 +5,7 @@ use log::info;
 use petgraph::{
     algo::tarjan_scc,
     prelude::StableUnGraph,
+    stable_graph::{StableGraphEdge, StableGraphNode},
     visit::{EdgeRef, IntoNodeReferences},
 };
 
@@ -397,23 +398,34 @@ fn join_graphs<NodeKey: Eq + Hash + Clone + Debug, T: Debug, S>(
 
     // Do the merging
 
-    let (nodes, edges) = second.into_nodes_edges();
+    let (nodes, edges) = second.into_nodes_edges_iters();
 
-    let old_to_new_map = HashMap::<_, _>::from_iter(nodes.map(|(old_idx, weight)| {
-        let new_idx = first.add_node(weight);
+    let old_to_new_map = HashMap::<_, _>::from_iter(nodes.map(
+        |StableGraphNode {
+             index: old_idx,
+             weight,
+         }| {
+            let new_idx = first.add_node(weight);
 
-        first_map.insert(
-            second_map
-                .remove_by_right(&old_idx)
-                .expect("Missing value in map")
-                .0,
-            new_idx,
-        );
+            first_map.insert(
+                second_map
+                    .remove_by_right(&old_idx)
+                    .expect("Missing value in map")
+                    .0,
+                new_idx,
+            );
 
-        (old_idx, new_idx)
-    }));
+            (old_idx, new_idx)
+        },
+    ));
 
-    for (_, old_source, old_dest, weight) in edges {
+    for StableGraphEdge {
+        index: _,
+        source: old_source,
+        target: old_dest,
+        weight,
+    } in edges
+    {
         first.add_edge(
             old_to_new_map[&old_source],
             old_to_new_map[&old_dest],
