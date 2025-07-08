@@ -1,15 +1,21 @@
 use std::{
     mem,
-    sync::{mpsc::Sender, Arc, LazyLock},
+    sync::{atomic::AtomicU64, atomic::Ordering, mpsc::channel, mpsc::Sender, Arc, LazyLock},
+    thread,
     time::Instant,
 };
 
+use directories::ProjectDirs;
 use parking_lot::Mutex;
 
+use crate::run_integrated_server;
+use crate::GameCreationInfo;
+use crate::StartGameInfo;
 use eframe::{
     egui::{CentralPanel, Event, PaintCallbackInfo, Shape},
     egui_wgpu::{self, CallbackTrait},
 };
+use egui::{CursorIcon, ProgressBar, Window};
 use log::warn;
 use tilelib::types::RawRenderer;
 
@@ -36,14 +42,14 @@ pub struct App {
 
     last_rendered_update: u64,
 
-    input_sender: Sender<Input>,
+    input_sender: Option<Sender<Input>>,
 
     texture_atlas: Arc<TextureAtlas>,
 }
 
 impl App {
     #[must_use]
-    pub fn new(cc: &eframe::CreationContext, input_sender: Sender<Input>) -> Self {
+    pub fn new(cc: &eframe::CreationContext) -> Self {
         let render_state = cc.wgpu_render_state.as_ref().unwrap();
         let atlas = Arc::new(texture_atlas());
 
@@ -53,8 +59,8 @@ impl App {
                 &render_state.queue,
                 render_state.target_format,
             ),
-            input_sender,
-            state: AppState::Ingame,
+            input_sender: None,
+            state: AppState::MainMenu,
             texture_atlas: atlas,
             currently_loaded_game: None,
             last_rendered_update: 0,
@@ -68,7 +74,149 @@ impl eframe::App for App {
 
         let size = ctx.available_rect();
 
+        match &self.state {
+            AppState::Ingame => {
+                self.update_ingame(ctx, frame);
+            },
+
+            AppState::Loading {
+                progress,
+                game_state_receiver,
+            } => {
+                let progress = f64::from_bits(progress.load(Ordering::Relaxed));
+
+                CentralPanel::default().show(ctx, |ui| {
+                    Window::new("Loading")
+                        .default_pos((0.5, 0.5))
+                        .show(ctx, |ui| {
+                            ui.add(ProgressBar::new(progress as f32).corner_radius(0));
+                        });
+                });
+
+                if let Ok((new_state, current_tick, input_sender)) = game_state_receiver.try_recv()
+                {
+                    self.input_sender = Some(input_sender);
+                    self.currently_loaded_game = Some(LoadedGameInfo {
+                        state: new_state,
+                        tick: current_tick,
+                    });
+                    self.state = AppState::Ingame;
+                }
+            },
+
+            AppState::MainMenu => {
+                CentralPanel::default().show(ctx, |ui| {
+                    if ui.button("Load").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .set_directory(
+                                ProjectDirs::from("de", "aschhoff", "factory_game")
+                                    .expect("No Home path found")
+                                    .data_dir(),
+                            )
+                            .pick_file()
+                        {
+                            let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
+                            let (send, recv) = channel();
+
+                            let progress_send = progress.clone();
+                            thread::spawn(move || {
+                                send.send(run_integrated_server(
+                                    progress_send,
+                                    StartGameInfo::Load(path),
+                                ));
+                            });
+
+                            self.state = AppState::Loading {
+                                progress,
+                                game_state_receiver: recv,
+                            };
+                        }
+                    } else if ui.button("Empty World").clicked() {
+                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
+                        let (send, recv) = channel();
+
+                        let progress_send = progress.clone();
+                        thread::spawn(move || {
+                            send.send(run_integrated_server(
+                                progress_send,
+                                StartGameInfo::Create(GameCreationInfo::Empty),
+                            ));
+                        });
+
+                        self.state = AppState::Loading {
+                            progress,
+                            game_state_receiver: recv,
+                        };
+                    } else if ui.button("Red Green Chest Insertion").clicked() {
+                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
+                        let (send, recv) = channel();
+
+                        let progress_send = progress.clone();
+                        thread::spawn(move || {
+                            send.send(run_integrated_server(
+                                progress_send,
+                                StartGameInfo::Create(GameCreationInfo::RedGreen),
+                            ));
+                        });
+
+                        self.state = AppState::Loading {
+                            progress,
+                            game_state_receiver: recv,
+                        };
+                    } else if ui.button("Red Green 1 to 1 belts").clicked() {
+                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
+                        let (send, recv) = channel();
+
+                        let progress_send = progress.clone();
+                        thread::spawn(move || {
+                            send.send(run_integrated_server(
+                                progress_send,
+                                StartGameInfo::Create(GameCreationInfo::RedGreenBelts),
+                            ));
+                        });
+
+                        self.state = AppState::Loading {
+                            progress,
+                            game_state_receiver: recv,
+                        };
+                    }
+                });
+            },
+        }
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        if let Some(state) = &self.currently_loaded_game {
+            match &state.state {
+                LoadedGame::ItemU8RecipeU8(state) => save(
+                    &state.state.lock(),
+                    state.data_store.lock().checksum.clone(),
+                ),
+                LoadedGame::ItemU8RecipeU16(state) => save(
+                    &state.state.lock(),
+                    state.data_store.lock().checksum.clone(),
+                ),
+                LoadedGame::ItemU16RecipeU8(state) => save(
+                    &state.state.lock(),
+                    state.data_store.lock().checksum.clone(),
+                ),
+                LoadedGame::ItemU16RecipeU16(state) => save(
+                    &state.state.lock(),
+                    state.data_store.lock().checksum.clone(),
+                ),
+            }
+        }
+    }
+}
+
+impl App {
+    fn update_ingame(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
+        let size = ctx.available_rect();
+
         CentralPanel::default().show(ctx, |ui| {
+            if ui.ui_contains_pointer() {
+                ctx.set_cursor_icon(CursorIcon::Default);
+            }
             let painter = ui.painter();
 
             let game_graphics_area = painter.clip_rect();
@@ -125,7 +273,11 @@ impl eframe::App for App {
                         };
 
                         if let Ok(input) = input {
-                            self.input_sender.send(input).expect("Could not send input");
+                            self.input_sender
+                                .as_mut()
+                                .unwrap()
+                                .send(input)
+                                .expect("Could not send input");
                         }
                     }
                 });
@@ -184,29 +336,6 @@ impl eframe::App for App {
                 warn!("No Game loaded!");
             }
         });
-    }
-
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        if let Some(state) = &self.currently_loaded_game {
-            match &state.state {
-                LoadedGame::ItemU8RecipeU8(state) => save(
-                    &state.state.lock(),
-                    state.data_store.lock().checksum.clone(),
-                ),
-                LoadedGame::ItemU8RecipeU16(state) => save(
-                    &state.state.lock(),
-                    state.data_store.lock().checksum.clone(),
-                ),
-                LoadedGame::ItemU16RecipeU8(state) => save(
-                    &state.state.lock(),
-                    state.data_store.lock().checksum.clone(),
-                ),
-                LoadedGame::ItemU16RecipeU16(state) => save(
-                    &state.state.lock(),
-                    state.data_store.lock().checksum.clone(),
-                ),
-            }
-        }
     }
 }
 

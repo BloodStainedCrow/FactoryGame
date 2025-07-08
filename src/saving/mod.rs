@@ -4,6 +4,7 @@ use std::{
     fs::{create_dir_all, File},
     io::{Read, Write},
     marker::PhantomData,
+    path::PathBuf,
 };
 
 use directories::ProjectDirs;
@@ -77,12 +78,10 @@ pub fn save<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 pub fn load<
     ItemIdxType: IdxTrait + for<'a> serde::Deserialize<'a>,
     RecipeIdxType: IdxTrait + for<'a> serde::Deserialize<'a>,
->() -> Option<SaveGame<ItemIdxType, RecipeIdxType, GameState<ItemIdxType, RecipeIdxType>>> {
-    let dir = ProjectDirs::from("de", "aschhoff", "factory_game").expect("No Home path found");
-
-    let save_file_dir = dir.data_dir().join("save.save");
-
-    let file = File::open(save_file_dir);
+>(
+    path: PathBuf,
+) -> Option<SaveGame<ItemIdxType, RecipeIdxType, GameState<ItemIdxType, RecipeIdxType>>> {
+    let file = File::open(path);
 
     file.map_or(None, |mut file| {
         let mut v = Vec::with_capacity(file.metadata().unwrap().len() as usize);

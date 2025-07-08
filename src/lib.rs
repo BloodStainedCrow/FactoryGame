@@ -34,12 +34,13 @@ use multiplayer::{
     connection_reciever::accept_continously, ClientConnectionInfo, Game, GameInitData, ServerInfo,
 };
 use rendering::{
-    app_state::{AppState, GameState},
+    app_state::GameState,
     eframe_app,
     window::{LoadedGame, LoadedGameInfo, LoadedGameSized},
 };
 use saving::load;
 use simple_logger::SimpleLogger;
+use std::path::PathBuf;
 
 use crate::item::Indexable;
 
@@ -131,27 +132,10 @@ pub fn main() {
 
     let mode = env::args().nth(1);
 
-    dbg!(&mode);
-
-    let (loaded, tick, sender) = if Some("--client") == mode.as_deref() {
-        run_client(StartGameInfo {})
-    } else if Some("--dedicated") == mode.as_deref() {
-        run_dedicated_server(StartGameInfo {});
-    } else {
-        run_integrated_server(StartGameInfo {})
-    };
-    // let mut app = App::new(sender);
-
-    // app.currently_loaded_game = Some(LoadedGameInfo {
-    //     state: loaded,
-    //     tick: tick,
-    // });
-    // app.state = AppState::Ingame;
-    // let event_loop = EventLoop::new().unwrap();
-
-    // event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
-
-    // let _ = event_loop.run_app(&mut app);
+    if Some("--dedicated") == mode.as_deref() {
+        run_dedicated_server(StartGameInfo::Load("".try_into().unwrap()));
+        return;
+    }
 
     eframe::run_native(
         "FactoryGame",
@@ -160,13 +144,7 @@ pub fn main() {
             ..Default::default()
         },
         Box::new(|cc| {
-            let mut app = eframe_app::App::new(cc, sender);
-
-            app.state = AppState::Ingame;
-            app.currently_loaded_game = Some(LoadedGameInfo {
-                state: loaded,
-                tick,
-            });
+            let app = eframe_app::App::new(cc);
 
             Ok(Box::new(app))
         }),
@@ -174,9 +152,19 @@ pub fn main() {
     .unwrap();
 }
 
-struct StartGameInfo {}
+enum StartGameInfo {
+    Load(PathBuf),
+    Create(GameCreationInfo),
+}
+
+enum GameCreationInfo {
+    Empty,
+    RedGreen,
+    RedGreenBelts,
+}
 
 fn run_integrated_server(
+    progress: Arc<AtomicU64>,
     start_game_info: StartGameInfo,
 ) -> (LoadedGame, Arc<AtomicU64>, Sender<Input>) {
     // TODO: Do mod loading here
@@ -199,19 +187,26 @@ fn run_integrated_server(
                     &data_store,
                 )));
 
-            let game_state = Arc::new(Mutex::new(
-                load().map(|save| save.game_state).unwrap_or_else(|| {
-                    // GameState::new_with_bp(&data_store, "test_blueprints/single_steel.bp")
-                    // GameState::new_with_production(&data_store)
-                    // GameState::new_with_beacon_red_production(&data_store)
-                    // GameState::new_with_beacon_production(&data_store)
-                    GameState::new_with_beacon_belt_production(&data_store)
-                    // GameState::new_with_lots_of_belts(&data_store)
-                    // GameState::new_with_tons_of_solar(&data_store)
-                    // GameState::new_eight_beacon_factory(&data_store)
-                    // GameState::new(&data_store)
-                }),
-            ));
+            let game_state = Arc::new(Mutex::new(match start_game_info {
+                StartGameInfo::Load(path) => load(path)
+                    .map(|sg| {
+                        assert_eq!(
+                            sg.checksum, data_store.checksum,
+                            "A savegame can only be loaded with the EXACT same mods!"
+                        );
+                        sg.game_state
+                    })
+                    .expect("Loading from disk failed!"),
+                StartGameInfo::Create(info) => match info {
+                    GameCreationInfo::Empty => GameState::new(progress, &data_store),
+                    GameCreationInfo::RedGreen => {
+                        GameState::new_with_beacon_production(progress, &data_store)
+                    },
+                    GameCreationInfo::RedGreenBelts => {
+                        GameState::new_with_beacon_belt_production(progress, &data_store)
+                    },
+                },
+            }));
 
             let (ui_sender, ui_recv) = channel();
 
@@ -257,16 +252,20 @@ fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
     let raw_data = get_raw_data_test();
     let data_store = raw_data.process();
 
+    let progress = Default::default();
+
     let connections: Arc<Mutex<Vec<std::net::TcpStream>>> = Arc::default();
 
     accept_continously(connections.clone()).unwrap();
 
     match data_store {
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
-            let game_state = load().map(|save| save.game_state).unwrap_or_else(|| {
-                // GameState::new(&data_store)
-                GameState::new_with_beacon_production(&data_store)
-            });
+            let game_state = load(todo!("Add a console argument for the save file path"))
+                .map(|save| save.game_state)
+                .unwrap_or_else(|| {
+                    // GameState::new(&data_store)
+                    GameState::new_with_beacon_production(progress, &data_store)
+                });
 
             let mut game = Game::new(
                 GameInitData::DedicatedServer(game_state, ServerInfo { connections }),
@@ -304,9 +303,9 @@ fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Se
                 )));
 
             let game_state = Arc::new(Mutex::new(
-                load()
+                load(todo!("When running in client mode, we should download the gamestate from the server instead of loading it from disk"))
                     .map(|save| save.game_state)
-                    .unwrap_or_else(|| GameState::new(&data_store)),
+                    .unwrap_or_else(|| GameState::new(Default::default(), &data_store)),
             ));
 
             let (ui_sender, ui_recv) = channel();
@@ -404,12 +403,6 @@ use std::simd::Simd;
 type BOOLSIMDTYPE = Simd<u8, 4>;
 type SIMDTYPE = Simd<u8, 4>;
 
-// As of Rust 1.75, small functions are automatically
-// marked as `#[inline]` so they will not show up in
-// the output when compiling with optimisations. Use
-// `#[no_mangle]` or `#[inline(never)]` to work around
-// this issue.
-// See https://github.com/compiler-explorer/compiler-explorer/issues/5939
 pub struct InserterInfo {
     num_items: u8,
 }
@@ -522,7 +515,7 @@ mod tests {
     fn clone_empty_simulation(b: &mut Bencher) {
         let data_store = get_raw_data_test().process().assume_simple();
 
-        let game_state = GameState::new(&data_store);
+        let game_state = GameState::new(Default::default(), &data_store);
 
         let replay = Replay::new(&game_state, None, Rc::new(data_store));
 
@@ -536,7 +529,7 @@ mod tests {
 
         let data_store = get_raw_data_test().process().assume_simple();
 
-        let game_state = GameState::new(&data_store);
+        let game_state = GameState::new(Default::default(), &data_store);
 
         let mut replay = Replay::new(&game_state, None, Rc::new(data_store));
 
@@ -556,7 +549,7 @@ mod tests {
 
         let data_store = get_raw_data_test().process().assume_simple();
 
-        let game_state = GameState::new(&data_store);
+        let game_state = GameState::new(Default::default(), &data_store);
 
         let mut replay = Replay::new(&game_state, None, Rc::new(data_store));
 
@@ -604,7 +597,10 @@ mod tests {
 
     #[bench]
     fn bench_huge_red_green_sci(b: &mut Bencher) {
-        let game_state = GameState::new_with_beacon_red_green_production_many_grids(&DATA_STORE);
+        let game_state = GameState::new_with_beacon_red_green_production_many_grids(
+            Default::default(),
+            &DATA_STORE,
+        );
 
         let mut game_state = game_state.clone();
 
@@ -615,7 +611,8 @@ mod tests {
 
     #[bench]
     fn bench_12_beacon_red(b: &mut Bencher) {
-        let game_state = GameState::new_with_beacon_belt_production(&DATA_STORE);
+        let game_state =
+            GameState::new_with_beacon_belt_production(Default::default(), &DATA_STORE);
 
         let mut game_state = game_state.clone();
 

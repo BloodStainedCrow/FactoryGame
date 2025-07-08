@@ -1256,7 +1256,7 @@ mod test {
 
         #[test]
         fn inserter_always_attaches(actions in chest_onto_belt().prop_shuffle()) {
-            let mut state = GameState::new(&DATA_STORE);
+            let mut state = GameState::new(Default::default(), &DATA_STORE);
 
             let bp = Blueprint { actions };
 
@@ -1281,7 +1281,7 @@ mod test {
 
         #[test]
         fn inserter_always_attaches_full_bp(actions in sideload_items().prop_shuffle()) {
-            let mut state = GameState::new(&DATA_STORE);
+            let mut state = GameState::new(Default::default(), &DATA_STORE);
 
             let bp = Blueprint { actions };
 
@@ -1306,7 +1306,7 @@ mod test {
 
         #[test]
         fn sideload_empty_does_not_crash(actions in belts_into_sideload().prop_shuffle()) {
-            let mut state = GameState::new(&DATA_STORE);
+            let mut state = GameState::new(Default::default(), &DATA_STORE);
 
             let bp = Blueprint { actions };
 
@@ -1315,7 +1315,7 @@ mod test {
 
         #[test]
         fn sideload_with_items_at_source_does_not_crash(actions in sideload_items().prop_shuffle()) {
-            let mut state = GameState::new(&DATA_STORE);
+            let mut state = GameState::new(Default::default(), &DATA_STORE);
 
             let bp = Blueprint { actions };
 
@@ -1324,7 +1324,7 @@ mod test {
 
         #[test]
         fn sideload_with_items_at_source_items_reach_the_intersection(actions in chest_onto_belt().prop_shuffle()) {
-            let mut state = GameState::new(&DATA_STORE);
+            let mut state = GameState::new(Default::default(), &DATA_STORE);
 
             let bp = Blueprint { actions };
 
@@ -1359,7 +1359,7 @@ mod test {
 
         #[test]
         fn sideload_with_items_at_source_items_actually_reach(actions in sideload_items().prop_shuffle()) {
-            let mut state = GameState::new(&DATA_STORE);
+            let mut state = GameState::new(Default::default(), &DATA_STORE);
 
             let bp = Blueprint { actions };
 

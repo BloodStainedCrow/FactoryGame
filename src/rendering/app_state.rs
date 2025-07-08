@@ -2,6 +2,7 @@ use crate::data::AllowedFluidDirection;
 use crate::inserter::HAND_SIZE;
 use crate::liquid::connection_logic::can_fluid_tanks_connect_to_single_connection;
 use crate::liquid::FluidConnectionDir;
+use crate::LoadedGameInfo;
 use crate::{
     belt::{BeltBeltInserterInfo, BeltStore},
     blueprint::Blueprint,
@@ -38,6 +39,7 @@ use crate::{
     storage_list::{
         full_to_by_item, grid_size, num_recipes, sizes, storages_by_item, SingleItemStorages,
     },
+    Input, LoadedGame,
 };
 use crate::{
     item::Indexable,
@@ -47,6 +49,11 @@ use itertools::Itertools;
 use log::{info, trace, warn};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::iter;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
+use std::sync::mpsc::Receiver;
+use std::sync::mpsc::Sender;
+use std::sync::Arc;
 use std::{
     borrow::Borrow,
     fs::File,
@@ -85,7 +92,10 @@ impl<'a> AddAssign<&'a UpdateTime> for UpdateTime {
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, RecipeIdxType> {
     #[must_use]
-    pub fn new(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+    pub fn new(
+        progress: Arc<AtomicU64>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
         Self {
             current_tick: 0,
             world: World::new(),
@@ -97,7 +107,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     }
 
     #[must_use]
-    pub fn new_with_production(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+    pub fn new_with_production(
+        progress: Arc<AtomicU64>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
         let mut ret = Self {
             current_tick: 0,
             world: World::new(),
@@ -111,8 +124,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
 
         puffin::set_scopes_on(false);
-        for y_pos in (1590..30000).step_by(7) {
-            for x_pos in (1590..3000).step_by(20) {
+        let y_range = (1590..30000).step_by(7);
+        let x_range = (1590..3000).step_by(20);
+
+        let total = y_range.size_hint().0 * x_range.size_hint().0;
+
+        let mut current = 0;
+
+        for y_pos in y_range {
+            for x_pos in x_range.clone() {
+                progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
+                current += 1;
+
                 if rand::random::<u16>() < u16::MAX / 100 {
                     ret.update(data_store);
                 }
@@ -126,12 +149,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     }
 
     #[must_use]
-    pub fn new_with_beacon_production(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
-        Self::new_with_beacon_red_green_production_many_grids(data_store)
+    pub fn new_with_beacon_production(
+        progress: Arc<AtomicU64>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
+        Self::new_with_beacon_red_green_production_many_grids(progress, data_store)
     }
 
     #[must_use]
     pub fn new_with_beacon_red_green_production_many_grids(
+        progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         let mut ret = Self {
@@ -147,9 +174,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
 
         puffin::set_scopes_on(false);
-        for y_start in (0..24_000).step_by(4_000) {
-            for y_pos in (1590..4000).step_by(40) {
-                for x_start in (0..24_000).step_by(4_000) {
+        let y_range = (0..12_000).step_by(4_000);
+        let x_range = (0..24_000).step_by(4_000);
+
+        let total = y_range.size_hint().0 * x_range.size_hint().0;
+
+        let mut current = 0;
+
+        for y_start in y_range {
+            for x_start in x_range.clone() {
+                progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
+                current += 1;
+                for y_pos in (1590..4000).step_by(40) {
                     for x_pos in (1590..4000).step_by(50) {
                         while rand::random::<u16>() < u16::MAX / 200 {
                             ret.update(data_store);
@@ -173,6 +209,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
     #[must_use]
     pub fn new_with_beacon_belt_production(
+        progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         let mut ret = Self {
@@ -212,7 +249,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     }
 
     #[must_use]
-    pub fn new_with_lots_of_belts(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+    pub fn new_with_lots_of_belts(
+        progress: Arc<AtomicU64>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
         let mut ret = Self {
             current_tick: 0,
             world: World::new(),
@@ -236,7 +276,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     }
 
     #[must_use]
-    pub fn new_with_tons_of_solar(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+    pub fn new_with_tons_of_solar(
+        progress: Arc<AtomicU64>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
         let mut ret = Self {
             current_tick: 0,
             world: World::new(),
@@ -261,7 +304,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     }
 
     #[must_use]
-    pub fn new_eight_beacon_factory(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+    pub fn new_eight_beacon_factory(
+        progress: Arc<AtomicU64>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
         let mut ret = Self {
             current_tick: 0,
             world: World::new(),
@@ -532,8 +578,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
 }
 
 pub enum AppState {
+    MainMenu,
     Ingame,
-    Loading,
+    Loading {
+        /// WARNING: This is a f64!
+        progress: Arc<AtomicU64>,
+        game_state_receiver: Receiver<(LoadedGame, Arc<AtomicU64>, Sender<Input>)>,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2048,7 +2099,7 @@ mod tests {
         #[test]
         fn test_random_blueprint_does_not_crash(base_pos in random_position(), blueprint in random_blueprint_strategy::<u8, u8>(0..1_000, &DATA_STORE)) {
 
-            let mut game_state = GameState::new(&DATA_STORE);
+            let mut game_state = GameState::new(Default::default(), &DATA_STORE);
 
             blueprint.apply(base_pos, &mut game_state, &DATA_STORE);
 
@@ -2057,7 +2108,7 @@ mod tests {
         #[test]
         fn test_random_blueprint_does_not_crash_after(base_pos in random_position(), blueprint in random_blueprint_strategy::<u8, u8>(0..100, &DATA_STORE), time in 0usize..600) {
 
-            let mut game_state = GameState::new(&DATA_STORE);
+            let mut game_state = GameState::new(Default::default(), &DATA_STORE);
 
             blueprint.apply(base_pos, &mut game_state, &DATA_STORE);
 
@@ -2082,7 +2133,7 @@ mod tests {
             //     ..
             // })));
 
-            let mut game_state = GameState::new(&DATA_STORE);
+            let mut game_state = GameState::new(Default::default(), &DATA_STORE);
 
             Blueprint { actions }.apply(Position { x: 0, y: 0 }, &mut game_state, &DATA_STORE);
 
@@ -2119,7 +2170,7 @@ mod tests {
                 }),
             }))) < actions.iter().position(|a| matches!(a, ActionType::AddModules { pos: Position { x: 24, y: 21 }, ..})));
 
-            let mut game_state = GameState::new(&DATA_STORE);
+            let mut game_state = GameState::new(Default::default(), &DATA_STORE);
 
             Blueprint { actions }.apply(Position { x: 1600, y: 1600 }, &mut game_state, &DATA_STORE);
 
@@ -2146,7 +2197,7 @@ mod tests {
 
     #[bench]
     fn bench_single_inserter(b: &mut Bencher) {
-        let mut game_state = GameState::new(&DATA_STORE);
+        let mut game_state = GameState::new(Default::default(), &DATA_STORE);
 
         let mut rep = Replay::new(&game_state, None, (*DATA_STORE).clone());
 

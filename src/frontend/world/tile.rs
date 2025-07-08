@@ -789,7 +789,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         #[cfg(debug_assertions)]
         const WORLDSIZE_CHUNKS: i32 = 200;
         #[cfg(not(debug_assertions))]
-        const WORLDSIZE_CHUNKS: i32 = 8000;
+        const WORLDSIZE_CHUNKS: i32 = 4000;
 
         let noise = Simplex::new(1);
 
@@ -3458,7 +3458,7 @@ mod test {
 
         #[test]
         fn test_get_entity(position in random_position(), ent in random_entity_to_place(&DATA_STORE)) {
-            let mut state = GameState::new(&DATA_STORE);
+            let mut state = GameState::new(Default::default(), &DATA_STORE);
 
             let mut rep = Replay::new(&state, None, &*DATA_STORE);
 

@@ -190,6 +190,8 @@ impl winit::application::ApplicationHandler for App {
                     Duration::from_secs(1).div_duration_f32(self.window.last_frame_time.elapsed());
 
                 match self.state {
+                    AppState::MainMenu => todo!(),
+
                     AppState::Ingame => {
                         if let Some(loaded) = &self.currently_loaded_game {
                             let current_tick =
@@ -234,7 +236,7 @@ impl winit::application::ApplicationHandler for App {
                             warn!("No Game loaded");
                         }
                     },
-                    AppState::Loading => {
+                    AppState::Loading { .. } => {
                         // TODO:
                     },
                 }
@@ -267,7 +269,7 @@ impl Window {
 impl App {
     pub fn new(input_sender: Sender<Input>) -> Self {
         Self {
-            state: AppState::Loading,
+            state: AppState::MainMenu,
             window: Window::new(),
             last_rendered_update: 0,
             currently_loaded_game: None,
