@@ -2,20 +2,20 @@ use std::{error::Error, fmt::Display, marker::PhantomData};
 
 use crate::item::{IdxTrait, Item, WeakIdxTrait};
 
-use super::smart::Side;
+use super::{smart::Side, splitter::SushiSplitter};
 
 pub type BeltLenType = u16;
 
 pub trait Belt<ItemIdxType: IdxTrait> {
-    fn query_item(&self, pos: BeltLenType) -> Option<ItemInfo<ItemIdxType>>;
-    fn get_front(&self) -> Option<ItemInfo<ItemIdxType>> {
+    fn query_item(&self, pos: BeltLenType) -> Option<Item<ItemIdxType>>;
+    fn get_front(&self) -> Option<Item<ItemIdxType>> {
         self.query_item(0)
     }
-    fn get_back(&self) -> Option<ItemInfo<ItemIdxType>> {
+    fn get_back(&self) -> Option<Item<ItemIdxType>> {
         let len = self.get_len();
         self.query_item(len - 1)
     }
-    fn remove_item(&mut self, pos: BeltLenType) -> Option<ItemInfo<ItemIdxType>>;
+    fn remove_item(&mut self, pos: BeltLenType) -> Option<Item<ItemIdxType>>;
     /// # Errors
     /// When there is no space at `pos`
     fn try_insert_item(
@@ -32,7 +32,7 @@ pub trait Belt<ItemIdxType: IdxTrait> {
     fn get_len(&self) -> BeltLenType;
     fn add_length(&mut self, amount: BeltLenType, side: Side) -> BeltLenType;
 
-    fn update(&mut self);
+    fn update(&mut self, splitter_list: &[SushiSplitter<ItemIdxType>]);
 
     fn item_hint(&self) -> Option<Vec<Item<ItemIdxType>>>;
 }

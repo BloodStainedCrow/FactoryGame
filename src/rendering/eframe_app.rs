@@ -42,7 +42,7 @@ pub struct App {
 
     last_rendered_update: u64,
 
-    input_sender: Option<Sender<Input>>,
+    pub input_sender: Option<Sender<Input>>,
 
     texture_atlas: Arc<TextureAtlas>,
 }

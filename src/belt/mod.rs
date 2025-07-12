@@ -7,6 +7,7 @@ pub mod splitter;
 mod sushi;
 
 use std::{
+    cell::UnsafeCell,
     collections::{HashMap, HashSet},
     iter::once,
     marker::PhantomData,
@@ -14,6 +15,9 @@ use std::{
 };
 
 use crate::inserter::HAND_SIZE;
+
+use serde::ser::{SerializeSeq, SerializeStruct};
+use strum::IntoEnumIterator;
 
 use crate::{
     data::DataStore,
@@ -31,22 +35,22 @@ use crate::{
 use belt::{Belt, BeltLenType};
 use itertools::Itertools;
 use log::info;
-use petgraph::{
-    graph::NodeIndex,
-    prelude::StableDiGraph,
-    visit::{EdgeRef, NodeRef},
-    Direction::Outgoing,
-};
+use petgraph::{graph::NodeIndex, prelude::StableDiGraph, visit::EdgeRef, Direction::Outgoing};
 use rayon::iter::IntoParallelRefMutIterator;
 use rayon::iter::{IndexedParallelIterator, ParallelIterator};
 use smart::{BeltInserterInfo, InserterAdditionError, Side, SmartBelt, SpaceOccupiedError};
-use splitter::{Splitter, SplitterDistributionMode, SushiSplitter};
+use splitter::{PureSplitter, SplitterDistributionMode, SplitterSide, SushiSplitter};
 use sushi::{SushiBelt, SushiInfo};
 
 #[derive(Debug, PartialEq, Clone, Copy, serde::Deserialize, serde::Serialize)]
 enum FreeIndex {
     FreeIndex(BeltLenType),
     OldFreeIndex(BeltLenType),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+struct SplitterID {
+    index: u32,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -115,11 +119,14 @@ enum BeltGraphConnection<ItemIdxType: WeakIdxTrait> {
         dest_belt_pos: BeltLenType,
         filter: Item<ItemIdxType>,
     },
-    Connected, // Used for handling extremely long belts and splitters
-               // Always connects the end of the source to the beginning of the destination
+    /// Used for handling extremely long belts and splitters
+    /// Always connects the end of the source to the beginning of the destination
+    Connected {
+        filter: Option<Item<ItemIdxType>>,
+    },
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct InnerBeltStore<ItemIdxType: WeakIdxTrait> {
     sushi_belts: Vec<SushiBelt<ItemIdxType>>,
     sushi_belt_holes: Vec<usize>,
@@ -130,31 +137,107 @@ pub struct InnerBeltStore<ItemIdxType: WeakIdxTrait> {
 
     pure_splitters: Box<[SplitterStore<ItemIdxType>]>,
 
-    sushi_splitters: Vec<SushiSplitter>,
+    sushi_splitters: Vec<SushiSplitter<ItemIdxType>>,
+    sushi_splitter_connections: Vec<[[AnyBelt<ItemIdxType>; 2]; 2]>,
     sushi_splitter_holes: Vec<usize>,
 
     belt_update_timers: Box<[u8]>,
 }
 
+impl<ItemIdxType: WeakIdxTrait> Clone for InnerBeltStore<ItemIdxType> {
+    fn clone(&self) -> Self {
+        Self {
+            sushi_belts: self.sushi_belts.clone(),
+            sushi_belt_holes: self.sushi_belt_holes.clone(),
+            smart_belts: self.smart_belts.clone(),
+            belt_belt_inserters: self.belt_belt_inserters.clone(),
+            pure_splitters: self.pure_splitters.clone(),
+            sushi_splitters: self
+                .sushi_splitters
+                .iter()
+                .map(|sushi_splitter| unsafe {
+                    // SAFETY:
+                    // The only point in the code, where we use a & for mutating the unsafe cell is during the belt update.
+                    // The Belt update requires a &mut of either self.smart_belts or self.sushi_belts.
+                    // We currently hold a & of both of them, so no &mut can exist.
+                    sushi_splitter.unsafe_clone()
+                })
+                .collect(),
+            sushi_splitter_connections: self.sushi_splitter_connections.clone(),
+            sushi_splitter_holes: self.sushi_splitter_holes.clone(),
+            belt_update_timers: self.belt_update_timers.clone(),
+        }
+    }
+}
+
+impl<ItemIdxType: WeakIdxTrait> serde::Serialize for InnerBeltStore<ItemIdxType>
+where
+    ItemIdxType: serde::Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        /// CONSTRUCTING THIS IS unsafe, since it requires a precondition or the trait impl will cause UB
+        struct SushiSplitterWrapper<'a, ItemIdxType: WeakIdxTrait> {
+            inner: &'a Vec<SushiSplitter<ItemIdxType>>,
+        }
+
+        impl<'a, ItemIdxType: WeakIdxTrait> serde::Serialize for SushiSplitterWrapper<'a, ItemIdxType>
+        where
+            ItemIdxType: serde::Serialize,
+        {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                let mut seq = serializer.serialize_seq(Some(self.inner.len()))?;
+                for sushi_splitter in self.inner {
+                    // SAFETY:
+                    // This is safe, since SushiSplitterWrapper may only be constructed when no writes on the inner SushiSplitters are occuring
+                    unsafe {
+                        sushi_splitter.unsafe_serialize_elem::<S>(&mut seq)?;
+                    }
+                }
+                seq.end()
+            }
+        }
+
+        let mut state = serializer.serialize_struct("InnerBeltStore", 9)?;
+        state.serialize_field("sushi_belts", &self.sushi_belts)?;
+        state.serialize_field("sushi_belt_holes", &self.sushi_belt_holes)?;
+        state.serialize_field("smart_belts", &self.smart_belts)?;
+        state.serialize_field("belt_belt_inserters", &self.belt_belt_inserters)?;
+        state.serialize_field("pure_splitters", &self.pure_splitters)?;
+        state.serialize_field(
+            "sushi_splitters",
+            // SAFETY:
+            // The only point in the code, where we use a & for mutating the unsafe cell is during the belt update.
+            // The Belt update requires a &mut of either self.smart_belts or self.sushi_belts.
+            // We currently hold a & of both of them, so no &mut can exist.
+            &SushiSplitterWrapper {
+                inner: &self.sushi_splitters,
+            },
+        )?;
+        state.serialize_field(
+            "sushi_splitter_connections",
+            &self.sushi_splitter_connections,
+        )?;
+        state.serialize_field("sushi_splitter_holes", &self.sushi_splitter_holes)?;
+        state.serialize_field("belt_update_timers", &self.belt_update_timers)?;
+        state.end()
+    }
+}
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct SplitterStore<ItemIdxType: WeakIdxTrait> {
     // TODO: Holes
-    pub pure_splitters: Vec<Splitter>,
+    pub pure_splitters: Vec<PureSplitter>,
 
     item: PhantomData<ItemIdxType>,
 }
 
-impl<ItemIdxType: IdxTrait> SplitterStore<ItemIdxType> {
-    pub fn get_splitter_belt_ids<'a>(
-        &'a self,
-        id: usize,
-    ) -> [impl IntoIterator<Item = usize> + use<'a, ItemIdxType>; 2] {
-        [
-            self.pure_splitters[id].input_belts.iter().copied(),
-            self.pure_splitters[id].output_belts.iter().copied(),
-        ]
-    }
-}
+impl<ItemIdxType: IdxTrait> SplitterStore<ItemIdxType> {}
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 enum AnyBeltBeltInserter {
@@ -248,25 +331,145 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
         &'a self,
         item: Item<ItemIdxType>,
         id: usize,
-    ) -> [impl IntoIterator<Item = BeltId<ItemIdxType>> + use<'a, ItemIdxType>; 2] {
-        let index_to_id = move |index| BeltId { item, index };
-
-        let [input, output] = self.pure_splitters[usize_from(item.id)].get_splitter_belt_ids(id);
-
-        [
-            input.into_iter().map(index_to_id),
-            output.into_iter().map(index_to_id),
-        ]
+    ) -> [[AnyBelt<ItemIdxType>; 2]; 2] {
+        info!("Had to search for splitter belt ids!");
+        todo!()
     }
 
-    fn get_sushi_splitter_belt_ids<'a>(
-        &'a self,
-        id: usize,
-    ) -> [impl IntoIterator<Item = usize> + use<'a, ItemIdxType>; 2] {
-        [
-            self.sushi_splitters[id].input_belts.iter().copied(),
-            self.sushi_splitters[id].output_belts.iter().copied(),
-        ]
+    fn get_sushi_splitter_belt_ids<'a>(&'a self, id: SplitterID) -> [[AnyBelt<ItemIdxType>; 2]; 2] {
+        let mut maybe_ret = self.sushi_splitter_connections[id.index as usize].clone();
+
+        for side in SplitterSide::iter() {
+            let input_belt = &mut maybe_ret[0][usize::from(bool::from(side))];
+
+            let needs_update = match input_belt {
+                AnyBelt::Smart(belt_id) => {
+                    if let Some((out_id, out_side)) = self.get_smart(*belt_id).output_splitter {
+                        out_id != id || out_side != side
+                    } else {
+                        true
+                    }
+                },
+                AnyBelt::Sushi(sushi_index) => {
+                    if let Some((out_id, out_side)) = self.get_sushi(*sushi_index).output_splitter {
+                        out_id != id || out_side != side
+                    } else {
+                        true
+                    }
+                },
+            };
+
+            if needs_update {
+                *input_belt = self.get_sushi_splitter_belt_ids_uncached_input(id, side);
+            }
+        }
+
+        for side in SplitterSide::iter() {
+            let output_belt = &mut maybe_ret[1][usize::from(bool::from(side))];
+
+            let needs_update = match output_belt {
+                AnyBelt::Smart(belt_id) => {
+                    if let Some((in_id, in_side)) = self.get_smart(*belt_id).input_splitter {
+                        in_id != id || in_side != side
+                    } else {
+                        true
+                    }
+                },
+                AnyBelt::Sushi(sushi_index) => {
+                    if let Some((in_id, in_side)) = self.get_sushi(*sushi_index).input_splitter {
+                        in_id != id || in_side != side
+                    } else {
+                        true
+                    }
+                },
+            };
+
+            if needs_update {
+                *output_belt = self.get_sushi_splitter_belt_ids_uncached_output(id, side);
+            }
+        }
+
+        maybe_ret
+    }
+
+    fn get_sushi_splitter_belt_ids_uncached_input(
+        &self,
+        id: SplitterID,
+        side: SplitterSide,
+    ) -> AnyBelt<ItemIdxType> {
+        info!("Had to search for splitter belt ids!");
+
+        for (item_index, store) in self.smart_belts.iter().enumerate() {
+            let item = Item {
+                id: ItemIdxType::try_from(item_index).unwrap(),
+            };
+
+            let index = store.belts.iter().position(|belt| {
+                if let Some((splitter_id, splitter_side)) = belt.input_splitter {
+                    splitter_id == id && splitter_side == side
+                } else {
+                    false
+                }
+            });
+
+            if let Some(index) = index {
+                return AnyBelt::Smart(BeltId { item, index: index });
+            }
+        }
+
+        let index = self.sushi_belts.iter().position(|belt| {
+            if let Some((splitter_id, splitter_side)) = belt.input_splitter {
+                splitter_id == id && splitter_side == side
+            } else {
+                false
+            }
+        });
+
+        if let Some(index) = index {
+            return AnyBelt::Sushi(index);
+        }
+
+        unreachable!("Splitter is not connected to any belt (including its internal one)");
+    }
+
+    fn get_sushi_splitter_belt_ids_uncached_output(
+        &self,
+        id: SplitterID,
+        side: SplitterSide,
+    ) -> AnyBelt<ItemIdxType> {
+        info!("Had to search for splitter belt ids!");
+
+        for (item_index, store) in self.smart_belts.iter().enumerate() {
+            let item = Item {
+                id: ItemIdxType::try_from(item_index).unwrap(),
+            };
+
+            let index = store.belts.iter().position(|belt| {
+                if let Some((splitter_id, splitter_side)) = belt.output_splitter {
+                    splitter_id == id && splitter_side == side
+                } else {
+                    false
+                }
+            });
+
+            if let Some(index) = index {
+                return AnyBelt::Smart(BeltId { item, index: index });
+            }
+        }
+
+        let index = self.sushi_belts.iter().position(|belt| {
+            if let Some((splitter_id, splitter_side)) = belt.output_splitter {
+                splitter_id == id && splitter_side == side
+            } else {
+                false
+            }
+        });
+
+        if let Some(index) = index {
+            return AnyBelt::Sushi(index);
+        }
+
+        unreachable!("Splitter is not connected to any belt (including its internal one)");
     }
 
     fn remove_sushi_belt(&mut self, id: usize) -> SushiBelt<ItemIdxType> {
@@ -274,6 +477,13 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
         mem::swap(&mut temp, &mut self.sushi_belts[id]);
         self.sushi_belt_holes.push(id);
         temp
+    }
+
+    fn try_get_smart(&self, smart_belt_id: BeltId<ItemIdxType>) -> Option<&SmartBelt<ItemIdxType>> {
+        self.smart_belts
+            .get(usize_from(smart_belt_id.item.id))?
+            .belts
+            .get(smart_belt_id.index)
     }
 
     fn get_smart(&self, smart_belt_id: BeltId<ItemIdxType>) -> &SmartBelt<ItemIdxType> {
@@ -895,7 +1105,7 @@ pub enum SplitterTileId {
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 enum AnySplitter<ItemIdxType: WeakIdxTrait> {
     Pure(Item<ItemIdxType>, usize),
-    Sushi(usize),
+    Sushi(SplitterID),
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -949,6 +1159,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                 .into_boxed_slice(),
 
                 sushi_splitters: vec![],
+                sushi_splitter_connections: vec![],
                 sushi_splitter_holes: vec![],
 
                 belt_update_timers: vec![0; data_store.belt_infos.len()].into_boxed_slice(),
@@ -1009,7 +1220,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         AnyBelt::Sushi(idx) => {
                             match connection_type {
                                 BeltGraphConnection::Sideload { dest_belt_pos: _ }
-                                | BeltGraphConnection::Connected => {
+                                | BeltGraphConnection::Connected { filter: None } => {
                                     // Every item on the belt could end up on out belt!
 
                                     match store.try_make_belt_pure(idx, *source_tile_id, bias) {
@@ -1029,7 +1240,10 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                                         },
                                     }
                                 },
-                                BeltGraphConnection::BeltBeltInserter {
+                                BeltGraphConnection::Connected {
+                                    filter: Some(filter),
+                                }
+                                | BeltGraphConnection::BeltBeltInserter {
                                     source_belt_pos: _,
                                     dest_belt_pos: _,
                                     filter,
@@ -1190,7 +1404,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     // TODO: Fix BeltBeltInserter inserter
                     todo!()
                 },
-                BeltGraphConnection::Connected => {
+                BeltGraphConnection::Connected { .. } => {
                     // TODO: Fix Connection inserter
                     todo!()
                 },
@@ -1244,7 +1458,10 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     },
                     filter,
                 },
-                BeltGraphConnection::Connected => BeltGraphConnection::Connected,
+                // TODO: Is this correct?
+                BeltGraphConnection::Connected { filter } => {
+                    BeltGraphConnection::Connected { filter }
+                },
             };
 
             if source == self.belt_graph_lookup[&back_tile_id] {
@@ -1433,7 +1650,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             .into_iter()
             .flat_map(|(belt, connection)| match connection {
                 BeltGraphConnection::Sideload { dest_belt_pos: _ }
-                | BeltGraphConnection::Connected => {
+                | BeltGraphConnection::Connected { filter: None } => {
                     self.get_items_which_could_end_up_on_that_belt(*belt, dedup, done);
                     done.get(belt)
                         .unwrap_or(&vec![])
@@ -1441,7 +1658,10 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         .copied()
                         .collect::<Vec<_>>()
                 },
-                BeltGraphConnection::BeltBeltInserter {
+                BeltGraphConnection::Connected {
+                    filter: Some(filter),
+                }
+                | BeltGraphConnection::BeltBeltInserter {
                     source_belt_pos: _,
                     dest_belt_pos: _,
                     filter,
@@ -1482,6 +1702,14 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                 .expect("Belt Timer wrapped!");
         }
 
+        {
+            profiling::scope!("Update Splitters");
+            self.inner
+                .sushi_splitters
+                .par_iter_mut()
+                .for_each(|splitter| splitter.update());
+        }
+
         // Update all the "Pure Belts"
         self.inner
             .smart_belts
@@ -1513,7 +1741,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         for (belt, ty) in belt_store.belts.iter_mut().zip(&belt_store.belt_ty) {
                             // TODO: Avoid last minute decision making
                             if self.inner.belt_update_timers[usize::from(*ty)] >= 120 {
-                                belt.update();
+                                belt.update(&self.inner.sushi_splitters);
                             }
                             belt.update_inserters(
                                 item_storages,
@@ -1522,12 +1750,11 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                                 grid_size,
                             );
                         }
-                        
                     }
                     // {
                     //     profiling::scope!("Update BeltStorageInserters");
                     //     for belt in &mut belt_store.belts {
-                            
+
                     //     }
                     // }
 
@@ -1592,7 +1819,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                 .par_iter_mut()
                 .for_each(|sushi_belt| {
                     if self.inner.belt_update_timers[usize::from(sushi_belt.ty)] >= 120 {
-                        sushi_belt.update();
+                        sushi_belt.update(&self.inner.sushi_splitters);
                     }
                 });
         }
@@ -1615,36 +1842,14 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
     ) -> [[BeltTileId<ItemIdxType>; 2]; 2] {
         let belts: [[AnyBelt<ItemIdxType>; 2]; 2] = match splitter_id {
             SplitterTileId::Any(index) => match self.any_splitters[index] {
-                AnySplitter::Pure(item, id) => self
-                    .inner
-                    .get_pure_splitter_belt_ids(item, id)
-                    .into_iter()
-                    .map(|v| {
-                        v.into_iter()
-                            .map(|belt_id| AnyBelt::Smart(belt_id))
-                            .collect_array()
-                            .unwrap()
-                    })
-                    .collect_array()
-                    .unwrap(),
-                AnySplitter::Sushi(id) => self
-                    .inner
-                    .get_sushi_splitter_belt_ids(id)
-                    .into_iter()
-                    .map(|v| {
-                        v.into_iter()
-                            .map(|index| AnyBelt::Sushi(index))
-                            .collect_array()
-                            .unwrap()
-                    })
-                    .collect_array()
-                    .unwrap(),
+                AnySplitter::Pure(item, id) => self.inner.get_pure_splitter_belt_ids(item, id),
+                AnySplitter::Sushi(id) => self.inner.get_sushi_splitter_belt_ids(id),
             },
         };
 
         let [inputs, outputs] = belts;
 
-        // FIXME: This is O(n) over the number of splitters :/
+        // FIXME: This is O(n) over the number of belts :/
         [
             inputs
                 .into_iter()
@@ -2038,12 +2243,15 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
 
                     edges.map(|edge| match edge.weight() {
                         BeltGraphConnection::BeltBeltInserter {
-                            source_belt_pos,
-                            dest_belt_pos,
+                            source_belt_pos: _,
+                            dest_belt_pos: _,
                             filter,
+                        }
+                        | BeltGraphConnection::Connected {
+                            filter: Some(filter),
                         } => SushiInfo::Pure(Some(*filter)),
                         BeltGraphConnection::Sideload { dest_belt_pos: _ }
-                        | BeltGraphConnection::Connected => {
+                        | BeltGraphConnection::Connected { filter: None } => {
                             match self.belt_graph.node_weight(edge.source()).unwrap() {
                                 BeltTileId::AnyBelt(index, _) => match self.any_belts[*index] {
                                     AnyBelt::Smart(belt_id) => SushiInfo::Pure(Some(belt_id.item)),
@@ -2521,10 +2729,110 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
     }
 
     pub fn add_splitter(&mut self, info: SplitterInfo<ItemIdxType>) -> SplitterTileId {
-        todo!()
+        let new_splitter = SushiSplitter {
+            in_mode: info.in_mode,
+            out_mode: info.out_mode,
+            inputs: [UnsafeCell::new(None), UnsafeCell::new(None)],
+            outputs: [UnsafeCell::new(None), UnsafeCell::new(None)],
+        };
+
+        let new_splitter_connections = [
+            info.input_belts.map(|any| match any {
+                BeltTileId::AnyBelt(idx, _) => match self.any_belts[idx] {
+                    AnyBelt::Smart(belt_id) => AnyBelt::Smart(belt_id),
+                    AnyBelt::Sushi(index) => AnyBelt::Sushi(index),
+                },
+            }),
+            info.output_belts.map(|any| match any {
+                BeltTileId::AnyBelt(idx, _) => match self.any_belts[idx] {
+                    AnyBelt::Smart(belt_id) => AnyBelt::Smart(belt_id),
+                    AnyBelt::Sushi(index) => AnyBelt::Sushi(index),
+                },
+            }),
+        ];
+
+        let index = if let Some(hole_idx) = self.inner.sushi_splitter_holes.pop() {
+            self.inner.sushi_splitters[hole_idx] = new_splitter;
+            self.inner.sushi_splitter_connections[hole_idx] = new_splitter_connections;
+            hole_idx
+        } else {
+            self.inner.sushi_splitters.push(new_splitter);
+            self.inner
+                .sushi_splitter_connections
+                .push(new_splitter_connections);
+            self.inner.sushi_splitters.len() - 1
+        };
+
+        let any_idx = if let Some(hole_idx) = self.any_splitter_holes.pop() {
+            self.any_splitters[hole_idx] = AnySplitter::Sushi(SplitterID {
+                index: index.try_into().unwrap(),
+            });
+            hole_idx
+        } else {
+            self.any_splitters.push(AnySplitter::Sushi(SplitterID {
+                index: index.try_into().unwrap(),
+            }));
+            self.any_splitters.len() - 1
+        };
+
+        // Since we distribute the SplitterID once for each side, no two belts point to the same UnsafeCell in the splitter, maintaining the safety invariant
+        for side in SplitterSide::iter() {
+            let belt_id = info.input_belts[usize::from(bool::from(side))];
+
+            match belt_id {
+                BeltTileId::AnyBelt(idx, _) => match self.any_belts[idx] {
+                    AnyBelt::Smart(belt_id) => {
+                        self.inner.get_smart_mut(belt_id).add_output_splitter(
+                            SplitterID {
+                                index: index.try_into().unwrap(),
+                            },
+                            side,
+                        )
+                    },
+                    AnyBelt::Sushi(sushi_index) => {
+                        self.inner.get_sushi_mut(sushi_index).add_output_splitter(
+                            SplitterID {
+                                index: index.try_into().unwrap(),
+                            },
+                            side,
+                        )
+                    },
+                },
+            }
+        }
+
+        for side in SplitterSide::iter() {
+            // This is flipped from the add_x_splitter calls below since this is from the POV of the splitter and those calls are from the pow of the belt
+            let belt_id = info.output_belts[usize::from(bool::from(side))];
+
+            match belt_id {
+                BeltTileId::AnyBelt(idx, _) => match self.any_belts[idx] {
+                    AnyBelt::Smart(belt_id) => {
+                        self.inner.get_smart_mut(belt_id).add_input_splitter(
+                            SplitterID {
+                                index: index.try_into().unwrap(),
+                            },
+                            side,
+                        )
+                    },
+                    AnyBelt::Sushi(sushi_index) => {
+                        self.inner.get_sushi_mut(sushi_index).add_input_splitter(
+                            SplitterID {
+                                index: index.try_into().unwrap(),
+                            },
+                            side,
+                        )
+                    },
+                },
+            }
+        }
+
+        SplitterTileId::Any(any_idx)
     }
 
-    pub fn remove_splitter(&mut self, index: usize) {
+    /// Remove the Splitter from the update list and its connections to belts.
+    /// Does NOT remove any length of belt originally associated with a splitter world entity!
+    pub fn remove_splitter(&mut self, tile_id: SplitterTileId) {
         todo!()
     }
 

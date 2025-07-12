@@ -1,4 +1,5 @@
 use eframe::EventLoopBuilderHook;
+use factory::rendering::app_state::AppState;
 use factory::rendering::eframe_app;
 use factory::rendering::window::LoadedGameSized;
 
@@ -34,7 +35,7 @@ fn start_ui() -> (
     let (ctx_send, ctx_recv) = channel();
 
     let ds = Arc::new(Mutex::new(DATA_STORE.clone()));
-    let gs = Arc::new(Mutex::new(GameState::new(&DATA_STORE)));
+    let gs = Arc::new(Mutex::new(GameState::new(Default::default(), &DATA_STORE)));
 
     let gs_move = gs.clone();
     let ds_move = ds.clone();
@@ -76,7 +77,7 @@ fn start_ui() -> (
             format!("FactoryGame Test Runner").as_str(),
             native_options,
             Box::new(move |cc| {
-                let mut app = eframe_app::App::new(cc, send);
+                let mut app = eframe_app::App::new(cc);
 
                 ctx_send.send(cc.egui_ctx.clone()).unwrap();
 
@@ -91,6 +92,11 @@ fn start_ui() -> (
                     }),
                     tick: Arc::new(AtomicU64::new(0)),
                 });
+
+                let (send, _recv) = channel();
+
+                app.input_sender = Some(send);
+                app.state = AppState::Ingame;
 
                 Ok(Box::new(app))
             }),
@@ -139,7 +145,7 @@ fn crashing_replays_visual(
     let ds_move = start_ui.1.clone();
 
     replay.run_with(gs_move.clone(), || {
-        // sleep(Duration::from_millis(1));
+        sleep(Duration::from_millis(1));
     });
 
     for _ in 0..RUNTIME_AFTER_PRESUMED_CRASH {

@@ -122,8 +122,9 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     let splitter = SplitterInfo {
         in_mode: in_mode.unwrap_or_default(),
         out_mode: out_mode.unwrap_or_default(),
-        input_belts: [belt_connections[0][0], belt_connections[1][0]],
-        output_belts: [belt_connections[0][1], belt_connections[1][1]],
+        // TODO: Figure out the correct order
+        input_belts: [belt_connections[0][1], belt_connections[1][1]],
+        output_belts: [belt_connections[0][0], belt_connections[1][0]],
     };
 
     let id = game_state
@@ -407,7 +408,7 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                                 * u16::try_from(
                                     new_belt_pos.x.abs_diff(pos.x) + new_belt_pos.y.abs_diff(pos.y),
                                 )
-                                .unwrap() + 
+                                .unwrap() +
                                 // The newly placed tile itself
                                 BELT_LEN_PER_TILE,
                             Side::FRONT,

@@ -84,7 +84,6 @@ mod test {
                 "gb/s {:?}",
                 size as f64 / (time / NUM_ITER).as_secs_f64() / 1_000_000_000.0
             );
-            y
         });
 
         loop {

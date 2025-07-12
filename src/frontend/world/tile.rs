@@ -1143,29 +1143,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 direction,
                 id: splitter_id,
             } => {
-                let ids = sim_state
-                    .factory
-                    .belts
-                    .get_splitter_belt_ids(splitter_id)
-                    .into_iter()
-                    .flatten();
-
-                for id in ids {
-                    let chunk_pos_right = self.get_chunk_pos_for_tile(pos + direction.turn_right());
-
-                    self.belt_lookup
-                        .belt_id_to_chunks
-                        .entry(id)
-                        .or_default()
-                        .extend([chunk_pos, chunk_pos_right]);
-
-                    self.belt_recieving_input_directions
-                        .entry(pos + direction)
-                        .or_default()[direction.reverse()] = true;
-                    self.belt_recieving_input_directions
-                        .entry(pos + direction.turn_right() + direction)
-                        .or_default()[direction.reverse()] = true;
-                }
+                self.belt_recieving_input_directions
+                    .entry(pos + direction)
+                    .or_default()[direction.reverse()] = true;
+                self.belt_recieving_input_directions
+                    .entry(pos + direction.turn_right() + direction)
+                    .or_default()[direction.reverse()] = true;
             },
             Entity::Inserter { info, .. } => match info {
                 InserterInfo::NotAttached { .. } => {
@@ -2028,7 +2011,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             *id = new_id;
                         }
                     },
-                    Entity::Splitter { .. } => todo!(),
+                    Entity::Splitter { .. } => {},
                     Entity::Inserter { info, .. } => match info {
                         InserterInfo::NotAttached { .. } => {},
                         InserterInfo::Attached {
@@ -2091,7 +2074,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                 .expect("belt_pos wrapped!");
                         }
                     },
-                    Entity::Splitter { .. } => todo!(),
+                    Entity::Splitter { .. } => {},
                     Entity::Inserter { info, .. } => match info {
                         InserterInfo::NotAttached { .. } => {},
                         InserterInfo::Attached {

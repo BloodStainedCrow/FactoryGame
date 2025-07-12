@@ -10,11 +10,14 @@ use crate::{
 
 use super::{
     belt::{Belt, BeltLenType, ItemInfo, NoSpaceError},
+    splitter::{SplitterSide, SushiSplitter},
     sushi::{SushiBelt, SushiInserterStore},
-    FreeIndex, Inserter,
+    FreeIndex, Inserter, SplitterID,
 };
 use crate::inserter::FakeUnionStorage;
 use crate::inserter::HAND_SIZE;
+
+type TEST = SmartBelt<u8>;
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -31,6 +34,9 @@ pub struct SmartBelt<ItemIdxType: WeakIdxTrait> {
     pub(super) item: Item<ItemIdxType>,
 
     pub last_moving_spot: BeltLenType,
+
+    pub(super) input_splitter: Option<(SplitterID, SplitterSide)>,
+    pub(super) output_splitter: Option<(SplitterID, SplitterSide)>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default)]
@@ -82,6 +88,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             item,
 
             last_moving_spot: len,
+
+            input_splitter: None,
+            output_splitter: None,
         }
     }
 
@@ -101,6 +110,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             item,
 
             last_moving_spot,
+
+            input_splitter,
+            output_splitter,
         } = self;
 
         SushiBelt {
@@ -122,12 +134,57 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             },
 
             last_moving_spot,
+
+            input_splitter,
+            output_splitter,
         }
     }
 
     pub fn make_circular(&mut self) {
+        assert!(
+            self.input_splitter.is_none(),
+            "A circular belt may NOT be connected to a splitter"
+        );
+        assert!(
+            self.output_splitter.is_none(),
+            "A circular belt may NOT be connected to a splitter"
+        );
         self.is_circular = true;
         self.last_moving_spot = 0;
+    }
+
+    pub fn add_input_splitter(&mut self, id: SplitterID, side: SplitterSide) {
+        assert!(
+            self.input_splitter.is_none(),
+            "Tried to add splitter where one already existed"
+        );
+        assert!(
+            !self.is_circular,
+            "A circular belt can never be attached to a splitter!"
+        );
+
+        self.input_splitter = Some((id, side));
+    }
+
+    pub fn add_output_splitter(&mut self, id: SplitterID, side: SplitterSide) {
+        assert!(
+            self.output_splitter.is_none(),
+            "Tried to add splitter where one already existed"
+        );
+        assert!(
+            !self.is_circular,
+            "A circular belt can never be attached to a splitter!"
+        );
+
+        self.output_splitter = Some((id, side));
+    }
+
+    pub fn remove_input_splitter(&mut self) -> Option<(SplitterID, SplitterSide)> {
+        self.input_splitter.take()
+    }
+
+    pub fn remove_output_splitter(&mut self) -> Option<(SplitterID, SplitterSide)> {
+        self.output_splitter.take()
     }
 
     // pub fn get_take_item_fn<'a>(
@@ -678,7 +735,13 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             item,
 
             last_moving_spot: last_moving_spot_front,
-        } = front;
+
+            input_splitter: None,
+            output_splitter,
+        } = front
+        else {
+            unreachable!()
+        };
         // Important, first_free_index must ALWAYS be used using mod len
         let front_zero_index = usize::from(front_zero_index) % front_locs.len();
 
@@ -693,7 +756,13 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             item,
 
             last_moving_spot: _,
-        } = back;
+
+            input_splitter,
+            output_splitter: None,
+        } = back
+        else {
+            unreachable!()
+        };
 
         // HUGE FIXME FIXME FIXME
         //assert_eq!(
@@ -746,6 +815,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             item,
 
             last_moving_spot: last_moving_spot_front,
+
+            input_splitter,
+            output_splitter,
         }
     }
 
@@ -767,7 +839,15 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             item,
 
             last_moving_spot,
+
+            input_splitter,
+            output_splitter,
         } = self;
+
+        match side {
+            Side::FRONT => assert!(output_splitter.is_none()),
+            Side::BACK => assert!(input_splitter.is_none()),
+        }
 
         assert_eq!(ty, empty.ty);
 
@@ -823,6 +903,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
                 Side::FRONT => 0,
                 Side::BACK => last_moving_spot,
             },
+
+            input_splitter,
+            output_splitter,
         };
 
         new.find_and_update_real_first_free_index();
@@ -833,6 +916,8 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
     pub fn break_belt_at(&mut self, belt_pos_to_break_at: u16) -> Option<Self> {
         // TODO: Is this correct
         if self.is_circular {
+            assert!(self.input_splitter.is_none());
+            assert!(self.output_splitter.is_none());
             self.is_circular = false;
             self.first_free_index = FreeIndex::OldFreeIndex(0);
             self.zero_index = belt_pos_to_break_at;
@@ -885,6 +970,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             *offs = new_offs;
         }
 
+        // Since we split off the back portion, it will own our input splitter if we have one
+        let input_splitter = self.input_splitter.take();
+
         let new_belt = Self {
             ty: self.ty,
 
@@ -899,6 +987,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             item: self.item,
 
             last_moving_spot: self.last_moving_spot.saturating_sub(belt_pos_to_break_at),
+
+            input_splitter,
+            output_splitter: None,
         };
 
         Some(new_belt)
@@ -985,6 +1076,11 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
         pos: BeltLenType,
         item: Item<ItemIdxType>,
     ) -> Result<(), super::belt::NoSpaceError> {
+        debug_assert_eq!(
+            self.item, item,
+            "Tried to insert wrong item onto SmartBelt, resulting in item transmutation"
+        );
+
         if Belt::<ItemIdxType>::query_item(self, pos).is_none() {
             self.locs[self.into_loc_index(pos)] = true;
 
@@ -1005,12 +1101,51 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
     }
 
     #[allow(clippy::bool_assert_comparison)]
-    fn update(&mut self) {
+    fn update(&mut self, splitter_list: &[SushiSplitter<ItemIdxType>]) {
         if self.is_circular {
-            // Correctness: Since we always % len whenever we access using self.zero_index, we do not need to % len here
+            // Correctness: Since we always % len henever we access using self.zero_index, we do not need to % len here
             // TODO: This could overflow after usize::MAX ticks which is 9749040289 Years. Should be fine!
             self.zero_index += 1;
             return;
+        }
+
+        if let Some((output_id, side)) = &self.output_splitter {
+            if let Some(item) = self.query_item(0) {
+                let splitter_loc =
+                    &splitter_list[output_id.index as usize].inputs[usize::from(bool::from(*side))];
+
+                // SAFETY:
+                // This is the only place where we modify splitter_list from a &.
+                // This can never race since only one belt ever has the same values for output_id and side, so only a single belt will ever modify each splitter loc
+                let splitter_loc = unsafe { &mut *splitter_loc.get() };
+
+                dbg!(&splitter_loc);
+
+                if splitter_loc.is_none() {
+                    *splitter_loc = Some(item);
+                    let _ = self.remove_item(0);
+                }
+            }
+        }
+
+        if let Some((input_id, side)) = &self.input_splitter {
+            // Last pos
+            if self.query_item(self.get_len() - 1).is_none() {
+                let splitter_loc =
+                    &splitter_list[input_id.index as usize].outputs[usize::from(bool::from(*side))];
+
+                // SAFETY:
+                // This is the only place where we modify splitter_list from a &.
+                // This can never race since only one belt ever has the same values for output_id and side, so only a single belt will ever modify each splitter loc
+                let splitter_loc = unsafe { &mut *splitter_loc.get() };
+
+                if let Some(item) = *splitter_loc {
+                    *splitter_loc = None;
+                    let _ = self
+                        .try_insert_item(self.get_len() - 1, item)
+                        .expect("Should never fail!");
+                }
+            }
         }
 
         match self.first_free_index {
@@ -1118,18 +1253,19 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
         self.locs.len().try_into().unwrap()
     }
 
-    fn query_item(&self, pos: BeltLenType) -> Option<ItemInfo<ItemIdxType>> {
+    fn query_item(&self, pos: BeltLenType) -> Option<Item<ItemIdxType>> {
         if self.locs[self.into_loc_index(pos)] {
-            Some(ItemInfo::Implicit)
+            Some(self.item)
         } else {
             None
         }
     }
 
-    fn remove_item(&mut self, pos: BeltLenType) -> Option<ItemInfo<ItemIdxType>> {
+    fn remove_item(&mut self, pos: BeltLenType) -> Option<Item<ItemIdxType>> {
         if self.locs[self.into_loc_index(pos)] {
             self.locs[self.into_loc_index(pos)] = false;
-            Some(ItemInfo::Implicit)
+            self.update_first_free_pos(pos);
+            Some(self.item)
         } else {
             None
         }

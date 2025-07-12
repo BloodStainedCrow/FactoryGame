@@ -11,7 +11,8 @@ use crate::{
 use super::{
     belt::{Belt, BeltLenType},
     smart::{BeltInserterInfo, InserterStore, Side, SmartBelt, SpaceOccupiedError},
-    FreeIndex, Inserter,
+    splitter::{SplitterSide, SushiSplitter},
+    FreeIndex, Inserter, SplitterID,
 };
 use crate::inserter::FakeUnionStorage;
 
@@ -27,6 +28,9 @@ pub(super) struct SushiBelt<ItemIdxType: WeakIdxTrait> {
     pub(super) inserters: SushiInserterStore<ItemIdxType>,
 
     pub last_moving_spot: BeltLenType,
+
+    pub(super) input_splitter: Option<(SplitterID, SplitterSide)>,
+    pub(super) output_splitter: Option<(SplitterID, SplitterSide)>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -56,6 +60,9 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             },
 
             last_moving_spot: len,
+
+            input_splitter: None,
+            output_splitter: None,
         }
     }
 
@@ -350,6 +357,9 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             inserters: SushiInserterStore { inserters, offsets },
 
             last_moving_spot,
+
+            input_splitter,
+            output_splitter,
         } = self;
 
         SmartBelt {
@@ -377,8 +387,45 @@ ty,
             },
             item,
 
-            last_moving_spot
+            last_moving_spot,
+
+            input_splitter,
+            output_splitter
         }
+    }
+
+    pub fn add_input_splitter(&mut self, id: SplitterID, side: SplitterSide) {
+        assert!(
+            self.input_splitter.is_none(),
+            "Tried to add splitter where one already existed"
+        );
+        assert!(
+            !self.is_circular,
+            "A circular belt can never be attached to a splitter!"
+        );
+
+        self.input_splitter = Some((id, side));
+    }
+
+    pub fn add_output_splitter(&mut self, id: SplitterID, side: SplitterSide) {
+        assert!(
+            self.output_splitter.is_none(),
+            "Tried to add splitter where one already existed"
+        );
+        assert!(
+            !self.is_circular,
+            "A circular belt can never be attached to a splitter!"
+        );
+
+        self.output_splitter = Some((id, side));
+    }
+
+    pub fn remove_input_splitter(&mut self) -> Option<(SplitterID, SplitterSide)> {
+        self.input_splitter.take()
+    }
+
+    pub fn remove_output_splitter(&mut self) -> Option<(SplitterID, SplitterSide)> {
+        self.output_splitter.take()
     }
 
     pub fn break_belt_at(&mut self, belt_pos_to_break_at: u16) -> Option<Self> {
@@ -435,6 +482,9 @@ ty,
             *offs -= belt_pos_to_break_at
         }
 
+        // Since self will end up as the front half, any inputting splitter will end up at the back belt
+        let input_splitter = self.input_splitter.take();
+
         let new_belt = Self {
             ty: self.ty,
 
@@ -448,6 +498,9 @@ ty,
             },
 
             last_moving_spot: self.last_moving_spot.saturating_sub(belt_pos_to_break_at),
+
+            input_splitter,
+            output_splitter: None,
         };
 
         Some(new_belt)
@@ -472,7 +525,13 @@ ty,
             locs: front_locs,
             inserters: front_inserters,
             last_moving_spot: last_moving_spot_front,
-        } = front;
+
+            input_splitter: None,
+            output_splitter,
+        } = front
+        else {
+            unreachable!()
+        };
 
         // Important, first_free_index must ALWAYS be used using mod len
         let front_zero_index = usize::from(front_zero_index) % front_locs.len();
@@ -486,7 +545,13 @@ ty,
             locs: back_locs,
             inserters: mut back_inserters,
             last_moving_spot: _,
-        } = back;
+
+            input_splitter,
+            output_splitter: None,
+        } = back
+        else {
+            unreachable!()
+        };
 
         // HUGE FIXME FIXME FIXME
         // assert_eq!(ty_front, ty_back);
@@ -537,6 +602,19 @@ ty,
             inserters: new_inserters,
 
             last_moving_spot: last_moving_spot_front,
+
+            input_splitter,
+            output_splitter,
+        }
+    }
+
+    pub fn update_first_free_pos(&mut self, now_empty_pos: BeltLenType) {
+        match self.first_free_index {
+            FreeIndex::OldFreeIndex(index) | FreeIndex::FreeIndex(index) => {
+                if now_empty_pos <= index {
+                    self.first_free_index = FreeIndex::FreeIndex(now_empty_pos);
+                }
+            },
         }
     }
 
@@ -586,24 +664,20 @@ ty,
 }
 
 impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
-    fn query_item(
-        &self,
-        pos: super::belt::BeltLenType,
-    ) -> Option<super::belt::ItemInfo<ItemIdxType>> {
+    fn query_item(&self, pos: super::belt::BeltLenType) -> Option<Item<ItemIdxType>> {
         let pos = usize::from((self.zero_index + pos) % self.get_len());
 
-        self.locs[pos].map(|item| super::belt::ItemInfo::Sushi(item))
+        self.locs[pos].map(|item| item)
     }
 
-    fn remove_item(
-        &mut self,
-        pos: super::belt::BeltLenType,
-    ) -> Option<super::belt::ItemInfo<ItemIdxType>> {
-        let pos = usize::from((self.zero_index + pos) % self.get_len());
+    fn remove_item(&mut self, pos: super::belt::BeltLenType) -> Option<Item<ItemIdxType>> {
+        let pos_size = usize::from((self.zero_index + pos) % self.get_len());
 
-        self.locs[pos]
-            .take()
-            .map(|item| super::belt::ItemInfo::Sushi(item))
+        if self.locs[pos_size].is_some() {
+            self.update_first_free_pos(pos);
+        }
+
+        self.locs[pos_size].take().map(|item| item)
     }
 
     fn try_insert_item(
@@ -640,7 +714,44 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
     }
 
     #[profiling::function]
-    fn update(&mut self) {
+    fn update(&mut self, splitter_list: &[SushiSplitter<ItemIdxType>]) {
+        if let Some((output_id, side)) = &self.output_splitter {
+            if let Some(item) = self.query_item(0) {
+                let splitter_loc =
+                    &splitter_list[output_id.index as usize].inputs[usize::from(bool::from(*side))];
+
+                // SAFETY:
+                // This is the only place where we modify splitter_list from a &.
+                // This can never race since only one belt ever has the same values for output_id and side, so only a single belt will ever modify each splitter loc
+                let splitter_loc = unsafe { &mut *splitter_loc.get() };
+
+                if splitter_loc.is_none() {
+                    *splitter_loc = Some(item);
+                    let _ = self.remove_item(0);
+                }
+            }
+        }
+
+        if let Some((input_id, side)) = &self.input_splitter {
+            // Last pos
+            if self.query_item(self.get_len() - 1).is_none() {
+                let splitter_loc =
+                    &splitter_list[input_id.index as usize].outputs[usize::from(bool::from(*side))];
+
+                // SAFETY:
+                // This is the only place where we modify splitter_list from a &.
+                // This can never race since only one belt ever has the same values for output_id and side, so only a single belt will ever modify each splitter loc
+                let splitter_loc = unsafe { &mut *splitter_loc.get() };
+
+                if let Some(item) = *splitter_loc {
+                    *splitter_loc = None;
+                    let _ = self
+                        .try_insert_item(self.get_len() - 1, item)
+                        .expect("Should never fail!");
+                }
+            }
+        }
+
         if self.query_item(0).is_none() {
             // Correctness: Since we always % len whenever we access using self.zero_index, we do not need to % len here
             // TODO: This could overflow after usize::MAX ticks which is 9749040289 Years. Should be fine!
@@ -805,7 +916,15 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
                 mut inserters,
 
                 last_moving_spot,
+
+                input_splitter,
+                output_splitter,
             } = slf;
+
+            match side {
+                Side::FRONT => assert!(output_splitter.is_none()),
+                Side::BACK => assert!(input_splitter.is_none()),
+            }
 
             // Important, first_free_index must ALWAYS be used using mod len
             let zero_index = zero_index % len;
@@ -840,9 +959,11 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
             };
 
             if side == Side::FRONT {
-                inserters.offsets[0] = inserters.offsets[0]
-                    .checked_add(front_extension_amount)
-                    .expect("Max length of belt (u16::MAX) reached");
+                if !inserters.offsets.is_empty() {
+                    inserters.offsets[0] = inserters.offsets[0]
+                        .checked_add(front_extension_amount)
+                        .expect("Max length of belt (u16::MAX) reached");
+                }
             }
 
             Self {
@@ -855,6 +976,9 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
                 inserters,
 
                 last_moving_spot,
+
+                input_splitter,
+                output_splitter,
             }
         });
 

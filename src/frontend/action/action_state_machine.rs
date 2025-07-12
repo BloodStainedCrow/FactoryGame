@@ -588,14 +588,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key1) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::MiningDrill {
+                    PlaceEntityType::Splitter {
                         ty: 0,
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
                             self.local_player_pos,
                             self.current_mouse_pos,
                         ),
-                        rotation: Dir::North,
+                        direction: Dir::North,
+                        in_mode: None,
+                        out_mode: None,
                     },
                 ));
                 vec![]
