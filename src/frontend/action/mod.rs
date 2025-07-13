@@ -4,7 +4,7 @@ use place_entity::PlaceEntityInfo;
 use place_tile::PlaceFloorTileByHandInfo;
 use set_recipe::SetRecipeInfo;
 
-use crate::item::WeakIdxTrait;
+use crate::{item::WeakIdxTrait, research::Technology};
 
 use super::world::Position;
 
@@ -46,6 +46,10 @@ pub enum ActionType<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     },
 
     Remove(Position),
+
+    SetActiveResearch {
+        tech: Option<Technology>,
+    },
 
     Ping(Position),
 }

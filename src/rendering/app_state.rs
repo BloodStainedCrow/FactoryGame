@@ -6,6 +6,7 @@ use crate::inserter::storage_storage_with_buckets::{
 use crate::inserter::{InserterState, HAND_SIZE};
 use crate::liquid::connection_logic::can_fluid_tanks_connect_to_single_connection;
 use crate::liquid::FluidConnectionDir;
+use crate::research::LabTickInfo;
 use crate::LoadedGameInfo;
 use crate::{
     belt::{BeltBeltInserterInfo, BeltStore},
@@ -49,7 +50,7 @@ use crate::{
 use itertools::Itertools;
 use log::{info, trace, warn};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::iter;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
@@ -79,6 +80,13 @@ pub struct GameState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub update_times: Timeline<UpdateTime>,
     #[serde(skip)]
     last_update_time: Option<Instant>,
+
+    pub settings: GameSettings,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct GameSettings {
+    pub show_unresearched_recipes: bool,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
@@ -94,10 +102,7 @@ impl<'a> AddAssign<&'a UpdateTime> for UpdateTime {
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, RecipeIdxType> {
     #[must_use]
-    pub fn new(
-        progress: Arc<AtomicU64>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Self {
+    pub fn new(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         Self {
             current_tick: 0,
             world: World::new(),
@@ -105,6 +110,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             statistics: GenStatistics::new(data_store),
             update_times: Timeline::new(false, data_store),
             last_update_time: None,
+            settings: GameSettings {
+                show_unresearched_recipes: false,
+            },
         }
     }
 
@@ -113,14 +121,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        let mut ret = Self {
-            current_tick: 0,
-            world: World::new(),
-            simulation_state: SimulationState::new(data_store),
-            statistics: GenStatistics::new(data_store),
-            update_times: Timeline::new(false, data_store),
-            last_update_time: None,
-        };
+        let mut ret = GameState::new(data_store);
 
         let file = File::open("test_blueprints/red_sci.bp").unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
@@ -163,21 +164,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        let mut ret = Self {
-            current_tick: 0,
-            world: World::new(),
-            simulation_state: SimulationState::new(data_store),
-            statistics: GenStatistics::new(data_store),
-            update_times: Timeline::new(false, data_store),
-            last_update_time: None,
-        };
+        let mut ret = GameState::new(data_store);
 
         let file = File::open("test_blueprints/red_and_green_with_clocking.bp").unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
 
         puffin::set_scopes_on(false);
-        let y_range = (0..12_000).step_by(4_000);
-        let x_range = (0..24_000).step_by(4_000);
+        let y_range = (0..40_000).step_by(4_000);
+        let x_range = (0..40_000).step_by(4_000);
 
         let total = y_range.size_hint().0 * x_range.size_hint().0;
 
@@ -214,14 +208,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        let mut ret = Self {
-            current_tick: 0,
-            world: World::new(),
-            simulation_state: SimulationState::new(data_store),
-            statistics: GenStatistics::new(data_store),
-            update_times: Timeline::new(false, data_store),
-            last_update_time: None,
-        };
+        let mut ret = GameState::new(data_store);
 
         let file = File::open("test_blueprints/red_sci_with_beacons_and_belts.bp").unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
@@ -255,14 +242,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        let mut ret = Self {
-            current_tick: 0,
-            world: World::new(),
-            simulation_state: SimulationState::new(data_store),
-            statistics: GenStatistics::new(data_store),
-            update_times: Timeline::new(false, data_store),
-            last_update_time: None,
-        };
+        let mut ret = GameState::new(data_store);
 
         let file = File::open("test_blueprints/lots_of_belts.bp").unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
@@ -282,14 +262,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        let mut ret = Self {
-            current_tick: 0,
-            world: World::new(),
-            simulation_state: SimulationState::new(data_store),
-            statistics: GenStatistics::new(data_store),
-            update_times: Timeline::new(false, data_store),
-            last_update_time: None,
-        };
+        let mut ret = GameState::new(data_store);
 
         let file = File::open("test_blueprints/solar_farm.bp").unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
@@ -310,14 +283,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        let mut ret = Self {
-            current_tick: 0,
-            world: World::new(),
-            simulation_state: SimulationState::new(data_store),
-            statistics: GenStatistics::new(data_store),
-            update_times: Timeline::new(false, data_store),
-            last_update_time: None,
-        };
+        let mut ret = GameState::new(data_store);
 
         let red = File::open("test_blueprints/eight_beacon_red_sci_with_storage.bp").unwrap();
         let red: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(red).unwrap();
@@ -332,14 +298,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     }
 
     pub fn new_with_bp(data_store: &DataStore<ItemIdxType, RecipeIdxType>, bp_path: &str) -> Self {
-        let mut ret = Self {
-            current_tick: 0,
-            world: World::new(),
-            simulation_state: SimulationState::new(data_store),
-            statistics: GenStatistics::new(data_store),
-            update_times: Timeline::new(false, data_store),
-            last_update_time: None,
-        };
+        let mut ret = GameState::new(data_store);
 
         let file = File::open(bp_path).unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
@@ -384,7 +343,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SimulationState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    tech_state: TechState,
+    pub tech_state: TechState,
     pub factory: Factory<ItemIdxType, RecipeIdxType>,
     // TODO:
 }
@@ -393,9 +352,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SimulationState<ItemIdxType
     #[must_use]
     pub fn new(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         Self {
-            tech_state: TechState {
-                current_technology: Some(Technology { id: 0 }),
-            },
+            tech_state: TechState::new(data_store),
             factory: Factory::new(data_store),
         }
     }
@@ -706,6 +663,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         for action in actions {
             // FIXME: I just clone for now
             match action.borrow().clone() {
+                ActionType::SetActiveResearch { tech } => {
+                    self.simulation_state.tech_state.current_technology = tech;
+                },
+
                 ActionType::PlaceFloorTile(place_floor_tile_by_hand_info) => {
                     let num_items_needed = match place_floor_tile_by_hand_info.ghost_info.position {
                         PositionInfo::Rect { pos, width, height } => width * height,
@@ -1912,19 +1873,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         //     // dbg!(num_assemblers);
         // }
 
-        let (tech_progress, recipe_tick_info): (ResearchProgress, RecipeTickInfo) = self
-            .simulation_state
-            .factory
-            .power_grids
-            .update(&self.simulation_state.tech_state, 0, data_store);
+        let (tech_progress, recipe_tick_info, lab_info): (
+            ResearchProgress,
+            RecipeTickInfo,
+            Option<LabTickInfo>,
+        ) = self.simulation_state.factory.power_grids.update(
+            &self.simulation_state.tech_state,
+            0,
+            data_store,
+        );
 
         self.simulation_state
             .tech_state
-            .apply_progress(tech_progress);
+            .apply_progress(tech_progress, data_store);
 
         self.statistics.append_single_set_of_samples((
             ProductionInfo::from_recipe_info(&recipe_tick_info, data_store),
-            ConsumptionInfo::from_recipe_info(&recipe_tick_info, data_store),
+            ConsumptionInfo::from_infos(&recipe_tick_info, &lab_info, data_store),
             tech_progress,
         ));
 
@@ -2263,7 +2228,7 @@ mod tests {
         #[test]
         fn test_random_blueprint_does_not_crash(base_pos in random_position(), blueprint in random_blueprint_strategy::<u8, u8>(0..1_000, &DATA_STORE)) {
 
-            let mut game_state = GameState::new(Default::default(), &DATA_STORE);
+            let mut game_state = GameState::new(&DATA_STORE);
 
             blueprint.apply(base_pos, &mut game_state, &DATA_STORE);
 
@@ -2272,7 +2237,7 @@ mod tests {
         #[test]
         fn test_random_blueprint_does_not_crash_after(base_pos in random_position(), blueprint in random_blueprint_strategy::<u8, u8>(0..100, &DATA_STORE), time in 0usize..600) {
 
-            let mut game_state = GameState::new(Default::default(), &DATA_STORE);
+            let mut game_state = GameState::new(&DATA_STORE);
 
             blueprint.apply(base_pos, &mut game_state, &DATA_STORE);
 
@@ -2297,7 +2262,7 @@ mod tests {
             //     ..
             // })));
 
-            let mut game_state = GameState::new(Default::default(), &DATA_STORE);
+            let mut game_state = GameState::new(&DATA_STORE);
 
             Blueprint { actions }.apply(Position { x: 0, y: 0 }, &mut game_state, &DATA_STORE);
 
@@ -2334,7 +2299,7 @@ mod tests {
                 }),
             }))) < actions.iter().position(|a| matches!(a, ActionType::AddModules { pos: Position { x: 24, y: 21 }, ..})));
 
-            let mut game_state = GameState::new(Default::default(), &DATA_STORE);
+            let mut game_state = GameState::new(&DATA_STORE);
 
             Blueprint { actions }.apply(Position { x: 1600, y: 1600 }, &mut game_state, &DATA_STORE);
 
@@ -2361,7 +2326,7 @@ mod tests {
 
     #[bench]
     fn bench_single_inserter(b: &mut Bencher) {
-        let mut game_state = GameState::new(Default::default(), &DATA_STORE);
+        let mut game_state = GameState::new(&DATA_STORE);
 
         let mut rep = Replay::new(&game_state, None, (*DATA_STORE).clone());
 

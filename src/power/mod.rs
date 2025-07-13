@@ -24,7 +24,7 @@ use crate::{
     },
     item::{IdxTrait, WeakIdxTrait},
     network_graph::WeakIndex,
-    research::{ResearchProgress, TechState},
+    research::{LabTickInfo, ResearchProgress, TechState},
     statistics::recipe::RecipeTickInfo,
     TICKS_PER_SECOND_LOGIC,
 };
@@ -801,8 +801,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         tech_state: &TechState,
         current_time: u32,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> (ResearchProgress, RecipeTickInfo) {
-        let (research_progress, production_info, beacon_updates) = self
+    ) -> (ResearchProgress, RecipeTickInfo, Option<LabTickInfo>) {
+        let (research_progress, production_info, times_labs_used_science, beacon_updates) = self
             .power_grids
             .par_iter_mut()
             .map(|grid| {
@@ -822,10 +822,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                 )
             })
             .reduce(
-                || (0, RecipeTickInfo::new(data_store), vec![]),
-                |(acc_progress, infos, mut old_updates), (rhs_progress, info, new_updates)| {
+                || (0, RecipeTickInfo::new(data_store), 0, vec![]),
+                |(acc_progress, infos, times_labs_used_science, mut old_updates),
+                 (rhs_progress, info, new_times_labs_used_science, new_updates)| {
                     old_updates.extend(new_updates);
-                    (acc_progress + rhs_progress, infos + &info, old_updates)
+                    (
+                        acc_progress + rhs_progress,
+                        infos + &info,
+                        times_labs_used_science + new_times_labs_used_science,
+                        old_updates,
+                    )
                 },
             );
 
@@ -842,7 +848,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             }
         }
 
-        (research_progress, production_info)
+        (
+            research_progress,
+            production_info,
+            tech_state.current_technology.map(|tech| LabTickInfo {
+                times_labs_used_science,
+                tech,
+            }),
+        )
     }
 
     pub fn add_beacon(

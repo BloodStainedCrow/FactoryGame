@@ -19,8 +19,8 @@ use noise::{NoiseFn, Simplex};
 
 use crate::{
     belt::{
-        splitter::SplitterDistributionMode, BeltBeltInserterAdditionInfo, BeltTileId,
-        SplitterTileId,
+        splitter::{SplitterDistributionMode, SplitterSide, SPLITTER_BELT_LEN},
+        BeltBeltInserterAdditionInfo, BeltTileId, SplitterTileId,
     },
     data::{DataStore, ItemRecipeDir},
     inserter::{storage_storage_with_buckets::InserterIdentifier, StaticID, Storage, MOVETIME},
@@ -1429,7 +1429,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         None => PossibleItem::All,
                     },
                 }),
-                Entity::Splitter { pos, direction, id } => todo!("Inserters on splitters"),
+                Entity::Splitter { pos, id, .. } => {
+                    let side = if *pos == *end_pos {
+                        SplitterSide::Left
+                    } else {
+                        SplitterSide::Right
+                    };
+
+                    let [_, outputs] = simulation_state
+                    .factory
+                    .belts.get_splitter_belt_ids(*id);
+
+                    let id = outputs[usize::from(bool::from(side))];
+
+                    Some(InserterConnectionPossibility { conn: InserterConnection::Belt(id, SPLITTER_BELT_LEN), inserter_item_hint: simulation_state
+                        .factory
+                        .belts
+                        .get_pure_item(id).map(|item| vec![item]), possible_item_list: PossibleItem::All })
+                },
                 Entity::Chest {
                     ty: _,
                     pos: _,
@@ -1513,17 +1530,30 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     ..
                 } => Some(InserterConnectionPossibility {
                     conn: InserterConnection::Belt(BeltTileId::AnyBelt(*id, PhantomData), *belt_pos),
-                    inserter_item_hint: match simulation_state
+                    inserter_item_hint: simulation_state
                         .factory
                         .belts
-                        .get_pure_item(BeltTileId::AnyBelt(*id, PhantomData))
-                    {
-                        Some(item) => Some(vec![item]),
-                        None => None,
-                    },
+                        .get_pure_item(BeltTileId::AnyBelt(*id, PhantomData)).map(|item| vec![item]),
                     possible_item_list: PossibleItem::All,
                 }),
-                Entity::Splitter { pos, direction, id } => todo!(),
+                Entity::Splitter { pos, id, .. } => {
+                    let side = if *pos == *end_pos {
+                        SplitterSide::Left
+                    } else {
+                        SplitterSide::Right
+                    };
+
+                    let [inputs, _] = simulation_state
+                    .factory
+                    .belts.get_splitter_belt_ids(*id);
+
+                    let id = inputs[usize::from(bool::from(side))];
+
+                    Some(InserterConnectionPossibility { conn: InserterConnection::Belt(id, SPLITTER_BELT_LEN), inserter_item_hint: simulation_state
+                        .factory
+                        .belts
+                        .get_pure_item(id).map(|item| vec![item]), possible_item_list: PossibleItem::All })
+                },
                 Entity::Chest {
                     ty,
                     pos,
@@ -3466,7 +3496,7 @@ mod test {
 
         #[test]
         fn test_get_entity(position in random_position(), ent in random_entity_to_place(&DATA_STORE)) {
-            let mut state = GameState::new(Default::default(), &DATA_STORE);
+            let mut state = GameState::new(&DATA_STORE);
 
             let mut rep = Replay::new(&state, None, &*DATA_STORE);
 

@@ -38,13 +38,14 @@ bitcode = { version = "0.6.6", features = ["serde"] }
 egui = { version = "0.31.1", features = ["serde"] }
 flate2 = {version = "1.1.1", features = ["zlib-rs"]}
 rstest = "0.25.0"
-parking_lot = "0.12.3"
+parking_lot = { version = "0.12.3", features = ["serde"] }
 profiling = { version = "1.0.16", features = ["profile-with-puffin"] }
 puffin_egui = "0.29"
 puffin = "0.19"
 dhat = "0.3.3"
 noise = { version = "0.9.0", features = ["std"] }
 rfd = "0.15.3"
+egui_graphs = "0.25.1"
 
 [patch.crates-io]
 puffin_egui = { git = "https://github.com/BloodStainedCrow/puffin" }
@@ -88,9 +89,6 @@ strip = "none"
 lto = false
 codegen-units = 256
 incremental = true
-# codegen-backend = "cranelift"
-
-[profile.release]
 # lto = true
 # codegen-units = 1
 

@@ -9,9 +9,11 @@ use itertools::Itertools;
 
 use crate::{
     data::DataStore,
-    item::{IdxTrait, Item},
+    item::{IdxTrait, Indexable, Item},
     NewWithDataStore,
 };
+
+use crate::research::LabTickInfo;
 
 use super::{recipe::RecipeTickInfo, IntoSeries};
 
@@ -21,11 +23,12 @@ pub struct ConsumptionInfo {
 }
 
 impl ConsumptionInfo {
-    pub fn from_recipe_info<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-        info: &RecipeTickInfo,
+    pub fn from_infos<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        recipe_info: &RecipeTickInfo,
+        lab_info: &Option<LabTickInfo>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        Self {
+        let mut ret = Self {
             items_consumed: data_store
                 .item_to_recipe_count_where_its_ingredient
                 .iter()
@@ -33,13 +36,24 @@ impl ConsumptionInfo {
                     values
                         .iter()
                         .map(|(recipe, amount)| {
-                            info.num_crafts_finished[recipe.id.into()].full_crafts
+                            recipe_info.num_crafts_finished[recipe.id.into()].full_crafts
                                 * u64::from(*amount)
                         })
                         .sum()
                 })
                 .collect(),
+        };
+
+        if let Some(lab_info) = lab_info {
+            let costs = &data_store.technology_costs[lab_info.tech.id as usize].1;
+
+            for (cost, item) in costs.iter().zip(data_store.science_bottle_items.iter()) {
+                ret.items_consumed[item.into_usize()] +=
+                    u64::from(*cost) * lab_info.times_labs_used_science;
+            }
         }
+
+        ret
     }
 }
 

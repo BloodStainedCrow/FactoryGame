@@ -1,10 +1,12 @@
 use std::{collections::HashSet, marker::PhantomData, num::NonZero, sync::mpsc::Receiver};
 
+use egui_graphs::{DefaultEdgeShape, DefaultNodeShape, Graph};
 use log::warn;
+use petgraph::Directed;
 
 use crate::{
     belt::splitter::SplitterDistributionMode,
-    data::DataStore,
+    data::{self, DataStore},
     frontend::{
         action::{
             place_entity::{EntityPlaceOptions, PlaceEntityInfo},
@@ -18,6 +20,7 @@ use crate::{
         },
     },
     item::{IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
+    research,
 };
 
 use super::{place_tile::PositionInfo, ActionType, PLAYERID};
@@ -31,6 +34,17 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     pub my_player_id: PLAYERID,
 
     pub statistics_panel_open: bool,
+    pub technology_panel_open: bool,
+    pub tech_tree_render: Option<
+        Graph<
+            data::Technology<RecipeIdxType>,
+            (),
+            Directed,
+            u16,
+            DefaultNodeShape,
+            DefaultEdgeShape,
+        >,
+    >,
     pub statistics_panel: StatisticsPanel,
     pub production_filters: Vec<bool>,
     pub consumption_filters: Vec<bool>,
@@ -104,7 +118,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             my_player_id,
             local_player_pos,
 
+            tech_tree_render: None,
+
             statistics_panel_open: false,
+            technology_panel_open: true,
             statistics_panel: StatisticsPanel::default(),
             production_filters: vec![true; data_store.item_names.len()],
             consumption_filters: vec![true; data_store.item_names.len()],
@@ -930,6 +947,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
             (_, Key::P) => {
                 self.statistics_panel_open = !self.statistics_panel_open;
+                vec![]
+            },
+
+            (_, Key::T) => {
+                self.technology_panel_open = !self.technology_panel_open;
                 vec![]
             },
 

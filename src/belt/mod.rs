@@ -42,6 +42,8 @@ use smart::{BeltInserterInfo, InserterAdditionError, Side, SmartBelt, SpaceOccup
 use splitter::{PureSplitter, SplitterDistributionMode, SplitterSide, SushiSplitter};
 use sushi::{SushiBelt, SushiInfo};
 
+use parking_lot::Mutex;
+
 #[derive(Debug, PartialEq, Clone, Copy, serde::Deserialize, serde::Serialize)]
 enum FreeIndex {
     FreeIndex(BeltLenType),
@@ -138,7 +140,7 @@ pub struct InnerBeltStore<ItemIdxType: WeakIdxTrait> {
     pure_splitters: Box<[SplitterStore<ItemIdxType>]>,
 
     sushi_splitters: Vec<SushiSplitter<ItemIdxType>>,
-    sushi_splitter_connections: Vec<[[AnyBelt<ItemIdxType>; 2]; 2]>,
+    sushi_splitter_connections: Mutex<Vec<[[AnyBelt<ItemIdxType>; 2]; 2]>>,
     sushi_splitter_holes: Vec<usize>,
 
     belt_update_timers: Box<[u8]>,
@@ -163,7 +165,7 @@ impl<ItemIdxType: WeakIdxTrait> Clone for InnerBeltStore<ItemIdxType> {
                     sushi_splitter.unsafe_clone()
                 })
                 .collect(),
-            sushi_splitter_connections: self.sushi_splitter_connections.clone(),
+            sushi_splitter_connections: Mutex::new(self.sushi_splitter_connections.lock().clone()),
             sushi_splitter_holes: self.sushi_splitter_holes.clone(),
             belt_update_timers: self.belt_update_timers.clone(),
         }
@@ -336,23 +338,25 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
         todo!()
     }
 
-    fn get_sushi_splitter_belt_ids<'a>(&'a self, id: SplitterID) -> [[AnyBelt<ItemIdxType>; 2]; 2] {
-        let mut maybe_ret = self.sushi_splitter_connections[id.index as usize].clone();
+    fn get_sushi_splitter_belt_ids(&self, id: SplitterID) -> [[AnyBelt<ItemIdxType>; 2]; 2] {
+        let maybe_ret = &mut self.sushi_splitter_connections.lock()[id.index as usize];
+
+        dbg!(&maybe_ret);
 
         for side in SplitterSide::iter() {
-            let input_belt = &mut maybe_ret[0][usize::from(bool::from(side))];
+            let input_belt = &mut dbg!(&mut maybe_ret[0])[usize::from(bool::from(side))];
 
             let needs_update = match input_belt {
                 AnyBelt::Smart(belt_id) => {
                     if let Some((out_id, out_side)) = self.get_smart(*belt_id).output_splitter {
-                        out_id != id || out_side != side
+                        dbg!(out_id) != id || dbg!(out_side) != side
                     } else {
                         true
                     }
                 },
                 AnyBelt::Sushi(sushi_index) => {
                     if let Some((out_id, out_side)) = self.get_sushi(*sushi_index).output_splitter {
-                        out_id != id || out_side != side
+                        dbg!(out_id) != id || dbg!(out_side) != side
                     } else {
                         true
                     }
@@ -389,7 +393,7 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
             }
         }
 
-        maybe_ret
+        dbg!(maybe_ret.clone())
     }
 
     fn get_sushi_splitter_belt_ids_uncached_input(
@@ -405,7 +409,7 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
             };
 
             let index = store.belts.iter().position(|belt| {
-                if let Some((splitter_id, splitter_side)) = belt.input_splitter {
+                if let Some((splitter_id, splitter_side)) = belt.output_splitter {
                     splitter_id == id && splitter_side == side
                 } else {
                     false
@@ -413,12 +417,12 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
             });
 
             if let Some(index) = index {
-                return AnyBelt::Smart(BeltId { item, index: index });
+                return AnyBelt::Smart(BeltId { item, index });
             }
         }
 
         let index = self.sushi_belts.iter().position(|belt| {
-            if let Some((splitter_id, splitter_side)) = belt.input_splitter {
+            if let Some((splitter_id, splitter_side)) = belt.output_splitter {
                 splitter_id == id && splitter_side == side
             } else {
                 false
@@ -445,7 +449,7 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
             };
 
             let index = store.belts.iter().position(|belt| {
-                if let Some((splitter_id, splitter_side)) = belt.output_splitter {
+                if let Some((splitter_id, splitter_side)) = belt.input_splitter {
                     splitter_id == id && splitter_side == side
                 } else {
                     false
@@ -453,12 +457,12 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
             });
 
             if let Some(index) = index {
-                return AnyBelt::Smart(BeltId { item, index: index });
+                return AnyBelt::Smart(BeltId { item, index });
             }
         }
 
         let index = self.sushi_belts.iter().position(|belt| {
-            if let Some((splitter_id, splitter_side)) = belt.output_splitter {
+            if let Some((splitter_id, splitter_side)) = belt.input_splitter {
                 splitter_id == id && splitter_side == side
             } else {
                 false
@@ -474,6 +478,7 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
 
     fn remove_sushi_belt(&mut self, id: usize) -> SushiBelt<ItemIdxType> {
         let mut temp = SushiBelt::new(0, 1);
+        // temp.make_circular();
         mem::swap(&mut temp, &mut self.sushi_belts[id]);
         self.sushi_belt_holes.push(id);
         temp
@@ -1159,7 +1164,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                 .into_boxed_slice(),
 
                 sushi_splitters: vec![],
-                sushi_splitter_connections: vec![],
+                sushi_splitter_connections: Mutex::new(vec![]),
                 sushi_splitter_holes: vec![],
 
                 belt_update_timers: vec![0; data_store.belt_infos.len()].into_boxed_slice(),
@@ -1378,6 +1383,14 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         }
     }
 
+    fn fix_graph(&mut self, tile_id: BeltTileId<ItemIdxType>) {
+        let mut done_propagating = HashSet::default();
+        let mut dedup = HashSet::default();
+        let mut done = HashMap::default();
+
+        self.propagate_sushi_if_necessary(tile_id, &mut done_propagating, &mut dedup, &mut done);
+    }
+
     fn merge_and_fix(
         &mut self,
         front_tile_id: BeltTileId<ItemIdxType>,
@@ -1592,7 +1605,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
 
     // TODO: This needs tests!
     // TODO: This HashMap could be kept until the graph is modified
-    fn get_items_which_could_end_up_on_that_belt(
+    pub fn get_items_which_could_end_up_on_that_belt(
         &self,
         tile_id: BeltTileId<ItemIdxType>,
         dedup: &mut HashSet<BeltTileId<ItemIdxType>>,
@@ -2023,7 +2036,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                                 // It succeeded!
                             },
                             Err(InserterAdditionError::SpaceOccupied) => {
-                                return Err(SpaceOccupiedError)
+                                unreachable!();
                             },
                             Err(InserterAdditionError::ItemMismatch) => {
                                 // We need to transition to sushi belt
@@ -2047,12 +2060,14 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                                 let sushi_belt_index = *sushi_belt_index;
                                 let _ = self.try_make_belt_pure(sushi_belt_index, id, None);
                             },
-                            Err(SpaceOccupiedError) => return Err(SpaceOccupiedError),
+                            Err(SpaceOccupiedError) => unreachable!(),
                         }
                     },
                 }
             },
         }
+
+        self.fix_graph(id);
 
         return Ok(());
     }
@@ -2736,6 +2751,19 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             outputs: [UnsafeCell::new(None), UnsafeCell::new(None)],
         };
 
+        // match info.filter {
+        // FIXME: Even with this splitter seems to still be transmuting items
+        for input in &info.input_belts {
+            for output in &info.output_belts {
+                self.add_graph_connection_and_fix(
+                    *input,
+                    *output,
+                    BeltGraphConnection::Connected { filter: None },
+                );
+            }
+        }
+        // }
+
         let new_splitter_connections = [
             info.input_belts.map(|any| match any {
                 BeltTileId::AnyBelt(idx, _) => match self.any_belts[idx] {
@@ -2753,12 +2781,13 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
 
         let index = if let Some(hole_idx) = self.inner.sushi_splitter_holes.pop() {
             self.inner.sushi_splitters[hole_idx] = new_splitter;
-            self.inner.sushi_splitter_connections[hole_idx] = new_splitter_connections;
+            self.inner.sushi_splitter_connections.lock()[hole_idx] = new_splitter_connections;
             hole_idx
         } else {
             self.inner.sushi_splitters.push(new_splitter);
             self.inner
                 .sushi_splitter_connections
+                .lock()
                 .push(new_splitter_connections);
             self.inner.sushi_splitters.len() - 1
         };

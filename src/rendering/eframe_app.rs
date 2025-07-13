@@ -16,7 +16,7 @@ use eframe::{
     egui_wgpu::{self, CallbackTrait},
 };
 use egui::{CursorIcon, ProgressBar, Window};
-use log::warn;
+use log::{error, warn};
 use tilelib::types::RawRenderer;
 
 use crate::{
@@ -179,6 +179,22 @@ impl eframe::App for App {
                             progress,
                             game_state_receiver: recv,
                         };
+                    } else if ui.button("Red with labs").clicked() {
+                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
+                        let (send, recv) = channel();
+
+                        let progress_send = progress.clone();
+                        thread::spawn(move || {
+                            send.send(run_integrated_server(
+                                progress_send,
+                                StartGameInfo::Create(GameCreationInfo::RedWithLabs),
+                            ));
+                        });
+
+                        self.state = AppState::Loading {
+                            progress,
+                            game_state_receiver: recv,
+                        };
                     }
                 });
             },
@@ -273,11 +289,9 @@ impl App {
                         };
 
                         if let Ok(input) = input {
-                            self.input_sender
-                                .as_mut()
-                                .unwrap()
-                                .send(input)
-                                .expect("Could not send input");
+                            if self.input_sender.as_mut().unwrap().send(input).is_err() {
+                                error!("Could not send input");
+                            }
                         }
                     }
                 });

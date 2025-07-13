@@ -5,7 +5,7 @@ use strum::IntoEnumIterator;
 use crate::{
     belt::{
         smart::Side,
-        splitter::{SplitterDistributionMode, SPLITTER_BELT_LEN},
+        splitter::{SplitterDistributionMode, SplitterSide, SPLITTER_BELT_LEN},
         BeltTileId, SplitterInfo,
     },
     data::DataStore,
@@ -251,7 +251,21 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         underground_dir: UndergroundDir::Exit,
                         ..
                     } => *id,
-                    Entity::Splitter { .. } => todo!(),
+                    Entity::Splitter { pos, id, .. } => {
+                        let side = if potentially_incoming_pos == *pos {
+                            SplitterSide::Left
+                        } else {
+                            SplitterSide::Right
+                        };
+
+                        let [_, outputs] = game_state
+                            .simulation_state
+                            .factory
+                            .belts
+                            .get_splitter_belt_ids(*id);
+
+                        outputs[usize::from(bool::from(side))]
+                    },
                     _ => unreachable!(),
                 };
 
@@ -1026,7 +1040,22 @@ fn should_merge<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             underground_dir: UndergroundDir::Exit,
                             ..
                         } => None,
-                        Entity::Splitter { .. } => Some(todo!("get the id from the simstate")),
+                        Entity::Splitter { pos, id, .. } => {
+                            let side = if front_pos == *pos {
+                                SplitterSide::Left
+                            } else {
+                                SplitterSide::Right
+                            };
+
+                            // TODO: Only calculate what we need
+                            let [inputs, _] = game_state
+                                .simulation_state
+                                .factory
+                                .belts
+                                .get_splitter_belt_ids(*id);
+
+                            Some(inputs[usize::from(bool::from(side))])
+                        },
                         _ => unreachable!(),
                     }
                 } else {
@@ -1257,7 +1286,7 @@ mod test {
 
         #[test]
         fn inserter_always_attaches(actions in chest_onto_belt().prop_shuffle()) {
-            let mut state = GameState::new(Default::default(), &DATA_STORE);
+            let mut state = GameState::new( &DATA_STORE);
 
             let bp = Blueprint { actions };
 
@@ -1282,7 +1311,7 @@ mod test {
 
         #[test]
         fn inserter_always_attaches_full_bp(actions in sideload_items().prop_shuffle()) {
-            let mut state = GameState::new(Default::default(), &DATA_STORE);
+            let mut state = GameState::new(&DATA_STORE);
 
             let bp = Blueprint { actions };
 
@@ -1307,7 +1336,7 @@ mod test {
 
         #[test]
         fn sideload_empty_does_not_crash(actions in belts_into_sideload().prop_shuffle()) {
-            let mut state = GameState::new(Default::default(), &DATA_STORE);
+            let mut state = GameState::new(&DATA_STORE);
 
             let bp = Blueprint { actions };
 
@@ -1316,7 +1345,7 @@ mod test {
 
         #[test]
         fn sideload_with_items_at_source_does_not_crash(actions in sideload_items().prop_shuffle()) {
-            let mut state = GameState::new(Default::default(), &DATA_STORE);
+            let mut state = GameState::new(&DATA_STORE);
 
             let bp = Blueprint { actions };
 
@@ -1325,7 +1354,7 @@ mod test {
 
         #[test]
         fn sideload_with_items_at_source_items_reach_the_intersection(actions in chest_onto_belt().prop_shuffle()) {
-            let mut state = GameState::new(Default::default(), &DATA_STORE);
+            let mut state = GameState::new( &DATA_STORE);
 
             let bp = Blueprint { actions };
 
@@ -1360,7 +1389,7 @@ mod test {
 
         #[test]
         fn sideload_with_items_at_source_items_actually_reach(actions in sideload_items().prop_shuffle()) {
-            let mut state = GameState::new(Default::default(), &DATA_STORE);
+            let mut state = GameState::new(&DATA_STORE);
 
             let bp = Blueprint { actions };
 

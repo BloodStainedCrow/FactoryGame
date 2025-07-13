@@ -30,11 +30,12 @@ I was playing the above games and started being unable to expand due to performa
 - ~~Production Graphs~~
 - ~~Liquids~~
 - ~~Map View~~
+- Technology
 - Mining Drills
 - ~~Underground belts~~
 - Fix Underground Pipe connection breaking/overlap
 - Place Steam Turbines
-- Splitters
+- ~~Splitters~~
 - Allow Belts of different types to connect to one another
 - Decide if I want beacons to match factorio behaviour or keep the hard switch on/off
 - ~~Ore Generation~~

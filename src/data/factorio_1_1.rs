@@ -3,6 +3,7 @@ use crate::power::Watt;
 use super::{
     AllowedIn, RawAssemblingMachine, RawBeacon, RawChest, RawDataStore, RawEntity, RawItem,
     RawItemStack, RawLab, RawModule, RawPowerPole, RawRecipeData, RawSolarPanel, RawTechnology,
+    RawTechnologyEffect, TechnologyEffect,
 };
 
 const RAW_DATA_STR: &'static str = include_str!("factorio_1_1.fgmod");
@@ -512,6 +513,14 @@ pub fn get_raw_data_fn() -> RawDataStore {
             }],
             num_units: 10,
             precursors: vec![],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: vec![
+                RawTechnologyEffect::RecipeUnlock("factory_game::assembling_machine".to_string()),
+                RawTechnologyEffect::RecipeUnlock("factory_game::red_inserter".to_string()),
+            ],
         }],
         solar_panels: vec![
             RawSolarPanel {

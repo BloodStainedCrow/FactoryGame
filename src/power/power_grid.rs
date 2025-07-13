@@ -7,7 +7,7 @@ use crate::{
     assembler::{AssemblerOnclickInfo, AssemblerRemovalInfo, FullAssemblerStore},
     data::{DataStore, LazyPowerMachineInfo},
     frontend::world::{tile::AssemblerID, Position},
-    item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
+    item::{usize_from, IdxTrait, Indexable, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
     lab::MultiLabStore,
     network_graph::{Network, WeakIndex},
     power::Joule,
@@ -1793,8 +1793,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     ) -> (
         ResearchProgress,
         RecipeTickInfo,
+        u64,
         Vec<(BeaconAffectedEntity<RecipeIdxType>, (i16, i16, i16))>,
     ) {
+        let active_recipes = tech_state.get_active_recipes();
+
         let (
             (
                 (power_used_0_1, infos_0_1),
@@ -1817,13 +1820,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                             .par_iter_mut()
                             .map(|s| {
                                 profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_names[usize_from(s.recipe.id)]).as_str());
-                                s.update_branchless::<RecipeIdxType>(
-                                    self.last_power_mult,
-                                    &data_store.recipe_index_lookups,
-                                    &data_store.recipe_ings.ing0,
-                                    &data_store.recipe_outputs.out1,
-                                    &data_store.recipe_timers,
-                                )
+                                if active_recipes[s.recipe.into_usize()] {
+                                    s.update_branchless::<RecipeIdxType>(
+                                        self.last_power_mult,
+                                        &data_store.recipe_index_lookups,
+                                        &data_store.recipe_ings.ing0,
+                                        &data_store.recipe_outputs.out1,
+                                        &data_store.recipe_timers,
+                                    )
+                                } else {
+                                    (Watt(0), 0, 0)
+                                }
                             })
                             .map(|(power_used, times_ings_used, crafts_finished)| {
                                 (power_used, SingleRecipeTickInfo {
@@ -1850,13 +1857,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         .par_iter_mut()
                         .map(|s| {
                             profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_names[usize_from(s.recipe.id)]).as_str());
-                            s.update_branchless::<RecipeIdxType>(
-                                self.last_power_mult,
-                                &data_store.recipe_index_lookups,
-                                &data_store.recipe_ings.ing1,
-                                &data_store.recipe_outputs.out1,
-                                &data_store.recipe_timers,
-                            )
+                            if active_recipes[s.recipe.into_usize()] {
+                                s.update_branchless::<RecipeIdxType>(
+                                    self.last_power_mult,
+                                    &data_store.recipe_index_lookups,
+                                    &data_store.recipe_ings.ing1,
+                                    &data_store.recipe_outputs.out1,
+                                    &data_store.recipe_timers,
+                                )
+                            } else {
+                                (Watt(0), 0, 0)
+                            }
                         })
                         .map(|(power_used, times_ings_used, crafts_finished)| {
                             (power_used, SingleRecipeTickInfo {
@@ -1882,14 +1893,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                                     .assemblers_2_1
                                     .par_iter_mut()
                                     .map(|s| {
-                            profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_names[usize_from(s.recipe.id)]).as_str());
-                                        s.update_branchless::<RecipeIdxType>(
-                                            self.last_power_mult,
-                                            &data_store.recipe_index_lookups,
-                                            &data_store.recipe_ings.ing2,
-                                            &data_store.recipe_outputs.out1,
-                                            &data_store.recipe_timers,
-                                        )
+                                        profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_names[usize_from(s.recipe.id)]).as_str());
+                                        if active_recipes[s.recipe.into_usize()] {
+                                            s.update_branchless::<RecipeIdxType>(
+                                                self.last_power_mult,
+                                                &data_store.recipe_index_lookups,
+                                                &data_store.recipe_ings.ing2,
+                                                &data_store.recipe_outputs.out1,
+                                                &data_store.recipe_timers,
+                                            )
+                                        } else {
+                                            (Watt(0), 0, 0)
+                                        }
                                     })
                                     .map(|(power_used, times_ings_used, crafts_finished)| {
                                         (power_used, SingleRecipeTickInfo {
@@ -1915,14 +1930,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                                         .assemblers_3_1
                                         .par_iter_mut()
                                         .map(|s| {
-                            profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_names[usize_from(s.recipe.id)]).as_str());
-                                            s.update_branchless::<RecipeIdxType>(
-                                                self.last_power_mult,
-                                                &data_store.recipe_index_lookups,
-                                                &data_store.recipe_ings.ing3,
-                                                &data_store.recipe_outputs.out1,
-                                                &data_store.recipe_timers,
-                                            )
+                                            profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_names[usize_from(s.recipe.id)]).as_str());
+                                            if active_recipes[s.recipe.into_usize()] {
+                                                s.update_branchless::<RecipeIdxType>(
+                                                    self.last_power_mult,
+                                                    &data_store.recipe_index_lookups,
+                                                    &data_store.recipe_ings.ing3,
+                                                    &data_store.recipe_outputs.out1,
+                                                    &data_store.recipe_timers,
+                                                )
+                                            } else {
+                                                (Watt(0), 0, 0)
+                                            }
                                         })
                                         .map(|(power_used, times_ings_used, crafts_finished)| {
                                             (power_used, SingleRecipeTickInfo {
@@ -1946,14 +1965,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                                         .assemblers_4_1
                                         .par_iter_mut()
                                         .map(|s| {
-                            profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_names[usize_from(s.recipe.id)]).as_str());
-                                            s.update_branchless::<RecipeIdxType>(
-                                                self.last_power_mult,
-                                                &data_store.recipe_index_lookups,
-                                                &data_store.recipe_ings.ing4,
-                                                &data_store.recipe_outputs.out1,
-                                                &data_store.recipe_timers,
-                                            )
+                                            profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_names[usize_from(s.recipe.id)]).as_str());
+                                            if active_recipes[s.recipe.into_usize()] {
+                                                s.update_branchless::<RecipeIdxType>(
+                                                    self.last_power_mult,
+                                                    &data_store.recipe_index_lookups,
+                                                    &data_store.recipe_ings.ing4,
+                                                    &data_store.recipe_outputs.out1,
+                                                    &data_store.recipe_timers,
+                                                )
+                                            } else {
+                                                (Watt(0), 0, 0)
+                                            }
                                         })
                                         .map(|(power_used, times_ings_used, crafts_finished)| {
                                             (power_used, SingleRecipeTickInfo {
@@ -1981,8 +2004,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             },
             || {
                 profiling::scope!("Lab updates");
-                self.lab_stores
-                    .update(self.last_power_mult, None, data_store)
+                self.lab_stores.update(
+                    self.last_power_mult,
+                    tech_state
+                        .current_technology
+                        .as_ref()
+                        .map(|tech| &*data_store.technology_costs[tech.id as usize].1),
+                    data_store,
+                )
             },
         );
 
@@ -2056,6 +2085,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         (
             tech_progress,
             RecipeTickInfo::from_parts(parts, data_store),
+            times_labs_used_science.into(),
             beacon_updates,
         )
     }

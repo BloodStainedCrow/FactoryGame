@@ -27,6 +27,7 @@ use crate::{
     item::{usize_from, IdxTrait, Item, Recipe},
     power::{power_grid::MAX_POWER_MULT, Joule, Watt},
     rendering::map_view::{self, create_map_textures_if_needed, MapViewUpdate},
+    research,
     statistics::{
         NUM_SAMPLES_AT_INTERVALS, NUM_X_AXIS_TICKS, RELATIVE_INTERVAL_MULTS, TIMESCALE_LEGEND,
     },
@@ -676,6 +677,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                                 let right_dir = direction.turn_right();
 
+                                // FIXME: We currently do not take partial movement (from slow belt speeds) into account, which leads to ugly jumping of the items on the belt
                                 for ((pos, input), output) in
                                     successors(Some(*pos), |pos| Some(*pos + right_dir))
                                         .zip(inputs)
@@ -699,6 +701,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         chunk_draw_offs.1 + (pos.y % 16) as f32 + 0.5
                                             - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
                                     );
+                                    let offs = direction.into_offset();
                                     render_items_straight::<ItemIdxType, RecipeIdxType>(
                                         game_state
                                             .simulation_state
@@ -708,7 +711,14 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         *direction,
                                         SPLITTER_BELT_LEN,
                                         SPLITTER_BELT_LEN,
-                                        centered_on_tile,
+                                        (
+                                            centered_on_tile.0
+                                                - f32::from(offs.0)
+                                                    * (1.0 / f32::from(BELT_LEN_PER_TILE)),
+                                            centered_on_tile.1
+                                                - f32::from(offs.1)
+                                                    * (0.5 / f32::from(BELT_LEN_PER_TILE)),
+                                        ),
                                         &mut item_layer,
                                         texture_atlas,
                                     );
@@ -1344,8 +1354,9 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                         ComboBox::new("Recipe list", "Recipes").selected_text(goal_recipe.map(|recipe| data_store.recipe_names[usize_from(recipe.id)].as_str()).unwrap_or("Choose a recipe!")).show_ui(ui, |ui| {
                             data_store.recipe_names.iter().enumerate().filter(|(i, recipe_name)| {
-                                    data_store.recipe_allowed_assembling_machines[*i].contains(ty)
+                                    (game_state.settings.show_unresearched_recipes || game_state.simulation_state.tech_state.get_active_recipes()[*i]) && data_store.recipe_allowed_assembling_machines[*i].contains(ty)
                                 }).for_each(|(i, recipe_name)| {
+                                    
                                 ui.selectable_value(&mut goal_recipe, Some(Recipe {id: i.try_into().unwrap()}), recipe_name);
                             });
                         });
@@ -1578,6 +1589,11 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         }
                         ui.label(format!("Item: {:?}", game_state.simulation_state.factory.belts.get_pure_item(*id)).as_str());
 
+                        let mut dedup = Default::default();
+                        let mut done = Default::default();
+                        game_state.simulation_state.factory.belts.get_items_which_could_end_up_on_that_belt(*id, &mut dedup, &mut done);
+                        ui.label(format!("Possible items: {:?}", done[id]).as_str());
+
                         ui.label(format!("Inner: {:?}", game_state.simulation_state.factory.belts.inner.belt_belt_inserters).as_str());
 
                         ui.label(format!("Belt Pos: {:?}", *belt_pos));
@@ -1669,8 +1685,15 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             actions.push(ActionType::OverrideInserterMovetime { pos: *pos, new_movetime: None });
                         }
                     },
-                    Entity::Splitter { .. } => {
-                        warn!("Viewing Splitter. This currently does nothing!");
+                    Entity::Splitter { id, .. } => {
+                        let [inputs, outputs] = game_state
+                                    .simulation_state
+                                    .factory
+                                    .belts
+                                    .get_splitter_belt_ids(*id);
+
+                        ui.label(format!("Inputs: {:?}", inputs));
+                        ui.label(format!("Outputs: {:?}", outputs));
                     },
                     Entity::Chest {
                         ty,
@@ -1770,6 +1793,23 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         }
                     });
                 });
+        });
+
+    Window::new("Technology")
+        .open(&mut state_machine.technology_panel_open)
+        .show(ctx, |ui| {
+            let research_actions = game_state.simulation_state.tech_state.render_tech_window(
+                ui,
+                state_machine.tech_tree_render.get_or_insert(
+                    game_state
+                        .simulation_state
+                        .tech_state
+                        .generate_render_graph(data_store),
+                ),
+                data_store,
+            );
+
+            actions.extend(research_actions);
         });
 
     Window::new("Statistics")
@@ -1924,12 +1964,19 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 }
                             });
 
-                        let ticks_total = (RELATIVE_INTERVAL_MULTS[..=time_scale]
+                        let ticks_per_sample = RELATIVE_INTERVAL_MULTS[..=time_scale]
                             .iter()
                             .copied()
-                            .product::<usize>()
-                            * NUM_SAMPLES_AT_INTERVALS[time_scale])
-                            as f32;
+                            .product::<usize>();
+                        let ticks_total = min(
+                            ticks_per_sample * NUM_SAMPLES_AT_INTERVALS[time_scale],
+                            game_state
+                                .statistics
+                                .production
+                                .num_samples_pushed
+                                .next_multiple_of(ticks_per_sample)
+                                - ticks_per_sample,
+                        ) as f32;
 
                         let row_height = ui_production.spacing().interact_size.y;
                         ScrollArea::vertical().id_salt("Prod List Scroll").show(

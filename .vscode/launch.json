@@ -119,26 +119,6 @@
             },
             "args": [],
             "cwd": "${workspaceFolder}"
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug integration test 'test'",
-            "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--test=test",
-                    "--package=factory",
-                    "--features=graphics",
-                ],
-                "filter": {
-                    "name": "test",
-                    "kind": "test"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}"
         }
     ]
 }

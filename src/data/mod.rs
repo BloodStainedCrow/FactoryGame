@@ -7,7 +7,8 @@ use std::{
 
 use eframe::egui::Color32;
 use itertools::Itertools;
-use log::warn;
+use log::{error, warn};
+use petgraph::{graph::NodeIndex, prelude::StableGraph, Directed};
 use rand::random;
 use sha2::{Digest, Sha256};
 use strum::IntoEnumIterator;
@@ -23,9 +24,12 @@ use crate::{
 };
 
 type ItemString = String;
+type RecipeString = String;
 type AssemblingMachineString = String;
 type InserterString = String;
 type EngineString = String;
+type TechnologyString = String;
+type OreString = String;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct RawRecipeData {
@@ -188,11 +192,63 @@ struct RawFluidTank {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct RawTechnology {
-    name: String,
+    name: TechnologyString,
     display_name: String,
     cost_of_single_research_unit: Vec<RawItemStack>,
     num_units: u64,
     precursors: Vec<String>,
+
+    /// Whether or not the technology is unlocked at the start of the game
+    pre_unlocked: bool,
+
+    infinite: Option<InfiniteTechnologyInfo>,
+
+    effects: Vec<RawTechnologyEffect>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+struct InfiniteTechnologyInfo {
+    scaling: InfiniteCostScaling,
+    display_level_offset: u32,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+enum InfiniteCostScaling {
+    /// final_cost = base_cost + level * units_per_level
+    Linear { units_per_level: u64 },
+    /// final_cost = base_cost + (level * level) * units_per_level
+    Quadradic { units_per_level: u64 },
+    /// final_cost = base_cost + exponential_base ^ level * units_per_level
+    Exponential {
+        units_per_level: u64,
+        exponential_base: f64,
+    },
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+enum RawTechnologyEffect {
+    RecipeUnlock(RecipeString),
+    RecipeModifier {
+        recipe: RecipeString,
+        modifier: RecipeModifier,
+    },
+    MiningDrillModifier {
+        /// Allows specifying only some ores to be affected
+        filter: Option<OreString>,
+        modifier: RecipeModifier,
+    },
+    InserterHandSizeModifier {
+        filter: Option<String>,
+        modifier: i8,
+    },
+    // TODO: Robot speed etc
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+enum RecipeModifier {
+    Productivity(i8),
+    Speed(i8),
+    PowerConsumption(i8),
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -414,9 +470,26 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     pub item_to_colour: Vec<Color32>,
 
+    pub technology_tree: StableGraph<Technology<RecipeIdxType>, (), Directed, u16>,
+    pub instantly_finished_technologies: Vec<NodeIndex<u16>>,
+
     pub technology_costs: Vec<(u64, Box<[ITEMCOUNTTYPE]>)>,
     pub belt_infos: Vec<BeltInfo>,
     pub mining_drill_info: Vec<MiningDrillInfo>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
+pub struct Technology<RecipeIdxType: WeakIdxTrait> {
+    pub name: String,
+    pub base_cost: (u64, Box<[ITEMCOUNTTYPE]>),
+
+    pub effect: TechnologyEffect<RecipeIdxType>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
+pub struct TechnologyEffect<RecipeIdxType: WeakIdxTrait> {
+    pub unlocked_recipes: Vec<Recipe<RecipeIdxType>>,
+    // TODO etc.
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
@@ -886,7 +959,7 @@ impl RawDataStore {
             recipe_index_lookups.push((ing_idx, out_idx));
         }
 
-        let recipe_timers = self.recipes.iter().map(|r| r.time_to_craft).collect();
+        let recipe_timers: Box<[u16]> = self.recipes.iter().map(|r| r.time_to_craft).collect();
 
         let recipe_to_items = self
             .recipes
@@ -1001,21 +1074,117 @@ impl RawDataStore {
             })
             .collect();
 
+        let mut instantly_finished_technologies = vec![];
+
+        let mut tech_tree = StableGraph::<_, (), Directed, u16>::default();
+        let mut name_to_node_index = HashMap::new();
+
+        for (i, raw_tech) in self.technologies.iter().enumerate() {
+            let index = tech_tree.add_node(Technology {
+                name: raw_tech.display_name.clone(),
+                base_cost: (
+                    raw_tech.num_units,
+                    science_bottle_items
+                        .iter()
+                        .map(|item| reverse_item_lookup[&item.id])
+                        .map(|raw_item_name| {
+                            raw_tech
+                                .cost_of_single_research_unit
+                                .iter()
+                                .find_map(|stack| {
+                                    (stack.item == raw_item_name).then_some(stack.amount)
+                                })
+                                .unwrap_or(0)
+                        })
+                        .collect(),
+                ),
+
+                effect: TechnologyEffect {
+                    unlocked_recipes: raw_tech
+                        .effects
+                        .iter()
+                        .filter_map(|effect| match effect {
+                            RawTechnologyEffect::RecipeUnlock(unlocked_recipe) => {
+                                let index = self
+                                    .recipes
+                                    .iter()
+                                    .position(|recipe| recipe.name == *unlocked_recipe)
+                                    .expect(
+                                        format!(
+                                            "Technology tried unlocking nonexistant recipe: {}",
+                                            unlocked_recipe
+                                        )
+                                        .as_str(),
+                                    );
+
+                                Some(Recipe {
+                                    id: index.try_into().unwrap(),
+                                })
+                            },
+                            _ => None,
+                        })
+                        .collect(),
+                },
+            });
+
+            if raw_tech.pre_unlocked {
+                instantly_finished_technologies.push(index);
+            }
+
+            assert!(name_to_node_index
+                .insert(raw_tech.name.clone(), index)
+                .is_none());
+        }
+
+        for (i, raw_tech) in self.technologies.iter().enumerate() {
+            for req in &raw_tech.precursors {
+                let req = name_to_node_index[req];
+
+                tech_tree.add_edge(req, NodeIndex::new(i), ());
+            }
+        }
+
+        // TODO: This does not take instantly_finished_technologies into account!
+        assert!(
+            !petgraph::algo::is_cyclic_directed(&tech_tree),
+            "The tech tree contains cycles. This means some technologies are unobtainable!"
+        );
+
+        for recipe_index in 0..recipe_timers.len() {
+            let recipe = Recipe {
+                id: recipe_index.try_into().unwrap(),
+            };
+
+            let can_be_unlocked = tech_tree
+                .node_weights()
+                .any(|tech| tech.effect.unlocked_recipes.contains(&recipe));
+
+            if !can_be_unlocked {
+                error!(
+                    "Recipe {} cannot be unlocked (and is therefore useless)!",
+                    self.recipes[recipe_index].name
+                );
+            }
+        }
+
         DataStore {
             checksum,
+
+            technology_tree: tech_tree,
+            instantly_finished_technologies,
 
             belt_infos: vec![
                 BeltInfo {
                     name: "Transport Belt".to_string(),
                     has_underground: Some(BeltUndergroundInfo { max_distance: 6 }),
                     has_splitter: None,
-                    timer_increase: 45 * 2,
+                    timer_increase: 15 * 2,
                 },
                 BeltInfo {
                     name: "Fast Transport Belt".to_string(),
                     has_underground: Some(BeltUndergroundInfo { max_distance: 8 }),
                     has_splitter: None,
-                    timer_increase: 45 * 2,
+                    timer_increase: 15 * 2,
                 },
             ],
 

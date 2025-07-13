@@ -161,6 +161,8 @@ enum GameCreationInfo {
     Empty,
     RedGreen,
     RedGreenBelts,
+
+    RedWithLabs,
 }
 
 fn run_integrated_server(
@@ -198,12 +200,15 @@ fn run_integrated_server(
                     })
                     .expect("Loading from disk failed!"),
                 StartGameInfo::Create(info) => match info {
-                    GameCreationInfo::Empty => GameState::new(progress, &data_store),
+                    GameCreationInfo::Empty => GameState::new(&data_store),
                     GameCreationInfo::RedGreen => {
                         GameState::new_with_beacon_production(progress, &data_store)
                     },
                     GameCreationInfo::RedGreenBelts => {
                         GameState::new_with_beacon_belt_production(progress, &data_store)
+                    },
+                    GameCreationInfo::RedWithLabs => {
+                        GameState::new_with_production(progress, &data_store)
                     },
                 },
             }));
@@ -305,7 +310,7 @@ fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Se
             let game_state = Arc::new(Mutex::new(
                 load(todo!("When running in client mode, we should download the gamestate from the server instead of loading it from disk"))
                     .map(|save| save.game_state)
-                    .unwrap_or_else(|| GameState::new(Default::default(), &data_store)),
+                    .unwrap_or_else(|| GameState::new(&data_store)),
             ));
 
             let (ui_sender, ui_recv) = channel();
@@ -482,31 +487,15 @@ pub fn simd(
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs::File,
-        iter,
-        os::unix::thread,
-        path::PathBuf,
-        rc::Rc,
-        sync::atomic::AtomicU64,
-        thread::{sleep, spawn},
-        time::Duration,
-    };
+    use std::{fs::File, iter, path::PathBuf, rc::Rc};
 
-    use eframe::EventLoopBuilder;
     use rstest::rstest;
     use test::{black_box, Bencher};
 
     use crate::{
         data::{factorio_1_1::get_raw_data_test, DataStore},
-        frontend::{
-            action::{action_state_machine::ActionStateMachine, ActionType},
-            world::{tile::World, Position},
-        },
-        rendering::{
-            app_state::{GameState, SimulationState},
-            window::{App, LoadedGameInfo, LoadedGameSized},
-        },
+        frontend::{action::ActionType, world::Position},
+        rendering::app_state::GameState,
         replays::{run_till_finished, Replay},
         DATA_STORE, TICKS_PER_SECOND_LOGIC,
     };
@@ -515,7 +504,7 @@ mod tests {
     fn clone_empty_simulation(b: &mut Bencher) {
         let data_store = get_raw_data_test().process().assume_simple();
 
-        let game_state = GameState::new(Default::default(), &data_store);
+        let game_state = GameState::new(&data_store);
 
         let replay = Replay::new(&game_state, None, Rc::new(data_store));
 
@@ -529,7 +518,7 @@ mod tests {
 
         let data_store = get_raw_data_test().process().assume_simple();
 
-        let game_state = GameState::new(Default::default(), &data_store);
+        let game_state = GameState::new(&data_store);
 
         let mut replay = Replay::new(&game_state, None, Rc::new(data_store));
 
@@ -549,7 +538,7 @@ mod tests {
 
         let data_store = get_raw_data_test().process().assume_simple();
 
-        let game_state = GameState::new(Default::default(), &data_store);
+        let game_state = GameState::new(&data_store);
 
         let mut replay = Replay::new(&game_state, None, Rc::new(data_store));
 

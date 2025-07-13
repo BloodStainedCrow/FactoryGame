@@ -521,6 +521,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                 ActionType::OverrideInserterMovetime { .. } => {},
                 ActionType::Remove(position) => {},
                 ActionType::Ping(position) => unreachable!(),
+                ActionType::SetActiveResearch { .. } => unreachable!(),
             }
         }
     }

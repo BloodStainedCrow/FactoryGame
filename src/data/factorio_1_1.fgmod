@@ -1050,6 +1050,97 @@
     ],
     technologies: [
         (
+            name: "factory_game::debug",
+            display_name: "DEBUG",
+            cost_of_single_research_unit: [],
+            num_units: 0,
+            precursors: [],
+
+            pre_unlocked: true,
+
+            infinite: None,
+            effects: [
+                RecipeUnlock("factory_game::iron_ore_generation"),
+                RecipeUnlock("factory_game::copper_ore_generation"),
+                RecipeUnlock("factory_game::raw_oil_generation"),
+                RecipeUnlock("factory_game::water_generation"),
+            ],
+        ),
+        (
+            name: "factory_game::smelting",
+            display_name: "Smelting",
+            cost_of_single_research_unit: [],
+            num_units: 0,
+            precursors: [],
+
+            pre_unlocked: true,
+
+            infinite: None,
+            effects: [
+                RecipeUnlock("factory_game::iron_smelting"),
+                RecipeUnlock("factory_game::gears"),
+                RecipeUnlock("factory_game::copper_smelting"),
+                RecipeUnlock("factory_game::yellow_belt"),
+            ],
+        ),
+        (
+            name: "factory_game::electronics",
+            display_name: "Electronics",
+            cost_of_single_research_unit: [],
+            num_units: 0,
+            precursors: [
+                "factory_game::smelting",
+            ],
+
+            pre_unlocked: true,
+
+            infinite: None,
+            effects: [
+                RecipeUnlock("factory_game::copper_wire"),
+                RecipeUnlock("factory_game::green_chip"),
+                RecipeUnlock("factory_game::inserter"),
+                // RecipeUnlock("factory_game::lab"),
+                // RecipeUnlock("factory_game::power_pole"),
+            ],
+        ),
+        (
+            name: "factory_game::steam_power",
+            display_name: "Steam power",
+            cost_of_single_research_unit: [],
+            num_units: 0,
+            precursors: [
+                "factory_game::smelting",
+            ],
+
+            pre_unlocked: true,
+
+            infinite: None,
+            effects: [
+                RecipeUnlock("factory_game::pipe"),
+                // RecipeUnlock("factory_game::underground_pipe"),
+                // RecipeUnlock("factory_game::boiler"),
+                // RecipeUnlock("factory_game::offshore_pump"),
+                // RecipeUnlock("factory_game::steam_engine"),
+            ],
+        ),
+        (
+            name: "factory_game::automation_science_pack",
+            display_name: "Automation Science Pack",
+            cost_of_single_research_unit: [],
+            num_units: 0,
+            precursors: [
+                "factory_game::electronics",
+                "factory_game::steam_power",
+            ],
+
+            pre_unlocked: true,
+
+            infinite: None,
+            effects: [
+                RecipeUnlock("factory_game::red_science"),
+            ],
+        ),
+        (
             name: "factory_game::automation",
             display_name: "Automation",
             cost_of_single_research_unit: [
@@ -1059,7 +1150,86 @@
                 ),
             ],
             num_units: 10,
-            precursors: [],
+            precursors: [
+                "factory_game::automation_science_pack"
+            ],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: [
+                // RecipeUnlock("factory_game::assembling_machine"),
+                // RecipeUnlock("factory_game::red_inserter"),
+            ],
+        ),
+        (
+            name: "factory_game::logistics_science_pack",
+            display_name: "Logistics Science Pack",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 75,
+            precursors: [
+                "factory_game::automation_science_pack"
+            ],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: [
+                RecipeUnlock("factory_game::green_science"),
+            ],
+        ),
+        (
+            name: "factory_game::steel",
+            display_name: "Steel Processing",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 500_000_000,
+            precursors: [
+                "factory_game::automation_science_pack"
+            ],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: [
+                RecipeUnlock("factory_game::steel"),
+            ],
+        ),
+        (
+            name: "factory_game::automation_2",
+            display_name: "Automation 2",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::green_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 40,
+            precursors: [
+                "factory_game::automation",
+                "factory_game::logistics_science_pack",
+                "factory_game::steel",
+            ],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: [
+                // RecipeUnlock("factory_game::assembling_machine_2"),
+            ],
         ),
     ],
     solar_panels: [

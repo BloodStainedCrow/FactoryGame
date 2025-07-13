@@ -1245,6 +1245,7 @@ dependencies = [
  "log",
  "nohash-hasher",
  "profiling",
+ "ron 0.10.1",
  "serde",
  "unicode-segmentation",
 ]
@@ -1317,6 +1318,18 @@ dependencies = [
  "wasm-bindgen",
  "web-sys",
  "winit",
+]
+
+[[package]]
+name = "egui_graphs"
+version = "0.25.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4779b6849bda09572523f4dedbfbf80179253f801f4eb1aaa0ef231894634ba6"
+dependencies = [
+ "egui",
+ "petgraph",
+ "rand 0.9.1",
+ "serde",
 ]
 
 [[package]]
@@ -1536,6 +1549,7 @@ dependencies = [
  "eframe",
  "egui",
  "egui_extras",
+ "egui_graphs",
  "egui_plot",
  "enum-map",
  "flate2",
@@ -1555,7 +1569,7 @@ dependencies = [
  "rand 0.8.5",
  "rayon",
  "rfd",
- "ron",
+ "ron 0.8.1",
  "rstest",
  "serde",
  "sha2",
@@ -2455,6 +2469,7 @@ checksum = "96936507f153605bddfcda068dd804796c84324ed2510809e5b2a624c81da765"
 dependencies = [
  "autocfg",
  "scopeguard",
+ "serde",
 ]
 
 [[package]]
@@ -3831,6 +3846,19 @@ dependencies = [
  "bitflags 2.9.1",
  "serde",
  "serde_derive",
+]
+
+[[package]]
+name = "ron"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "beceb6f7bf81c73e73aeef6dd1356d9a1b2b4909e1f0fc3e59b034f9572d7b7f"
+dependencies = [
+ "base64 0.22.1",
+ "bitflags 2.9.1",
+ "serde",
+ "serde_derive",
+ "unicode-ident",
 ]
 
 [[package]]

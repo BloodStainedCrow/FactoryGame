@@ -1119,8 +1119,6 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
                 // This can never race since only one belt ever has the same values for output_id and side, so only a single belt will ever modify each splitter loc
                 let splitter_loc = unsafe { &mut *splitter_loc.get() };
 
-                dbg!(&splitter_loc);
-
                 if splitter_loc.is_none() {
                     *splitter_loc = Some(item);
                     let _ = self.remove_item(0);
