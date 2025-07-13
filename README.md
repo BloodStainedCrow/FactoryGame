@@ -30,7 +30,7 @@ I was playing the above games and started being unable to expand due to performa
 - ~~Production Graphs~~
 - ~~Liquids~~
 - ~~Map View~~
-- Technology
+- ~~Technology~~
 - Mining Drills
 - ~~Underground belts~~
 - Fix Underground Pipe connection breaking/overlap
