@@ -1,15 +1,20 @@
+use std::iter;
+use std::time::Instant;
 use std::u16;
 
+use itertools::ChunkBy;
 use itertools::Itertools;
 use rayon::iter::IndexedParallelIterator;
 use strum::IntoEnumIterator;
 
+use crate::chest::MultiChestStore;
+use crate::data::all_recipe_iter;
 use crate::{
     assembler::FullAssemblerStore,
     chest::FullChestStore,
-    data::{DataStore, ItemRecipeDir},
+    data::{all_item_iter, DataStore, ItemRecipeDir},
     inserter::{FakeUnionStorage, StaticID, Storage},
-    item::{usize_from, IdxTrait, Item, ITEMCOUNTTYPE},
+    item::{usize_from, IdxTrait, Indexable, Item, ITEMCOUNTTYPE},
     lab::MultiLabStore,
     power::{power_grid::PowerGridIdentifier, PowerGridStorage},
     split_arbitrary::split_arbitrary_mut_slice,
@@ -138,7 +143,7 @@ pub fn index_fake_union<'a, 'b>(
 pub fn sizes<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &'a DataStore<ItemIdxType, RecipeIdxType>,
     num_grids_total: usize,
-) -> impl IntoIterator<Item = usize> + use<'a, ItemIdxType, RecipeIdxType> {
+) -> impl Iterator<Item = usize> + use<'a, ItemIdxType, RecipeIdxType> {
     (0..data_store.item_names.len())
         .map(|i| Item {
             id: ItemIdxType::try_from(i).unwrap(),
@@ -149,7 +154,7 @@ pub fn sizes<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 pub fn full_to_by_item<'a, 'b, 'c, 'd>(
     storages: &'d mut FullStorages<'a, 'b>,
     sizes: &'c [usize],
-) -> impl IntoIterator<Item = SingleItemStorages<'a, 'b>>
+) -> impl Iterator<Item = SingleItemStorages<'a, 'b>>
        + use<'a, 'b, 'c, 'd>
        + IndexedParallelIterator<Item = SingleItemStorages<'a, 'b>>
 where
@@ -273,17 +278,68 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         }
     }
 
-    let all_storages = all_storages(grids, chest_store, data_store);
+    // let all_storages = all_storages(grids, chest_store, data_store);
 
-    let all_storages_sorted = {
-        profiling::scope!("Sort Storages");
-        let mut ret: Vec<_> = all_storages.into_iter().collect();
+    // let all_storages_sorted: Box<[_]> = {
+    //     profiling::scope!("Sort Storages");
+    //     let mut ret: Vec<_> = all_storages.into_iter().collect();
 
-        ret.sort_by_cached_key(|v| get_full_storage_index(v.0, v.1, num_power_grids, data_store));
+    //     ret.sort_by_cached_key(|v| get_full_storage_index(v.0, v.1, num_power_grids, data_store));
 
-        // TODO: Collecting twice here seems wasteful
-        ret.into_iter().map(|v| (v.2, v.3)).collect()
+    //     // TODO: Collecting twice here seems wasteful
+    //     ret.into_iter().map(|v| (v.2, v.3)).collect()
+    // };
+
+    // let correct_len = all_storages_sorted.len();
+
+    let all_storages_sorted: Box<[_]> = {
+        let start = Instant::now();
+        let mut grids_by_item = grids
+            .power_grids
+            .iter_mut()
+            .enumerate()
+            .flat_map(|(grid_id, grid)| {
+                let grid_id = grid_id.try_into().unwrap();
+                all_assembler_storages(grid_id, &mut grid.stores, data_store)
+                    .into_iter()
+                    .chain(all_lab_storages(grid_id, &mut grid.lab_stores, data_store))
+            })
+            .into_group_map_by(|v| v.0);
+        dbg!(start.elapsed());
+
+        for item in all_item_iter(data_store) {
+            let vec = grids_by_item.entry(item).or_default();
+            // assert!(
+            //     vec.is_sorted_by_key(|v| get_full_storage_index(
+            //         v.0,
+            //         v.1,
+            //         num_power_grids,
+            //         data_store
+            //     )),
+            //     "{:?}",
+            //     vec.iter()
+            //         .map(|v| (
+            //             v.1,
+            //             get_full_storage_index(v.0, v.1, num_power_grids, data_store)
+            //         ))
+            //         .collect_vec()
+            // );
+        }
+
+        all_item_iter(data_store)
+            .zip(chest_store.stores.iter_mut())
+            .zip(grids_by_item.into_iter().sorted_by_key(|v| v.0))
+            .flat_map(|((item, chest_store), (grid_item, grid))| {
+                assert_eq!(item, grid_item);
+                chest_storages_pre_sorted(item, chest_store, data_store).chain(
+                    grid.into_iter()
+                        .map(|(_item, _storage, max_insert, data)| (max_insert, data)),
+                )
+            })
+            .collect()
     };
+
+    // assert_eq!(correct_len, all_storages_sorted.len());
     all_storages_sorted
 }
 
@@ -292,7 +348,7 @@ fn all_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     grids: &'a mut PowerGridStorage<ItemIdxType, RecipeIdxType>,
     chest_store: &'a mut FullChestStore<ItemIdxType>,
     data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
-) -> impl IntoIterator<
+) -> impl Iterator<
     Item = (
         Item<ItemIdxType>,
         Storage<RecipeIdxType>,
@@ -315,11 +371,30 @@ fn all_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 }
 
 #[profiling::function]
+pub fn chest_storages_pre_sorted<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    item: Item<ItemIdxType>,
+    chest_store: &'a mut MultiChestStore<ItemIdxType>,
+    data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
+) -> impl Iterator<Item = (&'a [ITEMCOUNTTYPE], &'a mut [ITEMCOUNTTYPE])>
+       + use<'a, 'b, ItemIdxType, RecipeIdxType> {
+    let grid_size = grid_size(item, data_store);
+    let static_size = static_size(item, data_store);
+
+    let first_grid_offs_in_grids = static_size.div_ceil(grid_size);
+
+    let first_grid_offs = grid_size * first_grid_offs_in_grids;
+
+    iter::once(chest_store.storage_list_slices())
+        .chain(iter::repeat_with(|| (PANIC_ON_INSERT, [].as_mut_slice())))
+        .take(first_grid_offs)
+}
+
+#[profiling::function]
 fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     grid: PowerGridIdentifier,
     assembler_store: &'a mut FullAssemblerStore<RecipeIdxType>,
     data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
-) -> impl IntoIterator<
+) -> impl Iterator<
     Item = (
         Item<ItemIdxType>,
         Storage<RecipeIdxType>,
@@ -711,7 +786,7 @@ fn all_lab_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     grid: PowerGridIdentifier,
     lab_store: &'a mut MultiLabStore,
     data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
-) -> impl IntoIterator<
+) -> impl Iterator<
     Item = (
         Item<ItemIdxType>,
         Storage<RecipeIdxType>,
@@ -741,7 +816,7 @@ fn all_lazy_power_machine_storages() {}
 fn all_static_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     chest_store: &'a mut FullChestStore<ItemIdxType>,
     data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
-) -> impl IntoIterator<
+) -> impl Iterator<
     Item = (
         Item<ItemIdxType>,
         Storage<RecipeIdxType>,
@@ -801,7 +876,7 @@ fn all_static_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 #[profiling::function]
 fn all_chest_storages<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     chest_store: &'a mut FullChestStore<ItemIdxType>,
-) -> impl IntoIterator<
+) -> impl Iterator<
     Item = (
         Item<ItemIdxType>,
         Storage<RecipeIdxType>,
@@ -833,8 +908,8 @@ fn all_chest_storages<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 }
 
 fn bot_network_storages<ItemIdxType: IdxTrait>(
-) -> impl IntoIterator<Item = (Item<ItemIdxType>, &'static mut [ITEMCOUNTTYPE])> {
-    vec![todo!()]
+) -> impl Iterator<Item = (Item<ItemIdxType>, &'static mut [ITEMCOUNTTYPE])> {
+    vec![todo!()].into_iter()
 }
 
 fn all_train_station_storages() {}

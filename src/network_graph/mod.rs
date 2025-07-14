@@ -48,22 +48,22 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
         self.graph.node_count()
     }
 
-    pub fn keys(&self) -> impl IntoIterator<Item = &NodeKey> {
+    pub fn keys(&self) -> impl Iterator<Item = &NodeKey> {
         self.key_map.iter().map(|v| v.0)
     }
 
-    pub fn nodes(&self) -> impl IntoIterator<Item = &S> {
+    pub fn nodes(&self) -> impl Iterator<Item = &S> {
         self.graph.node_weights().map(|n| &n.node_info)
     }
 
-    pub fn weak_components(&self) -> impl IntoIterator<Item = &W> {
+    pub fn weak_components(&self) -> impl Iterator<Item = &W> {
         self.graph
             .node_weights()
             .flat_map(|n| &n.connected_weak_components)
             .flatten()
     }
 
-    pub fn weak_components_mut(&mut self) -> impl IntoIterator<Item = &mut W> {
+    pub fn weak_components_mut(&mut self) -> impl Iterator<Item = &mut W> {
         self.graph
             .node_weights_mut()
             .flat_map(|n| &mut n.connected_weak_components)

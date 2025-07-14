@@ -8,7 +8,7 @@ use std::{
 use eframe::egui::Color32;
 use itertools::Itertools;
 use log::{error, warn};
-use petgraph::{graph::NodeIndex, prelude::StableGraph, Directed};
+use petgraph::{data, graph::NodeIndex, prelude::StableGraph, Directed};
 use rand::random;
 use sha2::{Digest, Sha256};
 use strum::IntoEnumIterator;
@@ -624,10 +624,16 @@ impl RawDataStore {
 
     #[allow(clippy::too_many_lines)]
     pub fn turn<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-        self,
+        mut self,
     ) -> DataStore<ItemIdxType, RecipeIdxType> {
         let checksum = self.get_checksum();
         warn!("Parsing game data with checksum {}", checksum);
+
+        // Sort the recipes so they are sorted by number of ings/outputs
+        // This is needed for the presorted assembler storage lists to be correct
+        self.recipes.sort_by(|a, b| {
+            (a.ings.len().cmp(&b.ings.len())).then(a.output.len().cmp(&b.output.len()))
+        });
 
         let pipe_connection_groups_map: Vec<_> = self
             .machines
@@ -1525,4 +1531,20 @@ impl RawDataStore {
 
         hex::encode_upper(hasher.finalize())
     }
+}
+
+pub fn all_item_iter<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+) -> impl Iterator<Item = Item<ItemIdxType>> {
+    (0..data_store.item_names.len()).map(|id| Item {
+        id: id.try_into().unwrap(),
+    })
+}
+
+pub fn all_recipe_iter<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+) -> impl Iterator<Item = Recipe<RecipeIdxType>> {
+    (0..data_store.recipe_names.len()).map(|id| Recipe {
+        id: id.try_into().unwrap(),
+    })
 }

@@ -51,6 +51,7 @@ use log::{info, trace, warn};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::collections::{BTreeMap, HashMap};
 use std::iter;
+use std::path::Path;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver;
@@ -110,7 +111,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             update_times: Timeline::new(false, data_store),
             last_update_time: None,
             settings: GameSettings {
-                show_unresearched_recipes: false,
+                show_unresearched_recipes: true,
             },
         }
     }
@@ -296,7 +297,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         ret
     }
 
-    pub fn new_with_bp(data_store: &DataStore<ItemIdxType, RecipeIdxType>, bp_path: &str) -> Self {
+    pub fn new_with_bp(
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        bp_path: impl AsRef<Path>,
+    ) -> Self {
         let mut ret = GameState::new(data_store);
 
         let file = File::open(bp_path).unwrap();
@@ -595,7 +599,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
         let mut storages_by_item: Box<[_]> = {
             profiling::scope!("Sort storages by item");
             let storages_by_item = full_to_by_item(&mut all_storages, &sizes);
-            storages_by_item.into_iter().collect()
+            Iterator::collect(storages_by_item.into_iter())
         };
 
         self.storage_storage_inserters.update(

@@ -1283,7 +1283,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     state_machine: &mut ActionStateMachine<ItemIdxType, RecipeIdxType>,
     game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
+) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
     let mut actions = vec![];
 
     Window::new("DEBUG USE WITH CARE")
@@ -2244,7 +2244,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             }
         });
 
-    actions
+    actions.into_iter()
 }
 
 fn render_items_straight<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(

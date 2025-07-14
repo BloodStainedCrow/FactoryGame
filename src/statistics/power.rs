@@ -16,7 +16,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         values: &[Self],
         _filter: Option<impl Fn(Item<ItemIdxType>) -> bool>,
         _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<Item = (usize, Series)> {
+    ) -> impl Iterator<Item = (usize, Series)> {
         iter::once((
             0,
             (

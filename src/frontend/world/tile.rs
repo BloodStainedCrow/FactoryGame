@@ -221,6 +221,10 @@ fn instantiate_inserter_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         update: Box::new(move |world, sim_state, updates, data_store| {
             world.to_instantiate.insert(pos);
 
+            if world.to_instantiate.len() > 1_000 {
+                warn!("More than 1_000 inserters waiting to be instantiated. This will cause lag!");
+            }
+
             let mut tmp = BTreeSet::default();
 
             mem::swap(&mut tmp, &mut world.to_instantiate);
@@ -875,10 +879,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         self.belt_recieving_input_directions.entry(pos).or_default()
     }
 
-    pub fn get_chunks(
-        &self,
-    ) -> impl IntoIterator<Item = &Chunk<ItemIdxType, RecipeIdxType>, IntoIter: Send> {
-        self.chunks.occupied_entries().map(|(a, b)| b)
+    pub fn get_chunks(&self) -> impl Iterator<Item = &Chunk<ItemIdxType, RecipeIdxType>> + Send {
+        self.chunks.occupied_entries().map(|(_, chunk)| chunk)
     }
 
     pub fn get_chunk(&self, x: i32, y: i32) -> Option<&Chunk<ItemIdxType, RecipeIdxType>> {
@@ -3043,8 +3045,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
     }
 
     #[must_use]
-    pub fn get_entities(&self) -> impl IntoIterator<Item = &Entity<ItemIdxType, RecipeIdxType>> {
-        &self.entities
+    pub fn get_entities(&self) -> impl Iterator<Item = &Entity<ItemIdxType, RecipeIdxType>> {
+        self.entities.iter()
     }
 }
 

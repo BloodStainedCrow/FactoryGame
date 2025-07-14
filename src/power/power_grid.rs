@@ -728,7 +728,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         &'a mut self,
         other: &'b mut Self,
         data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<
+    ) -> impl Iterator<
         Item = (
             Position,
             PowerGridEntity<ItemIdxType, RecipeIdxType>,
@@ -2148,7 +2148,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         pole_pos: Position,
         weak_idx: WeakIndex,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<Item = (BeaconAffectedEntity<RecipeIdxType>, (i16, i16, i16))> {
+    ) -> impl Iterator<Item = (BeaconAffectedEntity<RecipeIdxType>, (i16, i16, i16))> {
         let (
             _beacon_pos,
             PowerGridEntity::Beacon {

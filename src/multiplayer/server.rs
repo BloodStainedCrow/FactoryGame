@@ -32,7 +32,7 @@ pub(super) trait ActionSource<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
         current_tick: u64,
         world: &'b World<ItemIdxType, RecipeIdxType>,
         data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
            + use<'a, 'b, 'c, Self, ItemIdxType, RecipeIdxType>;
 }
 

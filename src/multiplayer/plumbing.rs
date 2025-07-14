@@ -59,8 +59,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         current_tick: u64,
         world: &World<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
-           + use<'a, ItemIdxType, RecipeIdxType> {
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<'a, ItemIdxType, RecipeIdxType>
+    {
         // This will block (?) if we did not yet recieve the actions from the server for this tick
         // TODO: This could introduce hitches which might be noticeable.
         //       This could be solved either by introducing some fixed delay on all actions (i.e. just running the client a couple ticks in the past compared to the server)
@@ -110,7 +110,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         current_tick: u64,
         world: &World<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
     {
         let start = Instant::now();
         // This is the Server, it will just keep on chugging along and never block
@@ -153,7 +153,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
             error!("recieved_actions {:?}", start.elapsed());
         }
 
-        recieved_actions
+        recieved_actions.into_iter()
     }
 }
 
@@ -188,7 +188,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         current_tick: u64,
         world: &'b World<ItemIdxType, RecipeIdxType>,
         data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
            + use<'a, 'b, 'c, ItemIdxType, RecipeIdxType> {
         let start = Instant::now();
         let mut state_machine = self.local_actions.lock();

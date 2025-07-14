@@ -143,7 +143,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         input: &'b Receiver<Input>,
         world: &'c World<ItemIdxType, RecipeIdxType>,
         data_store: &'d DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
            + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType> {
         input.try_iter().map(|input| {
             let actions = match input {
@@ -467,7 +467,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         key: Key,
         world: &World<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
         match (&self.state, key) {
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Q) => {
                 match world
@@ -956,14 +956,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
             (_, _) => vec![],
         }
+        .into_iter()
     }
 
     fn handle_stop_pressing_key(
         &mut self,
         key: Key,
-    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
         match (&self.state, key) {
-            (_, _) => vec![],
+            (_, _) => vec![].into_iter(),
         }
     }
 
@@ -990,7 +991,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         &mut self,
         world: &World<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
         let mut actions = Vec::new();
 
         if let ActionStateMachineState::Deconstructing(pos, timer) = &mut self.state {
@@ -1049,6 +1050,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             self.local_player_pos,
         ));
 
-        actions
+        actions.into_iter()
     }
 }

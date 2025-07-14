@@ -2516,11 +2516,11 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
     pub fn get_item_iter(
         &self,
         id: BeltTileId<ItemIdxType>,
-    ) -> impl IntoIterator<Item = Option<Item<ItemIdxType>>> {
+    ) -> impl Iterator<Item = Option<Item<ItemIdxType>>> {
         match id {
             BeltTileId::AnyBelt(index, _) => match &self.any_belts[index] {
-                AnyBelt::Smart(smart_belt) => self.inner.get_smart(*smart_belt).items(),
-                AnyBelt::Sushi(sushi_belt) => self.inner.get_sushi(*sushi_belt).items(),
+                AnyBelt::Smart(smart_belt) => self.inner.get_smart(*smart_belt).items().into_iter(),
+                AnyBelt::Sushi(sushi_belt) => self.inner.get_sushi(*sushi_belt).items().into_iter(),
             },
         }
     }
@@ -2885,7 +2885,7 @@ impl<ItemIdxType: IdxTrait> Default for MultiBeltStore<ItemIdxType> {
 }
 
 impl<ItemIdxType: IdxTrait> MultiBeltStore<ItemIdxType> {
-    pub fn belts_mut(&mut self) -> impl IntoIterator<Item = &mut SmartBelt<ItemIdxType>> {
+    pub fn belts_mut(&mut self) -> impl Iterator<Item = &mut SmartBelt<ItemIdxType>> {
         self.belts
             .iter_mut()
             .enumerate()

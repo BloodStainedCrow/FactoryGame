@@ -84,7 +84,7 @@ pub trait IntoSeries<T, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>: Sized {
         values: &[Self],
         filter: Option<impl Fn(T) -> bool>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<Item = (usize, Series)>;
+    ) -> impl Iterator<Item = (usize, Series)>;
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -164,7 +164,7 @@ impl<T: NewWithDataStore + Clone + for<'a> AddAssign<&'a T>> Timeline<T> {
         timescale: usize,
         data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
         filter: Option<Filter>,
-    ) -> impl IntoIterator<Item = (usize, Series)>
+    ) -> impl Iterator<Item = (usize, Series)>
            + use<'a, 'b, T, Item, ItemIdxType, RecipeIdxType, Filter>
     where
         T: IntoSeries<Item, ItemIdxType, RecipeIdxType>,

@@ -640,8 +640,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
 
     fn get_logibot_jobs(
         &mut self,
-    ) -> impl IntoIterator<Item = (Item<ItemIdxType>, ITEMCOUNTTYPE, u16, u16)> {
-        vec![todo!()]
+    ) -> impl Iterator<Item = (Item<ItemIdxType>, ITEMCOUNTTYPE, u16, u16)> {
+        vec![todo!()].into_iter()
     }
 
     fn add_requester_chest(
@@ -725,7 +725,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
     fn update_logibots(
         &mut self,
         sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<Item = BotRenderInfo> {
+    ) -> impl Iterator<Item = BotRenderInfo> {
         let mut render_infos = vec![];
 
         // Handle logibots, which are now done with their job
@@ -1064,7 +1064,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
 
         self.current_tick += 1;
 
-        render_infos
+        render_infos.into_iter()
     }
 
     fn update_construction_bots(
