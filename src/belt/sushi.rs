@@ -505,6 +505,12 @@ ty,
         Some(new_belt)
     }
 
+    pub fn make_circular(&mut self) {
+        assert!(self.input_splitter.is_none());
+        assert!(self.output_splitter.is_none());
+        self.is_circular = false;
+    }
+
     pub fn join(front: Self, back: Self) -> Self {
         let front_len = front.get_len() as usize;
         let _back_len = back.get_len() as usize;
@@ -714,6 +720,11 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
 
     #[profiling::function]
     fn update(&mut self, splitter_list: &[SushiSplitter<ItemIdxType>]) {
+        if self.is_circular {
+            self.zero_index += 1;
+            return;
+        }
+
         if let Some((output_id, side)) = &self.output_splitter {
             if let Some(item) = self.query_item(0) {
                 let splitter_loc =

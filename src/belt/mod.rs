@@ -478,7 +478,7 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
 
     fn remove_sushi_belt(&mut self, id: usize) -> SushiBelt<ItemIdxType> {
         let mut temp = SushiBelt::new(0, 1);
-        // temp.make_circular();
+        temp.make_circular();
         mem::swap(&mut temp, &mut self.sushi_belts[id]);
         self.sushi_belt_holes.push(id);
         temp
@@ -1004,9 +1004,7 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
     #[profiling::function]
     fn merge_sushi_belts(&mut self, front: usize, back: usize) {
         if front == back {
-            todo!("Make circular");
-            // self.get_sushi_mut(front).make_circular();
-
+            self.get_sushi_mut(front).make_circular();
             return;
         }
 
