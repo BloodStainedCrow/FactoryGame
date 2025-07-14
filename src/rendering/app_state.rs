@@ -7,7 +7,6 @@ use crate::inserter::{InserterState, HAND_SIZE};
 use crate::liquid::connection_logic::can_fluid_tanks_connect_to_single_connection;
 use crate::liquid::FluidConnectionDir;
 use crate::research::LabTickInfo;
-use crate::LoadedGameInfo;
 use crate::{
     belt::{BeltBeltInserterInfo, BeltStore},
     blueprint::Blueprint,
@@ -33,7 +32,7 @@ use crate::{
     liquid::connection_logic::can_fluid_tanks_connect,
     network_graph::WeakIndex,
     power::{power_grid::PowerGridIdentifier, PowerGridStorage},
-    research::{ResearchProgress, TechState, Technology},
+    research::{ResearchProgress, TechState},
     statistics::{
         consumption::ConsumptionInfo, production::ProductionInfo, recipe::RecipeTickInfo,
         GenStatistics, Timeline,
@@ -50,7 +49,7 @@ use crate::{
 use itertools::Itertools;
 use log::{info, trace, warn};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::iter;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
@@ -571,7 +570,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                     .map(|id| Item {
                         id: id.try_into().unwrap(),
                     })
-                    .map(|item| MultiChestStore::new(item, data_store))
+                    .map(|item| MultiChestStore::new(item))
                     .collect(),
             },
 
@@ -607,7 +606,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
         );
 
         self.belts.update(
-            num_grids_total,
             storages_by_item.par_iter_mut().map(|v| &mut **v),
             data_store,
         );
@@ -1006,8 +1004,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
-                                                                    }.translate(self.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos, data_store), data_store);
-                                                                    self.simulation_state.factory.belts.update_belt_storage_inserter_src(*id, *belt_pos, self.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos, data_store), new_storage, data_store);
+                                                                    }.translate(self.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), data_store);
+                                                                    self.simulation_state.factory.belts.update_belt_storage_inserter_src(*id, *belt_pos, self.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), new_storage, data_store);
                                                                 },
                                                                 AttachedInserter::BeltBelt { .. } => {
                                                                     unreachable!("A BeltBelt inserter should not be pointing at a machine")
@@ -1042,8 +1040,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
-                                                                    }.translate(self.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos, data_store), data_store);
-                                                                    self.simulation_state.factory.belts.update_belt_storage_inserter_dest(*id, *belt_pos, self.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos, data_store), new_storage, data_store);
+                                                                    }.translate(self.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), data_store);
+                                                                    self.simulation_state.factory.belts.update_belt_storage_inserter_dest(*id, *belt_pos, self.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), new_storage, data_store);
                                                                 },
                                                                 AttachedInserter::BeltBelt { item, inserter } => {
                                                                     unreachable!("A BeltBelt inserter should not be pointing at a machine")
@@ -1756,11 +1754,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             AssemblerInfo::UnpoweredNoRecipe
                                             | AssemblerInfo::Unpowered(_)
                                             | AssemblerInfo::PoweredNoRecipe(_) => {},
-                                            AssemblerInfo::Powered {
-                                                id,
-                                                pole_position,
-                                                weak_index,
-                                            } => {
+                                            AssemblerInfo::Powered { id, .. } => {
                                                 for removed_module in modules_to_remove {
                                                     self.simulation_state
                                                         .factory
@@ -1794,21 +1788,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 .into_iter()
                 .flat_map(|chunk| chunk.get_entities())
                 .all(|e| match e {
-                    Entity::Assembler {
-                        ty,
-                        pos,
-                        modules,
-                        info,
-                    } => {
+                    Entity::Assembler { info, .. } => {
                         match info {
                             AssemblerInfo::UnpoweredNoRecipe => true,
-                            AssemblerInfo::Unpowered(recipe) => true,
-                            AssemblerInfo::PoweredNoRecipe(position) => true,
-                            AssemblerInfo::Powered {
-                                id,
-                                pole_position,
-                                weak_index,
-                            } => {
+                            AssemblerInfo::Unpowered(_) => true,
+                            AssemblerInfo::PoweredNoRecipe(_) => true,
+                            AssemblerInfo::Powered { id, .. } => {
                                 !self.simulation_state.factory.power_grids.power_grids
                                     [usize::from(id.grid)]
                                 .is_placeholder
@@ -1816,10 +1801,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         }
                     },
                     Entity::Beacon {
-                        ty,
-                        pos,
-                        modules,
                         pole_position: Some((pole_pos, _)),
+                        ..
                     } => {
                         self.simulation_state
                             .factory
@@ -1931,16 +1914,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     data_store,
                     |e| {
                         match e {
-                            Entity::Inserter {
-                                ty,
-                                user_movetime,
-                                type_movetime,
-
-                                pos,
-                                direction,
-                                info,
-                                filter,
-                            } => match info {
+                            Entity::Inserter { pos, info, .. } => match info {
                                 InserterInfo::NotAttached { start_pos, end_pos } => {
                                     if start_pos
                                         .contained_in(assembler_pos, (size.0.into(), size.1.into()))
@@ -1973,16 +1947,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     data_store,
                     |e| {
                         match e {
-                            Entity::Inserter {
-                                ty,
-                                user_movetime,
-                                type_movetime,
-
-                                pos,
-                                direction,
-                                info,
-                                filter,
-                            } => match info {
+                            Entity::Inserter { pos, info, .. } => match info {
                                 InserterInfo::NotAttached { start_pos, end_pos } => {
                                     if start_pos.contained_in(belt_pos, (1, 1))
                                         || end_pos.contained_in(belt_pos, (1, 1))
@@ -2014,16 +1979,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     data_store,
                     |e| {
                         match e {
-                            Entity::Inserter {
-                                ty,
-                                user_movetime,
-                                type_movetime,
-
-                                pos,
-                                direction,
-                                info,
-                                filter,
-                            } => match info {
+                            Entity::Inserter { pos, info, .. } => match info {
                                 InserterInfo::NotAttached { start_pos, end_pos } => {
                                     if start_pos
                                         .contained_in(assembler_pos, (size.0.into(), size.1.into()))
@@ -2044,7 +2000,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     ..
                                 } => todo!(),
                                 InserterInfo::Attached {
-                                    info: AttachedInserter::BeltBelt { item, inserter },
+                                    info: AttachedInserter::BeltBelt { .. },
                                     ..
                                 } => {},
                             },
@@ -2143,7 +2099,6 @@ mod tests {
 
     use crate::{
         blueprint::{random_blueprint_strategy, random_position, Blueprint},
-        data::{factorio_1_1::get_raw_data_test, DataStore},
         frontend::{
             action::{
                 place_entity::{EntityPlaceOptions, PlaceEntityInfo},
@@ -2155,19 +2110,17 @@ mod tests {
                 Position,
             },
         },
-        inserter::MOVETIME,
         item::Recipe,
         power::{power_grid::MAX_POWER_MULT, Watt},
         rendering::app_state::GameState,
         replays::Replay,
         DATA_STORE,
     };
-    use itertools::Itertools;
     use proptest::{
         prelude::{Just, Strategy},
         prop_assert, prop_assert_eq, prop_assume, proptest,
     };
-    use rayon::iter::{IntoParallelIterator, IntoParallelRefMutIterator};
+
     use test::Bencher;
 
     fn beacon_test_val() -> impl Strategy<Value = Vec<ActionType<u8, u8>>> {
@@ -2270,7 +2223,7 @@ mod tests {
                 game_state.update(&DATA_STORE);
             }
 
-            let Some(Entity::Assembler { ty, pos, modules, info: AssemblerInfo::Powered { id, pole_position, weak_index } }) = game_state.world.get_entities_colliding_with(Position { x: 1600, y: 1600 }, (1,1), &DATA_STORE).into_iter().next() else {
+            let Some(Entity::Assembler { info: AssemblerInfo::Powered { id, .. }, .. }) = game_state.world.get_entities_colliding_with(Position { x: 1600, y: 1600 }, (1,1), &DATA_STORE).into_iter().next() else {
                 unreachable!("{:?}", game_state.world.get_entities_colliding_with(Position { x: 1600, y: 1600 }, (1,1), &DATA_STORE).into_iter().next());
             };
 
@@ -2307,7 +2260,7 @@ mod tests {
                 game_state.update(&DATA_STORE);
             }
 
-            let Some(Entity::Assembler { ty, pos, modules, info: AssemblerInfo::Powered { id, pole_position, weak_index } }) = game_state.world.get_entities_colliding_with(Position { x: 1624, y: 1621 }, (1,1), &DATA_STORE).into_iter().next() else {
+            let Some(Entity::Assembler { info: AssemblerInfo::Powered { id, .. }, .. }) = game_state.world.get_entities_colliding_with(Position { x: 1624, y: 1621 }, (1,1), &DATA_STORE).into_iter().next() else {
                 unreachable!("{:?}", game_state.world.get_entities_colliding_with(Position { x: 1624, y: 1621 }, (1,1), &DATA_STORE).into_iter().next());
             };
 
@@ -2424,91 +2377,4 @@ mod tests {
                 > 0
         );
     }
-
-    use crate::rendering::app_state::FakeUnionStorage;
-    use crate::rendering::app_state::StorageStorageInserterStore;
-    use rand::{random, seq::SliceRandom};
-
-    // #[bench]
-    // fn bench_update_storage_storage_inserter_store_naive(b: &mut Bencher) {
-    //     const NUM_INSERTERS: usize = 2_000_000;
-    //     let mut store = StorageStorageInserterStore::new(&DATA_STORE);
-
-    //     let max_insert = vec![200u8; NUM_INSERTERS];
-    //     let mut storages_in = vec![200u8; NUM_INSERTERS];
-    //     let mut storages_out = vec![0u8; NUM_INSERTERS];
-
-    //     let mut values = (0..(NUM_INSERTERS as u32)).collect_vec();
-    //     // values.shuffle(&mut rand::thread_rng());
-
-    //     let mut current_time = 0;
-
-    //     for i in values {
-    //         if random::<u16>() < 50 {
-    //             store.update(
-    //                 vec![[
-    //                     (max_insert.as_slice(), storages_in.as_mut_slice()),
-    //                     (max_insert.as_slice(), storages_out.as_mut_slice()),
-    //                 ]
-    //                 .as_mut_slice()]
-    //                 .into_par_iter(),
-    //                 10,
-    //                 current_time,
-    //                 &DATA_STORE,
-    //             );
-
-    //             if storages_in[0] < 20 {
-    //                 storages_in = vec![200u8; NUM_INSERTERS];
-    //                 storages_out = vec![0u8; NUM_INSERTERS];
-    //             }
-
-    //             current_time += 1;
-    //         }
-
-    //         store.add_ins(
-    //             crate::item::Item {
-    //                 id: 0usize.try_into().unwrap(),
-    //             },
-    //             MOVETIME,
-    //             crate::inserter::Storage::Static {
-    //                 static_id: 0,
-    //                 index: i,
-    //             },
-    //             crate::inserter::Storage::Static {
-    //                 static_id: 1,
-    //                 index: i,
-    //             },
-    //             &DATA_STORE,
-    //         );
-    //     }
-
-    //     storages_in = vec![200u8; NUM_INSERTERS];
-    //     storages_out = vec![0u8; NUM_INSERTERS];
-
-    //     let mut num_iter = 0;
-
-    //     b.iter(|| {
-    //         // for _ in 0..10 {
-    //         if storages_in[0] < 20 {
-    //             storages_in = vec![200u8; NUM_INSERTERS];
-    //             storages_out = vec![0u8; NUM_INSERTERS];
-    //         }
-    //         store.update(
-    //             vec![[
-    //                 (max_insert.as_slice(), storages_in.as_mut_slice()),
-    //                 (max_insert.as_slice(), storages_out.as_mut_slice()),
-    //             ]
-    //             .as_mut_slice()]
-    //             .into_par_iter(),
-    //             0,
-    //             num_iter,
-    //             &DATA_STORE,
-    //         );
-    //         // }
-    //         num_iter += 1;
-    //         current_time += 1;
-    //     });
-
-    //     dbg!(&storages_in[0..10], &storages_out[0..10], num_iter);
-    // }
 }

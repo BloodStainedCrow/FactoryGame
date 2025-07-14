@@ -84,7 +84,7 @@ enum OreLoc {
     },
 }
 
-struct MiningDrillStore {
+pub struct MiningDrillStore {
     todo: !,
 }
 

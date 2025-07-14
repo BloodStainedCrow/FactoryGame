@@ -9,8 +9,6 @@ use crate::item::{IdxTrait, Item, WeakIdxTrait};
 
 use strum::EnumIter;
 
-type BeltBeltInserterID = u32;
-
 pub const SPLITTER_BELT_LEN: u16 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, EnumIter)]
@@ -97,10 +95,11 @@ impl PureSplitter {
                     SplitterDistributionMode::Priority(splitter_side) => splitter_side.into(),
                 };
 
-                // TODO:
-                // if should_switch_out {
-                //     outputs.rotate_left(1);
-                // }
+                let mut outputs = self.outputs.each_mut();
+
+                if should_switch_out {
+                    outputs.rotate_left(1);
+                }
 
                 for (i, input) in self.inputs.iter_mut().enumerate() {
                     let old = *input;
@@ -116,9 +115,9 @@ impl PureSplitter {
                     }
                 }
 
-                for (i, output) in self.outputs.iter_mut().enumerate() {
-                    let old = *output;
-                    *output = true;
+                for (i, output) in outputs.iter_mut().enumerate() {
+                    let old = **output;
+                    **output = true;
                     if !old {
                         let original_index = (i + usize::from(should_switch_in)) % 2;
                         if let SplitterDistributionMode::Fair { next } = &mut self.out_mode {
@@ -208,14 +207,6 @@ impl<ItemIdxType: WeakIdxTrait> SushiSplitter<ItemIdxType> {
                 ],
             }
         }
-    }
-
-    pub unsafe fn unsafe_serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-        ItemIdxType: serde::Serialize,
-    {
-        todo!()
     }
 
     /// The caller must ensure, reads from self cannot race on the unsafe cell (i.e. that this is not called during a belt update)

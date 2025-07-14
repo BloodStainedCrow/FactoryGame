@@ -339,13 +339,12 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
 
     pub fn into_smart_belt(self, item: Item<ItemIdxType>) -> SmartBelt<ItemIdxType> {
         let found_item = match self.locs.iter().copied().flatten().all_equal_value() {
-            Ok(found_item) => {
-                assert_eq!(found_item, item);
-                found_item
-            },
+            Ok(found_item) => found_item,
             Err(None) => item,
             Err(Some(_)) => panic!("Belt is not pure!"),
         };
+
+        assert_eq!(found_item, item);
 
         let Self {
             ty,

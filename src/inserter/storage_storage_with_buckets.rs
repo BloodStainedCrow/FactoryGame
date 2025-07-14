@@ -844,7 +844,7 @@ mod test {
     use itertools::Itertools;
     use rand::{random, seq::SliceRandom};
     use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
-    use test::{black_box, Bencher};
+    use test::Bencher;
 
     use crate::inserter::{
         storage_storage_with_buckets::{
@@ -1038,6 +1038,8 @@ mod test {
             );
 
             current_time += 1;
+
+            ret
         });
 
         dbg!(&storages_in[0..10], &storages_out[0..10], current_time);
@@ -1138,6 +1140,8 @@ mod test {
             );
 
             current_time += 1;
+
+            ret
         });
 
         dbg!(&storages_in[0..10], &storages_out[0..10], current_time);

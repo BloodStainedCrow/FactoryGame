@@ -210,7 +210,7 @@ impl TechState {
                         .clone(),
                 );
             },
-            |edge| {},
+            |_edge| {},
         )
     }
 

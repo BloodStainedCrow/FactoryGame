@@ -14,8 +14,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 {
     fn into_series(
         values: &[Self],
-        filter: Option<impl Fn(Item<ItemIdxType>) -> bool>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        _filter: Option<impl Fn(Item<ItemIdxType>) -> bool>,
+        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl IntoIterator<Item = (usize, Series)> {
         iter::once((
             0,

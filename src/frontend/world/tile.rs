@@ -264,7 +264,7 @@ fn new_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType: IdxTra
     size: (u16, u16),
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
-        update: Box::new(move |world, sim_state, updates, data_store| {
+        update: Box::new(move |world, _sim_state, updates, data_store| {
             let inserter_search_start_pos = Position {
                 x: pos.x - data_store.max_inserter_search_range as i32,
                 y: pos.y - data_store.max_inserter_search_range as i32,
@@ -306,7 +306,7 @@ fn new_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType: IdxTra
 #[profiling::function]
 fn new_lab_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
-    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
         update: Box::new(move |world, sim_state, updates, data_store| {

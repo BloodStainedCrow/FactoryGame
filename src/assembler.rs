@@ -14,12 +14,9 @@ use crate::{
 
 pub type Simdtype = Simd<u8, 32>;
 
-// TODO: Is u8 bit enough?
 pub type TIMERTYPE = u16;
 
-// TODO: Do I want these generics or just get it at runtime?
 // FIXME: We store the same slice length n times!
-// TODO: Do I want to use SimdTypes for this?
 // TODO: Don´t clump update data and data for adding/removing assemblers together!
 
 // FIXME: Using Boxed slices here is probably the main contributor to the time usage for building large power grids, since this means reallocation whenever we add assemblers!
@@ -834,10 +831,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
     //     }
     // }
 
-    #[inline(never)]
-    // TODO: Do i want this to also do the power calculation, or will that be done in another step?
     // TODO: Currently power demand and supply are offset by a single tick. Is this acceptable?
-    // TODO: Write tests to ensure this works as expected.
     /// # Panics
     /// If `power_mult` > `MAX_POWER_MULT` = 64
     pub fn update_branchless<ItemIdxType: IdxTrait>(
@@ -856,19 +850,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         let mut times_ings_used = 0;
         let mut num_finished_crafts = 0;
 
-        // TODO: With power calculations being done on the fly, we cannot return early, since we then do not know the power demands of the base :(
-        // It might be fine, since it only applies if the power is so low, NOTHING happens and as soon as any power is connected it will start running again.
-        // My guess is that returning 0 (or just the drain power) would lead to flickering.
-        // if power_mult == 0 {
-        //     return;
-        // }
-
         assert!(power_mult <= MAX_POWER_MULT);
-
-        // FIXME:
-        // assert_eq!(self.outputs.len(), self.timers.len());
-        // assert_eq!(self.input1.len(), self.timers.len());
-        // assert!(self.outputs.len() % Simdtype::LEN == 0);
 
         // TODO: Is this amount of accuracy enough?
         let increase: TIMERTYPE = (u32::from(power_mult) * u32::from(TIMERTYPE::MAX)
@@ -876,9 +858,6 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             / u32::from(times[self.recipe.id.into()]))
         .try_into()
         .unwrap_or(TIMERTYPE::MAX);
-
-        // TODO: I don't think this holds anymore, now that we cannot bail early at 0 power_mult
-        // debug_assert!(increase > 0);
 
         let mut power = Watt(0);
 

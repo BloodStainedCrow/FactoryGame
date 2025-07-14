@@ -29,10 +29,6 @@ pub struct WeakIndex {
     index: usize,
 }
 
-pub struct NetworkUpdate {
-    new_network: usize,
-}
-
 impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
     pub fn new(first_node: S, key: NodeKey) -> Self {
         let mut graph = StableUnGraph::default();

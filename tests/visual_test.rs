@@ -35,7 +35,7 @@ fn start_ui() -> (
     let (ctx_send, ctx_recv) = channel();
 
     let ds = Arc::new(Mutex::new(DATA_STORE.clone()));
-    let gs = Arc::new(Mutex::new(GameState::new(Default::default(), &DATA_STORE)));
+    let gs = Arc::new(Mutex::new(GameState::new(&DATA_STORE)));
 
     let gs_move = gs.clone();
     let ds_move = ds.clone();

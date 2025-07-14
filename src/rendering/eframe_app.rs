@@ -72,8 +72,6 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
         ctx.request_repaint();
 
-        let size = ctx.available_rect();
-
         match &self.state {
             AppState::Ingame => {
                 self.update_ingame(ctx, frame);
@@ -226,7 +224,7 @@ impl eframe::App for App {
 }
 
 impl App {
-    fn update_ingame(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
+    fn update_ingame(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         let size = ctx.available_rect();
 
         CentralPanel::default().show(ctx, |ui| {
@@ -234,8 +232,6 @@ impl App {
                 ctx.set_cursor_icon(CursorIcon::Default);
             }
             let painter = ui.painter();
-
-            let game_graphics_area = painter.clip_rect();
 
             if let Some(game) = &self.currently_loaded_game {
                 // Only create game input actions if the ui does not currently want input
@@ -321,10 +317,6 @@ impl App {
 
                         mem::swap(&mut now, &mut *LAST_DRAW.lock());
 
-                        let time_since_last_update = now.elapsed();
-
-                        // dbg!(tick - self.last_rendered_update);
-
                         self.last_rendered_update = tick;
 
                         let render_actions = render_ui(
@@ -369,7 +361,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> CallbackTrait
         &self,
         info: PaintCallbackInfo,
         render_pass: &mut eframe::wgpu::RenderPass<'static>,
-        callback_resources: &egui_wgpu::CallbackResources,
+        _callback_resources: &egui_wgpu::CallbackResources,
     ) {
         let mut rend = self.raw_renderer.start_draw(
             render_pass,

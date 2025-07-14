@@ -7,7 +7,7 @@ use std::{
     path::PathBuf,
 };
 
-use bitcode::{Encode, __private::Encoder};
+use bitcode::Encode;
 use directories::ProjectDirs;
 use log::error;
 use ron::ser::PrettyConfig;

@@ -48,10 +48,7 @@ pub struct MultiChestStore<ItemIdxType: WeakIdxTrait> {
 
 impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
     #[must_use]
-    pub fn new<RecipeIdxType: IdxTrait>(
-        item: Item<ItemIdxType>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Self {
+    pub fn new(item: Item<ItemIdxType>) -> Self {
         Self {
             item,
             inout: vec![],

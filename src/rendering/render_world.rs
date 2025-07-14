@@ -27,7 +27,6 @@ use crate::{
     item::{usize_from, IdxTrait, Item, Recipe},
     power::{power_grid::MAX_POWER_MULT, Joule, Watt},
     rendering::map_view::{self, create_map_textures_if_needed, MapViewUpdate},
-    research,
     statistics::{
         NUM_SAMPLES_AT_INTERVALS, NUM_X_AXIS_TICKS, RELATIVE_INTERVAL_MULTS, TIMESCALE_LEGEND,
     },
@@ -40,7 +39,7 @@ use eframe::egui::{
 use egui::{RichText, ScrollArea, Sense};
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
-use log::{info, trace, warn};
+use log::{info, trace};
 use parking_lot::MutexGuard;
 use tilelib::types::{DrawInstance, Layer, RendererTrait};
 
@@ -297,7 +296,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     AssemblerInfo::Powered {
                                         id,
                                         pole_position,
-                                        weak_index,
+                                        ..
                                     } => {
                                         let grid = game_state
                                             .simulation_state
@@ -326,15 +325,15 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         }
 
                                         let AssemblerOnclickInfo {
-                                            inputs,
-                                            outputs,
+                                            inputs: _,
+                                            outputs: _,
                                             timer_percentage,
-                                            prod_timer_percentage,
-                                            base_speed,
-                                            speed_mod,
-                                            prod_mod,
-                                            power_consumption_mod,
-                                            base_power_consumption,
+                                            prod_timer_percentage: _,
+                                            base_speed: _,
+                                            speed_mod: _,
+                                            prod_mod: _,
+                                            power_consumption_mod: _,
+                                            base_power_consumption: _,
                                         } = game_state
                                             .simulation_state
                                             .factory
@@ -1208,11 +1207,11 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 },
             }
         },
-        crate::frontend::action::action_state_machine::ActionStateMachineState::Viewing(pos) => {
+        crate::frontend::action::action_state_machine::ActionStateMachineState::Viewing(_) => {
             // TODO:
         },
-        crate::frontend::action::action_state_machine::ActionStateMachineState::Decontructing(
-            position,
+        crate::frontend::action::action_state_machine::ActionStateMachineState::Deconstructing(
+            _,
             _,
         ) => {
             // TODO:
@@ -1348,8 +1347,8 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         let mut goal_recipe: Option<Recipe<RecipeIdxType>> = match info {
                             AssemblerInfo::UnpoweredNoRecipe => None,
                             AssemblerInfo::Unpowered(recipe) => Some(*recipe),
-                            AssemblerInfo::PoweredNoRecipe(position) => None,
-                            AssemblerInfo::Powered { id, pole_position, weak_index } => Some(id.recipe),
+                            AssemblerInfo::PoweredNoRecipe(_) => None,
+                            AssemblerInfo::Powered { id, .. } => Some(id.recipe),
                         };
 
                         ComboBox::new("Recipe list", "Recipes").selected_text(goal_recipe.map(|recipe| data_store.recipe_names[usize_from(recipe.id)].as_str()).unwrap_or("Choose a recipe!")).show_ui(ui, |ui| {
@@ -1377,15 +1376,14 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     }
                                 }
                             },
-                            crate::frontend::world::tile::AssemblerInfo::PoweredNoRecipe(grid) => {
+                            crate::frontend::world::tile::AssemblerInfo::PoweredNoRecipe(_) => {
                                 ui.label(&data_store.assembler_info[usize::from(*ty)].display_name);
                                 if let Some(goal_recipe) = goal_recipe {
                                     actions.push(ActionType::SetRecipe(SetRecipeInfo { pos: *pos, recipe: goal_recipe }));
                                 }
                             },
                             crate::frontend::world::tile::AssemblerInfo::Powered {
-                                id,
-                                pole_position, weak_index
+                                id, ..
                             } => {
                                 ui.label(&data_store.assembler_info[usize::from(*ty)].display_name);
 
@@ -1473,13 +1471,13 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         }
                     },
                     crate::frontend::world::tile::Entity::PowerPole {
-                        ty,
+                        
                         pos,
-                        connected_power_poles,
+                        ..
                     } => {
                         // TODO:
-                        let power_range = data_store.power_pole_data[usize::from(*ty)].power_range;
-                        let size = data_store.power_pole_data[usize::from(*ty)].size;
+                        // let power_range = data_store.power_pole_data[usize::from(*ty)].power_range;
+                        // let size = data_store.power_pole_data[usize::from(*ty)].size;
 
                         let grid_id = game_state
                         .simulation_state
@@ -1575,11 +1573,9 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             });
                     },
                     crate::frontend::world::tile::Entity::Belt {
-                        pos,
-                        direction,
-                        ty,
                         id,
                         belt_pos,
+                        ..
                     } => {
                         match id {
                             BeltTileId::AnyBelt(index, _) => {
@@ -1599,12 +1595,10 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         ui.label(format!("Belt Pos: {:?}", *belt_pos));
                     },
                     crate::frontend::world::tile::Entity::Underground {
-                        pos,
-                        direction,
-                        ty,
                         id,
                         underground_dir,
                         belt_pos,
+                        ..
                     } => {
                         match id {
                             BeltTileId::AnyBelt(index, _) => {
@@ -1622,21 +1616,18 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                     },
                     crate::frontend::world::tile::Entity::Inserter {
-                        ty,
+                        
                         user_movetime,
                         type_movetime,
 
                         pos,
-                        direction,
                         info,
-                        filter,
+                        
+                        ..
                     } => {
                         ui.label("Inserter");
                         match info {
-                            crate::frontend::world::tile::InserterInfo::NotAttached {
-                                start_pos,
-                                end_pos,
-                            } => {
+                            crate::frontend::world::tile::InserterInfo::NotAttached { .. } => {
                                 ui.label("NotAttached");
                             },
                             crate::frontend::world::tile::InserterInfo::Attached {info: ins, ..} => match ins {
@@ -1649,7 +1640,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     ui.label(format!("belt_id: {:?}", *id));
                                     ui.label(format!("belt_pos: {}", *belt_pos));
 
-                                    ui.label(format!("storage: {:?}", game_state.simulation_state.factory.belts.get_inserter_info_at(*id, *belt_pos, data_store).expect("No inserter at pos indicated in entity!")));
+                                    ui.label(format!("storage: {:?}", game_state.simulation_state.factory.belts.get_inserter_info_at(*id, *belt_pos).expect("No inserter at pos indicated in entity!")));
 
                                     // TODO:
                                 },
@@ -1697,9 +1688,9 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     },
                     Entity::Chest {
                         ty,
-                        pos,
                         item,
-                        slot_limit,
+                        
+                        ..
                     } => {
                         let Some((item, index)) = item else {
                             todo!()
@@ -1735,13 +1726,13 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             });
                         });
                     },
-                    Entity::Lab { pos, ty, modules, pole_position } => {
+                    Entity::Lab {   .. } => {
                         // TODO
                     },
-                    Entity::SolarPanel { pos, ty, pole_position } => {
+                    Entity::SolarPanel {  .. } => {
                         // TODO
                     }
-                    Entity::Beacon { pos, ty, modules, pole_position } => {
+                    Entity::Beacon {   .. } => {
                         // TODO
                     },
                     Entity::FluidTank { ty, pos, rotation } => {
@@ -1758,8 +1749,8 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 state_machine.state = ActionStateMachineState::Idle;
             }
         },
-        crate::frontend::action::action_state_machine::ActionStateMachineState::Decontructing(
-            position,
+        crate::frontend::action::action_state_machine::ActionStateMachineState::Deconstructing(
+            _,
             timer,
         ) => {
             Window::new("Deconstructing").show(ui.ctx(), |ui| {

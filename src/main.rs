@@ -17,7 +17,6 @@ fn main() {
 
 #[cfg(test)]
 mod test {
-    use itertools::Itertools;
     use rand::Rng;
     use std::{
         arch::x86_64::{
@@ -221,7 +220,7 @@ mod test {
         assert_eq!(hand_content.len(), belt_id.len());
         assert_eq!(hand_content.len(), belt_index.len());
 
-        let mut iter = hand_content
+        let iter = hand_content
             .iter_mut()
             .zip(belt_id.iter().zip(belt_index))
             .array_chunks();

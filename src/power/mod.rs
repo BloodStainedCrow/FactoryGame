@@ -572,15 +572,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         mem::swap(&mut ret.0, &mut self.power_grids[usize::from(kept_id)]);
 
         // Update Beacons when merging
-        // FIXME: Seems like this is broken
         {
             profiling::scope!("Update Beacons when merging");
             for pg in self.power_grids.iter_mut() {
                 for (_, pg_entity) in pg.grid_graph.weak_components_mut() {
                     if let PowerGridEntity::Beacon {
-                        ty,
-                        modules,
-                        affected_entities,
+                        affected_entities, ..
                     } = pg_entity
                     {
                         for affected_entity in affected_entities {
@@ -772,12 +769,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                 .iter()
                 .filter(|grid| !grid.is_placeholder)
                 .flat_map(|pg| { pg.grid_graph.weak_components() })
-                .all(|(pos, e)| {
+                .all(|(_pos, e)| {
                     match e {
                         PowerGridEntity::Beacon {
-                            ty,
-                            modules,
-                            affected_entities,
+                            affected_entities, ..
                         } => affected_entities.iter().all(|e| match e {
                             BeaconAffectedEntity::Assembler { id } => {
                                 !self.power_grids[usize::from(id.grid)].is_placeholder

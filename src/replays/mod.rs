@@ -5,7 +5,6 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use std::io::Read;
 use std::mem;
 
 use std::path::PathBuf;

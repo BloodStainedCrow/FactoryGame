@@ -1,7 +1,7 @@
 use std::{cmp::min, collections::HashMap, mem};
 
 use itertools::Itertools;
-use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
 use crate::{
     assembler::{AssemblerOnclickInfo, AssemblerRemovalInfo, FullAssemblerStore},
@@ -24,11 +24,6 @@ pub const MAX_POWER_MULT: u8 = 64;
 pub const MIN_BEACON_POWER_MULT: u8 = MAX_POWER_MULT / 2;
 
 pub const MAX_BURNER_RATE: Watt = Watt(1_800_000);
-
-const MAX_ACCUMULATOR_CHARGE_RATE: Watt = Watt(300_000);
-const MAX_ACCUMULATOR_DISCHARGE_RATE: Watt = Watt(300_000);
-
-const MAX_ACCUMULATOR_CHARGE: Joule = Joule(5_000_000);
 
 pub enum PowerGridEntityFIXME {
     Assembler {
@@ -558,7 +553,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             no_longer_connected_entities.into_iter().unzip();
 
         // This is needed to make sure both paths have the same type (since closures have different types even if identical)
-        let pos_closure = |v: &(Position, PowerGridEntity<ItemIdxType, RecipeIdxType>)| v.0;
         let beacon_mod_closure = |v: PowerGridEntity<ItemIdxType, RecipeIdxType>| match &v {
             PowerGridEntity::Beacon {
                 ty,
@@ -1397,7 +1391,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     ) -> AssemblerRemovalInfo {
         let removal_info = self.remove_assembler_raw(assembler_id, data_store);
 
-        let (pos, PowerGridEntity::Assembler { ty, recipe, index }) =
+        let (_pos, PowerGridEntity::Assembler { ty, .. }) =
             self.grid_graph.remove_weak_element(pole_pos, weak_idx)
         else {
             unreachable!()
@@ -1771,6 +1765,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             .iter_mut()
             .zip(discharge_amount_per)
             .zip((1..=data_store.accumulator_info.len()).rev())
+            // FIXME: This seems incorrect?
             .sorted_by_key(|((charge, max_rate), num_left)| *max_rate)
         {
             // FIXME: This is integer division, so we lose some power here.
@@ -2010,7 +2005,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         .current_technology
                         .as_ref()
                         .map(|tech| &*data_store.technology_costs[tech.id as usize].1),
-                    data_store,
                 )
             },
         );
@@ -2156,7 +2150,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl IntoIterator<Item = (BeaconAffectedEntity<RecipeIdxType>, (i16, i16, i16))> {
         let (
-            beacon_pos,
+            _beacon_pos,
             PowerGridEntity::Beacon {
                 ty,
                 modules,

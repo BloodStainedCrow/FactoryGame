@@ -26,7 +26,6 @@ use super::{
     app_state::{AppState, GameState},
     texture_atlas, TextureAtlas,
 };
-use image::GenericImageView;
 
 pub struct App {
     window: Window,
@@ -83,7 +82,7 @@ impl winit::application::ApplicationHandler for App {
     fn window_event(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
-        window_id: winit::window::WindowId,
+        _window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
         assert!(self.window.display.is_some());
@@ -123,7 +122,7 @@ impl winit::application::ApplicationHandler for App {
             },
 
             WindowEvent::KeyboardInput {
-                device_id,
+                device_id: _,
                 event,
                 is_synthetic,
             } => {
@@ -140,7 +139,7 @@ impl winit::application::ApplicationHandler for App {
             },
 
             WindowEvent::MouseWheel {
-                device_id,
+                device_id: _,
                 delta,
                 phase,
             } => {
@@ -161,7 +160,7 @@ impl winit::application::ApplicationHandler for App {
             },
 
             WindowEvent::MouseInput {
-                device_id,
+                device_id: _,
                 state,
                 button,
             } => {

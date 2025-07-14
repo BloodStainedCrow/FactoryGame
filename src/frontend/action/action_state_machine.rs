@@ -20,7 +20,6 @@ use crate::{
         },
     },
     item::{IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
-    research,
 };
 
 use super::{place_tile::PositionInfo, ActionType, PLAYERID};
@@ -93,7 +92,7 @@ impl Default for StatisticsPanel {
 #[derive(Debug)]
 pub enum ActionStateMachineState<ItemIdxType: WeakIdxTrait> {
     Idle,
-    Decontructing(Position, u32),
+    Deconstructing(Position, u32),
     Holding(HeldObject<ItemIdxType>),
     Viewing(Position),
 }
@@ -245,7 +244,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
                                 vec![]
                             },
-                            ActionStateMachineState::Decontructing(_, _) => {
+                            ActionStateMachineState::Deconstructing(_, _) => {
                                 self.state = ActionStateMachineState::Idle;
                                 vec![]
                             }
@@ -296,7 +295,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                     self.current_mouse_pos,
                                 );
                                 if world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next().is_some() {
-                                    self.state = ActionStateMachineState::Decontructing(pos, 100);
+                                    self.state = ActionStateMachineState::Deconstructing(pos, 100);
                                 }
                                 vec![]
                             },
@@ -308,7 +307,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 self.state = ActionStateMachineState::Idle;
                                 vec![]
                             },
-                            ActionStateMachineState::Decontructing(_, _) => vec![],
+                            ActionStateMachineState::Deconstructing(_, _) => vec![],
                         }
                     }
 
@@ -317,7 +316,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
                 ,
                 Input::RightClickReleased => match &self.state {
-                    ActionStateMachineState::Decontructing(_, _) => {
+                    ActionStateMachineState::Deconstructing(_, _) => {
                         self.state = ActionStateMachineState::Idle;
                         vec![]
                     },
@@ -408,7 +407,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 );},
                             },
                         },
-                        ActionStateMachineState::Decontructing(position, timer) =>{
+                        ActionStateMachineState::Deconstructing(position, timer) =>{
                             //todo!("Check if we are still over the same thing")
                             },
                     }
@@ -994,7 +993,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
         let mut actions = Vec::new();
 
-        if let ActionStateMachineState::Decontructing(pos, timer) = &mut self.state {
+        if let ActionStateMachineState::Deconstructing(pos, timer) = &mut self.state {
             // Check if we are still over the thing we were deconstructing
             if world
                 .get_entities_colliding_with(*pos, (1, 1), data_store)

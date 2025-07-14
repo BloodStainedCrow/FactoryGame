@@ -122,7 +122,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
 
                 assert_eq!(network_to_join_into.fluid, merge_fluid);
 
-                let final_fluid = match (merge_fluid, connected_storages_fluid) {
+                let _final_fluid = match (merge_fluid, connected_storages_fluid) {
                     (None, None) => None,
                     (None, Some(fluid)) => Some(fluid),
                     (Some(fluid), None) => Some(fluid),
@@ -351,11 +351,11 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                 [id_the_box_ends_up_with.index]
                 .as_ref()
                 .unwrap()
-                .check_consistency(chest_store, data_store),
+                .check_consistency(chest_store),
             None => self.empty_fluid_systems[id_the_box_ends_up_with.index]
                 .as_ref()
                 .unwrap()
-                .check_consistency(chest_store, data_store),
+                .check_consistency(chest_store),
         }
 
         Ok(())
@@ -973,8 +973,8 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         inserter_store: &mut StorageStorageInserterStore,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        self.check_consistency(chest_store, data_store);
-        other.check_consistency(chest_store, data_store);
+        self.check_consistency(chest_store);
+        other.check_consistency(chest_store);
 
         if !self
             .graph
@@ -1258,7 +1258,8 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
             FluidSystemState::NoFluid => {},
             FluidSystemState::HasFluid { fluid, chest_id } => {
                 chest_store.stores[fluid.into_usize()]
-                    .remove_items_from_chest(chest_id, old_fluid_level - fluid_left_for_us);
+                    .remove_items_from_chest(chest_id, old_fluid_level - fluid_left_for_us)
+                    .expect("Not enough items in fluid system chest");
                 assert!(fluid_left_for_us <= self.storage_capacity.try_into().unwrap());
                 let 0 = chest_store.stores[fluid.into_usize()]
                     .change_chest_size(chest_id, self.storage_capacity.try_into().unwrap())
@@ -1378,7 +1379,8 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
             FluidSystemState::NoFluid => {},
             FluidSystemState::HasFluid { fluid, chest_id } => {
                 chest_store.stores[fluid.into_usize()]
-                    .remove_items_from_chest(chest_id, old_fluid_level - fluid_left_for_us);
+                    .remove_items_from_chest(chest_id, old_fluid_level - fluid_left_for_us)
+                    .expect("Not enough items in fluid system chest");
                 assert!(fluid_left_for_us <= self.storage_capacity.try_into().unwrap());
                 let 0 = chest_store.stores[fluid.into_usize()]
                     .change_chest_size(chest_id, self.storage_capacity.try_into().unwrap())
@@ -1391,11 +1393,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         (new_grids.into_iter(), false)
     }
 
-    pub fn check_consistency<RecipeIdxType: IdxTrait>(
-        &self,
-        chest_store: &FullChestStore<ItemIdxType>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) {
+    pub fn check_consistency(&self, chest_store: &FullChestStore<ItemIdxType>) {
         let calculated_capacity: u32 = self
             .graph
             .nodes()

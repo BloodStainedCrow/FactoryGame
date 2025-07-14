@@ -124,9 +124,7 @@ impl<T: NewWithDataStore + Clone + for<'a> AddAssign<&'a T>> Timeline<T> {
                 break;
             }
 
-            let (level_to_read_from, current_level) =
-                // TODO: mid might be wrong here
-                self.samples.split_at_mut(current_level_idx);
+            let (level_to_read_from, current_level) = self.samples.split_at_mut(current_level_idx);
 
             let (level_to_read_from, current_level) =
                 (level_to_read_from.last().unwrap(), &mut current_level[0]);

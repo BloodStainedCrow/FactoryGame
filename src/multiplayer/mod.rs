@@ -31,7 +31,7 @@ mod server;
 
 pub mod connection_reciever;
 
-pub enum Game<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+pub(super) enum Game<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
     Client(
         Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
         GameStateUpdateHandler<ItemIdxType, RecipeIdxType, Client<ItemIdxType, RecipeIdxType>>,
@@ -230,8 +230,8 @@ impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
 {
     fn consume(
         &mut self,
-        current_tick: u64,
-        actions: impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>,
+        _current_tick: u64,
+        _actions: impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>,
     ) {
         // Do nothing
     }

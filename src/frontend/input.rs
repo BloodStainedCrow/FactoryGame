@@ -48,9 +48,9 @@ impl TryFrom<egui::Event> for Input {
         let ret = match event {
             eframe::egui::Event::Key {
                 key,
-                physical_key,
+                physical_key: _,
                 pressed,
-                repeat,
+                repeat: _,
                 modifiers,
             } => {
                 let key = EguiInputState {
@@ -66,7 +66,7 @@ impl TryFrom<egui::Event> for Input {
             },
             eframe::egui::Event::PointerMoved(pos2) => Ok(Input::MouseMove(pos2.x, pos2.y)),
             eframe::egui::Event::PointerButton {
-                pos,
+                pos: _,
                 button,
                 pressed,
                 modifiers,

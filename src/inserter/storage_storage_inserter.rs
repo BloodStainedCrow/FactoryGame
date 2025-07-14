@@ -40,8 +40,6 @@ impl StorageStorageInserter {
         storages: SingleItemStorages,
         movetime: u8,
         max_hand_size: ITEMCOUNTTYPE,
-        num_grids_total: usize,
-        num_recipes: usize,
         grid_size: usize,
     ) {
         // TODO: I just added InserterStates and it is a lot slower (unsurprisingly),

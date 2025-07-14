@@ -436,10 +436,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                     })]
                 },
                 crate::frontend::world::tile::Entity::Beacon {
-                    ty,
-                    pos,
-                    modules,
-                    pole_position,
+                    ty, pos, modules, ..
                 } => {
                     vec![
                         ActionType::PlaceEntity(PlaceEntityInfo {

@@ -36,7 +36,7 @@ use multiplayer::{
 use rendering::{
     app_state::GameState,
     eframe_app,
-    window::{LoadedGame, LoadedGameInfo, LoadedGameSized},
+    window::{LoadedGame, LoadedGameSized},
 };
 use saving::load;
 use simple_logger::SimpleLogger;
@@ -121,7 +121,7 @@ impl<T: Default> NewWithDataStore for T {
     }
 }
 
-pub fn main() {
+pub fn main() -> Result<(), ()> {
     puffin::set_scopes_on(true);
 
     SimpleLogger::new()
@@ -134,22 +134,23 @@ pub fn main() {
 
     if Some("--dedicated") == mode.as_deref() {
         run_dedicated_server(StartGameInfo::Load("".try_into().unwrap()));
-        return;
+    } else {
+        eframe::run_native(
+            "FactoryGame",
+            NativeOptions {
+                // depth_buffer: 32,
+                ..Default::default()
+            },
+            Box::new(|cc| {
+                let app = eframe_app::App::new(cc);
+
+                Ok(Box::new(app))
+            }),
+        )
+        .unwrap();
+
+        Ok(())
     }
-
-    eframe::run_native(
-        "FactoryGame",
-        NativeOptions {
-            // depth_buffer: 32,
-            ..Default::default()
-        },
-        Box::new(|cc| {
-            let app = eframe_app::App::new(cc);
-
-            Ok(Box::new(app))
-        }),
-    )
-    .unwrap();
 }
 
 enum StartGameInfo {
@@ -353,54 +354,6 @@ fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Se
         data::DataStoreOptions::ItemU16RecipeU16(data_store) => todo!(),
     }
 }
-
-// fn main_loop<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-//     current_tick: Arc<AtomicU64>,
-//     input_reciever: Receiver<Input>,
-//     app_state: Arc<Mutex<AppState<ItemIdxType, RecipeIdxType>>>,
-//     state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType>>>,
-//     data_store: Arc<DataStore<ItemIdxType, RecipeIdxType>>,
-// ) -> ! {
-//     let mut update_interval =
-//         spin_sleep_util::interval(Duration::from_secs(1) / TICKS_PER_SECOND as u32);
-
-//     loop {
-//         update_interval.tick();
-//         match &mut *app_state.lock().unwrap() {
-//             AppState::Ingame(game_state) => {
-//                 // TODO: For now I collect the actions here.
-
-//                 let actions: Vec<ActionType<ItemIdxType, RecipeIdxType>> = {
-//                     let mut state_machine = state_machine.lock().unwrap();
-//                     let mut ret: Vec<ActionType<ItemIdxType, RecipeIdxType>> = input_reciever
-//                         .try_iter()
-//                         .flat_map(|input| {
-//                             state_machine.handle_input(input, &game_state.world, &data_store)
-//                         })
-//                         .collect();
-
-//                     ret.extend(state_machine.once_per_update_actions());
-
-//                     ret
-//                 };
-
-//                 let start = Instant::now();
-//                 game_state.apply_actions(actions, &data_store);
-
-//                 info!("Apply Actions Time: {:?}", start.elapsed());
-//                 let start = Instant::now();
-
-//                 game_state.update(&data_store);
-//                 info!("Update Time: {:?}", start.elapsed());
-//             },
-//         }
-//         current_tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-//     }
-// }
-
-// #[cfg(not(debug_assertions))]
-
-// Type your code here, or load an example.
 
 use std::simd::Simd;
 

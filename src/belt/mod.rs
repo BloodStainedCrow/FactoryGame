@@ -26,7 +26,7 @@ use crate::{
         belt_storage_inserter::{BeltStorageInserter, Dir},
     },
     item::{usize_from, Item},
-    storage_list::{grid_size, num_recipes, SingleItemStorages},
+    storage_list::{grid_size, SingleItemStorages},
 };
 use crate::{
     inserter::{FakeUnionStorage, Storage},
@@ -1695,7 +1695,6 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
     #[profiling::function]
     pub fn update<'a, 'b, RecipeIdxType: IdxTrait>(
         &mut self,
-        num_grids_total: usize,
         storages_by_item: impl IndexedParallelIterator<Item = SingleItemStorages<'a, 'b>>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) where
@@ -1747,7 +1746,6 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     );
 
                     let grid_size = grid_size(item, data_store);
-                    let num_recipes = num_recipes(item, data_store);
 
                     {
                         profiling::scope!("Update Belt");
@@ -1756,12 +1754,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                             if self.inner.belt_update_timers[usize::from(*ty)] >= 120 {
                                 belt.update(&self.inner.sushi_splitters);
                             }
-                            belt.update_inserters(
-                                item_storages,
-                                num_grids_total,
-                                num_recipes,
-                                grid_size,
-                            );
+                            belt.update_inserters(item_storages, grid_size);
                         }
                     }
                     // {
@@ -2318,11 +2311,10 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         )
     }
 
-    pub fn get_inserter_info_at<RecipeIdxType: IdxTrait>(
+    pub fn get_inserter_info_at(
         &self,
         belt: BeltTileId<ItemIdxType>,
         belt_pos: u16,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Option<BeltInserterInfo> {
         match belt {
             BeltTileId::AnyBelt(idx, _) => match self.any_belts[idx] {
@@ -2336,11 +2328,10 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         }
     }
 
-    pub fn get_inserter_item<RecipeIdxType: IdxTrait>(
+    pub fn get_inserter_item(
         &self,
         belt: BeltTileId<ItemIdxType>,
         belt_pos: u16,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Item<ItemIdxType> {
         match belt {
             BeltTileId::AnyBelt(idx, _) => match self.any_belts[idx] {
@@ -2501,7 +2492,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     sushi_belt.remove_inserter(pos);
                     let sushi_belt_id = *sushi_belt_id;
                     match self.try_make_belt_pure(sushi_belt_id, id, None) {
-                        Ok((item, new_id)) => {
+                        Ok((_, new_id)) => {
                             assert_eq!(id, new_id);
                         },
                         Err(_) => {
@@ -2517,7 +2508,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         match id {
             BeltTileId::AnyBelt(index, _) => match &self.any_belts[index] {
                 AnyBelt::Smart(smart_belt) => Some(smart_belt.item),
-                AnyBelt::Sushi(sushi_belt) => None,
+                AnyBelt::Sushi(_) => None,
             },
         }
     }

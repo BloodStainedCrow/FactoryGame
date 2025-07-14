@@ -15,7 +15,7 @@ use crate::{
     split_arbitrary::split_arbitrary_mut_slice,
 };
 
-// FIXME: We just yeet 10MB of RAM into  the wind here :/
+// FIXME: We just yeet 10MB of RAM into the wind here :/
 pub const ALWAYS_FULL: &'static [ITEMCOUNTTYPE] = &[0; 10_000_000];
 pub const PANIC_ON_INSERT: &'static [ITEMCOUNTTYPE] = &[0; 0];
 pub const PANIC_ON_INSERT_DATA: &'static [ITEMCOUNTTYPE] = &[0; 0];
@@ -69,7 +69,6 @@ fn size_of_single_item_slice<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     num_grids_total: usize,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> usize {
-    let num_different_static_containers = data_store.num_different_static_containers;
     let grid_size = grid_size(item, data_store);
     let static_size = static_size(item, data_store);
 
@@ -81,7 +80,6 @@ fn size_of_single_item_slice<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 pub fn index<'a, 'b, RecipeIdxType: IdxTrait>(
     slice: SingleItemStorages<'a, 'b>,
     storage_id: Storage<RecipeIdxType>,
-    num_grids_total: usize,
     num_recipes: usize,
     grid_size: usize,
     static_size: usize,
@@ -178,7 +176,6 @@ fn get_full_storage_index<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         .sum();
 
     let num_recipes = num_recipes(item, data_store);
-    let num_labs = num_labs(item, data_store);
     let grid_size = grid_size(item, data_store);
     let static_size = static_size(item, data_store);
 

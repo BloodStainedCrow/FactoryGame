@@ -3,7 +3,7 @@ use crate::power::Watt;
 use super::{
     AllowedIn, RawAssemblingMachine, RawBeacon, RawChest, RawDataStore, RawEntity, RawItem,
     RawItemStack, RawLab, RawModule, RawPowerPole, RawRecipeData, RawSolarPanel, RawTechnology,
-    RawTechnologyEffect, TechnologyEffect,
+    RawTechnologyEffect,
 };
 
 const RAW_DATA_STR: &'static str = include_str!("factorio_1_1.fgmod");

@@ -250,11 +250,10 @@ impl MultiLabStore {
 
     // TODO: Ensure good compilation results (i.e. vectorization)
     // FIXME: Use module modifiers
-    pub fn update<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    pub fn update(
         &mut self,
         power_mult: u8,
         current_research_costs: Option<&[u8]>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (Joule, u32, u16) {
         const POWER_CONSUMPTION: Watt = Watt(600);
         const TICKS_PER_SCIENCE: TIMERTYPE = 60;

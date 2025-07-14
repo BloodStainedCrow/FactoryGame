@@ -290,7 +290,6 @@ impl<RecipeIdxType: IdxTrait> Storage<RecipeIdxType> {
 
     fn into_inner_and_outer_indices_with_statics_at_zero(
         self,
-        num_grids_total: usize,
         num_recipes: usize,
         grid_size: usize,
         static_size: usize,
@@ -421,14 +420,14 @@ mod test {
         }
 
         #[test]
-        fn storage_and_fake_union_result_in_same_indices_with_statics_at_zero((item, num_grids, storage) in union_test_input()) {
+        fn storage_and_fake_union_result_in_same_indices_with_statics_at_zero((item, _num_grids, storage) in union_test_input()) {
             let grid_size = grid_size(item, &DATA_STORE);
 
             let storage_union = FakeUnionStorage::from_storage_with_statics_at_zero(item, storage, &DATA_STORE);
 
             let union_indices = storage_union.into_inner_and_outer_indices_with_statics_at_zero(grid_size);
 
-            let storage_indices = storage.into_inner_and_outer_indices_with_statics_at_zero(num_grids.into(), DATA_STORE.num_recipes_with_item[usize_from(item.id)], grid_size, static_size(item, &DATA_STORE));
+            let storage_indices = storage.into_inner_and_outer_indices_with_statics_at_zero(DATA_STORE.num_recipes_with_item[usize_from(item.id)], grid_size, static_size(item, &DATA_STORE));
 
             prop_assert_eq!(union_indices, storage_indices);
         }

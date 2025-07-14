@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::Display, marker::PhantomData};
+use std::{error::Error, fmt::Display};
 
 use crate::item::{IdxTrait, Item, WeakIdxTrait};
 
@@ -40,26 +40,6 @@ pub trait Belt<ItemIdxType: IdxTrait> {
 pub enum ItemInfo<ItemIdxType: WeakIdxTrait> {
     Implicit,
     Sushi(Item<ItemIdxType>),
-}
-
-struct PrintMe<ItemIdxType: IdxTrait, T: Belt<ItemIdxType>>(T, PhantomData<ItemIdxType>);
-
-impl<ItemIdxType: IdxTrait, T> Display for PrintMe<ItemIdxType, T>
-where
-    T: Belt<ItemIdxType>,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = String::new();
-
-        for i in 0..self.0.get_len() {
-            // match self.query_item(i) {
-            //     Some(item) => f.write_str(&item.print()),
-            //     None => f.write_char("."),
-            // }
-        }
-
-        write!(f, "{s}")
-    }
 }
 
 #[derive(Debug)]
