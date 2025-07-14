@@ -294,9 +294,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         );
                                     },
                                     AssemblerInfo::Powered {
-                                        id,
-                                        pole_position,
-                                        ..
+                                        id, pole_position, ..
                                     } => {
                                         let grid = game_state
                                             .simulation_state
@@ -1355,7 +1353,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             data_store.recipe_names.iter().enumerate().filter(|(i, recipe_name)| {
                                     (game_state.settings.show_unresearched_recipes || game_state.simulation_state.tech_state.get_active_recipes()[*i]) && data_store.recipe_allowed_assembling_machines[*i].contains(ty)
                                 }).for_each(|(i, recipe_name)| {
-                                    
+
                                 ui.selectable_value(&mut goal_recipe, Some(Recipe {id: i.try_into().unwrap()}), recipe_name);
                             });
                         });
@@ -1471,7 +1469,6 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         }
                     },
                     crate::frontend::world::tile::Entity::PowerPole {
-                        
                         pos,
                         ..
                     } => {
@@ -1616,13 +1613,11 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                     },
                     crate::frontend::world::tile::Entity::Inserter {
-                        
                         user_movetime,
                         type_movetime,
 
                         pos,
                         info,
-                        
                         ..
                     } => {
                         ui.label("Inserter");
@@ -1689,7 +1684,6 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     Entity::Chest {
                         ty,
                         item,
-                        
                         ..
                     } => {
                         let Some((item, index)) = item else {

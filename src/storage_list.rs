@@ -293,8 +293,9 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     // let correct_len = all_storages_sorted.len();
 
     let all_storages_sorted: Box<[_]> = {
-        let start = Instant::now();
-        let mut grids_by_item = grids
+        let mut grids_by_item = {
+            profiling::scope!("grids_by_item");
+            grids
             .power_grids
             .iter_mut()
             .enumerate()
@@ -304,8 +305,8 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     .into_iter()
                     .chain(all_lab_storages(grid_id, &mut grid.lab_stores, data_store))
             })
-            .into_group_map_by(|v| v.0);
-        dbg!(start.elapsed());
+            .into_group_map_by(|v| v.0)
+        };
 
         for item in all_item_iter(data_store) {
             let vec = grids_by_item.entry(item).or_default();
@@ -326,17 +327,20 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             // );
         }
 
-        all_item_iter(data_store)
-            .zip(chest_store.stores.iter_mut())
-            .zip(grids_by_item.into_iter().sorted_by_key(|v| v.0))
-            .flat_map(|((item, chest_store), (grid_item, grid))| {
-                assert_eq!(item, grid_item);
-                chest_storages_pre_sorted(item, chest_store, data_store).chain(
-                    grid.into_iter()
-                        .map(|(_item, _storage, max_insert, data)| (max_insert, data)),
-                )
-            })
-            .collect()
+        {
+            profiling::scope!("all_storages_sorted");
+            all_item_iter(data_store)
+                .zip(chest_store.stores.iter_mut())
+                .zip(grids_by_item.into_iter().sorted_by_key(|v| v.0))
+                .flat_map(|((item, chest_store), (grid_item, grid))| {
+                    assert_eq!(item, grid_item);
+                    chest_storages_pre_sorted(item, chest_store, data_store).chain(
+                        grid.into_iter()
+                            .map(|(_item, _storage, max_insert, data)| (max_insert, data)),
+                    )
+                })
+                .collect()
+        }
     };
 
     // assert_eq!(correct_len, all_storages_sorted.len());

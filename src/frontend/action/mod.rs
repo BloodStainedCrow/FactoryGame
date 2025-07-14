@@ -51,5 +51,9 @@ pub enum ActionType<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         tech: Option<Technology>,
     },
 
+    CheatUnlockTechnology {
+        tech: Technology,
+    },
+
     Ping(Position),
 }

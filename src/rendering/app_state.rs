@@ -48,6 +48,7 @@ use crate::{
 };
 use itertools::Itertools;
 use log::{info, trace, warn};
+use petgraph::graph::NodeIndex;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::collections::{BTreeMap, HashMap};
 use std::iter;
@@ -667,6 +668,29 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             match action.borrow().clone() {
                 ActionType::SetActiveResearch { tech } => {
                     self.simulation_state.tech_state.current_technology = tech;
+                },
+
+                ActionType::CheatUnlockTechnology { tech } => {
+                    if self.simulation_state.tech_state.current_technology == Some(tech) {
+                        self.simulation_state.tech_state.current_technology = None;
+                    }
+                    self.simulation_state
+                        .tech_state
+                        .in_progress_technologies
+                        .remove(&tech);
+                    self.simulation_state
+                        .tech_state
+                        .finished_technologies
+                        .insert(tech);
+                    for recipe in &data_store
+                        .technology_tree
+                        .node_weight(NodeIndex::from(tech.id))
+                        .unwrap()
+                        .effect
+                        .unlocked_recipes
+                    {
+                        self.simulation_state.tech_state.recipe_active[recipe.into_usize()] = true;
+                    }
                 },
 
                 ActionType::PlaceFloorTile(place_floor_tile_by_hand_info) => {
@@ -1822,52 +1846,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
     #[profiling::function]
     pub fn update(&mut self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) {
-        self.simulation_state.factory.chests.update(data_store);
-
         self.simulation_state
             .factory
             // We can downcast here, since this could only cause graphical weirdness for a couple frame every ~2 years of playtime
             .belt_update(self.current_tick as u32, data_store);
 
-        // TODO: Do I want this, or just do it in the belt_update
-        //self.simulation_state
-        //    .factory
-        //    .belt_belt_inserters
-        //    .update(&mut self.simulation_state.factory.belts, data_store);
-
-        // #[cfg(debug_assertions)]
-        // {
-        //     let num_placeholders = self
-        //         .simulation_state
-        //         .factory
-        //         .power_grids
-        //         .power_grids
-        //         .iter()
-        //         .filter(|grid| grid.is_placeholder)
-        //         .count();
-        //     dbg!(
-        //         num_placeholders,
-        //         self.simulation_state.factory.power_grids.power_grids.len()
-        //     );
-
-        //     // let num_assemblers = self
-        //     //     .world
-        //     //     .get_chunks()
-        //     //     .into_iter()
-        //     //     .flat_map(|c| c.get_entities())
-        //     //     .filter(|e| matches!(e, Entity::Assembler { .. }))
-        //     //     .count();
-        //     // dbg!(num_assemblers);
-        // }
-
-        let (tech_progress, recipe_tick_info, lab_info): (
-            ResearchProgress,
-            RecipeTickInfo,
-            Option<LabTickInfo>,
-        ) = self.simulation_state.factory.power_grids.update(
-            &self.simulation_state.tech_state,
-            0,
-            data_store,
+        let ((), (tech_progress, recipe_tick_info, lab_info)) = rayon::join(
+            || self.simulation_state.factory.chests.update(data_store),
+            || {
+                self.simulation_state.factory.power_grids.update(
+                    &self.simulation_state.tech_state,
+                    0,
+                    data_store,
+                )
+            },
         );
 
         self.simulation_state

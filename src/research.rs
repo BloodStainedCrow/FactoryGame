@@ -18,6 +18,7 @@ use std::u16;
 
 use crate::data;
 use crate::data::DataStore;
+use crate::item::Indexable;
 
 use crate::frontend::action::ActionType;
 use crate::item::Recipe;
@@ -43,7 +44,7 @@ pub struct TechState {
     pub finished_technologies: HashSet<Technology>,
     pub in_progress_technologies: HashMap<Technology, u64>,
     // current_tech_mod_lookup: (),
-    recipe_active: Vec<bool>,
+    pub recipe_active: Vec<bool>,
 
     science_overflow_buffer: Box<[u32]>,
 }
@@ -148,6 +149,15 @@ impl TechState {
                 // We finished this technology!
                 let final_science_used = self.in_progress_technologies.remove(&current).unwrap();
                 self.finished_technologies.insert(*current);
+                for recipe in &data_store
+                    .technology_tree
+                    .node_weight(NodeIndex::from(current.id))
+                    .unwrap()
+                    .effect
+                    .unlocked_recipes
+                {
+                    self.recipe_active[recipe.into_usize()] = true;
+                }
                 self.current_technology = None;
 
                 // Since we only check if a tech is finished at the end of each update, it is possible we produced more science progress in this tick, than was required.
@@ -280,6 +290,8 @@ impl TechState {
 
                     if ui.button("Cancel").clicked() {
                         ret.push(ActionType::SetActiveResearch { tech: None });
+                    } else if ui.button("[CHEAT] Unlock Technology").clicked() {
+                        ret.push(ActionType::CheatUnlockTechnology { tech: *tech });
                     }
                 }
             },

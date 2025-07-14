@@ -219,8 +219,8 @@ impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
         current_tick: u64,
         _: &World<ItemIdxType, RecipeIdxType>,
         _: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
-           + use<'a, ItemIdxType, RecipeIdxType> {
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<'a, ItemIdxType, RecipeIdxType>
+    {
         self.try_iter()
     }
 }

@@ -164,8 +164,7 @@ impl<T: NewWithDataStore + Clone + for<'a> AddAssign<&'a T>> Timeline<T> {
         timescale: usize,
         data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
         filter: Option<Filter>,
-    ) -> impl Iterator<Item = (usize, Series)>
-           + use<'a, 'b, T, Item, ItemIdxType, RecipeIdxType, Filter>
+    ) -> impl Iterator<Item = (usize, Series)> + use<'a, 'b, T, Item, ItemIdxType, RecipeIdxType, Filter>
     where
         T: IntoSeries<Item, ItemIdxType, RecipeIdxType>,
     {
