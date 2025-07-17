@@ -36,7 +36,7 @@ use eframe::egui::{
     self, Align2, Color32, ComboBox, Context, CornerRadius, Label, Layout, ProgressBar, Stroke, Ui,
     Window,
 };
-use egui::{RichText, ScrollArea, Sense};
+use egui::{Modal, RichText, ScrollArea, Sense};
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
 use log::{info, trace};
@@ -1275,14 +1275,36 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     renderer.draw(&player_layer);
 }
 
+pub(super) enum EscapeMenuOptions {
+    BackToMainMenu,
+}
+
 pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     ctx: &Context,
-    ui: &Ui,
+    ui: &mut Ui,
     state_machine: &mut ActionStateMachine<ItemIdxType, RecipeIdxType>,
     game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
+) -> Result<impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>, EscapeMenuOptions> {
     let mut actions = vec![];
+
+    if state_machine.escape_menu_open {
+        if let Some(escape_action) = Modal::new("Pause Window".into())
+            .show(ctx, |ui| {
+                ui.heading("Paused");
+                if ui.button("Main Menu").clicked() {
+                    return Some(EscapeMenuOptions::BackToMainMenu);
+                }
+
+                None
+            })
+            .inner
+        {
+            match escape_action {
+                EscapeMenuOptions::BackToMainMenu => return Err(escape_action),
+            }
+        }
+    }
 
     Window::new("DEBUG USE WITH CARE")
         .default_open(false)
@@ -2238,7 +2260,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             }
         });
 
-    actions.into_iter()
+    Ok(actions.into_iter())
 }
 
 fn render_items_straight<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(

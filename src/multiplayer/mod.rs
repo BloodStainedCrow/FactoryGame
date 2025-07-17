@@ -1,8 +1,12 @@
 use std::{
     env,
-    net::{IpAddr, TcpStream},
+    net::{SocketAddr, TcpStream},
     ops::ControlFlow,
-    sync::{atomic::AtomicU64, mpsc::Receiver, Arc},
+    sync::{
+        atomic::{AtomicBool, AtomicU64},
+        mpsc::Receiver,
+        Arc,
+    },
     time::Duration,
 };
 
@@ -41,6 +45,7 @@ pub(super) enum Game<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
         GameState<ItemIdxType, RecipeIdxType>,
         Replay<ItemIdxType, RecipeIdxType, DataStore<ItemIdxType, RecipeIdxType>>,
         GameStateUpdateHandler<ItemIdxType, RecipeIdxType, Server<ItemIdxType, RecipeIdxType>>,
+        Box<dyn FnMut() + Send + Sync>,
     ),
     /// Integrated Server is also how Singleplayer works
     IntegratedServer(
@@ -52,12 +57,30 @@ pub(super) enum Game<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
             IntegratedServer<ItemIdxType, RecipeIdxType>,
         >,
         Arc<AtomicU64>,
+        Box<dyn FnMut() + Send + Sync>,
     ),
 }
 
+impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Drop for Game<ItemIdxType, RecipeIdxType> {
+    fn drop(&mut self) {
+        match self {
+            Game::Client(mutex, game_state_update_handler, atomic_u64) => {},
+            Game::DedicatedServer(game_state, replay, game_state_update_handler, cancel_socket) => {
+                cancel_socket()
+            },
+            Game::IntegratedServer(
+                mutex,
+                replay,
+                game_state_update_handler,
+                atomic_u64,
+                cancel_socket,
+            ) => cancel_socket(),
+        }
+    }
+}
+
 pub struct ClientConnectionInfo {
-    pub ip: IpAddr,
-    pub port: u16,
+    pub addr: SocketAddr,
 }
 
 pub struct ServerInfo {
@@ -73,7 +96,11 @@ pub enum GameInitData<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         tick_counter: Arc<AtomicU64>,
         info: ClientConnectionInfo,
     },
-    DedicatedServer(GameState<ItemIdxType, RecipeIdxType>, ServerInfo),
+    DedicatedServer(
+        GameState<ItemIdxType, RecipeIdxType>,
+        ServerInfo,
+        Box<dyn FnMut() + Send + Sync>,
+    ),
     IntegratedServer {
         game_state: Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
         action_state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
@@ -81,10 +108,12 @@ pub enum GameInitData<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         ui_actions: Receiver<ActionType<ItemIdxType, RecipeIdxType>>,
         tick_counter: Arc<AtomicU64>,
         info: ServerInfo,
+        cancel_socket: Box<dyn FnMut() + Send + Sync>,
     },
 }
 
 pub enum ExitReason {
+    LoopStopped,
     UserQuit,
     ConnectionDropped,
 }
@@ -103,7 +132,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 info,
                 ui_actions,
             } => {
-                let stream = std::net::TcpStream::connect((info.ip, info.port))?;
+                let stream = std::net::TcpStream::connect(info.addr)?;
                 Ok(Self::Client(
                     game_state,
                     GameStateUpdateHandler::new(Client {
@@ -115,7 +144,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                     tick_counter,
                 ))
             },
-            GameInitData::DedicatedServer(game_state, info) => {
+            GameInitData::DedicatedServer(game_state, info, cancel_socket) => {
                 #[cfg(debug_assertions)]
                 let replay = Replay::new(&game_state, None, data_store.clone());
                 #[cfg(not(debug_assertions))]
@@ -124,6 +153,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                     game_state,
                     replay,
                     GameStateUpdateHandler::new(Server::new(info)),
+                    cancel_socket,
                 ))
             },
             GameInitData::IntegratedServer {
@@ -133,6 +163,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 action_state_machine,
                 inputs,
                 ui_actions,
+                cancel_socket,
             } => {
                 #[cfg(debug_assertions)]
                 let replay = Replay::new(&*game_state.lock(), None, data_store.clone());
@@ -148,16 +179,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                         ui_actions,
                     }),
                     tick_counter,
+                    cancel_socket,
                 ))
             },
         }
     }
 
-    pub fn run(&mut self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> ExitReason {
+    pub fn run(
+        &mut self,
+        stop: Arc<AtomicBool>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> ExitReason {
         let mut update_interval =
             spin_sleep_util::interval(Duration::from_secs(1) / TICKS_PER_SECOND_RUNSPEED as u32);
 
-        loop {
+        while stop.load(std::sync::atomic::Ordering::Relaxed) == false {
             profiling::finish_frame!();
             profiling::scope!("Update Loop");
 
@@ -171,6 +207,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 update_interval.tick();
             }
         }
+
+        ExitReason::LoopStopped
     }
 
     fn do_tick(
@@ -186,10 +224,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 );
                 tick_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             },
-            Game::DedicatedServer(game_state, replay, game_state_update_handler) => {
-                game_state_update_handler.update(game_state, Some(replay), data_store)
-            },
-            Game::IntegratedServer(game_state, replay, game_state_update_handler, tick_counter) => {
+            Game::DedicatedServer(
+                game_state,
+                replay,
+                game_state_update_handler,
+                _cancel_socket,
+            ) => game_state_update_handler.update(game_state, Some(replay), data_store),
+            Game::IntegratedServer(
+                game_state,
+                replay,
+                game_state_update_handler,
+                tick_counter,
+                _cancel_socket,
+            ) => {
                 #[cfg(debug_assertions)]
                 {
                     profiling::scope!("Crash anticipation save to disk");

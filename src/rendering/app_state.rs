@@ -6,7 +6,6 @@ use crate::inserter::storage_storage_with_buckets::{
 use crate::inserter::{InserterState, HAND_SIZE};
 use crate::liquid::connection_logic::can_fluid_tanks_connect_to_single_connection;
 use crate::liquid::FluidConnectionDir;
-use crate::research::LabTickInfo;
 use crate::{
     belt::{BeltBeltInserterInfo, BeltStore},
     blueprint::Blueprint,
@@ -32,10 +31,9 @@ use crate::{
     liquid::connection_logic::can_fluid_tanks_connect,
     network_graph::WeakIndex,
     power::{power_grid::PowerGridIdentifier, PowerGridStorage},
-    research::{ResearchProgress, TechState},
+    research::TechState,
     statistics::{
-        consumption::ConsumptionInfo, production::ProductionInfo, recipe::RecipeTickInfo,
-        GenStatistics, Timeline,
+        consumption::ConsumptionInfo, production::ProductionInfo, GenStatistics, Timeline,
     },
     storage_list::{
         full_to_by_item, grid_size, num_recipes, sizes, storages_by_item, SingleItemStorages,
@@ -618,7 +616,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
 }
 
 pub enum AppState {
-    MainMenu,
+    MainMenu {
+        in_ip_box: Option<(String, bool)>,
+    },
     Ingame,
     Loading {
         /// WARNING: This is a f64!

@@ -1,7 +1,7 @@
 use eframe::egui;
 use winit::{dpi::PhysicalPosition, event::MouseScrollDelta, keyboard::KeyCode};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Input {
     LeftClickPressed { shift: bool },
     LeftClickReleased,
@@ -16,7 +16,7 @@ pub enum Input {
     UnknownInput(UnknownInput),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 enum UnknownInput {
     UnknownKeyInput(winit::keyboard::NativeKeyCode),
 }
@@ -132,6 +132,7 @@ pub enum Key {
     Key9,
     R,
     ShiftR,
+    Esc,
 }
 
 impl TryFrom<winit::keyboard::KeyCode> for Key {
@@ -195,6 +196,7 @@ impl TryFrom<EguiInputState> for Key {
             (egui::Key::Num7, _) => Key::Key7,
             (egui::Key::Num8, _) => Key::Key8,
             (egui::Key::Num9, _) => Key::Key9,
+            (egui::Key::Escape, _) => Key::Esc,
 
             _ => return Err(()),
         };

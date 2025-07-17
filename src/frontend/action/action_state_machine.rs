@@ -52,6 +52,8 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     current_held_keys: HashSet<Key>,
     pub state: ActionStateMachineState<ItemIdxType>,
 
+    pub escape_menu_open: bool,
+
     pub zoom_level: f32,
 
     copy_info: Option<CopyInfo<ItemIdxType, RecipeIdxType>>,
@@ -131,6 +133,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
             zoom_level: 1.0,
 
+            escape_menu_open: false,
+
             copy_info: None,
 
             recipe: PhantomData,
@@ -146,6 +150,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
            + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType> {
         input.try_iter().map(|input| {
+            if dbg!(self.escape_menu_open) && dbg!(input != Input::KeyPress(Key::Esc)) {
+                match input {
+                    Input::KeyPress(key) => {
+                        self.current_held_keys.insert(key);
+                    },
+                    Input::KeyRelease(key) => {
+                        self.current_held_keys.remove(&key);
+                    },
+                    _ => {}
+                }
+
+                return vec![];
+            }
+
             let actions = match input {
                 Input::LeftClickPressed { shift } => {
                     if shift {
@@ -468,7 +486,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         world: &World<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
-        match (&self.state, key) {
+        let ret = match (&self.state, key) {
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Q) => {
                 match world
                     .get_entities_colliding_with(
@@ -954,9 +972,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 vec![]
             },
 
+            (_, Key::Esc) => {
+                self.escape_menu_open = !self.escape_menu_open;
+                vec![]
+            },
+
             (_, _) => vec![],
+        };
+
+        // Do not send any actions if we are in the escape menu
+        if self.escape_menu_open {
+            vec![].into_iter()
+        } else {
+            ret.into_iter()
         }
-        .into_iter()
     }
 
     fn handle_stop_pressing_key(

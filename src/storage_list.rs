@@ -1,20 +1,17 @@
 use std::iter;
-use std::time::Instant;
 use std::u16;
 
-use itertools::ChunkBy;
 use itertools::Itertools;
 use rayon::iter::IndexedParallelIterator;
 use strum::IntoEnumIterator;
 
 use crate::chest::MultiChestStore;
-use crate::data::all_recipe_iter;
 use crate::{
     assembler::FullAssemblerStore,
     chest::FullChestStore,
     data::{all_item_iter, DataStore, ItemRecipeDir},
     inserter::{FakeUnionStorage, StaticID, Storage},
-    item::{usize_from, IdxTrait, Indexable, Item, ITEMCOUNTTYPE},
+    item::{usize_from, IdxTrait, Item, ITEMCOUNTTYPE},
     lab::MultiLabStore,
     power::{power_grid::PowerGridIdentifier, PowerGridStorage},
     split_arbitrary::split_arbitrary_mut_slice,
@@ -296,16 +293,16 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         let mut grids_by_item = {
             profiling::scope!("grids_by_item");
             grids
-            .power_grids
-            .iter_mut()
-            .enumerate()
-            .flat_map(|(grid_id, grid)| {
-                let grid_id = grid_id.try_into().unwrap();
-                all_assembler_storages(grid_id, &mut grid.stores, data_store)
-                    .into_iter()
-                    .chain(all_lab_storages(grid_id, &mut grid.lab_stores, data_store))
-            })
-            .into_group_map_by(|v| v.0)
+                .power_grids
+                .iter_mut()
+                .enumerate()
+                .flat_map(|(grid_id, grid)| {
+                    let grid_id = grid_id.try_into().unwrap();
+                    all_assembler_storages(grid_id, &mut grid.stores, data_store)
+                        .into_iter()
+                        .chain(all_lab_storages(grid_id, &mut grid.lab_stores, data_store))
+                })
+                .into_group_map_by(|v| v.0)
         };
 
         for item in all_item_iter(data_store) {

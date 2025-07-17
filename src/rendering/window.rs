@@ -1,5 +1,9 @@
 use std::{
-    sync::{atomic::AtomicU64, mpsc::Sender, Arc},
+    sync::{
+        atomic::{AtomicBool, AtomicU64},
+        mpsc::Sender,
+        Arc,
+    },
     time::{Duration, Instant},
 };
 
@@ -56,6 +60,17 @@ pub struct LoadedGameSized<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrai
     pub state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
     pub data_store: Arc<Mutex<DataStore<ItemIdxType, RecipeIdxType>>>,
     pub ui_action_sender: Sender<ActionType<ItemIdxType, RecipeIdxType>>,
+
+    pub stop_update_thread: Arc<AtomicBool>,
+}
+
+impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> Drop
+    for LoadedGameSized<ItemIdxType, RecipeIdxType>
+{
+    fn drop(&mut self) {
+        self.stop_update_thread
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 pub struct Window {
@@ -188,8 +203,8 @@ impl winit::application::ApplicationHandler for App {
                 let fps =
                     Duration::from_secs(1).div_duration_f32(self.window.last_frame_time.elapsed());
 
-                match self.state {
-                    AppState::MainMenu => todo!(),
+                match &self.state {
+                    AppState::MainMenu { in_ip_box } => todo!(),
 
                     AppState::Ingame => {
                         if let Some(loaded) = &self.currently_loaded_game {
@@ -268,7 +283,7 @@ impl Window {
 impl App {
     pub fn new(input_sender: Sender<Input>) -> Self {
         Self {
-            state: AppState::MainMenu,
+            state: AppState::MainMenu { in_ip_box: None },
             window: Window::new(),
             last_rendered_update: 0,
             currently_loaded_game: None,

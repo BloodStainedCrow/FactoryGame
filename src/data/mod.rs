@@ -8,7 +8,7 @@ use std::{
 use eframe::egui::Color32;
 use itertools::Itertools;
 use log::{error, warn};
-use petgraph::{data, graph::NodeIndex, prelude::StableGraph, Directed};
+use petgraph::{graph::NodeIndex, prelude::StableGraph, Directed};
 use rand::random;
 use sha2::{Digest, Sha256};
 use strum::IntoEnumIterator;

@@ -1,6 +1,11 @@
 use std::{
     mem,
-    sync::{atomic::AtomicU64, atomic::Ordering, mpsc::channel, mpsc::Sender, Arc, LazyLock},
+    net::ToSocketAddrs,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc::{channel, Sender},
+        Arc, LazyLock,
+    },
     thread,
     time::Instant,
 };
@@ -8,14 +13,14 @@ use std::{
 use directories::ProjectDirs;
 use parking_lot::Mutex;
 
-use crate::run_integrated_server;
-use crate::GameCreationInfo;
 use crate::StartGameInfo;
+use crate::{rendering::render_world::EscapeMenuOptions, run_integrated_server};
+use crate::{run_client, GameCreationInfo};
 use eframe::{
     egui::{CentralPanel, Event, PaintCallbackInfo, Shape},
     egui_wgpu::{self, CallbackTrait},
 };
-use egui::{CursorIcon, ProgressBar, Window};
+use egui::{Color32, CursorIcon, Modal, ProgressBar, RichText, TextEdit, Window};
 use log::{error, warn};
 use tilelib::types::RawRenderer;
 
@@ -32,7 +37,6 @@ use super::{
     window::{LoadedGame, LoadedGameInfo},
     TextureAtlas,
 };
-use std::path::PathBuf;
 
 use crate::saving::save;
 
@@ -61,7 +65,7 @@ impl App {
                 render_state.target_format,
             ),
             input_sender: None,
-            state: AppState::MainMenu,
+            state: AppState::MainMenu { in_ip_box: None },
             texture_atlas: atlas,
             currently_loaded_game: None,
             last_rendered_update: 0,
@@ -73,7 +77,7 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
         ctx.request_repaint();
 
-        match &self.state {
+        match &mut self.state {
             AppState::Ingame => {
                 self.update_ingame(ctx, frame);
             },
@@ -103,7 +107,67 @@ impl eframe::App for App {
                 }
             },
 
-            AppState::MainMenu => {
+            AppState::MainMenu { in_ip_box } => {
+                if let Some((current_text, error_pupup)) = in_ip_box {
+                    if ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
+                        *in_ip_box = None;
+                        return;
+                    }
+
+                    let popup = Modal::new("Ip Box".into());
+
+                    if let Some(ip) = popup
+                        .show(ctx, |ui| {
+                            let text = TextEdit::singleline(current_text)
+                                .char_limit(100)
+                                .hint_text("ip:port");
+
+                            let ret = if (text.show(ui).response.lost_focus()
+                                && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                                || ui.button("Connect").clicked()
+                            {
+                                match current_text.to_socket_addrs() {
+                                    Ok(mut addr) => match addr.next() {
+                                        Some(addr) => Some(addr),
+                                        None => {
+                                            *error_pupup = true;
+                                            None
+                                        },
+                                    },
+                                    Err(_) => {
+                                        *error_pupup = true;
+                                        None
+                                    },
+                                }
+                            } else {
+                                None
+                            };
+
+                            if *error_pupup {
+                                ui.label(
+                                    RichText::new("Invalid IP. Example: 127.0.0.1:8080")
+                                        .color(Color32::RED),
+                                );
+                            }
+
+                            ret
+                        })
+                        .inner
+                    {
+                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
+                        let (send, recv) = channel();
+
+                        send.send(run_client(ip));
+
+                        self.state = AppState::Loading {
+                            progress,
+                            game_state_receiver: recv,
+                        };
+
+                        return;
+                    }
+                }
+
                 CentralPanel::default().show(ctx, |ui| {
                     if ui.button("Load").clicked() {
                         if let Some(path) = rfd::FileDialog::new()
@@ -130,6 +194,12 @@ impl eframe::App for App {
                                 game_state_receiver: recv,
                             };
                         }
+                    } else if ui.button("Connect over network").clicked() {
+                        let AppState::MainMenu { in_ip_box } = &mut self.state else {
+                            unreachable!()
+                        };
+                        assert!(in_ip_box.is_none());
+                        *in_ip_box = Some((String::new(), false));
                     } else if ui.button("Empty World").clicked() {
                         let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
                         let (send, recv) = channel();
@@ -326,6 +396,7 @@ impl App {
 
                         let mut game_state = loaded_game_sized.state.lock();
                         let mut state_machine = loaded_game_sized.state_machine.lock();
+                        let data_store = loaded_game_sized.data_store.lock();
 
                         let tick = game.tick.load(std::sync::atomic::Ordering::Relaxed);
 
@@ -338,19 +409,28 @@ impl App {
 
                         self.last_rendered_update = tick;
 
-                        let render_actions = render_ui(
-                            ctx,
-                            &ui,
-                            &mut state_machine,
-                            &mut game_state,
-                            &loaded_game_sized.data_store.lock(),
-                        );
+                        match render_ui(ctx, ui, &mut state_machine, &mut game_state, &data_store) {
+                            Ok(render_actions) => {
+                                for action in render_actions {
+                                    loaded_game_sized
+                                        .ui_action_sender
+                                        .send(action)
+                                        .expect("Ui action channel died");
+                                }
+                            },
+                            Err(escape) => match escape {
+                                EscapeMenuOptions::BackToMainMenu => {
+                                    self.state = AppState::MainMenu { in_ip_box: None };
+                                    self.last_rendered_update = 0;
+                                    self.input_sender = None;
 
-                        for action in render_actions {
-                            loaded_game_sized
-                                .ui_action_sender
-                                .send(action)
-                                .expect("Ui action channel died");
+                                    // Needed to make borrows happy
+                                    mem::drop(game_state);
+                                    mem::drop(state_machine);
+                                    mem::drop(data_store);
+                                    self.currently_loaded_game = None;
+                                },
+                            },
                         }
                     },
                     LoadedGame::ItemU8RecipeU16(loaded_game_sized) => todo!(),

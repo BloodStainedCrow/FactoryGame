@@ -11,11 +11,11 @@ use std::{
     array,
     borrow::Borrow,
     env,
-    net::{IpAddr, Ipv4Addr},
+    net::{SocketAddr, TcpStream},
     process::exit,
     simd::cmp::SimdPartialEq,
     sync::{
-        atomic::AtomicU64,
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc::{channel, Sender},
         Arc,
     },
@@ -180,7 +180,10 @@ fn run_integrated_server(
 
     let connections: Arc<Mutex<Vec<std::net::TcpStream>>> = Arc::default();
 
-    accept_continously(connections.clone()).unwrap();
+    let local_addr = "127.0.0.1:8080";
+    let cancel: Arc<AtomicBool> = Default::default();
+
+    accept_continously(local_addr, connections.clone(), cancel.clone()).unwrap();
 
     match data_store {
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
@@ -228,15 +231,25 @@ fn run_integrated_server(
                     action_state_machine: state_machine.clone(),
                     inputs: recv,
                     ui_actions: ui_recv,
+                    cancel_socket: Box::new(move || {
+                        cancel.store(true, Ordering::Relaxed);
+                        // This is a little hack. Our connection accept thread is stuck waiting for connections and will only exit if anything connects.
+                        // So we just connect to ourselves :)
+                        // See https://stackoverflow.com/questions/56692961/how-do-i-gracefully-exit-tcplistener-incoming
+                        let _ = TcpStream::connect(local_addr);
+                    }),
                 },
                 &data_store,
             )
             .unwrap();
 
+            let stop = Arc::new(AtomicBool::new(false));
+
             let m_data_store = data_store.clone();
+            let m_stop: Arc<AtomicBool> = stop.clone();
             thread::spawn(move || {
                 profiling::register_thread!("Game Update Thread");
-                game.run(&m_data_store);
+                game.run(m_stop, &m_data_store);
             });
 
             let data_store = Arc::new(Mutex::new(data_store));
@@ -246,6 +259,8 @@ fn run_integrated_server(
                     state_machine,
                     data_store,
                     ui_action_sender: ui_sender,
+
+                    stop_update_thread: stop,
                 }),
                 tick_counter,
                 send,
@@ -266,7 +281,10 @@ fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
 
     let connections: Arc<Mutex<Vec<std::net::TcpStream>>> = Arc::default();
 
-    accept_continously(connections.clone()).unwrap();
+    let local_addr = "127.0.0.1:8080";
+    let cancel: Arc<AtomicBool> = Default::default();
+
+    accept_continously(local_addr, connections.clone(), cancel.clone()).unwrap();
 
     match data_store {
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
@@ -278,15 +296,28 @@ fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
                 });
 
             let mut game = Game::new(
-                GameInitData::DedicatedServer(game_state, ServerInfo { connections }),
+                GameInitData::DedicatedServer(
+                    game_state,
+                    ServerInfo { connections },
+                    Box::new(move || {
+                        cancel.store(true, Ordering::Relaxed);
+                        // This is a little hack. Our connection accept thread is stuck waiting for connections and will only exit if anything connects.
+                        // So we just connect to ourselves :)
+                        // See https://stackoverflow.com/questions/56692961/how-do-i-gracefully-exit-tcplistener-incoming
+                        let _ = TcpStream::connect(local_addr);
+                    }),
+                ),
                 &data_store,
             )
             .unwrap();
 
+            let stop = Arc::new(AtomicBool::new(false));
+
             let data_store = Arc::new(data_store);
-            match game.run(&data_store) {
+            match game.run(stop, &data_store) {
                 multiplayer::ExitReason::UserQuit => exit(0),
                 multiplayer::ExitReason::ConnectionDropped => exit(1),
+                multiplayer::ExitReason::LoopStopped => exit(0),
             }
         },
         data::DataStoreOptions::ItemU8RecipeU16(data_store) => todo!(),
@@ -295,7 +326,7 @@ fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
     }
 }
 
-fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Sender<Input>) {
+fn run_client(remote_addr: SocketAddr) -> (LoadedGame, Arc<AtomicU64>, Sender<Input>) {
     // TODO: Do mod loading here
     let raw_data = get_raw_data_test();
     let data_store = raw_data.process();
@@ -313,7 +344,8 @@ fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Se
                 )));
 
             let game_state = Arc::new(Mutex::new(
-                load(todo!("When running in client mode, we should download the gamestate from the server instead of loading it from disk"))
+                // FIXME: When running in client mode, we should download the gamestate from the server instead of loading it from disk
+                load(PathBuf::new())
                     .map(|save| save.game_state)
                     .unwrap_or_else(|| GameState::new(&data_store)),
             ));
@@ -326,19 +358,19 @@ fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Se
                     action_state_machine: state_machine.clone(),
                     inputs: recv,
                     tick_counter: tick_counter.clone(),
-                    info: ClientConnectionInfo {
-                        ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
-                        port: 8080,
-                    },
+                    info: ClientConnectionInfo { addr: remote_addr },
                     ui_actions: ui_recv,
                 },
                 &data_store,
             )
-            .unwrap();
+            .expect("Could not start Game");
+
+            let stop = Arc::new(AtomicBool::new(false));
 
             let m_data_store = data_store.clone();
+            let m_stop = stop.clone();
             thread::spawn(move || {
-                game.run(&m_data_store);
+                game.run(m_stop, &m_data_store);
             });
 
             let data_store = Arc::new(Mutex::new(data_store));
@@ -348,6 +380,8 @@ fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Se
                     state_machine,
                     data_store,
                     ui_action_sender: ui_sender,
+
+                    stop_update_thread: stop,
                 }),
                 tick_counter,
                 send,
