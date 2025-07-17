@@ -1,9 +1,10 @@
 use crate::data::AllowedFluidDirection;
 use crate::inserter::storage_storage_with_buckets::InserterIdentifier;
+use crate::inserter::storage_storage_with_buckets::LargeInserterState;
 use crate::inserter::storage_storage_with_buckets::{
     BucketedStorageStorageInserterStore, BucketedStorageStorageInserterStoreFrontend, InserterId,
 };
-use crate::inserter::{InserterState, HAND_SIZE};
+use crate::inserter::HAND_SIZE;
 use crate::liquid::connection_logic::can_fluid_tanks_connect_to_single_connection;
 use crate::liquid::FluidConnectionDir;
 use crate::{
@@ -212,8 +213,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let file = File::open("test_blueprints/red_sci_with_beacons_and_belts.bp").unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
 
+        let y_range = (0..100_000).step_by(6_000);
+
+        let total = y_range.size_hint().0;
+
+        let mut current = 0;
+
         puffin::set_scopes_on(false);
         for y_start in (0..100_000).step_by(6_000) {
+            progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
+            current += 1;
             for y_pos in (1590..6000).step_by(10) {
                 for x_pos in (1590..3000).step_by(60) {
                     if rand::random::<u16>() < 128 {
@@ -399,7 +408,7 @@ impl StorageStorageInserterStore {
         movetime: u16,
         ids: impl IntoIterator<Item = InserterIdentifier>,
         current_tick: u32,
-    ) -> HashMap<InserterIdentifier, InserterState> {
+    ) -> HashMap<InserterIdentifier, LargeInserterState> {
         let (front, back) = self.inserters[item.into_usize()]
             .get_mut(&movetime)
             .unwrap();

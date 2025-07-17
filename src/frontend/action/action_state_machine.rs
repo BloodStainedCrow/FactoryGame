@@ -150,7 +150,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
            + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType> {
         input.try_iter().map(|input| {
-            if dbg!(self.escape_menu_open) && dbg!(input != Input::KeyPress(Key::Esc)) {
+            if self.escape_menu_open && input != Input::KeyPress(Key::Esc) {
                 match input {
                     Input::KeyPress(key) => {
                         self.current_held_keys.insert(key);

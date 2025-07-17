@@ -1,10 +1,5 @@
-use std::{
-    cmp::{min, Ordering},
-    iter::successors,
-    mem,
-    time::Duration,
-};
-
+use crate::frontend::action::belt_placement::{expected_belt_state, BeltState};
+use crate::rendering::Corner;
 use crate::{
     assembler::AssemblerOnclickInfo,
     belt::{belt::BeltLenType, splitter::SPLITTER_BELT_LEN, BeltTileId},
@@ -41,9 +36,17 @@ use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
 use log::{info, trace};
 use parking_lot::MutexGuard;
+use std::{
+    cmp::{min, Ordering},
+    iter::successors,
+    mem,
+    time::Duration,
+};
 use tilelib::types::{DrawInstance, Layer, RendererTrait};
 
 use super::{app_state::GameState, TextureAtlas};
+
+const BELT_ANIM_SPEED: f32 = 1.0 / (BELT_LEN_PER_TILE as f32);
 
 // TODO: I found a weird performance cliff while zooming out, jumping from ~10ms to 20ms suddenly
 //       Investigate!
@@ -81,6 +84,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     let mut tile_layer = Layer::square_tile_grid(tilesize, ar);
     let mut entity_layer = Layer::square_tile_grid(tilesize, ar);
+
+    let mut entity_overlay_layer = Layer::square_tile_grid(tilesize, ar);
 
     let mut item_layer = Layer::square_tile_grid(tilesize, ar);
 
@@ -371,19 +376,68 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 id,
                                 belt_pos,
                             } => {
-                                entity_layer.draw_sprite(
-                                    &texture_atlas.belt[*direction],
-                                    DrawInstance {
-                                        position: [
-                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                        ],
-                                        size: [1.0, 1.0],
-                                        animation_frame: 0,
-                                    },
+                                let inputs =
+                                    game_state.world.get_belt_possible_inputs_no_cache(*pos);
+                                let (sprite, corner) =
+                                    match expected_belt_state(*direction, |dir| inputs[*dir]) {
+                                        BeltState::Straight => {
+                                            (&texture_atlas.belt[*direction], None)
+                                        },
+                                        BeltState::Curved => {
+                                            if inputs[direction.turn_right()] {
+                                                (
+                                                    &texture_atlas.belt_corners[Corner {
+                                                        to_dir: *direction,
+                                                        from_dir: crate::rendering::BeltSide::Right,
+                                                    }],
+                                                    Some(crate::rendering::BeltSide::Right),
+                                                )
+                                            } else {
+                                                (
+                                                    &texture_atlas.belt_corners[Corner {
+                                                        to_dir: *direction,
+                                                        from_dir: crate::rendering::BeltSide::Left,
+                                                    }],
+                                                    Some(crate::rendering::BeltSide::Left),
+                                                )
+                                            }
+                                        },
+                                        BeltState::Sideloading => {
+                                            (&texture_atlas.belt[*direction], None)
+                                        },
+                                        BeltState::DoubleSideloading => {
+                                            (&texture_atlas.belt[*direction], None)
+                                        },
+                                    };
+                                sprite.draw(
+                                    [
+                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                    ],
+                                    [1, 1],
+                                    (game_state
+                                        .simulation_state
+                                        .factory
+                                        .belts
+                                        .inner
+                                        .belt_update_timers_cumulative
+                                        [*ty as usize] as f32
+                                        / 120.0
+                                        * BELT_ANIM_SPEED
+                                        * (texture_atlas.belt[*direction]
+                                            .sprite
+                                            .texture
+                                            .number_anim_frames
+                                            as f32)) as u32
+                                        % texture_atlas.belt[*direction]
+                                            .sprite
+                                            .texture
+                                            .number_anim_frames,
+                                    &mut entity_layer,
                                 );
 
                                 // Draw Items
+                                // TODO: Draw items on corners not straight
                                 let items_iter = game_state
                                     .simulation_state
                                     .factory
@@ -479,16 +533,41 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 underground_dir,
                                 belt_pos,
                             } => {
-                                entity_layer.draw_sprite(
-                                    &texture_atlas.belt[*direction],
-                                    DrawInstance {
-                                        position: [
-                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                        ],
-                                        size: [1.0, 1.0],
-                                        animation_frame: 0,
-                                    },
+                                texture_atlas.belt[*direction].draw(
+                                    [
+                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                    ],
+                                    [1, 1],
+                                    (game_state
+                                        .simulation_state
+                                        .factory
+                                        .belts
+                                        .inner
+                                        .belt_update_timers_cumulative
+                                        [*ty as usize] as f32
+                                        / 120.0
+                                        * BELT_ANIM_SPEED
+                                        * (texture_atlas.belt[*direction]
+                                            .sprite
+                                            .texture
+                                            .number_anim_frames
+                                            as f32)) as u32
+                                        % texture_atlas.belt[*direction]
+                                            .sprite
+                                            .texture
+                                            .number_anim_frames,
+                                    &mut entity_layer,
+                                );
+
+                                texture_atlas.underground[*direction][*underground_dir].draw(
+                                    [
+                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                    ],
+                                    [1, 1],
+                                    0,
+                                    &mut entity_overlay_layer,
                                 );
 
                                 // Draw Items
@@ -680,16 +759,14 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         .zip(inputs)
                                         .zip(outputs)
                                 {
-                                    entity_layer.draw_sprite(
-                                        &texture_atlas.belt[*direction],
-                                        DrawInstance {
-                                            position: [
-                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                            ],
-                                            size: [1.0, 1.0],
-                                            animation_frame: 0,
-                                        },
+                                    texture_atlas.belt[*direction].draw(
+                                        [
+                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                        ],
+                                        [1, 1],
+                                        0,
+                                        &mut entity_layer,
                                     );
 
                                     let centered_on_tile = (
@@ -986,18 +1063,16 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     },
                     crate::frontend::world::tile::PlaceEntityType::Belt { pos, direction, ty } => {
                         let size: [u16; 2] = [1, 1];
-                        entity_layer.draw_sprite(
-                            &texture_atlas.belt[*direction],
-                            DrawInstance {
-                                position: [
-                                    pos.x as f32 - state_machine.local_player_pos.0
-                                        + num_tiles_across_screen_horizontal / 2.0,
-                                    pos.y as f32 - state_machine.local_player_pos.1
-                                        + num_tiles_across_screen_vertical / 2.0,
-                                ],
-                                size: [size[0].into(), size[1].into()],
-                                animation_frame: 0,
-                            },
+                        texture_atlas.belt[*direction].draw(
+                            [
+                                pos.x as f32 - state_machine.local_player_pos.0
+                                    + num_tiles_across_screen_horizontal / 2.0,
+                                pos.y as f32 - state_machine.local_player_pos.1
+                                    + num_tiles_across_screen_vertical / 2.0,
+                            ],
+                            size,
+                            0,
+                            &mut entity_layer,
                         );
                     },
                     crate::frontend::world::tile::PlaceEntityType::Underground {
@@ -1008,18 +1083,16 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     } => {
                         let size: [u16; 2] = [1, 1];
                         // TODO:
-                        entity_layer.draw_sprite(
-                            &texture_atlas.belt[*direction],
-                            DrawInstance {
-                                position: [
-                                    pos.x as f32 - state_machine.local_player_pos.0
-                                        + num_tiles_across_screen_horizontal / 2.0,
-                                    pos.y as f32 - state_machine.local_player_pos.1
-                                        + num_tiles_across_screen_vertical / 2.0,
-                                ],
-                                size: [size[0].into(), size[1].into()],
-                                animation_frame: 0,
-                            },
+                        texture_atlas.belt[*direction].draw(
+                            [
+                                pos.x as f32 - state_machine.local_player_pos.0
+                                    + num_tiles_across_screen_horizontal / 2.0,
+                                pos.y as f32 - state_machine.local_player_pos.1
+                                    + num_tiles_across_screen_vertical / 2.0,
+                            ],
+                            size,
+                            0,
+                            &mut entity_layer,
                         );
                     },
                     crate::frontend::world::tile::PlaceEntityType::PowerPole { pos, ty } => {
@@ -1267,6 +1340,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     renderer.draw(&entity_layer);
 
     renderer.draw(&item_layer);
+
+    renderer.draw(&entity_overlay_layer);
 
     renderer.draw(&range_layer);
 

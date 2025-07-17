@@ -2,7 +2,7 @@ use itertools::Itertools;
 use std::mem;
 use std::{array, collections::HashMap};
 
-use super::{FakeUnionStorage, InserterState, HAND_SIZE, MOVETIME};
+use super::{FakeUnionStorage, HAND_SIZE};
 use crate::assembler::arrays;
 use crate::{
     item::ITEMCOUNTTYPE,
@@ -24,13 +24,21 @@ pub struct Inserter {
     pub id: InserterId,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
+pub enum LargeInserterState {
+    WaitingForSourceItems(ITEMCOUNTTYPE),
+    WaitingForSpaceInDestination(ITEMCOUNTTYPE),
+    FullAndMovingOut(u16),
+    EmptyAndMovingBack(u16),
+}
+
 // This means at most u8::MAX inserters connecting any pair of Storages, that seems plenty
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub struct InserterId(u8);
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BucketedStorageStorageInserterStoreFrontend {
-    lookup: HashMap<InserterIdentifier, (u32, InserterState)>,
+    lookup: HashMap<InserterIdentifier, (u32, LargeInserterState)>,
     next_tick: NextTick,
 }
 
@@ -64,14 +72,21 @@ impl BucketedStorageStorageInserterStoreFrontend {
         }
     }
 
-    fn get_info_naive(&mut self, id: InserterIdentifier, current_time: u32) -> InserterState {
+    fn get_info_naive(
+        &mut self,
+        id: InserterIdentifier,
+        movetime: u16,
+        current_time: u32,
+    ) -> LargeInserterState {
+        // FIXME:
+        todo!();
         match self.lookup.entry(id) {
             std::collections::hash_map::Entry::Occupied(mut occupied_entry) => {
                 let (old_time, old_state) = occupied_entry.get();
 
                 let possible_states = get_possible_new_states_after_n_ticks(
                     (*old_state).into(),
-                    MOVETIME,
+                    movetime,
                     HAND_SIZE,
                     current_time - *old_time,
                 );
@@ -100,7 +115,7 @@ impl BucketedStorageStorageInserterStoreFrontend {
         store: &BucketedStorageStorageInserterStore,
         do_next_tick_storing: bool,
         current_time: u32,
-    ) -> HashMap<InserterIdentifier, InserterState> {
+    ) -> HashMap<InserterIdentifier, LargeInserterState> {
         let mut num_to_find = 0;
 
         assert!(
@@ -131,7 +146,7 @@ impl BucketedStorageStorageInserterStoreFrontend {
                     Some((old_time, old_state)) => {
                         let possible_states = get_possible_new_states_after_n_ticks(
                             (*old_state).into(),
-                            MOVETIME,
+                            store.movetime,
                             HAND_SIZE,
                             current_time - *old_time,
                         );
@@ -143,16 +158,16 @@ impl BucketedStorageStorageInserterStoreFrontend {
                                 assert!(possible_states.iter().all_unique());
                                 for possible in possible_states {
                                     match possible {
-                                        InserterState::WaitingForSourceItems(_) => {
+                                        LargeInserterState::WaitingForSourceItems(_) => {
                                             waiting_for_item.push(to_find)
                                         },
-                                        InserterState::WaitingForSpaceInDestination(_) => {
+                                        LargeInserterState::WaitingForSpaceInDestination(_) => {
                                             waiting_for_space.push(to_find)
                                         },
-                                        InserterState::FullAndMovingOut(time) => {
+                                        LargeInserterState::FullAndMovingOut(time) => {
                                             moving_out[usize::from(time) - 1].push(to_find)
                                         },
-                                        InserterState::EmptyAndMovingBack(time) => {
+                                        LargeInserterState::EmptyAndMovingBack(time) => {
                                             moving_in[usize::from(time) - 1].push(to_find)
                                         },
                                     }
@@ -204,12 +219,12 @@ impl BucketedStorageStorageInserterStoreFrontend {
                         // TODO: Do I want to remove this inserter from next_tick result list?
                         ret.insert(
                             *to_find,
-                            InserterState::WaitingForSourceItems(ins.current_hand),
+                            LargeInserterState::WaitingForSourceItems(ins.current_hand),
                         );
                     } else {
-                        let to_remove = moving_out[MOVETIME as usize - 1].iter().position(|v| v == to_find).expect("Inserter with last state being WaitingForSourceItems not in moving_out list?");
-                        moving_out[MOVETIME as usize - 1].swap_remove(to_remove);
-                        ret.insert(*to_find, InserterState::FullAndMovingOut(MOVETIME));
+                        let to_remove = moving_out[store.movetime as usize - 1].iter().position(|v| v == to_find).expect("Inserter with last state being WaitingForSourceItems not in moving_out list?");
+                        moving_out[store.movetime as usize - 1].swap_remove(to_remove);
+                        ret.insert(*to_find, LargeInserterState::FullAndMovingOut(store.movetime));
                     }
                     false
                 } else {
@@ -227,12 +242,12 @@ impl BucketedStorageStorageInserterStoreFrontend {
                         // TODO: Do I want to remove this inserter from next_tick result list?
                         ret.insert(
                             *to_find,
-                            InserterState::WaitingForSpaceInDestination(ins.current_hand),
+                            LargeInserterState::WaitingForSpaceInDestination(ins.current_hand),
                         );
                     } else {
-                        let to_remove = moving_in[MOVETIME as usize - 1].iter().position(|v| v == to_find).expect("Inserter with last state being WaitingForSpaceInDestination not in moving_in list?");
-                        moving_in[MOVETIME as usize - 1].swap_remove(to_remove);
-                        ret.insert(*to_find, InserterState::EmptyAndMovingBack(MOVETIME));
+                        let to_remove = moving_in[store.movetime as usize - 1].iter().position(|v| v == to_find).expect("Inserter with last state being WaitingForSpaceInDestination not in moving_in list?");
+                        moving_in[store.movetime as usize - 1].swap_remove(to_remove);
+                        ret.insert(*to_find, LargeInserterState::EmptyAndMovingBack(store.movetime));
                     }
                     false
                 } else {
@@ -282,16 +297,16 @@ impl BucketedStorageStorageInserterStoreFrontend {
                     k,
                     // TODO: Respect store.current_tick
                     match i {
-                        0 => InserterState::WaitingForSourceItems(inserter.current_hand),
+                        0 => LargeInserterState::WaitingForSourceItems(inserter.current_hand),
                         n @ 1..MOVING_OUT_END => {
-                            InserterState::FullAndMovingOut((n - 1).try_into().unwrap())
+                            LargeInserterState::FullAndMovingOut((n - 1).try_into().unwrap())
                         },
                         WATING_FOR_SPACE => {
-                            InserterState::WaitingForSpaceInDestination(inserter.current_hand)
+                            LargeInserterState::WaitingForSpaceInDestination(inserter.current_hand)
                         },
-                        n @ MOVING_IN..MOVING_IN_END => {
-                            InserterState::EmptyAndMovingBack((n - MOVING_IN).try_into().unwrap())
-                        },
+                        n @ MOVING_IN..MOVING_IN_END => LargeInserterState::EmptyAndMovingBack(
+                            (n - MOVING_IN).try_into().unwrap(),
+                        ),
 
                         _ => unreachable!(),
                     },
@@ -303,9 +318,9 @@ impl BucketedStorageStorageInserterStoreFrontend {
         let mut waiting_for_space = vec![];
 
         for (k, v) in ret.iter() {
-            if matches!(*v, InserterState::WaitingForSourceItems(_)) {
+            if matches!(*v, LargeInserterState::WaitingForSourceItems(_)) {
                 waiting_for_item.push(*k);
-            } else if matches!(*v, InserterState::WaitingForSpaceInDestination(_)) {
+            } else if matches!(*v, LargeInserterState::WaitingForSpaceInDestination(_)) {
                 waiting_for_space.push(*k);
             }
         }
@@ -347,11 +362,11 @@ impl BucketedStorageStorageInserterStoreFrontend {
 // TODO: Make this faster
 #[profiling::function]
 fn get_possible_new_states_after_n_ticks(
-    starting_state: InserterState,
-    movetime: u8,
+    starting_state: LargeInserterState,
+    movetime: u16,
     max_hand_size: ITEMCOUNTTYPE,
     n: u32,
-) -> Result<Vec<InserterState>, ()> {
+) -> Result<Vec<LargeInserterState>, ()> {
     const MAX_SEARCH_SIZE: usize = 100;
 
     let mut current = vec![starting_state];
@@ -375,33 +390,35 @@ fn get_possible_new_states_after_n_ticks(
 }
 
 fn get_possible_new_states(
-    starting_state: InserterState,
-    movetime: u8,
+    starting_state: LargeInserterState,
+    movetime: u16,
     max_hand_size: ITEMCOUNTTYPE,
-) -> Vec<InserterState> {
+) -> Vec<LargeInserterState> {
     match starting_state {
-        InserterState::WaitingForSourceItems(_) => {
-            iter::once(InserterState::FullAndMovingOut(movetime))
-                .chain(iter::once(InserterState::WaitingForSourceItems(0)))
+        LargeInserterState::WaitingForSourceItems(_) => {
+            iter::once(LargeInserterState::FullAndMovingOut(movetime))
+                .chain(iter::once(LargeInserterState::WaitingForSourceItems(0)))
                 .collect()
         },
-        InserterState::WaitingForSpaceInDestination(_) => {
-            iter::once(InserterState::EmptyAndMovingBack(movetime))
-                .chain(iter::once(InserterState::WaitingForSpaceInDestination(0)))
+        LargeInserterState::WaitingForSpaceInDestination(_) => {
+            iter::once(LargeInserterState::EmptyAndMovingBack(movetime))
+                .chain(iter::once(
+                    LargeInserterState::WaitingForSpaceInDestination(0),
+                ))
                 .collect()
         },
-        InserterState::FullAndMovingOut(time) => {
+        LargeInserterState::FullAndMovingOut(time) => {
             if time > 0 {
-                vec![InserterState::FullAndMovingOut(time - 1)]
+                vec![LargeInserterState::FullAndMovingOut(time - 1)]
             } else {
-                vec![InserterState::WaitingForSpaceInDestination(0)]
+                vec![LargeInserterState::WaitingForSpaceInDestination(0)]
             }
         },
-        InserterState::EmptyAndMovingBack(time) => {
+        LargeInserterState::EmptyAndMovingBack(time) => {
             if time > 0 {
-                vec![InserterState::EmptyAndMovingBack(time - 1)]
+                vec![LargeInserterState::EmptyAndMovingBack(time - 1)]
             } else {
-                vec![InserterState::WaitingForSourceItems(0)]
+                vec![LargeInserterState::WaitingForSourceItems(0)]
             }
         },
     }

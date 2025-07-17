@@ -18,7 +18,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum BeltState {
+pub enum BeltState {
     Straight,
     Curved,
     Sideloading,
@@ -1143,7 +1143,7 @@ fn should_sideload<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     }
 }
 
-fn expected_belt_state(belt_dir: Dir, gets_input_from: impl FnMut(&Dir) -> bool) -> BeltState {
+pub fn expected_belt_state(belt_dir: Dir, gets_input_from: impl FnMut(&Dir) -> bool) -> BeltState {
     let input_dirs: Vec<Dir> = Dir::iter().filter(gets_input_from).collect();
     // Output dirs are unused for determining this, interesting!
     // let output_dirs: Vec<Dir> = Dir::iter().filter(|dir| dir_info(*dir) == Some(BeltDir::Ouput)).collect();

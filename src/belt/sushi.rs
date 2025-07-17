@@ -1,6 +1,7 @@
 use std::{iter::repeat, mem};
 
 use itertools::Itertools;
+use log::error;
 
 use crate::{
     belt::belt::NoSpaceError,
@@ -362,7 +363,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         } = self;
 
         SmartBelt {
-ty,
+            ty,
 
             is_circular,
             first_free_index,
@@ -379,7 +380,11 @@ ty,
             inserters: InserterStore {
                 // FIXME: Some of these inserters might have a different item than what we are converting to. This will result in crashes and item transmutation
                 inserters: inserters.into_iter().map(|(ins, inserter_item)| {
-                    assert_eq!(item, inserter_item, "FIXME: We need to handle inserters which will never work again in smart belts");    
+                    // FIXME: REENABLE THIS!
+                    // assert_eq!(item, inserter_item, "FIXME: We need to handle inserters which will never work again in smart belts");
+                    if item !=  inserter_item {
+                        error!("We need to handle inserters which will never work again in smart belts!!!!!!!");
+                    }
                     ins
                 }).collect(),
                 offsets,

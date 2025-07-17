@@ -1,7 +1,7 @@
 use image::GenericImageView;
 use tilelib::types::{DrawInstance, Layer, Sprite, Texture};
 
-use crate::frontend::world::tile::Dir;
+use crate::frontend::world::tile::{Dir, UndergroundDir};
 
 pub mod app_state;
 pub mod eframe_app;
@@ -10,7 +10,9 @@ pub mod window;
 
 pub mod map_view;
 
-#[derive(Debug)]
+use enum_map::{Enum, EnumArray};
+
+#[derive(Debug, Clone)]
 struct EntitySprite {
     pub sprite: Sprite,
     pub aspect_ratio: f32,
@@ -33,6 +35,15 @@ impl EntitySprite {
             sprite,
             aspect_ratio: 1.0,
             offset: (0.0, 0.0),
+            scaling: (size, size),
+        }
+    }
+
+    const fn new_scaled_centered(sprite: Sprite, size: f32) -> Self {
+        Self {
+            sprite,
+            aspect_ratio: 1.0,
+            offset: (-(size - 1.0) / 2.0, -(size - 1.0) / 2.0),
             scaling: (size, size),
         }
     }
@@ -97,6 +108,41 @@ impl EntitySprite {
     }
 }
 
+#[derive(Debug, Clone, Copy, Enum)]
+enum BeltSide {
+    Left,
+    Right,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Corner {
+    to_dir: Dir,
+    from_dir: BeltSide,
+}
+
+impl Enum for Corner {
+    const LENGTH: usize = Dir::LENGTH * BeltSide::LENGTH;
+
+    fn from_usize(value: usize) -> Self {
+        let (to, from) = (value / BeltSide::LENGTH, value % BeltSide::LENGTH);
+
+        Self {
+            to_dir: Dir::from_usize(to),
+            from_dir: BeltSide::from_usize(from),
+        }
+    }
+
+    fn into_usize(self) -> usize {
+        let Self { from_dir, to_dir } = self;
+
+        from_dir.into_usize() + to_dir.into_usize() * BeltSide::LENGTH
+    }
+}
+
+impl<V> EnumArray<V> for Corner {
+    type Array = [V; Self::LENGTH];
+}
+
 #[derive(Debug)]
 pub struct TextureAtlas {
     outside_world: Sprite,
@@ -107,7 +153,8 @@ pub struct TextureAtlas {
     assembler: EntitySprite,
     no_power: EntitySprite,
     not_connected: EntitySprite,
-    belt: enum_map::EnumMap<Dir, Sprite>,
+    belt: enum_map::EnumMap<Dir, EntitySprite>,
+    belt_corners: enum_map::EnumMap<Corner, EntitySprite>,
     inserter: enum_map::EnumMap<Dir, Sprite>,
 
     player: Sprite,
@@ -120,6 +167,8 @@ pub struct TextureAtlas {
     lab: EntitySprite,
 
     dark_square: Sprite,
+
+    underground: enum_map::EnumMap<Dir, enum_map::EnumMap<UndergroundDir, EntitySprite>>,
 
     default: Sprite,
 }
@@ -145,6 +194,21 @@ macro_rules! entity_sprite_from_path_scaled {
         let sprite = sprite.to_rgba8().into_vec();
 
         EntitySprite::new_scaled(
+            Sprite::new(Texture::new($number_anim_frames, sprite, sprite_dimensions)),
+            $size,
+        )
+    }};
+}
+
+macro_rules! entity_sprite_from_path_scaled_centered {
+    ($path:literal, $number_anim_frames:expr, $size:expr) => {{
+        let sprite = include_bytes!($path);
+        let sprite = image::load_from_memory(sprite).unwrap();
+
+        let sprite_dimensions = sprite.dimensions();
+        let sprite = sprite.to_rgba8().into_vec();
+
+        EntitySprite::new_scaled_centered(
             Sprite::new(Texture::new($number_anim_frames, sprite, sprite_dimensions)),
             $size,
         )
@@ -184,6 +248,17 @@ macro_rules! entity_sprite_from_path_tall {
 
 #[cfg(not(feature = "graphics"))]
 fn texture_atlas() -> TextureAtlas {
+    let belts: enum_map::EnumMap<Dir, EntitySprite> = enum_map::EnumMap::from_array([
+        entity_sprite_from_path_tiling!("temp_assets/belt_north.png", 1),
+        entity_sprite_from_path_tiling!("temp_assets/belt_east.png", 1),
+        entity_sprite_from_path_tiling!("temp_assets/belt_south.png", 1),
+        entity_sprite_from_path_tiling!("temp_assets/belt_west.png", 1),
+    ]);
+
+    let undergrounds = enum_map::EnumMap::from_fn(|dir| {
+        enum_map::EnumMap::from_array([belts[dir].clone(), belts[dir].clone()])
+    });
+
     TextureAtlas {
         outside_world: sprite_from_path!("temp_assets/outside_world.png", 1),
         blue: sprite_from_path!("temp_assets/blue.png", 1),
@@ -198,11 +273,17 @@ fn texture_atlas() -> TextureAtlas {
         items: vec![sprite_from_path!("temp_assets/plate.png", 1); 200].into_boxed_slice(),
 
         player: sprite_from_path!("temp_assets/player.png", 1),
-        belt: enum_map::EnumMap::from_array([
-            sprite_from_path!("temp_assets/belt_north.png", 1),
-            sprite_from_path!("temp_assets/belt_east.png", 1),
-            sprite_from_path!("temp_assets/belt_south.png", 1),
-            sprite_from_path!("temp_assets/belt_west.png", 1),
+        belt: belts,
+
+        belt_corners: enum_map::EnumMap::from_array([
+            entity_sprite_from_path_tiling!("temp_assets/belt_north.png", 1),
+            entity_sprite_from_path_tiling!("temp_assets/belt_north.png", 1),
+            entity_sprite_from_path_tiling!("temp_assets/belt_east.png", 1),
+            entity_sprite_from_path_tiling!("temp_assets/belt_east.png", 1),
+            entity_sprite_from_path_tiling!("temp_assets/belt_south.png", 1),
+            entity_sprite_from_path_tiling!("temp_assets/belt_south.png", 1),
+            entity_sprite_from_path_tiling!("temp_assets/belt_west.png", 1),
+            entity_sprite_from_path_tiling!("temp_assets/belt_west.png", 1),
         ]),
 
         inserter: enum_map::EnumMap::from_array([
@@ -219,12 +300,18 @@ fn texture_atlas() -> TextureAtlas {
 
         dark_square: sprite_from_path!("temp_assets/dark_square.png", 1),
 
+        underground: undergrounds,
+
         default: Sprite::new(Texture::default()),
     }
 }
 
 #[cfg(feature = "graphics")]
 fn texture_atlas() -> TextureAtlas {
+    for i in 0..8 {
+        dbg!(Corner::from_usize(i));
+    }
+
     TextureAtlas {
         outside_world: sprite_from_path!("temp_assets/outside_world.png", 1),
         blue: sprite_from_path!("temp_assets/blue.png", 1),
@@ -268,10 +355,69 @@ fn texture_atlas() -> TextureAtlas {
 
         player: sprite_from_path!("temp_assets/player.png", 1),
         belt: enum_map::EnumMap::from_array([
-            sprite_from_path!("temp_assets/belt_north.png", 1),
-            sprite_from_path!("temp_assets/belt_east.png", 1),
-            sprite_from_path!("temp_assets/belt_south.png", 1),
-            sprite_from_path!("temp_assets/belt_west.png", 1),
+            entity_sprite_from_path_scaled_centered!(
+                "temp_assets/krastorio/belt/north.png",
+                32,
+                2.0
+            ),
+            entity_sprite_from_path_scaled_centered!(
+                "temp_assets/krastorio/belt/east.png",
+                32,
+                2.0
+            ),
+            entity_sprite_from_path_scaled_centered!(
+                "temp_assets/krastorio/belt/south.png",
+                32,
+                2.0
+            ),
+            entity_sprite_from_path_scaled_centered!(
+                "temp_assets/krastorio/belt/west.png",
+                32,
+                2.0
+            ),
+        ]),
+
+        belt_corners: enum_map::EnumMap::from_array([
+            entity_sprite_from_path_scaled_centered!(
+                "temp_assets/krastorio/belt/west-north.png",
+                32,
+                2.0
+            ),
+            entity_sprite_from_path_scaled_centered!(
+                "temp_assets/krastorio/belt/east-north.png",
+                32,
+                2.0
+            ),
+            entity_sprite_from_path_scaled_centered!(
+                "temp_assets/krastorio/belt/north-east.png",
+                32,
+                2.0
+            ),
+            entity_sprite_from_path_scaled_centered!(
+                "temp_assets/krastorio/belt/south-east.png",
+                32,
+                2.0
+            ),
+            entity_sprite_from_path_scaled_centered!(
+                "temp_assets/krastorio/belt/east-south.png",
+                32,
+                2.0
+            ),
+            entity_sprite_from_path_scaled_centered!(
+                "temp_assets/krastorio/belt/west-south.png",
+                32,
+                2.0
+            ),
+            entity_sprite_from_path_scaled_centered!(
+                "temp_assets/krastorio/belt/south-west.png",
+                32,
+                2.0
+            ),
+            entity_sprite_from_path_scaled_centered!(
+                "temp_assets/krastorio/belt/north-west.png",
+                32,
+                2.0
+            ),
         ]),
 
         inserter: enum_map::EnumMap::from_array([
@@ -291,6 +437,57 @@ fn texture_atlas() -> TextureAtlas {
         lab: entity_sprite_from_path_tiling!("temp_assets/krastorio/advanced-lab.png", 1),
 
         dark_square: sprite_from_path!("temp_assets/dark_square.png", 1),
+
+        underground: enum_map::EnumMap::from_array([
+            enum_map::EnumMap::from_array([
+                entity_sprite_from_path_scaled_centered!(
+                    "temp_assets/krastorio/underground/north-entrance.png",
+                    1,
+                    3.0
+                ),
+                entity_sprite_from_path_scaled_centered!(
+                    "temp_assets/krastorio/underground/north-exit.png",
+                    1,
+                    3.0
+                ),
+            ]),
+            enum_map::EnumMap::from_array([
+                entity_sprite_from_path_scaled_centered!(
+                    "temp_assets/krastorio/underground/east-entrance.png",
+                    1,
+                    3.0
+                ),
+                entity_sprite_from_path_scaled_centered!(
+                    "temp_assets/krastorio/underground/east-exit.png",
+                    1,
+                    3.0
+                ),
+            ]),
+            enum_map::EnumMap::from_array([
+                entity_sprite_from_path_scaled_centered!(
+                    "temp_assets/krastorio/underground/south-entrance.png",
+                    1,
+                    3.0
+                ),
+                entity_sprite_from_path_scaled_centered!(
+                    "temp_assets/krastorio/underground/south-exit.png",
+                    1,
+                    3.0
+                ),
+            ]),
+            enum_map::EnumMap::from_array([
+                entity_sprite_from_path_scaled_centered!(
+                    "temp_assets/krastorio/underground/west-entrance.png",
+                    1,
+                    3.0
+                ),
+                entity_sprite_from_path_scaled_centered!(
+                    "temp_assets/krastorio/underground/west-exit.png",
+                    1,
+                    3.0
+                ),
+            ]),
+        ]),
 
         default: Sprite::new(Texture::default()),
     }

@@ -879,6 +879,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         self.belt_recieving_input_directions.entry(pos).or_default()
     }
 
+    pub fn get_belt_possible_inputs_no_cache(&self, pos: Position) -> EnumMap<Dir, bool> {
+        self.belt_recieving_input_directions
+            .get(&pos)
+            .copied()
+            .unwrap_or_default()
+    }
+
     pub fn get_chunks(&self) -> impl Iterator<Item = &Chunk<ItemIdxType, RecipeIdxType>> + Send {
         self.chunks.occupied_entries().map(|(_, chunk)| chunk)
     }
@@ -3092,7 +3099,7 @@ pub enum AttachedInserter<ItemIdxType: WeakIdxTrait> {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, Enum)]
 pub enum UndergroundDir {
     Entrance,
     Exit,

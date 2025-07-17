@@ -24,10 +24,10 @@
                 y: 21,
             ),
             modules: [
-                1,
-                1,
-                1,
-                1,
+                0,
+                0,
+                0,
+                0,
             ],
         ),
         PlaceEntity((
@@ -280,7 +280,7 @@
                     x: 34,
                     y: 21,
                 ),
-                ty: 2,
+                ty: 3,
             )),
         )),
         SetRecipe((
@@ -289,7 +289,7 @@
                 y: 21,
             ),
             recipe: (
-                id: 2,
+                id: 4,
             ),
         )),
         AddModules(
@@ -298,8 +298,6 @@
                 y: 21,
             ),
             modules: [
-                1,
-                1,
                 1,
                 1,
             ],
@@ -474,52 +472,52 @@
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 28,
                     y: 22,
                 ),
                 direction: East,
+                ty: 0,
             )),
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 29,
                     y: 22,
                 ),
                 direction: East,
+                ty: 0,
             )),
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 30,
                     y: 22,
                 ),
                 direction: East,
+                ty: 0,
             )),
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 31,
                     y: 22,
                 ),
                 direction: East,
+                ty: 0,
             )),
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 32,
                     y: 22,
                 ),
                 direction: East,
+                ty: 0,
             )),
         )),
         PlaceEntity((
@@ -544,42 +542,42 @@ ty: 0,
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 38,
                     y: 22,
                 ),
                 direction: East,
+                ty: 0,
             )),
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 39,
                     y: 22,
                 ),
                 direction: East,
+                ty: 0,
             )),
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 40,
                     y: 22,
                 ),
                 direction: East,
+                ty: 0,
             )),
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 41,
                     y: 22,
                 ),
                 direction: East,
+                ty: 0,
             )),
         )),
         PlaceEntity((
@@ -692,7 +690,7 @@ ty: 0,
                 y: 21,
             ),
             recipe: (
-                id: 4,
+                id: 6,
             ),
         )),
         AddModules(
@@ -862,7 +860,7 @@ ty: 0,
                 y: 21,
             ),
             recipe: (
-                id: 5,
+                id: 11,
             ),
         )),
         AddModules(
@@ -953,12 +951,12 @@ ty: 0,
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 42,
                     y: 22,
                 ),
                 direction: East,
+                ty: 0,
             )),
         )),
         PlaceEntity((
@@ -993,52 +991,52 @@ ty: 0,
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 48,
                     y: 22,
                 ),
                 direction: East,
+                ty: 0,
             )),
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 49,
                     y: 22,
                 ),
                 direction: East,
+                ty: 0,
             )),
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 50,
                     y: 22,
                 ),
                 direction: East,
+                ty: 0,
             )),
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 51,
                     y: 22,
                 ),
                 direction: East,
+                ty: 0,
             )),
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 52,
                     y: 22,
                 ),
                 direction: East,
+                ty: 0,
             )),
         )),
         PlaceEntity((
@@ -1057,7 +1055,7 @@ ty: 0,
                     x: 55,
                     y: 19,
                 ),
-                ty: 2
+                ty: 2,
             )),
         )),
         PlaceEntity((
@@ -1246,7 +1244,7 @@ ty: 0,
                     x: 64,
                     y: 21,
                 ),
-                ty: 2,
+                ty: 3,
             )),
         )),
         SetRecipe((
@@ -1255,7 +1253,7 @@ ty: 0,
                 y: 21,
             ),
             recipe: (
-                id: 3,
+                id: 5,
             ),
         )),
         AddModules(
@@ -1264,8 +1262,6 @@ ty: 0,
                 y: 21,
             ),
             modules: [
-                1,
-                1,
                 1,
                 1,
             ],
@@ -1506,102 +1502,102 @@ ty: 0,
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 62,
                     y: 22,
                 ),
                 direction: West,
+                ty: 0,
             )),
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 61,
                     y: 22,
                 ),
                 direction: West,
+                ty: 0,
             )),
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 60,
                     y: 22,
                 ),
                 direction: West,
+                ty: 0,
             )),
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 59,
                     y: 22,
                 ),
                 direction: West,
+                ty: 0,
             )),
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 58,
                     y: 22,
                 ),
                 direction: West,
+                ty: 0,
             )),
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 72,
                     y: 22,
                 ),
                 direction: West,
+                ty: 0,
             )),
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 71,
                     y: 22,
                 ),
                 direction: West,
+                ty: 0,
             )),
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 70,
                     y: 22,
                 ),
                 direction: West,
+                ty: 0,
             )),
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 69,
                     y: 22,
                 ),
                 direction: West,
+                ty: 0,
             )),
         )),
         PlaceEntity((
             entities: Single(Belt(
-ty: 0,
                 pos: (
                     x: 68,
                     y: 22,
                 ),
                 direction: West,
+                ty: 0,
             )),
         )),
         PlaceEntity((
@@ -1723,10 +1719,10 @@ ty: 0,
                 y: 21,
             ),
             modules: [
-                1,
-                1,
-                1,
-                1,
+                0,
+                0,
+                0,
+                0,
             ],
         ),
         PlaceEntity((

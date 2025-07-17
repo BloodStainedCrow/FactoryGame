@@ -143,7 +143,8 @@ pub struct InnerBeltStore<ItemIdxType: WeakIdxTrait> {
     sushi_splitter_connections: Mutex<Vec<[[AnyBelt<ItemIdxType>; 2]; 2]>>,
     sushi_splitter_holes: Vec<usize>,
 
-    belt_update_timers: Box<[u8]>,
+    pub belt_update_timers: Box<[u8]>,
+    pub belt_update_timers_cumulative: Box<[u32]>,
 }
 
 impl<ItemIdxType: WeakIdxTrait> Clone for InnerBeltStore<ItemIdxType> {
@@ -168,6 +169,7 @@ impl<ItemIdxType: WeakIdxTrait> Clone for InnerBeltStore<ItemIdxType> {
             sushi_splitter_connections: Mutex::new(self.sushi_splitter_connections.lock().clone()),
             sushi_splitter_holes: self.sushi_splitter_holes.clone(),
             belt_update_timers: self.belt_update_timers.clone(),
+            belt_update_timers_cumulative: self.belt_update_timers_cumulative.clone(),
         }
     }
 }
@@ -1166,6 +1168,8 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                 sushi_splitter_holes: vec![],
 
                 belt_update_timers: vec![0; data_store.belt_infos.len()].into_boxed_slice(),
+                belt_update_timers_cumulative: vec![0; data_store.belt_infos.len()]
+                    .into_boxed_slice(),
             },
             any_belts: vec![],
             any_belt_holes: vec![],
@@ -1701,15 +1705,18 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         // TODO: Once every (maybe more or less) check a single belt and check if it still needs to be sushi
 
         // Increase the belt timers
-        for (current_timer, increase) in self
+        for ((current_timer, increase), cumulative) in self
             .inner
             .belt_update_timers
             .iter_mut()
             .zip(data_store.belt_infos.iter().map(|info| info.timer_increase))
+            .zip(self.inner.belt_update_timers_cumulative.iter_mut())
         {
             *current_timer = (*current_timer)
                 .checked_add(increase)
                 .expect("Belt Timer wrapped!");
+
+            *cumulative += u32::from(increase);
         }
 
         {
