@@ -1139,7 +1139,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         chest_store: &mut FullChestStore<ItemIdxType>,
         inserter_store: &mut StorageStorageInserterStore,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> (impl Iterator<Item = Self>, bool) {
+    ) -> (impl Iterator<Item = Self> + use<RecipeIdxType, ItemIdxType>, bool) {
         let old_fluid = self.get_fluid();
 
         let (removed_fluid_box, connections_to_remove, new_graphs) =
@@ -1279,7 +1279,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         chest_store: &mut FullChestStore<ItemIdxType>,
         inserter_store: &mut StorageStorageInserterStore,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> (impl Iterator<Item = Self>, bool) {
+    ) -> (impl Iterator<Item = Self> + use<RecipeIdxType, ItemIdxType>, bool) {
         let old_fluid = self.get_fluid();
 
         let new_graphs = self

@@ -89,6 +89,7 @@ fn start_ui() -> (
                         state_machine: sm,
                         data_store: ds_move,
                         ui_action_sender: send,
+                        stop_update_thread: Default::default(),
                     }),
                     tick: Arc::new(AtomicU64::new(0)),
                 });

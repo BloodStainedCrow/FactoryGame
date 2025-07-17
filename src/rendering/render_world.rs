@@ -1360,7 +1360,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     state_machine: &mut ActionStateMachine<ItemIdxType, RecipeIdxType>,
     game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-) -> Result<impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>, EscapeMenuOptions> {
+) -> Result<impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>, EscapeMenuOptions> {
     let mut actions = vec![];
 
     if state_machine.escape_menu_open {

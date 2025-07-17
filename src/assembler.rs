@@ -144,7 +144,7 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
         Self,
-        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
+        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>,
     ) {
         // TODO: This just works with box::into_iter in edition 2024
         let (assemblers_0_1, assemblers_0_1_updates): (Vec<_>, Vec<_>) = self
@@ -350,7 +350,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
         Self,
-        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
+        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType, NUM_INGS, NUM_OUTPUTS>,
     ) {
         #[cfg(debug_assertions)]
         {

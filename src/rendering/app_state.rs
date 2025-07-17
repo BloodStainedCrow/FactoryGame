@@ -942,13 +942,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 .map(|e| e.get_pos())
                                 .collect();
 
-                            if let Some((pole_updates, storage_updates)) =
-                                self.simulation_state.factory.power_grids.add_pole(
+                            match self.simulation_state.factory.power_grids.add_pole(
                                     pole_pos,
                                     connection_candidates.iter().copied(),
                                     data_store,
                                 )
-                            {
+                            { Some((pole_updates, storage_updates)) => {
                                 // Handle Entities that are now part of another power_grid
                                 for pole_position in pole_updates {
                                     let grid = self
@@ -1107,9 +1106,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         },
                                     );
                                 }
-                            } else {
+                            } _ => {
                                 // No updates needed
-                            }
+                            }}
 
                             // Add the powerpole entity to the correct chunk
                             self.world.add_entity(

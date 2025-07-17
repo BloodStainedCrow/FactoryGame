@@ -538,11 +538,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         PowerGridEntity<ItemIdxType, RecipeIdxType>,
                         PowerGridEntity<ItemIdxType, RecipeIdxType>,
                     ),
-                >,
+                > + use<ItemIdxType, RecipeIdxType>,
             ),
-        >,
+        > + use<ItemIdxType, RecipeIdxType>,
         bool, // This tells the storage to delete us
-        impl IntoIterator<Item = Position>,
+        impl IntoIterator<Item = Position> + use<ItemIdxType, RecipeIdxType>,
         impl IntoIterator<Item = (BeaconAffectedEntity<RecipeIdxType>, (i16, i16, i16))>
             + use<'a, ItemIdxType, RecipeIdxType>,
     ) {
@@ -2148,7 +2148,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         pole_pos: Position,
         weak_idx: WeakIndex,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl Iterator<Item = (BeaconAffectedEntity<RecipeIdxType>, (i16, i16, i16))> {
+    ) -> impl Iterator<Item = (BeaconAffectedEntity<RecipeIdxType>, (i16, i16, i16))> + use<ItemIdxType, RecipeIdxType> {
         let (
             _beacon_pos,
             PowerGridEntity::Beacon {
@@ -2326,7 +2326,7 @@ impl MultiLazyPowerProducer {
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
         Self,
-        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
+        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>,
     ) {
         (todo!(), [])
     }

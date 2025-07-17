@@ -640,7 +640,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
 
     fn get_logibot_jobs(
         &mut self,
-    ) -> impl Iterator<Item = (Item<ItemIdxType>, ITEMCOUNTTYPE, u16, u16)> {
+    ) -> impl Iterator<Item = (Item<ItemIdxType>, ITEMCOUNTTYPE, u16, u16)> + use<ItemIdxType, RecipeIdxType> {
         vec![todo!()].into_iter()
     }
 
@@ -725,7 +725,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
     fn update_logibots(
         &mut self,
         sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
-    ) -> impl Iterator<Item = BotRenderInfo> {
+    ) -> impl Iterator<Item = BotRenderInfo> + use<ItemIdxType, RecipeIdxType> {
         let mut render_infos = vec![];
 
         // Handle logibots, which are now done with their job
@@ -1072,8 +1072,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
         sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
         world: &mut World<ItemIdxType, RecipeIdxType>,
     ) -> (
-        impl IntoIterator<Item = ConstructionBotWorldUpdate>,
-        impl IntoIterator<Item = BotRenderInfo>,
+        impl IntoIterator<Item = ConstructionBotWorldUpdate> + use<ItemIdxType, RecipeIdxType>,
+        impl IntoIterator<Item = BotRenderInfo> + use<ItemIdxType, RecipeIdxType>,
     ) {
         // self.bot_jobs.
         (vec![todo!()], vec![todo!()])

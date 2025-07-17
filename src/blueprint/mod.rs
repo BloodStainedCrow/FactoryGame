@@ -528,14 +528,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
 pub fn random_blueprint_strategy<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     len_range: Range<usize>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-) -> impl Strategy<Value = Blueprint<ItemIdxType, RecipeIdxType>> {
+) -> impl Strategy<Value = Blueprint<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType> {
     prop::collection::vec(random_blueprint_action(data_store), len_range)
         .prop_map(|actions| Blueprint { actions })
 }
 
 pub fn random_action<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-) -> impl Strategy<Value = ActionType<ItemIdxType, RecipeIdxType>> {
+) -> impl Strategy<Value = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType> {
     prop_oneof![
         random_position().prop_map(|pos| ActionType::Ping(pos)),
         random_position().prop_map(|pos| ActionType::Position(0, (pos.x as f32, pos.y as f32))),
@@ -559,7 +559,7 @@ pub fn random_action<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
 pub fn random_blueprint_action<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-) -> impl Strategy<Value = ActionType<ItemIdxType, RecipeIdxType>> {
+) -> impl Strategy<Value = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType> {
     prop_oneof![
         // random_blueprint_offs().prop_map(|pos| ActionType::PlaceFloorTile(
         //     PlaceFloorTileByHandInfo {
@@ -583,7 +583,7 @@ pub fn random_blueprint_action<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
 pub fn random_entity_to_place<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-) -> impl Strategy<Value = PlaceEntityType<ItemIdxType>> {
+) -> impl Strategy<Value = PlaceEntityType<ItemIdxType>> + use<ItemIdxType, RecipeIdxType> {
     prop_oneof![
         random_blueprint_offs().prop_map(|pos| PlaceEntityType::Assembler { pos, ty: 0 }),
         (random_blueprint_offs(), 0..data_store.chest_num_slots.len()).prop_map(|(pos, ty)| {
@@ -651,7 +651,7 @@ pub fn random_dir() -> impl Strategy<Value = Dir> {
 
 pub fn random_recipe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-) -> impl Strategy<Value = Recipe<RecipeIdxType>> {
+) -> impl Strategy<Value = Recipe<RecipeIdxType>> + use<ItemIdxType, RecipeIdxType> {
     (0..data_store.recipe_timers.len())
         .prop_map(|recipe_idx| RecipeIdxType::try_from(recipe_idx).unwrap())
         .prop_map(|id| Recipe { id })
@@ -659,7 +659,7 @@ pub fn random_recipe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
 pub fn random_item<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-) -> impl Strategy<Value = Item<ItemIdxType>> {
+) -> impl Strategy<Value = Item<ItemIdxType>> + use<ItemIdxType, RecipeIdxType> {
     (0..data_store.item_names.len())
         .prop_map(|item_idx| ItemIdxType::try_from(item_idx).unwrap())
         .prop_map(|id| Item { id })

@@ -236,7 +236,7 @@ impl TechState {
             DefaultEdgeShape,
         >,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType> {
         {
             profiling::scope!("Update Tech Tree colors");
             for tech in 0..data_store.technology_costs.len() {

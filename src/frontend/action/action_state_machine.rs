@@ -173,7 +173,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 self.local_player_pos,
                                 self.current_mouse_pos,
                             );
-                            if let Some(e) = world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next() {
+                            match world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next() { Some(e) => {
                                 match (e, copy_info) {
                                     (Entity::Assembler { .. }, CopyInfo::Recipe { recipe }) => {
                                         vec![ActionType::SetRecipe(SetRecipeInfo { pos, recipe: *recipe })]
@@ -190,9 +190,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                         vec![]
                                     }
                                 }
-                            } else {
+                            } _ => {
                                 vec![]
-                            }
+                            }}
                         } else {
                             vec![]
                         }
@@ -485,7 +485,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         key: Key,
         world: &World<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType> {
         let ret = match (&self.state, key) {
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Q) => {
                 match world
@@ -991,7 +991,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     fn handle_stop_pressing_key(
         &mut self,
         key: Key,
-    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType> {
         match (&self.state, key) {
             (_, _) => vec![].into_iter(),
         }
@@ -1020,7 +1020,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         &mut self,
         world: &World<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType> {
         let mut actions = Vec::new();
 
         if let ActionStateMachineState::Deconstructing(pos, timer) = &mut self.state {

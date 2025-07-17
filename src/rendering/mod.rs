@@ -174,7 +174,7 @@ pub struct TextureAtlas {
 }
 
 macro_rules! sprite_from_path {
-    ($path:literal, $number_anim_frames:expr) => {{
+    ($path:literal, $number_anim_frames:expr_2021) => {{
         let sprite = include_bytes!($path);
         let sprite = image::load_from_memory(sprite).unwrap();
 
@@ -186,7 +186,7 @@ macro_rules! sprite_from_path {
 }
 
 macro_rules! entity_sprite_from_path_scaled {
-    ($path:literal, $number_anim_frames:expr, $size:expr) => {{
+    ($path:literal, $number_anim_frames:expr_2021, $size:expr_2021) => {{
         let sprite = include_bytes!($path);
         let sprite = image::load_from_memory(sprite).unwrap();
 
@@ -201,7 +201,7 @@ macro_rules! entity_sprite_from_path_scaled {
 }
 
 macro_rules! entity_sprite_from_path_scaled_centered {
-    ($path:literal, $number_anim_frames:expr, $size:expr) => {{
+    ($path:literal, $number_anim_frames:expr_2021, $size:expr_2021) => {{
         let sprite = include_bytes!($path);
         let sprite = image::load_from_memory(sprite).unwrap();
 
@@ -216,7 +216,7 @@ macro_rules! entity_sprite_from_path_scaled_centered {
 }
 
 macro_rules! entity_sprite_from_path_tiling {
-    ($path:literal, $number_anim_frames:expr) => {{
+    ($path:literal, $number_anim_frames:expr_2021) => {{
         let sprite = include_bytes!($path);
         let sprite = image::load_from_memory(sprite).unwrap();
 
@@ -232,7 +232,7 @@ macro_rules! entity_sprite_from_path_tiling {
 }
 
 macro_rules! entity_sprite_from_path_tall {
-    ($path:literal, $number_anim_frames:expr, $ar:expr) => {{
+    ($path:literal, $number_anim_frames:expr_2021, $ar:expr_2021) => {{
         let sprite = include_bytes!($path);
         let sprite = image::load_from_memory(sprite).unwrap();
 

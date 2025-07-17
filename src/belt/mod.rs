@@ -2521,7 +2521,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
     pub fn get_item_iter(
         &self,
         id: BeltTileId<ItemIdxType>,
-    ) -> impl Iterator<Item = Option<Item<ItemIdxType>>> {
+    ) -> impl Iterator<Item = Option<Item<ItemIdxType>>> + use<ItemIdxType> {
         match id {
             BeltTileId::AnyBelt(index, _) => match &self.any_belts[index] {
                 AnyBelt::Smart(smart_belt) => self.inner.get_smart(*smart_belt).items().into_iter(),

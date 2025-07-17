@@ -376,9 +376,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         pole_position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
-        impl IntoIterator<Item = Position>,
-        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
-        impl IntoIterator<Item = Position>,
+        impl IntoIterator<Item = Position> + use<ItemIdxType, RecipeIdxType>,
+        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>,
+        impl IntoIterator<Item = Position> + use<ItemIdxType, RecipeIdxType>,
     ) {
         let old_id = self.pole_pos_to_grid_id.remove(&pole_position).unwrap();
 

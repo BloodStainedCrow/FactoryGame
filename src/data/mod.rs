@@ -1535,7 +1535,7 @@ impl RawDataStore {
 
 pub fn all_item_iter<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-) -> impl Iterator<Item = Item<ItemIdxType>> {
+) -> impl Iterator<Item = Item<ItemIdxType>> + use<ItemIdxType, RecipeIdxType> {
     (0..data_store.item_names.len()).map(|id| Item {
         id: id.try_into().unwrap(),
     })
@@ -1543,7 +1543,7 @@ pub fn all_item_iter<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
 pub fn all_recipe_iter<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-) -> impl Iterator<Item = Recipe<RecipeIdxType>> {
+) -> impl Iterator<Item = Recipe<RecipeIdxType>> + use<ItemIdxType, RecipeIdxType> {
     (0..data_store.recipe_names.len()).map(|id| Recipe {
         id: id.try_into().unwrap(),
     })
