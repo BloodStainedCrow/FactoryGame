@@ -1,7 +1,7 @@
 use std::{
     borrow::Borrow,
     env,
-    fs::{create_dir_all, File},
+    fs::{File, create_dir_all},
     io::{Read, Write},
     marker::PhantomData,
     path::PathBuf,
@@ -12,7 +12,7 @@ use directories::ProjectDirs;
 use log::error;
 use ron::ser::PrettyConfig;
 
-use crate::{item::IdxTrait, rendering::app_state::GameState};
+use crate::{data::DataStore, item::IdxTrait, rendering::app_state::GameState};
 
 #[derive(Debug, Encode, serde::Deserialize, serde::Serialize)]
 pub struct SaveGame<
@@ -22,6 +22,7 @@ pub struct SaveGame<
 > {
     pub checksum: String,
     pub game_state: G,
+    // pub data_store: D,
     pub item: PhantomData<ItemIdxType>,
     pub recipe: PhantomData<RecipeIdxType>,
 }
@@ -30,6 +31,7 @@ pub struct SaveGame<
 /// If File system stuff fails
 pub fn save<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     game_state: &GameState<ItemIdxType, RecipeIdxType>,
+    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     checksum: String,
 ) {
     let dir = ProjectDirs::from("de", "aschhoff", "factory_game").expect("No Home path found");
@@ -93,7 +95,35 @@ pub fn load<
 
         file.read_to_end(&mut v).unwrap();
 
-        match bitcode::deserialize(v.as_slice()) {
+        match bitcode::deserialize(&mut v) {
+            Ok(val) => Some(val),
+            Err(err) => {
+                error!("Found save, but was unable to deserialize it!!!! \n{}", err);
+                None
+            },
+        }
+    })
+}
+
+/// # Panics
+/// If File system stuff fails
+#[must_use]
+pub fn load_readable<
+    ItemIdxType: IdxTrait + for<'a> serde::Deserialize<'a>,
+    RecipeIdxType: IdxTrait + for<'a> serde::Deserialize<'a>,
+>(
+    path: PathBuf,
+) -> Option<SaveGame<ItemIdxType, RecipeIdxType, GameState<ItemIdxType, RecipeIdxType>>> {
+    let file = File::open(path);
+
+    file.map_or(None, |mut file| {
+        let mut v = Vec::with_capacity(file.metadata().unwrap().len() as usize);
+
+        file.read_to_end(&mut v).unwrap();
+
+        let mut de = ron::Deserializer::from_bytes(&v).unwrap();
+
+        match serde_path_to_error::deserialize(&mut de) {
             Ok(val) => Some(val),
             Err(err) => {
                 error!("Found save, but was unable to deserialize it!!!! \n{}", err);

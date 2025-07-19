@@ -15,30 +15,30 @@ use std::{
     process::exit,
     simd::cmp::SimdPartialEq,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
-        mpsc::{channel, Sender},
         Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        mpsc::{Sender, channel},
     },
     thread,
 };
 
 use parking_lot::Mutex;
 
-use data::{factorio_1_1::get_raw_data_test, DataStore};
+use data::{DataStore, factorio_1_1::get_raw_data_test};
 use eframe::NativeOptions;
 use frontend::{
     action::action_state_machine::ActionStateMachine, input::Input, world::tile::CHUNK_SIZE_FLOAT,
 };
 use item::{IdxTrait, WeakIdxTrait};
 use multiplayer::{
-    connection_reciever::accept_continously, ClientConnectionInfo, Game, GameInitData, ServerInfo,
+    ClientConnectionInfo, Game, GameInitData, ServerInfo, connection_reciever::accept_continously,
 };
 use rendering::{
     app_state::GameState,
     eframe_app,
     window::{LoadedGame, LoadedGameSized},
 };
-use saving::load;
+use saving::{load, load_readable};
 use simple_logger::SimpleLogger;
 use std::path::PathBuf;
 
@@ -155,6 +155,7 @@ pub fn main() -> Result<(), ()> {
 
 enum StartGameInfo {
     Load(PathBuf),
+    LoadReadable(PathBuf),
     Create(GameCreationInfo),
 }
 
@@ -198,13 +199,23 @@ fn run_integrated_server(
             let game_state = Arc::new(Mutex::new(match start_game_info {
                 StartGameInfo::Load(path) => load(path)
                     .map(|sg| {
+                        if sg.checksum != data_store.checksum {
+                            // Try reconciliation
+                            todo!("Checksum mismatch, try to merge old and new mod state")
+                        } else {
+                            sg.game_state
+                        }
+                    })
+                    .unwrap(),
+                StartGameInfo::LoadReadable(path) => load_readable(path)
+                    .map(|sg| {
                         assert_eq!(
                             sg.checksum, data_store.checksum,
                             "A savegame can only be loaded with the EXACT same mods!"
                         );
                         sg.game_state
                     })
-                    .expect("Loading from disk failed!"),
+                    .unwrap(),
                 StartGameInfo::Create(info) => match info {
                     GameCreationInfo::Empty => GameState::new(&data_store),
                     GameCreationInfo::RedGreen => {
@@ -481,14 +492,14 @@ mod tests {
     use std::{fs::File, iter, path::PathBuf, rc::Rc};
 
     use rstest::rstest;
-    use test::{black_box, Bencher};
+    use test::{Bencher, black_box};
 
     use crate::{
-        data::{factorio_1_1::get_raw_data_test, DataStore},
+        DATA_STORE, TICKS_PER_SECOND_LOGIC,
+        data::{DataStore, factorio_1_1::get_raw_data_test},
         frontend::{action::ActionType, world::Position},
         rendering::app_state::GameState,
-        replays::{run_till_finished, Replay},
-        DATA_STORE, TICKS_PER_SECOND_LOGIC,
+        replays::{Replay, run_till_finished},
     };
 
     #[bench]

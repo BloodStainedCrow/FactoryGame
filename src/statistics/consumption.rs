@@ -99,7 +99,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 .map(|info| {
                     info.items_consumed
                         .iter()
-                        .zip(data_store.item_names.iter())
+                        .zip(data_store.item_display_names.iter())
                         .enumerate()
                         .filter_map(|(item_id, v)| {
                             filter

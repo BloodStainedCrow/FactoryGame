@@ -1,10 +1,13 @@
-use std::{borrow::Borrow, ops::Range};
-
 use proptest::{
     prelude::{Just, Strategy, prop},
     prop_oneof,
 };
+use std::num::NonZero;
+use std::{borrow::Borrow, ops::Range};
 use tilelib::types::{DrawInstance, Layer};
+
+use crate::frontend::world::tile::UndergroundDir;
+use crate::{belt::splitter::SplitterDistributionMode, item::Indexable};
 
 use crate::{
     data::DataStore,
@@ -20,232 +23,650 @@ use crate::{
             tile::{AssemblerID, AssemblerInfo, Dir, FloorTile, PlaceEntityType, World},
         },
     },
-    item::{IdxTrait, Item, Recipe, WeakIdxTrait},
+    item::{IdxTrait, Item, Recipe},
     rendering::{TextureAtlas, app_state::GameState},
     replays::Replay,
 };
 
 // For now blueprint will just be a list of actions
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct Blueprint<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    pub actions: Vec<ActionType<ItemIdxType, RecipeIdxType>>,
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Blueprint {
+    pub actions: Vec<BlueprintAction>,
 }
 
-impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, RecipeIdxType> {
-    pub fn actions_with_base_pos(
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+enum BlueprintAction {
+    PlaceEntity(BlueprintPlaceEntity),
+
+    SetRecipe {
+        pos: Position,
+        recipe: String,
+    },
+
+    OverrideInserterMovetime {
+        pos: Position,
+        new_movetime: Option<NonZero<u16>>,
+    },
+
+    AddModules {
+        pos: Position,
+        modules: Vec<String>,
+    },
+
+    SetChestSlotLimit {
+        pos: Position,
+        num_slots: u8,
+    },
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+enum BlueprintPlaceEntity {
+    Assembler {
+        pos: Position,
+        ty: String,
+    },
+    Inserter {
+        pos: Position,
+        dir: Dir,
+        /// The Item the inserter will move, must fit both the in and output side
+        filter: Option<String>,
+    },
+    Belt {
+        pos: Position,
+        direction: Dir,
+        ty: String,
+    },
+    Underground {
+        pos: Position,
+        direction: Dir,
+        ty: String,
+        underground_dir: UndergroundDir,
+    },
+    PowerPole {
+        pos: Position,
+        ty: String,
+    },
+    Splitter {
+        pos: Position,
+        direction: Dir,
+        ty: String,
+
+        in_mode: Option<SplitterDistributionMode>,
+        out_mode: Option<SplitterDistributionMode>,
+    },
+    Chest {
+        pos: Position,
+        ty: String,
+    },
+    SolarPanel {
+        pos: Position,
+        ty: String,
+    },
+    Lab {
+        pos: Position,
+        ty: String,
+    },
+    Beacon {
+        ty: String,
+        pos: Position,
+    },
+    FluidTank {
+        ty: String,
+        pos: Position,
+        rotation: Dir,
+    },
+    MiningDrill {
+        ty: String,
+        pos: Position,
+        rotation: Dir,
+    },
+}
+
+impl BlueprintAction {
+    fn from<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        action: &ActionType<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
+        match action {
+            ActionType::PlaceFloorTile(_) => unimplemented!(),
+            ActionType::PlaceEntity(place_entity_info) => {
+                match place_entity_info.entities.clone() {
+                    EntityPlaceOptions::Single(place_entity_type) => {
+                        let ty = match place_entity_type {
+                            PlaceEntityType::Assembler { pos, ty } => {
+                                BlueprintPlaceEntity::Assembler {
+                                    pos,
+                                    ty: data_store.assembler_info[ty as usize].name.clone(),
+                                }
+                            },
+                            PlaceEntityType::Inserter { pos, dir, filter } => {
+                                BlueprintPlaceEntity::Inserter {
+                                    pos,
+                                    dir,
+                                    filter: filter.map(|item| {
+                                        data_store.item_names[item.into_usize()].clone()
+                                    }),
+                                }
+                            },
+                            PlaceEntityType::Belt { pos, direction, ty } => {
+                                BlueprintPlaceEntity::Belt {
+                                    pos,
+                                    direction,
+                                    ty: data_store.belt_infos[ty as usize].name.clone(),
+                                }
+                            },
+                            PlaceEntityType::Underground {
+                                pos,
+                                direction,
+                                ty,
+                                underground_dir,
+                            } => BlueprintPlaceEntity::Underground {
+                                pos,
+                                direction,
+                                ty: data_store.belt_infos[ty as usize].name.clone(),
+                                underground_dir,
+                            },
+                            PlaceEntityType::PowerPole { pos, ty } => BlueprintPlaceEntity::Chest {
+                                pos,
+                                ty: data_store.power_pole_data[ty as usize].name.clone(),
+                            },
+                            PlaceEntityType::Splitter {
+                                pos,
+                                direction,
+                                ty,
+                                in_mode,
+                                out_mode,
+                            } => BlueprintPlaceEntity::Splitter {
+                                pos,
+                                direction,
+                                ty: todo!(),
+                                in_mode,
+                                out_mode,
+                            },
+                            PlaceEntityType::Chest { pos, ty } => BlueprintPlaceEntity::Chest {
+                                pos,
+                                ty: data_store.chest_names[ty as usize].clone(),
+                            },
+                            PlaceEntityType::SolarPanel { pos, ty } => {
+                                BlueprintPlaceEntity::SolarPanel {
+                                    pos,
+                                    ty: data_store.solar_panel_info[ty as usize].name.clone(),
+                                }
+                            },
+                            PlaceEntityType::Lab { pos, ty } => BlueprintPlaceEntity::Lab {
+                                pos,
+                                ty: data_store.lab_info[ty as usize].name.clone(),
+                            },
+                            PlaceEntityType::Beacon { ty, pos } => BlueprintPlaceEntity::Beacon {
+                                pos,
+                                ty: data_store.beacon_info[ty as usize].name.clone(),
+                            },
+                            PlaceEntityType::FluidTank { ty, pos, rotation } => {
+                                BlueprintPlaceEntity::FluidTank {
+                                    pos,
+                                    ty: data_store.fluid_tank_infos[ty as usize].name.clone(),
+                                    rotation,
+                                }
+                            },
+                            PlaceEntityType::MiningDrill { ty, pos, rotation } => {
+                                BlueprintPlaceEntity::MiningDrill {
+                                    pos,
+                                    ty: data_store.mining_drill_info[ty as usize].name.clone(),
+                                    rotation,
+                                }
+                            },
+                        };
+                        Self::PlaceEntity(ty)
+                    },
+                    EntityPlaceOptions::Multiple(_) => unimplemented!(),
+                }
+            },
+            ActionType::SetRecipe(set_recipe_info) => Self::SetRecipe {
+                pos: set_recipe_info.pos,
+                recipe: data_store.recipe_names[set_recipe_info.recipe.into_usize()].clone(),
+            },
+            ActionType::OverrideInserterMovetime { pos, new_movetime } => {
+                Self::OverrideInserterMovetime {
+                    pos: *pos,
+                    new_movetime: *new_movetime,
+                }
+            },
+            ActionType::Position(_, _) => unimplemented!(),
+            ActionType::AddModules { pos, modules } => Self::AddModules {
+                pos: *pos,
+                modules: modules
+                    .iter()
+                    .map(|module| data_store.module_info[*module].name.clone())
+                    .collect(),
+            },
+            ActionType::RemoveModules { .. } => unimplemented!(),
+            ActionType::SetChestSlotLimit { pos, num_slots } => Self::SetChestSlotLimit {
+                pos: *pos,
+                num_slots: *num_slots,
+            },
+            ActionType::Remove(_) => unimplemented!(),
+            ActionType::SetActiveResearch { .. } => unimplemented!(),
+            ActionType::CheatUnlockTechnology { .. } => unimplemented!(),
+            ActionType::Ping(_) => unimplemented!(),
+        }
+    }
+
+    fn try_into<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &self,
-        base_pos: Position,
-    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
-        self.actions.iter().map(move |a| match a {
-            ActionType::PlaceFloorTile(PlaceFloorTileByHandInfo {
-                ghost_info:
-                    PlaceFloorTileGhostInfo {
-                        tile,
-                        position: PositionInfo::Single { pos },
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Result<ActionType<ItemIdxType, RecipeIdxType>, ()> {
+        let action = match self {
+            BlueprintAction::PlaceEntity(blueprint_place_entity) => {
+                let entity = match blueprint_place_entity {
+                    BlueprintPlaceEntity::Assembler { pos, ty } => PlaceEntityType::Assembler {
+                        pos: *pos,
+                        ty: data_store
+                            .assembler_info
+                            .iter()
+                            .position(|info| info.name == *ty)
+                            .map(|v| v.try_into().unwrap())
+                            .ok_or(())?,
                     },
-                player,
-            }) => ActionType::PlaceFloorTile(PlaceFloorTileByHandInfo {
-                ghost_info: PlaceFloorTileGhostInfo {
-                    tile: *tile,
-                    position: PositionInfo::Single {
-                        pos: Position {
-                            x: base_pos.x + pos.x,
-                            y: base_pos.y + pos.y,
-                        },
+                    BlueprintPlaceEntity::Inserter { pos, dir, filter } => {
+                        PlaceEntityType::Inserter {
+                            pos: *pos,
+                            dir: *dir,
+                            filter: filter
+                                .as_ref()
+                                .map(|item| {
+                                    data_store
+                                        .item_names
+                                        .iter()
+                                        .position(|ds_item| ds_item == item)
+                                        .map(|index| Item {
+                                            id: index.try_into().unwrap(),
+                                        })
+                                        .ok_or(())
+                                })
+                                .transpose()?,
+                        }
                     },
-                },
-                player: *player,
-            }),
-            ActionType::PlaceEntity(PlaceEntityInfo {
-                entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler { pos, ty }),
-            }) => ActionType::PlaceEntity(PlaceEntityInfo {
-                entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler {
-                    pos: Position {
-                        x: base_pos.x + pos.x,
-                        y: base_pos.y + pos.y,
+                    BlueprintPlaceEntity::Belt { pos, direction, ty } => PlaceEntityType::Belt {
+                        pos: *pos,
+                        direction: *direction,
+                        ty: data_store
+                            .belt_infos
+                            .iter()
+                            .position(|info| info.name == *ty)
+                            .map(|v| v.try_into().unwrap())
+                            .ok_or(())?,
                     },
-                    ty: *ty,
-                }),
-            }),
-            ActionType::PlaceEntity(PlaceEntityInfo {
-                entities:
-                    EntityPlaceOptions::Single(PlaceEntityType::Belt { pos, direction, ty }),
-            }) => ActionType::PlaceEntity(PlaceEntityInfo {
-                entities: EntityPlaceOptions::Single(PlaceEntityType::Belt {
-                    pos: Position {
-                        x: base_pos.x + pos.x,
-                        y: base_pos.y + pos.y,
-                    },
-                    direction: *direction,
-                    ty: *ty,
-                }),
-            }),
-            ActionType::PlaceEntity(PlaceEntityInfo {
-                entities:
-                    EntityPlaceOptions::Single(PlaceEntityType::Underground {
+                    BlueprintPlaceEntity::Underground {
                         pos,
                         direction,
                         ty,
                         underground_dir,
-                    }),
-            }) => ActionType::PlaceEntity(PlaceEntityInfo {
-                entities: EntityPlaceOptions::Single(PlaceEntityType::Underground {
-                    pos: Position {
-                        x: base_pos.x + pos.x,
-                        y: base_pos.y + pos.y,
+                    } => PlaceEntityType::Underground {
+                        pos: *pos,
+                        direction: *direction,
+                        ty: data_store
+                            .belt_infos
+                            .iter()
+                            .position(|info| info.name == *ty)
+                            .map(|v| v.try_into().unwrap())
+                            .ok_or(())?,
+                        underground_dir: *underground_dir,
                     },
-                    direction: *direction,
-                    ty: *ty,
-                    underground_dir: *underground_dir,
-                }),
-            }),
-            ActionType::PlaceEntity(PlaceEntityInfo {
-                entities: EntityPlaceOptions::Single(PlaceEntityType::Chest { pos, ty }),
-            }) => ActionType::PlaceEntity(PlaceEntityInfo {
-                entities: EntityPlaceOptions::Single(PlaceEntityType::Chest {
-                    pos: Position {
-                        x: base_pos.x + pos.x,
-                        y: base_pos.y + pos.y,
+                    BlueprintPlaceEntity::PowerPole { pos, ty } => PlaceEntityType::PowerPole {
+                        pos: *pos,
+                        ty: data_store
+                            .power_pole_data
+                            .iter()
+                            .position(|info| info.name == *ty)
+                            .map(|v| v.try_into().unwrap())
+                            .ok_or(())?,
                     },
-                    ty: *ty,
-                }),
-            }),
-            ActionType::PlaceEntity(PlaceEntityInfo {
-                entities:
-                    EntityPlaceOptions::Single(PlaceEntityType::Inserter { pos, dir, filter }),
-            }) => ActionType::PlaceEntity(PlaceEntityInfo {
-                entities: EntityPlaceOptions::Single(PlaceEntityType::Inserter {
-                    pos: Position {
-                        x: base_pos.x + pos.x,
-                        y: base_pos.y + pos.y,
-                    },
-                    dir: *dir,
-                    filter: *filter,
-                }),
-            }),
-            ActionType::PlaceEntity(PlaceEntityInfo {
-                entities: EntityPlaceOptions::Single(PlaceEntityType::PowerPole { pos, ty }),
-            }) => ActionType::PlaceEntity(PlaceEntityInfo {
-                entities: EntityPlaceOptions::Single(PlaceEntityType::PowerPole {
-                    pos: Position {
-                        x: base_pos.x + pos.x,
-                        y: base_pos.y + pos.y,
-                    },
-                    ty: *ty,
-                }),
-            }),
-            ActionType::PlaceEntity(PlaceEntityInfo {
-                entities:
-                    EntityPlaceOptions::Single(PlaceEntityType::Splitter {
+                    BlueprintPlaceEntity::Splitter {
                         pos,
                         direction,
                         ty,
                         in_mode,
                         out_mode,
-                    }),
-            }) => ActionType::PlaceEntity(PlaceEntityInfo {
-                entities: EntityPlaceOptions::Single(PlaceEntityType::Splitter {
-                    pos: Position {
-                        x: base_pos.x + pos.x,
-                        y: base_pos.y + pos.y,
+                    } => todo!(),
+                    BlueprintPlaceEntity::Chest { pos, ty } => PlaceEntityType::Chest {
+                        pos: *pos,
+                        ty: data_store
+                            .chest_names
+                            .iter()
+                            .position(|name| name == ty)
+                            .map(|v| v.try_into().unwrap())
+                            .ok_or(())?,
                     },
-                    direction: *direction,
-                    in_mode: *in_mode,
-                    out_mode: *out_mode,
-                    ty: *ty,
-                }),
-            }),
-            ActionType::PlaceEntity(PlaceEntityInfo {
-                entities: EntityPlaceOptions::Single(PlaceEntityType::SolarPanel { pos, ty }),
-            }) => ActionType::PlaceEntity(PlaceEntityInfo {
-                entities: EntityPlaceOptions::Single(PlaceEntityType::SolarPanel {
-                    pos: Position {
-                        x: base_pos.x + pos.x,
-                        y: base_pos.y + pos.y,
+                    BlueprintPlaceEntity::SolarPanel { pos, ty } => PlaceEntityType::SolarPanel {
+                        pos: *pos,
+                        ty: data_store
+                            .solar_panel_info
+                            .iter()
+                            .position(|info| info.name == *ty)
+                            .map(|v| v.try_into().unwrap())
+                            .ok_or(())?,
                     },
-                    ty: *ty,
-                }),
-            }),
-            ActionType::PlaceEntity(PlaceEntityInfo {
-                entities: EntityPlaceOptions::Single(PlaceEntityType::Lab { pos, ty }),
-            }) => ActionType::PlaceEntity(PlaceEntityInfo {
-                entities: EntityPlaceOptions::Single(PlaceEntityType::Lab {
-                    pos: Position {
-                        x: base_pos.x + pos.x,
-                        y: base_pos.y + pos.y,
+                    BlueprintPlaceEntity::Lab { pos, ty } => PlaceEntityType::Lab {
+                        pos: *pos,
+                        ty: data_store
+                            .lab_info
+                            .iter()
+                            .position(|info| info.name == *ty)
+                            .map(|v| v.try_into().unwrap())
+                            .ok_or(())?,
                     },
-                    ty: *ty,
-                }),
-            }),
-            ActionType::PlaceEntity(PlaceEntityInfo {
-                entities: EntityPlaceOptions::Single(PlaceEntityType::Beacon { pos, ty }),
-            }) => ActionType::PlaceEntity(PlaceEntityInfo {
-                entities: EntityPlaceOptions::Single(PlaceEntityType::Beacon {
-                    pos: Position {
-                        x: base_pos.x + pos.x,
-                        y: base_pos.y + pos.y,
+                    BlueprintPlaceEntity::Beacon { ty, pos } => PlaceEntityType::Beacon {
+                        pos: *pos,
+                        ty: data_store
+                            .beacon_info
+                            .iter()
+                            .position(|info| info.name == *ty)
+                            .map(|v| v.try_into().unwrap())
+                            .ok_or(())?,
                     },
-                    ty: *ty,
-                }),
-            }),
-            ActionType::SetRecipe(SetRecipeInfo { pos, recipe }) => {
-                ActionType::SetRecipe(SetRecipeInfo {
-                    pos: Position {
-                        x: base_pos.x + pos.x,
-                        y: base_pos.y + pos.y,
+                    BlueprintPlaceEntity::FluidTank { ty, pos, rotation } => {
+                        PlaceEntityType::FluidTank {
+                            pos: *pos,
+                            ty: data_store
+                                .fluid_tank_infos
+                                .iter()
+                                .position(|info| info.name == *ty)
+                                .map(|v| v.try_into().unwrap())
+                                .ok_or(())?,
+                            rotation: *rotation,
+                        }
                     },
-                    recipe: *recipe,
+                    BlueprintPlaceEntity::MiningDrill { ty, pos, rotation } => {
+                        PlaceEntityType::MiningDrill {
+                            pos: *pos,
+                            ty: data_store
+                                .mining_drill_info
+                                .iter()
+                                .position(|info| info.name == *ty)
+                                .map(|v| v.try_into().unwrap())
+                                .ok_or(())?,
+                            rotation: *rotation,
+                        }
+                    },
+                };
+
+                ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(entity),
                 })
             },
-            ActionType::Remove(position) => ActionType::Remove(Position {
-                x: base_pos.x + position.x,
-                y: base_pos.y + position.y,
+            BlueprintAction::SetRecipe { pos, recipe } => ActionType::SetRecipe(SetRecipeInfo {
+                pos: *pos,
+                recipe: data_store
+                    .recipe_names
+                    .iter()
+                    .position(|ds_recipe| ds_recipe == recipe)
+                    .map(|index| Recipe {
+                        id: index.try_into().unwrap(),
+                    })
+                    .ok_or(())?,
             }),
-            ActionType::AddModules { pos, modules } => ActionType::AddModules {
-                pos: Position {
-                    x: base_pos.x + pos.x,
-                    y: base_pos.y + pos.y,
-                },
-                modules: modules.clone(),
-            },
-            ActionType::SetChestSlotLimit { pos, num_slots } => ActionType::SetChestSlotLimit {
-                pos: Position {
-                    x: base_pos.x + pos.x,
-                    y: base_pos.y + pos.y,
-                },
-                num_slots: *num_slots,
-            },
-            ActionType::OverrideInserterMovetime { pos, new_movetime } => {
+            BlueprintAction::OverrideInserterMovetime { pos, new_movetime } => {
                 ActionType::OverrideInserterMovetime {
-                    pos: Position {
-                        x: base_pos.x + pos.x,
-                        y: base_pos.y + pos.y,
-                    },
+                    pos: *pos,
                     new_movetime: *new_movetime,
                 }
             },
-            a => unreachable!("{:?}", a),
-        })
+            BlueprintAction::AddModules { pos, modules } => ActionType::AddModules {
+                pos: *pos,
+                modules: modules
+                    .iter()
+                    .map(|action_module| {
+                        data_store
+                            .module_info
+                            .iter()
+                            .position(|module| module.name == *action_module)
+                    })
+                    .collect::<Option<_>>()
+                    .ok_or(())?,
+            },
+            BlueprintAction::SetChestSlotLimit { pos, num_slots } => {
+                ActionType::SetChestSlotLimit {
+                    pos: *pos,
+                    num_slots: *num_slots,
+                }
+            },
+        };
+
+        Ok(action)
+    }
+}
+
+impl Blueprint {
+    pub fn actions_with_base_pos<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        &self,
+        base_pos: Position,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
+        self.actions
+            .iter()
+            .map(|bp_action| {
+                bp_action
+                    .try_into(data_store)
+                    .expect("Action not possible with current mod set!")
+            })
+            .map(move |a| match a {
+                ActionType::PlaceFloorTile(PlaceFloorTileByHandInfo {
+                    ghost_info:
+                        PlaceFloorTileGhostInfo {
+                            tile,
+                            position: PositionInfo::Single { pos },
+                        },
+                    player,
+                }) => ActionType::PlaceFloorTile(PlaceFloorTileByHandInfo {
+                    ghost_info: PlaceFloorTileGhostInfo {
+                        tile,
+                        position: PositionInfo::Single {
+                            pos: Position {
+                                x: base_pos.x + pos.x,
+                                y: base_pos.y + pos.y,
+                            },
+                        },
+                    },
+                    player,
+                }),
+                ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler { pos, ty }),
+                }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler {
+                        pos: Position {
+                            x: base_pos.x + pos.x,
+                            y: base_pos.y + pos.y,
+                        },
+                        ty,
+                    }),
+                }),
+                ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities:
+                        EntityPlaceOptions::Single(PlaceEntityType::Belt { pos, direction, ty }),
+                }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Belt {
+                        pos: Position {
+                            x: base_pos.x + pos.x,
+                            y: base_pos.y + pos.y,
+                        },
+                        direction,
+                        ty,
+                    }),
+                }),
+                ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities:
+                        EntityPlaceOptions::Single(PlaceEntityType::Underground {
+                            pos,
+                            direction,
+                            ty,
+                            underground_dir,
+                        }),
+                }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Underground {
+                        pos: Position {
+                            x: base_pos.x + pos.x,
+                            y: base_pos.y + pos.y,
+                        },
+                        direction,
+                        ty,
+                        underground_dir,
+                    }),
+                }),
+                ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Chest { pos, ty }),
+                }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Chest {
+                        pos: Position {
+                            x: base_pos.x + pos.x,
+                            y: base_pos.y + pos.y,
+                        },
+                        ty,
+                    }),
+                }),
+                ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities:
+                        EntityPlaceOptions::Single(PlaceEntityType::Inserter { pos, dir, filter }),
+                }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Inserter {
+                        pos: Position {
+                            x: base_pos.x + pos.x,
+                            y: base_pos.y + pos.y,
+                        },
+                        dir,
+                        filter,
+                    }),
+                }),
+                ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::PowerPole { pos, ty }),
+                }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::PowerPole {
+                        pos: Position {
+                            x: base_pos.x + pos.x,
+                            y: base_pos.y + pos.y,
+                        },
+                        ty,
+                    }),
+                }),
+                ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities:
+                        EntityPlaceOptions::Single(PlaceEntityType::Splitter {
+                            pos,
+                            direction,
+                            ty,
+                            in_mode,
+                            out_mode,
+                        }),
+                }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Splitter {
+                        pos: Position {
+                            x: base_pos.x + pos.x,
+                            y: base_pos.y + pos.y,
+                        },
+                        direction,
+                        in_mode,
+                        out_mode,
+                        ty,
+                    }),
+                }),
+                ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::SolarPanel { pos, ty }),
+                }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::SolarPanel {
+                        pos: Position {
+                            x: base_pos.x + pos.x,
+                            y: base_pos.y + pos.y,
+                        },
+                        ty,
+                    }),
+                }),
+                ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Lab { pos, ty }),
+                }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Lab {
+                        pos: Position {
+                            x: base_pos.x + pos.x,
+                            y: base_pos.y + pos.y,
+                        },
+                        ty,
+                    }),
+                }),
+                ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Beacon { pos, ty }),
+                }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Beacon {
+                        pos: Position {
+                            x: base_pos.x + pos.x,
+                            y: base_pos.y + pos.y,
+                        },
+                        ty,
+                    }),
+                }),
+                ActionType::SetRecipe(SetRecipeInfo { pos, recipe }) => {
+                    ActionType::SetRecipe(SetRecipeInfo {
+                        pos: Position {
+                            x: base_pos.x + pos.x,
+                            y: base_pos.y + pos.y,
+                        },
+                        recipe,
+                    })
+                },
+                ActionType::Remove(position) => ActionType::Remove(Position {
+                    x: base_pos.x + position.x,
+                    y: base_pos.y + position.y,
+                }),
+                ActionType::AddModules { pos, modules } => ActionType::AddModules {
+                    pos: Position {
+                        x: base_pos.x + pos.x,
+                        y: base_pos.y + pos.y,
+                    },
+                    modules: modules.clone(),
+                },
+                ActionType::SetChestSlotLimit { pos, num_slots } => ActionType::SetChestSlotLimit {
+                    pos: Position {
+                        x: base_pos.x + pos.x,
+                        y: base_pos.y + pos.y,
+                    },
+                    num_slots,
+                },
+                ActionType::OverrideInserterMovetime { pos, new_movetime } => {
+                    ActionType::OverrideInserterMovetime {
+                        pos: Position {
+                            x: base_pos.x + pos.x,
+                            y: base_pos.y + pos.y,
+                        },
+                        new_movetime,
+                    }
+                },
+                a => unreachable!("{:?}", a),
+            })
     }
 
-    pub fn apply(
+    pub fn apply<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &self,
         base_pos: Position,
         game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        game_state.apply_actions(self.actions_with_base_pos(base_pos), data_store);
+        game_state.apply_actions(self.actions_with_base_pos(base_pos, data_store), data_store);
     }
 
-    pub fn from_replay<DS: Borrow<DataStore<ItemIdxType, RecipeIdxType>>>(
+    pub fn from_replay<
+        ItemIdxType: IdxTrait,
+        RecipeIdxType: IdxTrait,
+        DS: Borrow<DataStore<ItemIdxType, RecipeIdxType>>,
+    >(
         replay: &Replay<ItemIdxType, RecipeIdxType, DS>,
     ) -> Self {
         Self {
-            actions: replay.actions.iter().map(|ra| ra.action.clone()).collect(),
+            actions: replay
+                .actions
+                .iter()
+                .map(|ra| BlueprintAction::from(&ra.action, replay.data_store.borrow()))
+                .collect(),
         }
     }
 
-    pub fn from_area(
+    pub fn from_area<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         world: &World<ItemIdxType, RecipeIdxType>,
         area: [Range<i32>; 2],
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -485,13 +906,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
                 },
             };
 
-            bp.actions.extend(actions);
+            bp.actions.extend(
+                actions
+                    .into_iter()
+                    .map(|action| BlueprintAction::from(&action, data_store)),
+            );
         }
 
         bp
     }
 
-    pub fn draw(
+    pub fn draw<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &self,
         base_pos: (f32, f32),
         camera_pos: (f32, f32),
@@ -549,6 +974,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
         // );
 
         for action in &self.actions {
+            let Ok(action) = action.try_into(data_store) else {
+                return;
+            };
             let pos = action.get_pos();
             let size = action.get_building_size(data_store);
 
@@ -571,13 +999,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Blueprint<ItemIdxType, Reci
     }
 }
 
-pub fn random_blueprint_strategy<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+pub fn random_blueprint_strategy<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     len_range: Range<usize>,
-    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-) -> impl Strategy<Value = Blueprint<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
-{
-    prop::collection::vec(random_blueprint_action(data_store), len_range)
-        .prop_map(|actions| Blueprint { actions })
+    data_store: &'a DataStore<ItemIdxType, RecipeIdxType>,
+) -> impl Strategy<Value = Blueprint> + use<'a, ItemIdxType, RecipeIdxType> {
+    prop::collection::vec(random_blueprint_action(data_store), len_range).prop_map(|actions| {
+        Blueprint {
+            actions: actions
+                .into_iter()
+                .map(|v| BlueprintAction::from(&v, data_store))
+                .collect(),
+        }
+    })
 }
 
 pub fn random_action<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
@@ -709,7 +1142,7 @@ pub fn random_recipe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 pub fn random_item<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> impl Strategy<Value = Item<ItemIdxType>> + use<ItemIdxType, RecipeIdxType> {
-    (0..data_store.item_names.len())
+    (0..data_store.item_display_names.len())
         .prop_map(|item_idx| ItemIdxType::try_from(item_idx).unwrap())
         .prop_map(|id| Item { id })
 }

@@ -18,19 +18,19 @@ use itertools::Itertools;
 use noise::{NoiseFn, Simplex};
 
 use crate::{
+    TICKS_PER_SECOND_LOGIC,
     belt::{
-        splitter::{SplitterDistributionMode, SplitterSide, SPLITTER_BELT_LEN},
         BeltBeltInserterAdditionInfo, BeltTileId, SplitterTileId,
+        splitter::{SPLITTER_BELT_LEN, SplitterDistributionMode, SplitterSide},
     },
     data::{DataStore, ItemRecipeDir},
-    inserter::{storage_storage_with_buckets::InserterIdentifier, StaticID, Storage, MOVETIME},
-    item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
+    inserter::{MOVETIME, StaticID, Storage, storage_storage_with_buckets::InserterIdentifier},
+    item::{IdxTrait, Item, Recipe, WeakIdxTrait, usize_from},
     network_graph::WeakIndex,
     power::power_grid::{BeaconAffectedEntity, PowerGridEntity, PowerGridIdentifier},
     rendering::app_state::{
-        calculate_inserter_positions, InstantiateInserterError, SimulationState,
+        InstantiateInserterError, SimulationState, calculate_inserter_positions,
     },
-    TICKS_PER_SECOND_LOGIC,
 };
 use crate::{inserter::FakeUnionStorage, item::Indexable};
 use static_assertions::const_assert;
@@ -44,7 +44,7 @@ use serde::Serializer;
 
 use noise::Seedable;
 
-use super::{sparse_grid::SparseGrid, Position};
+use super::{Position, sparse_grid::SparseGrid};
 use crate::liquid::FluidSystemId;
 
 pub const BELT_LEN_PER_TILE: u16 = 4;
@@ -939,6 +939,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
                     let assembler_size = data_store.assembler_info[usize::from(*ty)].size;
 
+                    if id.recipe == new_recipe {
+                        return ControlFlow::Break(());
+                    }
+
                     // Change assembler recipe
                     let (removal_info, new_id) = sim_state.factory.power_grids.power_grids
                         [usize::from(id.grid)]
@@ -1277,8 +1281,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         #[cfg(debug_assertions)]
         for x_offs in 0..e_size.0 {
             for y_offs in 0..e_size.1 {
-                assert!(self
-                    .get_entities_colliding_with(
+                assert!(
+                    self.get_entities_colliding_with(
                         Position {
                             x: e_pos.x + i32::from(x_offs),
                             y: e_pos.y + i32::from(y_offs)
@@ -1288,7 +1292,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     )
                     .into_iter()
                     .next()
-                    .is_some());
+                    .is_some()
+                );
                 assert!(
                     self.get_entities_colliding_with(
                         Position {
@@ -1637,11 +1642,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     PossibleItem::All => return Err(InstantiateInserterError::PleaseSpecifyFilter),
                     PossibleItem::List(items) => match items.len().cmp(&1) {
                         std::cmp::Ordering::Less => {
-                            return Err(InstantiateInserterError::ItemConflict)
+                            return Err(InstantiateInserterError::ItemConflict);
                         },
                         std::cmp::Ordering::Equal => items[0],
                         std::cmp::Ordering::Greater => {
-                            return Err(InstantiateInserterError::PleaseSpecifyFilter)
+                            return Err(InstantiateInserterError::PleaseSpecifyFilter);
                         },
                     },
                     PossibleItem::None => unreachable!(),
@@ -2307,7 +2312,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         size: (u16, u16),
         data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl IntoIterator<Item = &'a Entity<ItemIdxType, RecipeIdxType>, IntoIter: Clone>
-           + use<'a, 'b, ItemIdxType, RecipeIdxType> {
+    + use<'a, 'b, ItemIdxType, RecipeIdxType> {
         let max_size = data_store.max_entity_size;
 
         let bb_top_left = (pos.x - i32::from(max_size.0), pos.y - i32::from(max_size.1));
@@ -2633,10 +2638,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                 },
                             };
 
-                            assert!(new_storages
-                                .iter()
-                                .map(|(item, _storage)| item)
-                                .all_unique());
+                            assert!(
+                                new_storages
+                                    .iter()
+                                    .map(|(item, _storage)| item)
+                                    .all_unique()
+                            );
 
                             self.mutate_entities_colliding_with(
                                 inserter_search_area.0,
@@ -2741,12 +2748,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                             pole_position,
                                             weak_index,
                                         } => {
-                                            assert!(sim_state
-                                                .factory
-                                                .power_grids
-                                                .pole_pos_to_grid_id
-                                                .get(pole_position)
-                                                .is_none());
+                                            assert!(
+                                                sim_state
+                                                    .factory
+                                                    .power_grids
+                                                    .pole_pos_to_grid_id
+                                                    .get(pole_position)
+                                                    .is_none()
+                                            );
 
                                             if let Some(new_pole_pos) = pole_pos {
                                                 // FIXME: Items are lost here!
@@ -2939,8 +2948,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         connection_range: u8,
         data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl IntoIterator<Item = &'a Entity<ItemIdxType, RecipeIdxType>, IntoIter: Clone>
-           + Clone
-           + use<'a, 'b, ItemIdxType, RecipeIdxType> {
+    + Clone
+    + use<'a, 'b, ItemIdxType, RecipeIdxType> {
         self.get_entities_colliding_with(
             Position {
                 x: pole_pos.x - i32::from(connection_range),
@@ -3523,14 +3532,14 @@ mod test {
     use proptest::{prop_assert, prop_assert_eq, proptest};
 
     use crate::{
-        blueprint::{random_entity_to_place, random_position, Blueprint},
+        DATA_STORE,
+        blueprint::{Blueprint, random_entity_to_place, random_position},
         frontend::{
-            action::{place_entity::PlaceEntityInfo, ActionType},
+            action::{ActionType, place_entity::PlaceEntityInfo},
             world::Position,
         },
         rendering::app_state::GameState,
         replays::Replay,
-        DATA_STORE,
     };
 
     proptest! {

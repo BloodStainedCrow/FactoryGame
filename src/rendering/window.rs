@@ -1,8 +1,8 @@
 use std::{
     sync::{
+        Arc,
         atomic::{AtomicBool, AtomicU64},
         mpsc::Sender,
-        Arc,
     },
     time::{Duration, Instant},
 };
@@ -12,7 +12,7 @@ use parking_lot::Mutex;
 use crate::{
     data::DataStore,
     frontend::{
-        action::{action_state_machine::ActionStateMachine, ActionType},
+        action::{ActionType, action_state_machine::ActionStateMachine},
         input::Input,
     },
     item::WeakIdxTrait,
@@ -27,8 +27,9 @@ use winit::{
 };
 
 use super::{
+    TextureAtlas,
     app_state::{AppState, GameState},
-    texture_atlas, TextureAtlas,
+    texture_atlas,
 };
 
 pub struct App {
@@ -111,18 +112,22 @@ impl winit::application::ApplicationHandler for App {
                     match &state.state {
                         LoadedGame::ItemU8RecipeU8(state) => save(
                             &state.state.lock(),
+                            &state.data_store.lock(),
                             state.data_store.lock().checksum.clone(),
                         ),
                         LoadedGame::ItemU8RecipeU16(state) => save(
                             &state.state.lock(),
+                            &state.data_store.lock(),
                             state.data_store.lock().checksum.clone(),
                         ),
                         LoadedGame::ItemU16RecipeU8(state) => save(
                             &state.state.lock(),
+                            &state.data_store.lock(),
                             state.data_store.lock().checksum.clone(),
                         ),
                         LoadedGame::ItemU16RecipeU16(state) => save(
                             &state.state.lock(),
+                            &state.data_store.lock(),
                             state.data_store.lock().checksum.clone(),
                         ),
                     }

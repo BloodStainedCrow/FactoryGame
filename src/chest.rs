@@ -28,7 +28,7 @@ impl<ItemIdxType: IdxTrait> FullChestStore<ItemIdxType> {
             .for_each(|(item_id, store)| {
                 profiling::scope!(
                     "Chest Update",
-                    format!("Item: {}", data_store.item_names[item_id]).as_str()
+                    format!("Item: {}", data_store.item_display_names[item_id]).as_str()
                 );
                 store.update_simd()
             });

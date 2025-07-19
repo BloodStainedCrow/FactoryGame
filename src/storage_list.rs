@@ -141,7 +141,7 @@ pub fn sizes<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &'a DataStore<ItemIdxType, RecipeIdxType>,
     num_grids_total: usize,
 ) -> impl Iterator<Item = usize> + use<'a, ItemIdxType, RecipeIdxType> {
-    (0..data_store.item_names.len())
+    (0..data_store.item_display_names.len())
         .map(|i| Item {
             id: ItemIdxType::try_from(i).unwrap(),
         })
@@ -825,7 +825,7 @@ fn all_static_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &'a mut [ITEMCOUNTTYPE],
     ),
 > + use<'a, 'b, ItemIdxType, RecipeIdxType> {
-    (0..data_store.item_names.len())
+    (0..data_store.item_display_names.len())
         .zip(chest_store.stores.iter_mut())
         .flat_map(|(id, chest)| {
             let item = Item {

@@ -8,7 +8,7 @@ use std::{
 use eframe::egui::Color32;
 use itertools::Itertools;
 use log::{error, warn};
-use petgraph::{graph::NodeIndex, prelude::StableGraph, Directed};
+use petgraph::{Directed, graph::NodeIndex, prelude::StableGraph};
 use rand::random;
 use sha2::{Digest, Sha256};
 use strum::IntoEnumIterator;
@@ -19,7 +19,7 @@ use crate::{
     assembler::TIMERTYPE,
     frontend::world::tile::Dir,
     inserter::StaticID,
-    item::{IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
+    item::{ITEMCOUNTTYPE, IdxTrait, Item, Recipe, WeakIdxTrait},
     power::{Joule, Watt},
 };
 
@@ -307,6 +307,7 @@ enum RawEntity {
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct AssemblerInfo {
+    pub name: String,
     pub display_name: String,
 
     pub size: (u16, u16),
@@ -322,6 +323,7 @@ pub struct AssemblerInfo {
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct LabInfo {
+    pub name: String,
     pub display_name: String,
 
     pub size: (u16, u16),
@@ -335,6 +337,7 @@ pub struct LabInfo {
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct BeaconInfo {
+    pub name: String,
     pub display_name: String,
 
     pub size: (u16, u16),
@@ -348,6 +351,7 @@ pub struct BeaconInfo {
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct ModuleInfo {
     pub name: String,
+    pub display_name: String,
 
     pub speed_mod: i8,
     pub prod_mod: i8,
@@ -357,6 +361,7 @@ pub struct ModuleInfo {
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct SolarPanelInfo {
     pub name: String,
+    pub display_name: String,
     pub size: [u16; 2],
 
     pub power_output: SolarPanelOutputFunction,
@@ -371,6 +376,7 @@ pub enum SolarPanelOutputFunction {
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct AccumulatorInfo {
     pub name: String,
+    pub display_name: String,
     pub size: [u16; 2],
 
     pub max_charge: Joule,
@@ -407,6 +413,7 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub min_power_mod: u8,
 
     pub recipe_names: Vec<String>,
+    pub recipe_display_names: Vec<String>,
     pub recipe_allowed_assembling_machines: Vec<Vec<u8>>,
 
     pub recipe_is_intermediate: Vec<bool>,
@@ -443,6 +450,7 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub lazy_power_machine_infos: Vec<LazyPowerMachineInfo<ItemIdxType>>,
 
     pub item_names: Vec<String>,
+    pub item_display_names: Vec<String>,
 
     pub item_is_fluid: Vec<bool>,
 
@@ -462,6 +470,7 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub item_stack_sizes: Vec<ITEMCOUNTTYPE>,
     pub chest_num_slots: Vec<u8>,
     pub chest_tile_sizes: Vec<(u16, u16)>,
+    pub chest_names: Vec<String>,
 
     pub fluid_tank_infos: Vec<FluidTankData>,
 
@@ -507,6 +516,7 @@ pub struct MiningDrillInfo {
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct BeltInfo {
     pub name: String,
+    pub display_name: String,
     pub has_underground: Option<BeltUndergroundInfo>,
     pub has_splitter: Option<BeltSplitterInfo>,
     /// Setting how often this kind of belt moves
@@ -533,6 +543,9 @@ pub struct LazyPowerMachineInfo<ItemIdxType: WeakIdxTrait> {
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct FluidTankData {
+    pub name: String,
+    pub display_name: String,
+
     pub size: [u16; 2],
     /// Capacity in fluid units
     pub capacity: u32,
@@ -551,6 +564,8 @@ pub struct FluidConnection {
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct PowerPoleData {
+    pub name: String,
+    pub display_name: String,
     pub size: (u16, u16),
     pub power_range: u8,
     pub connection_range: u8,
@@ -618,7 +633,9 @@ impl RawDataStore {
                 DataStoreOptions::ItemU16RecipeU16(self.turn::<u16, u16>())
             },
 
-            _ => unimplemented!("Too many items or recipes, u16::MAX is the max allowed amount (currently) (Btw, are you joking? Who are you trying to torture with this many options? xD)"),
+            _ => unimplemented!(
+                "Too many items or recipes, u16::MAX is the max allowed amount (currently) (Btw, are you joking? Who are you trying to torture with this many options? xD)"
+            ),
         }
     }
 
@@ -721,7 +738,8 @@ impl RawDataStore {
         );
 
         // TODO: Stop cloning the item names
-        let item_names = self.items.iter().map(|i| i.display_name.clone()).collect();
+        let item_names = self.items.iter().map(|i| i.name.clone()).collect();
+        let item_display_names = self.items.iter().map(|i| i.display_name.clone()).collect();
 
         let mut ing_out_num_to_recipe: HashMap<(usize, usize), Vec<Recipe<RecipeIdxType>>> = (0
             ..10)
@@ -1033,6 +1051,8 @@ impl RawDataStore {
             .power_poles
             .iter()
             .map(|p| PowerPoleData {
+                name: p.name.clone(),
+                display_name: p.display_name.clone(),
                 size: (u16::from(p.tile_size.0), u16::from(p.tile_size.1)),
                 power_range: p.power_range,
                 connection_range: p.connection_range,
@@ -1137,9 +1157,11 @@ impl RawDataStore {
                 instantly_finished_technologies.push(index);
             }
 
-            assert!(name_to_node_index
-                .insert(raw_tech.name.clone(), index)
-                .is_none());
+            assert!(
+                name_to_node_index
+                    .insert(raw_tech.name.clone(), index)
+                    .is_none()
+            );
         }
 
         for (i, raw_tech) in self.technologies.iter().enumerate() {
@@ -1181,14 +1203,16 @@ impl RawDataStore {
 
             belt_infos: vec![
                 BeltInfo {
-                    name: "Transport Belt".to_string(),
-                    has_underground: Some(BeltUndergroundInfo { max_distance: 6 }),
+                    name: "factory_game::fast_transport_belt".to_string(),
+                    display_name: "Fast Transport Belt".to_string(),
+                    has_underground: Some(BeltUndergroundInfo { max_distance: 9 }),
                     has_splitter: None,
-                    timer_increase: 15 * 2,
+                    timer_increase: 45 * 2,
                 },
                 BeltInfo {
-                    name: "Fast Transport Belt".to_string(),
-                    has_underground: Some(BeltUndergroundInfo { max_distance: 8 }),
+                    name: "factory_game::transport_belt".to_string(),
+                    display_name: "Transport Belt".to_string(),
+                    has_underground: Some(BeltUndergroundInfo { max_distance: 6 }),
                     has_splitter: None,
                     timer_increase: 15 * 2,
                 },
@@ -1230,6 +1254,7 @@ impl RawDataStore {
                 .machines
                 .iter()
                 .map(|m| AssemblerInfo {
+                    name: m.name.clone(),
                     display_name: m.display_name.clone(),
 
                     size: (m.tile_size.0.into(), m.tile_size.1.into()),
@@ -1280,6 +1305,7 @@ impl RawDataStore {
                 .labs
                 .iter()
                 .map(|m| LabInfo {
+                    name: m.name.clone(),
                     display_name: m.display_name.clone(),
 
                     size: (m.tile_size.0.into(), m.tile_size.1.into()),
@@ -1295,7 +1321,8 @@ impl RawDataStore {
                 .iter()
                 .map(|raw| {
                     SolarPanelInfo {
-                        name: raw.display_name.clone(),
+                        name: raw.name.clone(),
+                        display_name: raw.display_name.clone(),
                         size: [raw.tile_size.0.into(), raw.tile_size.1.into()],
                         // FIXME:
                         power_output: SolarPanelOutputFunction::Constant(raw.output),
@@ -1307,7 +1334,8 @@ impl RawDataStore {
                 .accumulators
                 .iter()
                 .map(|raw| AccumulatorInfo {
-                    name: raw.display_name.clone(),
+                    name: raw.name.clone(),
+                    display_name: raw.display_name.clone(),
                     size: [raw.tile_size.0.into(), raw.tile_size.1.into()],
                     max_charge: raw.charge,
                     max_charge_rate: raw.max_charge_rate,
@@ -1319,6 +1347,7 @@ impl RawDataStore {
                 .beacons
                 .iter()
                 .map(|m| BeaconInfo {
+                    name: m.name.clone(),
                     display_name: m.display_name.clone(),
 
                     size: (m.tile_size.0.into(), m.tile_size.1.into()),
@@ -1341,7 +1370,8 @@ impl RawDataStore {
                 .modules
                 .iter()
                 .map(|module| ModuleInfo {
-                    name: module.display_name.clone(),
+                    name: module.name.clone(),
+                    display_name: module.display_name.clone(),
                     speed_mod: module.speed_effect,
                     prod_mod: module.productivity_effect,
                     power_mod: module.power_effect,
@@ -1353,7 +1383,8 @@ impl RawDataStore {
             // TODO:
             max_entity_size: (5, 5),
 
-            recipe_names: self
+            recipe_names: self.recipes.iter().map(|r| r.name.clone()).collect(),
+            recipe_display_names: self
                 .recipes
                 .iter()
                 .map(|r| r.display_name.clone())
@@ -1381,6 +1412,7 @@ impl RawDataStore {
             item_to_recipe_where_its_output,
 
             item_names,
+            item_display_names,
 
             power_pole_data,
 
@@ -1417,6 +1449,7 @@ impl RawDataStore {
                 .iter()
                 .map(|chest| (u16::from(chest.tile_size.0), u16::from(chest.tile_size.1)))
                 .collect(),
+            chest_names: self.chests.iter().map(|chest| chest.name.clone()).collect(),
 
             recipe_to_translated_index: (0..self.recipes.len())
                 .cartesian_product(
@@ -1483,6 +1516,8 @@ impl RawDataStore {
 
                     FluidTankData {
                         // TODO: Sanity check the fluid connections
+                        name: tank.name,
+                        display_name: tank.display_name,
                         size: [tank.tile_size.0.into(), tank.tile_size.1.into()],
                         capacity: tank.capacity,
                         fluid_connections: tank
@@ -1490,7 +1525,7 @@ impl RawDataStore {
                             .into_iter()
                             .map(|conn| FluidConnection {
                                 dir: conn.1,
-                                offset: [conn.0 .0.into(), conn.0 .1.into()],
+                                offset: [conn.0.0.into(), conn.0.1.into()],
                                 kind: match conn.2 {
                                     RawPipeConnectionType::Direct => PipeConnectionType::Direct,
                                     RawPipeConnectionType::Underground {
@@ -1536,7 +1571,7 @@ impl RawDataStore {
 pub fn all_item_iter<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> impl Iterator<Item = Item<ItemIdxType>> + use<ItemIdxType, RecipeIdxType> {
-    (0..data_store.item_names.len()).map(|id| Item {
+    (0..data_store.item_display_names.len()).map(|id| Item {
         id: id.try_into().unwrap(),
     })
 }
@@ -1544,7 +1579,7 @@ pub fn all_item_iter<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 pub fn all_recipe_iter<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> impl Iterator<Item = Recipe<RecipeIdxType>> + use<ItemIdxType, RecipeIdxType> {
-    (0..data_store.recipe_names.len()).map(|id| Recipe {
+    (0..data_store.recipe_display_names.len()).map(|id| Recipe {
         id: id.try_into().unwrap(),
     })
 }

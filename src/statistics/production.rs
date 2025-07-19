@@ -8,12 +8,12 @@ use charts_rs::Series;
 use itertools::Itertools;
 
 use crate::{
+    NewWithDataStore,
     data::DataStore,
     item::{IdxTrait, Item},
-    NewWithDataStore,
 };
 
-use super::{recipe::RecipeTickInfo, IntoSeries};
+use super::{IntoSeries, recipe::RecipeTickInfo};
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ProductionInfo {
@@ -86,7 +86,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 .map(|info| {
                     info.items_produced
                         .iter()
-                        .zip(data_store.item_names.iter())
+                        .zip(data_store.item_display_names.iter())
                         .enumerate()
                         .filter_map(|(item_id, v)| {
                             filter

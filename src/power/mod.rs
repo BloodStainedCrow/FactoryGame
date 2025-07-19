@@ -846,7 +846,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                         self.power_grids[usize::from(id.grid)]
                             .change_assembler_module_modifiers(id, update.1, data_store);
                     },
-                    power_grid::BeaconAffectedEntity::Lab { grid, index } => todo!(),
+                    power_grid::BeaconAffectedEntity::Lab { grid, index } => {
+                        // TODO:
+                        warn!("Currently Beacons do not affect labs!");
+                    },
                 }
             }
         }

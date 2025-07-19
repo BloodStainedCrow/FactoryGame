@@ -1,4 +1,5 @@
 use crate::frontend::action::belt_placement::{BeltState, expected_belt_state};
+use crate::item::Indexable;
 use crate::rendering::Corner;
 use crate::{
     TICKS_PER_SECOND_LOGIC,
@@ -50,6 +51,8 @@ use tilelib::types::{DrawInstance, Layer, RendererTrait};
 use super::{TextureAtlas, app_state::GameState};
 
 const BELT_ANIM_SPEED: f32 = 1.0 / (BELT_LEN_PER_TILE as f32);
+
+const ALT_MODE_ICON_SIZE: f32 = 0.5;
 
 pub const SWITCH_TO_MAPVIEW_TILES: f32 = if cfg!(debug_assertions) { 200.0 } else { 500.0 };
 pub const SWITCH_TO_MAPVIEW_ZOOM_LEVEL: LazyLock<f32> =
@@ -113,6 +116,26 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     );
 
     if num_tiles_across_screen_horizontal > SWITCH_TO_MAPVIEW_TILES {
+        if let ActionStateMachineState::Holding(HeldObject::Blueprint(bp)) = &state_machine.state {
+            let Position { x, y } =
+                ActionStateMachine::<ItemIdxType, RecipeIdxType>::player_mouse_to_tile(
+                    state_machine.zoom_level,
+                    camera_pos,
+                    state_machine.current_mouse_pos,
+                );
+
+            bp.draw(
+                (
+                    x as f32 + num_tiles_across_screen_horizontal / 2.0,
+                    y as f32 + num_tiles_across_screen_vertical / 2.0,
+                ),
+                camera_pos,
+                &mut entity_overlay_layer,
+                texture_atlas,
+                data_store,
+            );
+        }
+
         mem::drop(state_machine);
 
         create_map_textures_if_needed(
@@ -142,6 +165,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             ar,
             camera_pos,
         );
+
+        renderer.draw(&entity_overlay_layer);
+
         return;
     }
 
@@ -247,8 +273,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 ];
 
                                 match info {
-                                    AssemblerInfo::UnpoweredNoRecipe
-                                    | AssemblerInfo::Unpowered(_) => {
+                                    AssemblerInfo::UnpoweredNoRecipe => {
                                         texture_atlas.not_connected.draw_centered_on(
                                             &texture_atlas.assembler,
                                             [
@@ -268,6 +293,55 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             size,
                                             0,
                                             &mut entity_layer,
+                                        );
+                                    },
+                                    AssemblerInfo::Unpowered(recipe) => {
+                                        texture_atlas.not_connected.draw_centered_on(
+                                            &texture_atlas.assembler,
+                                            [
+                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                            ],
+                                            size,
+                                            0,
+                                            &mut warning_layer,
+                                        );
+
+                                        texture_atlas.assembler.draw(
+                                            [
+                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                            ],
+                                            size,
+                                            0,
+                                            &mut entity_layer,
+                                        );
+
+                                        let item_idx = data_store.recipe_to_items[recipe]
+                                            .iter()
+                                            .find(|item| item.0 == ItemRecipeDir::Out)
+                                            .map(|item| item.1.into_usize())
+                                            .unwrap_or(0);
+
+                                        let icon_size: [f32; 2] = [
+                                            size[0] as f32 * ALT_MODE_ICON_SIZE,
+                                            size[1] as f32 * ALT_MODE_ICON_SIZE,
+                                        ];
+
+                                        entity_overlay_layer.draw_sprite(
+                                            &texture_atlas.items[item_idx],
+                                            DrawInstance {
+                                                position: [
+                                                    chunk_draw_offs.0
+                                                        + (pos.x % 16) as f32
+                                                        + (size[0] as f32 - icon_size[0]) / 2.0,
+                                                    chunk_draw_offs.1
+                                                        + (pos.y % 16) as f32
+                                                        + (size[1] as f32 - icon_size[1]) / 2.0,
+                                                ],
+                                                size: icon_size,
+                                                animation_frame: 0,
+                                            },
                                         );
                                     },
                                     AssemblerInfo::PoweredNoRecipe(pole_position) => {
@@ -373,6 +447,33 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                     .texture
                                                     .number_anim_frames,
                                             &mut entity_layer,
+                                        );
+
+                                        let item_idx = data_store.recipe_to_items[&id.recipe]
+                                            .iter()
+                                            .find(|item| item.0 == ItemRecipeDir::Out)
+                                            .map(|item| item.1.into_usize())
+                                            .unwrap_or(0);
+
+                                        let icon_size: [f32; 2] = [
+                                            size[0] as f32 * ALT_MODE_ICON_SIZE,
+                                            size[1] as f32 * ALT_MODE_ICON_SIZE,
+                                        ];
+
+                                        entity_overlay_layer.draw_sprite(
+                                            &texture_atlas.items[item_idx],
+                                            DrawInstance {
+                                                position: [
+                                                    chunk_draw_offs.0
+                                                        + (pos.x % 16) as f32
+                                                        + (size[0] as f32 - icon_size[0]) / 2.0,
+                                                    chunk_draw_offs.1
+                                                        + (pos.y % 16) as f32
+                                                        + (size[1] as f32 - icon_size[1]) / 2.0,
+                                                ],
+                                                size: icon_size,
+                                                animation_frame: 0,
+                                            },
                                         );
                                     },
                                 }
@@ -1157,6 +1258,18 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             0,
                             &mut entity_layer,
                         );
+
+                        texture_atlas.underground[*direction][*underground_dir].draw(
+                            [
+                                pos.x as f32 - camera_pos.0
+                                    + num_tiles_across_screen_horizontal / 2.0,
+                                pos.y as f32 - camera_pos.1
+                                    + num_tiles_across_screen_vertical / 2.0,
+                            ],
+                            [1, 1],
+                            0,
+                            &mut entity_overlay_layer,
+                        );
                     },
                     crate::frontend::world::tile::PlaceEntityType::PowerPole { pos, ty } => {
                         let size: [u16; 2] = [
@@ -1394,6 +1507,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         trace!("Rendering self at {:?}", state_machine.local_player_pos);
     }
 
+    mem::drop(state_machine);
+    mem::drop(game_state);
+
     renderer.draw(&tile_layer);
 
     renderer.draw(&entity_layer);
@@ -1480,11 +1596,11 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     });
 
     Window::new("BP").default_open(false).show(ctx, |ui| {
-        let bp = Blueprint::from_area(&game_state.world, [1590..3000, 1590..3000], data_store);
-
-        let mut s: String =
-            ron::ser::to_string_pretty(&bp, ron::ser::PrettyConfig::default()).unwrap();
-        ui.text_edit_multiline(&mut s);
+        if let ActionStateMachineState::Holding(HeldObject::Blueprint(bp)) = &state_machine.state {
+            let mut s: String =
+                ron::ser::to_string_pretty(&bp, ron::ser::PrettyConfig::default()).unwrap();
+            ui.text_edit_multiline(&mut s);
+        }
     });
 
     Window::new("RawData").default_open(false).show(ctx, |ui| {
@@ -1531,8 +1647,8 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             AssemblerInfo::Powered { id, .. } => Some(id.recipe),
                         };
 
-                        ComboBox::new("Recipe list", "Recipes").selected_text(goal_recipe.map(|recipe| data_store.recipe_names[usize_from(recipe.id)].as_str()).unwrap_or("Choose a recipe!")).show_ui(ui, |ui| {
-                            data_store.recipe_names.iter().enumerate().filter(|(i, recipe_name)| {
+                        ComboBox::new("Recipe list", "Recipes").selected_text(goal_recipe.map(|recipe| data_store.recipe_display_names[usize_from(recipe.id)].as_str()).unwrap_or("Choose a recipe!")).show_ui(ui, |ui| {
+                            data_store.recipe_display_names.iter().enumerate().filter(|(i, recipe_name)| {
                                     (game_state.settings.show_unresearched_recipes || game_state.simulation_state.tech_state.get_active_recipes()[*i]) && data_store.recipe_allowed_assembling_machines[*i].contains(ty)
                                 }).for_each(|(i, recipe_name)| {
 
@@ -1607,7 +1723,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         for module in modules {
                                             row.col(|ui| {
                                                 if let Some(module_id) = module {
-                                                    ui.label(&data_store.module_info[*module_id].name);
+                                                    ui.label(&data_store.module_info[*module_id].display_name);
                                                 } else {
                                                     ui.label("Empty Module Slot");
                                                 }
@@ -1624,7 +1740,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         for (item, count) in inputs.iter() {
                                             let (_, _, count_in_recipe) = data_store.recipe_to_items_and_amounts[&id.recipe].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Ing && *item == *recipe_item).unwrap();
                                             row.col(|ui| {
-                                                ui.add(egui::Label::new(&data_store.item_names[usize_from(item.id)]).wrap_mode(egui::TextWrapMode::Extend));
+                                                ui.add(egui::Label::new(&data_store.item_display_names[usize_from(item.id)]).wrap_mode(egui::TextWrapMode::Extend));
                                                 ui.add(egui::Label::new(format!("{}", *count)).wrap_mode(egui::TextWrapMode::Extend));
                                                 ui.add(egui::Label::new(format!("{}/s", (*count_in_recipe as f32) / (time_per_craft / 60.0))).wrap_mode(egui::TextWrapMode::Extend));
                                             });
@@ -1633,7 +1749,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         for (item, count) in outputs.iter() {
                                             let (_, _, count_in_recipe) = data_store.recipe_to_items_and_amounts[&id.recipe].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Out && *item == *recipe_item).unwrap();
                                             row.col(|ui| {
-                                                ui.add(egui::Label::new(&data_store.item_names[usize_from(item.id)]).wrap_mode(egui::TextWrapMode::Extend));
+                                                ui.add(egui::Label::new(&data_store.item_display_names[usize_from(item.id)]).wrap_mode(egui::TextWrapMode::Extend));
                                                 ui.add(egui::Label::new(format!("{}", *count)).wrap_mode(egui::TextWrapMode::Extend));
                                                 ui.add(egui::Label::new(format!("{:.2}/s", (*count_in_recipe as f32) / (time_per_craft / 60.0) * (1.0 + prod_mod))).wrap_mode(egui::TextWrapMode::Extend));
                                             });
@@ -1720,7 +1836,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 } else {
                                     let i = i - pg.num_assemblers_of_type.len();
                                     row.col(|ui| {
-                                        ui.add(Label::new(&data_store.solar_panel_info[i].name).extend());
+                                        ui.add(Label::new(&data_store.solar_panel_info[i].display_name).extend());
 
                                         });
                                     row.col(|ui| {ui.label(format!("{}", pg.num_solar_panels_of_type[i]));});
@@ -1830,7 +1946,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 },
                                 crate::frontend::world::tile::AttachedInserter::StorageStorage { item,  .. } => {
                                     ui.label("StorageStorage");
-                                    ui.label(&data_store.item_names[usize_from(item.id)]);
+                                    ui.label(&data_store.item_display_names[usize_from(item.id)]);
 
                                     // TODO:
                                 },
@@ -1871,7 +1987,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         let Some((item, index)) = item else {
                             todo!()
                         };
-                        ui.label(&data_store.item_names[usize_from(item.id)]);
+                        ui.label(&data_store.item_display_names[usize_from(item.id)]);
                         ui.label(format!("{}", *index));
 
                         let stack_size: u16 = data_store.item_stack_sizes[usize_from(item.id)] as u16;

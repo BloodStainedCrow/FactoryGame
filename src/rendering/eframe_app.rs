@@ -194,6 +194,31 @@ impl eframe::App for App {
                                 game_state_receiver: recv,
                             };
                         }
+                    } else if ui.button("Load Debug Save").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .set_directory(
+                                ProjectDirs::from("de", "aschhoff", "factory_game")
+                                    .expect("No Home path found")
+                                    .data_dir(),
+                            )
+                            .pick_file()
+                        {
+                            let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
+                            let (send, recv) = channel();
+
+                            let progress_send = progress.clone();
+                            thread::spawn(move || {
+                                send.send(run_integrated_server(
+                                    progress_send,
+                                    StartGameInfo::LoadReadable(path),
+                                ));
+                            });
+
+                            self.state = AppState::Loading {
+                                progress,
+                                game_state_receiver: recv,
+                            };
+                        }
                     } else if ui.button("Connect over network").clicked() {
                         let AppState::MainMenu { in_ip_box } = &mut self.state else {
                             unreachable!()
@@ -293,18 +318,22 @@ impl eframe::App for App {
             match &state.state {
                 LoadedGame::ItemU8RecipeU8(state) => save(
                     &state.state.lock(),
+                    &state.data_store.lock(),
                     state.data_store.lock().checksum.clone(),
                 ),
                 LoadedGame::ItemU8RecipeU16(state) => save(
                     &state.state.lock(),
+                    &state.data_store.lock(),
                     state.data_store.lock().checksum.clone(),
                 ),
                 LoadedGame::ItemU16RecipeU8(state) => save(
                     &state.state.lock(),
+                    &state.data_store.lock(),
                     state.data_store.lock().checksum.clone(),
                 ),
                 LoadedGame::ItemU16RecipeU16(state) => save(
                     &state.state.lock(),
+                    &state.data_store.lock(),
                     state.data_store.lock().checksum.clone(),
                 ),
             }
@@ -375,6 +404,8 @@ impl App {
 
                         if let Ok(input) = input {
                             if self.input_sender.as_mut().unwrap().send(input).is_err() {
+                                #[cfg(not(test))]
+                                panic!("Could not send input");
                                 error!("Could not send input");
                             }
                         }

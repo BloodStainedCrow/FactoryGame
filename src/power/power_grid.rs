@@ -1814,7 +1814,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                             .assemblers_0_1
                             .par_iter_mut()
                             .map(|s| {
-                                profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_names[usize_from(s.recipe.id)]).as_str());
+                                profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_display_names[usize_from(s.recipe.id)]).as_str());
                                 if active_recipes[s.recipe.into_usize()] {
                                     s.update_branchless::<RecipeIdxType>(
                                         self.last_power_mult,
@@ -1851,7 +1851,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         .assemblers_1_1
                         .par_iter_mut()
                         .map(|s| {
-                            profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_names[usize_from(s.recipe.id)]).as_str());
+                            profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_display_names[usize_from(s.recipe.id)]).as_str());
                             if active_recipes[s.recipe.into_usize()] {
                                 s.update_branchless::<RecipeIdxType>(
                                     self.last_power_mult,
@@ -1888,7 +1888,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                                     .assemblers_2_1
                                     .par_iter_mut()
                                     .map(|s| {
-                                        profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_names[usize_from(s.recipe.id)]).as_str());
+                                        profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_display_names[usize_from(s.recipe.id)]).as_str());
                                         if active_recipes[s.recipe.into_usize()] {
                                             s.update_branchless::<RecipeIdxType>(
                                                 self.last_power_mult,
@@ -1925,7 +1925,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                                         .assemblers_3_1
                                         .par_iter_mut()
                                         .map(|s| {
-                                            profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_names[usize_from(s.recipe.id)]).as_str());
+                                            profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_display_names[usize_from(s.recipe.id)]).as_str());
                                             if active_recipes[s.recipe.into_usize()] {
                                                 s.update_branchless::<RecipeIdxType>(
                                                     self.last_power_mult,
@@ -1960,7 +1960,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                                         .assemblers_4_1
                                         .par_iter_mut()
                                         .map(|s| {
-                                            profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_names[usize_from(s.recipe.id)]).as_str());
+                                            profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_display_names[usize_from(s.recipe.id)]).as_str());
                                             if active_recipes[s.recipe.into_usize()] {
                                                 s.update_branchless::<RecipeIdxType>(
                                                     self.last_power_mult,

@@ -4,14 +4,14 @@ use strum::IntoEnumIterator;
 
 use crate::{
     belt::{
-        smart::Side,
-        splitter::{SplitterDistributionMode, SplitterSide, SPLITTER_BELT_LEN},
         BeltTileId, SplitterInfo,
+        smart::Side,
+        splitter::{SPLITTER_BELT_LEN, SplitterDistributionMode, SplitterSide},
     },
     data::DataStore,
     frontend::world::{
-        tile::{Dir, DirRelative, Entity, UndergroundDir, World, BELT_LEN_PER_TILE},
         Position,
+        tile::{BELT_LEN_PER_TILE, Dir, DirRelative, Entity, UndergroundDir, World},
     },
     item::IdxTrait,
     rendering::app_state::{GameState, SimulationState},
@@ -425,10 +425,8 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                                 .unwrap() +
                                 // The newly placed tile itself
                                 BELT_LEN_PER_TILE,
-                            Side::FRONT,
+                            Side::BACK,
                         );
-
-                        dbg!(res);
 
                         game_state.world.add_entity(
                             Entity::Underground {
@@ -447,6 +445,7 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                     },
                 }
             } else {
+                // No underground found to connect to
                 let id = game_state
                     .simulation_state
                     .factory
@@ -472,13 +471,10 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
             if let Some(id) = should_merge(game_state, new_belt_direction, new_belt_pos, data_store)
             {
                 assert_eq!(self_id, id);
-                debug_assert!(should_sideload(
-                    game_state,
-                    new_belt_direction,
-                    new_belt_pos,
-                    data_store
-                )
-                .is_none());
+                debug_assert!(
+                    should_sideload(game_state, new_belt_direction, new_belt_pos, data_store)
+                        .is_none()
+                );
 
                 let potentially_incoming_pos = new_belt_pos + new_belt_direction.reverse();
 
@@ -495,21 +491,20 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                         ..
                     }) => Some(*id),
                     Some(Entity::Splitter { .. }) => todo!(),
-                    Some(_) => unreachable!(),
+                    Some(_) => None,
                     None => None,
                 };
 
                 if let Some(back_id) = back_id {
+                    game_state
+                        .world
+                        .modify_belt_pos(back_id, self_len.try_into().unwrap());
                     let (final_id, final_len) = merge_belts(
                         &mut game_state.simulation_state,
                         self_id,
                         back_id,
                         data_store,
                     );
-                    game_state
-                        .world
-                        .modify_belt_pos(back_id, self_len.try_into().unwrap());
-
                     if final_id == self_id {
                         game_state.world.update_belt_id(back_id, final_id);
                     } else {
@@ -536,13 +531,10 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
             let (self_id, self_len) = if let Some(id) =
                 should_merge(game_state, new_belt_direction, front_pos, data_store)
             {
-                debug_assert!(should_sideload(
-                    game_state,
-                    new_belt_direction,
-                    front_pos,
-                    data_store
-                )
-                .is_none());
+                debug_assert!(
+                    should_sideload(game_state, new_belt_direction, front_pos, data_store)
+                        .is_none()
+                );
                 let result = lengthen(game_state, id, BELT_LEN_PER_TILE, Side::BACK);
                 game_state.world.add_entity(
                     Entity::Underground {
@@ -787,10 +779,16 @@ fn handle_belt_breaking<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         (BeltState::Straight, BeltState::DoubleSideloading) => unreachable!("Should be impossible"),
         (BeltState::Curved, BeltState::Straight) => unreachable!("Should be impossible"),
         (BeltState::Curved, BeltState::Curved) => {},
-        (BeltState::Curved, BeltState::Sideloading) | (BeltState::Curved, BeltState::DoubleSideloading) => {
-            let entity = game_state.world.get_entities_colliding_with(pos_which_might_break, (1,1), data_store).into_iter().next().unwrap();
+        (BeltState::Curved, BeltState::Sideloading)
+        | (BeltState::Curved, BeltState::DoubleSideloading) => {
+            let entity = game_state
+                .world
+                .get_entities_colliding_with(pos_which_might_break, (1, 1), data_store)
+                .into_iter()
+                .next()
+                .unwrap();
 
-            let (id,belt_pos_to_break_at) = match entity {
+            let (id, belt_pos_to_break_at) = match entity {
                 Entity::Belt { belt_pos, id, .. } => (*id, *belt_pos),
                 Entity::Underground { .. } => {
                     // Undergrounds cannot be curved, so this is not a problem
@@ -800,19 +798,32 @@ fn handle_belt_breaking<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     // Splitters cannot be curved, so this is not a problem
                     return;
                 },
-                e => unreachable!("{e:?} does not have a belt_pos")
+                e => unreachable!("{e:?} does not have a belt_pos"),
             };
 
-            let res = game_state.simulation_state.factory.belts.break_belt_at(id, belt_pos_to_break_at);
+            let res = game_state
+                .simulation_state
+                .factory
+                .belts
+                .break_belt_at(id, belt_pos_to_break_at);
 
             match res.new_belt {
                 Some((new_id, new_belt_side)) => {
                     match new_belt_side {
-                        Side::FRONT => unimplemented!("In the currerent implementation we will always keep the Front."),
+                        Side::FRONT => unimplemented!(
+                            "In the currerent implementation we will always keep the Front."
+                        ),
                         Side::BACK => {
                             // FIXME: Understand this + 1
-                            game_state.world.update_belt_id_after(res.kept_id, new_id, belt_pos_to_break_at + 1);
-                            game_state.world.modify_belt_pos(new_id, -i16::try_from(belt_pos_to_break_at).unwrap());
+                            game_state.world.update_belt_id_after(
+                                res.kept_id,
+                                new_id,
+                                belt_pos_to_break_at + 1,
+                            );
+                            game_state.world.modify_belt_pos(
+                                new_id,
+                                -i16::try_from(belt_pos_to_break_at).unwrap(),
+                            );
 
                             let new_len = game_state.simulation_state.factory.belts.get_len(new_id);
 
@@ -820,7 +831,10 @@ fn handle_belt_breaking<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 .simulation_state
                                 .factory
                                 .belts
-                                .add_sideloading_inserter(new_id, (res.kept_id, belt_pos_to_break_at - 1));
+                                .add_sideloading_inserter(
+                                    new_id,
+                                    (res.kept_id, belt_pos_to_break_at - 1),
+                                );
                         },
                     }
                 },
@@ -831,7 +845,9 @@ fn handle_belt_breaking<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         (BeltState::Sideloading, BeltState::Curved) => unreachable!("Should be impossible"),
         (BeltState::Sideloading, BeltState::Sideloading) => {},
         (BeltState::Sideloading, BeltState::DoubleSideloading) => {},
-        (BeltState::DoubleSideloading, _) => unreachable!("For the belt to be DoubleSideloading before, there would have to have been a belt here before"),
+        (BeltState::DoubleSideloading, _) => unreachable!(
+            "For the belt to be DoubleSideloading before, there would have to have been a belt here before"
+        ),
     }
 }
 
@@ -1200,14 +1216,14 @@ mod test {
     use proptest::prelude::{Just, Strategy};
     use proptest::{prop_assert, prop_assume, proptest};
 
+    use crate::DATA_STORE;
     use crate::blueprint::Blueprint;
-    use crate::frontend::action::set_recipe::SetRecipeInfo;
     use crate::frontend::action::ActionType;
-    use crate::frontend::world::tile::{AssemblerInfo, Entity, InserterInfo, PlaceEntityType};
+    use crate::frontend::action::set_recipe::SetRecipeInfo;
     use crate::frontend::world::Position;
+    use crate::frontend::world::tile::{AssemblerInfo, Entity, InserterInfo, PlaceEntityType};
     use crate::item::Recipe;
     use crate::rendering::app_state::GameState;
-    use crate::DATA_STORE;
 
     fn chest_onto_belt() -> impl Strategy<Value = Vec<ActionType<u8, u8>>> {
         Just(vec![

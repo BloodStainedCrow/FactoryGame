@@ -124,7 +124,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let mut ret = GameState::new(data_store);
 
         let file = File::open("test_blueprints/red_sci.bp").unwrap();
-        let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
+        let bp: Blueprint = ron::de::from_reader(file).unwrap();
 
         puffin::set_scopes_on(false);
         let y_range = (1590..30000).step_by(7);
@@ -167,7 +167,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let mut ret = GameState::new(data_store);
 
         let file = File::open("test_blueprints/red_and_green_with_clocking.bp").unwrap();
-        let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
+        let bp: Blueprint = ron::de::from_reader(file).unwrap();
 
         puffin::set_scopes_on(false);
         let y_range = (0..40_000).step_by(4_000);
@@ -211,7 +211,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let mut ret = GameState::new(data_store);
 
         let file = File::open("test_blueprints/red_sci_with_beacons_and_belts.bp").unwrap();
-        let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
+        let bp: Blueprint = ron::de::from_reader(file).unwrap();
 
         let y_range = (0..20_000).step_by(6_000);
 
@@ -253,7 +253,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let mut ret = GameState::new(data_store);
 
         let file = File::open("test_blueprints/lots_of_belts.bp").unwrap();
-        let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
+        let bp: Blueprint = ron::de::from_reader(file).unwrap();
 
         puffin::set_scopes_on(false);
         for y_pos in (1600..60_000).step_by(3) {
@@ -273,7 +273,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let mut ret = GameState::new(data_store);
 
         let file = File::open("test_blueprints/solar_farm.bp").unwrap();
-        let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
+        let bp: Blueprint = ron::de::from_reader(file).unwrap();
 
         puffin::set_scopes_on(false);
         for y_pos in (1600..30_000).step_by(18) {
@@ -294,7 +294,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let mut ret = GameState::new(data_store);
 
         let red = File::open("test_blueprints/eight_beacon_red_sci_with_storage.bp").unwrap();
-        let red: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(red).unwrap();
+        let red: Blueprint = ron::de::from_reader(red).unwrap();
 
         puffin::set_scopes_on(false);
         for y_pos in (1600..=30_000).step_by(20) {
@@ -312,7 +312,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let mut ret = GameState::new(data_store);
 
         let file = File::open(bp_path).unwrap();
-        let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
+        let bp: Blueprint = ron::de::from_reader(file).unwrap();
 
         // for x in (0..60).map(|p| p * 15) {
         bp.apply(
@@ -397,7 +397,8 @@ impl StorageStorageInserterStore {
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         Self {
-            inserters: vec![BTreeMap::new(); data_store.item_names.len()].into_boxed_slice(),
+            inserters: vec![BTreeMap::new(); data_store.item_display_names.len()]
+                .into_boxed_slice(),
         }
     }
 
@@ -434,7 +435,7 @@ impl StorageStorageInserterStore {
             .for_each(|(item_id, (map, storages))| {
                 profiling::scope!(
                     "StorageStorage Inserter Update",
-                    format!("Item: {}", data_store.item_names[item_id]).as_str()
+                    format!("Item: {}", data_store.item_display_names[item_id]).as_str()
                 );
 
                 let item = Item {
@@ -578,7 +579,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
             belts: BeltStore::new(data_store),
             storage_storage_inserters: StorageStorageInserterStore::new(data_store),
             chests: FullChestStore {
-                stores: (0..data_store.item_names.len())
+                stores: (0..data_store.item_display_names.len())
                     .map(|id| Item {
                         id: id.try_into().unwrap(),
                     })
@@ -603,7 +604,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
         };
         let sizes: Vec<_> = sizes(data_store, num_grids_total).into_iter().collect();
         // dbg!(&all_storages);
-        assert_eq!(sizes.len(), data_store.item_names.len());
+        assert_eq!(sizes.len(), data_store.item_display_names.len());
         let mut storages_by_item: Box<[_]> = {
             profiling::scope!("Sort storages by item");
             let storages_by_item = full_to_by_item(&mut all_storages, &sizes);
@@ -1598,8 +1599,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 Err(CannotMixFluidsError { items: [a, b] }) => {
                                     warn!(
                                         "Cannot connect systems containing {} and {}",
-                                        data_store.item_names[a.into_usize()],
-                                        data_store.item_names[b.into_usize()]
+                                        data_store.item_display_names[a.into_usize()],
+                                        data_store.item_display_names[b.into_usize()]
                                     )
                                 },
                             }
@@ -2188,7 +2189,7 @@ mod tests {
 
     fn full_beacon() -> impl Strategy<Value = Vec<ActionType<u8, u8>>> {
         Just(ron::de::from_reader(File::open("test_blueprints/full_beacons.bp").unwrap()).unwrap())
-            .prop_map(|bp: Blueprint<u8, u8>| bp.actions)
+            .prop_map(|bp: Blueprint| bp.actions)
     }
 
     proptest! {
