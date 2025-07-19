@@ -1,331 +1,275 @@
 (
     actions: [
-        PlaceEntity((
-            entities: Single(Assembler(
-                pos: (
-                    x: 10,
-                    y: 9,
-                ),
-                ty: 2,
-            )),
-        )),
-        SetRecipe((
+        PlaceEntity(Assembler(
             pos: (
-                x: 10,
-                y: 9,
+                x: 0,
+                y: 0,
             ),
-            recipe: (
-                id: 0,
-            ),
+            ty: "factory_game::assembler3",
         )),
+        SetRecipe(
+            pos: (
+                x: 0,
+                y: 0,
+            ),
+            recipe: "factory_game::iron_ore_generation",
+        ),
         AddModules(
             pos: (
-                x: 10,
-                y: 9,
+                x: 0,
+                y: 0,
             ),
             modules: [
-                0,
-                0,
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Assembler(
-                pos: (
-                    x: 18,
-                    y: 9,
-                ),
-                ty: 2,
-            )),
-        )),
-        SetRecipe((
+        PlaceEntity(Assembler(
             pos: (
-                x: 18,
-                y: 9,
+                x: 8,
+                y: 0,
             ),
-            recipe: (
-                id: 6,
-            ),
+            ty: "factory_game::assembler3",
         )),
+        SetRecipe(
+            pos: (
+                x: 8,
+                y: 0,
+            ),
+            recipe: "factory_game::gears",
+        ),
         AddModules(
             pos: (
-                x: 18,
-                y: 9,
+                x: 8,
+                y: 0,
             ),
             modules: [
-                1,
-                1,
-                1,
-                1,
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 13,
-                    y: 9,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Assembler(
-                pos: (
-                    x: 14,
-                    y: 9,
-                ),
-                ty: 3,
-            )),
-        )),
-        SetRecipe((
+        PlaceEntity(Chest(
             pos: (
-                x: 14,
-                y: 9,
+                x: 3,
+                y: 0,
             ),
-            recipe: (
-                id: 4,
-            ),
+            ty: "factory_game::small_power_pole",
         )),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 4,
+                y: 0,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 4,
+                y: 0,
+            ),
+            recipe: "factory_game::iron_smelting",
+        ),
         AddModules(
             pos: (
-                x: 14,
-                y: 9,
+                x: 4,
+                y: 0,
             ),
             modules: [
-                1,
-                1,
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(SolarPanel(
-                pos: (
-                    x: 10,
-                    y: 12,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Assembler(
-                pos: (
-                    x: 22,
-                    y: 11,
-                ),
-                ty: 2,
-            )),
-        )),
-        SetRecipe((
+        PlaceEntity(SolarPanel(
             pos: (
-                x: 22,
-                y: 11,
+                x: 0,
+                y: 3,
             ),
-            recipe: (
-                id: 11,
-            ),
+            ty: "factory_game::infinity_battery",
         )),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 12,
+                y: 2,
+            ),
+            ty: "factory_game::assembler3",
+        )),
+        SetRecipe(
+            pos: (
+                x: 12,
+                y: 2,
+            ),
+            recipe: "factory_game::red_science",
+        ),
         AddModules(
             pos: (
-                x: 22,
-                y: 11,
+                x: 12,
+                y: 2,
             ),
             modules: [
-                1,
-                1,
-                1,
-                1,
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(SolarPanel(
-                pos: (
-                    x: 22,
-                    y: 14,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Assembler(
-                pos: (
-                    x: 14,
-                    y: 13,
-                ),
-                ty: 2,
-            )),
-        )),
-        SetRecipe((
+        PlaceEntity(SolarPanel(
             pos: (
-                x: 14,
-                y: 13,
+                x: 12,
+                y: 5,
             ),
-            recipe: (
-                id: 1,
-            ),
+            ty: "factory_game::infinity_battery",
         )),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 4,
+                y: 4,
+            ),
+            ty: "factory_game::assembler3",
+        )),
+        SetRecipe(
+            pos: (
+                x: 4,
+                y: 4,
+            ),
+            recipe: "factory_game::copper_ore_generation",
+        ),
         AddModules(
             pos: (
-                x: 14,
-                y: 13,
+                x: 4,
+                y: 4,
             ),
             modules: [
-                0,
-                0,
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 13,
-                    y: 12,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 17,
-                    y: 12,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 21,
-                    y: 12,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 25,
-                    y: 12,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 13,
-                    y: 11,
-                ),
-                dir: East,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 17,
-                    y: 11,
-                ),
-                dir: East,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 21,
-                    y: 11,
-                ),
-                dir: East,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 17,
-                    y: 13,
-                ),
-                dir: East,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 21,
-                    y: 13,
-                ),
-                dir: East,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 25,
-                    y: 11,
-                ),
-                dir: East,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 25,
-                    y: 13,
-                ),
-                dir: East,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Assembler(
-                pos: (
-                    x: 18,
-                    y: 13,
-                ),
-                ty: 3,
-            )),
-        )),
-        SetRecipe((
+        PlaceEntity(Chest(
             pos: (
-                x: 18,
-                y: 13,
+                x: 3,
+                y: 3,
             ),
-            recipe: (
-                id: 5,
-            ),
+            ty: "factory_game::small_power_pole",
         )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 7,
+                y: 3,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 11,
+                y: 3,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 15,
+                y: 3,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 3,
+                y: 2,
+            ),
+            dir: East,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 7,
+                y: 2,
+            ),
+            dir: East,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 11,
+                y: 2,
+            ),
+            dir: East,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 7,
+                y: 4,
+            ),
+            dir: East,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 11,
+                y: 4,
+            ),
+            dir: East,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 15,
+                y: 2,
+            ),
+            dir: East,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 15,
+                y: 4,
+            ),
+            dir: East,
+            filter: None,
+        )),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 8,
+                y: 4,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 8,
+                y: 4,
+            ),
+            recipe: "factory_game::copper_smelting",
+        ),
         AddModules(
             pos: (
-                x: 18,
-                y: 13,
+                x: 8,
+                y: 4,
             ),
             modules: [
-                1,
-                1,
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Lab(
-                pos: (
-                    x: 26,
-                    y: 9,
-                ),
-                ty: 0,
-            )),
+        PlaceEntity(Lab(
+            pos: (
+                x: 16,
+                y: 0,
+            ),
+            ty: "factory_game::lab",
         )),
-        PlaceEntity((
-            entities: Single(Lab(
-                pos: (
-                    x: 26,
-                    y: 13,
-                ),
-                ty: 0,
-            )),
+        PlaceEntity(Lab(
+            pos: (
+                x: 16,
+                y: 4,
+            ),
+            ty: "factory_game::lab",
         )),
     ],
 )

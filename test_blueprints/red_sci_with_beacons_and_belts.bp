@@ -1,1860 +1,1586 @@
 (
     actions: [
-        PlaceEntity((
-            entities: Single(Assembler(
-                pos: (
-                    x: 24,
-                    y: 21,
-                ),
-                ty: 2,
-            )),
-        )),
-        SetRecipe((
+        PlaceEntity(Assembler(
             pos: (
-                x: 24,
-                y: 21,
+                x: 5,
+                y: 8,
             ),
-            recipe: (
-                id: 0,
-            ),
+            ty: "factory_game::assembler3",
         )),
+        SetRecipe(
+            pos: (
+                x: 5,
+                y: 8,
+            ),
+            recipe: "factory_game::iron_ore_generation",
+        ),
         AddModules(
             pos: (
-                x: 24,
-                y: 21,
+                x: 5,
+                y: 8,
             ),
             modules: [
-                0,
-                0,
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 22,
-                    y: 19,
-                ),
-                ty: 0,
-            )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 3,
+                y: 6,
+            ),
+            ty: "factory_game::small_power_pole",
         )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 22,
-                    y: 25,
-                ),
-                ty: 0,
-            )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 3,
+                y: 12,
+            ),
+            ty: "factory_game::small_power_pole",
         )),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 19,
-                    y: 16,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 0,
+                y: 3,
+            ),
         )),
         AddModules(
+            pos: (
+                x: 0,
+                y: 3,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 3,
+                y: 3,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 3,
+                y: 3,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 0,
+                y: 6,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 0,
+                y: 6,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 0,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 0,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(SolarPanel(
+            pos: (
+                x: 0,
+                y: 0,
+            ),
+            ty: "factory_game::infinity_battery",
+        )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 3,
+                y: 2,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 0,
+                y: 13,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 0,
+                y: 13,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 3,
+                y: 13,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 3,
+                y: 13,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Chest(
+            pos: (
+                x: 9,
+                y: 6,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 9,
+                y: 12,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 10,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 10,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 7,
+                y: 3,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 7,
+                y: 3,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 10,
+                y: 3,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 10,
+                y: 3,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 10,
+                y: 6,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 10,
+                y: 6,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 15,
+                y: 8,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 15,
+                y: 8,
+            ),
+            recipe: "factory_game::iron_smelting",
+        ),
+        AddModules(
+            pos: (
+                x: 15,
+                y: 8,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Chest(
+            pos: (
+                x: 13,
+                y: 6,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Chest(
             pos: (
                 x: 19,
-                y: 16,
+                y: 6,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 22,
-                    y: 16,
-                ),
-            )),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 19,
+                y: 12,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 13,
+                y: 12,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 13,
+                y: 3,
+            ),
         )),
         AddModules(
+            pos: (
+                x: 13,
+                y: 3,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 20,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 20,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 17,
+                y: 3,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 17,
+                y: 3,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 20,
+                y: 3,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 20,
+                y: 3,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 20,
+                y: 6,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 20,
+                y: 6,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(SolarPanel(
+            pos: (
+                x: 10,
+                y: 0,
+            ),
+            ty: "factory_game::infinity_battery",
+        )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 13,
+                y: 2,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(SolarPanel(
+            pos: (
+                x: 20,
+                y: 0,
+            ),
+            ty: "factory_game::infinity_battery",
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 8,
+                y: 9,
+            ),
+            dir: East,
+            filter: None,
+        )),
+        PlaceEntity(Belt(
+            pos: (
+                x: 9,
+                y: 9,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Belt(
+            pos: (
+                x: 10,
+                y: 9,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Belt(
+            pos: (
+                x: 11,
+                y: 9,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Belt(
+            pos: (
+                x: 12,
+                y: 9,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Belt(
+            pos: (
+                x: 13,
+                y: 9,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 14,
+                y: 9,
+            ),
+            dir: East,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 18,
+                y: 9,
+            ),
+            dir: East,
+            filter: None,
+        )),
+        PlaceEntity(Belt(
+            pos: (
+                x: 19,
+                y: 9,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Belt(
+            pos: (
+                x: 20,
+                y: 9,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Belt(
+            pos: (
+                x: 21,
+                y: 9,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Belt(
             pos: (
                 x: 22,
-                y: 16,
+                y: 9,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 19,
-                    y: 19,
-                ),
-            )),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 7,
+                y: 13,
+            ),
         )),
         AddModules(
             pos: (
-                x: 19,
-                y: 19,
+                x: 7,
+                y: 13,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 19,
-                    y: 23,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 10,
+                y: 13,
+            ),
         )),
         AddModules(
             pos: (
-                x: 19,
-                y: 23,
+                x: 10,
+                y: 13,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(SolarPanel(
-                pos: (
-                    x: 19,
-                    y: 13,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 22,
-                    y: 15,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 19,
-                    y: 26,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 13,
+                y: 13,
+            ),
         )),
         AddModules(
             pos: (
-                x: 19,
-                y: 26,
+                x: 13,
+                y: 13,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 22,
-                    y: 26,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 17,
+                y: 13,
+            ),
         )),
         AddModules(
             pos: (
-                x: 22,
-                y: 26,
+                x: 17,
+                y: 13,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 28,
-                    y: 19,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 28,
-                    y: 25,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 29,
-                    y: 23,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 20,
+                y: 13,
+            ),
         )),
         AddModules(
+            pos: (
+                x: 20,
+                y: 13,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 25,
+                y: 8,
+            ),
+            ty: "factory_game::assembler3",
+        )),
+        SetRecipe(
+            pos: (
+                x: 25,
+                y: 8,
+            ),
+            recipe: "factory_game::gears",
+        ),
+        AddModules(
+            pos: (
+                x: 25,
+                y: 8,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Chest(
+            pos: (
+                x: 23,
+                y: 6,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Chest(
             pos: (
                 x: 29,
-                y: 23,
+                y: 6,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 26,
-                    y: 16,
-                ),
-            )),
+            ty: "factory_game::small_power_pole",
         )),
-        AddModules(
-            pos: (
-                x: 26,
-                y: 16,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 29,
-                    y: 16,
-                ),
-            )),
-        )),
-        AddModules(
+        PlaceEntity(Chest(
             pos: (
                 x: 29,
-                y: 16,
+                y: 12,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 29,
-                    y: 19,
-                ),
-            )),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 23,
+                y: 12,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 23,
+                y: 3,
+            ),
         )),
         AddModules(
             pos: (
-                x: 29,
-                y: 19,
+                x: 23,
+                y: 3,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Assembler(
-                pos: (
-                    x: 34,
-                    y: 21,
-                ),
-                ty: 3,
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 30,
+                y: 10,
+            ),
         )),
-        SetRecipe((
+        AddModules(
+            pos: (
+                x: 30,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 27,
+                y: 3,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 27,
+                y: 3,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 30,
+                y: 3,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 30,
+                y: 3,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 30,
+                y: 6,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 30,
+                y: 6,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Chest(
+            pos: (
+                x: 23,
+                y: 2,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 35,
+                y: 8,
+            ),
+            ty: "factory_game::assembler3",
+        )),
+        SetRecipe(
+            pos: (
+                x: 35,
+                y: 8,
+            ),
+            recipe: "factory_game::red_science",
+        ),
+        AddModules(
+            pos: (
+                x: 35,
+                y: 8,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Chest(
+            pos: (
+                x: 33,
+                y: 6,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 33,
+                y: 12,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 33,
+                y: 3,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 33,
+                y: 3,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 37,
+                y: 3,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 37,
+                y: 3,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(SolarPanel(
+            pos: (
+                x: 30,
+                y: 0,
+            ),
+            ty: "factory_game::infinity_battery",
+        )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 33,
+                y: 2,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Belt(
+            pos: (
+                x: 23,
+                y: 9,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 24,
+                y: 9,
+            ),
+            dir: East,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 28,
+                y: 9,
+            ),
+            dir: East,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
             pos: (
                 x: 34,
-                y: 21,
+                y: 9,
             ),
-            recipe: (
-                id: 4,
-            ),
+            dir: East,
+            filter: None,
         )),
-        AddModules(
-            pos: (
-                x: 34,
-                y: 21,
-            ),
-            modules: [
-                1,
-                1,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 32,
-                    y: 19,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 38,
-                    y: 19,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 38,
-                    y: 25,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 32,
-                    y: 25,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 32,
-                    y: 16,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 32,
-                y: 16,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 39,
-                    y: 23,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 39,
-                y: 23,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 36,
-                    y: 16,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 36,
-                y: 16,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 39,
-                    y: 16,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 39,
-                y: 16,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 39,
-                    y: 19,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 39,
-                y: 19,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(SolarPanel(
-                pos: (
-                    x: 29,
-                    y: 13,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 32,
-                    y: 15,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(SolarPanel(
-                pos: (
-                    x: 39,
-                    y: 13,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 27,
-                    y: 22,
-                ),
-                dir: East,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 28,
-                    y: 22,
-                ),
-                direction: East,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 29,
-                    y: 22,
-                ),
-                direction: East,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 30,
-                    y: 22,
-                ),
-                direction: East,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 31,
-                    y: 22,
-                ),
-                direction: East,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 32,
-                    y: 22,
-                ),
-                direction: East,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 33,
-                    y: 22,
-                ),
-                dir: East,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 37,
-                    y: 22,
-                ),
-                dir: East,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 38,
-                    y: 22,
-                ),
-                direction: East,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 39,
-                    y: 22,
-                ),
-                direction: East,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 40,
-                    y: 22,
-                ),
-                direction: East,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 41,
-                    y: 22,
-                ),
-                direction: East,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 26,
-                    y: 26,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 26,
-                y: 26,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 29,
-                    y: 26,
-                ),
-            )),
-        )),
-        AddModules(
+        PlaceEntity(Belt(
             pos: (
                 x: 29,
-                y: 26,
+                y: 9,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 32,
-                    y: 26,
-                ),
-            )),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
         )),
-        AddModules(
+        PlaceEntity(Belt(
+            pos: (
+                x: 30,
+                y: 9,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Belt(
+            pos: (
+                x: 31,
+                y: 9,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Belt(
             pos: (
                 x: 32,
-                y: 26,
+                y: 9,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 36,
-                    y: 26,
-                ),
-            )),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
         )),
-        AddModules(
+        PlaceEntity(Belt(
+            pos: (
+                x: 33,
+                y: 9,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Inserter(
             pos: (
                 x: 36,
-                y: 26,
+                y: 7,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 39,
-                    y: 26,
-                ),
-            )),
+            dir: North,
+            filter: None,
+        )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 36,
+                y: 6,
+            ),
+            ty: "factory_game::steel_chest",
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 38,
+                y: 9,
+            ),
+            dir: West,
+            filter: None,
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 23,
+                y: 13,
+            ),
         )),
         AddModules(
+            pos: (
+                x: 23,
+                y: 13,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 27,
+                y: 13,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 27,
+                y: 13,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 30,
+                y: 13,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 30,
+                y: 13,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 33,
+                y: 13,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 33,
+                y: 13,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 37,
+                y: 13,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 37,
+                y: 13,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Chest(
             pos: (
                 x: 39,
-                y: 26,
+                y: 6,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 39,
+                y: 12,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 40,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 40,
+                y: 10,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Assembler(
-                pos: (
-                    x: 44,
-                    y: 21,
-                ),
-                ty: 2,
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 40,
+                y: 3,
+            ),
         )),
-        SetRecipe((
+        AddModules(
+            pos: (
+                x: 40,
+                y: 3,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 40,
+                y: 6,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 40,
+                y: 6,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 45,
+                y: 8,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 45,
+                y: 8,
+            ),
+            recipe: "factory_game::copper_smelting",
+        ),
+        AddModules(
+            pos: (
+                x: 45,
+                y: 8,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Chest(
+            pos: (
+                x: 43,
+                y: 6,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 49,
+                y: 6,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 49,
+                y: 12,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 43,
+                y: 12,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 43,
+                y: 3,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 43,
+                y: 3,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 50,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 50,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 47,
+                y: 3,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 47,
+                y: 3,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 50,
+                y: 3,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 50,
+                y: 3,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 50,
+                y: 6,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 50,
+                y: 6,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(SolarPanel(
+            pos: (
+                x: 40,
+                y: 0,
+            ),
+            ty: "factory_game::infinity_battery",
+        )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 43,
+                y: 2,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 53,
+                y: 6,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 53,
+                y: 12,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 53,
+                y: 3,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 53,
+                y: 3,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(SolarPanel(
+            pos: (
+                x: 50,
+                y: 0,
+            ),
+            ty: "factory_game::infinity_battery",
+        )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 53,
+                y: 2,
+            ),
+            ty: "factory_game::small_power_pole",
+        )),
+        PlaceEntity(Inserter(
             pos: (
                 x: 44,
-                y: 21,
+                y: 9,
             ),
-            recipe: (
-                id: 6,
-            ),
+            dir: West,
+            filter: None,
         )),
-        AddModules(
+        PlaceEntity(Inserter(
             pos: (
-                x: 44,
-                y: 21,
+                x: 48,
+                y: 9,
             ),
-            modules: [
-                1,
-                1,
-                1,
-                1,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 42,
-                    y: 19,
-                ),
-                ty: 0,
-            )),
+            dir: West,
+            filter: None,
         )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 48,
-                    y: 19,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 48,
-                    y: 25,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 42,
-                    y: 25,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 42,
-                    y: 16,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 42,
-                y: 16,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 49,
-                    y: 23,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 49,
-                y: 23,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 46,
-                    y: 16,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 46,
-                y: 16,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 49,
-                    y: 16,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 49,
-                y: 16,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 49,
-                    y: 19,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 49,
-                y: 19,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 42,
-                    y: 15,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Assembler(
-                pos: (
-                    x: 54,
-                    y: 21,
-                ),
-                ty: 2,
-            )),
-        )),
-        SetRecipe((
+        PlaceEntity(Inserter(
             pos: (
                 x: 54,
-                y: 21,
+                y: 9,
             ),
-            recipe: (
-                id: 11,
-            ),
+            dir: West,
+            filter: None,
         )),
-        AddModules(
+        PlaceEntity(Belt(
             pos: (
-                x: 54,
-                y: 21,
+                x: 43,
+                y: 9,
             ),
-            modules: [
-                1,
-                1,
-                1,
-                1,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 52,
-                    y: 19,
-                ),
-                ty: 0,
-            )),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
         )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 52,
-                    y: 25,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 52,
-                    y: 16,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 52,
-                y: 16,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 56,
-                    y: 16,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 56,
-                y: 16,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(SolarPanel(
-                pos: (
-                    x: 49,
-                    y: 13,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 52,
-                    y: 15,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 42,
-                    y: 22,
-                ),
-                direction: East,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 43,
-                    y: 22,
-                ),
-                dir: East,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 47,
-                    y: 22,
-                ),
-                dir: East,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 53,
-                    y: 22,
-                ),
-                dir: East,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 48,
-                    y: 22,
-                ),
-                direction: East,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 49,
-                    y: 22,
-                ),
-                direction: East,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 50,
-                    y: 22,
-                ),
-                direction: East,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 51,
-                    y: 22,
-                ),
-                direction: East,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 52,
-                    y: 22,
-                ),
-                direction: East,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 55,
-                    y: 20,
-                ),
-                dir: North,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Chest(
-                pos: (
-                    x: 55,
-                    y: 19,
-                ),
-                ty: 2,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 57,
-                    y: 22,
-                ),
-                dir: West,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 42,
-                    y: 26,
-                ),
-            )),
-        )),
-        AddModules(
+        PlaceEntity(Belt(
             pos: (
                 x: 42,
-                y: 26,
+                y: 9,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 46,
-                    y: 26,
-                ),
-            )),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
         )),
-        AddModules(
+        PlaceEntity(Belt(
             pos: (
-                x: 46,
-                y: 26,
+                x: 41,
+                y: 9,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 49,
-                    y: 26,
-                ),
-            )),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
         )),
-        AddModules(
+        PlaceEntity(Belt(
             pos: (
-                x: 49,
-                y: 26,
+                x: 40,
+                y: 9,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 52,
-                    y: 26,
-                ),
-            )),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
         )),
-        AddModules(
+        PlaceEntity(Belt(
+            pos: (
+                x: 39,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Belt(
+            pos: (
+                x: 53,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Belt(
             pos: (
                 x: 52,
-                y: 26,
+                y: 9,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 56,
-                    y: 26,
-                ),
-            )),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Belt(
+            pos: (
+                x: 51,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Belt(
+            pos: (
+                x: 50,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Belt(
+            pos: (
+                x: 49,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 40,
+                y: 13,
+            ),
         )),
         AddModules(
             pos: (
-                x: 56,
-                y: 26,
+                x: 40,
+                y: 13,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 58,
-                    y: 19,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 58,
-                    y: 25,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 59,
-                    y: 23,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 43,
+                y: 13,
+            ),
         )),
         AddModules(
+            pos: (
+                x: 43,
+                y: 13,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 47,
+                y: 13,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 47,
+                y: 13,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 50,
+                y: 13,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 50,
+                y: 13,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 53,
+                y: 13,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 53,
+                y: 13,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 55,
+                y: 8,
+            ),
+            ty: "factory_game::assembler3",
+        )),
+        SetRecipe(
+            pos: (
+                x: 55,
+                y: 8,
+            ),
+            recipe: "factory_game::copper_ore_generation",
+        ),
+        AddModules(
+            pos: (
+                x: 55,
+                y: 8,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Chest(
             pos: (
                 x: 59,
-                y: 23,
+                y: 6,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 59,
-                    y: 16,
-                ),
-            )),
+            ty: "factory_game::small_power_pole",
         )),
-        AddModules(
+        PlaceEntity(Chest(
             pos: (
                 x: 59,
-                y: 16,
+                y: 12,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 59,
-                    y: 19,
-                ),
-            )),
+            ty: "factory_game::small_power_pole",
         )),
-        AddModules(
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
             pos: (
-                x: 59,
-                y: 19,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Assembler(
-                pos: (
-                    x: 64,
-                    y: 21,
-                ),
-                ty: 3,
-            )),
-        )),
-        SetRecipe((
-            pos: (
-                x: 64,
-                y: 21,
-            ),
-            recipe: (
-                id: 5,
+                x: 60,
+                y: 10,
             ),
         )),
         AddModules(
             pos: (
-                x: 64,
-                y: 21,
+                x: 60,
+                y: 10,
             ),
             modules: [
-                1,
-                1,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 62,
-                    y: 19,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 68,
-                    y: 19,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 68,
-                    y: 25,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 62,
-                    y: 25,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 62,
-                    y: 16,
-                ),
-            )),
-        )),
-        AddModules(
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
             pos: (
-                x: 62,
-                y: 16,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 69,
-                    y: 23,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 69,
-                y: 23,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 66,
-                    y: 16,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 66,
-                y: 16,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 69,
-                    y: 16,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 69,
-                y: 16,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 69,
-                    y: 19,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 69,
-                y: 19,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(SolarPanel(
-                pos: (
-                    x: 59,
-                    y: 13,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 62,
-                    y: 15,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 72,
-                    y: 19,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 72,
-                    y: 25,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 72,
-                    y: 16,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 72,
-                y: 16,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(SolarPanel(
-                pos: (
-                    x: 69,
-                    y: 13,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 72,
-                    y: 15,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 63,
-                    y: 22,
-                ),
-                dir: West,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 67,
-                    y: 22,
-                ),
-                dir: West,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 73,
-                    y: 22,
-                ),
-                dir: West,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 62,
-                    y: 22,
-                ),
-                direction: West,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 61,
-                    y: 22,
-                ),
-                direction: West,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 60,
-                    y: 22,
-                ),
-                direction: West,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 59,
-                    y: 22,
-                ),
-                direction: West,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 58,
-                    y: 22,
-                ),
-                direction: West,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 72,
-                    y: 22,
-                ),
-                direction: West,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 71,
-                    y: 22,
-                ),
-                direction: West,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 70,
-                    y: 22,
-                ),
-                direction: West,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 69,
-                    y: 22,
-                ),
-                direction: West,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 68,
-                    y: 22,
-                ),
-                direction: West,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 59,
-                    y: 26,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 59,
-                y: 26,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 62,
-                    y: 26,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 62,
-                y: 26,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 66,
-                    y: 26,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 66,
-                y: 26,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 69,
-                    y: 26,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 69,
-                y: 26,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 72,
-                    y: 26,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 72,
-                y: 26,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Assembler(
-                pos: (
-                    x: 74,
-                    y: 21,
-                ),
-                ty: 2,
-            )),
-        )),
-        SetRecipe((
-            pos: (
-                x: 74,
-                y: 21,
-            ),
-            recipe: (
-                id: 1,
+                x: 57,
+                y: 3,
             ),
         )),
         AddModules(
             pos: (
-                x: 74,
-                y: 21,
+                x: 57,
+                y: 3,
             ),
             modules: [
-                0,
-                0,
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 78,
-                    y: 19,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 78,
-                    y: 25,
-                ),
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 79,
-                    y: 23,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 60,
+                y: 3,
+            ),
         )),
         AddModules(
             pos: (
-                x: 79,
-                y: 23,
+                x: 60,
+                y: 3,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 76,
-                    y: 16,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 60,
+                y: 6,
+            ),
         )),
         AddModules(
             pos: (
-                x: 76,
-                y: 16,
+                x: 60,
+                y: 6,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 79,
-                    y: 16,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 57,
+                y: 13,
+            ),
         )),
         AddModules(
             pos: (
-                x: 79,
-                y: 16,
+                x: 57,
+                y: 13,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 79,
-                    y: 19,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 60,
+                y: 13,
+            ),
         )),
         AddModules(
             pos: (
-                x: 79,
-                y: 19,
+                x: 60,
+                y: 13,
             ),
             modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 76,
-                    y: 26,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 76,
-                y: 26,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 79,
-                    y: 26,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 79,
-                y: 26,
-            ),
-            modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
     ],

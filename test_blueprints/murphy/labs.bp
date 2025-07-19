@@ -1,13 +1,11 @@
 (
     actions: [
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 0,
-                    y: 0,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 0,
+                y: 0,
+            ),
         )),
         AddModules(
             pos: (
@@ -15,18 +13,16 @@
                 y: 0,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 3,
-                    y: 0,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 3,
+                y: 0,
+            ),
         )),
         AddModules(
             pos: (
@@ -34,18 +30,16 @@
                 y: 0,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 7,
-                    y: 0,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 7,
+                y: 0,
+            ),
         )),
         AddModules(
             pos: (
@@ -53,37 +47,16 @@
                 y: 0,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 10,
-                    y: 0,
-                ),
-            )),
-        )),
-        AddModules(
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
             pos: (
-                x: 10,
-                y: 0,
+                x: 0,
+                y: 3,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 0,
-                    y: 3,
-                ),
-            )),
         )),
         AddModules(
             pos: (
@@ -91,79 +64,50 @@
                 y: 3,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 10,
-                    y: 3,
-                ),
-            )),
-        )),
-        AddModules(
+        PlaceEntity(Underground(
             pos: (
-                x: 10,
+                x: 5,
                 y: 3,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 5,
-                    y: 3,
-                ),
-                direction: East,
-                ty: 0,
-                underground_dir: Entrance,
-            )),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
         )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 4,
-                    y: 3,
-                ),
-                direction: East,
-                ty: 0,
-                underground_dir: Exit,
-            )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 4,
+                y: 3,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
         )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 6,
-                    y: 3,
-                ),
-                direction: South,
-                ty: 0,
-                underground_dir: Entrance,
-            )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 6,
+                y: 3,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
         )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 7,
-                    y: 3,
-                ),
-                ty: 3,
-            )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 7,
+                y: 3,
+            ),
+            ty: "factory_game::substation",
         )),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 0,
-                    y: 7,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 0,
+                y: 7,
+            ),
         )),
         AddModules(
             pos: (
@@ -171,288 +115,219 @@
                 y: 7,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 0,
-                    y: 10,
-                ),
-            )),
-        )),
-        AddModules(
-            pos: (
-                x: 0,
-                y: 10,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 3,
-                    y: 10,
-                ),
-            )),
-        )),
-        AddModules(
+        PlaceEntity(Underground(
             pos: (
                 x: 3,
-                y: 10,
+                y: 6,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 7,
-                    y: 10,
-                ),
-            )),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
         )),
-        AddModules(
+        PlaceEntity(Underground(
             pos: (
-                x: 7,
-                y: 10,
+                x: 5,
+                y: 9,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 10,
-                    y: 10,
-                ),
-            )),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
         )),
-        AddModules(
+        PlaceEntity(Underground(
             pos: (
-                x: 10,
-                y: 10,
+                x: 4,
+                y: 9,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 10,
-                    y: 7,
-                ),
-            )),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
         )),
-        AddModules(
-            pos: (
-                x: 10,
-                y: 7,
-            ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 3,
-                    y: 6,
-                ),
-                direction: East,
-                ty: 0,
-                underground_dir: Entrance,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 5,
-                    y: 9,
-                ),
-                direction: East,
-                ty: 0,
-                underground_dir: Entrance,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 4,
-                    y: 9,
-                ),
-                direction: East,
-                ty: 0,
-                underground_dir: Exit,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Lab(
-                pos: (
-                    x: 5,
-                    y: 5,
-                ),
-                ty: 0,
-            )),
-        )),
-        AddModules(
+        PlaceEntity(Lab(
             pos: (
                 x: 5,
                 y: 5,
             ),
-            modules: [],
+            ty: "factory_game::lab",
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 4,
+                y: 6,
+            ),
+            dir: East,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 5,
+                y: 8,
+            ),
+            dir: North,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 5,
+                y: 4,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 3,
+                y: 5,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 3,
+                y: 4,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 4,
+                y: 5,
+            ),
+            dir: East,
+            filter: None,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 8,
+                y: 6,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 9,
+                y: 5,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 9,
+                y: 4,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 8,
+                y: 5,
+            ),
+            dir: West,
+            filter: None,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 6,
+                y: 8,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 6,
+                y: 4,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        PlaceEntity(Belt(
+            pos: (
+                x: 9,
+                y: 6,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Belt(
+            pos: (
+                x: 6,
+                y: 9,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 0,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 0,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
         ),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 4,
-                    y: 6,
-                ),
-                dir: East,
-                filter: None,
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 3,
+                y: 10,
+            ),
         )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 5,
-                    y: 8,
-                ),
-                dir: North,
-                filter: None,
-            )),
+        AddModules(
+            pos: (
+                x: 3,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 7,
+                y: 10,
+            ),
         )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 5,
-                    y: 4,
-                ),
-                dir: South,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 3,
-                    y: 5,
-                ),
-                direction: South,
-                ty: 0,
-                underground_dir: Entrance,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 3,
-                    y: 4,
-                ),
-                direction: South,
-                ty: 0,
-                underground_dir: Exit,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 4,
-                    y: 5,
-                ),
-                dir: East,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 8,
-                    y: 6,
-                ),
-                direction: East,
-                ty: 0,
-                underground_dir: Exit,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 9,
-                    y: 5,
-                ),
-                direction: South,
-                ty: 0,
-                underground_dir: Entrance,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 9,
-                    y: 4,
-                ),
-                direction: South,
-                ty: 0,
-                underground_dir: Exit,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 8,
-                    y: 5,
-                ),
-                dir: West,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 6,
-                    y: 8,
-                ),
-                direction: South,
-                ty: 0,
-                underground_dir: Exit,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 6,
-                    y: 4,
-                ),
-                dir: South,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 0,
-                    y: 13,
-                ),
-            )),
+        AddModules(
+            pos: (
+                x: 7,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 0,
+                y: 13,
+            ),
         )),
         AddModules(
             pos: (
@@ -460,70 +335,43 @@
                 y: 13,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 10,
-                    y: 13,
-                ),
-            )),
-        )),
-        AddModules(
+        PlaceEntity(Underground(
             pos: (
-                x: 10,
+                x: 5,
                 y: 13,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 5,
-                    y: 13,
-                ),
-                direction: East,
-                ty: 0,
-                underground_dir: Entrance,
-            )),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
         )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 4,
-                    y: 13,
-                ),
-                direction: East,
-                ty: 0,
-                underground_dir: Exit,
-            )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 4,
+                y: 13,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
         )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 6,
-                    y: 13,
-                ),
-                direction: South,
-                ty: 0,
-                underground_dir: Entrance,
-            )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 6,
+                y: 13,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
         )),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 0,
-                    y: 17,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 0,
+                y: 17,
+            ),
         )),
         AddModules(
             pos: (
@@ -531,301 +379,183 @@
                 y: 17,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 10,
-                    y: 17,
-                ),
-            )),
-        )),
-        AddModules(
+        PlaceEntity(Underground(
             pos: (
-                x: 10,
-                y: 17,
+                x: 3,
+                y: 16,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 3,
-                    y: 16,
-                ),
-                direction: East,
-                ty: 0,
-                underground_dir: Entrance,
-            )),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
         )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 5,
-                    y: 19,
-                ),
-                direction: East,
-                ty: 0,
-                underground_dir: Entrance,
-            )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 5,
+                y: 19,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
         )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 4,
-                    y: 19,
-                ),
-                direction: East,
-                ty: 0,
-                underground_dir: Exit,
-            )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 4,
+                y: 19,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
         )),
-        PlaceEntity((
-            entities: Single(Lab(
-                pos: (
-                    x: 5,
-                    y: 15,
-                ),
-                ty: 0,
-            )),
-        )),
-        AddModules(
+        PlaceEntity(Lab(
             pos: (
                 x: 5,
                 y: 15,
             ),
-            modules: [],
-        ),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 4,
-                    y: 16,
-                ),
-                dir: East,
-                filter: None,
-            )),
+            ty: "factory_game::lab",
         )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 5,
-                    y: 18,
-                ),
-                dir: North,
-                filter: None,
-            )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 4,
+                y: 16,
+            ),
+            dir: East,
+            filter: None,
         )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 5,
-                    y: 14,
-                ),
-                dir: South,
-                filter: None,
-            )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 5,
+                y: 18,
+            ),
+            dir: North,
+            filter: None,
         )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 3,
-                    y: 15,
-                ),
-                direction: South,
-                ty: 0,
-                underground_dir: Entrance,
-            )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 5,
+                y: 14,
+            ),
+            dir: South,
+            filter: None,
         )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 3,
-                    y: 14,
-                ),
-                direction: South,
-                ty: 0,
-                underground_dir: Exit,
-            )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 3,
+                y: 15,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
         )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 4,
-                    y: 15,
-                ),
-                dir: East,
-                filter: None,
-            )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 3,
+                y: 14,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
         )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 8,
-                    y: 16,
-                ),
-                direction: East,
-                ty: 0,
-                underground_dir: Exit,
-            )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 4,
+                y: 15,
+            ),
+            dir: East,
+            filter: None,
         )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 9,
-                    y: 15,
-                ),
-                direction: South,
-                ty: 0,
-                underground_dir: Entrance,
-            )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 8,
+                y: 16,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
         )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 9,
-                    y: 14,
-                ),
-                direction: South,
-                ty: 0,
-                underground_dir: Exit,
-            )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 9,
+                y: 15,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
         )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 8,
-                    y: 15,
-                ),
-                dir: West,
-                filter: None,
-            )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 9,
+                y: 14,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
         )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 6,
-                    y: 18,
-                ),
-                direction: South,
-                ty: 0,
-                underground_dir: Exit,
-            )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 8,
+                y: 15,
+            ),
+            dir: West,
+            filter: None,
         )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 6,
-                    y: 14,
-                ),
-                dir: South,
-                filter: None,
-            )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 6,
+                y: 18,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
         )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 9,
-                    y: 6,
-                ),
-                direction: East,
-                ty: 0,
-            )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 6,
+                y: 14,
+            ),
+            dir: South,
+            filter: None,
         )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 10,
-                    y: 6,
-                ),
-                direction: East,
-                ty: 0,
-            )),
+        PlaceEntity(Belt(
+            pos: (
+                x: 6,
+                y: 10,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
         )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 12,
-                    y: 6,
-                ),
-                direction: East,
-                ty: 0,
-            )),
+        PlaceEntity(Belt(
+            pos: (
+                x: 6,
+                y: 11,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
         )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 11,
-                    y: 6,
-                ),
-                direction: East,
-                ty: 0,
-            )),
+        PlaceEntity(Belt(
+            pos: (
+                x: 6,
+                y: 12,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
         )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 6,
-                    y: 9,
-                ),
-                direction: South,
-                ty: 0,
-            )),
+        PlaceEntity(Chest(
+            pos: (
+                x: 7,
+                y: 13,
+            ),
+            ty: "factory_game::substation",
         )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 6,
-                    y: 10,
-                ),
-                direction: South,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 6,
-                    y: 11,
-                ),
-                direction: South,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Belt(
-                pos: (
-                    x: 6,
-                    y: 12,
-                ),
-                direction: South,
-                ty: 0,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 7,
-                    y: 13,
-                ),
-                ty: 3,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 0,
-                    y: 20,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 0,
+                y: 20,
+            ),
         )),
         AddModules(
             pos: (
@@ -833,18 +563,16 @@
                 y: 20,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 3,
-                    y: 20,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 3,
+                y: 20,
+            ),
         )),
         AddModules(
             pos: (
@@ -852,18 +580,16 @@
                 y: 20,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 7,
-                    y: 20,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 7,
+                y: 20,
+            ),
         )),
         AddModules(
             pos: (
@@ -871,37 +597,91 @@
                 y: 20,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 10,
-                    y: 20,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 10,
+                y: 0,
+            ),
         )),
         AddModules(
             pos: (
                 x: 10,
-                y: 20,
+                y: 0,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 13,
-                    y: 0,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 10,
+                y: 3,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 10,
+                y: 3,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 10,
+                y: 7,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 10,
+                y: 7,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Belt(
+            pos: (
+                x: 10,
+                y: 6,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Belt(
+            pos: (
+                x: 12,
+                y: 6,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Belt(
+            pos: (
+                x: 11,
+                y: 6,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 13,
+                y: 0,
+            ),
         )),
         AddModules(
             pos: (
@@ -909,18 +689,16 @@
                 y: 0,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 17,
-                    y: 0,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 17,
+                y: 0,
+            ),
         )),
         AddModules(
             pos: (
@@ -928,18 +706,16 @@
                 y: 0,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 20,
-                    y: 0,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 20,
+                y: 0,
+            ),
         )),
         AddModules(
             pos: (
@@ -947,18 +723,16 @@
                 y: 0,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 20,
-                    y: 3,
-                ),
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 20,
+                y: 3,
+            ),
         )),
         AddModules(
             pos: (
@@ -966,117 +740,50 @@
                 y: 3,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 15,
-                    y: 3,
-                ),
-                direction: East,
-                ty: 0,
-                underground_dir: Entrance,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 14,
-                    y: 3,
-                ),
-                direction: East,
-                ty: 0,
-                underground_dir: Exit,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 16,
-                    y: 3,
-                ),
-                direction: South,
-                ty: 0,
-                underground_dir: Entrance,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(PowerPole(
-                pos: (
-                    x: 17,
-                    y: 3,
-                ),
-                ty: 3,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 13,
-                    y: 10,
-                ),
-            )),
-        )),
-        AddModules(
+        PlaceEntity(Underground(
             pos: (
-                x: 13,
-                y: 10,
+                x: 15,
+                y: 3,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 17,
-                    y: 10,
-                ),
-            )),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
         )),
-        AddModules(
+        PlaceEntity(Underground(
+            pos: (
+                x: 14,
+                y: 3,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 16,
+                y: 3,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Chest(
             pos: (
                 x: 17,
-                y: 10,
+                y: 3,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 20,
-                    y: 10,
-                ),
-            )),
+            ty: "factory_game::substation",
         )),
-        AddModules(
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
             pos: (
                 x: 20,
-                y: 10,
+                y: 7,
             ),
-            modules: [
-                0,
-                0,
-            ],
-        ),
-        PlaceEntity((
-            entities: Single(Beacon(
-                ty: 0,
-                pos: (
-                    x: 20,
-                    y: 7,
-                ),
-            )),
         )),
         AddModules(
             pos: (
@@ -1084,184 +791,264 @@
                 y: 7,
             ),
             modules: [
-                0,
-                0,
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 13,
-                    y: 6,
-                ),
-                direction: East,
-                ty: 0,
-                underground_dir: Entrance,
-            )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 13,
+                y: 6,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
         )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 15,
-                    y: 9,
-                ),
-                direction: East,
-                ty: 0,
-                underground_dir: Entrance,
-            )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 15,
+                y: 9,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
         )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 14,
-                    y: 9,
-                ),
-                direction: East,
-                ty: 0,
-                underground_dir: Exit,
-            )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 14,
+                y: 9,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
         )),
-        PlaceEntity((
-            entities: Single(Lab(
-                pos: (
-                    x: 15,
-                    y: 5,
-                ),
-                ty: 0,
-            )),
-        )),
-        AddModules(
+        PlaceEntity(Lab(
             pos: (
                 x: 15,
                 y: 5,
             ),
-            modules: [],
+            ty: "factory_game::lab",
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 14,
+                y: 6,
+            ),
+            dir: East,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 15,
+                y: 8,
+            ),
+            dir: North,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 15,
+                y: 4,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 13,
+                y: 5,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 13,
+                y: 4,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 14,
+                y: 5,
+            ),
+            dir: East,
+            filter: None,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 18,
+                y: 6,
+            ),
+            direction: East,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 19,
+                y: 5,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 19,
+                y: 4,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 18,
+                y: 5,
+            ),
+            dir: West,
+            filter: None,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 16,
+                y: 8,
+            ),
+            direction: South,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 16,
+                y: 4,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 10,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 10,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
         ),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 14,
-                    y: 6,
-                ),
-                dir: East,
-                filter: None,
-            )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 10,
+                y: 13,
+            ),
         )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 15,
-                    y: 8,
-                ),
-                dir: North,
-                filter: None,
-            )),
+        AddModules(
+            pos: (
+                x: 10,
+                y: 13,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 10,
+                y: 17,
+            ),
         )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 15,
-                    y: 4,
-                ),
-                dir: South,
-                filter: None,
-            )),
+        AddModules(
+            pos: (
+                x: 10,
+                y: 17,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 10,
+                y: 20,
+            ),
         )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 13,
-                    y: 5,
-                ),
-                direction: South,
-                ty: 0,
-                underground_dir: Entrance,
-            )),
+        AddModules(
+            pos: (
+                x: 10,
+                y: 20,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 13,
+                y: 10,
+            ),
         )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 13,
-                    y: 4,
-                ),
-                direction: South,
-                ty: 0,
-                underground_dir: Exit,
-            )),
+        AddModules(
+            pos: (
+                x: 13,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 17,
+                y: 10,
+            ),
         )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 14,
-                    y: 5,
-                ),
-                dir: East,
-                filter: None,
-            )),
+        AddModules(
+            pos: (
+                x: 17,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 20,
+                y: 10,
+            ),
         )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 18,
-                    y: 6,
-                ),
-                direction: East,
-                ty: 0,
-                underground_dir: Exit,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 19,
-                    y: 5,
-                ),
-                direction: South,
-                ty: 0,
-                underground_dir: Entrance,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 19,
-                    y: 4,
-                ),
-                direction: South,
-                ty: 0,
-                underground_dir: Exit,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 18,
-                    y: 5,
-                ),
-                dir: West,
-                filter: None,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Underground(
-                pos: (
-                    x: 16,
-                    y: 8,
-                ),
-                direction: South,
-                ty: 0,
-                underground_dir: Exit,
-            )),
-        )),
-        PlaceEntity((
-            entities: Single(Inserter(
-                pos: (
-                    x: 16,
-                    y: 4,
-                ),
-                dir: South,
-                filter: None,
-            )),
-        )),
+        AddModules(
+            pos: (
+                x: 20,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
     ],
 )
