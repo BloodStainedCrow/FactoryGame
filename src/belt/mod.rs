@@ -25,8 +25,8 @@ use crate::{
         belt_belt_inserter::BeltBeltInserter,
         belt_storage_inserter::{BeltStorageInserter, Dir},
     },
-    item::{usize_from, Item},
-    storage_list::{grid_size, SingleItemStorages},
+    item::{Item, usize_from},
+    storage_list::{SingleItemStorages, grid_size},
 };
 use crate::{
     inserter::{FakeUnionStorage, Storage},
@@ -35,7 +35,7 @@ use crate::{
 use belt::{Belt, BeltLenType};
 use itertools::Itertools;
 use log::info;
-use petgraph::{graph::NodeIndex, prelude::StableDiGraph, visit::EdgeRef, Direction::Outgoing};
+use petgraph::{Direction::Outgoing, graph::NodeIndex, prelude::StableDiGraph, visit::EdgeRef};
 use rayon::iter::IntoParallelRefMutIterator;
 use rayon::iter::{IndexedParallelIterator, ParallelIterator};
 use smart::{BeltInserterInfo, InserterAdditionError, Side, SmartBelt, SpaceOccupiedError};
@@ -207,7 +207,7 @@ where
             }
         }
 
-        let mut state = serializer.serialize_struct("InnerBeltStore", 9)?;
+        let mut state = serializer.serialize_struct("InnerBeltStore", 10)?;
         state.serialize_field("sushi_belts", &self.sushi_belts)?;
         state.serialize_field("sushi_belt_holes", &self.sushi_belt_holes)?;
         state.serialize_field("smart_belts", &self.smart_belts)?;
@@ -229,6 +229,10 @@ where
         )?;
         state.serialize_field("sushi_splitter_holes", &self.sushi_splitter_holes)?;
         state.serialize_field("belt_update_timers", &self.belt_update_timers)?;
+        state.serialize_field(
+            "belt_update_timers_cumulative",
+            &self.belt_update_timers_cumulative,
+        )?;
         state.end()
     }
 }
@@ -555,9 +559,10 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
                             ));
 
                             if let Some(hole_idx) = hole_idx {
-                                assert!(self.belt_belt_inserters.sushi_to_sushi_inserters
-                                    [hole_idx]
-                                    .is_none());
+                                assert!(
+                                    self.belt_belt_inserters.sushi_to_sushi_inserters[hole_idx]
+                                        .is_none()
+                                );
                                 self.belt_belt_inserters.sushi_to_sushi_inserters[hole_idx] =
                                     new_val;
                             } else {
@@ -610,8 +615,10 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
                             ));
 
                             if let Some(hole_idx) = hole_idx {
-                                assert!(self.belt_belt_inserters.pure_to_sushi_inserters[hole_idx]
-                                    .is_none());
+                                assert!(
+                                    self.belt_belt_inserters.pure_to_sushi_inserters[hole_idx]
+                                        .is_none()
+                                );
                                 self.belt_belt_inserters.pure_to_sushi_inserters[hole_idx] =
                                     new_val;
                             } else {
@@ -687,8 +694,10 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
                         ));
 
                         if let Some(hole_idx) = hole_idx {
-                            assert!(self.belt_belt_inserters.sushi_to_sushi_inserters[hole_idx]
-                                .is_none());
+                            assert!(
+                                self.belt_belt_inserters.sushi_to_sushi_inserters[hole_idx]
+                                    .is_none()
+                            );
                             self.belt_belt_inserters.sushi_to_sushi_inserters[hole_idx] = new_val;
                         } else {
                             self.belt_belt_inserters
@@ -745,9 +754,11 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
                             ));
 
                             if let Some(hole_idx) = hole_idx {
-                                assert!(self.belt_belt_inserters.pure_to_pure_inserters
-                                    [usize_from(item.id)][hole_idx]
-                                    .is_none());
+                                assert!(
+                                    self.belt_belt_inserters.pure_to_pure_inserters
+                                        [usize_from(item.id)][hole_idx]
+                                        .is_none()
+                                );
                                 self.belt_belt_inserters.pure_to_pure_inserters
                                     [usize_from(item.id)][hole_idx] = new_val;
                             } else {
@@ -769,8 +780,10 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
                             ));
 
                             if let Some(hole_idx) = hole_idx {
-                                assert!(self.belt_belt_inserters.pure_to_sushi_inserters[hole_idx]
-                                    .is_none());
+                                assert!(
+                                    self.belt_belt_inserters.pure_to_sushi_inserters[hole_idx]
+                                        .is_none()
+                                );
                                 self.belt_belt_inserters.pure_to_sushi_inserters[hole_idx] =
                                     new_val;
                             } else {
@@ -823,9 +836,11 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
                     ));
 
                     if let Some(hole_idx) = hole_idx {
-                        assert!(self.belt_belt_inserters.pure_to_pure_inserters
-                            [usize_from(item.id)][hole_idx]
-                            .is_none());
+                        assert!(
+                            self.belt_belt_inserters.pure_to_pure_inserters[usize_from(item.id)]
+                                [hole_idx]
+                                .is_none()
+                        );
                         self.belt_belt_inserters.pure_to_pure_inserters[usize_from(item.id)]
                             [hole_idx] = new_val;
                     } else {
@@ -859,9 +874,11 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
                         ));
 
                         if let Some(hole_idx) = hole_idx {
-                            assert!(self.belt_belt_inserters.pure_to_pure_inserters
-                                [usize_from(item.id)][hole_idx]
-                                .is_none());
+                            assert!(
+                                self.belt_belt_inserters.pure_to_pure_inserters
+                                    [usize_from(item.id)][hole_idx]
+                                    .is_none()
+                            );
                             self.belt_belt_inserters.pure_to_pure_inserters[usize_from(item.id)]
                                 [hole_idx] = new_val;
                         } else {
@@ -1143,11 +1160,11 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         belts: vec![],
                         holes: vec![]
                     };
-                    data_store.item_names.len()
+                    data_store.item_display_names.len()
                 ]
                 .into_boxed_slice(),
                 belt_belt_inserters: BeltBeltInserterStore {
-                    pure_to_pure_inserters: vec![vec![]; data_store.item_names.len()]
+                    pure_to_pure_inserters: vec![vec![]; data_store.item_display_names.len()]
                         .into_boxed_slice(),
                     pure_to_sushi_inserters: vec![],
                     sushi_to_sushi_inserters: vec![],
@@ -1159,7 +1176,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         pure_splitters: vec![],
                         item: PhantomData,
                     };
-                    data_store.item_names.len()
+                    data_store.item_display_names.len()
                 ]
                 .into_boxed_slice(),
 
@@ -1747,7 +1764,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     };
                     profiling::scope!(
                         "Pure Belt Update",
-                        format!("Item: {}", data_store.item_names[item_id]).as_str()
+                        format!("Item: {}", data_store.item_display_names[item_id]).as_str()
                     );
 
                     let grid_size = grid_size(item, data_store);
@@ -2091,7 +2108,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                                 // It succeeded!
                             },
                             Err(InserterAdditionError::SpaceOccupied) => {
-                                return Err(SpaceOccupiedError)
+                                return Err(SpaceOccupiedError);
                             },
                             Err(InserterAdditionError::ItemMismatch) => {
                                 // We need to transition to sushi belt
@@ -2578,7 +2595,10 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             (BeltTileId::AnyBelt(front, _), BeltTileId::AnyBelt(back, _)) => {
                 assert_ne!(front, back);
                 match self.any_belts.get_disjoint_mut([front, back]).unwrap() {
-                    [AnyBelt::Smart(front_smart_belt), AnyBelt::Smart(back_smart_belt)] => {
+                    [
+                        AnyBelt::Smart(front_smart_belt),
+                        AnyBelt::Smart(back_smart_belt),
+                    ] => {
                         if front_smart_belt.item == back_smart_belt.item {
                             self.inner
                                 .merge_smart_belts(*front_smart_belt, *back_smart_belt);
@@ -2603,7 +2623,10 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                             self.merge_belts(front_tile_id, back_tile_id, data_store)
                         }
                     },
-                    [AnyBelt::Smart(front_smart_belt), AnyBelt::Sushi(back_sushi_belt)] => {
+                    [
+                        AnyBelt::Smart(front_smart_belt),
+                        AnyBelt::Sushi(back_sushi_belt),
+                    ] => {
                         let front_smart_belt = *front_smart_belt;
                         let back_sushi_belt = *back_sushi_belt;
 
@@ -2623,7 +2646,10 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                             },
                         }
                     },
-                    [AnyBelt::Sushi(front_sushi_belt), AnyBelt::Smart(back_smart_belt)] => {
+                    [
+                        AnyBelt::Sushi(front_sushi_belt),
+                        AnyBelt::Smart(back_smart_belt),
+                    ] => {
                         let front_sushi_belt = *front_sushi_belt;
                         let back_smart_belt = *back_smart_belt;
 
@@ -2643,7 +2669,10 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                             },
                         }
                     },
-                    [AnyBelt::Sushi(front_sushi_belt), AnyBelt::Sushi(back_sushi_belt)] => {
+                    [
+                        AnyBelt::Sushi(front_sushi_belt),
+                        AnyBelt::Sushi(back_sushi_belt),
+                    ] => {
                         let front_sushi_belt = *front_sushi_belt;
 
                         self.inner
@@ -2686,54 +2715,57 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                 "{:?}",
                 self.inner.belt_belt_inserters.pure_to_pure_inserters[0]
             );
-            assert!(self
-                .inner
-                .belt_belt_inserters
-                .sushi_to_sushi_inserters
-                .iter()
-                .flatten()
-                .all(
-                    |(
-                        _ins_info,
-                        ((source, _source_pos), (dest, _dest_pos), _movetime, _filter),
-                    )| {
-                        !self.inner.sushi_belt_holes.contains(source)
-                            && !self.inner.sushi_belt_holes.contains(dest)
-                    },
-                ));
-            assert!(self
-                .inner
-                .belt_belt_inserters
-                .pure_to_sushi_inserters
-                .iter()
-                .flatten()
-                .all(
-                    |(
-                        _ins_info,
-                        ((source, _source_pos), (dest, _dest_pos), _movetime, _filter),
-                    )| {
-                        !self.inner.smart_belts[usize_from(source.item.id)]
-                            .holes
-                            .contains(&source.index)
-                            && !self.inner.sushi_belt_holes.contains(dest)
-                    },
-                ));
-            assert!(self
-                .inner
-                .belt_belt_inserters
-                .temp_sushi_to_smart_inserters
-                .iter()
-                .all(
-                    |(
-                        _ins_info,
-                        ((source, _source_pos), (dest, _dest_pos), _movetime, _filter),
-                    )| {
-                        !self.inner.sushi_belt_holes.contains(source)
-                            && !self.inner.smart_belts[usize_from(dest.item.id)]
+            assert!(
+                self.inner
+                    .belt_belt_inserters
+                    .sushi_to_sushi_inserters
+                    .iter()
+                    .flatten()
+                    .all(
+                        |(
+                            _ins_info,
+                            ((source, _source_pos), (dest, _dest_pos), _movetime, _filter),
+                        )| {
+                            !self.inner.sushi_belt_holes.contains(source)
+                                && !self.inner.sushi_belt_holes.contains(dest)
+                        },
+                    )
+            );
+            assert!(
+                self.inner
+                    .belt_belt_inserters
+                    .pure_to_sushi_inserters
+                    .iter()
+                    .flatten()
+                    .all(
+                        |(
+                            _ins_info,
+                            ((source, _source_pos), (dest, _dest_pos), _movetime, _filter),
+                        )| {
+                            !self.inner.smart_belts[usize_from(source.item.id)]
                                 .holes
-                                .contains(&dest.index)
-                    },
-                ));
+                                .contains(&source.index)
+                                && !self.inner.sushi_belt_holes.contains(dest)
+                        },
+                    )
+            );
+            assert!(
+                self.inner
+                    .belt_belt_inserters
+                    .temp_sushi_to_smart_inserters
+                    .iter()
+                    .all(
+                        |(
+                            _ins_info,
+                            ((source, _source_pos), (dest, _dest_pos), _movetime, _filter),
+                        )| {
+                            !self.inner.sushi_belt_holes.contains(source)
+                                && !self.inner.smart_belts[usize_from(dest.item.id)]
+                                    .holes
+                                    .contains(&dest.index)
+                        },
+                    )
+            );
         }
 
         ret
