@@ -1,4 +1,10 @@
-use std::{collections::HashSet, marker::PhantomData, num::NonZero, sync::mpsc::Receiver};
+use std::{
+    cmp::{max, min},
+    collections::HashSet,
+    marker::PhantomData,
+    num::NonZero,
+    sync::mpsc::Receiver,
+};
 
 use egui_graphs::{DefaultEdgeShape, DefaultNodeShape, Graph};
 use log::warn;
@@ -6,6 +12,7 @@ use petgraph::Directed;
 
 use crate::{
     belt::splitter::SplitterDistributionMode,
+    blueprint::Blueprint,
     data::{self, DataStore},
     frontend::{
         action::{
@@ -15,14 +22,17 @@ use crate::{
         },
         input::{Input, Key},
         world::{
-            tile::{AssemblerInfo, Dir, Entity, FloorTile, PlaceEntityType, UndergroundDir, World},
             Position,
+            tile::{AssemblerInfo, Dir, Entity, FloorTile, PlaceEntityType, UndergroundDir, World},
         },
     },
-    item::{IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
+    item::{ITEMCOUNTTYPE, IdxTrait, Item, Recipe, WeakIdxTrait},
+    rendering::render_world::{SWITCH_TO_MAPVIEW_TILES, SWITCH_TO_MAPVIEW_ZOOM_LEVEL},
 };
 
-use super::{place_tile::PositionInfo, ActionType, PLAYERID};
+use super::{ActionType, PLAYERID, place_tile::PositionInfo};
+
+const MAP_VIEW_PAN_SPEED: f32 = 0.05;
 
 const MIN_ZOOM_WIDTH: f32 = 1.0;
 pub const WIDTH_PER_LEVEL: usize = 16;
@@ -48,13 +58,14 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     pub production_filters: Vec<bool>,
     pub consumption_filters: Vec<bool>,
 
-    current_mouse_pos: (f32, f32),
+    pub current_mouse_pos: (f32, f32),
     current_held_keys: HashSet<Key>,
-    pub state: ActionStateMachineState<ItemIdxType>,
+    pub state: ActionStateMachineState<ItemIdxType, RecipeIdxType>,
 
     pub escape_menu_open: bool,
 
     pub zoom_level: f32,
+    pub map_view_info: Option<(f32, f32)>,
 
     copy_info: Option<CopyInfo<ItemIdxType, RecipeIdxType>>,
 
@@ -92,18 +103,23 @@ impl Default for StatisticsPanel {
 }
 
 #[derive(Debug)]
-pub enum ActionStateMachineState<ItemIdxType: WeakIdxTrait> {
+pub enum ActionStateMachineState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Idle,
     Deconstructing(Position, u32),
-    Holding(HeldObject<ItemIdxType>),
+    Holding(HeldObject<ItemIdxType, RecipeIdxType>),
     Viewing(Position),
+
+    CtrlCPressed,
+    CopyDragInProgress { start_pos: Position },
 }
 
 #[derive(Debug)]
-pub enum HeldObject<ItemIdxType: WeakIdxTrait> {
+pub enum HeldObject<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Tile(FloorTile),
     // TODO: PlaceEntityType is not quite right for this case
     Entity(PlaceEntityType<ItemIdxType>),
+
+    Blueprint(Blueprint<ItemIdxType, RecipeIdxType>),
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
@@ -132,6 +148,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             state: ActionStateMachineState::Idle,
 
             zoom_level: 1.0,
+            map_view_info: None,
 
             escape_menu_open: false,
 
@@ -148,7 +165,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         world: &'c World<ItemIdxType, RecipeIdxType>,
         data_store: &'d DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
-           + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType> {
+    + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType> {
         input.try_iter().map(|input| {
             if self.escape_menu_open && input != Input::KeyPress(Key::Esc) {
                 match input {
@@ -165,6 +182,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             }
 
             let actions = match input {
+                Input::Copy => {
+                    self.state = ActionStateMachineState::CtrlCPressed;
+                    vec![]
+                },
                 Input::LeftClickPressed { shift } => {
                     if shift {
                         if let Some(copy_info) = &self.copy_info {
@@ -212,10 +233,36 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
                                 vec![]
                             },
+
+                            ActionStateMachineState::CtrlCPressed => {
+                                self.state = ActionStateMachineState::CopyDragInProgress {
+                                    start_pos: Self::player_mouse_to_tile(
+                                        self.zoom_level,
+                                        self.local_player_pos,
+                                        self.current_mouse_pos,
+                                    )
+                                };
+
+                                vec![]
+                            },
+
+                            ActionStateMachineState::CopyDragInProgress { start_pos: _ } => {
+                                warn!("Tried starting CopyDraw again!");
+                                vec![]
+                            },
+
                             ActionStateMachineState::Holding(held_object) => {
                                 // TODO: Check if what we are trying to place would collide
 
                                 match held_object {
+                                    HeldObject::Blueprint(bp) => {
+                                        bp.actions_with_base_pos(Self::player_mouse_to_tile(
+                                            self.zoom_level,
+                                            self.local_player_pos,
+                                            self.current_mouse_pos,
+                                        )).collect()
+                                    },
+
                                     HeldObject::Tile(floor_tile) => {
                                         vec![ActionType::PlaceFloorTile(PlaceFloorTileByHandInfo {
                                             ghost_info: PlaceFloorTileGhostInfo {
@@ -326,6 +373,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 vec![]
                             },
                             ActionStateMachineState::Deconstructing(_, _) => vec![],
+                            ActionStateMachineState::CtrlCPressed | ActionStateMachineState::CopyDragInProgress { start_pos: _ } => {
+                                self.state = ActionStateMachineState::Idle;
+                                vec![]
+                            }
                         }
                     }
 
@@ -333,6 +384,28 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
 
                 ,
+                Input::LeftClickReleased => {
+                    match self.state {
+                        ActionStateMachineState::Idle => {},
+                        ActionStateMachineState::Deconstructing(_, _) => {},
+                        ActionStateMachineState::Holding(_) => {},
+                        ActionStateMachineState::Viewing(_) => {},
+                        ActionStateMachineState::CtrlCPressed => {},
+                        ActionStateMachineState::CopyDragInProgress { start_pos } => {
+                            let end_pos = Self::player_mouse_to_tile(
+                                self.zoom_level,
+                                self.local_player_pos,
+                                self.current_mouse_pos,
+                            );
+
+                            let x_range = min(start_pos.x, end_pos.x)..max(start_pos.x, end_pos.x);
+                            let y_range = min(start_pos.y, end_pos.y)..max(start_pos.y, end_pos.y);
+
+                            self.state = ActionStateMachineState::Holding(HeldObject::Blueprint(Blueprint::from_area(world, [x_range, y_range], data_store)))
+                        },
+                    }
+                    vec![]
+                },
                 Input::RightClickReleased => match &self.state {
                     ActionStateMachineState::Deconstructing(_, _) => {
                         self.state = ActionStateMachineState::Idle;
@@ -344,8 +417,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     self.current_mouse_pos = (x, y);
 
                     match &mut self.state {
+                        ActionStateMachineState::CtrlCPressed | ActionStateMachineState::CopyDragInProgress { start_pos:_ } => {},
+
                         ActionStateMachineState::Idle | ActionStateMachineState::Viewing(_) => {},
                         ActionStateMachineState::Holding(held_object) => match held_object {
+                            HeldObject::Blueprint(_) => {},
+
                             HeldObject::Tile(floor_tile) => {},
                             HeldObject::Entity(place_entity_type) => match place_entity_type {
                                 PlaceEntityType::Assembler {
@@ -453,13 +530,29 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 },
 
                 Input::MouseScoll(delta) => {
+                    let old_width = WIDTH_PER_LEVEL as f32 * 1.5f32.powf(self.zoom_level);
+                    let Position {x: mouse_x, y: mouse_y} = Self::player_mouse_to_tile(self.zoom_level, self.map_view_info.unwrap_or(self.local_player_pos), self.current_mouse_pos);
                     match delta {
                         winit::event::MouseScrollDelta::LineDelta(_, y) => {
-                            self.zoom_level -= y / 10.0;
+                            self.zoom_level -=  y / 10.0;
                         },
                         winit::event::MouseScrollDelta::PixelDelta(physical_position) => {
                             self.zoom_level -= physical_position.y as f32 / 10.0;
                         },
+                    }
+                    if let Some(view_center) = &mut self.map_view_info {
+                        let new_width = WIDTH_PER_LEVEL as f32 * 1.5f32.powf(self.zoom_level);
+
+                        let new_center_x = ((old_width - new_width) / old_width) * (mouse_x as f32 - view_center.0) + view_center.0;
+                        let new_center_y = ((old_width - new_width) / old_width) * (mouse_y as f32 - view_center.1) + view_center.1;
+
+                        *view_center = (new_center_x, new_center_y);
+                    } else {
+                        self.zoom_level = if self.zoom_level < *SWITCH_TO_MAPVIEW_ZOOM_LEVEL {
+                            self.zoom_level
+                        } else {
+                            *SWITCH_TO_MAPVIEW_ZOOM_LEVEL
+                        };
                     }
                     if self.zoom_level < MIN_ZOOM_WIDTH {
                         self.zoom_level = MIN_ZOOM_WIDTH;
@@ -468,10 +561,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 },
 
                 Input::UnknownInput(..) => {
-                    vec![]
-                },
-
-                i @ Input::LeftClickReleased => {
                     vec![]
                 },
             };
@@ -485,7 +574,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         key: Key,
         world: &World<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType> {
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
+    {
         let ret = match (&self.state, key) {
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Q) => {
                 match world
@@ -972,6 +1062,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 vec![]
             },
 
+            (_, Key::M) => {
+                if self.map_view_info.is_some() {
+                    self.map_view_info = None;
+                } else {
+                    self.map_view_info = Some(self.local_player_pos);
+                }
+                vec![]
+            },
+
             (_, Key::Esc) => {
                 self.escape_menu_open = !self.escape_menu_open;
                 vec![]
@@ -991,22 +1090,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     fn handle_stop_pressing_key(
         &mut self,
         key: Key,
-    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType> {
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
+    {
         match (&self.state, key) {
             (_, _) => vec![].into_iter(),
         }
     }
 
-    fn player_mouse_to_tile(
+    pub fn player_mouse_to_tile(
         zoom_level: f32,
-        player_pos: (f32, f32),
+        camera_pos: (f32, f32),
         mouse_pos: (f32, f32),
     ) -> Position {
         let mouse_pos = (
             ((mouse_pos.0) * (WIDTH_PER_LEVEL as f32))
-                .mul_add(1.5f32.powf(zoom_level), player_pos.0),
+                .mul_add(1.5f32.powf(zoom_level), camera_pos.0),
             ((mouse_pos.1) * (WIDTH_PER_LEVEL as f32))
-                .mul_add(1.5f32.powf(zoom_level), player_pos.1),
+                .mul_add(1.5f32.powf(zoom_level), camera_pos.1),
         );
 
         Position {
@@ -1020,7 +1120,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         &mut self,
         world: &World<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType> {
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
+    {
+        dbg!(&self.state);
+
         let mut actions = Vec::new();
 
         if let ActionStateMachineState::Deconstructing(pos, timer) = &mut self.state {
@@ -1068,16 +1171,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             move_dir.0 += 1;
         }
 
-        self.local_player_pos.0 +=
-            move_dir.0 as f32 * world.players[usize::from(self.my_player_id)].movement_speed;
-        self.local_player_pos.1 +=
-            move_dir.1 as f32 * world.players[usize::from(self.my_player_id)].movement_speed;
+        if let Some(map_view_pos) = &mut self.map_view_info {
+            map_view_pos.0 += move_dir.0 as f32 * 1.5f32.powf(self.zoom_level) * MAP_VIEW_PAN_SPEED;
+            map_view_pos.1 += move_dir.1 as f32 * 1.5f32.powf(self.zoom_level) * MAP_VIEW_PAN_SPEED;
+        } else {
+            self.local_player_pos.0 +=
+                move_dir.0 as f32 * world.players[usize::from(self.my_player_id)].movement_speed;
+            self.local_player_pos.1 +=
+                move_dir.1 as f32 * world.players[usize::from(self.my_player_id)].movement_speed;
 
-        // TODO: Maybe only send this event if it changed
-        actions.push(ActionType::Position(
-            self.my_player_id,
-            self.local_player_pos,
-        ));
+            if move_dir.0 != 0 || move_dir.1 != 0 {
+                // Only send this event if it changed
+                actions.push(ActionType::Position(
+                    self.my_player_id,
+                    self.local_player_pos,
+                ));
+            }
+        }
 
         actions.into_iter()
     }

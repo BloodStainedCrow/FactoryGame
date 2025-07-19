@@ -9,24 +9,24 @@ use std::{
 use itertools::Itertools;
 use log::warn;
 use power_grid::{
-    BeaconAffectedEntity, IndexUpdateInfo, PowerGrid, PowerGridEntity, PowerGridIdentifier,
-    MIN_BEACON_POWER_MULT,
+    BeaconAffectedEntity, IndexUpdateInfo, MIN_BEACON_POWER_MULT, PowerGrid, PowerGridEntity,
+    PowerGridIdentifier,
 };
 
 use std::fmt::Display;
 
 use crate::{
+    TICKS_PER_SECOND_LOGIC,
     assembler::AssemblerOnclickInfo,
     data::DataStore,
     frontend::world::{
-        tile::{AssemblerID, MachineID},
         Position,
+        tile::{AssemblerID, MachineID},
     },
     item::{IdxTrait, WeakIdxTrait},
     network_graph::WeakIndex,
     research::{LabTickInfo, ResearchProgress, TechState},
     statistics::recipe::RecipeTickInfo,
-    TICKS_PER_SECOND_LOGIC,
 };
 
 use rayon::iter::IntoParallelRefMutIterator;
@@ -264,14 +264,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
 
     /// Returns a list of power poles, which have their PowerGridId changed
     #[profiling::function]
-    pub fn add_pole(
+    pub fn add_pole<T: IntoIterator<Item = Position>>(
         &mut self,
         pole_position: Position,
-        connected_poles: impl IntoIterator<Item = Position>,
+        connected_poles: T,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Option<(
-        impl IntoIterator<Item = Position>,
-        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
+        impl IntoIterator<Item = Position> + use<ItemIdxType, RecipeIdxType, T>,
+        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>
+        + use<ItemIdxType, RecipeIdxType, T>,
     )> {
         let mut connected_poles: Vec<_> = connected_poles.into_iter().collect();
 
@@ -351,10 +352,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                         "Not all connected_poles ended up in final power grid!"
                     );
 
-                    assert!(storage_update_vec
-                        .iter()
-                        .map(|update| update.position)
-                        .all_unique());
+                    assert!(
+                        storage_update_vec
+                            .iter()
+                            .map(|update| update.position)
+                            .all_unique()
+                    );
                 }
 
                 Some((poles_to_update, storage_update_vec))
@@ -377,7 +380,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
         impl IntoIterator<Item = Position> + use<ItemIdxType, RecipeIdxType>,
-        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>,
+        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>
+        + use<ItemIdxType, RecipeIdxType>,
         impl IntoIterator<Item = Position> + use<ItemIdxType, RecipeIdxType>,
     ) {
         let old_id = self.pole_pos_to_grid_id.remove(&pole_position).unwrap();
@@ -443,10 +447,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
 
         #[cfg(debug_assertions)]
         {
-            assert!(self
-                .pole_pos_to_grid_id
-                .iter()
-                .all(|idx| !self.power_grids[usize::from(*idx.1)].is_placeholder))
+            assert!(
+                self.pole_pos_to_grid_id
+                    .iter()
+                    .all(|idx| !self.power_grids[usize::from(*idx.1)].is_placeholder)
+            )
         }
     }
 
@@ -735,10 +740,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
 
         #[cfg(debug_assertions)]
         {
-            assert!(self
-                .pole_pos_to_grid_id
-                .iter()
-                .all(|idx| !self.power_grids[usize::from(*idx.1)].is_placeholder));
+            assert!(
+                self.pole_pos_to_grid_id
+                    .iter()
+                    .all(|idx| !self.power_grids[usize::from(*idx.1)].is_placeholder)
+            );
 
             assert_eq!(
                 num_placeholders + 1,
@@ -748,43 +754,45 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                     .count()
             );
 
-            assert!(self
-                .power_grids
-                .iter()
-                .filter(|grid| !grid.is_placeholder)
-                .flat_map(|pg| { pg.beacon_affected_entities.keys() })
-                .all(|e| {
-                    match e {
-                        BeaconAffectedEntity::Assembler { id } => {
-                            !self.power_grids[usize::from(id.grid)].is_placeholder
-                        },
-                        BeaconAffectedEntity::Lab { grid, index: _ } => {
-                            !self.power_grids[usize::from(*grid)].is_placeholder
-                        },
-                    }
-                }));
-
-            assert!(self
-                .power_grids
-                .iter()
-                .filter(|grid| !grid.is_placeholder)
-                .flat_map(|pg| { pg.grid_graph.weak_components() })
-                .all(|(_pos, e)| {
-                    match e {
-                        PowerGridEntity::Beacon {
-                            affected_entities, ..
-                        } => affected_entities.iter().all(|e| match e {
+            assert!(
+                self.power_grids
+                    .iter()
+                    .filter(|grid| !grid.is_placeholder)
+                    .flat_map(|pg| { pg.beacon_affected_entities.keys() })
+                    .all(|e| {
+                        match e {
                             BeaconAffectedEntity::Assembler { id } => {
                                 !self.power_grids[usize::from(id.grid)].is_placeholder
                             },
                             BeaconAffectedEntity::Lab { grid, index: _ } => {
                                 !self.power_grids[usize::from(*grid)].is_placeholder
                             },
-                        }),
-                        // TODO: Other things to check?
-                        _ => true,
-                    }
-                }));
+                        }
+                    })
+            );
+
+            assert!(
+                self.power_grids
+                    .iter()
+                    .filter(|grid| !grid.is_placeholder)
+                    .flat_map(|pg| { pg.grid_graph.weak_components() })
+                    .all(|(_pos, e)| {
+                        match e {
+                            PowerGridEntity::Beacon {
+                                affected_entities, ..
+                            } => affected_entities.iter().all(|e| match e {
+                                BeaconAffectedEntity::Assembler { id } => {
+                                    !self.power_grids[usize::from(id.grid)].is_placeholder
+                                },
+                                BeaconAffectedEntity::Lab { grid, index: _ } => {
+                                    !self.power_grids[usize::from(*grid)].is_placeholder
+                                },
+                            }),
+                            // TODO: Other things to check?
+                            _ => true,
+                        }
+                    })
+            );
         }
 
         Some(updates)

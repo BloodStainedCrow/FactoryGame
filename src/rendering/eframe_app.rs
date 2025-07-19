@@ -2,9 +2,9 @@ use std::{
     mem,
     net::ToSocketAddrs,
     sync::{
-        atomic::{AtomicU64, Ordering},
-        mpsc::{channel, Sender},
         Arc, LazyLock,
+        atomic::{AtomicU64, Ordering},
+        mpsc::{Sender, channel},
     },
     thread,
     time::Instant,
@@ -14,8 +14,8 @@ use directories::ProjectDirs;
 use parking_lot::Mutex;
 
 use crate::StartGameInfo;
+use crate::{GameCreationInfo, run_client};
 use crate::{rendering::render_world::EscapeMenuOptions, run_integrated_server};
-use crate::{run_client, GameCreationInfo};
 use eframe::{
     egui::{CentralPanel, Event, PaintCallbackInfo, Shape},
     egui_wgpu::{self, CallbackTrait},
@@ -31,11 +31,11 @@ use crate::{
 };
 
 use super::{
+    TextureAtlas,
     app_state::{AppState, GameState},
     render_world::{render_ui, render_world},
     texture_atlas,
     window::{LoadedGame, LoadedGameInfo},
-    TextureAtlas,
 };
 
 use crate::saving::save;

@@ -3,9 +3,9 @@ use std::{
     net::{SocketAddr, TcpStream},
     ops::ControlFlow,
     sync::{
+        Arc,
         atomic::{AtomicBool, AtomicU64},
         mpsc::Receiver,
-        Arc,
     },
     time::Duration,
 };
@@ -16,9 +16,10 @@ use plumbing::{Client, IntegratedServer, Server};
 use server::{ActionSource, GameStateUpdateHandler, HandledActionConsumer};
 
 use crate::{
+    TICKS_PER_SECOND_RUNSPEED,
     data::DataStore,
     frontend::{
-        action::{action_state_machine::ActionStateMachine, ActionType},
+        action::{ActionType, action_state_machine::ActionStateMachine},
         input::Input,
         world::tile::World,
     },
@@ -26,7 +27,6 @@ use crate::{
     rendering::app_state::GameState,
     replays::Replay,
     saving::save,
-    TICKS_PER_SECOND_RUNSPEED,
 };
 
 mod plumbing;
@@ -243,9 +243,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                     save(&game_state.lock(), data_store.checksum.clone());
                 }
                 game_state_update_handler.update(
-                    {
+                    &mut *{
                         profiling::scope!("Wait for GameState Lock");
-                        &mut game_state.lock()
+                        game_state.lock()
                     },
                     Some(replay),
                     data_store,

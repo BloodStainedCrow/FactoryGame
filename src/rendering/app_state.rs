@@ -1,45 +1,45 @@
 use crate::data::AllowedFluidDirection;
+use crate::inserter::HAND_SIZE;
 use crate::inserter::storage_storage_with_buckets::InserterIdentifier;
 use crate::inserter::storage_storage_with_buckets::LargeInserterState;
 use crate::inserter::storage_storage_with_buckets::{
     BucketedStorageStorageInserterStore, BucketedStorageStorageInserterStoreFrontend, InserterId,
 };
-use crate::inserter::HAND_SIZE;
-use crate::liquid::connection_logic::can_fluid_tanks_connect_to_single_connection;
 use crate::liquid::FluidConnectionDir;
+use crate::liquid::connection_logic::can_fluid_tanks_connect_to_single_connection;
 use crate::{
+    Input, LoadedGame,
     belt::{BeltBeltInserterInfo, BeltStore},
     blueprint::Blueprint,
     chest::{FullChestStore, MultiChestStore},
     data::{DataStore, ItemRecipeDir},
     frontend::{
         action::{
+            ActionType,
             belt_placement::{
                 handle_belt_placement, handle_splitter_placement, handle_underground_belt_placement,
             },
             set_recipe::SetRecipeInfo,
-            ActionType,
         },
         world::{
+            Position,
             tile::{
                 AssemblerID, AssemblerInfo, AttachedInserter, Dir, Entity, InserterInfo, World,
             },
-            Position,
         },
     },
-    inserter::{belt_belt_inserter::BeltBeltInserter, FakeUnionStorage, Storage, MOVETIME},
-    item::{usize_from, IdxTrait, Item, Recipe, WeakIdxTrait},
+    inserter::{FakeUnionStorage, MOVETIME, Storage, belt_belt_inserter::BeltBeltInserter},
+    item::{IdxTrait, Item, Recipe, WeakIdxTrait, usize_from},
     liquid::connection_logic::can_fluid_tanks_connect,
     network_graph::WeakIndex,
-    power::{power_grid::PowerGridIdentifier, PowerGridStorage},
+    power::{PowerGridStorage, power_grid::PowerGridIdentifier},
     research::TechState,
     statistics::{
-        consumption::ConsumptionInfo, production::ProductionInfo, GenStatistics, Timeline,
+        GenStatistics, Timeline, consumption::ConsumptionInfo, production::ProductionInfo,
     },
     storage_list::{
-        full_to_by_item, grid_size, num_recipes, sizes, storages_by_item, SingleItemStorages,
+        SingleItemStorages, full_to_by_item, grid_size, num_recipes, sizes, storages_by_item,
     },
-    Input, LoadedGame,
 };
 use crate::{
     item::Indexable,
@@ -52,11 +52,11 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelI
 use std::collections::{BTreeMap, HashMap};
 use std::iter;
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
-use std::sync::Arc;
 use std::{
     borrow::Borrow,
     fs::File,
@@ -213,21 +213,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let file = File::open("test_blueprints/red_sci_with_beacons_and_belts.bp").unwrap();
         let bp: Blueprint<ItemIdxType, RecipeIdxType> = ron::de::from_reader(file).unwrap();
 
-        let y_range = (0..100_000).step_by(6_000);
+        let y_range = (0..20_000).step_by(6_000);
 
         let total = y_range.size_hint().0;
 
         let mut current = 0;
 
         puffin::set_scopes_on(false);
-        for y_start in (0..100_000).step_by(6_000) {
+        for y_start in y_range {
             progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
             current += 1;
             for y_pos in (1590..6000).step_by(10) {
-                for x_pos in (1590..3000).step_by(60) {
-                    if rand::random::<u16>() < 128 {
-                        ret.update(data_store);
-                    }
+                for x_pos in (1590..4000).step_by(60) {
+                    // if rand::random::<u16>() < 1 {
+                    //     ret.update(data_store);
+                    // }
 
                     bp.apply(
                         Position {
@@ -943,33 +943,36 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 .collect();
 
                             match self.simulation_state.factory.power_grids.add_pole(
-                                    pole_pos,
-                                    connection_candidates.iter().copied(),
-                                    data_store,
-                                )
-                            { Some((pole_updates, storage_updates)) => {
-                                // Handle Entities that are now part of another power_grid
-                                for pole_position in pole_updates {
-                                    let grid = self
-                                        .simulation_state
-                                        .factory
-                                        .power_grids
-                                        .pole_pos_to_grid_id[&pole_position];
+                                pole_pos,
+                                connection_candidates.iter().copied(),
+                                data_store,
+                            ) {
+                                Some((pole_updates, storage_updates)) => {
+                                    // Handle Entities that are now part of another power_grid
+                                    for pole_position in pole_updates {
+                                        let grid = self
+                                            .simulation_state
+                                            .factory
+                                            .power_grids
+                                            .pole_pos_to_grid_id[&pole_position];
 
-                                    assert!(
-                                        !self.simulation_state.factory.power_grids.power_grids
-                                            [grid as usize]
-                                            .is_placeholder
-                                    );
+                                        assert!(
+                                            !self.simulation_state.factory.power_grids.power_grids
+                                                [grid as usize]
+                                                .is_placeholder
+                                        );
 
-                                    self.world
-                                        .update_pole_power(pole_position, grid, data_store);
-                                }
+                                        self.world.update_pole_power(
+                                            pole_position,
+                                            grid,
+                                            data_store,
+                                        );
+                                    }
 
-                                // Handle storage updates
-                                for storage_update in storage_updates {
-                                    let mut entity_size = None;
-                                    self.world.mutate_entities_colliding_with(storage_update.position, (1,1), data_store, |e| {
+                                    // Handle storage updates
+                                    for storage_update in storage_updates {
+                                        let mut entity_size = None;
+                                        self.world.mutate_entities_colliding_with(storage_update.position, (1,1), data_store, |e| {
                                         match (e, storage_update.new_pg_entity.clone()) {
                                             (Entity::Assembler { ty, pos: _, info: AssemblerInfo::Powered { id, pole_position: _, weak_index }, modules: _ }, crate::power::power_grid::PowerGridEntity::Assembler { ty: _, recipe, index }) => {
                                                 entity_size = Some(data_store.assembler_info[usize::from(*ty)].size);
@@ -992,12 +995,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         ControlFlow::Break(())
                                     });
 
-                                    // FIXME: Rotation
-                                    let e_size = entity_size.unwrap();
+                                        // FIXME: Rotation
+                                        let e_size = entity_size.unwrap();
 
-                                    let inserter_range = data_store.max_inserter_search_range;
+                                        let inserter_range = data_store.max_inserter_search_range;
 
-                                    self.world.mutate_entities_colliding_with(
+                                        self.world.mutate_entities_colliding_with(
                                         Position {
                                             x: storage_update.position.x
                                                 - i32::from(inserter_range),
@@ -1105,10 +1108,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             ControlFlow::Continue(())
                                         },
                                     );
-                                }
-                            } _ => {
-                                // No updates needed
-                            }}
+                                    }
+                                },
+                                _ => {
+                                    // No updates needed
+                                },
+                            }
 
                             // Add the powerpole entity to the correct chunk
                             self.world.add_entity(
@@ -1818,37 +1823,38 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         #[cfg(debug_assertions)]
         {
-            assert!(self
-                .world
-                .get_chunks()
-                .into_iter()
-                .flat_map(|chunk| chunk.get_entities())
-                .all(|e| match e {
-                    Entity::Assembler { info, .. } => {
-                        match info {
-                            AssemblerInfo::UnpoweredNoRecipe => true,
-                            AssemblerInfo::Unpowered(_) => true,
-                            AssemblerInfo::PoweredNoRecipe(_) => true,
-                            AssemblerInfo::Powered { id, .. } => {
-                                !self.simulation_state.factory.power_grids.power_grids
-                                    [usize::from(id.grid)]
-                                .is_placeholder
-                            },
-                        }
-                    },
-                    Entity::Beacon {
-                        pole_position: Some((pole_pos, _)),
-                        ..
-                    } => {
-                        self.simulation_state
-                            .factory
-                            .power_grids
-                            .pole_pos_to_grid_id
-                            .get(pole_pos)
-                            .is_some()
-                    },
-                    _ => true,
-                }));
+            assert!(
+                self.world
+                    .get_chunks()
+                    .into_iter()
+                    .flat_map(|chunk| chunk.get_entities())
+                    .all(|e| match e {
+                        Entity::Assembler { info, .. } => {
+                            match info {
+                                AssemblerInfo::UnpoweredNoRecipe => true,
+                                AssemblerInfo::Unpowered(_) => true,
+                                AssemblerInfo::PoweredNoRecipe(_) => true,
+                                AssemblerInfo::Powered { id, .. } => {
+                                    !self.simulation_state.factory.power_grids.power_grids
+                                        [usize::from(id.grid)]
+                                    .is_placeholder
+                                },
+                            }
+                        },
+                        Entity::Beacon {
+                            pole_position: Some((pole_pos, _)),
+                            ..
+                        } => {
+                            self.simulation_state
+                                .factory
+                                .power_grids
+                                .pole_pos_to_grid_id
+                                .get(pole_pos)
+                                .is_some()
+                        },
+                        _ => true,
+                    })
+            );
         }
     }
 
@@ -2102,23 +2108,23 @@ mod tests {
     use std::fs::File;
 
     use crate::{
-        blueprint::{random_blueprint_strategy, random_position, Blueprint},
+        DATA_STORE,
+        blueprint::{Blueprint, random_blueprint_strategy, random_position},
         frontend::{
             action::{
+                ActionType,
                 place_entity::{EntityPlaceOptions, PlaceEntityInfo},
                 set_recipe::SetRecipeInfo,
-                ActionType,
             },
             world::{
-                tile::{AssemblerInfo, Entity, PlaceEntityType},
                 Position,
+                tile::{AssemblerInfo, Entity, PlaceEntityType},
             },
         },
         item::Recipe,
-        power::{power_grid::MAX_POWER_MULT, Watt},
+        power::{Watt, power_grid::MAX_POWER_MULT},
         rendering::app_state::GameState,
         replays::Replay,
-        DATA_STORE,
     };
     use proptest::{
         prelude::{Just, Strategy},
@@ -2355,9 +2361,11 @@ mod tests {
 
         blueprint.apply(Position { x: 1600, y: 1600 }, &mut game_state, &DATA_STORE);
 
-        dbg!(&game_state
-            .world
-            .get_chunk_for_tile(Position { x: 1600, y: 1600 }));
+        dbg!(
+            &game_state
+                .world
+                .get_chunk_for_tile(Position { x: 1600, y: 1600 })
+        );
 
         dbg!(game_state.current_tick);
 

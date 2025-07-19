@@ -10,10 +10,10 @@ use crate::{
 };
 
 use super::{
+    FreeIndex, Inserter, SplitterID,
     belt::{Belt, BeltLenType},
     smart::{BeltInserterInfo, InserterStore, Side, SmartBelt, SpaceOccupiedError},
     splitter::{SplitterSide, SushiSplitter},
-    FreeIndex, Inserter, SplitterID,
 };
 use crate::inserter::FakeUnionStorage;
 
@@ -36,8 +36,8 @@ pub(super) struct SushiBelt<ItemIdxType: WeakIdxTrait> {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub(super) struct SushiInserterStore<ItemIdxType: WeakIdxTrait> {
-    pub(super) inserters: Vec<(Inserter, Item<ItemIdxType>)>,
-    pub(super) offsets: Vec<u16>,
+    pub(super) inserters: Box<[(Inserter, Item<ItemIdxType>)]>,
+    pub(super) offsets: Box<[u16]>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -56,8 +56,8 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             first_free_index: FreeIndex::FreeIndex(0),
             zero_index: 0,
             inserters: SushiInserterStore {
-                inserters: vec![],
-                offsets: vec![],
+                inserters: vec![].into_boxed_slice(),
+                offsets: vec![].into_boxed_slice(),
             },
 
             last_moving_spot: len,
@@ -98,11 +98,19 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
 
         // Insert at i
         let new_inserter_offset = pos - pos_after_last_inserter;
-        self.inserters.offsets.insert(i, new_inserter_offset);
-        self.inserters.inserters.insert(
-            i,
-            (Inserter::In(BeltStorageInserter::new(storage_id)), filter),
-        );
+        take_mut::take(&mut self.inserters.inserters, |ins| {
+            let mut ins = ins.into_vec();
+            ins.insert(
+                i,
+                (Inserter::In(BeltStorageInserter::new(storage_id)), filter),
+            );
+            ins.into_boxed_slice()
+        });
+        take_mut::take(&mut self.inserters.offsets, |offs| {
+            let mut offs = offs.into_vec();
+            offs.insert(i, new_inserter_offset);
+            offs.into_boxed_slice()
+        });
 
         let next = self.inserters.offsets.get_mut(i + 1);
 
@@ -144,11 +152,19 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
 
         // Insert at i
         let new_inserter_offset = pos - pos_after_last_inserter;
-        self.inserters.offsets.insert(i, new_inserter_offset);
-        self.inserters.inserters.insert(
-            i,
-            (Inserter::Out(BeltStorageInserter::new(storage_id)), filter),
-        );
+        take_mut::take(&mut self.inserters.inserters, |ins| {
+            let mut ins = ins.into_vec();
+            ins.insert(
+                i,
+                (Inserter::Out(BeltStorageInserter::new(storage_id)), filter),
+            );
+            ins.into_boxed_slice()
+        });
+        take_mut::take(&mut self.inserters.offsets, |offs| {
+            let mut offs = offs.into_vec();
+            offs.insert(i, new_inserter_offset);
+            offs.into_boxed_slice()
+        });
 
         let next = self.inserters.offsets.get_mut(i + 1);
 
@@ -206,7 +222,9 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             let next_inserter_pos = pos_after_last_inserter + offset;
 
             match next_inserter_pos.cmp(&belt_pos) {
-                std::cmp::Ordering::Greater => panic!("The belt did not have an inserter at position specified to remove inserter from"), // This is the index to insert at
+                std::cmp::Ordering::Greater => panic!(
+                    "The belt did not have an inserter at position specified to remove inserter from"
+                ), // This is the index to insert at
                 std::cmp::Ordering::Equal => break,
 
                 std::cmp::Ordering::Less => {
@@ -260,7 +278,9 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             let next_inserter_pos = pos_after_last_inserter + offset;
 
             match next_inserter_pos.cmp(&pos) {
-                std::cmp::Ordering::Greater => panic!("The belt did not have an inserter at position specified to remove inserter from"), // This is the index to insert at
+                std::cmp::Ordering::Greater => panic!(
+                    "The belt did not have an inserter at position specified to remove inserter from"
+                ), // This is the index to insert at
                 std::cmp::Ordering::Equal => break,
 
                 std::cmp::Ordering::Less => {
@@ -270,8 +290,18 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             }
         }
 
-        self.inserters.inserters.remove(i);
-        let removed = self.inserters.offsets.remove(i);
+        take_mut::take(&mut self.inserters.inserters, |ins| {
+            let mut ins = ins.into_vec();
+            ins.remove(i);
+            ins.into_boxed_slice()
+        });
+        let mut removed = None;
+        take_mut::take(&mut self.inserters.offsets, |offs| {
+            let mut offs = offs.into_vec();
+            removed = Some(offs.remove(i));
+            offs.into_boxed_slice()
+        });
+        let removed = removed.unwrap();
         // The offset after i (which has now shifted left to i)
         self.inserters.offsets[i] += removed + 1;
     }
@@ -380,11 +410,10 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             inserters: InserterStore {
                 // FIXME: Some of these inserters might have a different item than what we are converting to. This will result in crashes and item transmutation
                 inserters: inserters.into_iter().map(|(ins, inserter_item)| {
-                    // FIXME: REENABLE THIS!
-                    // assert_eq!(item, inserter_item, "FIXME: We need to handle inserters which will never work again in smart belts");
-                    if item !=  inserter_item {
-                        error!("We need to handle inserters which will never work again in smart belts!!!!!!!");
-                    }
+                    assert_eq!(item, inserter_item, "FIXME: We need to handle inserters which will never work again in smart belts");
+                    // if item !=  inserter_item {
+                    //     error!("We need to handle inserters which will never work again in smart belts!!!!!!!");
+                    // }
                     ins
                 }).collect(),
                 offsets,
@@ -479,8 +508,20 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             }
         };
 
-        let new_inserters = self.inserters.inserters.split_off(split_at_inserters);
-        let mut new_offsets = self.inserters.offsets.split_off(split_at_inserters);
+        let mut new_inserters = None;
+        take_mut::take(&mut self.inserters.inserters, |ins| {
+            let mut ins = ins.into_vec();
+            new_inserters = Some(ins.split_off(split_at_inserters).into_boxed_slice());
+            ins.into_boxed_slice()
+        });
+        let new_inserters = new_inserters.unwrap();
+        let mut new_offsets = None;
+        take_mut::take(&mut self.inserters.offsets, |offs| {
+            let mut offs = offs.into_vec();
+            new_offsets = Some(offs.split_off(split_at_inserters).into_boxed_slice());
+            offs.into_boxed_slice()
+        });
+        let mut new_offsets = new_offsets.unwrap();
 
         if let Some(offs) = new_offsets.get_mut(0) {
             *offs -= belt_pos_to_break_at
@@ -584,10 +625,20 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         }
 
         let mut new_inserters = front_inserters;
-        new_inserters
-            .inserters
-            .append(&mut back_inserters.inserters);
-        new_inserters.offsets.append(&mut back_inserters.offsets);
+        take_mut::take(&mut new_inserters.inserters, |ins| {
+            let mut ins = ins.into_vec();
+            let mut other = vec![].into_boxed_slice();
+            mem::swap(&mut other, &mut back_inserters.inserters);
+            ins.extend(other.into_vec().drain(..));
+            ins.into_boxed_slice()
+        });
+        take_mut::take(&mut new_inserters.offsets, |offs| {
+            let mut offs = offs.into_vec();
+            let mut other = vec![].into_boxed_slice();
+            mem::swap(&mut other, &mut back_inserters.offsets);
+            offs.extend(other.into_vec().drain(..));
+            offs.into_boxed_slice()
+        });
 
         let new_first_free_index = front_first_free_index;
 
@@ -781,10 +832,14 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
                     }
                 },
                 FreeIndex::FreeIndex(_) => {
-                    unreachable!("FreeIndex should always point at the earliest known empty spot and we know that index 0 WAS an empty spot")
+                    unreachable!(
+                        "FreeIndex should always point at the earliest known empty spot and we know that index 0 WAS an empty spot"
+                    )
                 },
                 FreeIndex::OldFreeIndex(_) => {
-                    unreachable!("OldFreeIndex should always point at the earliest potential empty spot and we know that index 0 WAS an empty spot")
+                    unreachable!(
+                        "OldFreeIndex should always point at the earliest potential empty spot and we know that index 0 WAS an empty spot"
+                    )
                 },
             }
             return;

@@ -3083,6 +3083,17 @@ pub enum InserterInfo<ItemIdxType: WeakIdxTrait> {
 }
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
+pub enum InternalInserterInfo<ItemIdxType: WeakIdxTrait> {
+    NotAttached {
+        end_pos: Position,
+    },
+    Attached {
+        end_pos: Position,
+        info: AttachedInternalInserter<ItemIdxType>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum AttachedInserter<ItemIdxType: WeakIdxTrait> {
     BeltStorage {
         id: BeltTileId<ItemIdxType>,
@@ -3091,6 +3102,19 @@ pub enum AttachedInserter<ItemIdxType: WeakIdxTrait> {
     BeltBelt {
         item: Item<ItemIdxType>,
         inserter: usize,
+    },
+    StorageStorage {
+        item: Item<ItemIdxType>,
+        // TODO: Do I want to store this Identifier of calculate it on demand to save RAM?
+        inserter: InserterIdentifier,
+    },
+}
+
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
+pub enum AttachedInternalInserter<ItemIdxType: WeakIdxTrait> {
+    BeltStorage {
+        id: BeltTileId<ItemIdxType>,
+        belt_pos: u16,
     },
     StorageStorage {
         item: Item<ItemIdxType>,
@@ -3203,7 +3227,15 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     //     ty: u8,
     //     pos: Position,
     //     rotation: Dir,
+    //     drill_id: DrillID,
+    //     internal_inserter: InternalInserterInfo<ItemIdxType>,
     // },
+}
+
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
+enum DrillID {
+    OnlySolo(u32),
+    WithShared(u32),
 }
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]

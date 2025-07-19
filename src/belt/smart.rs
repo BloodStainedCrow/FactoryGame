@@ -1,23 +1,21 @@
 use std::iter::repeat;
 
-use log::trace;
-
 use crate::{
-    inserter::{belt_storage_inserter::BeltStorageInserter, InserterState, MOVETIME},
+    inserter::{InserterState, MOVETIME, belt_storage_inserter::BeltStorageInserter},
     item::{IdxTrait, Item, WeakIdxTrait},
     storage_list::SingleItemStorages,
 };
+use log::trace;
+use std::mem;
 
 use super::{
+    FreeIndex, Inserter, SplitterID,
     belt::{Belt, BeltLenType, NoSpaceError},
     splitter::{SplitterSide, SushiSplitter},
     sushi::{SushiBelt, SushiInserterStore},
-    FreeIndex, Inserter, SplitterID,
 };
 use crate::inserter::FakeUnionStorage;
 use crate::inserter::HAND_SIZE;
-
-type TEST = SmartBelt<u8>;
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -49,8 +47,8 @@ pub struct EmptyBelt {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct InserterStore {
-    pub(super) inserters: Vec<Inserter>,
-    pub(super) offsets: Vec<u16>,
+    pub(super) inserters: Box<[Inserter]>,
+    pub(super) offsets: Box<[u16]>,
 }
 
 #[derive(Debug)]
@@ -81,8 +79,8 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             zero_index: 0,
             locs: vec![false; len.into()].into_boxed_slice(),
             inserters: InserterStore {
-                inserters: vec![],
-                offsets: vec![],
+                inserters: vec![].into_boxed_slice(),
+                offsets: vec![].into_boxed_slice(),
             },
 
             item,
@@ -300,7 +298,10 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
                 }
                 return;
             } else if pos > belt_pos {
-                unreachable!("Tried to set_inserter_storage_id with position {belt_pos}, which does not contain an inserter. {:?}", self.inserters.offsets);
+                unreachable!(
+                    "Tried to set_inserter_storage_id with position {belt_pos}, which does not contain an inserter. {:?}",
+                    self.inserters.offsets
+                );
             }
             pos += 1;
         }
@@ -353,7 +354,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             let next_inserter_pos = pos_after_last_inserter + offset;
 
             match next_inserter_pos.cmp(&pos) {
-                std::cmp::Ordering::Greater => panic!("The belt did not have an inserter at position specified to remove inserter from"), // This is the index to insert at
+                std::cmp::Ordering::Greater => panic!(
+                    "The belt did not have an inserter at position specified to remove inserter from"
+                ), // This is the index to insert at
                 std::cmp::Ordering::Equal => break,
 
                 std::cmp::Ordering::Less => {
@@ -363,8 +366,20 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             }
         }
 
-        let old_inserter = self.inserters.inserters.remove(i);
-        let removed = self.inserters.offsets.remove(i);
+        let mut old_inserter = None;
+        take_mut::take(&mut self.inserters.inserters, |ins| {
+            let mut ins = ins.into_vec();
+            old_inserter = Some(ins.remove(i));
+            ins.into_boxed_slice()
+        });
+        let old_inserter = old_inserter.unwrap();
+        let mut removed = None;
+        take_mut::take(&mut self.inserters.offsets, |offs| {
+            let mut offs = offs.into_vec();
+            removed = Some(offs.remove(i));
+            offs.into_boxed_slice()
+        });
+        let removed = removed.unwrap();
         // The offset after i (which has now shifted left to i)
         if let Some(next_offs) = self.inserters.offsets.get_mut(i) {
             *next_offs += removed + 1
@@ -417,10 +432,16 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
         // Insert at i
         let new_inserter_offset = index - pos_after_last_inserter;
-        self.inserters.offsets.insert(i, new_inserter_offset);
-        self.inserters
-            .inserters
-            .insert(i, Inserter::Out(BeltStorageInserter::new(storage_id)));
+        take_mut::take(&mut self.inserters.inserters, |ins| {
+            let mut ins = ins.into_vec();
+            ins.insert(i, Inserter::Out(BeltStorageInserter::new(storage_id)));
+            ins.into_boxed_slice()
+        });
+        take_mut::take(&mut self.inserters.offsets, |offs| {
+            let mut offs = offs.into_vec();
+            offs.insert(i, new_inserter_offset);
+            offs.into_boxed_slice()
+        });
 
         let next = self.inserters.offsets.get_mut(i + 1);
 
@@ -472,10 +493,16 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
         // Insert at i
         let new_inserter_offset = index - pos_after_last_inserter;
-        self.inserters.offsets.insert(i, new_inserter_offset);
-        self.inserters
-            .inserters
-            .insert(i, Inserter::In(BeltStorageInserter::new(storage_id)));
+        take_mut::take(&mut self.inserters.inserters, |ins| {
+            let mut ins = ins.into_vec();
+            ins.insert(i, Inserter::In(BeltStorageInserter::new(storage_id)));
+            ins.into_boxed_slice()
+        });
+        take_mut::take(&mut self.inserters.offsets, |offs| {
+            let mut offs = offs.into_vec();
+            offs.insert(i, new_inserter_offset);
+            offs.into_boxed_slice()
+        });
 
         let next = self.inserters.offsets.get_mut(i + 1);
 
@@ -623,13 +650,14 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
                     self.locs.len() - usize::from(search_start_index)
                 );
 
-                debug_assert!(self
-                    .locs
-                    .iter()
-                    .skip(self.zero_index as usize)
-                    .chain(self.locs.iter().take(self.zero_index as usize))
-                    .take(usize::from(search_start_index))
-                    .all(|v| *v));
+                debug_assert!(
+                    self.locs
+                        .iter()
+                        .skip(self.zero_index as usize)
+                        .chain(self.locs.iter().take(self.zero_index as usize))
+                        .take(usize::from(search_start_index))
+                        .all(|v| *v)
+                );
 
                 // We now have an iterator which is effectively the belt in the correct order,
                 // starting at search_start_index
@@ -774,10 +802,20 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         }
 
         let mut new_inserters = front_inserters;
-        new_inserters
-            .inserters
-            .append(&mut back_inserters.inserters);
-        new_inserters.offsets.append(&mut back_inserters.offsets);
+        take_mut::take(&mut new_inserters.inserters, |ins| {
+            let mut ins = ins.into_vec();
+            let mut other = vec![].into_boxed_slice();
+            mem::swap(&mut other, &mut back_inserters.inserters);
+            ins.extend(other.into_vec().drain(..));
+            ins.into_boxed_slice()
+        });
+        take_mut::take(&mut new_inserters.offsets, |offs| {
+            let mut offs = offs.into_vec();
+            let mut other = vec![].into_boxed_slice();
+            mem::swap(&mut other, &mut back_inserters.offsets);
+            offs.extend(other.into_vec().drain(..));
+            offs.into_boxed_slice()
+        });
 
         let mut front_locs_vec = Vec::from(front_locs);
 
@@ -948,8 +986,20 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             }
         };
 
-        let new_inserters = self.inserters.inserters.split_off(split_at_inserters);
-        let mut new_offsets = self.inserters.offsets.split_off(split_at_inserters);
+        let mut new_inserters = None;
+        take_mut::take(&mut self.inserters.inserters, |ins| {
+            let mut ins = ins.into_vec();
+            new_inserters = Some(ins.split_off(split_at_inserters).into_boxed_slice());
+            ins.into_boxed_slice()
+        });
+        let new_inserters = new_inserters.unwrap();
+        let mut new_offsets = None;
+        take_mut::take(&mut self.inserters.offsets, |offs| {
+            let mut offs = offs.into_vec();
+            new_offsets = Some(offs.split_off(split_at_inserters).into_boxed_slice());
+            offs.into_boxed_slice()
+        });
+        let mut new_offsets = new_offsets.unwrap();
 
         if let Some(offs) = new_offsets.get_mut(0) {
             // TODO: Make sure this is correct!
@@ -1151,10 +1201,14 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
                     }
                 },
                 FreeIndex::FreeIndex(_) => {
-                    unreachable!("FreeIndex should always point at the earliest known empty spot and we know that index 0 WAS an empty spot")
+                    unreachable!(
+                        "FreeIndex should always point at the earliest known empty spot and we know that index 0 WAS an empty spot"
+                    )
                 },
                 FreeIndex::OldFreeIndex(_) => {
-                    unreachable!("OldFreeIndex should always point at the earliest potential empty spot and we know that index 0 WAS an empty spot")
+                    unreachable!(
+                        "OldFreeIndex should always point at the earliest potential empty spot and we know that index 0 WAS an empty spot"
+                    )
                 },
             }
             return;

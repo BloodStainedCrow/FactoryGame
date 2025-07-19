@@ -1,31 +1,31 @@
-use crate::frontend::action::belt_placement::{expected_belt_state, BeltState};
+use crate::frontend::action::belt_placement::{BeltState, expected_belt_state};
 use crate::rendering::Corner;
 use crate::{
+    TICKS_PER_SECOND_LOGIC,
     assembler::AssemblerOnclickInfo,
-    belt::{belt::BeltLenType, splitter::SPLITTER_BELT_LEN, BeltTileId},
+    belt::{BeltTileId, belt::BeltLenType, splitter::SPLITTER_BELT_LEN},
     blueprint::Blueprint,
-    data::{factorio_1_1::get_raw_data_test, DataStore, ItemRecipeDir},
+    data::{DataStore, ItemRecipeDir, factorio_1_1::get_raw_data_test},
     frontend::{
         action::{
+            ActionType,
             action_state_machine::{
                 ActionStateMachine, ActionStateMachineState, HeldObject, StatisticsPanel,
                 WIDTH_PER_LEVEL,
             },
             set_recipe::SetRecipeInfo,
-            ActionType,
         },
         world::{
-            tile::{AssemblerInfo, Dir, Entity, BELT_LEN_PER_TILE, CHUNK_SIZE, CHUNK_SIZE_FLOAT},
             Position,
+            tile::{AssemblerInfo, BELT_LEN_PER_TILE, CHUNK_SIZE, CHUNK_SIZE_FLOAT, Dir, Entity},
         },
     },
-    item::{usize_from, IdxTrait, Item, Recipe},
-    power::{power_grid::MAX_POWER_MULT, Joule, Watt},
-    rendering::map_view::{self, create_map_textures_if_needed, MapViewUpdate},
+    item::{IdxTrait, Item, Recipe, usize_from},
+    power::{Joule, Watt, power_grid::MAX_POWER_MULT},
+    rendering::map_view::{self, MapViewUpdate, create_map_textures_if_needed},
     statistics::{
         NUM_SAMPLES_AT_INTERVALS, NUM_X_AXIS_TICKS, RELATIVE_INTERVAL_MULTS, TIMESCALE_LEGEND,
     },
-    TICKS_PER_SECOND_LOGIC,
 };
 use eframe::egui::{
     self, Align2, Color32, ComboBox, Context, CornerRadius, Label, Layout, ProgressBar, Stroke, Ui,
@@ -36,17 +36,24 @@ use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
 use log::{info, trace};
 use parking_lot::MutexGuard;
+use std::cmp::max;
+use std::fs::File;
+use std::sync::{LazyLock, OnceLock};
 use std::{
-    cmp::{min, Ordering},
+    cmp::{Ordering, min},
     iter::successors,
     mem,
     time::Duration,
 };
 use tilelib::types::{DrawInstance, Layer, RendererTrait};
 
-use super::{app_state::GameState, TextureAtlas};
+use super::{TextureAtlas, app_state::GameState};
 
 const BELT_ANIM_SPEED: f32 = 1.0 / (BELT_LEN_PER_TILE as f32);
+
+pub const SWITCH_TO_MAPVIEW_TILES: f32 = if cfg!(debug_assertions) { 200.0 } else { 500.0 };
+pub const SWITCH_TO_MAPVIEW_ZOOM_LEVEL: LazyLock<f32> =
+    LazyLock::new(|| ((SWITCH_TO_MAPVIEW_TILES - 1.0) / WIDTH_PER_LEVEL as f32).log(1.5));
 
 // TODO: I found a weird performance cliff while zooming out, jumping from ~10ms to 20ms suddenly
 //       Investigate!
@@ -95,23 +102,25 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     let mut range_layer = Layer::square_tile_grid(tilesize, ar);
 
-    let player_pos = state_machine.local_player_pos;
+    let camera_pos = match &state_machine.map_view_info {
+        Some(map_view_pos) => *map_view_pos,
+        None => state_machine.local_player_pos,
+    };
 
     let player_chunk = (
-        (player_pos.0 / CHUNK_SIZE_FLOAT) as i32,
-        (player_pos.1 / CHUNK_SIZE_FLOAT) as i32,
+        (camera_pos.0 / CHUNK_SIZE_FLOAT) as i32,
+        (camera_pos.1 / CHUNK_SIZE_FLOAT) as i32,
     );
 
-    const SWITCH_TO_MAPVIEW: f32 = if cfg!(debug_assertions) { 200.0 } else { 500.0 };
-    if num_tiles_across_screen_horizontal > SWITCH_TO_MAPVIEW {
+    if num_tiles_across_screen_horizontal > SWITCH_TO_MAPVIEW_TILES {
         mem::drop(state_machine);
 
         create_map_textures_if_needed(
             &game_state.world,
             renderer,
             Position {
-                x: player_pos.0 as i32,
-                y: player_pos.1 as i32,
+                x: camera_pos.0 as i32,
+                y: camera_pos.1 as i32,
             },
             num_tiles_across_screen_horizontal as usize,
             num_tiles_across_screen_vertical as usize,
@@ -122,8 +131,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         map_view::render_map_view(
             renderer,
             Position {
-                x: player_pos.0 as i32,
-                y: player_pos.1 as i32,
+                x: camera_pos.0 as i32,
+                y: camera_pos.1 as i32,
             },
             num_tiles_across_screen_horizontal,
             num_tiles_across_screen_vertical,
@@ -131,7 +140,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             num_tiles_across_screen_vertical as usize,
             tilesize,
             ar,
-            player_pos,
+            camera_pos,
         );
         return;
     }
@@ -145,9 +154,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             ..=((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
         {
             let chunk_draw_offs = (
-                x_offs as f32 * CHUNK_SIZE_FLOAT - player_pos.0 % CHUNK_SIZE_FLOAT
+                x_offs as f32 * CHUNK_SIZE_FLOAT - camera_pos.0 % CHUNK_SIZE_FLOAT
                     + (0.5 * num_tiles_across_screen_horizontal),
-                y_offs as f32 * CHUNK_SIZE_FLOAT - player_pos.1 % CHUNK_SIZE_FLOAT
+                y_offs as f32 * CHUNK_SIZE_FLOAT - camera_pos.1 % CHUNK_SIZE_FLOAT
                     + (0.5 * num_tiles_across_screen_vertical),
             );
 
@@ -1015,9 +1024,63 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     }
 
     match &state_machine.state {
+        ActionStateMachineState::CtrlCPressed => {},
+        ActionStateMachineState::CopyDragInProgress { start_pos } => {
+            let end_pos = ActionStateMachine::<ItemIdxType, RecipeIdxType>::player_mouse_to_tile(
+                state_machine.zoom_level,
+                camera_pos,
+                state_machine.current_mouse_pos,
+            );
+
+            let bottom_right = Position {
+                x: max(start_pos.x, end_pos.x),
+                y: max(start_pos.y, end_pos.y),
+            };
+
+            let base_pos = Position {
+                x: min(start_pos.x, end_pos.x),
+                y: min(start_pos.y, end_pos.y),
+            };
+
+            entity_overlay_layer.draw_sprite(
+                &texture_atlas.dark_square,
+                DrawInstance {
+                    position: [
+                        base_pos.x as f32 - camera_pos.0 + num_tiles_across_screen_horizontal / 2.0,
+                        base_pos.y as f32 - camera_pos.1 + num_tiles_across_screen_vertical / 2.0,
+                    ],
+                    size: [
+                        (bottom_right.x - base_pos.x) as f32,
+                        (bottom_right.y - base_pos.y) as f32,
+                    ],
+                    animation_frame: 0,
+                },
+            );
+        },
+
         crate::frontend::action::action_state_machine::ActionStateMachineState::Idle => {},
         crate::frontend::action::action_state_machine::ActionStateMachineState::Holding(e) => {
             match e {
+                crate::frontend::action::action_state_machine::HeldObject::Blueprint(bp) => {
+                    let Position { x, y } =
+                        ActionStateMachine::<ItemIdxType, RecipeIdxType>::player_mouse_to_tile(
+                            state_machine.zoom_level,
+                            camera_pos,
+                            state_machine.current_mouse_pos,
+                        );
+
+                    bp.draw(
+                        (
+                            x as f32 + num_tiles_across_screen_horizontal / 2.0,
+                            y as f32 + num_tiles_across_screen_vertical / 2.0,
+                        ),
+                        camera_pos,
+                        &mut entity_overlay_layer,
+                        texture_atlas,
+                        data_store,
+                    );
+                },
+
                 crate::frontend::action::action_state_machine::HeldObject::Tile(floor_tile) => {
                     // TODO
                 },
@@ -1031,9 +1094,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         ];
                         texture_atlas.assembler.draw(
                             [
-                                pos.x as f32 - state_machine.local_player_pos.0
+                                pos.x as f32 - camera_pos.0
                                     + num_tiles_across_screen_horizontal / 2.0,
-                                pos.y as f32 - state_machine.local_player_pos.1
+                                pos.y as f32 - camera_pos.1
                                     + num_tiles_across_screen_vertical / 2.0,
                             ],
                             size,
@@ -1051,9 +1114,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             &texture_atlas.inserter[*dir],
                             DrawInstance {
                                 position: [
-                                    pos.x as f32 - state_machine.local_player_pos.0
+                                    pos.x as f32 - camera_pos.0
                                         + num_tiles_across_screen_horizontal / 2.0,
-                                    pos.y as f32 - state_machine.local_player_pos.1
+                                    pos.y as f32 - camera_pos.1
                                         + num_tiles_across_screen_vertical / 2.0,
                                 ],
                                 size: [size[0].into(), size[1].into()],
@@ -1065,9 +1128,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         let size: [u16; 2] = [1, 1];
                         texture_atlas.belt[*direction].draw(
                             [
-                                pos.x as f32 - state_machine.local_player_pos.0
+                                pos.x as f32 - camera_pos.0
                                     + num_tiles_across_screen_horizontal / 2.0,
-                                pos.y as f32 - state_machine.local_player_pos.1
+                                pos.y as f32 - camera_pos.1
                                     + num_tiles_across_screen_vertical / 2.0,
                             ],
                             size,
@@ -1085,9 +1148,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         // TODO:
                         texture_atlas.belt[*direction].draw(
                             [
-                                pos.x as f32 - state_machine.local_player_pos.0
+                                pos.x as f32 - camera_pos.0
                                     + num_tiles_across_screen_horizontal / 2.0,
-                                pos.y as f32 - state_machine.local_player_pos.1
+                                pos.y as f32 - camera_pos.1
                                     + num_tiles_across_screen_vertical / 2.0,
                             ],
                             size,
@@ -1102,9 +1165,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         ];
                         texture_atlas.power_pole.draw(
                             [
-                                pos.x as f32 - state_machine.local_player_pos.0
+                                pos.x as f32 - camera_pos.0
                                     + num_tiles_across_screen_horizontal / 2.0,
-                                pos.y as f32 - state_machine.local_player_pos.1
+                                pos.y as f32 - camera_pos.1
                                     + num_tiles_across_screen_vertical / 2.0,
                             ],
                             size,
@@ -1118,11 +1181,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             &texture_atlas.dark_square,
                             DrawInstance {
                                 position: [
-                                    (pos.x as f32 - power_range as f32)
-                                        - state_machine.local_player_pos.0
+                                    (pos.x as f32 - power_range as f32) - camera_pos.0
                                         + num_tiles_across_screen_horizontal / 2.0,
-                                    (pos.y as f32 - power_range as f32)
-                                        - state_machine.local_player_pos.1
+                                    (pos.y as f32 - power_range as f32) - camera_pos.1
                                         + num_tiles_across_screen_vertical / 2.0,
                                 ],
                                 size: [
@@ -1146,9 +1207,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         let size = [size.0, size.1];
                         texture_atlas.chest.draw(
                             [
-                                pos.x as f32 - state_machine.local_player_pos.0
+                                pos.x as f32 - camera_pos.0
                                     + num_tiles_across_screen_horizontal / 2.0,
-                                pos.y as f32 - state_machine.local_player_pos.1
+                                pos.y as f32 - camera_pos.1
                                     + num_tiles_across_screen_vertical / 2.0,
                             ],
                             size,
@@ -1162,9 +1223,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             &texture_atlas.default,
                             DrawInstance {
                                 position: [
-                                    pos.x as f32 - state_machine.local_player_pos.0
+                                    pos.x as f32 - camera_pos.0
                                         + num_tiles_across_screen_horizontal / 2.0,
-                                    pos.y as f32 - state_machine.local_player_pos.1
+                                    pos.y as f32 - camera_pos.1
                                         + num_tiles_across_screen_vertical / 2.0,
                                 ],
                                 size: [size[0] as f32, size[1] as f32],
@@ -1178,9 +1239,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                         texture_atlas.lab.draw(
                             [
-                                pos.x as f32 - state_machine.local_player_pos.0
+                                pos.x as f32 - camera_pos.0
                                     + num_tiles_across_screen_horizontal / 2.0,
-                                pos.y as f32 - state_machine.local_player_pos.1
+                                pos.y as f32 - camera_pos.1
                                     + num_tiles_across_screen_vertical / 2.0,
                             ],
                             size,
@@ -1194,9 +1255,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                         texture_atlas.beacon.draw(
                             [
-                                pos.x as f32 - state_machine.local_player_pos.0
+                                pos.x as f32 - camera_pos.0
                                     + num_tiles_across_screen_horizontal / 2.0,
-                                pos.y as f32 - state_machine.local_player_pos.1
+                                pos.y as f32 - camera_pos.1
                                     + num_tiles_across_screen_vertical / 2.0,
                             ],
                             size,
@@ -1211,10 +1272,10 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             DrawInstance {
                                 position: [
                                     (pos.x as f32 - ((effect_range.0 - size[0]) / 2) as f32)
-                                        - state_machine.local_player_pos.0
+                                        - camera_pos.0
                                         + num_tiles_across_screen_horizontal / 2.0,
                                     (pos.y as f32 - ((effect_range.1 - size[1]) / 2) as f32)
-                                        - state_machine.local_player_pos.1
+                                        - camera_pos.1
                                         + num_tiles_across_screen_vertical / 2.0,
                                 ],
                                 size: [effect_range.0 as f32, effect_range.1 as f32],
@@ -1238,9 +1299,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         // TODO:
                         texture_atlas.chest.draw(
                             [
-                                pos.x as f32 - state_machine.local_player_pos.0
+                                pos.x as f32 - camera_pos.0
                                     + num_tiles_across_screen_horizontal / 2.0,
-                                pos.y as f32 - state_machine.local_player_pos.1
+                                pos.y as f32 - camera_pos.1
                                     + num_tiles_across_screen_vertical / 2.0,
                             ],
                             size,
@@ -1256,10 +1317,10 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             DrawInstance {
                                 position: [
                                     (pos.x as f32 - ((mining_range[0] - size[0]) / 2) as f32)
-                                        - state_machine.local_player_pos.0
+                                        - camera_pos.0
                                         + num_tiles_across_screen_horizontal / 2.0,
                                     (pos.y as f32 - ((mining_range[1] - size[1]) / 2) as f32)
-                                        - state_machine.local_player_pos.1
+                                        - camera_pos.1
                                         + num_tiles_across_screen_vertical / 2.0,
                                 ],
                                 size: [mining_range[0] as f32, mining_range[1] as f32],
@@ -1295,16 +1356,16 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         .iter()
         .enumerate()
         .filter(|(_, p)| p.visible)
-        .filter(|(i, _)| *i != state_machine.my_player_id as usize)
+        .filter(|(i, _)| {
+            *i != state_machine.my_player_id as usize || state_machine.map_view_info.is_some()
+        })
     {
         player_layer.draw_sprite(
             &texture_atlas.player,
             DrawInstance {
                 position: [
-                    player.pos.0 - state_machine.local_player_pos.0
-                        + num_tiles_across_screen_horizontal / 2.0,
-                    player.pos.1 - state_machine.local_player_pos.1
-                        + num_tiles_across_screen_vertical / 2.0,
+                    player.pos.0 - camera_pos.0 + num_tiles_across_screen_horizontal / 2.0,
+                    player.pos.1 - camera_pos.1 + num_tiles_across_screen_vertical / 2.0,
                 ],
                 size: [1.0, 2.0],
                 animation_frame: 0,
@@ -1313,27 +1374,25 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         info!(
             "Rendering other player {} at {:?}",
             player_id,
-            [
-                player.pos.0 - state_machine.local_player_pos.0,
-                player.pos.1 - state_machine.local_player_pos.1,
-            ]
+            [player.pos.0 - camera_pos.0, player.pos.1 - camera_pos.1,]
         );
     }
 
-    player_layer.draw_sprite(
-        &texture_atlas.player,
-        DrawInstance {
-            // Always in the middle
-            position: [
-                num_tiles_across_screen_horizontal / 2.0,
-                num_tiles_across_screen_vertical / 2.0,
-            ],
-            size: [1.0, 2.0],
-            animation_frame: 0,
-        },
-    );
-
-    trace!("Rendering self at {:?}", state_machine.local_player_pos);
+    if state_machine.map_view_info.is_none() {
+        player_layer.draw_sprite(
+            &texture_atlas.player,
+            DrawInstance {
+                // Always in the middle
+                position: [
+                    num_tiles_across_screen_horizontal / 2.0,
+                    num_tiles_across_screen_vertical / 2.0,
+                ],
+                size: [1.0, 2.0],
+                animation_frame: 0,
+            },
+        );
+        trace!("Rendering self at {:?}", state_machine.local_player_pos);
+    }
 
     renderer.draw(&tile_layer);
 
@@ -1360,7 +1419,10 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     state_machine: &mut ActionStateMachine<ItemIdxType, RecipeIdxType>,
     game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-) -> Result<impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>, EscapeMenuOptions> {
+) -> Result<
+    impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>,
+    EscapeMenuOptions,
+> {
     let mut actions = vec![];
 
     if state_machine.escape_menu_open {
@@ -1380,6 +1442,21 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             }
         }
     }
+
+    Window::new("Import BP")
+        .default_open(false)
+        .show(ctx, |ui| {
+            if ui.button("Import").clicked() {
+                if let Some(path) = rfd::FileDialog::new().pick_file() {
+                    if let Ok(file) = File::open(path) {
+                        if let Ok(bp) = ron::de::from_reader(file) {
+                            state_machine.state =
+                                ActionStateMachineState::Holding(HeldObject::Blueprint(bp));
+                        }
+                    }
+                }
+            }
+        });
 
     Window::new("DEBUG USE WITH CARE")
         .default_open(false)
@@ -1420,7 +1497,15 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     puffin_egui::profiler_window(ctx);
 
+    ctx.set_cursor_icon(egui::CursorIcon::Default);
     match &state_machine.state {
+        ActionStateMachineState::CtrlCPressed => {
+            ctx.set_cursor_icon(egui::CursorIcon::Copy);
+        },
+        ActionStateMachineState::CopyDragInProgress { start_pos } => {
+            ctx.set_cursor_icon(egui::CursorIcon::Copy);
+        },
+
         crate::frontend::action::action_state_machine::ActionStateMachineState::Idle => {},
         crate::frontend::action::action_state_machine::ActionStateMachineState::Holding(
             held_object,

@@ -5,7 +5,7 @@ use crate::frontend::world::tile::{Dir, UndergroundDir};
 
 pub mod app_state;
 pub mod eframe_app;
-mod render_world;
+pub mod render_world;
 pub mod window;
 
 pub mod map_view;
@@ -166,7 +166,7 @@ pub struct TextureAtlas {
 
     lab: EntitySprite,
 
-    dark_square: Sprite,
+    pub dark_square: Sprite,
 
     underground: enum_map::EnumMap<Dir, enum_map::EnumMap<UndergroundDir, EntitySprite>>,
 
@@ -308,10 +308,6 @@ fn texture_atlas() -> TextureAtlas {
 
 #[cfg(feature = "graphics")]
 fn texture_atlas() -> TextureAtlas {
-    for i in 0..8 {
-        dbg!(Corner::from_usize(i));
-    }
-
     TextureAtlas {
         outside_world: sprite_from_path!("temp_assets/outside_world.png", 1),
         blue: sprite_from_path!("temp_assets/blue.png", 1),

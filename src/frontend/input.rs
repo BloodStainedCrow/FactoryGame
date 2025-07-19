@@ -11,6 +11,8 @@ pub enum Input {
     KeyPress(Key),
     KeyRelease(Key),
 
+    Copy,
+
     MouseScoll(MouseScrollDelta),
 
     UnknownInput(UnknownInput),
@@ -56,6 +58,7 @@ impl TryFrom<egui::Event> for Input {
                 let key = EguiInputState {
                     key,
                     shift: modifiers.shift,
+                    ctrl: modifiers.ctrl,
                 };
 
                 if pressed {
@@ -102,6 +105,7 @@ impl TryFrom<egui::Event> for Input {
                 )),
                 eframe::egui::MouseWheelUnit::Page => Err(()),
             },
+            egui::Event::Copy => Ok(Self::Copy),
 
             _ => Err(()),
         };
@@ -120,6 +124,7 @@ pub enum Key {
     Q,
     P,
     T,
+    M,
     Key0,
     Key1,
     Key2,
@@ -170,33 +175,35 @@ impl TryFrom<winit::keyboard::KeyCode> for Key {
 struct EguiInputState {
     key: egui::Key,
     shift: bool,
+    ctrl: bool,
 }
 
 impl TryFrom<EguiInputState> for Key {
     type Error = ();
 
     fn try_from(value: EguiInputState) -> Result<Self, Self::Error> {
-        let ret = match (value.key, value.shift) {
-            (egui::Key::W, _) => Key::W,
-            (egui::Key::A, _) => Key::A,
-            (egui::Key::S, _) => Key::S,
-            (egui::Key::D, _) => Key::D,
-            (egui::Key::Q, _) => Key::Q,
-            (egui::Key::R, false) => Key::R,
-            (egui::Key::R, true) => Key::ShiftR,
-            (egui::Key::T, _) => Key::T,
-            (egui::Key::P, _) => Key::P,
-            (egui::Key::Num0, _) => Key::Key0,
-            (egui::Key::Num1, _) => Key::Key1,
-            (egui::Key::Num2, _) => Key::Key2,
-            (egui::Key::Num3, _) => Key::Key3,
-            (egui::Key::Num4, _) => Key::Key4,
-            (egui::Key::Num5, _) => Key::Key5,
-            (egui::Key::Num6, _) => Key::Key6,
-            (egui::Key::Num7, _) => Key::Key7,
-            (egui::Key::Num8, _) => Key::Key8,
-            (egui::Key::Num9, _) => Key::Key9,
-            (egui::Key::Escape, _) => Key::Esc,
+        let ret = match (value.key, value.shift, value.ctrl) {
+            (egui::Key::W, _, false) => Key::W,
+            (egui::Key::A, _, false) => Key::A,
+            (egui::Key::S, _, false) => Key::S,
+            (egui::Key::D, _, false) => Key::D,
+            (egui::Key::Q, _, false) => Key::Q,
+            (egui::Key::R, false, false) => Key::R,
+            (egui::Key::R, true, false) => Key::ShiftR,
+            (egui::Key::T, _, false) => Key::T,
+            (egui::Key::P, _, false) => Key::P,
+            (egui::Key::M, _, false) => Key::M,
+            (egui::Key::Num0, _, false) => Key::Key0,
+            (egui::Key::Num1, _, false) => Key::Key1,
+            (egui::Key::Num2, _, false) => Key::Key2,
+            (egui::Key::Num3, _, false) => Key::Key3,
+            (egui::Key::Num4, _, false) => Key::Key4,
+            (egui::Key::Num5, _, false) => Key::Key5,
+            (egui::Key::Num6, _, false) => Key::Key6,
+            (egui::Key::Num7, _, false) => Key::Key7,
+            (egui::Key::Num8, _, false) => Key::Key8,
+            (egui::Key::Num9, _, false) => Key::Key9,
+            (egui::Key::Escape, _, false) => Key::Esc,
 
             _ => return Err(()),
         };
