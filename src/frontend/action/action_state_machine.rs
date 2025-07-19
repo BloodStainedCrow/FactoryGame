@@ -60,7 +60,7 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
 
     pub current_mouse_pos: (f32, f32),
     current_held_keys: HashSet<Key>,
-    pub state: ActionStateMachineState<ItemIdxType, RecipeIdxType>,
+    pub state: ActionStateMachineState<ItemIdxType>,
 
     pub escape_menu_open: bool,
 
@@ -103,10 +103,10 @@ impl Default for StatisticsPanel {
 }
 
 #[derive(Debug)]
-pub enum ActionStateMachineState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+pub enum ActionStateMachineState<ItemIdxType: WeakIdxTrait> {
     Idle,
     Deconstructing(Position, u32),
-    Holding(HeldObject<ItemIdxType, RecipeIdxType>),
+    Holding(HeldObject<ItemIdxType>),
     Viewing(Position),
 
     CtrlCPressed,
@@ -114,12 +114,12 @@ pub enum ActionStateMachineState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakI
 }
 
 #[derive(Debug)]
-pub enum HeldObject<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+pub enum HeldObject<ItemIdxType: WeakIdxTrait> {
     Tile(FloorTile),
     // TODO: PlaceEntityType is not quite right for this case
     Entity(PlaceEntityType<ItemIdxType>),
 
-    Blueprint(Blueprint<ItemIdxType, RecipeIdxType>),
+    Blueprint(Blueprint),
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
@@ -140,8 +140,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             statistics_panel_open: false,
             technology_panel_open: true,
             statistics_panel: StatisticsPanel::default(),
-            production_filters: vec![true; data_store.item_names.len()],
-            consumption_filters: vec![true; data_store.item_names.len()],
+            production_filters: vec![true; data_store.item_display_names.len()],
+            consumption_filters: vec![true; data_store.item_display_names.len()],
 
             current_mouse_pos: (0.0, 0.0),
             current_held_keys: HashSet::new(),
@@ -191,7 +191,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         if let Some(copy_info) = &self.copy_info {
                             let pos = Self::player_mouse_to_tile(
                                 self.zoom_level,
-                                self.local_player_pos,
+                                self.map_view_info.unwrap_or(self.local_player_pos),
                                 self.current_mouse_pos,
                             );
                             match world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next() { Some(e) => {
@@ -223,7 +223,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 // TODO: Check if we are hovering over something that can be opened
                                 let pos = Self::player_mouse_to_tile(
                                     self.zoom_level,
-                                    self.local_player_pos,
+                                    self.map_view_info.unwrap_or(self.local_player_pos),
                                     self.current_mouse_pos,
                                 );
 
@@ -238,7 +238,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 self.state = ActionStateMachineState::CopyDragInProgress {
                                     start_pos: Self::player_mouse_to_tile(
                                         self.zoom_level,
-                                        self.local_player_pos,
+                                        self.map_view_info.unwrap_or(self.local_player_pos),
                                         self.current_mouse_pos,
                                     )
                                 };
@@ -258,9 +258,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                     HeldObject::Blueprint(bp) => {
                                         bp.actions_with_base_pos(Self::player_mouse_to_tile(
                                             self.zoom_level,
-                                            self.local_player_pos,
+                                            self.map_view_info.unwrap_or(self.local_player_pos),
                                             self.current_mouse_pos,
-                                        )).collect()
+                                        ), data_store).collect()
                                     },
 
                                     HeldObject::Tile(floor_tile) => {
@@ -270,7 +270,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                                 position: PositionInfo::Single {
                                                     pos: Self::player_mouse_to_tile(
                                                         self.zoom_level,
-                                                        self.local_player_pos,
+                                                        self.map_view_info.unwrap_or(self.local_player_pos),
                                                         self.current_mouse_pos,
                                                     ),
                                                 },
@@ -289,7 +289,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                                 UndergroundDir::Exit => *underground_dir = UndergroundDir::Entrance,
                                             }
 
-                                            dbg!(underground_dir);
                                         }
 
                                         ret
@@ -299,7 +298,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             ActionStateMachineState::Viewing(Position { x, y }) => {
                                 let pos = Self::player_mouse_to_tile(
                                     self.zoom_level,
-                                    self.local_player_pos,
+                                    self.map_view_info.unwrap_or(self.local_player_pos),
                                     self.current_mouse_pos,
                                 );
 
@@ -322,7 +321,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     if shift {
                         let pos = Self::player_mouse_to_tile(
                             self.zoom_level,
-                            self.local_player_pos,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
                             self.current_mouse_pos,
                         );
                         if let Some(e) = world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next() {
@@ -356,7 +355,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             ActionStateMachineState::Idle => {
                                 let pos = Self::player_mouse_to_tile(
                                     self.zoom_level,
-                                    self.local_player_pos,
+                                    self.map_view_info.unwrap_or(self.local_player_pos),
                                     self.current_mouse_pos,
                                 );
                                 if world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next().is_some() {
@@ -394,7 +393,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         ActionStateMachineState::CopyDragInProgress { start_pos } => {
                             let end_pos = Self::player_mouse_to_tile(
                                 self.zoom_level,
-                                self.local_player_pos,
+                                self.map_view_info.unwrap_or(self.local_player_pos),
                                 self.current_mouse_pos,
                             );
 
@@ -431,73 +430,73 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                                             } => {
                                                                 *position = Self::player_mouse_to_tile(
                                                                     self.zoom_level,
-                                                                    self.local_player_pos,
+                                                                    self.map_view_info.unwrap_or(self.local_player_pos),
                                                                     self.current_mouse_pos,
                                                                 );
                                                             },
                                 PlaceEntityType::Inserter { pos, dir: _, filter: _ } => {
                                                                 *pos = Self::player_mouse_to_tile(
                                                                     self.zoom_level,
-                                                                    self.local_player_pos,
+                                                                    self.map_view_info.unwrap_or(self.local_player_pos),
                                                                     self.current_mouse_pos,
                                                                 );
                                                             },
                                 PlaceEntityType::Belt { pos, ty: _, direction: _ } => {
                                                                 *pos = Self::player_mouse_to_tile(
                                                                     self.zoom_level,
-                                                                    self.local_player_pos,
+                                                                    self.map_view_info.unwrap_or(self.local_player_pos),
                                                                     self.current_mouse_pos,
                                                                 );
                                                             },
                                                     PlaceEntityType::Underground { pos, ty: _, direction: _, underground_dir: _ } => {
                                                         *pos = Self::player_mouse_to_tile(
                                                             self.zoom_level,
-                                                            self.local_player_pos,
+                                                            self.map_view_info.unwrap_or(self.local_player_pos),
                                                             self.current_mouse_pos,
                                                         );
                                                     },
                                 PlaceEntityType::PowerPole { pos, ty: _ } => {
                                                                 *pos = Self::player_mouse_to_tile(
                                                                     self.zoom_level,
-                                                                    self.local_player_pos,
+                                                                    self.map_view_info.unwrap_or(self.local_player_pos),
                                                                     self.current_mouse_pos,
                                                                 );
                                                             },
                                 PlaceEntityType::Splitter { pos, direction: _, ty: _, in_mode: _, out_mode: _ } => {
                                                                 *pos = Self::player_mouse_to_tile(
                                                                     self.zoom_level,
-                                                                    self.local_player_pos,
+                                                                    self.map_view_info.unwrap_or(self.local_player_pos),
                                                                     self.current_mouse_pos,
                                                                 );
                                                             },
                                 PlaceEntityType::Chest { pos, .. } => {*pos = Self::player_mouse_to_tile(
                                                                 self.zoom_level,
-                                                                self.local_player_pos,
+                                                                self.map_view_info.unwrap_or(self.local_player_pos),
                                                                 self.current_mouse_pos,
                                                             );},
                                 PlaceEntityType::SolarPanel { pos, ty: _ } => {*pos = Self::player_mouse_to_tile(
                                                                 self.zoom_level,
-                                                                self.local_player_pos,
+                                                                self.map_view_info.unwrap_or(self.local_player_pos),
                                                                 self.current_mouse_pos,
                                                             );},
                                 PlaceEntityType::Lab { pos, ty: _ } => {*pos = Self::player_mouse_to_tile(
                                                                 self.zoom_level,
-                                                                self.local_player_pos,
+                                                                self.map_view_info.unwrap_or(self.local_player_pos),
                                                                 self.current_mouse_pos,
                                                             );},
                                 PlaceEntityType::Beacon { ty: _, pos } => {*pos = Self::player_mouse_to_tile(
                                     self.zoom_level,
-                                    self.local_player_pos,
+                                    self.map_view_info.unwrap_or(self.local_player_pos),
                                     self.current_mouse_pos,
                                 );},
                                 PlaceEntityType::FluidTank { ty: _, pos, rotation: _  } => {*pos = Self::player_mouse_to_tile(
                                     self.zoom_level,
-                                    self.local_player_pos,
+                                    self.map_view_info.unwrap_or(self.local_player_pos),
                                     self.current_mouse_pos,
                                 );},
                                 PlaceEntityType::MiningDrill { ty: _, pos, rotation: _  } => {*pos = Self::player_mouse_to_tile(
                                     self.zoom_level,
-                                    self.local_player_pos,
+                                    self.map_view_info.unwrap_or(self.local_player_pos),
                                     self.current_mouse_pos,
                                 );},
                             },
@@ -582,7 +581,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     .get_entities_colliding_with(
                         Self::player_mouse_to_tile(
                             self.zoom_level,
-                            self.local_player_pos,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
                             self.current_mouse_pos,
                         ),
                         (1, 1),
@@ -596,7 +595,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             PlaceEntityType::Assembler {
                                 pos: Self::player_mouse_to_tile(
                                     self.zoom_level,
-                                    self.local_player_pos,
+                                    self.map_view_info.unwrap_or(self.local_player_pos),
                                     self.current_mouse_pos,
                                 ),
                                 ty: *ty,
@@ -608,7 +607,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             PlaceEntityType::Beacon {
                                 pos: Self::player_mouse_to_tile(
                                     self.zoom_level,
-                                    self.local_player_pos,
+                                    self.map_view_info.unwrap_or(self.local_player_pos),
                                     self.current_mouse_pos,
                                 ),
                                 ty: *ty,
@@ -620,7 +619,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             PlaceEntityType::Belt {
                                 pos: Self::player_mouse_to_tile(
                                     self.zoom_level,
-                                    self.local_player_pos,
+                                    self.map_view_info.unwrap_or(self.local_player_pos),
                                     self.current_mouse_pos,
                                 ),
                                 ty: *ty,
@@ -633,7 +632,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             PlaceEntityType::Chest {
                                 pos: Self::player_mouse_to_tile(
                                     self.zoom_level,
-                                    self.local_player_pos,
+                                    self.map_view_info.unwrap_or(self.local_player_pos),
                                     self.current_mouse_pos,
                                 ),
                                 ty: *ty,
@@ -648,7 +647,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             PlaceEntityType::Inserter {
                                 pos: Self::player_mouse_to_tile(
                                     self.zoom_level,
-                                    self.local_player_pos,
+                                    self.map_view_info.unwrap_or(self.local_player_pos),
                                     self.current_mouse_pos,
                                 ),
                                 dir: *direction,
@@ -667,7 +666,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             PlaceEntityType::PowerPole {
                                 pos: Self::player_mouse_to_tile(
                                     self.zoom_level,
-                                    self.local_player_pos,
+                                    self.map_view_info.unwrap_or(self.local_player_pos),
                                     self.current_mouse_pos,
                                 ),
                                 ty: *ty,
@@ -697,7 +696,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             PlaceEntityType::Underground {
                                 pos: Self::player_mouse_to_tile(
                                     self.zoom_level,
-                                    self.local_player_pos,
+                                    self.map_view_info.unwrap_or(self.local_player_pos),
                                     self.current_mouse_pos,
                                 ),
                                 ty: *ty,
@@ -718,7 +717,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         ty: 0,
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
-                            self.local_player_pos,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
                             self.current_mouse_pos,
                         ),
                         direction: Dir::North,
@@ -748,7 +747,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     PlaceEntityType::Assembler {
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
-                            self.local_player_pos,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
                             self.current_mouse_pos,
                         ),
                         // TODO:
@@ -762,7 +761,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Belt {
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
-                            self.local_player_pos,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
                             self.current_mouse_pos,
                         ),
                         direction: Dir::North,
@@ -834,7 +833,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     PlaceEntityType::Inserter {
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
-                            self.local_player_pos,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
                             self.current_mouse_pos,
                         ),
                         dir: Dir::North,
@@ -864,7 +863,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     PlaceEntityType::PowerPole {
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
-                            self.local_player_pos,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
                             self.current_mouse_pos,
                         ),
                         ty: 0,
@@ -878,7 +877,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             //             ty: 0,
             //             pos: Self::player_mouse_to_tile(
             //                 self.zoom_level,
-            //                 self.local_player_pos,
+            //                 self.map_view_info.unwrap_or(self.local_player_pos),
             //                 self.current_mouse_pos,
             //             ),
             //             rotation: Dir::North,
@@ -892,7 +891,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         ty: 0,
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
-                            self.local_player_pos,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
                             self.current_mouse_pos,
                         ),
                     }));
@@ -924,7 +923,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     PlaceEntityType::Underground {
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
-                            self.local_player_pos,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
                             self.current_mouse_pos,
                         ),
                         ty: 0,
@@ -939,7 +938,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             //         ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Chest {
             //             pos: Self::player_mouse_to_tile(
             //                 self.zoom_level,
-            //                 self.local_player_pos,
+            //                 self.map_view_info.unwrap_or(self.local_player_pos),
             //                 self.current_mouse_pos,
             //             ),
             //             ty: 0,
@@ -966,7 +965,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     PlaceEntityType::SolarPanel {
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
-                            self.local_player_pos,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
                             self.current_mouse_pos,
                         ),
                         ty: 0,
@@ -980,7 +979,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         ty: 1,
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
-                            self.local_player_pos,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
                             self.current_mouse_pos,
                         ),
                         rotation: Dir::North,
@@ -993,7 +992,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Beacon {
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
-                            self.local_player_pos,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
                             self.current_mouse_pos,
                         ),
                         ty: 0,
@@ -1122,8 +1121,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
     {
-        dbg!(&self.state);
-
         let mut actions = Vec::new();
 
         if let ActionStateMachineState::Deconstructing(pos, timer) = &mut self.state {
@@ -1136,7 +1133,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     .get_entities_colliding_with(
                         Self::player_mouse_to_tile(
                             self.zoom_level,
-                            self.local_player_pos,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
                             self.current_mouse_pos,
                         ),
                         (1, 1),

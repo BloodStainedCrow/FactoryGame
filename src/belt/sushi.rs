@@ -25,6 +25,7 @@ pub(super) struct SushiBelt<ItemIdxType: WeakIdxTrait> {
     pub(super) locs: Box<[Option<Item<ItemIdxType>>]>,
     pub(super) first_free_index: FreeIndex,
     /// Important, zero_index must ALWAYS be used using mod len
+    // FIXME: This will overflow!
     pub(super) zero_index: BeltLenType,
     pub(super) inserters: SushiInserterStore<ItemIdxType>,
 
@@ -821,6 +822,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
         if self.query_item(0).is_none() {
             // Correctness: Since we always % len whenever we access using self.zero_index, we do not need to % len here
             // TODO: This could overflow after usize::MAX ticks which is 9749040289 Years. Should be fine!
+            self.zero_index %= self.get_len();
             self.zero_index += 1;
             self.last_moving_spot = 0;
             match self.first_free_index {

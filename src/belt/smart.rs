@@ -278,8 +278,6 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
     pub fn set_inserter_storage_id(&mut self, belt_pos: u16, new: FakeUnionStorage) {
         let mut pos = 0;
 
-        dbg!(&new);
-
         for (offset, inserter) in self
             .inserters
             .offsets
@@ -1190,6 +1188,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
         if Belt::<ItemIdxType>::query_item(self, 0).is_none() {
             // Correctness: Since we always % len whenever we access using self.zero_index, we do not need to % len here
             // TODO: This could overflow after usize::MAX ticks which is 9749040289 Years. Should be fine!
+            self.zero_index %= self.get_len();
             self.zero_index += 1;
             self.last_moving_spot = 0;
             match self.first_free_index {
