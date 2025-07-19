@@ -51,7 +51,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
     ) -> Self {
         // TODO: We can save some space here by only having fluid systems for items which are actually a fluid
         Self {
-            fluid_systems_with_fluid: vec![vec![]; data_store.item_names.len()].into_boxed_slice(),
+            fluid_systems_with_fluid: vec![vec![]; data_store.item_display_names.len()].into_boxed_slice(),
             empty_fluid_systems: vec![],
             fluid_box_pos_to_network_id: HashMap::new(),
         }
@@ -184,8 +184,10 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                             .position(Option::is_none);
 
                         let index = if let Some(hole_idx) = index {
-                            assert!(self.fluid_systems_with_fluid[fluid.into_usize()][hole_idx]
-                                .is_none());
+                            assert!(
+                                self.fluid_systems_with_fluid[fluid.into_usize()][hole_idx]
+                                    .is_none()
+                            );
                             self.fluid_systems_with_fluid[fluid.into_usize()][hole_idx] =
                                 Some(network);
                             hole_idx
@@ -950,7 +952,9 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                     .try_into()
                     .expect("Fluid system too large"),
             ) else {
-                unreachable!("We increase the size of the fluid network. It should not be possible remove items with it");
+                unreachable!(
+                    "We increase the size of the fluid network. It should not be possible remove items with it"
+                );
             };
         }
 
@@ -965,7 +969,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
 
     fn join<RecipeIdxType: IdxTrait>(
         &mut self,
-        other: Self,
+        mut other: Self,
         new_fluid_box_position: Position,
         fluid_box_capacity: u32,
         connected_fluid_box_positions: impl IntoIterator<Item = Position>,
@@ -994,28 +998,31 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         match (self.state, other.state) {
             (FluidSystemState::NoFluid, FluidSystemState::NoFluid) => {
                 // We do not have any fluid, so no chest and no inserters
-                debug_assert!(self
-                    .graph
-                    .weak_components()
-                    .into_iter()
-                    .all(|conn| match conn {
-                        FluidSystemEntity::OutgoingPump { .. } => true,
-                        FluidSystemEntity::IncomingPump { .. } => true,
-                        // Since input/outputs are always a specific fluid, we cannot have any (otherwise we shoudl already have a fluid)
-                        FluidSystemEntity::Input { .. } => false,
-                        FluidSystemEntity::Output { .. } => false,
-                    }));
-                debug_assert!(other
-                    .graph
-                    .weak_components()
-                    .into_iter()
-                    .all(|conn| match conn {
-                        FluidSystemEntity::OutgoingPump { .. } => true,
-                        FluidSystemEntity::IncomingPump { .. } => true,
-                        // Since input/outputs are always a specific fluid, we cannot have any (otherwise we shoudl already have a fluid)
-                        FluidSystemEntity::Input { .. } => false,
-                        FluidSystemEntity::Output { .. } => false,
-                    }));
+                debug_assert!(
+                    self.graph
+                        .weak_components()
+                        .into_iter()
+                        .all(|conn| match conn {
+                            FluidSystemEntity::OutgoingPump { .. } => true,
+                            FluidSystemEntity::IncomingPump { .. } => true,
+                            // Since input/outputs are always a specific fluid, we cannot have any (otherwise we shoudl already have a fluid)
+                            FluidSystemEntity::Input { .. } => false,
+                            FluidSystemEntity::Output { .. } => false,
+                        })
+                );
+                debug_assert!(
+                    other
+                        .graph
+                        .weak_components()
+                        .into_iter()
+                        .all(|conn| match conn {
+                            FluidSystemEntity::OutgoingPump { .. } => true,
+                            FluidSystemEntity::IncomingPump { .. } => true,
+                            // Since input/outputs are always a specific fluid, we cannot have any (otherwise we shoudl already have a fluid)
+                            FluidSystemEntity::Input { .. } => false,
+                            FluidSystemEntity::Output { .. } => false,
+                        })
+                );
             },
             (FluidSystemState::NoFluid, FluidSystemState::HasFluid { fluid, chest_id }) => {
                 let 0 = chest_store.stores[fluid.into_usize()].change_chest_size(
@@ -1069,10 +1076,10 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                         "Adding the contents of two chests (and their sizes) should always fit",
                     );
 
-                for conn in other.graph.weak_components() {
+                for conn in other.graph.weak_components_mut() {
                     match conn {
-                        FluidSystemEntity::OutgoingPump { inserter_id } => inserter_store
-                            .update_inserter_src(
+                        FluidSystemEntity::OutgoingPump { inserter_id } => {
+                            *inserter_id = inserter_store.update_inserter_src(
                                 fluid,
                                 FLUID_INSERTER_MOVETIME,
                                 *inserter_id,
@@ -1081,9 +1088,10 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                                     index: chest_id_a,
                                 },
                                 data_store,
-                            ),
-                        FluidSystemEntity::IncomingPump { inserter_id } => inserter_store
-                            .update_inserter_dest(
+                            );
+                        },
+                        FluidSystemEntity::IncomingPump { inserter_id } => {
+                            *inserter_id = inserter_store.update_inserter_dest(
                                 fluid,
                                 FLUID_INSERTER_MOVETIME,
                                 *inserter_id,
@@ -1092,9 +1100,10 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                                     index: chest_id_a,
                                 },
                                 data_store,
-                            ),
-                        FluidSystemEntity::Input { inserter_id } => inserter_store
-                            .update_inserter_dest(
+                            );
+                        },
+                        FluidSystemEntity::Input { inserter_id } => {
+                            *inserter_id = inserter_store.update_inserter_dest(
                                 fluid,
                                 FLUID_INSERTER_MOVETIME,
                                 *inserter_id,
@@ -1103,9 +1112,10 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                                     index: chest_id_a,
                                 },
                                 data_store,
-                            ),
-                        FluidSystemEntity::Output { inserter_id } => inserter_store
-                            .update_inserter_src(
+                            );
+                        },
+                        FluidSystemEntity::Output { inserter_id } => {
+                            *inserter_id = inserter_store.update_inserter_src(
                                 fluid,
                                 FLUID_INSERTER_MOVETIME,
                                 *inserter_id,
@@ -1114,7 +1124,8 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                                     index: chest_id_a,
                                 },
                                 data_store,
-                            ),
+                            );
+                        },
                     }
                 }
             },
@@ -1139,7 +1150,10 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         chest_store: &mut FullChestStore<ItemIdxType>,
         inserter_store: &mut StorageStorageInserterStore,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> (impl Iterator<Item = Self> + use<RecipeIdxType, ItemIdxType>, bool) {
+    ) -> (
+        impl Iterator<Item = Self> + use<RecipeIdxType, ItemIdxType>,
+        bool,
+    ) {
         let old_fluid = self.get_fluid();
 
         let (removed_fluid_box, connections_to_remove, new_graphs) =
@@ -1177,7 +1191,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
             .into_iter()
             .flatten()
             .map(|(graph, positions)| {
-                let new_system = Self::new_from_graph(
+                let mut new_system = Self::new_from_graph(
                     graph,
                     old_fluid,
                     &mut fluid_distribution,
@@ -1193,40 +1207,44 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                             index: chest_id,
                         };
 
-                        for connection in new_system.graph.weak_components() {
+                        for connection in new_system.graph.weak_components_mut() {
                             match connection {
-                                FluidSystemEntity::OutgoingPump { inserter_id } => inserter_store
-                                    .update_inserter_src(
+                                FluidSystemEntity::OutgoingPump { inserter_id } => {
+                                    *inserter_id = inserter_store.update_inserter_src(
                                         fluid,
                                         FLUID_INSERTER_MOVETIME,
                                         *inserter_id,
                                         our_storage,
                                         data_store,
-                                    ),
-                                FluidSystemEntity::IncomingPump { inserter_id } => inserter_store
-                                    .update_inserter_dest(
+                                    );
+                                },
+                                FluidSystemEntity::IncomingPump { inserter_id } => {
+                                    *inserter_id = inserter_store.update_inserter_dest(
                                         fluid,
                                         FLUID_INSERTER_MOVETIME,
                                         *inserter_id,
                                         our_storage,
                                         data_store,
-                                    ),
-                                FluidSystemEntity::Input { inserter_id } => inserter_store
-                                    .update_inserter_dest(
+                                    );
+                                },
+                                FluidSystemEntity::Input { inserter_id } => {
+                                    *inserter_id = inserter_store.update_inserter_dest(
                                         fluid,
                                         FLUID_INSERTER_MOVETIME,
                                         *inserter_id,
                                         our_storage,
                                         data_store,
-                                    ),
-                                FluidSystemEntity::Output { inserter_id } => inserter_store
-                                    .update_inserter_src(
+                                    );
+                                },
+                                FluidSystemEntity::Output { inserter_id } => {
+                                    *inserter_id = inserter_store.update_inserter_src(
                                         fluid,
                                         FLUID_INSERTER_MOVETIME,
                                         *inserter_id,
                                         our_storage,
                                         data_store,
-                                    ),
+                                    );
+                                },
                             }
                         }
                     },
@@ -1279,7 +1297,10 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         chest_store: &mut FullChestStore<ItemIdxType>,
         inserter_store: &mut StorageStorageInserterStore,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> (impl Iterator<Item = Self> + use<RecipeIdxType, ItemIdxType>, bool) {
+    ) -> (
+        impl Iterator<Item = Self> + use<RecipeIdxType, ItemIdxType>,
+        bool,
+    ) {
         let old_fluid = self.get_fluid();
 
         let new_graphs = self
@@ -1300,7 +1321,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
             .into_iter()
             .flatten()
             .map(|(graph, positions)| {
-                let new_system = Self::new_from_graph(
+                let mut new_system = Self::new_from_graph(
                     graph,
                     old_fluid,
                     &mut fluid_distribution,
@@ -1316,40 +1337,44 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                             index: chest_id,
                         };
 
-                        for connection in new_system.graph.weak_components() {
+                        for connection in new_system.graph.weak_components_mut() {
                             match connection {
-                                FluidSystemEntity::OutgoingPump { inserter_id } => inserter_store
-                                    .update_inserter_src(
+                                FluidSystemEntity::OutgoingPump { inserter_id } => {
+                                    *inserter_id = inserter_store.update_inserter_src(
                                         fluid,
                                         FLUID_INSERTER_MOVETIME,
                                         *inserter_id,
                                         our_storage,
                                         data_store,
-                                    ),
-                                FluidSystemEntity::IncomingPump { inserter_id } => inserter_store
-                                    .update_inserter_dest(
+                                    );
+                                },
+                                FluidSystemEntity::IncomingPump { inserter_id } => {
+                                    *inserter_id = inserter_store.update_inserter_dest(
                                         fluid,
                                         FLUID_INSERTER_MOVETIME,
                                         *inserter_id,
                                         our_storage,
                                         data_store,
-                                    ),
-                                FluidSystemEntity::Input { inserter_id } => inserter_store
-                                    .update_inserter_dest(
+                                    );
+                                },
+                                FluidSystemEntity::Input { inserter_id } => {
+                                    *inserter_id = inserter_store.update_inserter_dest(
                                         fluid,
                                         FLUID_INSERTER_MOVETIME,
                                         *inserter_id,
                                         our_storage,
                                         data_store,
-                                    ),
-                                FluidSystemEntity::Output { inserter_id } => inserter_store
-                                    .update_inserter_src(
+                                    );
+                                },
+                                FluidSystemEntity::Output { inserter_id } => {
+                                    *inserter_id = inserter_store.update_inserter_src(
                                         fluid,
                                         FLUID_INSERTER_MOVETIME,
                                         *inserter_id,
                                         our_storage,
                                         data_store,
-                                    ),
+                                    );
+                                },
                             }
                         }
                     },

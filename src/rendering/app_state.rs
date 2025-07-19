@@ -534,7 +534,7 @@ impl StorageStorageInserterStore {
         id: InserterIdentifier,
         new_src: Storage<RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) {
+    ) -> InserterIdentifier {
         self.inserters[item.into_usize()]
             .get_mut(&movetime)
             .unwrap()
@@ -542,7 +542,7 @@ impl StorageStorageInserterStore {
             .update_inserter_src(
                 id,
                 FakeUnionStorage::from_storage_with_statics_at_zero(item, new_src, data_store),
-            );
+            )
     }
 
     #[profiling::function]
@@ -553,7 +553,7 @@ impl StorageStorageInserterStore {
         id: InserterIdentifier,
         new_dest: Storage<RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) {
+    ) -> InserterIdentifier {
         self.inserters[item.into_usize()]
             .get_mut(&movetime)
             .unwrap()
@@ -561,7 +561,7 @@ impl StorageStorageInserterStore {
             .update_inserter_dest(
                 id,
                 FakeUnionStorage::from_storage_with_statics_at_zero(item, new_dest, data_store),
-            );
+            )
     }
 }
 
@@ -1061,7 +1061,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                                                                     let movetime = user_movetime.map(|v| v.into()).unwrap_or(*type_movetime);
 
-                                                                    self.simulation_state.factory.storage_storage_inserters.update_inserter_src(*item, movetime, *inserter, new_storage, data_store);
+                                                                    let new_id = self.simulation_state.factory.storage_storage_inserters.update_inserter_src(*item, movetime, *inserter, new_storage, data_store);
+
+                                                                    *inserter = new_id;
                                                                 },
                                                             }
                                                         }
@@ -1096,7 +1098,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                     }.translate(*item, data_store);
                                                                     let movetime = user_movetime.map(|v| v.into()).unwrap_or(*type_movetime);
 
-                                                                    self.simulation_state.factory.storage_storage_inserters.update_inserter_dest(*item, movetime, *inserter, new_storage, data_store);
+                                                                    let new_id = self.simulation_state.factory.storage_storage_inserters.update_inserter_dest(*item, movetime, *inserter, new_storage, data_store);
+
+                                                                    *inserter = new_id;
                                                                 },
                                                             }
                                                         }

@@ -6,9 +6,9 @@ use super::{FakeUnionStorage, HAND_SIZE};
 use crate::assembler::arrays;
 use crate::{
     item::ITEMCOUNTTYPE,
-    storage_list::{index_fake_union, SingleItemStorages},
+    storage_list::{SingleItemStorages, index_fake_union},
 };
-use log::{info, trace};
+use log::{error, info, trace};
 use std::{cmp::min, iter};
 
 const NUM_BUCKETS: usize = 120;
@@ -477,7 +477,9 @@ impl BucketedStorageStorageInserterStore {
             Some(next_id) => {
                 *id = next_id;
             },
-            None => todo!("A pair of storages has u8::MAX inserter between them! (Or a lot of ids were lost due to removals)"),
+            None => todo!(
+                "A pair of storages has u8::MAX inserter between them! (Or a lot of ids were lost due to removals)"
+            ),
             // None => {
             //     // FIXME FIXME FIXME
             // },
@@ -776,19 +778,52 @@ impl BucketedStorageStorageInserterStore {
     }
 
     #[profiling::function]
-    pub fn update_inserter_src(&mut self, id: InserterIdentifier, new_src: FakeUnionStorage) {
+    #[must_use]
+    pub fn update_inserter_src(
+        &mut self,
+        id: InserterIdentifier,
+        new_src: FakeUnionStorage,
+    ) -> InserterIdentifier {
         if let Some(idx) = self.waiting_for_item.iter().position(|i| {
             i.storage_id_in == id.source && i.storage_id_out == id.dest && i.id == id.id
         }) {
             self.waiting_for_item[idx].storage_id_in = new_src;
-            return;
+            let new_id = self
+                .id_lookup
+                .entry((
+                    self.waiting_for_item[idx].storage_id_in,
+                    self.waiting_for_item[idx].storage_id_out,
+                ))
+                .or_insert(0);
+
+            self.waiting_for_item[idx].id = InserterId(*new_id);
+
+            return InserterIdentifier {
+                source: self.waiting_for_item[idx].storage_id_in,
+                dest: self.waiting_for_item[idx].storage_id_out,
+                id: self.waiting_for_item[idx].id,
+            };
         }
 
         if let Some(idx) = self.waiting_for_space_in_destination.iter().position(|i| {
             i.storage_id_in == id.source && i.storage_id_out == id.dest && i.id == id.id
         }) {
             self.waiting_for_space_in_destination[idx].storage_id_in = new_src;
-            return;
+            let new_id = self
+                .id_lookup
+                .entry((
+                    self.waiting_for_space_in_destination[idx].storage_id_in,
+                    self.waiting_for_space_in_destination[idx].storage_id_out,
+                ))
+                .or_insert(0);
+
+            self.waiting_for_space_in_destination[idx].id = InserterId(*new_id);
+
+            return InserterIdentifier {
+                source: self.waiting_for_space_in_destination[idx].storage_id_in,
+                dest: self.waiting_for_space_in_destination[idx].storage_id_out,
+                id: self.waiting_for_space_in_destination[idx].id,
+            };
         }
 
         for moving_out in &mut self.full_and_moving_out {
@@ -796,7 +831,21 @@ impl BucketedStorageStorageInserterStore {
                 i.storage_id_in == id.source && i.storage_id_out == id.dest && i.id == id.id
             }) {
                 moving_out[idx].storage_id_in = new_src;
-                return;
+                let new_id = self
+                    .id_lookup
+                    .entry((
+                        moving_out[idx].storage_id_in,
+                        moving_out[idx].storage_id_out,
+                    ))
+                    .or_insert(0);
+
+                moving_out[idx].id = InserterId(*new_id);
+
+                return InserterIdentifier {
+                    source: moving_out[idx].storage_id_in,
+                    dest: moving_out[idx].storage_id_out,
+                    id: moving_out[idx].id,
+                };
             }
         }
 
@@ -805,7 +854,18 @@ impl BucketedStorageStorageInserterStore {
                 i.storage_id_in == id.source && i.storage_id_out == id.dest && i.id == id.id
             }) {
                 moving_in[idx].storage_id_in = new_src;
-                return;
+                let new_id = self
+                    .id_lookup
+                    .entry((moving_in[idx].storage_id_in, moving_in[idx].storage_id_out))
+                    .or_insert(0);
+
+                moving_in[idx].id = InserterId(*new_id);
+
+                return InserterIdentifier {
+                    source: moving_in[idx].storage_id_in,
+                    dest: moving_in[idx].storage_id_out,
+                    id: moving_in[idx].id,
+                };
             }
         }
 
@@ -813,19 +873,53 @@ impl BucketedStorageStorageInserterStore {
     }
 
     #[profiling::function]
-    pub fn update_inserter_dest(&mut self, id: InserterIdentifier, new_dest: FakeUnionStorage) {
+    #[must_use]
+    pub fn update_inserter_dest(
+        &mut self,
+        id: InserterIdentifier,
+        new_dest: FakeUnionStorage,
+    ) -> InserterIdentifier {
         if let Some(idx) = self.waiting_for_item.iter().position(|i| {
             i.storage_id_in == id.source && i.storage_id_out == id.dest && i.id == id.id
         }) {
             self.waiting_for_item[idx].storage_id_out = new_dest;
-            return;
+
+            let new_id = self
+                .id_lookup
+                .entry((
+                    self.waiting_for_item[idx].storage_id_in,
+                    self.waiting_for_item[idx].storage_id_out,
+                ))
+                .or_insert(0);
+
+            self.waiting_for_item[idx].id = InserterId(*new_id);
+
+            return InserterIdentifier {
+                source: self.waiting_for_item[idx].storage_id_in,
+                dest: self.waiting_for_item[idx].storage_id_out,
+                id: self.waiting_for_item[idx].id,
+            };
         }
 
         if let Some(idx) = self.waiting_for_space_in_destination.iter().position(|i| {
             i.storage_id_in == id.source && i.storage_id_out == id.dest && i.id == id.id
         }) {
             self.waiting_for_space_in_destination[idx].storage_id_out = new_dest;
-            return;
+            let new_id = self
+                .id_lookup
+                .entry((
+                    self.waiting_for_space_in_destination[idx].storage_id_in,
+                    self.waiting_for_space_in_destination[idx].storage_id_out,
+                ))
+                .or_insert(0);
+
+            self.waiting_for_space_in_destination[idx].id = InserterId(*new_id);
+
+            return InserterIdentifier {
+                source: self.waiting_for_space_in_destination[idx].storage_id_in,
+                dest: self.waiting_for_space_in_destination[idx].storage_id_out,
+                id: self.waiting_for_space_in_destination[idx].id,
+            };
         }
 
         for moving_out in &mut self.full_and_moving_out {
@@ -833,7 +927,21 @@ impl BucketedStorageStorageInserterStore {
                 i.storage_id_in == id.source && i.storage_id_out == id.dest && i.id == id.id
             }) {
                 moving_out[idx].storage_id_out = new_dest;
-                return;
+                let new_id = self
+                    .id_lookup
+                    .entry((
+                        moving_out[idx].storage_id_in,
+                        moving_out[idx].storage_id_out,
+                    ))
+                    .or_insert(0);
+
+                moving_out[idx].id = InserterId(*new_id);
+
+                return InserterIdentifier {
+                    source: moving_out[idx].storage_id_in,
+                    dest: moving_out[idx].storage_id_out,
+                    id: moving_out[idx].id,
+                };
             }
         }
 
@@ -842,11 +950,25 @@ impl BucketedStorageStorageInserterStore {
                 i.storage_id_in == id.source && i.storage_id_out == id.dest && i.id == id.id
             }) {
                 moving_in[idx].storage_id_out = new_dest;
-                return;
+                let new_id = self
+                    .id_lookup
+                    .entry((moving_in[idx].storage_id_in, moving_in[idx].storage_id_out))
+                    .or_insert(0);
+
+                moving_in[idx].id = InserterId(*new_id);
+
+                return InserterIdentifier {
+                    source: moving_in[idx].storage_id_in,
+                    dest: moving_in[idx].storage_id_out,
+                    id: moving_in[idx].id,
+                };
             }
         }
 
-        unreachable!("Tried to update_inserter_dest an inserter that does not exist!");
+        unreachable!(
+            "Tried to update_inserter_dest an inserter that does not exist! {:?}",
+            self
+        );
     }
 }
 
@@ -864,10 +986,10 @@ mod test {
     use test::Bencher;
 
     use crate::inserter::{
+        FakeUnionStorage,
         storage_storage_with_buckets::{
             BucketedStorageStorageInserterStoreFrontend, InserterId, InserterIdentifier,
         },
-        FakeUnionStorage,
     };
 
     use super::BucketedStorageStorageInserterStore;
