@@ -1166,9 +1166,11 @@ impl RawDataStore {
 
         for (i, raw_tech) in self.technologies.iter().enumerate() {
             for req in &raw_tech.precursors {
-                let req = name_to_node_index[req];
+                let req = name_to_node_index
+                    .get(req)
+                    .expect(format!("Cannot find technology prerequisite {}", req).as_str());
 
-                tech_tree.add_edge(req, NodeIndex::new(i), ());
+                tech_tree.add_edge(*req, NodeIndex::new(i), ());
             }
         }
 

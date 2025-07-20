@@ -1,0 +1,4449 @@
+(
+    actions: [
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 4,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 4,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 1,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 1,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 7,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 7,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 10,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 10,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 13,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 13,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 6,
+                y: 5,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 6,
+                y: 5,
+            ),
+            recipe: "factory_game::iron_smelting",
+        ),
+        AddModules(
+            pos: (
+                x: 6,
+                y: 5,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 5,
+                y: 9,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 5,
+                y: 9,
+            ),
+            recipe: "factory_game::steel",
+        ),
+        AddModules(
+            pos: (
+                x: 5,
+                y: 9,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 6,
+                y: 8,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        OverrideInserterMovetime(
+            pos: (
+                x: 6,
+                y: 8,
+            ),
+            new_movetime: Some(90),
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 8,
+                y: 8,
+            ),
+            dir: North,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 7,
+                y: 12,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 2,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 2,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(PowerPole(
+            pos: (
+                x: 4,
+                y: 7,
+            ),
+            ty: "factory_game::substation",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 1,
+                y: 7,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 1,
+                y: 7,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 0,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 0,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 3,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 3,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 9,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 9,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 10,
+                y: 7,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 10,
+                y: 7,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 8,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 8,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 11,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 11,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Underground(
+            pos: (
+                x: 7,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 8,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 8,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 9,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 15,
+                y: 5,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 15,
+                y: 5,
+            ),
+            recipe: "factory_game::iron_smelting",
+        ),
+        AddModules(
+            pos: (
+                x: 15,
+                y: 5,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 14,
+                y: 9,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 14,
+                y: 9,
+            ),
+            recipe: "factory_game::steel",
+        ),
+        AddModules(
+            pos: (
+                x: 14,
+                y: 9,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 15,
+                y: 8,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        OverrideInserterMovetime(
+            pos: (
+                x: 15,
+                y: 8,
+            ),
+            new_movetime: Some(90),
+        ),
+        PlaceEntity(PowerPole(
+            pos: (
+                x: 13,
+                y: 7,
+            ),
+            ty: "factory_game::substation",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 12,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 12,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 4,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 4,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 1,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 1,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 7,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 7,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 10,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 10,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 13,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 13,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 16,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 16,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 19,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 19,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 22,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 22,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 28,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 28,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 25,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 25,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 31,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 31,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 17,
+                y: 8,
+            ),
+            dir: North,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 16,
+                y: 12,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 18,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 18,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 19,
+                y: 7,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 19,
+                y: 7,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 17,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 17,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 20,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 20,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Underground(
+            pos: (
+                x: 16,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 17,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 17,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 18,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 24,
+                y: 5,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 24,
+                y: 5,
+            ),
+            recipe: "factory_game::iron_smelting",
+        ),
+        AddModules(
+            pos: (
+                x: 24,
+                y: 5,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 23,
+                y: 9,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 23,
+                y: 9,
+            ),
+            recipe: "factory_game::steel",
+        ),
+        AddModules(
+            pos: (
+                x: 23,
+                y: 9,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 24,
+                y: 8,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        OverrideInserterMovetime(
+            pos: (
+                x: 24,
+                y: 8,
+            ),
+            new_movetime: Some(90),
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 26,
+                y: 8,
+            ),
+            dir: North,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 25,
+                y: 12,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        PlaceEntity(PowerPole(
+            pos: (
+                x: 22,
+                y: 7,
+            ),
+            ty: "factory_game::substation",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 21,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 21,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 27,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 27,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 28,
+                y: 7,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 28,
+                y: 7,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 26,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 26,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 29,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 29,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Underground(
+            pos: (
+                x: 25,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 26,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 26,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 27,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 16,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 16,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 19,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 19,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 22,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 22,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 28,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 28,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 25,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 25,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 31,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 31,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(PowerPole(
+            pos: (
+                x: 31,
+                y: 7,
+            ),
+            ty: "factory_game::substation",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 30,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 30,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 34,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 34,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 37,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 37,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 40,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 40,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 43,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 43,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 46,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 46,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 34,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 34,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 37,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 37,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 40,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 40,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 43,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 43,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 46,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 46,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 33,
+                y: 5,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 33,
+                y: 5,
+            ),
+            recipe: "factory_game::iron_smelting",
+        ),
+        AddModules(
+            pos: (
+                x: 33,
+                y: 5,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 32,
+                y: 9,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 32,
+                y: 9,
+            ),
+            recipe: "factory_game::steel",
+        ),
+        AddModules(
+            pos: (
+                x: 32,
+                y: 9,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 33,
+                y: 8,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        OverrideInserterMovetime(
+            pos: (
+                x: 33,
+                y: 8,
+            ),
+            new_movetime: Some(90),
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 35,
+                y: 8,
+            ),
+            dir: North,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 34,
+                y: 12,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 36,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 36,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 37,
+                y: 7,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 37,
+                y: 7,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 35,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 35,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 38,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 38,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Underground(
+            pos: (
+                x: 34,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 35,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 35,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 36,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 39,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 39,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 42,
+                y: 5,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 42,
+                y: 5,
+            ),
+            recipe: "factory_game::iron_smelting",
+        ),
+        AddModules(
+            pos: (
+                x: 42,
+                y: 5,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 41,
+                y: 9,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 41,
+                y: 9,
+            ),
+            recipe: "factory_game::steel",
+        ),
+        AddModules(
+            pos: (
+                x: 41,
+                y: 9,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 42,
+                y: 8,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        OverrideInserterMovetime(
+            pos: (
+                x: 42,
+                y: 8,
+            ),
+            new_movetime: Some(90),
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 44,
+                y: 8,
+            ),
+            dir: North,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 43,
+                y: 12,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        PlaceEntity(PowerPole(
+            pos: (
+                x: 40,
+                y: 7,
+            ),
+            ty: "factory_game::substation",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 45,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 45,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 46,
+                y: 7,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 46,
+                y: 7,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 44,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 44,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 47,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 47,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Underground(
+            pos: (
+                x: 43,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 44,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 44,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 45,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 52,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 52,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 49,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 49,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 55,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 55,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 58,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 58,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 61,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 61,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 52,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 52,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 49,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 49,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 55,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 55,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 58,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 58,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 61,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 61,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 48,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 48,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 51,
+                y: 5,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 51,
+                y: 5,
+            ),
+            recipe: "factory_game::iron_smelting",
+        ),
+        AddModules(
+            pos: (
+                x: 51,
+                y: 5,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 50,
+                y: 9,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 50,
+                y: 9,
+            ),
+            recipe: "factory_game::steel",
+        ),
+        AddModules(
+            pos: (
+                x: 50,
+                y: 9,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 51,
+                y: 8,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        OverrideInserterMovetime(
+            pos: (
+                x: 51,
+                y: 8,
+            ),
+            new_movetime: Some(90),
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 53,
+                y: 8,
+            ),
+            dir: North,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 52,
+                y: 12,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        PlaceEntity(PowerPole(
+            pos: (
+                x: 49,
+                y: 7,
+            ),
+            ty: "factory_game::substation",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 54,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 54,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 55,
+                y: 7,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 55,
+                y: 7,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 53,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 53,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 56,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 56,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Underground(
+            pos: (
+                x: 52,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 53,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 53,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 54,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 57,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 57,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 60,
+                y: 5,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 60,
+                y: 5,
+            ),
+            recipe: "factory_game::iron_smelting",
+        ),
+        AddModules(
+            pos: (
+                x: 60,
+                y: 5,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 59,
+                y: 9,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 59,
+                y: 9,
+            ),
+            recipe: "factory_game::steel",
+        ),
+        AddModules(
+            pos: (
+                x: 59,
+                y: 9,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 60,
+                y: 8,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        OverrideInserterMovetime(
+            pos: (
+                x: 60,
+                y: 8,
+            ),
+            new_movetime: Some(90),
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 62,
+                y: 8,
+            ),
+            dir: North,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 61,
+                y: 12,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        PlaceEntity(PowerPole(
+            pos: (
+                x: 58,
+                y: 7,
+            ),
+            ty: "factory_game::substation",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 63,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 63,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 62,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 62,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Underground(
+            pos: (
+                x: 61,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 62,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 62,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 63,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 64,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 64,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 67,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 67,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 70,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 70,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 76,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 76,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 73,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 73,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 79,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 79,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 64,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 64,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 67,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 67,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 70,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 70,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 76,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 76,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 73,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 73,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 79,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 79,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 64,
+                y: 7,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 64,
+                y: 7,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 65,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 65,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 66,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 66,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 69,
+                y: 5,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 69,
+                y: 5,
+            ),
+            recipe: "factory_game::iron_smelting",
+        ),
+        AddModules(
+            pos: (
+                x: 69,
+                y: 5,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 68,
+                y: 9,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 68,
+                y: 9,
+            ),
+            recipe: "factory_game::steel",
+        ),
+        AddModules(
+            pos: (
+                x: 68,
+                y: 9,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 69,
+                y: 8,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        OverrideInserterMovetime(
+            pos: (
+                x: 69,
+                y: 8,
+            ),
+            new_movetime: Some(90),
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 71,
+                y: 8,
+            ),
+            dir: North,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 70,
+                y: 12,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        PlaceEntity(PowerPole(
+            pos: (
+                x: 67,
+                y: 7,
+            ),
+            ty: "factory_game::substation",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 72,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 72,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 73,
+                y: 7,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 73,
+                y: 7,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 71,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 71,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 74,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 74,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Underground(
+            pos: (
+                x: 70,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 71,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 71,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 72,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 78,
+                y: 5,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 78,
+                y: 5,
+            ),
+            recipe: "factory_game::iron_smelting",
+        ),
+        AddModules(
+            pos: (
+                x: 78,
+                y: 5,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 77,
+                y: 9,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 77,
+                y: 9,
+            ),
+            recipe: "factory_game::steel",
+        ),
+        AddModules(
+            pos: (
+                x: 77,
+                y: 9,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 78,
+                y: 8,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        OverrideInserterMovetime(
+            pos: (
+                x: 78,
+                y: 8,
+            ),
+            new_movetime: Some(90),
+        ),
+        PlaceEntity(PowerPole(
+            pos: (
+                x: 76,
+                y: 7,
+            ),
+            ty: "factory_game::substation",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 75,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 75,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 79,
+                y: 12,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 79,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 82,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 82,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 85,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 85,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 88,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 88,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 91,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 91,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 94,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 94,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 82,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 82,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 85,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 85,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 88,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 88,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 91,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 91,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 94,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 94,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 80,
+                y: 8,
+            ),
+            dir: North,
+            filter: None,
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 81,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 81,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 82,
+                y: 7,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 82,
+                y: 7,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 80,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 80,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 83,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 83,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Underground(
+            pos: (
+                x: 80,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 80,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 81,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 87,
+                y: 5,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 87,
+                y: 5,
+            ),
+            recipe: "factory_game::iron_smelting",
+        ),
+        AddModules(
+            pos: (
+                x: 87,
+                y: 5,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 86,
+                y: 9,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 86,
+                y: 9,
+            ),
+            recipe: "factory_game::steel",
+        ),
+        AddModules(
+            pos: (
+                x: 86,
+                y: 9,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 87,
+                y: 8,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        OverrideInserterMovetime(
+            pos: (
+                x: 87,
+                y: 8,
+            ),
+            new_movetime: Some(90),
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 89,
+                y: 8,
+            ),
+            dir: North,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 88,
+                y: 12,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        PlaceEntity(PowerPole(
+            pos: (
+                x: 85,
+                y: 7,
+            ),
+            ty: "factory_game::substation",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 84,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 84,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 90,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 90,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 91,
+                y: 7,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 91,
+                y: 7,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 89,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 89,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 92,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 92,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Underground(
+            pos: (
+                x: 88,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 89,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 89,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 90,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(PowerPole(
+            pos: (
+                x: 94,
+                y: 7,
+            ),
+            ty: "factory_game::substation",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 93,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 93,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 95,
+                y: 9,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 95,
+                y: 9,
+            ),
+            recipe: "factory_game::steel",
+        ),
+        AddModules(
+            pos: (
+                x: 95,
+                y: 9,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 97,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 97,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 100,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 100,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 103,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 103,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 109,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 109,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 106,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 106,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 96,
+                y: 5,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 96,
+                y: 5,
+            ),
+            recipe: "factory_game::iron_smelting",
+        ),
+        AddModules(
+            pos: (
+                x: 96,
+                y: 5,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 96,
+                y: 8,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        OverrideInserterMovetime(
+            pos: (
+                x: 96,
+                y: 8,
+            ),
+            new_movetime: Some(90),
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 98,
+                y: 8,
+            ),
+            dir: North,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 97,
+                y: 12,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 99,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 99,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 100,
+                y: 7,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 100,
+                y: 7,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 98,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 98,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 101,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 101,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Underground(
+            pos: (
+                x: 97,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 98,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 98,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 99,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 102,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 102,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 105,
+                y: 5,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 105,
+                y: 5,
+            ),
+            recipe: "factory_game::iron_smelting",
+        ),
+        AddModules(
+            pos: (
+                x: 105,
+                y: 5,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 104,
+                y: 9,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 104,
+                y: 9,
+            ),
+            recipe: "factory_game::steel",
+        ),
+        AddModules(
+            pos: (
+                x: 104,
+                y: 9,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 105,
+                y: 8,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        OverrideInserterMovetime(
+            pos: (
+                x: 105,
+                y: 8,
+            ),
+            new_movetime: Some(90),
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 107,
+                y: 8,
+            ),
+            dir: North,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 106,
+                y: 12,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        PlaceEntity(PowerPole(
+            pos: (
+                x: 103,
+                y: 7,
+            ),
+            ty: "factory_game::substation",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 108,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 108,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 109,
+                y: 7,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 109,
+                y: 7,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 107,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 107,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 110,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 110,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Underground(
+            pos: (
+                x: 106,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 107,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 107,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 108,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 111,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 111,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 97,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 97,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 100,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 100,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 103,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 103,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 106,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 106,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 109,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 109,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 112,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 112,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 115,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 115,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 118,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 118,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 121,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 121,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 124,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 124,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 127,
+                y: 0,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 127,
+                y: 0,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 114,
+                y: 5,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 114,
+                y: 5,
+            ),
+            recipe: "factory_game::iron_smelting",
+        ),
+        AddModules(
+            pos: (
+                x: 114,
+                y: 5,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 113,
+                y: 9,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 113,
+                y: 9,
+            ),
+            recipe: "factory_game::steel",
+        ),
+        AddModules(
+            pos: (
+                x: 113,
+                y: 9,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 114,
+                y: 8,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        OverrideInserterMovetime(
+            pos: (
+                x: 114,
+                y: 8,
+            ),
+            new_movetime: Some(90),
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 116,
+                y: 8,
+            ),
+            dir: North,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 115,
+                y: 12,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        PlaceEntity(PowerPole(
+            pos: (
+                x: 112,
+                y: 7,
+            ),
+            ty: "factory_game::substation",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 117,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 117,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 118,
+                y: 7,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 118,
+                y: 7,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 116,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 116,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 119,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 119,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Underground(
+            pos: (
+                x: 115,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 116,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 116,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 117,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 120,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 120,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 123,
+                y: 5,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 123,
+                y: 5,
+            ),
+            recipe: "factory_game::iron_smelting",
+        ),
+        AddModules(
+            pos: (
+                x: 123,
+                y: 5,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Assembler(
+            pos: (
+                x: 122,
+                y: 9,
+            ),
+            ty: "factory_game::electric_furnace",
+        )),
+        SetRecipe(
+            pos: (
+                x: 122,
+                y: 9,
+            ),
+            recipe: "factory_game::steel",
+        ),
+        AddModules(
+            pos: (
+                x: 122,
+                y: 9,
+            ),
+            modules: [
+                "factory_game::prod_mod",
+                "factory_game::prod_mod",
+            ],
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 123,
+                y: 8,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        OverrideInserterMovetime(
+            pos: (
+                x: 123,
+                y: 8,
+            ),
+            new_movetime: Some(90),
+        ),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 125,
+                y: 8,
+            ),
+            dir: North,
+            filter: None,
+        )),
+        PlaceEntity(Inserter(
+            pos: (
+                x: 124,
+                y: 12,
+            ),
+            dir: South,
+            filter: None,
+        )),
+        PlaceEntity(PowerPole(
+            pos: (
+                x: 121,
+                y: 7,
+            ),
+            ty: "factory_game::substation",
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 126,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 126,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 125,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 125,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Underground(
+            pos: (
+                x: 124,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 125,
+                y: 13,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 125,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Entrance,
+        )),
+        PlaceEntity(Underground(
+            pos: (
+                x: 126,
+                y: 9,
+            ),
+            direction: West,
+            ty: "factory_game::fast_transport_belt",
+            underground_dir: Exit,
+        )),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 127,
+                y: 7,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 127,
+                y: 7,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 112,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 112,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 115,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 115,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 118,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 118,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 121,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 121,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 124,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 124,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 127,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 127,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 128,
+                y: 10,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 128,
+                y: 10,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 129,
+                y: 4,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 129,
+                y: 4,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+        PlaceEntity(Beacon(
+            ty: "factory_game::beacon",
+            pos: (
+                x: 130,
+                y: 14,
+            ),
+        )),
+        AddModules(
+            pos: (
+                x: 130,
+                y: 14,
+            ),
+            modules: [
+                "factory_game::speed_mod",
+                "factory_game::speed_mod",
+            ],
+        ),
+    ],
+)
