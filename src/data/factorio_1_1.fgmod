@@ -37,6 +37,24 @@
             is_intermediate: false,
         ),
         (
+            name: "factory_game::coal_generation",
+            display_name: "Generate Coal from nothing",
+            possible_machines: [
+                "factory_game::assembler1",
+                "factory_game::assembler2",
+                "factory_game::assembler3",
+            ],
+            ings: [],
+            output: [
+                (
+                    item: "factory_game::coal",
+                    amount: 1,
+                ),
+            ],
+            time_to_craft: 1,
+            is_intermediate: false,
+        ),
+        (
             name: "factory_game::iron_smelting",
             display_name: "Smelt Iron Ore into Iron Plates",
             possible_machines: [
@@ -1229,6 +1247,189 @@
             infinite: None,
             effects: [
                 // RecipeUnlock("factory_game::assembling_machine_2"),
+            ],
+        ),
+        (
+            name: "factory_game::fluid_handling",
+            display_name: "Fluid Handling",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::green_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 50,
+            precursors: [
+                "factory_game::automation_2",
+                "factory_game::engine",
+            ],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: [
+                // RecipeUnlock("factory_game::fluid_tank"),
+                // RecipeUnlock("factory_game::pump"),
+            ],
+        ),
+        (
+            name: "factory_game::engine",
+            display_name: "Engine",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::green_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 100,
+            precursors: [
+                "factory_game::steel",
+                "factory_game::logistics_science_pack",
+            ],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: [
+                RecipeUnlock("factory_game::engine"),
+            ],
+        ),
+        (
+            name: "factory_game::oil_gathering",
+            display_name: "Oil Gathering",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::green_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 100,
+            precursors: [
+                "factory_game::fluid_handling",
+            ],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: [
+                // RecipeUnlock("factory_game::refinery"),
+                // RecipeUnlock("factory_game::chemical_plant"),
+                // RecipeUnlock("factory_game::solid_fuel_from_petroluem_gas"),
+                RecipeUnlock("factory_game::basic_oil_processing"),
+            ],
+        ),
+        (
+            name: "factory_game::plastics",
+            display_name: "Plastics",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::green_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 200,
+            precursors: [
+                "factory_game::oil_gathering",
+            ],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: [
+                RecipeUnlock("factory_game::plastic"),
+            ],
+        ),
+        (
+            name: "factory_game::advanced_circuit",
+            display_name: "Advanced Circuit",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::green_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 200,
+            precursors: [
+                "factory_game::plastics",
+            ],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: [
+                RecipeUnlock("factory_game::red_chip"),
+            ],
+        ),
+        (
+            name: "factory_game::sulfur",
+            display_name: "Sulfur",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::green_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 150,
+            precursors: [
+                "factory_game::oil_gathering",
+            ],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: [
+                RecipeUnlock("factory_game::sulfur"),
+                RecipeUnlock("factory_game::sulfuric_acid"),
+            ],
+        ),
+        (
+            name: "factory_game::chemical_science_pack",
+            display_name: "Chemical Science Pack",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::green_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 75,
+            precursors: [
+                "factory_game::advanced_circuit",
+                "factory_game::sulfur",
+            ],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: [
+                RecipeUnlock("factory_game::blue_science"),
             ],
         ),
     ],
