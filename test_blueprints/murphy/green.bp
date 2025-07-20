@@ -144,7 +144,7 @@
                 "factory_game::prod_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 5,
                 y: 5,
@@ -632,7 +632,7 @@
             dir: West,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 3,
                 y: 19,
@@ -1342,7 +1342,7 @@
             ty: "factory_game::fast_transport_belt",
             underground_dir: Entrance,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 3,
                 y: 31,
@@ -1357,7 +1357,7 @@
             dir: East,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 5,
                 y: 40,
@@ -1624,7 +1624,7 @@
                 "factory_game::prod_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 5,
                 y: 53,
@@ -2138,7 +2138,7 @@
             dir: West,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 3,
                 y: 67,
@@ -2848,7 +2848,7 @@
             ty: "factory_game::fast_transport_belt",
             underground_dir: Entrance,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 3,
                 y: 79,
@@ -2863,7 +2863,7 @@
             dir: East,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 5,
                 y: 88,
@@ -3130,7 +3130,7 @@
                 "factory_game::prod_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 5,
                 y: 101,
@@ -3644,7 +3644,7 @@
             dir: West,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 3,
                 y: 115,
@@ -4354,7 +4354,7 @@
             ty: "factory_game::fast_transport_belt",
             underground_dir: Entrance,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 3,
                 y: 127,
@@ -4369,7 +4369,7 @@
             dir: East,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 5,
                 y: 136,
@@ -4696,7 +4696,7 @@
                 "factory_game::prod_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 5,
                 y: 149,
@@ -5150,7 +5150,7 @@
             dir: West,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 3,
                 y: 163,
@@ -5860,7 +5860,7 @@
             ty: "factory_game::fast_transport_belt",
             underground_dir: Entrance,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 3,
                 y: 175,
@@ -5875,7 +5875,7 @@
             dir: East,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 5,
                 y: 184,
@@ -6142,7 +6142,7 @@
                 "factory_game::prod_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 5,
                 y: 197,
@@ -6515,7 +6515,7 @@
             direction: North,
             ty: "factory_game::fast_transport_belt",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 8,
                 y: 215,
@@ -6634,7 +6634,7 @@
             direction: West,
             ty: "factory_game::fast_transport_belt",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 8,
                 y: 233,
@@ -6835,7 +6835,7 @@
             dir: West,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 18,
                 y: 8,
@@ -7216,7 +7216,7 @@
             dir: North,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 16,
                 y: 22,
@@ -7770,7 +7770,7 @@
             dir: West,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 13,
                 y: 40,
@@ -8244,7 +8244,7 @@
             dir: West,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 18,
                 y: 56,
@@ -8748,7 +8748,7 @@
             dir: North,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 16,
                 y: 70,
@@ -9302,7 +9302,7 @@
             dir: West,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 13,
                 y: 88,
@@ -9776,7 +9776,7 @@
             dir: West,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 18,
                 y: 104,
@@ -10280,7 +10280,7 @@
             dir: North,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 16,
                 y: 118,
@@ -10834,7 +10834,7 @@
             dir: West,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 13,
                 y: 136,
@@ -11386,7 +11386,7 @@
             dir: West,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 18,
                 y: 152,
@@ -11812,7 +11812,7 @@
             dir: North,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 16,
                 y: 166,
@@ -12366,7 +12366,7 @@
             dir: West,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 13,
                 y: 184,
@@ -12840,7 +12840,7 @@
             dir: West,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 18,
                 y: 200,

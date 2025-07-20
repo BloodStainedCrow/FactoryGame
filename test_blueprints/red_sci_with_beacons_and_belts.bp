@@ -26,14 +26,14 @@
                 "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 3,
                 y: 6,
             ),
             ty: "factory_game::small_power_pole",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 3,
                 y: 12,
@@ -115,7 +115,7 @@
             ),
             ty: "factory_game::infinity_battery",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 3,
                 y: 2,
@@ -156,14 +156,14 @@
                 "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 9,
                 y: 6,
             ),
             ty: "factory_game::small_power_pole",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 9,
                 y: 12,
@@ -262,28 +262,28 @@
                 "factory_game::prod_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 13,
                 y: 6,
             ),
             ty: "factory_game::small_power_pole",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 19,
                 y: 6,
             ),
             ty: "factory_game::small_power_pole",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 19,
                 y: 12,
             ),
             ty: "factory_game::small_power_pole",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 13,
                 y: 12,
@@ -382,7 +382,7 @@
             ),
             ty: "factory_game::infinity_battery",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 13,
                 y: 2,
@@ -603,28 +603,28 @@
                 "factory_game::prod_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 23,
                 y: 6,
             ),
             ty: "factory_game::small_power_pole",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 29,
                 y: 6,
             ),
             ty: "factory_game::small_power_pole",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 29,
                 y: 12,
             ),
             ty: "factory_game::small_power_pole",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 23,
                 y: 12,
@@ -716,7 +716,7 @@
                 "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 23,
                 y: 2,
@@ -749,14 +749,14 @@
                 "factory_game::prod_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 33,
                 y: 6,
             ),
             ty: "factory_game::small_power_pole",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 33,
                 y: 12,
@@ -804,7 +804,7 @@
             ),
             ty: "factory_game::infinity_battery",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 33,
                 y: 2,
@@ -991,14 +991,14 @@
                 "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 39,
                 y: 6,
             ),
             ty: "factory_game::small_power_pole",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 39,
                 y: 12,
@@ -1080,28 +1080,28 @@
                 "factory_game::prod_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 43,
                 y: 6,
             ),
             ty: "factory_game::small_power_pole",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 49,
                 y: 6,
             ),
             ty: "factory_game::small_power_pole",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 49,
                 y: 12,
             ),
             ty: "factory_game::small_power_pole",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 43,
                 y: 12,
@@ -1200,21 +1200,21 @@
             ),
             ty: "factory_game::infinity_battery",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 43,
                 y: 2,
             ),
             ty: "factory_game::small_power_pole",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 53,
                 y: 6,
             ),
             ty: "factory_game::small_power_pole",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 53,
                 y: 12,
@@ -1245,7 +1245,7 @@
             ),
             ty: "factory_game::infinity_battery",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 53,
                 y: 2,
@@ -1467,14 +1467,14 @@
                 "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 59,
                 y: 6,
             ),
             ty: "factory_game::small_power_pole",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 59,
                 y: 12,

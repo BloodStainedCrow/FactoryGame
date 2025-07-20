@@ -75,7 +75,7 @@
                 "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 2,
                 y: 1,
@@ -200,7 +200,7 @@
                 "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 5,
                 y: 4,
@@ -264,7 +264,7 @@
             dir: East,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 7,
                 y: 12,
@@ -485,7 +485,7 @@
                 "factory_game::prod_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 7,
                 y: 26,
@@ -737,14 +737,14 @@
                 "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 15,
                 y: 4,
             ),
             ty: "factory_game::medium_power_pole",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 12,
                 y: 1,
@@ -919,14 +919,14 @@
                 "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 25,
                 y: 4,
             ),
             ty: "factory_game::medium_power_pole",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 22,
                 y: 1,
@@ -1016,7 +1016,7 @@
             dir: East,
             filter: None,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 17,
                 y: 12,
@@ -1848,7 +1848,7 @@
             ty: "factory_game::fast_transport_belt",
             underground_dir: Entrance,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 22,
                 y: 26,

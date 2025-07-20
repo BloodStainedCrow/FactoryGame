@@ -166,9 +166,11 @@ impl BlueprintAction {
                                 ty: data_store.belt_infos[ty as usize].name.clone(),
                                 underground_dir,
                             },
-                            PlaceEntityType::PowerPole { pos, ty } => BlueprintPlaceEntity::Chest {
-                                pos,
-                                ty: data_store.power_pole_data[ty as usize].name.clone(),
+                            PlaceEntityType::PowerPole { pos, ty } => {
+                                BlueprintPlaceEntity::PowerPole {
+                                    pos,
+                                    ty: data_store.power_pole_data[ty as usize].name.clone(),
+                                }
                             },
                             PlaceEntityType::Splitter {
                                 pos,
@@ -445,9 +447,9 @@ impl Blueprint {
         self.actions
             .iter()
             .map(|bp_action| {
-                bp_action
-                    .try_into(data_store)
-                    .expect("Action not possible with current mod set!")
+                bp_action.try_into(data_store).expect(
+                    format!("Action not possible with current mod set: {:?}", bp_action).as_str(),
+                )
             })
             .map(move |a| match a {
                 ActionType::PlaceFloorTile(PlaceFloorTileByHandInfo {

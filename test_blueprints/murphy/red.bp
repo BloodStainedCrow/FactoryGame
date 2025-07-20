@@ -213,7 +213,7 @@
                 "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 9,
                 y: 8,
@@ -730,7 +730,7 @@
                 "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 9,
                 y: 24,
@@ -1238,7 +1238,7 @@
                 "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 9,
                 y: 40,
@@ -1746,7 +1746,7 @@
                 "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 9,
                 y: 56,
@@ -2254,7 +2254,7 @@
                 "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 9,
                 y: 72,
@@ -2762,7 +2762,7 @@
                 "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 9,
                 y: 88,
@@ -3270,7 +3270,7 @@
                 "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 9,
                 y: 104,
@@ -4630,7 +4630,7 @@
                 "factory_game::speed_mod",
             ],
         ),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 12,
                 y: 122,

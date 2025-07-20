@@ -95,7 +95,7 @@
             ty: "factory_game::fast_transport_belt",
             underground_dir: Entrance,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 7,
                 y: 3,
@@ -543,7 +543,7 @@
             direction: South,
             ty: "factory_game::fast_transport_belt",
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 7,
                 y: 13,
@@ -771,7 +771,7 @@
             ty: "factory_game::fast_transport_belt",
             underground_dir: Entrance,
         )),
-        PlaceEntity(Chest(
+        PlaceEntity(PowerPole(
             pos: (
                 x: 17,
                 y: 3,
