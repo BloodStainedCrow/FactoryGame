@@ -1,3 +1,4 @@
+use log::error;
 use proptest::{
     prelude::{Just, Strategy, prop},
     prop_oneof,
@@ -6,8 +7,8 @@ use std::num::NonZero;
 use std::{borrow::Borrow, ops::Range};
 use tilelib::types::{DrawInstance, Layer};
 
-use crate::frontend::world::tile::UndergroundDir;
 use crate::{belt::splitter::SplitterDistributionMode, item::Indexable};
+use crate::{frontend::world::tile::UndergroundDir, item::WeakIdxTrait};
 
 use crate::{
     data::DataStore,
@@ -31,7 +32,12 @@ use crate::{
 // For now blueprint will just be a list of actions
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Blueprint {
-    pub actions: Vec<BlueprintAction>,
+    actions: Vec<BlueprintAction>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReusableBlueprint<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+    actions: Vec<ActionType<ItemIdxType, RecipeIdxType>>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -438,19 +444,23 @@ impl BlueprintAction {
     }
 }
 
-impl Blueprint {
-    pub fn actions_with_base_pos<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxType, RecipeIdxType> {
+    pub fn apply(
         &self,
         base_pos: Position,
+        game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        game_state.apply_actions(self.actions_with_base_pos(base_pos), data_store);
+    }
+
+    pub fn actions_with_base_pos(
+        &self,
+        base_pos: Position,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> {
         self.actions
             .iter()
-            .map(|bp_action| {
-                bp_action.try_into(data_store).expect(
-                    format!("Action not possible with current mod set: {:?}", bp_action).as_str(),
-                )
-            })
+            .cloned()
             .map(move |a| match a {
                 ActionType::PlaceFloorTile(PlaceFloorTileByHandInfo {
                     ghost_info:
@@ -603,6 +613,18 @@ impl Blueprint {
                         ty,
                     }),
                 }),
+                ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::FluidTank { pos, ty, rotation }),
+                }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::FluidTank {
+                        pos: Position {
+                            x: base_pos.x + pos.x,
+                            y: base_pos.y + pos.y,
+                        },
+                        ty,
+                        rotation,
+                    }),
+                }),
                 ActionType::SetRecipe(SetRecipeInfo { pos, recipe }) => {
                     ActionType::SetRecipe(SetRecipeInfo {
                         pos: Position {
@@ -642,6 +664,26 @@ impl Blueprint {
                 a => unreachable!("{:?}", a),
             })
     }
+}
+
+impl Blueprint {
+    pub fn get_reusable<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        &self,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> ReusableBlueprint<ItemIdxType, RecipeIdxType> {
+        ReusableBlueprint {
+            actions: self
+                .actions
+                .iter()
+                .map(|bp_action| {
+                    bp_action.try_into(data_store).expect(
+                        format!("Action not possible with current mod set: {:?}", bp_action)
+                            .as_str(),
+                    )
+                })
+                .collect(),
+        }
+    }
 
     pub fn apply<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &self,
@@ -649,7 +691,8 @@ impl Blueprint {
         game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        game_state.apply_actions(self.actions_with_base_pos(base_pos, data_store), data_store);
+        let reusable = self.get_reusable(data_store);
+        game_state.apply_actions(reusable.actions_with_base_pos(base_pos), data_store);
     }
 
     pub fn from_replay<
@@ -901,7 +944,10 @@ impl Blueprint {
                     vec![ActionType::PlaceEntity(PlaceEntityInfo {
                         entities: EntityPlaceOptions::Single(PlaceEntityType::FluidTank {
                             ty: *ty,
-                            pos: *pos,
+                            pos: Position {
+                                x: pos.x - base_pos.x,
+                                y: pos.y - base_pos.y,
+                            },
                             rotation: *rotation,
                         }),
                     })]
@@ -977,6 +1023,7 @@ impl Blueprint {
 
         for action in &self.actions {
             let Ok(action) = action.try_into(data_store) else {
+                error!("Could not draw blueprint!");
                 return;
             };
             let pos = action.get_pos();

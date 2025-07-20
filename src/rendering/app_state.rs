@@ -125,6 +125,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         let file = File::open("test_blueprints/red_sci.bp").unwrap();
         let bp: Blueprint = ron::de::from_reader(file).unwrap();
+        let bp = bp.get_reusable(data_store);
 
         puffin::set_scopes_on(false);
         let y_range = (1590..30000).step_by(7);
@@ -168,6 +169,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         let file = File::open("test_blueprints/red_and_green_with_clocking.bp").unwrap();
         let bp: Blueprint = ron::de::from_reader(file).unwrap();
+        let bp = bp.get_reusable(data_store);
 
         puffin::set_scopes_on(false);
         let y_range = (0..40_000).step_by(4_000);
@@ -212,6 +214,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         let file = File::open("test_blueprints/red_sci_with_beacons_and_belts.bp").unwrap();
         let bp: Blueprint = ron::de::from_reader(file).unwrap();
+        let bp = bp.get_reusable(data_store);
 
         let y_range = (0..20_000).step_by(6_000);
 
@@ -254,6 +257,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         let file = File::open("test_blueprints/lots_of_belts.bp").unwrap();
         let bp: Blueprint = ron::de::from_reader(file).unwrap();
+        let bp = bp.get_reusable(data_store);
 
         puffin::set_scopes_on(false);
         for y_pos in (1600..60_000).step_by(3) {
@@ -274,6 +278,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         let file = File::open("test_blueprints/solar_farm.bp").unwrap();
         let bp: Blueprint = ron::de::from_reader(file).unwrap();
+        let bp = bp.get_reusable(data_store);
 
         puffin::set_scopes_on(false);
         for y_pos in (1600..30_000).step_by(18) {
@@ -295,6 +300,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         let red = File::open("test_blueprints/eight_beacon_red_sci_with_storage.bp").unwrap();
         let red: Blueprint = ron::de::from_reader(red).unwrap();
+        let red = red.get_reusable(data_store);
 
         puffin::set_scopes_on(false);
         for y_pos in (1600..=30_000).step_by(20) {
@@ -1107,6 +1113,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                         }
                                                     },
                                                 },
+                                                Entity::FluidTank { ty, pos, rotation } => {
+                                                    let id = self.simulation_state.factory.fluid_store.fluid_box_pos_to_network_id[pos];
+                                                    if let Some(fluid) = id.fluid {
+
+                                                        let new_storage = match storage_update.new_pg_entity {
+                                                            crate::power::power_grid::PowerGridEntity::Assembler { ty, recipe, index } => Storage::Assembler { grid: storage_update.new_grid, recipe_idx_with_this_item: recipe.id, index },
+                                                            crate::power::power_grid::PowerGridEntity::Lab { ty, index } => Storage::Lab { grid: storage_update.new_grid, index },
+                                                            crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
+                                                            crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
+                                                            crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
+                                                            crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
+                                                        }.translate(fluid, data_store);
+                                                        self.simulation_state.factory.fluid_store.update_fluid_conn_if_needed(*pos, storage_update.position, e_size.into(), new_storage, &mut self.simulation_state.factory.storage_storage_inserters, data_store);
+                                                    }
+                                                },
 
                                                 _ => {},
                                             }
@@ -1497,6 +1518,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                 .recipe_to_translated_index
                                                                 [&(id.recipe, item)],
                                                         },
+                                                        dest_conn,
                                                         Box::new(|_weak_index: WeakIndex| {})
                                                             as Box<dyn FnOnce(WeakIndex) -> ()>,
                                                     )

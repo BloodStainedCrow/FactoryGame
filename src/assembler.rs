@@ -1,16 +1,17 @@
 use std::{array, i32, simd::Simd, u8};
 
-use itertools::Itertools;
-
 use crate::{
     data::{DataStore, ItemRecipeDir},
-    frontend::world::{tile::AssemblerID, Position},
-    item::{IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
+    frontend::world::{Position, tile::AssemblerID},
+    inserter::HAND_SIZE,
+    item::{ITEMCOUNTTYPE, IdxTrait, Item, Recipe, WeakIdxTrait},
     power::{
-        power_grid::{IndexUpdateInfo, PowerGridEntity, PowerGridIdentifier, MAX_POWER_MULT},
         Watt,
+        power_grid::{IndexUpdateInfo, MAX_POWER_MULT, PowerGridEntity, PowerGridIdentifier},
     },
 };
+use itertools::Itertools;
+use std::cmp::max;
 
 pub type Simdtype = Simd<u8, 32>;
 
@@ -144,7 +145,8 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
         Self,
-        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>,
+        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>
+        + use<ItemIdxType, RecipeIdxType>,
     ) {
         // TODO: This just works with box::into_iter in edition 2024
         let (assemblers_0_1, assemblers_0_1_updates): (Vec<_>, Vec<_>) = self
@@ -350,7 +352,8 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
         Self,
-        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType, NUM_INGS, NUM_OUTPUTS>,
+        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>
+        + use<ItemIdxType, RecipeIdxType, NUM_INGS, NUM_OUTPUTS>,
     ) {
         #[cfg(debug_assertions)]
         {
@@ -1121,6 +1124,8 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         ty: u8,
         modules: &[Option<usize>],
         position: Position,
+        recipe_lookup: &[(usize, usize)],
+        recipe_ings: &[[ITEMCOUNTTYPE; NUM_INGS]],
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> u32 {
         assert_eq!(
@@ -1155,9 +1160,13 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             .map(|module| i16::from(data_store.module_info[module].power_mod))
             .sum();
 
+        let (ing_idx, out_idx) = recipe_lookup[self.recipe.id.into()];
+
+        let our_ings: &[ITEMCOUNTTYPE; NUM_INGS] = &recipe_ings[ing_idx];
+
         self.add_assembler_with_data(
             // TODO: Make the automatic insertion limit dependent on the speed of the machine and recipe
-            array::from_fn(|ing| 20),
+            array::from_fn(|ing| max(HAND_SIZE, our_ings[ing].saturating_mul(3))),
             array::from_fn(|_| 0),
             array::from_fn(|_| 0),
             0,
@@ -1489,9 +1498,9 @@ pub mod arrays {
     use std::{convert::TryInto, marker::PhantomData};
 
     use serde::{
+        Deserialize, Deserializer, Serialize, Serializer,
         de::{SeqAccess, Visitor},
         ser::SerializeTuple,
-        Deserialize, Deserializer, Serialize, Serializer,
     };
     pub fn serialize<S: Serializer, T: Serialize, const N: usize>(
         data: &[T; N],

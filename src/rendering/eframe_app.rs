@@ -316,26 +316,18 @@ impl eframe::App for App {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         if let Some(state) = &self.currently_loaded_game {
             match &state.state {
-                LoadedGame::ItemU8RecipeU8(state) => save(
-                    &state.state.lock(),
-                    &state.data_store.lock(),
-                    state.data_store.lock().checksum.clone(),
-                ),
-                LoadedGame::ItemU8RecipeU16(state) => save(
-                    &state.state.lock(),
-                    &state.data_store.lock(),
-                    state.data_store.lock().checksum.clone(),
-                ),
-                LoadedGame::ItemU16RecipeU8(state) => save(
-                    &state.state.lock(),
-                    &state.data_store.lock(),
-                    state.data_store.lock().checksum.clone(),
-                ),
-                LoadedGame::ItemU16RecipeU16(state) => save(
-                    &state.state.lock(),
-                    &state.data_store.lock(),
-                    state.data_store.lock().checksum.clone(),
-                ),
+                LoadedGame::ItemU8RecipeU8(state) => {
+                    save(&state.state.lock(), &state.data_store.lock())
+                },
+                LoadedGame::ItemU8RecipeU16(state) => {
+                    save(&state.state.lock(), &state.data_store.lock())
+                },
+                LoadedGame::ItemU16RecipeU8(state) => {
+                    save(&state.state.lock(), &state.data_store.lock())
+                },
+                LoadedGame::ItemU16RecipeU16(state) => {
+                    save(&state.state.lock(), &state.data_store.lock())
+                },
             }
         }
     }

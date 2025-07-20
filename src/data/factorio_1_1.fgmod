@@ -1080,6 +1080,7 @@
             effects: [
                 RecipeUnlock("factory_game::iron_ore_generation"),
                 RecipeUnlock("factory_game::copper_ore_generation"),
+                RecipeUnlock("factory_game::coal_generation"),
                 RecipeUnlock("factory_game::raw_oil_generation"),
                 RecipeUnlock("factory_game::water_generation"),
             ],

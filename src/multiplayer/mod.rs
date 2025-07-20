@@ -240,7 +240,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 #[cfg(debug_assertions)]
                 {
                     profiling::scope!("Crash anticipation save to disk");
-                    save(&game_state.lock(), data_store, data_store.checksum.clone());
+                    save(&game_state.lock(), data_store);
                 }
                 game_state_update_handler.update(
                     &mut *{

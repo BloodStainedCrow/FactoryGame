@@ -201,10 +201,10 @@ fn run_integrated_server(
                     .map(|sg| {
                         if sg.checksum != data_store.checksum {
                             // Try reconciliation
-                            todo!("Checksum mismatch, try to merge old and new mod state")
+                            // todo!("Checksum mismatch, try to merge old and new mod state")
                         } else {
-                            sg.game_state
                         }
+                        sg.game_state
                     })
                     .unwrap(),
                 StartGameInfo::LoadReadable(path) => load_readable(path)

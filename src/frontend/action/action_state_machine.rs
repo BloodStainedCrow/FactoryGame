@@ -27,7 +27,7 @@ use crate::{
         },
     },
     item::{ITEMCOUNTTYPE, IdxTrait, Item, Recipe, WeakIdxTrait},
-    rendering::render_world::{SWITCH_TO_MAPVIEW_TILES, SWITCH_TO_MAPVIEW_ZOOM_LEVEL},
+    rendering::render_world::SWITCH_TO_MAPVIEW_ZOOM_LEVEL,
 };
 
 use super::{ActionType, PLAYERID, place_tile::PositionInfo};
@@ -256,11 +256,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
                                 match held_object {
                                     HeldObject::Blueprint(bp) => {
-                                        bp.actions_with_base_pos(Self::player_mouse_to_tile(
+                                        bp.get_reusable(data_store).actions_with_base_pos(Self::player_mouse_to_tile(
                                             self.zoom_level,
                                             self.map_view_info.unwrap_or(self.local_player_pos),
                                             self.current_mouse_pos,
-                                        ), data_store).collect()
+                                        )).collect()
                                     },
 
                                     HeldObject::Tile(floor_tile) => {
@@ -639,7 +639,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             },
                         ));
                     },
-                    Some(Entity::FluidTank { ty, pos, rotation }) => todo!(),
+                    Some(Entity::FluidTank { ty, pos, rotation }) => {
+                        self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                            PlaceEntityType::FluidTank {
+                                pos: Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.map_view_info.unwrap_or(self.local_player_pos),
+                                    self.current_mouse_pos,
+                                ),
+                                ty: *ty,
+                                rotation: *rotation,
+                            },
+                        ));
+                    },
                     Some(Entity::Inserter {
                         direction, filter, ..
                     }) => {
@@ -973,10 +985,27 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ));
                 vec![]
             },
+            (
+                ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::FluidTank {
+                    pos,
+                    ty,
+                    rotation,
+                })),
+                Key::Key9,
+            ) => {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::FluidTank {
+                        pos: *pos,
+                        ty: (*ty + 1) % data_store.fluid_tank_infos.len() as u8,
+                        rotation: *rotation,
+                    },
+                ));
+                vec![]
+            },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key9) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::FluidTank {
-                        ty: 1,
+                        ty: 0,
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
                             self.map_view_info.unwrap_or(self.local_player_pos),

@@ -32,8 +32,8 @@ pub struct SaveGame<
 pub fn save<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     game_state: &GameState<ItemIdxType, RecipeIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    checksum: String,
 ) {
+    let checksum = data_store.checksum.clone();
     let dir = ProjectDirs::from("de", "aschhoff", "factory_game").expect("No Home path found");
 
     create_dir_all(dir.data_dir()).expect("Could not create data dir");

@@ -6,15 +6,15 @@ use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use crate::{
     assembler::{AssemblerOnclickInfo, AssemblerRemovalInfo, FullAssemblerStore},
     data::{DataStore, LazyPowerMachineInfo},
-    frontend::world::{tile::AssemblerID, Position},
-    item::{usize_from, IdxTrait, Indexable, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
+    frontend::world::{Position, tile::AssemblerID},
+    item::{ITEMCOUNTTYPE, IdxTrait, Indexable, Item, Recipe, WeakIdxTrait, usize_from},
     lab::MultiLabStore,
     network_graph::{Network, WeakIndex},
     power::Joule,
     research::{ResearchProgress, TechState},
     statistics::{
-        recipe::{RecipeTickInfo, RecipeTickInfoParts, SingleRecipeTickInfo},
         Timeline,
+        recipe::{RecipeTickInfo, RecipeTickInfoParts, SingleRecipeTickInfo},
     },
 };
 
@@ -316,9 +316,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             match entry {
                 std::collections::hash_map::Entry::Occupied(mut occupied_entry) => {
                     let old = occupied_entry.get_mut();
-                    old.0 += affected.1 .0;
-                    old.1 += affected.1 .1;
-                    old.2 += affected.1 .2;
+                    old.0 += affected.1.0;
+                    old.1 += affected.1.1;
+                    old.2 += affected.1.2;
                 },
                 std::collections::hash_map::Entry::Vacant(vacant_entry) => {
                     vacant_entry.insert(affected.1);
@@ -377,7 +377,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                     if s == o {
                         Some(s)
                     } else {
-                        todo!("You specified using Fuel to charge accumulators on one power network, and not using it on another, how do I want to handle this...")
+                        todo!(
+                            "You specified using Fuel to charge accumulators on one power network, and not using it on another, how do I want to handle this..."
+                        )
                     }
                 },
             },
@@ -544,7 +546,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         bool, // This tells the storage to delete us
         impl IntoIterator<Item = Position> + use<ItemIdxType, RecipeIdxType>,
         impl IntoIterator<Item = (BeaconAffectedEntity<RecipeIdxType>, (i16, i16, i16))>
-            + use<'a, ItemIdxType, RecipeIdxType>,
+        + use<'a, ItemIdxType, RecipeIdxType>,
     ) {
         let ((), no_longer_connected_entities, new_electric_networks) =
             self.grid_graph.remove_node(pole_pos);
@@ -1177,22 +1179,57 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         ) {
             (0, 1) => self.stores.assemblers_0_1
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
-            .add_assembler(ty, modules, assembler_position, data_store),
+            .add_assembler(
+                ty,
+                modules,
+                assembler_position,
+                &data_store.recipe_index_lookups,
+                &data_store.recipe_ings.ing0,
+                data_store,
+            ),
 
             (1, 1) => self.stores.assemblers_1_1
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
-            .add_assembler(ty, modules, assembler_position, data_store),
+            .add_assembler(
+                ty,
+                modules,
+                assembler_position,
+                &data_store.recipe_index_lookups,
+                &data_store.recipe_ings.ing1,
+                data_store,
+            ),
 
             (2, 1) => self.stores.assemblers_2_1
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
-            .add_assembler(ty, modules, assembler_position, data_store),
+            .add_assembler(
+                ty,
+                modules,
+                assembler_position,
+                &data_store.recipe_index_lookups,
+                &data_store.recipe_ings.ing2,
+                data_store,
+            ),
 
             (3, 1) => self.stores.assemblers_3_1
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
-            .add_assembler(ty, modules, assembler_position, data_store),
+            .add_assembler(
+                ty,
+                modules,
+                assembler_position,
+                &data_store.recipe_index_lookups,
+                &data_store.recipe_ings.ing3,
+                data_store,
+            ),
             (4, 1) => self.stores.assemblers_4_1
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
-            .add_assembler(ty, modules, assembler_position, data_store),
+            .add_assembler(
+                ty,
+                modules,
+                assembler_position,
+                &data_store.recipe_index_lookups,
+                &data_store.recipe_ings.ing4,
+                data_store,
+            ),
 
             _ => unreachable!(),
         };
@@ -2148,7 +2185,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         pole_pos: Position,
         weak_idx: WeakIndex,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl Iterator<Item = (BeaconAffectedEntity<RecipeIdxType>, (i16, i16, i16))> + use<ItemIdxType, RecipeIdxType> {
+    ) -> impl Iterator<Item = (BeaconAffectedEntity<RecipeIdxType>, (i16, i16, i16))>
+    + use<ItemIdxType, RecipeIdxType> {
         let (
             _beacon_pos,
             PowerGridEntity::Beacon {
@@ -2326,7 +2364,8 @@ impl MultiLazyPowerProducer {
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
         Self,
-        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>,
+        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>
+        + use<ItemIdxType, RecipeIdxType>,
     ) {
         (todo!(), [])
     }

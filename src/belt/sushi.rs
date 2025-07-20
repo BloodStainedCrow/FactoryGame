@@ -1,7 +1,6 @@
 use std::{iter::repeat, mem};
 
 use itertools::Itertools;
-use log::error;
 
 use crate::{
     belt::belt::NoSpaceError,

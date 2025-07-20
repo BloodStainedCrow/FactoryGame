@@ -8,7 +8,7 @@ use crate::{
     item::ITEMCOUNTTYPE,
     storage_list::{SingleItemStorages, index_fake_union},
 };
-use log::{error, info, trace};
+use log::{info, trace, warn};
 use std::{cmp::min, iter};
 
 const NUM_BUCKETS: usize = 120;
@@ -784,6 +784,11 @@ impl BucketedStorageStorageInserterStore {
         id: InserterIdentifier,
         new_src: FakeUnionStorage,
     ) -> InserterIdentifier {
+        if id.source == new_src {
+            warn!("Tried to update src to the same id!");
+            return id;
+        }
+
         if let Some(idx) = self.waiting_for_item.iter().position(|i| {
             i.storage_id_in == id.source && i.storage_id_out == id.dest && i.id == id.id
         }) {
@@ -879,6 +884,11 @@ impl BucketedStorageStorageInserterStore {
         id: InserterIdentifier,
         new_dest: FakeUnionStorage,
     ) -> InserterIdentifier {
+        if id.dest == new_dest {
+            warn!("Tried to update dest to the same id!");
+            return id;
+        }
+
         if let Some(idx) = self.waiting_for_item.iter().position(|i| {
             i.storage_id_in == id.source && i.storage_id_out == id.dest && i.id == id.id
         }) {

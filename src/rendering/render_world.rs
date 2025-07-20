@@ -5,7 +5,6 @@ use crate::{
     TICKS_PER_SECOND_LOGIC,
     assembler::AssemblerOnclickInfo,
     belt::{BeltTileId, belt::BeltLenType, splitter::SPLITTER_BELT_LEN},
-    blueprint::Blueprint,
     data::{DataStore, ItemRecipeDir, factorio_1_1::get_raw_data_test},
     frontend::{
         action::{
@@ -39,7 +38,7 @@ use log::{info, trace};
 use parking_lot::MutexGuard;
 use std::cmp::max;
 use std::fs::File;
-use std::sync::{LazyLock, OnceLock};
+use std::sync::LazyLock;
 use std::{
     cmp::{Ordering, min},
     iter::successors,
@@ -1088,7 +1087,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             Entity::FluidTank { ty, pos, rotation } => {
                                 let size = data_store.fluid_tank_infos[usize::from(*ty)].size;
 
-                                texture_atlas.beacon.draw(
+                                texture_atlas.belt[*rotation].draw(
                                     [
                                         chunk_draw_offs.0 + (pos.x % 16) as f32,
                                         chunk_draw_offs.1 + (pos.y % 16) as f32,
@@ -1400,7 +1399,20 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         ty,
                         pos,
                         rotation,
-                    } => {},
+                    } => {
+                        let size: [u16; 2] = [1, 1];
+                        texture_atlas.belt[*rotation].draw(
+                            [
+                                pos.x as f32 - camera_pos.0
+                                    + num_tiles_across_screen_horizontal / 2.0,
+                                pos.y as f32 - camera_pos.1
+                                    + num_tiles_across_screen_vertical / 2.0,
+                            ],
+                            size,
+                            0,
+                            &mut entity_layer,
+                        );
+                    },
                     crate::frontend::world::tile::PlaceEntityType::MiningDrill {
                         ty,
                         pos,
