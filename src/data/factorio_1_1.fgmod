@@ -583,6 +583,170 @@
         //    time_to_craft: 300,
         //    is_intermediate: true,
         //),
+        (
+           name: "factory_game::purple_science",
+           display_name: "Purple Science",
+           possible_machines: [
+               "factory_game::assembler1",
+               "factory_game::assembler2",
+               "factory_game::assembler3",
+           ],
+           ings: [
+               (
+                   item: "factory_game::electric_furnace",
+                   amount: 1,
+               ),
+               (
+                   item: "factory_game::prod_module_1",
+                   amount: 1,
+               ),
+                (
+                   item: "factory_game::rail",
+                   amount: 30,
+               ),
+           ],
+           output: [
+               (
+                   item: "factory_game::purple_science",
+                   amount: 3,
+               ),
+           ],
+           time_to_craft: 1260,
+           is_intermediate: true,
+        ),
+        (
+           name: "factory_game::electric_furnace",
+           display_name: "Electric Furnace",
+           possible_machines: [
+               "factory_game::assembler1",
+               "factory_game::assembler2",
+               "factory_game::assembler3",
+           ],
+           ings: [
+               (
+                   item: "factory_game::red_chip",
+                   amount: 5,
+               ),
+               (
+                   item: "factory_game::steel",
+                   amount: 5,
+               ),
+                (
+                   item: "factory_game::stone_brick",
+                   amount: 10,
+               ),
+           ],
+           output: [
+               (
+                   item: "factory_game::electric_furnace",
+                   amount: 1,
+               ),
+           ],
+           time_to_craft: 300,
+           is_intermediate: false,
+        ),
+        (
+           name: "factory_game::stone_brick",
+           display_name: "Stone Brick",
+           possible_machines: [
+               "factory_game::electric_furnace",
+           ],
+           ings: [
+               (
+                   item: "factory_game::stone",
+                   amount: 2,
+               ),
+           ],
+           output: [
+               (
+                   item: "factory_game::stone_brick",
+                   amount: 1,
+               ),
+           ],
+           time_to_craft: 192,
+           is_intermediate: false,
+        ),
+        (
+           name: "factory_game::prod_module_1",
+           display_name: "Productivity Module 1",
+           possible_machines: [
+               "factory_game::assembler1",
+               "factory_game::assembler2",
+               "factory_game::assembler3",
+           ],
+           ings: [
+               (
+                   item: "factory_game::red_chip",
+                   amount: 5,
+               ),
+               (
+                   item: "factory_game::green_chip",
+                   amount: 5,
+               ),
+           ],
+           output: [
+               (
+                   item: "factory_game::prod_module_1",
+                   amount: 1,
+               ),
+           ],
+           time_to_craft: 900,
+           is_intermediate: false,
+        ),
+        (
+           name: "factory_game::rail",
+           display_name: "Rail",
+           possible_machines: [
+               "factory_game::assembler1",
+               "factory_game::assembler2",
+               "factory_game::assembler3",
+           ],
+           ings: [
+               (
+                   item: "factory_game::iron_stick",
+                   amount: 1,
+               ),
+               (
+                   item: "factory_game::steel",
+                   amount: 1,
+               ),
+               (
+                   item: "factory_game::stone",
+                   amount: 1,
+               ),
+           ],
+           output: [
+               (
+                   item: "factory_game::rail",
+                   amount: 2,
+               ),
+           ],
+           time_to_craft: 30,
+           is_intermediate: false,
+        ),
+        (
+           name: "factory_game::iron_stick",
+           display_name: "Iron Stick",
+           possible_machines: [
+               "factory_game::assembler1",
+               "factory_game::assembler2",
+               "factory_game::assembler3",
+           ],
+           ings: [
+               (
+                   item: "factory_game::iron_plate",
+                   amount: 1,
+               ),
+           ],
+           output: [
+               (
+                   item: "factory_game::iron_stick",
+                   amount: 2,
+               ),
+           ],
+           time_to_craft: 30,
+           is_intermediate: true,
+        ),
     ],
     items: [
         (
@@ -805,6 +969,69 @@
             name: "factory_game::pipe",
             display_name: "Pipe",
             stack_size: 100,
+            placed_as: None,
+            burnable_in: [],
+            science_data: None,
+            is_fluid: false,
+        ),
+        (
+            name: "factory_game::purple_science",
+            display_name: "Purple Science",
+            stack_size: 200,
+            placed_as: None,
+            burnable_in: [],
+            science_data: Some(()),
+            is_fluid: false,
+        ),
+        (
+            name: "factory_game::electric_furnace",
+            display_name: "Electric Furnace",
+            stack_size: 50,
+            placed_as: Some(AssemblingMachine("factory_game::electric_furnace")),
+            burnable_in: [],
+            science_data: None,
+            is_fluid: false,
+        ),
+        (
+            name: "factory_game::stone",
+            display_name: "Stone",
+            stack_size: 50,
+            placed_as: None,
+            burnable_in: [],
+            science_data: None,
+            is_fluid: false,
+        ),
+        (
+            name: "factory_game::stone_brick",
+            display_name: "Stone Brick",
+            stack_size: 100,
+            placed_as: None,
+            burnable_in: [],
+            science_data: None,
+            is_fluid: false,
+        ),
+        (
+            name: "factory_game::prod_module_1",
+            display_name: "Productivity Module 1",
+            stack_size: 50,
+            placed_as: None,
+            burnable_in: [],
+            science_data: None,
+            is_fluid: false,
+        ),
+        (
+            name: "factory_game::rail",
+            display_name: "Rail",
+            stack_size: 100,
+            placed_as: None,
+            burnable_in: [],
+            science_data: None,
+            is_fluid: false,
+        ),
+        (
+            name: "factory_game::iron_stick",
+            display_name: "Iron Stick",
+            stack_size: 200,
             placed_as: None,
             burnable_in: [],
             science_data: None,
@@ -1100,6 +1327,7 @@
                 RecipeUnlock("factory_game::gears"),
                 RecipeUnlock("factory_game::copper_smelting"),
                 RecipeUnlock("factory_game::yellow_belt"),
+                RecipeUnlock("factory_game::stone_brick"),
             ],
         ),
         (
@@ -1431,6 +1659,220 @@
             infinite: None,
             effects: [
                 RecipeUnlock("factory_game::blue_science"),
+            ],
+        ),
+        (
+            name: "factory_game::steel_furnace",
+            display_name: "Advanced material processing",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::green_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 75,
+            precursors: [
+                "factory_game::logistics_science_pack",
+                "factory_game::steel",
+            ],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: [
+                // RecipeUnlock("factory_game::steel_furnace"),
+            ],
+        ),
+        (
+            name: "factory_game::electric_furnace",
+            display_name: "Advanced material processing 2",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::green_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::blue_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 250,
+            precursors: [
+                "factory_game::steel_furnace",
+                "factory_game::chemical_science_pack",
+            ],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: [
+                RecipeUnlock("factory_game::electric_furnace"),
+            ],
+        ),
+        (
+            name: "factory_game::modules",
+            display_name: "Modules",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::green_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 100,
+            precursors: [
+                "factory_game::advanced_circuit",
+            ],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: [],
+        ),
+        (
+            name: "factory_game::prod_module",
+            display_name: "Productivity Module",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::green_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 50,
+            precursors: [
+                "factory_game::modules",
+            ],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: [
+                RecipeUnlock("factory_game::prod_module_1"),
+            ],
+        ),
+        (
+            name: "factory_game::railway",
+            display_name: "Railway",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::green_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 75,
+            precursors: [
+                "factory_game::engine",
+                "factory_game::logistics_2",
+            ],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: [
+                RecipeUnlock("factory_game::iron_stick"),
+                RecipeUnlock("factory_game::rail"),
+                // RecipeUnlock("factory_game::cargo_wagon"),
+                // RecipeUnlock("factory_game::locomotive"),
+            ],
+        ),
+        (
+            name: "factory_game::logistics_2",
+            display_name: "Railway",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::green_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 200,
+            precursors: [
+                "factory_game::logistics",
+                "factory_game::logistics_science_pack",
+            ],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: [
+                // RecipeUnlock("factory_game::red_belt"),
+                // RecipeUnlock("factory_game::red_underground"),
+                // RecipeUnlock("factory_game::red_splitter"),
+            ],
+        ),
+        (
+            name: "factory_game::logistics",
+            display_name: "Railway",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 20,
+            precursors: [
+                "factory_game::automation_science_pack",
+            ],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: [
+                // RecipeUnlock("factory_game::yellow_underground"),
+                // RecipeUnlock("factory_game::yellow_splitter"),
+            ],
+        ),
+        (
+            name: "factory_game::purple_science",
+            display_name: "Production Science Pack",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::green_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::blue_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 100,
+            precursors: [
+                "factory_game::electric_furnace",
+                "factory_game::railway",
+                "factory_game::prod_module",
+            ],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: [
+                RecipeUnlock("factory_game::purple_science"),
             ],
         ),
     ],
