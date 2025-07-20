@@ -5,6 +5,7 @@ use crate::inserter::storage_storage_with_buckets::LargeInserterState;
 use crate::inserter::storage_storage_with_buckets::{
     BucketedStorageStorageInserterStore, BucketedStorageStorageInserterStoreFrontend, InserterId,
 };
+use crate::item::ITEMCOUNTTYPE;
 use crate::liquid::FluidConnectionDir;
 use crate::liquid::connection_logic::can_fluid_tanks_connect_to_single_connection;
 use crate::{
@@ -467,6 +468,7 @@ impl StorageStorageInserterStore {
         movetime: u16,
         start: Storage<RecipeIdxType>,
         dest: Storage<RecipeIdxType>,
+        hand_size: ITEMCOUNTTYPE,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> InserterIdentifier {
         let source = FakeUnionStorage::from_storage_with_statics_at_zero(item, start, data_store);
@@ -481,7 +483,7 @@ impl StorageStorageInserterStore {
                 )
             })
             .1
-            .add_inserter(source, dest, HAND_SIZE);
+            .add_inserter(source, dest, hand_size);
 
         InserterIdentifier { source, dest, id }
     }

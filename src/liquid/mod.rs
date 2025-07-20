@@ -20,7 +20,7 @@ pub mod connection_logic;
 
 const FLUID_INSERTER_MOVETIME: u16 = 1;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub struct FluidSystemId<ItemIdxType: WeakIdxTrait> {
     pub fluid: Option<Item<ItemIdxType>>,
     index: usize,
@@ -140,7 +140,10 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                 let removed_ids: Vec<_> = connected_boxes
                     .iter()
                     .map(|pos| self.fluid_box_pos_to_network_id[pos])
+                    .unique()
                     .collect();
+
+                assert!(removed_ids.iter().all_unique());
                 for removed_id in removed_ids {
                     self.merge_fluid_system(
                         network_to_join_into,
@@ -912,6 +915,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                 index: self.get_chest_id().unwrap(),
             },
             dest,
+            50,
             data_store,
         );
 
@@ -943,6 +947,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                 static_id: StaticID::Chest as u16,
                 index: self.get_chest_id().unwrap(),
             },
+            50,
             data_store,
         );
 
@@ -979,6 +984,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                 static_id: StaticID::Chest as u16,
                 index: dest_fluid_network.get_chest_id().unwrap(),
             },
+            50,
             data_store,
         );
 

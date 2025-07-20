@@ -24,7 +24,9 @@ use crate::{
         splitter::{SPLITTER_BELT_LEN, SplitterDistributionMode, SplitterSide},
     },
     data::{DataStore, ItemRecipeDir},
-    inserter::{MOVETIME, StaticID, Storage, storage_storage_with_buckets::InserterIdentifier},
+    inserter::{
+        HAND_SIZE, MOVETIME, StaticID, Storage, storage_storage_with_buckets::InserterIdentifier,
+    },
     item::{IdxTrait, Item, Recipe, WeakIdxTrait, usize_from},
     network_graph::WeakIndex,
     power::power_grid::{BeaconAffectedEntity, PowerGridEntity, PowerGridIdentifier},
@@ -1926,6 +1928,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     movetime,
                     start_storage,
                     dest_storage,
+                    HAND_SIZE,
                     data_store,
                 );
 
