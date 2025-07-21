@@ -1844,14 +1844,14 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         ui.add(Label::new(&data_store.assembler_info[i].display_name).extend());
 
                                         });
-                                    row.col(|ui| {ui.label(format!("{}", pg.num_assemblers_of_type[i]));});
+                                    row.col(|ui| {ui.add(Label::new(format!("{}", pg.num_assemblers_of_type[i])).extend());});
                                 } else {
                                     let i = i - pg.num_assemblers_of_type.len();
                                     row.col(|ui| {
                                         ui.add(Label::new(&data_store.solar_panel_info[i].display_name).extend());
 
                                         });
-                                    row.col(|ui| {ui.label(format!("{}", pg.num_solar_panels_of_type[i]));});
+                                    row.col(|ui| {ui.add(Label::new(format!("{}", pg.num_solar_panels_of_type[i])).extend());});
                                 }
                             });
                         });
