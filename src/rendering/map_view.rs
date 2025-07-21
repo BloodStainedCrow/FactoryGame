@@ -5,7 +5,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use tilelib::types::{DrawInstance, Layer, RendererTrait};
 
 use crate::{
-    frontend::world::{tile::World, Position},
+    frontend::world::{Position, tile::World},
     item::IdxTrait,
 };
 

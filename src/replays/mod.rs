@@ -9,9 +9,9 @@ use std::mem;
 
 use std::path::PathBuf;
 
-use genawaiter::rc::{r#gen, Gen};
 use genawaiter::GeneratorState::Complete;
 use genawaiter::GeneratorState::Yielded;
+use genawaiter::rc::{Gen, r#gen};
 use itertools::Itertools;
 
 use crate::{
@@ -50,10 +50,10 @@ pub struct ReplayAction<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> 
 }
 
 impl<
-        ItemIdxType: IdxTrait,
-        RecipeIdxType: IdxTrait,
-        DataStor: Borrow<DataStore<ItemIdxType, RecipeIdxType>>,
-    > Replay<ItemIdxType, RecipeIdxType, DataStor>
+    ItemIdxType: IdxTrait,
+    RecipeIdxType: IdxTrait,
+    DataStor: Borrow<DataStore<ItemIdxType, RecipeIdxType>>,
+> Replay<ItemIdxType, RecipeIdxType, DataStor>
 {
     pub fn new(
         game_state: &GameState<ItemIdxType, RecipeIdxType>,

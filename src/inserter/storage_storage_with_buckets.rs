@@ -503,7 +503,7 @@ impl BucketedStorageStorageInserterStore {
             .expect("No ids for (source, dest) were ever given out!");
 
         // Only decrease if the id is the highest, so we do not invalidate but a simple place -> remove loop does not cause problems
-        if *old_id - 1 == id.0 {
+        if *old_id == id.0 + 1 {
             *old_id -= 1;
         }
 
@@ -789,6 +789,16 @@ impl BucketedStorageStorageInserterStore {
             return id;
         }
 
+        let old_id = self
+            .id_lookup
+            .get_mut(&(id.source, id.dest))
+            .expect("No ids for (source, dest) were ever given out!");
+
+        // Only decrease if the id is the highest, so we do not invalidate but a simple place -> remove loop does not cause problems
+        if *old_id == id.id.0 + 1 {
+            *old_id -= 1;
+        }
+
         if let Some(idx) = self.waiting_for_item.iter().position(|i| {
             i.storage_id_in == id.source && i.storage_id_out == id.dest && i.id == id.id
         }) {
@@ -887,6 +897,16 @@ impl BucketedStorageStorageInserterStore {
         if id.dest == new_dest {
             warn!("Tried to update dest to the same id!");
             return id;
+        }
+
+        let old_id = self
+            .id_lookup
+            .get_mut(&(id.source, id.dest))
+            .expect("No ids for (source, dest) were ever given out!");
+
+        // Only decrease if the id is the highest, so we do not invalidate but a simple place -> remove loop does not cause problems
+        if *old_id == id.id.0 + 1 {
+            *old_id -= 1;
         }
 
         if let Some(idx) = self.waiting_for_item.iter().position(|i| {

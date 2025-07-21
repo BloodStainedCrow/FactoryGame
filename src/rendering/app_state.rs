@@ -1,5 +1,5 @@
+use crate::belt::BeltTileId;
 use crate::data::AllowedFluidDirection;
-use crate::inserter::HAND_SIZE;
 use crate::inserter::storage_storage_with_buckets::InserterIdentifier;
 use crate::inserter::storage_storage_with_buckets::LargeInserterState;
 use crate::inserter::storage_storage_with_buckets::{
@@ -653,12 +653,16 @@ enum InserterUpdateInfo {
 }
 
 #[derive(Debug)]
-pub enum InstantiateInserterError {
+pub enum InstantiateInserterError<ItemIdxType: WeakIdxTrait> {
     NotUnattachedInserter,
     SourceMissing,
     DestMissing,
-    PleaseSpecifyFilter,
-    ItemConflict,
+    PleaseSpecifyFilter {
+        belts_which_could_help: Vec<BeltTileId<ItemIdxType>>,
+    },
+    ItemConflict {
+        belts_which_could_help: Vec<BeltTileId<ItemIdxType>>,
+    },
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, RecipeIdxType> {
@@ -682,6 +686,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         // panic!("{}", num_assemblers);
 
         for action in actions {
+            profiling::scope!("Apply Action");
             // FIXME: I just clone for now
             match action.borrow().clone() {
                 ActionType::SetActiveResearch { tech } => {
@@ -1143,6 +1148,30 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 },
                             }
 
+                            #[cfg(debug_assertions)]
+                            {
+                                let affected_grids_and_potential_match = self
+                                    .simulation_state
+                                    .factory
+                                    .power_grids
+                                    .power_grids
+                                    .iter()
+                                    .filter(|grid| !grid.is_placeholder)
+                                    .all(|pg| {
+                                        pg.beacon_affected_entities
+                                            .keys()
+                                            .map(|e| e.get_power_grid())
+                                            .all(|affected_grid| {
+                                                pg.potential_beacon_affected_powergrids
+                                                    .contains(&affected_grid)
+                                            })
+                                    });
+                                if !affected_grids_and_potential_match {
+                                    dbg!(action.borrow());
+                                }
+                                assert!(affected_grids_and_potential_match);
+                            }
+
                             // Add the powerpole entity to the correct chunk
                             self.world.add_entity(
                                 Entity::PowerPole {
@@ -1153,6 +1182,30 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 &mut self.simulation_state,
                                 data_store,
                             );
+
+                            #[cfg(debug_assertions)]
+                            {
+                                let affected_grids_and_potential_match = self
+                                    .simulation_state
+                                    .factory
+                                    .power_grids
+                                    .power_grids
+                                    .iter()
+                                    .filter(|grid| !grid.is_placeholder)
+                                    .all(|pg| {
+                                        pg.beacon_affected_entities
+                                            .keys()
+                                            .map(|e| e.get_power_grid())
+                                            .all(|affected_grid| {
+                                                pg.potential_beacon_affected_powergrids
+                                                    .contains(&affected_grid)
+                                            })
+                                    });
+                                if !affected_grids_and_potential_match {
+                                    dbg!(action.borrow());
+                                }
+                                assert!(affected_grids_and_potential_match);
+                            }
                         },
                         crate::frontend::world::tile::PlaceEntityType::Splitter {
                             pos,
@@ -1686,7 +1739,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                                     if new_modules.len() > num_free_module_slots {
                                         // Not enough space in the module slots
-                                        warn!(
+                                        info!(
                                             "Tried to insert more modules than space is available"
                                         );
                                     } else {
@@ -1734,7 +1787,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                                     if new_modules.len() > num_free_module_slots {
                                         // Not enough space in the module slots
-                                        warn!(
+                                        info!(
                                             "Tried to insert more modules than space is available"
                                         );
                                     } else {
@@ -1848,6 +1901,30 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         });
                 },
             }
+
+            #[cfg(debug_assertions)]
+            {
+                let affected_grids_and_potential_match = self
+                    .simulation_state
+                    .factory
+                    .power_grids
+                    .power_grids
+                    .iter()
+                    .filter(|grid| !grid.is_placeholder)
+                    .all(|pg| {
+                        pg.beacon_affected_entities
+                            .keys()
+                            .map(|e| e.get_power_grid())
+                            .all(|affected_grid| {
+                                pg.potential_beacon_affected_powergrids
+                                    .contains(&affected_grid)
+                            })
+                    });
+                if !affected_grids_and_potential_match {
+                    dbg!(action.borrow());
+                }
+                assert!(affected_grids_and_potential_match);
+            }
         }
 
         #[cfg(debug_assertions)]
@@ -1889,6 +1966,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
     #[profiling::function]
     pub fn update(&mut self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) {
+        dbg!(self.world.to_instantiate.len());
+        dbg!(self.world.to_instantiate.first());
+
         self.simulation_state
             .factory
             // We can downcast here, since this could only cause graphical weirdness for a couple frame every ~2 years of playtime

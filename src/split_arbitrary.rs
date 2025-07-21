@@ -1,8 +1,8 @@
 use std::{cmp::min, mem};
 
 use rayon::iter::{
-    plumbing::{bridge, Producer},
     IndexedParallelIterator, ParallelIterator,
+    plumbing::{Producer, bridge},
 };
 
 pub fn split_arbitrary_mut<T>(

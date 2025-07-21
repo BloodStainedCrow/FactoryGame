@@ -1,4 +1,8 @@
-use std::{cmp::min, collections::HashMap, mem};
+use std::{
+    cmp::min,
+    collections::{HashMap, HashSet},
+    mem,
+};
 
 use itertools::Itertools;
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
@@ -93,6 +97,15 @@ pub enum BeaconAffectedEntity<RecipeIdxType: WeakIdxTrait> {
     },
 }
 
+impl<RecipeIdxType: WeakIdxTrait> BeaconAffectedEntity<RecipeIdxType> {
+    pub fn get_power_grid(&self) -> PowerGridIdentifier {
+        match self {
+            BeaconAffectedEntity::Assembler { id } => id.grid,
+            BeaconAffectedEntity::Lab { grid, .. } => *grid,
+        }
+    }
+}
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct PowerGrid<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub stores: FullAssemblerStore<RecipeIdxType>,
@@ -126,6 +139,9 @@ pub struct PowerGrid<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub num_labs_of_type: Box<[usize]>,
     pub num_beacons_of_type: Box<[usize]>,
 
+    /// This stores the power_grid_ids which could be affected by this grids beacons.
+    /// We do not remove values from here, so it will overapproximate
+    pub potential_beacon_affected_powergrids: HashSet<PowerGridIdentifier>,
     pub beacon_affected_entities: HashMap<BeaconAffectedEntity<RecipeIdxType>, (i16, i16, i16)>,
 }
 
@@ -201,6 +217,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             num_labs_of_type: vec![0; data_store.lab_info.len()].into_boxed_slice(),
             num_beacons_of_type: vec![0; data_store.beacon_info.len()].into_boxed_slice(),
 
+            potential_beacon_affected_powergrids: HashSet::default(),
             beacon_affected_entities: HashMap::default(),
         }
     }
@@ -242,6 +259,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             num_labs_of_type: vec![].into_boxed_slice(),
             num_beacons_of_type: vec![].into_boxed_slice(),
 
+            potential_beacon_affected_powergrids: HashSet::default(),
             beacon_affected_entities: HashMap::default(),
         }
     }
@@ -358,6 +376,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             *self_count += other_count;
         }
 
+        self.potential_beacon_affected_powergrids
+            .extend(other.potential_beacon_affected_powergrids);
+
         let ret = Self {
             stores: new_stores,
             lab_stores: new_labs,
@@ -410,6 +431,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             num_labs_of_type: self.num_labs_of_type,
             num_beacons_of_type: self.num_beacons_of_type,
 
+            potential_beacon_affected_powergrids: self.potential_beacon_affected_powergrids,
             beacon_affected_entities: self.beacon_affected_entities,
         };
 
@@ -857,6 +879,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         let entry = other
                             .beacon_affected_entities
                             .entry(*affected_entity).or_insert((0, 0, 0));
+                        other.potential_beacon_affected_powergrids.insert(affected_entity.get_power_grid());
 
                         entry.0 += raw_effect.0;
                         entry.1 += raw_effect.1;
@@ -1828,6 +1851,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         u64,
         Vec<(BeaconAffectedEntity<RecipeIdxType>, (i16, i16, i16))>,
     ) {
+        if self.is_placeholder {
+            return (0, RecipeTickInfo::new(data_store), 0, vec![]);
+        }
+
         let active_recipes = tech_state.get_active_recipes();
 
         let (
@@ -2130,6 +2157,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         affected_entities: Vec<BeaconAffectedEntity<RecipeIdxType>>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> WeakIndex {
+        #[cfg(debug_assertions)]
+        {
+            let affected_grids_and_potential_match = self
+                .beacon_affected_entities
+                .keys()
+                .map(|e| e.get_power_grid())
+                .all(|affected_grid| {
+                    self.potential_beacon_affected_powergrids
+                        .contains(&affected_grid)
+                });
+            assert!(affected_grids_and_potential_match);
+        }
+
         let effect: (i16, i16, i16) = modules
             .iter()
             .flatten()
@@ -2153,6 +2193,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         );
 
         for affected_entity in &affected_entities {
+            self.potential_beacon_affected_powergrids
+                .insert(affected_entity.get_power_grid());
+
             let entry = self
                 .beacon_affected_entities
                 .entry(*affected_entity)
@@ -2176,6 +2219,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         );
 
         self.num_beacons_of_type[usize::from(ty)] += 1;
+
+        #[cfg(debug_assertions)]
+        {
+            let affected_grids_and_potential_match = self
+                .beacon_affected_entities
+                .keys()
+                .map(|e| e.get_power_grid())
+                .all(|affected_grid| {
+                    self.potential_beacon_affected_powergrids
+                        .contains(&affected_grid)
+                });
+            assert!(affected_grids_and_potential_match);
+        }
 
         idx
     }
@@ -2232,6 +2288,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             stored_effect.0 -= effect.0;
             stored_effect.1 -= effect.1;
             stored_effect.2 -= effect.2;
+
+            if *stored_effect == (0, 0, 0) {
+                let Some((0, 0, 0)) = self.beacon_affected_entities.remove(affected_entity) else {
+                    unreachable!();
+                };
+            }
         }
 
         let now_removed_effect = if self.last_power_mult >= MIN_BEACON_POWER_MULT {
@@ -2239,6 +2301,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         } else {
             (-0, -0, -effect.2)
         };
+
+        #[cfg(debug_assertions)]
+        {
+            let affected_grids_and_potential_match = self
+                .beacon_affected_entities
+                .keys()
+                .map(|e| e.get_power_grid())
+                .all(|affected_grid| {
+                    self.potential_beacon_affected_powergrids
+                        .contains(&affected_grid)
+                });
+            assert!(affected_grids_and_potential_match);
+        }
 
         affected_entities
             .into_iter()

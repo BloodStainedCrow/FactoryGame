@@ -1,11 +1,11 @@
 use itertools::Itertools;
 
+use crate::WeakIdxTrait;
 use crate::data::DataStore;
+use crate::item::ITEMCOUNTTYPE;
 use crate::item::IdxTrait;
 use crate::item::Item;
-use crate::item::ITEMCOUNTTYPE;
 use crate::power::Joule;
-use crate::WeakIdxTrait;
 
 use std::cmp::min;
 use std::mem;

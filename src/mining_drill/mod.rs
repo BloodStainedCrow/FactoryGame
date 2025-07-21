@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     data::DataStore,
-    frontend::world::{tile::World, Position},
+    frontend::world::{Position, tile::World},
     item::{IdxTrait, Item},
 };
 

@@ -2,7 +2,7 @@ use std::{cmp::min, iter, u8};
 
 use crate::{
     data::DataStore,
-    item::{IdxTrait, Item, WeakIdxTrait, ITEMCOUNTTYPE},
+    item::{ITEMCOUNTTYPE, IdxTrait, Item, WeakIdxTrait},
     power::Joule,
     storage_list::PANIC_ON_INSERT,
 };
@@ -144,11 +144,7 @@ impl<ItemIdxType: IdxTrait> PureDrillStorageWithSharedOreTiles<ItemIdxType> {
                             if threshholds.len() > 0 {
                                 threshholds.len() + 1
                             } else {
-                                if *solo_ore > 0 {
-                                    1
-                                } else {
-                                    0
-                                }
+                                if *solo_ore > 0 { 1 } else { 0 }
                             }
                         }),
                 )

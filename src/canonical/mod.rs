@@ -6,8 +6,8 @@ use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use crate::{
     assembler::TIMERTYPE,
     data::{DataStore, ItemRecipeDir},
-    frontend::world::{tile::Dir, Position},
-    item::{IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
+    frontend::world::{Position, tile::Dir},
+    item::{ITEMCOUNTTYPE, IdxTrait, Item, Recipe, WeakIdxTrait},
 };
 
 struct CanonicalRepresentation<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {

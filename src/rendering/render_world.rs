@@ -1571,6 +1571,22 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         }
     }
 
+    Window::new("Mouse Pos").default_open(true).show(ctx, |ui| {
+        ui.label(
+            format!(
+                "{:?}",
+                ActionStateMachine::<u8, u8>::player_mouse_to_tile(
+                    state_machine.zoom_level,
+                    state_machine
+                        .map_view_info
+                        .unwrap_or(state_machine.local_player_pos),
+                    state_machine.current_mouse_pos
+                )
+            )
+            .as_str(),
+        )
+    });
+
     Window::new("Import BP")
         .default_open(false)
         .show(ctx, |ui| {

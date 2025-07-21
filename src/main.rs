@@ -2,7 +2,7 @@
 #![feature(portable_simd)]
 #![feature(iter_array_chunks)]
 
-use std::simd::{cmp::SimdPartialEq, Simd};
+use std::simd::{Simd, cmp::SimdPartialEq};
 
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]
@@ -21,7 +21,7 @@ mod test {
     use std::{
         arch::x86_64::{
             __m256i, _mm256_add_epi8, _mm256_blendv_epi8, _mm256_cmpeq_epi8, _mm256_loadu_si256,
-            _mm256_movemask_epi8, _mm256_set1_epi8, _mm256_set_epi8, _mm256_setzero_si256,
+            _mm256_movemask_epi8, _mm256_set_epi8, _mm256_set1_epi8, _mm256_setzero_si256,
             _mm256_storeu_si256,
         },
         array, mem, thread,
@@ -332,8 +332,8 @@ mod test {
     fn split_array<const N: usize, A, B, C>(arr: [(A, (B, C)); N]) -> ([A; N], [B; N], [C; N]) {
         unsafe {
             let first = array::from_fn(|idx| ((&arr[idx].0) as *const A).read());
-            let second = array::from_fn(|idx| ((&arr[idx].1 .0) as *const B).read());
-            let third = array::from_fn(|idx| ((&arr[idx].1 .1) as *const C).read());
+            let second = array::from_fn(|idx| ((&arr[idx].1.0) as *const B).read());
+            let third = array::from_fn(|idx| ((&arr[idx].1.1) as *const C).read());
 
             mem::forget(arr);
             (first, second, third)

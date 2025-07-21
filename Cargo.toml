@@ -82,6 +82,12 @@ inherits = "release"
 debug = true
 strip = false
 
+[profile.release-with-debug-asserts]
+inherits = "release"
+debug = true
+strip = false
+debug-assertions = true
+
 [profile.fast-compile]
 inherits = "dev"
 opt-level = 0

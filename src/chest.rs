@@ -6,7 +6,7 @@ use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
 use crate::{
     data::DataStore,
-    item::{usize_from, IdxTrait, Item, WeakIdxTrait, ITEMCOUNTTYPE},
+    item::{ITEMCOUNTTYPE, IdxTrait, Item, WeakIdxTrait, usize_from},
 };
 
 const CHEST_GOAL_AMOUNT: ITEMCOUNTTYPE = ITEMCOUNTTYPE::MAX / 2;

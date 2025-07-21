@@ -5,10 +5,10 @@ use consumption::ConsumptionInfo;
 use production::ProductionInfo;
 
 use crate::{
+    NewWithDataStore,
     data::DataStore,
     item::{IdxTrait, Item},
     research::ResearchProgress,
-    NewWithDataStore,
 };
 
 pub mod consumption;

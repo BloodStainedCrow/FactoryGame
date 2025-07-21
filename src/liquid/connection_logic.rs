@@ -4,7 +4,7 @@ use crate::data::{FluidConnection, PipeConnectionType};
 use crate::frontend::world::tile::Dir;
 use crate::{
     data::DataStore,
-    frontend::world::{tile::DirRelative, Position},
+    frontend::world::{Position, tile::DirRelative},
     item::IdxTrait,
 };
 

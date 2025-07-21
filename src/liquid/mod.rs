@@ -768,7 +768,6 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         inserter_store: &mut StorageStorageInserterStore,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        dbg!(self.graph.weak_components().collect_vec());
         for e in self.graph.weak_components_mut() {
             match e {
                 FluidSystemEntity::OutgoingPump { .. } => {},
@@ -778,7 +777,6 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                     connected_entity_position,
                 } => {
                     if connected_entity_position.contained_in(update_pos, update_size.into()) {
-                        dbg!(&inserter_id);
                         *inserter_id = inserter_store.update_inserter_src(
                             fluid,
                             FLUID_INSERTER_MOVETIME,
@@ -794,7 +792,6 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                     connected_entity_position,
                 } => {
                     if connected_entity_position.contained_in(update_pos, update_size.into()) {
-                        dbg!(&inserter_id);
                         *inserter_id = inserter_store.update_inserter_dest(
                             fluid,
                             FLUID_INSERTER_MOVETIME,
@@ -802,7 +799,6 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                             new_storage,
                             data_store,
                         );
-                        dbg!(inserter_id);
                     }
                 },
             }

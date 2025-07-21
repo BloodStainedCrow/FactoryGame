@@ -3,7 +3,7 @@ use std::{
     marker::PhantomData,
     mem,
     net::TcpStream,
-    sync::{mpsc::Receiver, Arc},
+    sync::{Arc, mpsc::Receiver},
     time::{Duration, Instant},
 };
 
@@ -14,7 +14,7 @@ use log::{error, warn};
 use crate::{
     data::DataStore,
     frontend::{
-        action::{action_state_machine::ActionStateMachine, ActionType},
+        action::{ActionType, action_state_machine::ActionStateMachine},
         input::Input,
         world::tile::World,
     },
@@ -22,9 +22,9 @@ use crate::{
 };
 
 use super::{
+    ServerInfo,
     connection_reciever::ConnectionList,
     server::{ActionSource, HandledActionConsumer},
-    ServerInfo,
 };
 
 pub(super) struct Client<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
@@ -189,7 +189,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         world: &'b World<ItemIdxType, RecipeIdxType>,
         data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
-           + use<'a, 'b, 'c, ItemIdxType, RecipeIdxType> {
+    + use<'a, 'b, 'c, ItemIdxType, RecipeIdxType> {
         let start = Instant::now();
         let mut state_machine = self.local_actions.lock();
         if start.elapsed() > Duration::from_millis(10) {

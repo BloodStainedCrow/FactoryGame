@@ -2,10 +2,10 @@ use crate::{
     assembler::TIMERTYPE,
     data::DataStore,
     frontend::world::Position,
-    item::{IdxTrait, Item, ITEMCOUNTTYPE},
+    item::{ITEMCOUNTTYPE, IdxTrait, Item},
     power::{
-        power_grid::{IndexUpdateInfo, PowerGridEntity, PowerGridIdentifier, MAX_POWER_MULT},
         Joule, Watt,
+        power_grid::{IndexUpdateInfo, MAX_POWER_MULT, PowerGridEntity, PowerGridIdentifier},
     },
 };
 
@@ -78,7 +78,8 @@ impl MultiLabStore {
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
         Self,
-        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>,
+        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>
+        + use<ItemIdxType, RecipeIdxType>,
     ) {
         let old_len = self.positions.len();
 

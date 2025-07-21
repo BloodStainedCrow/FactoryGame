@@ -8,14 +8,14 @@ use charts_rs::Series;
 use itertools::Itertools;
 
 use crate::{
+    NewWithDataStore,
     data::DataStore,
     item::{IdxTrait, Indexable, Item},
-    NewWithDataStore,
 };
 
 use crate::research::LabTickInfo;
 
-use super::{recipe::RecipeTickInfo, IntoSeries};
+use super::{IntoSeries, recipe::RecipeTickInfo};
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ConsumptionInfo {

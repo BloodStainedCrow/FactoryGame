@@ -1,4 +1,4 @@
-use crate::frontend::world::{tile::FloorTile, Position};
+use crate::frontend::world::{Position, tile::FloorTile};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PlaceFloorTileByHandInfo {

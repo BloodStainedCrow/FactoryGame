@@ -8,9 +8,9 @@ use parking_lot::Mutex;
 use rstest::fixture;
 use rstest::rstest;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::sync::mpsc::channel;
-use std::sync::Arc;
 use std::thread::sleep;
 use std::thread::spawn;
 use std::time::Duration;
@@ -50,17 +50,20 @@ fn start_ui() -> (
         let sm_move = sm.clone();
         let gs_move_move = gs_move.clone();
         let ds_move_move = ds_move.clone();
-        spawn(move || loop {
-            {
-                let gs = gs_move_move.lock();
-                for action in sm_move
-                    .lock()
-                    .handle_inputs(&recv, &gs.world, &ds_move_move.lock())
+        spawn(move || {
+            loop {
                 {
-                    dbg!(action);
+                    let gs = gs_move_move.lock();
+                    for action in
+                        sm_move
+                            .lock()
+                            .handle_inputs(&recv, &gs.world, &ds_move_move.lock())
+                    {
+                        dbg!(action);
+                    }
                 }
+                sleep(Duration::from_millis(16));
             }
-            sleep(Duration::from_millis(16));
         });
 
         let event_loop_builder: Option<EventLoopBuilderHook> =

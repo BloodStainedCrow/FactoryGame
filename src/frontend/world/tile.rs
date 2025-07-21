@@ -38,7 +38,6 @@ use crate::{inserter::FakeUnionStorage, item::Indexable};
 use static_assertions::const_assert;
 
 use std::fmt::Debug;
-
 use std::ops::{Deref, DerefMut};
 
 use serde::Deserializer;
@@ -60,6 +59,13 @@ pub enum FloorTile {
     Empty,
     Concrete,
     Water,
+}
+
+pub enum InserterInstantiationNewOptions<ItemIdxType: WeakIdxTrait> {
+    Positions(Vec<Position>),
+    Belts(Vec<BeltTileId<ItemIdxType>>),
+    PositionsAndBelts(Vec<Position>, Vec<BeltTileId<ItemIdxType>>),
+    All,
 }
 
 // We rely on this, by storing entity indices as u8 in the chunk
@@ -122,7 +128,8 @@ pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     remaining_updates: Vec<WorldUpdate>,
 
-    to_instantiate: BTreeSet<Position>,
+    pub to_instantiate: BTreeSet<Position>,
+    pub to_instantiate_by_belt: HashMap<BeltTileId<ItemIdxType>, Vec<Position>>,
 
     #[serde(skip)]
     pub map_updates: Option<Vec<Position>>,
@@ -203,26 +210,98 @@ struct CascadingUpdate<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     >,
 }
 
-#[profiling::function]
-fn newly_instantiated_inserter_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    pos: Position,
+fn try_instantiating_inserters_for_belt_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    belt_id: BeltTileId<ItemIdxType>,
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
-        update: Box::new(|world, sim_state, updates, data_store| {
-            // TODO:
+        update: Box::new(move |world, sim_state, updates, data_store| {
+            profiling::scope!("try_instantiating_inserters_for_belt_cascade");
+            if !world.to_instantiate_by_belt.contains_key(&belt_id) {
+                return;
+            }
+            let by_belt = world.to_instantiate_by_belt.get_mut(&belt_id).unwrap();
+
+            if by_belt.len() > 1_000 {
+                warn!("More than 1_000 inserters waiting to be instantiated. This will cause lag!");
+            }
+
+            let mut tmp = Vec::default();
+
+            mem::swap(&mut tmp, &mut *by_belt);
+
+            tmp.retain(|pos| {
+                match world.try_instantiate_inserter(sim_state, *pos, data_store) {
+                    Ok(newly_instantiated) => {
+                        match newly_instantiated {
+                            InserterInstantiationNewOptions::Positions(positions) => updates
+                                .extend(positions.into_iter().map(|new_pos| {
+                                    // FIXME: Size hardcoded
+                                    new_possible_inserter_connection(new_pos, (10, 10))
+                                })),
+                            InserterInstantiationNewOptions::Belts(belts) => {
+                                updates.extend(belts.into_iter().map(|new_belt| {
+                                    try_instantiating_inserters_for_belt_cascade(new_belt)
+                                }))
+                            },
+                            InserterInstantiationNewOptions::PositionsAndBelts(
+                                positions,
+                                belts,
+                            ) => {
+                                updates.extend(positions.into_iter().map(|new_pos| {
+                                    // FIXME: Size hardcoded
+                                    new_possible_inserter_connection(new_pos, (10, 10))
+                                }));
+                                updates.extend(belts.into_iter().map(|new_belt| {
+                                    try_instantiating_inserters_for_belt_cascade(new_belt)
+                                }));
+                            },
+                            InserterInstantiationNewOptions::All => {
+                                updates.push(try_instantiating_all_inserters_cascade())
+                            },
+                        }
+
+                        false
+                    },
+                    Err(InstantiateInserterError::NotUnattachedInserter) => false,
+                    Err(
+                        InstantiateInserterError::ItemConflict {
+                            belts_which_could_help,
+                        }
+                        | InstantiateInserterError::PleaseSpecifyFilter {
+                            belts_which_could_help,
+                        },
+                    ) => {
+                        for belt in belts_which_could_help {
+                            if belt_id != belt {
+                                let by_belt = world.to_instantiate_by_belt.entry(belt).or_default();
+                                if !by_belt.contains(pos) {
+                                    by_belt.push(*pos);
+                                }
+                            }
+                        }
+                        true
+                    },
+                    Err(
+                        InstantiateInserterError::SourceMissing
+                        | InstantiateInserterError::DestMissing,
+                    ) => false,
+                }
+            });
+
+            let by_belt = world.to_instantiate_by_belt.get_mut(&belt_id).unwrap();
+
+            assert!(by_belt.is_empty());
+
+            mem::swap(&mut tmp, &mut *by_belt);
         }),
     }
 }
 
-#[profiling::function]
-fn instantiate_inserter_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    pos: Position,
-    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
+fn try_instantiating_all_inserters_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>()
+-> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
-        update: Box::new(move |world, sim_state, updates, data_store| {
-            world.to_instantiate.insert(pos);
-
+        update: Box::new(|world, sim_state, updates, data_store| {
+            profiling::scope!("try_instantiating_all_inserters_cascade");
             if world.to_instantiate.len() > 1_000 {
                 warn!("More than 1_000 inserters waiting to be instantiated. This will cause lag!");
             }
@@ -234,13 +313,33 @@ fn instantiate_inserter_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             tmp.retain(|pos| {
                 match world.try_instantiate_inserter(sim_state, *pos, data_store) {
                     Ok(newly_instantiated) => {
-                        updates.push(newly_instantiated_inserter_cascade(*pos));
-                        // FIXME: Size hardcoded
-                        updates.extend(
-                            newly_instantiated
-                                .into_iter()
-                                .map(|new_pos| new_possible_inserter_connection(new_pos, (10, 10))),
-                        );
+                        match newly_instantiated {
+                            InserterInstantiationNewOptions::Positions(positions) => updates
+                                .extend(positions.into_iter().map(|new_pos| {
+                                    // FIXME: Size hardcoded
+                                    new_possible_inserter_connection(new_pos, (10, 10))
+                                })),
+                            InserterInstantiationNewOptions::Belts(belts) => {
+                                updates.extend(belts.into_iter().map(|new_belt| {
+                                    try_instantiating_inserters_for_belt_cascade(new_belt)
+                                }))
+                            },
+                            InserterInstantiationNewOptions::PositionsAndBelts(
+                                positions,
+                                belts,
+                            ) => {
+                                updates.extend(positions.into_iter().map(|new_pos| {
+                                    // FIXME: Size hardcoded
+                                    new_possible_inserter_connection(new_pos, (10, 10))
+                                }));
+                                updates.extend(belts.into_iter().map(|new_belt| {
+                                    try_instantiating_inserters_for_belt_cascade(new_belt)
+                                }));
+                            },
+                            InserterInstantiationNewOptions::All => {
+                                updates.push(try_instantiating_all_inserters_cascade())
+                            },
+                        }
 
                         false
                     },
@@ -249,9 +348,21 @@ fn instantiate_inserter_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         false
                     },
                     Err(
-                        InstantiateInserterError::ItemConflict
-                        | InstantiateInserterError::PleaseSpecifyFilter,
-                    ) => true,
+                        InstantiateInserterError::ItemConflict {
+                            belts_which_could_help,
+                        }
+                        | InstantiateInserterError::PleaseSpecifyFilter {
+                            belts_which_could_help,
+                        },
+                    ) => {
+                        for belt in belts_which_could_help {
+                            let by_belt = world.to_instantiate_by_belt.entry(belt).or_default();
+                            if !by_belt.contains(pos) {
+                                by_belt.push(*pos);
+                            }
+                        }
+                        true
+                    },
                     Err(e) => {
                         info!("try_instantiate_inserter failed at {:?}, with {e:?}", pos);
                         false
@@ -264,13 +375,78 @@ fn instantiate_inserter_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     }
 }
 
-#[profiling::function]
+fn instantiate_inserter_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    new_instantiate_pos: Position,
+    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
+    CascadingUpdate {
+        update: Box::new(move |world, sim_state, updates, data_store| {
+            match world.try_instantiate_inserter(sim_state, new_instantiate_pos, data_store) {
+                Ok(newly_instantiated) => {
+                    match newly_instantiated {
+                        InserterInstantiationNewOptions::Positions(positions) => {
+                            updates.extend(positions.into_iter().map(|new_pos| {
+                                // FIXME: Size hardcoded
+                                new_possible_inserter_connection(new_pos, (10, 10))
+                            }))
+                        },
+                        InserterInstantiationNewOptions::Belts(belts) => {
+                            updates.extend(belts.into_iter().map(|new_belt| {
+                                try_instantiating_inserters_for_belt_cascade(new_belt)
+                            }))
+                        },
+                        InserterInstantiationNewOptions::PositionsAndBelts(positions, belts) => {
+                            updates.extend(positions.into_iter().map(|new_pos| {
+                                // FIXME: Size hardcoded
+                                new_possible_inserter_connection(new_pos, (10, 10))
+                            }));
+                            updates.extend(belts.into_iter().map(|new_belt| {
+                                try_instantiating_inserters_for_belt_cascade(new_belt)
+                            }));
+                        },
+                        InserterInstantiationNewOptions::All => {
+                            updates.push(try_instantiating_all_inserters_cascade())
+                        },
+                    }
+                },
+                Err(InstantiateInserterError::NotUnattachedInserter) => {
+                    warn!("We seem to have instantiated the same inserter twice?!?");
+                },
+                Err(
+                    InstantiateInserterError::ItemConflict {
+                        belts_which_could_help,
+                    }
+                    | InstantiateInserterError::PleaseSpecifyFilter {
+                        belts_which_could_help,
+                    },
+                ) => {
+                    world.to_instantiate.insert(new_instantiate_pos);
+                    for belt in belts_which_could_help {
+                        let by_belt = world.to_instantiate_by_belt.entry(belt).or_default();
+                        if !by_belt.contains(&new_instantiate_pos) {
+                            by_belt.push(new_instantiate_pos);
+                        }
+                    }
+                },
+                Err(e) => {
+                    info!(
+                        "try_instantiate_inserter failed at {:?}, with {e:?}",
+                        new_instantiate_pos
+                    );
+                    world.to_instantiate.insert(new_instantiate_pos);
+                },
+            }
+        }),
+    }
+}
+
 fn new_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
     size: (u16, u16),
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
         update: Box::new(move |world, _sim_state, updates, data_store| {
+            profiling::scope!("new_possible_inserter_connection");
             let inserter_search_start_pos = Position {
                 x: pos.x - data_store.max_inserter_search_range as i32,
                 y: pos.y - data_store.max_inserter_search_range as i32,
@@ -309,13 +485,13 @@ fn new_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType: IdxTra
     }
 }
 
-#[profiling::function]
 fn new_lab_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
     _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
         update: Box::new(move |world, sim_state, updates, data_store| {
+            profiling::scope!("new_lab_cascade");
             let Some(Entity::Lab {
                 pos,
                 ty,
@@ -392,13 +568,13 @@ fn new_lab_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     }
 }
 
-#[profiling::function]
 fn new_power_pole<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
         update: Box::new(move |world, sim_state, updates, data_store| {
+            profiling::scope!("new_power_pole");
             let pole = world
                 .get_entities_colliding_with(pos, (1, 1), data_store)
                 .into_iter()
@@ -525,12 +701,12 @@ fn new_power_pole<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     }
 }
 
-#[profiling::function]
 fn new_chest_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
         update: Box::new(move |world, sim_state, updates, data_store| {
+            profiling::scope!("new_chest_cascade");
             let Some(Entity::Chest {
                 ty,
                 pos,
@@ -551,13 +727,13 @@ fn new_chest_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     }
 }
 
-#[profiling::function]
 fn new_powered_beacon_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
-        update: Box::new(move |world, sim_state, updates, data_store| {
+        update: Box::new(move |world, sim_state, _updates, data_store| {
+            profiling::scope!("new_powered_beacon_cascade");
             let Some(Entity::Beacon {
                 ty,
                 pos,
@@ -627,13 +803,13 @@ fn new_powered_beacon_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     }
 }
 
-#[profiling::function]
 fn newly_working_assembler<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
         update: Box::new(move |world, sim_state, updates, data_store| {
+            profiling::scope!("newly_working_assembler");
             let Some(Entity::Assembler {
                 ty,
                 pos,
@@ -710,7 +886,6 @@ fn newly_working_assembler<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     }
 }
 
-#[profiling::function]
 fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
     size: (u16, u16),
@@ -718,6 +893,7 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
         update: Box::new(move |world, sim_state, updates, data_store| {
+            profiling::scope!("removal_of_possible_inserter_connection");
             let inserter_search_start_pos = Position {
                 x: pos.x - data_store.max_inserter_search_range as i32,
                 y: pos.y - data_store.max_inserter_search_range as i32,
@@ -838,6 +1014,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             remaining_updates: vec![],
 
             to_instantiate: BTreeSet::default(),
+            to_instantiate_by_belt: HashMap::default(),
 
             map_updates: None,
         }
@@ -1043,6 +1220,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         if !self.can_fit(entity.get_pos(), entity.get_size(data_store), data_store) {
             return Err(());
         }
+
+        profiling::scope!("add_entity {}", entity.get_type_name());
 
         let pos = entity.get_pos();
         let size = entity.get_size(data_store);
@@ -1314,8 +1493,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             }
         }
 
-        while let Some(update) = cascading_updates.pop() {
-            (update.update)(self, sim_state, &mut cascading_updates, data_store);
+        {
+            profiling::scope!("Cascading updates");
+            while let Some(update) = cascading_updates.pop() {
+                (update.update)(self, sim_state, &mut cascading_updates, data_store);
+            }
         }
 
         Ok(())
@@ -1326,7 +1508,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         simulation_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
         pos: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Result<Vec<Position>, InstantiateInserterError> {
+    ) -> Result<InserterInstantiationNewOptions<ItemIdxType>, InstantiateInserterError<ItemIdxType>>
+    {
         enum InserterConnection<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
             Belt(BeltTileId<ItemIdxType>, u16),
             Storage(Static<RecipeIdxType>),
@@ -1620,7 +1803,31 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         };
 
         if possible_items == PossibleItem::None {
-            return Err(InstantiateInserterError::ItemConflict);
+            match (start_conn.conn, dest_conn.conn) {
+                (
+                    InserterConnection::Belt(start_belt_id, _),
+                    InserterConnection::Belt(dest_belt_id, _),
+                ) => {
+                    return Err(InstantiateInserterError::ItemConflict {
+                        belts_which_could_help: vec![start_belt_id, dest_belt_id],
+                    });
+                },
+                (InserterConnection::Belt(start_belt_id, _), InserterConnection::Storage(_)) => {
+                    return Err(InstantiateInserterError::ItemConflict {
+                        belts_which_could_help: vec![start_belt_id],
+                    });
+                },
+                (InserterConnection::Storage(_), InserterConnection::Belt(dest_belt_id, _)) => {
+                    return Err(InstantiateInserterError::ItemConflict {
+                        belts_which_could_help: vec![dest_belt_id],
+                    });
+                },
+                (InserterConnection::Storage(_), InserterConnection::Storage(_)) => {
+                    return Err(InstantiateInserterError::ItemConflict {
+                        belts_which_could_help: vec![],
+                    });
+                },
+            }
         }
 
         // For determining the filter we use this plan:
@@ -1633,22 +1840,75 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 if possible_items.contains(*filter) {
                     *filter
                 } else {
-                    return Err(InstantiateInserterError::ItemConflict);
+                    match (start_conn.conn, dest_conn.conn) {
+                        (
+                            InserterConnection::Belt(start_belt_id, _),
+                            InserterConnection::Belt(dest_belt_id, _),
+                        ) => {
+                            return Err(InstantiateInserterError::ItemConflict {
+                                belts_which_could_help: vec![start_belt_id, dest_belt_id],
+                            });
+                        },
+                        (
+                            InserterConnection::Belt(start_belt_id, _),
+                            InserterConnection::Storage(_),
+                        ) => {
+                            return Err(InstantiateInserterError::ItemConflict {
+                                belts_which_could_help: vec![start_belt_id],
+                            });
+                        },
+                        (
+                            InserterConnection::Storage(_),
+                            InserterConnection::Belt(dest_belt_id, _),
+                        ) => {
+                            return Err(InstantiateInserterError::ItemConflict {
+                                belts_which_could_help: vec![dest_belt_id],
+                            });
+                        },
+                        (InserterConnection::Storage(_), InserterConnection::Storage(_)) => {
+                            return Err(InstantiateInserterError::ItemConflict {
+                                belts_which_could_help: vec![],
+                            });
+                        },
+                    }
                 }
             },
             None => {
                 // The user/game has not specified a filter, try and infer it
 
+                let belts = match (&start_conn.conn, &dest_conn.conn) {
+                    (
+                        InserterConnection::Belt(start_belt_id, _),
+                        InserterConnection::Belt(dest_belt_id, _),
+                    ) => vec![*start_belt_id, *dest_belt_id],
+                    (
+                        InserterConnection::Belt(start_belt_id, _),
+                        InserterConnection::Storage(_),
+                    ) => vec![*start_belt_id],
+                    (InserterConnection::Storage(_), InserterConnection::Belt(dest_belt_id, _)) => {
+                        vec![*dest_belt_id]
+                    },
+                    (InserterConnection::Storage(_), InserterConnection::Storage(_)) => vec![],
+                };
+
                 // TODO: Figure out what is most intuitive here, for now just use the only possible item otherwise error
                 match possible_items {
-                    PossibleItem::All => return Err(InstantiateInserterError::PleaseSpecifyFilter),
+                    PossibleItem::All => {
+                        return Err(InstantiateInserterError::PleaseSpecifyFilter {
+                            belts_which_could_help: belts,
+                        });
+                    },
                     PossibleItem::List(items) => match items.len().cmp(&1) {
                         std::cmp::Ordering::Less => {
-                            return Err(InstantiateInserterError::ItemConflict);
+                            return Err(InstantiateInserterError::ItemConflict {
+                                belts_which_could_help: belts,
+                            });
                         },
                         std::cmp::Ordering::Equal => items[0],
                         std::cmp::Ordering::Greater => {
-                            return Err(InstantiateInserterError::PleaseSpecifyFilter);
+                            return Err(InstantiateInserterError::PleaseSpecifyFilter {
+                                belts_which_could_help: belts,
+                            });
                         },
                     },
                     PossibleItem::None => unreachable!(),
@@ -1656,7 +1916,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             },
         };
 
-        let mut instantiated = vec![];
+        let mut instantiated = InserterInstantiationNewOptions::Positions(vec![]);
 
         match (start_conn.conn, dest_conn.conn) {
             (
@@ -1674,6 +1934,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         filter: determined_filter,
                     },
                 );
+                instantiated =
+                    InserterInstantiationNewOptions::Belts(vec![start_belt_id, dest_belt_id]);
 
                 let Entity::Inserter { info, .. } = self
                     .get_chunk_for_tile_mut(pos)
@@ -1715,7 +1977,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                         [usize_from(determined_filter.id)]
                                     .add_chest(*ty, *slot_limit, data_store);
                                     *item = Some((determined_filter, index));
-                                    instantiated.push(*chest_pos);
                                     storage = Some(Storage::Static {
                                         index,
                                         static_id: StaticID::Chest as u16,
@@ -1747,6 +2008,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         todo!()
                     },
                 };
+                instantiated = InserterInstantiationNewOptions::PositionsAndBelts(
+                    vec![end_pos],
+                    vec![start_belt_id],
+                );
 
                 let Entity::Inserter { info, .. } = self
                     .get_chunk_for_tile_mut(pos)
@@ -1794,7 +2059,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                         [usize_from(determined_filter.id)]
                                     .add_chest(*ty, *slot_limit, data_store);
                                     *item = Some((determined_filter, index));
-                                    instantiated.push(*chest_pos);
                                     storage = Some(Storage::Static {
                                         index,
                                         static_id: StaticID::Chest as u16,
@@ -1807,6 +2071,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         storage.unwrap()
                     },
                 };
+                instantiated = InserterInstantiationNewOptions::PositionsAndBelts(
+                    vec![start_pos],
+                    vec![dest_belt_id],
+                );
 
                 let start_storage =
                     start_storage_untranslated.translate(determined_filter, data_store);
@@ -1874,7 +2142,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                         [usize_from(determined_filter.id)]
                                     .add_chest(*ty, *slot_limit, data_store);
                                     *item = Some((determined_filter, index));
-                                    instantiated.push(*chest_pos);
+                                    match &mut instantiated {
+                                        InserterInstantiationNewOptions::Positions(positions) => {
+                                            positions.push(*chest_pos)
+                                        },
+                                        _ => todo!(),
+                                    }
                                     storage = Some(Storage::Static {
                                         index,
                                         static_id: StaticID::Chest as u16,
@@ -1904,7 +2177,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                         [usize_from(determined_filter.id)]
                                     .add_chest(*ty, *slot_limit, data_store);
                                     *item = Some((determined_filter, index));
-                                    instantiated.push(*chest_pos);
+                                    match &mut instantiated {
+                                        InserterInstantiationNewOptions::Positions(positions) => {
+                                            positions.push(*chest_pos)
+                                        },
+                                        _ => todo!(),
+                                    }
                                     storage = Some(Storage::Static {
                                         index,
                                         static_id: StaticID::Chest as u16,
@@ -3331,6 +3609,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::Lab { .. } => true,
             Self::Beacon { .. } => true,
             Self::FluidTank { .. } => false,
+        }
+    }
+
+    pub fn get_type_name(&self) -> &'static str {
+        match self {
+            Self::Assembler { .. } => "Assembler",
+            Self::PowerPole { .. } => "PowerPole",
+            Self::Belt { .. } => "Belt",
+            Self::Inserter { .. } => "Inserter",
+            Self::Underground { .. } => "Underground",
+            Self::Splitter { .. } => "Splitter",
+            Self::Chest { .. } => "Chest",
+            Self::Roboport { .. } => "Roboport",
+            Self::SolarPanel { .. } => "SolarPanel",
+            Self::Lab { .. } => "Lab",
+            Self::Beacon { .. } => "Beacon",
+            Self::FluidTank { .. } => "FluidTank",
         }
     }
 }

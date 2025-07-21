@@ -1,6 +1,6 @@
 use std::{
     net::{TcpListener, TcpStream, ToSocketAddrs},
-    sync::{atomic::AtomicBool, Arc},
+    sync::{Arc, atomic::AtomicBool},
     thread,
 };
 

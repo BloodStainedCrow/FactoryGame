@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, u16};
 
-use crate::item::{Indexable, ITEMCOUNTTYPE};
+use crate::item::{ITEMCOUNTTYPE, Indexable};
 use crate::{
     data::DataStore,
     item::{IdxTrait, Item, Recipe, WeakIdxTrait},
@@ -86,7 +86,10 @@ impl FakeUnionStorage {
         num_grids_total: usize,
         grid_size: usize,
     ) -> (usize, usize) {
-        debug_assert!(num_grids_total < u16::MAX as usize, "If we have u16::MAX power grids, we can no longer differentiate grids in that grid and static inventories independent of power grids");
+        debug_assert!(
+            num_grids_total < u16::MAX as usize,
+            "If we have u16::MAX power grids, we can no longer differentiate grids in that grid and static inventories independent of power grids"
+        );
 
         let grid_offs = min(num_grids_total, usize::from(self.grid_or_static_flag));
         let recipe_idx_with_this_item_or_single_kind_power_grid_kind =
@@ -343,11 +346,11 @@ pub enum StaticID {
 
 #[cfg(test)]
 mod test {
+    use crate::DATA_STORE;
     use crate::blueprint::random_item;
     use crate::inserter::{FakeUnionStorage, Storage};
-    use crate::item::{usize_from, Item};
+    use crate::item::{Item, usize_from};
     use crate::storage_list::{grid_size, static_size};
-    use crate::DATA_STORE;
     use proptest::prelude::{Just, Strategy};
     use proptest::prop_oneof;
     use proptest::{prop_assert_eq, proptest};

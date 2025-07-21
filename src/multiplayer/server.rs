@@ -33,7 +33,7 @@ pub(super) trait ActionSource<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
         world: &'b World<ItemIdxType, RecipeIdxType>,
         data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
-           + use<'a, 'b, 'c, Self, ItemIdxType, RecipeIdxType>;
+    + use<'a, 'b, 'c, Self, ItemIdxType, RecipeIdxType>;
 }
 
 pub(super) trait HandledActionConsumer<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
@@ -56,10 +56,10 @@ pub(super) struct GameStateUpdateHandler<
 }
 
 impl<
-        ItemIdxType: IdxTrait,
-        RecipeIdxType: IdxTrait,
-        ActionInterfaceType: ActionInterface<ItemIdxType, RecipeIdxType>,
-    > GameStateUpdateHandler<ItemIdxType, RecipeIdxType, ActionInterfaceType>
+    ItemIdxType: IdxTrait,
+    RecipeIdxType: IdxTrait,
+    ActionInterfaceType: ActionInterface<ItemIdxType, RecipeIdxType>,
+> GameStateUpdateHandler<ItemIdxType, RecipeIdxType, ActionInterfaceType>
 {
     pub fn new(actions: ActionInterfaceType) -> Self {
         Self {

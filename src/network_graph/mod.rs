@@ -105,7 +105,8 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
         S,
         impl IntoIterator<Item = W> + use<'a, NodeKey, S, W>,
         Option<
-            impl IntoIterator<Item = (Self, impl IntoIterator<Item = NodeKey> + use<NodeKey, S, W>)> + use<'a, NodeKey, S, W>,
+            impl IntoIterator<Item = (Self, impl IntoIterator<Item = NodeKey> + use<NodeKey, S, W>)>
+            + use<'a, NodeKey, S, W>,
         >,
     ) {
         let NetworkNode {
@@ -203,7 +204,8 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
         a: NodeKey,
         b: NodeKey,
     ) -> Option<
-        impl IntoIterator<Item = (Self, impl IntoIterator<Item = NodeKey> + use<NodeKey, S, W>)> + use<'a, NodeKey, S, W>,
+        impl IntoIterator<Item = (Self, impl IntoIterator<Item = NodeKey> + use<NodeKey, S, W>)>
+        + use<'a, NodeKey, S, W>,
     > {
         let Some(edge_index) = self.graph.find_edge(
             *self.key_map.get_by_left(&a).unwrap(),

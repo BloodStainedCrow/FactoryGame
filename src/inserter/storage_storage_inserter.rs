@@ -2,7 +2,7 @@ use std::cmp::min;
 
 use crate::{
     item::ITEMCOUNTTYPE,
-    storage_list::{index_fake_union, SingleItemStorages},
+    storage_list::{SingleItemStorages, index_fake_union},
 };
 
 use super::{FakeUnionStorage, InserterState};

@@ -27,8 +27,8 @@ const REQUIRED_VRAM_MB: usize = REQUIRED_VRAM / 1_000_000;
 use log::info;
 
 use crate::{
-    frontend::world::{tile::World, Position},
-    item::{usize_from, IdxTrait, Item, WeakIdxTrait, ITEMCOUNTTYPE},
+    frontend::world::{Position, tile::World},
+    item::{ITEMCOUNTTYPE, IdxTrait, Item, WeakIdxTrait, usize_from},
     network_graph::{Network, WeakIndex},
     power::{Joule, Watt},
     rendering::app_state::SimulationState,
@@ -640,7 +640,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
 
     fn get_logibot_jobs(
         &mut self,
-    ) -> impl Iterator<Item = (Item<ItemIdxType>, ITEMCOUNTTYPE, u16, u16)> + use<ItemIdxType, RecipeIdxType> {
+    ) -> impl Iterator<Item = (Item<ItemIdxType>, ITEMCOUNTTYPE, u16, u16)>
+    + use<ItemIdxType, RecipeIdxType> {
         vec![todo!()].into_iter()
     }
 
@@ -781,12 +782,26 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                         Err(DepositError::NoSpaceDump) | Err(DepositError::StorageRemoved) => {
                             match self.try_find_storage_to_get_rid_of_and_reserve(item, amount) {
                                 Ok(id) => {
-                                    let ((time, update), render) = self.go_deposit(current_bot_pos, current_charge, LOGIBOT_SPEED_CHARGED, LOGIBOT_SPEED_EMPTY, LOGIBOT_POWER_CONSUMPTION, item, amount, id);
+                                    let ((time, update), render) = self.go_deposit(
+                                        current_bot_pos,
+                                        current_charge,
+                                        LOGIBOT_SPEED_CHARGED,
+                                        LOGIBOT_SPEED_EMPTY,
+                                        LOGIBOT_POWER_CONSUMPTION,
+                                        item,
+                                        amount,
+                                        id,
+                                    );
 
-                                    self.bot_jobs.entry(self.current_tick + time).or_default().push(update);
+                                    self.bot_jobs
+                                        .entry(self.current_tick + time)
+                                        .or_default()
+                                        .push(update);
                                     render_infos.push(render);
                                 },
-                                Err(()) => todo!("Handle not having anywhere to dump items (i.e.) all storage chests are full"),
+                                Err(()) => todo!(
+                                    "Handle not having anywhere to dump items (i.e.) all storage chests are full"
+                                ),
                             }
                         },
                     }
@@ -845,7 +860,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                                             LOGIBOT_POWER_CONSUMPTION,
                                         )
                                     else {
-                                        unreachable!("We started with an empty charge, we should not have gained charge")
+                                        unreachable!(
+                                            "We started with an empty charge, we should not have gained charge"
+                                        )
                                     };
 
                                     self.bot_jobs
