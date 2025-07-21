@@ -397,8 +397,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 self.current_mouse_pos,
                             );
 
-                            let x_range = min(start_pos.x, end_pos.x)..max(start_pos.x, end_pos.x);
-                            let y_range = min(start_pos.y, end_pos.y)..max(start_pos.y, end_pos.y);
+                            let x_range = min(start_pos.x, end_pos.x)..(max(start_pos.x, end_pos.x) + 1);
+                            let y_range = min(start_pos.y, end_pos.y)..(max(start_pos.y, end_pos.y) + 1);
 
                             self.state = ActionStateMachineState::Holding(HeldObject::Blueprint(Blueprint::from_area(world, [x_range, y_range], data_store)))
                         },

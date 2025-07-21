@@ -1133,8 +1133,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             );
 
             let bottom_right = Position {
-                x: max(start_pos.x, end_pos.x),
-                y: max(start_pos.y, end_pos.y),
+                x: max(start_pos.x, end_pos.x) + 1,
+                y: max(start_pos.y, end_pos.y) + 1,
             };
 
             let base_pos = Position {
@@ -1843,14 +1843,14 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     row.col(|ui| {
                                         ui.add(Label::new(&data_store.assembler_info[i].display_name).extend());
 
-                                        });
+                                    });
                                     row.col(|ui| {ui.add(Label::new(format!("{}", pg.num_assemblers_of_type[i])).extend());});
                                 } else {
                                     let i = i - pg.num_assemblers_of_type.len();
                                     row.col(|ui| {
                                         ui.add(Label::new(&data_store.solar_panel_info[i].display_name).extend());
 
-                                        });
+                                    });
                                     row.col(|ui| {ui.add(Label::new(format!("{}", pg.num_solar_panels_of_type[i])).extend());});
                                 }
                             });
