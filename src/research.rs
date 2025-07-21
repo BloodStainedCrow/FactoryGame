@@ -8,9 +8,9 @@ use egui_graphs::LayoutStateHierarchical;
 use egui_graphs::SettingsInteraction;
 use egui_graphs::SettingsNavigation;
 use egui_graphs::{DefaultEdgeShape, SettingsStyle};
+use petgraph::Directed;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
-use petgraph::Directed;
 
 use std::cmp::min;
 use std::collections::{HashMap, HashSet};
@@ -20,9 +20,9 @@ use crate::data;
 use crate::data::DataStore;
 use crate::item::Indexable;
 
+use crate::IdxTrait;
 use crate::frontend::action::ActionType;
 use crate::item::Recipe;
-use crate::IdxTrait;
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Deserialize, serde::Serialize,
@@ -236,7 +236,8 @@ impl TechState {
             DefaultEdgeShape,
         >,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType> {
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
+    {
         {
             profiling::scope!("Update Tech Tree colors");
             for tech in 0..data_store.technology_costs.len() {
@@ -300,6 +301,16 @@ impl TechState {
         SidePanel::new(egui::panel::Side::Right, "Technology Info Sidepanel").show_inside(
             ui,
             |ui| {
+                if ui.button("[CHEAT] Unlock all techs").clicked() {
+                    for (tech, _tech_info) in render_graph.nodes_iter() {
+                        ret.push(ActionType::CheatUnlockTechnology {
+                            tech: Technology {
+                                id: tech.index().try_into().unwrap(),
+                            },
+                        });
+                    }
+                }
+
                 if !render_graph.selected_nodes().is_empty() {
                     let [selected_node] = render_graph.selected_nodes() else {
                         unreachable!("We only allow selecting a single node!");
