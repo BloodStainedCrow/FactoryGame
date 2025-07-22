@@ -189,7 +189,8 @@ impl BlueprintAction {
                             } => BlueprintPlaceEntity::Splitter {
                                 pos,
                                 direction,
-                                ty: todo!(),
+                                // FIXME:
+                                ty: "FIXME".to_string(),
                                 in_mode,
                                 out_mode,
                             },
@@ -337,7 +338,14 @@ impl BlueprintAction {
                         ty,
                         in_mode,
                         out_mode,
-                    } => todo!(),
+                    } => PlaceEntityType::Splitter {
+                        pos: *pos,
+                        direction: *direction,
+                        // FIXME:
+                        ty: 0,
+                        in_mode: *in_mode,
+                        out_mode: *out_mode,
+                    },
                     BlueprintPlaceEntity::Chest { pos, ty } => PlaceEntityType::Chest {
                         pos: *pos,
                         ty: data_store
@@ -850,7 +858,21 @@ impl Blueprint {
                         }),
                     })]
                 },
-                crate::frontend::world::tile::Entity::Splitter { pos, direction, id } => todo!(),
+                crate::frontend::world::tile::Entity::Splitter { pos, direction, id } => {
+                    vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                        entities: EntityPlaceOptions::Single(PlaceEntityType::Splitter {
+                            pos: Position {
+                                x: pos.x - base_pos.x,
+                                y: pos.y - base_pos.y,
+                            },
+                            direction: *direction,
+                            // FIXME:
+                            ty: 0,
+                            in_mode: None,
+                            out_mode: None,
+                        }),
+                    })]
+                },
                 crate::frontend::world::tile::Entity::Inserter {
                     user_movetime,
                     pos,

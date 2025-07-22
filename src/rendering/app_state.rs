@@ -1,5 +1,6 @@
 use crate::belt::BeltTileId;
 use crate::data::AllowedFluidDirection;
+use crate::frontend::world::tile::UndergroundDir;
 use crate::inserter::storage_storage_with_buckets::InserterIdentifier;
 use crate::inserter::storage_storage_with_buckets::LargeInserterState;
 use crate::inserter::storage_storage_with_buckets::{
@@ -49,6 +50,7 @@ use crate::{
 use itertools::Itertools;
 use log::{info, trace, warn};
 use petgraph::graph::NodeIndex;
+use proptest::collection::vec;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::collections::{BTreeMap, HashMap};
 use std::iter;
@@ -1966,6 +1968,62 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
     #[profiling::function]
     pub fn update(&mut self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) {
+        #[cfg(debug_assertions)]
+        {
+            let all_belt_connections = self
+                .world
+                .get_chunks()
+                .flat_map(|chunk| chunk.get_entities())
+                .flat_map(|e| match e {
+                    Entity::Belt {
+                        pos,
+                        direction,
+                        ty,
+                        id,
+                        belt_pos,
+                    } => vec![(*pos, *direction, *id), (*pos, direction.reverse(), *id)],
+                    Entity::Underground {
+                        pos,
+                        underground_dir: UndergroundDir::Entrance,
+                        direction,
+                        ty,
+                        id,
+                        belt_pos,
+                    } => vec![(*pos, direction.reverse(), *id)],
+                    Entity::Underground {
+                        pos,
+                        underground_dir: UndergroundDir::Exit,
+                        direction,
+                        ty,
+                        id,
+                        belt_pos,
+                    } => vec![(*pos, *direction, *id)],
+                    Entity::Splitter { pos, direction, id } => {
+                        // TODO:
+                        vec![]
+                    },
+                    _ => vec![],
+                });
+
+            for (belt_pos, check_dir, id_that_should_exist) in all_belt_connections {
+                if let Some(Entity::Splitter { pos, direction, id }) = self
+                    .world
+                    .get_entities_colliding_with(belt_pos + check_dir, (1, 1), data_store)
+                    .into_iter()
+                    .next()
+                {
+                    assert!(
+                        self.simulation_state
+                            .factory
+                            .belts
+                            .get_splitter_belt_ids(*id)
+                            .iter()
+                            .flatten()
+                            .contains(&id_that_should_exist)
+                    );
+                }
+            }
+        }
         dbg!(self.world.to_instantiate.len());
         dbg!(self.world.to_instantiate.first());
 

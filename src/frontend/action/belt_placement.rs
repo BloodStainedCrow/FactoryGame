@@ -1,5 +1,6 @@
 use std::iter::successors;
 
+use itertools::Itertools;
 use strum::IntoEnumIterator;
 
 use crate::{
@@ -34,71 +35,102 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     out_mode: Option<SplitterDistributionMode>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
-    let self_positions = [splitter_pos, splitter_pos + splitter_direction.turn_right()];
+    #[cfg(debug_assertions)]
+    {
+        let all_belt_connections = game_state
+            .world
+            .get_chunks()
+            .flat_map(|chunk| chunk.get_entities())
+            .flat_map(|e| match e {
+                Entity::Belt {
+                    pos,
+                    direction,
+                    ty,
+                    id,
+                    belt_pos,
+                } => vec![(*pos, *direction, *id), (*pos, direction.reverse(), *id)],
+                Entity::Underground {
+                    pos,
+                    underground_dir: UndergroundDir::Entrance,
+                    direction,
+                    ty,
+                    id,
+                    belt_pos,
+                } => vec![(*pos, direction.reverse(), *id)],
+                Entity::Underground {
+                    pos,
+                    underground_dir: UndergroundDir::Exit,
+                    direction,
+                    ty,
+                    id,
+                    belt_pos,
+                } => vec![(*pos, *direction, *id)],
+                Entity::Splitter { pos, direction, id } => {
+                    // TODO:
+                    vec![]
+                },
+                _ => vec![],
+            });
 
-    let belt_connections: [[BeltTileId<ItemIdxType>; 2]; 2] = self_positions.map(|self_pos| {
-        let front_pos = self_pos + splitter_direction;
-        handle_belt_breaking(game_state, front_pos, splitter_direction, data_store);
+        for (belt_pos, check_dir, id_that_should_exist) in all_belt_connections {
+            if let Some(Entity::Splitter { pos, direction, id }) = game_state
+                .world
+                .get_entities_colliding_with(belt_pos + check_dir, (1, 1), data_store)
+                .into_iter()
+                .next()
+            {
+                assert!(
+                    game_state
+                        .simulation_state
+                        .factory
+                        .belts
+                        .get_splitter_belt_ids(*id)
+                        .iter()
+                        .flatten()
+                        .contains(&id_that_should_exist)
+                );
+            }
+        }
+    }
+    let (left_pos, right_pos) = match splitter_direction {
+        Dir::North => (splitter_pos, splitter_pos + Dir::East),
+        Dir::East => (splitter_pos, splitter_pos + Dir::South),
+        Dir::South => (splitter_pos + Dir::East, splitter_pos),
+        Dir::West => (splitter_pos + Dir::South, splitter_pos),
+    };
+    let self_positions = [left_pos, right_pos];
 
-        // Handle front
-        let (self_front_id, self_front_len) = if let Some(id) =
-            should_merge(game_state, splitter_direction, front_pos, data_store)
-        {
-            debug_assert!(
-                should_sideload(game_state, splitter_direction, front_pos, data_store).is_none()
-            );
-            let result = lengthen(game_state, id, SPLITTER_BELT_LEN, Side::BACK);
-            (id, result.new_belt_len)
-        } else if let Some((id, pos)) =
-            should_sideload(game_state, splitter_direction, front_pos, data_store)
-        {
-            // Add the little belt at the front of the splitter
-            let new_belt = game_state
-                .simulation_state
-                .factory
-                .belts
-                .add_empty_belt(splitter_ty, SPLITTER_BELT_LEN);
-            // Add Sideloading inserter
-            game_state
-                .simulation_state
-                .factory
-                .belts
-                .add_sideloading_inserter(new_belt, (id, pos));
-            (new_belt, SPLITTER_BELT_LEN)
-        } else {
-            let id = game_state
-                .simulation_state
-                .factory
-                .belts
-                .add_empty_belt(splitter_ty, SPLITTER_BELT_LEN);
-            (id, SPLITTER_BELT_LEN)
-        };
+    let [[left_front, left_back], [right_front, right_back]]: [[BeltTileId<ItemIdxType>; 2]; 2] =
+        self_positions.map(|self_pos| {
+            let front_pos = self_pos + splitter_direction;
+            handle_belt_breaking(game_state, front_pos, splitter_direction, data_store);
 
-        let back_pos = self_pos + splitter_direction.reverse();
-        let belt_dir = get_belt_out_dir(&game_state.world, back_pos, data_store);
-        let (self_back_id, self_back_len) = if let Some(belt_dir) = belt_dir {
-            if belt_dir == splitter_direction {
-                // The belt at this position is pointing at the back of the splitter
-                let back_id = match game_state
-                    .world
-                    .get_entities_colliding_with(back_pos, (1, 1), data_store)
-                    .into_iter()
-                    .next()
-                    .unwrap()
-                {
-                    Entity::Belt { id, .. } => *id,
-                    Entity::Underground {
-                        underground_dir: UndergroundDir::Entrance,
-                        id,
-                        ..
-                    } => *id,
-                    Entity::Splitter { .. } => todo!("get the id from the simstate"),
-                    _ => unreachable!(),
-                };
-
-                let result = lengthen(game_state, back_id, SPLITTER_BELT_LEN, Side::FRONT);
-
-                (back_id, result.new_belt_len)
+            // Handle front
+            let (self_front_id, self_front_len) = if let Some(id) =
+                should_merge(game_state, splitter_direction, front_pos, data_store)
+            {
+                debug_assert!(
+                    should_sideload(game_state, splitter_direction, front_pos, data_store)
+                        .is_none()
+                );
+                let result = lengthen(game_state, id, SPLITTER_BELT_LEN, Side::BACK);
+                (id, result.new_belt_len)
+            } else if let Some((id, pos)) =
+                should_sideload(game_state, splitter_direction, front_pos, data_store)
+            {
+                // Add the little belt at the front of the splitter
+                let new_belt = game_state
+                    .simulation_state
+                    .factory
+                    .belts
+                    .add_empty_belt(splitter_ty, SPLITTER_BELT_LEN);
+                // Add Sideloading inserter
+                game_state
+                    .simulation_state
+                    .factory
+                    .belts
+                    .add_sideloading_inserter(new_belt, (id, pos));
+                (new_belt, SPLITTER_BELT_LEN)
             } else {
                 let id = game_state
                     .simulation_state
@@ -106,25 +138,59 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     .belts
                     .add_empty_belt(splitter_ty, SPLITTER_BELT_LEN);
                 (id, SPLITTER_BELT_LEN)
-            }
-        } else {
-            let id = game_state
-                .simulation_state
-                .factory
-                .belts
-                .add_empty_belt(splitter_ty, SPLITTER_BELT_LEN);
-            (id, SPLITTER_BELT_LEN)
-        };
+            };
 
-        [self_front_id, self_back_id]
-    });
+            let back_pos = self_pos + splitter_direction.reverse();
+            dbg!(back_pos);
+            let belt_dir = get_belt_out_dir(&game_state.world, back_pos, data_store);
+            let (self_back_id, self_back_len) = if let Some(belt_dir) = belt_dir {
+                if belt_dir == splitter_direction {
+                    // The belt at this position is pointing at the back of the splitter
+                    let back_id = match game_state
+                        .world
+                        .get_entities_colliding_with(back_pos, (1, 1), data_store)
+                        .into_iter()
+                        .next()
+                        .unwrap()
+                    {
+                        Entity::Belt { id, .. } => *id,
+                        Entity::Underground {
+                            underground_dir: UndergroundDir::Exit,
+                            id,
+                            ..
+                        } => *id,
+                        Entity::Splitter { .. } => todo!("get the id from the simstate"),
+                        e => unreachable!("{:?}", e),
+                    };
+
+                    let result = lengthen(game_state, back_id, SPLITTER_BELT_LEN, Side::FRONT);
+
+                    (back_id, result.new_belt_len)
+                } else {
+                    let id = game_state
+                        .simulation_state
+                        .factory
+                        .belts
+                        .add_empty_belt(splitter_ty, SPLITTER_BELT_LEN);
+                    (id, SPLITTER_BELT_LEN)
+                }
+            } else {
+                let id = game_state
+                    .simulation_state
+                    .factory
+                    .belts
+                    .add_empty_belt(splitter_ty, SPLITTER_BELT_LEN);
+                (id, SPLITTER_BELT_LEN)
+            };
+
+            [self_front_id, self_back_id]
+        });
 
     let splitter = SplitterInfo {
         in_mode: in_mode.unwrap_or_default(),
         out_mode: out_mode.unwrap_or_default(),
-        // TODO: Figure out the correct order
-        input_belts: [belt_connections[0][1], belt_connections[1][1]],
-        output_belts: [belt_connections[0][0], belt_connections[1][0]],
+        input_belts: [left_back, right_back],
+        output_belts: [left_front, right_front],
     };
 
     let id = game_state
@@ -135,13 +201,76 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
     game_state.world.add_entity(
         Entity::Splitter {
-            pos: splitter_pos,
+            pos: Position {
+                x: self_positions.into_iter().map(|pos| pos.x).min().unwrap(),
+                y: self_positions.into_iter().map(|pos| pos.y).min().unwrap(),
+            },
             direction: splitter_direction,
             id,
         },
         &mut game_state.simulation_state,
         data_store,
     );
+
+    #[cfg(debug_assertions)]
+    {
+        let all_belt_connections = game_state
+            .world
+            .get_chunks()
+            .flat_map(|chunk| chunk.get_entities())
+            .flat_map(|e| match e {
+                Entity::Belt {
+                    pos,
+                    direction,
+                    ty,
+                    id,
+                    belt_pos,
+                } => vec![(*pos, *direction, *id), (*pos, direction.reverse(), *id)],
+                Entity::Underground {
+                    pos,
+                    underground_dir: UndergroundDir::Entrance,
+                    direction,
+                    ty,
+                    id,
+                    belt_pos,
+                } => vec![(*pos, direction.reverse(), *id)],
+                Entity::Underground {
+                    pos,
+                    underground_dir: UndergroundDir::Exit,
+                    direction,
+                    ty,
+                    id,
+                    belt_pos,
+                } => vec![(*pos, *direction, *id)],
+                Entity::Splitter { pos, direction, id } => {
+                    // TODO:
+                    vec![]
+                },
+                _ => vec![],
+            });
+
+        for (belt_pos, check_dir, id_that_should_exist) in all_belt_connections {
+            if let Some(Entity::Splitter { pos, direction, id }) = game_state
+                .world
+                .get_entities_colliding_with(belt_pos + check_dir, (1, 1), data_store)
+                .into_iter()
+                .next()
+            {
+                assert!(
+                    game_state
+                        .simulation_state
+                        .factory
+                        .belts
+                        .get_splitter_belt_ids(*id)
+                        .iter()
+                        .flatten()
+                        .contains(&id_that_should_exist),
+                    "{:?}",
+                    belt_pos
+                );
+            }
+        }
+    }
 }
 
 #[allow(unreachable_code)]
@@ -251,12 +380,22 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         underground_dir: UndergroundDir::Exit,
                         ..
                     } => *id,
-                    Entity::Splitter { pos, id, .. } => {
-                        let side = if potentially_incoming_pos == *pos {
+                    Entity::Splitter {
+                        pos,
+                        id,
+                        direction: splitter_dir,
+                        ..
+                    } => {
+                        let mut side = if potentially_incoming_pos == *pos {
                             SplitterSide::Left
                         } else {
                             SplitterSide::Right
                         };
+
+                        match splitter_dir {
+                            Dir::North | Dir::East => {},
+                            Dir::South | Dir::West => side = side.switch(),
+                        }
 
                         let [_, outputs] = game_state
                             .simulation_state
@@ -317,6 +456,64 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     .add_sideloading_inserter(back_id, (id, belt_pos));
             } else {
                 // Do nothing
+            }
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    {
+        let all_belt_connections = game_state
+            .world
+            .get_chunks()
+            .flat_map(|chunk| chunk.get_entities())
+            .flat_map(|e| match e {
+                Entity::Belt {
+                    pos,
+                    direction,
+                    ty,
+                    id,
+                    belt_pos,
+                } => vec![(*pos, *direction, *id), (*pos, direction.reverse(), *id)],
+                Entity::Underground {
+                    pos,
+                    underground_dir: UndergroundDir::Entrance,
+                    direction,
+                    ty,
+                    id,
+                    belt_pos,
+                } => vec![(*pos, direction.reverse(), *id)],
+                Entity::Underground {
+                    pos,
+                    underground_dir: UndergroundDir::Exit,
+                    direction,
+                    ty,
+                    id,
+                    belt_pos,
+                } => vec![(*pos, *direction, *id)],
+                Entity::Splitter { pos, direction, id } => {
+                    // TODO:
+                    vec![]
+                },
+                _ => vec![],
+            });
+
+        for (belt_pos, check_dir, id_that_should_exist) in all_belt_connections {
+            if let Some(Entity::Splitter { pos, direction, id }) = game_state
+                .world
+                .get_entities_colliding_with(belt_pos + check_dir, (1, 1), data_store)
+                .into_iter()
+                .next()
+            {
+                assert!(
+                    game_state
+                        .simulation_state
+                        .factory
+                        .belts
+                        .get_splitter_belt_ids(*id)
+                        .iter()
+                        .flatten()
+                        .contains(&id_that_should_exist)
+                );
             }
         }
     }
@@ -738,6 +935,64 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
             }
         },
     }
+
+    #[cfg(debug_assertions)]
+    {
+        let all_belt_connections = game_state
+            .world
+            .get_chunks()
+            .flat_map(|chunk| chunk.get_entities())
+            .flat_map(|e| match e {
+                Entity::Belt {
+                    pos,
+                    direction,
+                    ty,
+                    id,
+                    belt_pos,
+                } => vec![(*pos, *direction, *id), (*pos, direction.reverse(), *id)],
+                Entity::Underground {
+                    pos,
+                    underground_dir: UndergroundDir::Entrance,
+                    direction,
+                    ty,
+                    id,
+                    belt_pos,
+                } => vec![(*pos, direction.reverse(), *id)],
+                Entity::Underground {
+                    pos,
+                    underground_dir: UndergroundDir::Exit,
+                    direction,
+                    ty,
+                    id,
+                    belt_pos,
+                } => vec![(*pos, *direction, *id)],
+                Entity::Splitter { pos, direction, id } => {
+                    // TODO:
+                    vec![]
+                },
+                _ => vec![],
+            });
+
+        for (belt_pos, check_dir, id_that_should_exist) in all_belt_connections {
+            if let Some(Entity::Splitter { pos, direction, id }) = game_state
+                .world
+                .get_entities_colliding_with(belt_pos + check_dir, (1, 1), data_store)
+                .into_iter()
+                .next()
+            {
+                assert!(
+                    game_state
+                        .simulation_state
+                        .factory
+                        .belts
+                        .get_splitter_belt_ids(*id)
+                        .iter()
+                        .flatten()
+                        .contains(&id_that_should_exist)
+                );
+            }
+        }
+    }
 }
 
 enum BeltChange {
@@ -849,6 +1104,64 @@ fn handle_belt_breaking<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             "For the belt to be DoubleSideloading before, there would have to have been a belt here before"
         ),
     }
+
+    #[cfg(debug_assertions)]
+    {
+        let all_belt_connections = game_state
+            .world
+            .get_chunks()
+            .flat_map(|chunk| chunk.get_entities())
+            .flat_map(|e| match e {
+                Entity::Belt {
+                    pos,
+                    direction,
+                    ty,
+                    id,
+                    belt_pos,
+                } => vec![(*pos, *direction, *id), (*pos, direction.reverse(), *id)],
+                Entity::Underground {
+                    pos,
+                    underground_dir: UndergroundDir::Entrance,
+                    direction,
+                    ty,
+                    id,
+                    belt_pos,
+                } => vec![(*pos, direction.reverse(), *id)],
+                Entity::Underground {
+                    pos,
+                    underground_dir: UndergroundDir::Exit,
+                    direction,
+                    ty,
+                    id,
+                    belt_pos,
+                } => vec![(*pos, *direction, *id)],
+                Entity::Splitter { pos, direction, id } => {
+                    // TODO:
+                    vec![]
+                },
+                _ => vec![],
+            });
+
+        for (belt_pos, check_dir, id_that_should_exist) in all_belt_connections {
+            if let Some(Entity::Splitter { pos, direction, id }) = game_state
+                .world
+                .get_entities_colliding_with(belt_pos + check_dir, (1, 1), data_store)
+                .into_iter()
+                .next()
+            {
+                assert!(
+                    game_state
+                        .simulation_state
+                        .factory
+                        .belts
+                        .get_splitter_belt_ids(*id)
+                        .iter()
+                        .flatten()
+                        .contains(&id_that_should_exist)
+                );
+            }
+        }
+    }
 }
 
 fn attach_to_back_of_belt<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
@@ -958,6 +1271,10 @@ fn get_belt_out_dir<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     position: Position,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> Option<Dir> {
+    // if position.x == 1800 && position.y == 1659 {
+    dbg!(position);
+    // }
+
     world
         .get_entities_colliding_with(position, (1, 1), data_store)
         .into_iter()
@@ -1056,12 +1373,22 @@ fn should_merge<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             underground_dir: UndergroundDir::Exit,
                             ..
                         } => None,
-                        Entity::Splitter { pos, id, .. } => {
-                            let side = if front_pos == *pos {
+                        Entity::Splitter {
+                            pos,
+                            id,
+                            direction: splitter_dir,
+                            ..
+                        } => {
+                            let mut side = if front_pos == *pos {
                                 SplitterSide::Left
                             } else {
                                 SplitterSide::Right
                             };
+
+                            match splitter_dir {
+                                Dir::North | Dir::East => {},
+                                Dir::South | Dir::West => side = side.switch(),
+                            }
 
                             // TODO: Only calculate what we need
                             let [inputs, _] = game_state

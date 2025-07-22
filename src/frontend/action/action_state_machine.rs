@@ -69,6 +69,8 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
 
     copy_info: Option<CopyInfo<ItemIdxType, RecipeIdxType>>,
 
+    pub show_graph_dot_output: bool,
+
     recipe: PhantomData<RecipeIdxType>,
 }
 
@@ -153,6 +155,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             escape_menu_open: false,
 
             copy_info: None,
+
+            show_graph_dot_output: false,
 
             recipe: PhantomData,
         }

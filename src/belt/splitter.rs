@@ -36,7 +36,7 @@ impl From<SplitterSide> for usize {
 }
 
 impl SplitterSide {
-    fn switch(self) -> Self {
+    pub fn switch(self) -> Self {
         match self {
             SplitterSide::Left => SplitterSide::Right,
             SplitterSide::Right => SplitterSide::Left,

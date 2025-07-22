@@ -36,6 +36,7 @@ use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
 use log::{info, trace};
 use parking_lot::MutexGuard;
+use petgraph::dot::Dot;
 use std::cmp::max;
 use std::fs::File;
 use std::sync::LazyLock;
@@ -860,13 +861,16 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     .belts
                                     .get_splitter_belt_ids(*id);
 
-                                let right_dir = direction.turn_right();
+                                let (left_pos, right_pos) = match direction {
+                                    Dir::North => (*pos, *pos + Dir::East),
+                                    Dir::East => (*pos, *pos + Dir::South),
+                                    Dir::South => (*pos + Dir::East, *pos),
+                                    Dir::West => (*pos + Dir::South, *pos),
+                                };
 
                                 // FIXME: We currently do not take partial movement (from slow belt speeds) into account, which leads to ugly jumping of the items on the belt
                                 for ((pos, input), output) in
-                                    successors(Some(*pos), |pos| Some(*pos + right_dir))
-                                        .zip(inputs)
-                                        .zip(outputs)
+                                    [left_pos, right_pos].into_iter().zip(inputs).zip(outputs)
                                 {
                                     texture_atlas.belt[*direction].draw(
                                         [
@@ -1612,6 +1616,18 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                 mem::drop(new_state);
             }
+            ui.checkbox(
+                &mut state_machine.show_graph_dot_output,
+                "Generate Belt Graph",
+            );
+            if state_machine.show_graph_dot_output {
+                let mut graph = format!(
+                    "{:?}",
+                    Dot::new(&game_state.simulation_state.factory.belts.belt_graph)
+                );
+
+                ui.text_edit_multiline(&mut graph);
+            }
         });
 
     Window::new("UPS").default_open(false).show(ctx, |ui| {
@@ -1930,6 +1946,11 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             },
                         }
                         ui.label(format!("Item: {:?}", game_state.simulation_state.factory.belts.get_pure_item(*id)).as_str());
+
+                        let mut dedup = Default::default();
+                        let mut done = Default::default();
+                        game_state.simulation_state.factory.belts.get_items_which_could_end_up_on_that_belt(*id, &mut dedup, &mut done);
+                        ui.label(format!("Possible items: {:?}", done[id]).as_str());
 
                         ui.label(format!("Inner: {:?}", game_state.simulation_state.factory.belts.inner.belt_belt_inserters).as_str());
 

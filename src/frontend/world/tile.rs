@@ -48,6 +48,8 @@ use noise::Seedable;
 use super::{Position, sparse_grid::SparseGrid};
 use crate::liquid::FluidSystemId;
 
+use petgraph::prelude::Bfs;
+
 pub const BELT_LEN_PER_TILE: u16 = 4;
 
 pub const CHUNK_SIZE: u16 = 16;
@@ -219,6 +221,34 @@ fn try_instantiating_inserters_for_belt_cascade<ItemIdxType: IdxTrait, RecipeIdx
             if !world.to_instantiate_by_belt.contains_key(&belt_id) {
                 return;
             }
+            // FIXME:
+            // let mut reachable = Bfs::new(
+            //     &sim_state.factory.belts.belt_graph,
+            //     sim_state.factory.belts.belt_graph_lookup[&belt_id],
+            // );
+            // while let Some(idx) = reachable.next(&sim_state.factory.belts.belt_graph) {
+            //     let belt = sim_state.factory.belts.belt_graph.node_weight(idx).unwrap();
+            //     if !world.to_instantiate_by_belt[belt].is_empty() {
+            //         // FIXME: What if the graph contains cycles???
+            //         updates.push(try_instantiating_inserters_for_belt(*belt));
+            //     }
+            // }
+            // In order to avoid problems wit
+            updates.push(try_instantiating_all_inserters_cascade());
+        }),
+    }
+}
+
+fn try_instantiating_inserters_for_belt<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    belt_id: BeltTileId<ItemIdxType>,
+) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
+    CascadingUpdate {
+        update: Box::new(move |world, sim_state, updates, data_store| {
+            profiling::scope!("try_instantiating_inserters_for_belt");
+            if !world.to_instantiate_by_belt.contains_key(&belt_id) {
+                return;
+            }
+
             let by_belt = world.to_instantiate_by_belt.get_mut(&belt_id).unwrap();
 
             if by_belt.len() > 1_000 {
@@ -1319,6 +1349,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     .or_default()[direction.reverse()] = true;
 
                 cascading_updates.push(new_possible_inserter_connection(pos, (1, 1)));
+                cascading_updates.push(try_instantiating_inserters_for_belt_cascade(id));
             },
             Entity::Underground {
                 pos,
@@ -1340,6 +1371,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 }
 
                 cascading_updates.push(new_possible_inserter_connection(pos, (1, 1)));
+                cascading_updates.push(try_instantiating_inserters_for_belt_cascade(id));
             },
             Entity::Splitter {
                 pos,
@@ -1352,6 +1384,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 self.belt_recieving_input_directions
                     .entry(pos + direction.turn_right() + direction)
                     .or_default()[direction.reverse()] = true;
+
+                cascading_updates.push(try_instantiating_all_inserters_cascade());
             },
             Entity::Inserter { info, .. } => match info {
                 InserterInfo::NotAttached { .. } => {
@@ -1628,12 +1662,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         None => PossibleItem::All,
                     },
                 }),
-                Entity::Splitter { pos, id, .. } => {
-                    let side = if *pos == *end_pos {
+                Entity::Splitter { pos, id, direction: splitter_dir, .. } => {
+                    let mut side = if *pos == *end_pos {
                         SplitterSide::Left
                     } else {
                         SplitterSide::Right
                     };
+
+                    match splitter_dir {
+                        Dir::North | Dir::East => {},
+                        Dir::South | Dir::West => side = side.switch(),
+                    }
 
                     let [_, outputs] = simulation_state
                     .factory
@@ -1735,12 +1774,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         .get_pure_item(BeltTileId::AnyBelt(*id, PhantomData)).map(|item| vec![item]),
                     possible_item_list: PossibleItem::All,
                 }),
-                Entity::Splitter { pos, id, .. } => {
-                    let side = if *pos == *end_pos {
+                Entity::Splitter { pos, id, direction: splitter_dir, .. } => {
+                    let mut side = if *pos == *end_pos {
                         SplitterSide::Left
                     } else {
                         SplitterSide::Right
                     };
+
+                    match splitter_dir {
+                        Dir::North | Dir::East => {},
+                        Dir::South | Dir::West => side = side.switch(),
+                    }
 
                     let [inputs, _] = simulation_state
                     .factory
