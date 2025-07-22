@@ -7,7 +7,9 @@ use std::num::NonZero;
 use std::{borrow::Borrow, ops::Range};
 use tilelib::types::{DrawInstance, Layer};
 
-use crate::{belt::splitter::SplitterDistributionMode, item::Indexable};
+use crate::{
+    belt::splitter::SplitterDistributionMode, frontend::world::tile::DirRelative, item::Indexable,
+};
 use crate::{frontend::world::tile::UndergroundDir, item::WeakIdxTrait};
 
 use crate::{
@@ -259,7 +261,7 @@ impl BlueprintAction {
         }
     }
 
-    fn try_into<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    fn try_into_real_action<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &self,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Result<ActionType<ItemIdxType, RecipeIdxType>, ()> {
@@ -676,7 +678,7 @@ impl Blueprint {
                 .actions
                 .iter()
                 .map(|bp_action| {
-                    bp_action.try_into(data_store).expect(
+                    bp_action.try_into_real_action(data_store).expect(
                         format!("Action not possible with current mod set: {:?}", bp_action)
                             .as_str(),
                     )
@@ -964,6 +966,274 @@ impl Blueprint {
         bp
     }
 
+    pub fn flip_horizontal<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        &mut self,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        for action in self.actions.iter_mut() {
+            let e_size: [i32; 2] = action
+                .try_into_real_action(data_store)
+                .unwrap()
+                .get_building_size(data_store)
+                .unwrap_or([1, 1])
+                .map(|v| v.into());
+            match action {
+                BlueprintAction::PlaceEntity(blueprint_place_entity) => {
+                    match blueprint_place_entity {
+                        BlueprintPlaceEntity::Assembler { pos, .. } => {
+                            *pos = Position {
+                                x: -pos.x - e_size[0],
+                                y: pos.y,
+                            }
+                        },
+                        BlueprintPlaceEntity::Inserter { pos, dir, .. } => {
+                            *pos = Position {
+                                x: -pos.x - e_size[0],
+                                y: pos.y,
+                            };
+                            if dir.compare(Dir::North) == DirRelative::Turned {
+                                *dir = dir.reverse();
+                            }
+                        },
+                        BlueprintPlaceEntity::Belt { pos, direction, .. } => {
+                            *pos = Position {
+                                x: -pos.x - e_size[0],
+                                y: pos.y,
+                            };
+                            if direction.compare(Dir::North) == DirRelative::Turned {
+                                *direction = direction.reverse();
+                            }
+                        },
+                        BlueprintPlaceEntity::Underground { pos, direction, .. } => {
+                            *pos = Position {
+                                x: -pos.x - e_size[0],
+                                y: pos.y,
+                            };
+                            if direction.compare(Dir::North) == DirRelative::Turned {
+                                *direction = direction.reverse();
+                            }
+                        },
+                        BlueprintPlaceEntity::PowerPole { pos, .. } => {
+                            *pos = Position {
+                                x: -pos.x - e_size[0],
+                                y: pos.y,
+                            };
+                        },
+                        BlueprintPlaceEntity::Splitter { pos, direction, .. } => {
+                            *pos = Position {
+                                x: -pos.x - e_size[0],
+                                y: pos.y,
+                            };
+                            if direction.compare(Dir::North) == DirRelative::Turned {
+                                *direction = direction.reverse();
+                            }
+                        },
+                        BlueprintPlaceEntity::Chest { pos, .. } => {
+                            *pos = Position {
+                                x: -pos.x - e_size[0],
+                                y: pos.y,
+                            };
+                        },
+                        BlueprintPlaceEntity::SolarPanel { pos, .. } => {
+                            *pos = Position {
+                                x: -pos.x - e_size[0],
+                                y: pos.y,
+                            };
+                        },
+                        BlueprintPlaceEntity::Lab { pos, .. } => {
+                            *pos = Position {
+                                x: -pos.x - e_size[0],
+                                y: pos.y,
+                            };
+                        },
+                        BlueprintPlaceEntity::Beacon { pos, .. } => {
+                            *pos = Position {
+                                x: -pos.x - e_size[0],
+                                y: pos.y,
+                            };
+                        },
+                        BlueprintPlaceEntity::FluidTank { pos, rotation, .. } => {
+                            *pos = Position {
+                                x: -pos.x - e_size[0],
+                                y: pos.y,
+                            };
+                            if rotation.compare(Dir::North) == DirRelative::Turned {
+                                *rotation = rotation.reverse();
+                            }
+                        },
+                        BlueprintPlaceEntity::MiningDrill { pos, rotation, .. } => {
+                            *pos = Position {
+                                x: -pos.x - e_size[0],
+                                y: pos.y,
+                            };
+                            if rotation.compare(Dir::North) == DirRelative::Turned {
+                                *rotation = rotation.reverse();
+                            }
+                        },
+                    }
+                },
+                BlueprintAction::SetRecipe { pos, .. } => {
+                    *pos = Position {
+                        x: -pos.x - e_size[0],
+                        y: pos.y,
+                    }
+                },
+                BlueprintAction::OverrideInserterMovetime { pos, .. } => {
+                    *pos = Position {
+                        x: -pos.x - e_size[0],
+                        y: pos.y,
+                    }
+                },
+                BlueprintAction::AddModules { pos, .. } => {
+                    *pos = Position {
+                        x: -pos.x - e_size[0],
+                        y: pos.y,
+                    }
+                },
+                BlueprintAction::SetChestSlotLimit { pos, .. } => {
+                    *pos = Position {
+                        x: -pos.x - e_size[0],
+                        y: pos.y,
+                    }
+                },
+            }
+        }
+    }
+
+    pub fn flip_vertical<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        &mut self,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        for action in self.actions.iter_mut() {
+            let e_size: [i32; 2] = action
+                .try_into_real_action(data_store)
+                .unwrap()
+                .get_building_size(data_store)
+                .unwrap_or([1, 1])
+                .map(|v| v.into());
+            match action {
+                BlueprintAction::PlaceEntity(blueprint_place_entity) => {
+                    match blueprint_place_entity {
+                        BlueprintPlaceEntity::Assembler { pos, .. } => {
+                            *pos = Position {
+                                x: pos.x,
+                                y: pos.y - e_size[0],
+                            }
+                        },
+                        BlueprintPlaceEntity::Inserter { pos, dir, .. } => {
+                            *pos = Position {
+                                x: pos.x,
+                                y: pos.y - e_size[0],
+                            };
+                            if dir.compare(Dir::East) == DirRelative::Turned {
+                                *dir = dir.reverse();
+                            }
+                        },
+                        BlueprintPlaceEntity::Belt { pos, direction, .. } => {
+                            *pos = Position {
+                                x: pos.x,
+                                y: pos.y - e_size[0],
+                            };
+                            if direction.compare(Dir::East) == DirRelative::Turned {
+                                *direction = direction.reverse();
+                            }
+                        },
+                        BlueprintPlaceEntity::Underground { pos, direction, .. } => {
+                            *pos = Position {
+                                x: pos.x,
+                                y: pos.y - e_size[0],
+                            };
+                            if direction.compare(Dir::East) == DirRelative::Turned {
+                                *direction = direction.reverse();
+                            }
+                        },
+                        BlueprintPlaceEntity::PowerPole { pos, .. } => {
+                            *pos = Position {
+                                x: pos.x,
+                                y: pos.y - e_size[0],
+                            };
+                        },
+                        BlueprintPlaceEntity::Splitter { pos, direction, .. } => {
+                            *pos = Position {
+                                x: pos.x,
+                                y: pos.y - e_size[0],
+                            };
+                            if direction.compare(Dir::East) == DirRelative::Turned {
+                                *direction = direction.reverse();
+                            }
+                        },
+                        BlueprintPlaceEntity::Chest { pos, .. } => {
+                            *pos = Position {
+                                x: pos.x,
+                                y: pos.y - e_size[0],
+                            };
+                        },
+                        BlueprintPlaceEntity::SolarPanel { pos, .. } => {
+                            *pos = Position {
+                                x: pos.x,
+                                y: pos.y - e_size[0],
+                            };
+                        },
+                        BlueprintPlaceEntity::Lab { pos, .. } => {
+                            *pos = Position {
+                                x: pos.x,
+                                y: pos.y - e_size[0],
+                            };
+                        },
+                        BlueprintPlaceEntity::Beacon { pos, .. } => {
+                            *pos = Position {
+                                x: pos.x,
+                                y: pos.y - e_size[0],
+                            };
+                        },
+                        BlueprintPlaceEntity::FluidTank { pos, rotation, .. } => {
+                            *pos = Position {
+                                x: pos.x,
+                                y: pos.y - e_size[0],
+                            };
+                            if rotation.compare(Dir::East) == DirRelative::Turned {
+                                *rotation = rotation.reverse();
+                            }
+                        },
+                        BlueprintPlaceEntity::MiningDrill { pos, rotation, .. } => {
+                            *pos = Position {
+                                x: pos.x,
+                                y: pos.y - e_size[0],
+                            };
+                            if rotation.compare(Dir::East) == DirRelative::Turned {
+                                *rotation = rotation.reverse();
+                            }
+                        },
+                    }
+                },
+                BlueprintAction::SetRecipe { pos, .. } => {
+                    *pos = Position {
+                        x: -pos.x - e_size[0],
+                        y: pos.y,
+                    }
+                },
+                BlueprintAction::OverrideInserterMovetime { pos, .. } => {
+                    *pos = Position {
+                        x: -pos.x - e_size[0],
+                        y: pos.y,
+                    }
+                },
+                BlueprintAction::AddModules { pos, .. } => {
+                    *pos = Position {
+                        x: -pos.x - e_size[0],
+                        y: pos.y,
+                    }
+                },
+                BlueprintAction::SetChestSlotLimit { pos, .. } => {
+                    *pos = Position {
+                        x: -pos.x - e_size[0],
+                        y: pos.y,
+                    }
+                },
+            }
+        }
+    }
+
     pub fn draw<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &self,
         base_pos: (f32, f32),
@@ -1022,7 +1292,7 @@ impl Blueprint {
         // );
 
         for action in &self.actions {
-            let Ok(action) = action.try_into(data_store) else {
+            let Ok(action) = action.try_into_real_action(data_store) else {
                 error!("Could not draw blueprint!");
                 return;
             };

@@ -575,7 +575,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
     {
-        let ret = match (&self.state, key) {
+        let ret = match (&mut self.state, key) {
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Q) => {
                 match world
                     .get_entities_colliding_with(
@@ -1096,6 +1096,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 } else {
                     self.map_view_info = Some(self.local_player_pos);
                 }
+                vec![]
+            },
+
+            (ActionStateMachineState::Holding(HeldObject::Blueprint(bp)), Key::V) => {
+                bp.flip_vertical(data_store);
+                vec![]
+            },
+            (ActionStateMachineState::Holding(HeldObject::Blueprint(bp)), Key::H) => {
+                bp.flip_horizontal(data_store);
                 vec![]
             },
 
