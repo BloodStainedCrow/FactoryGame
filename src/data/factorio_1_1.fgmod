@@ -55,6 +55,24 @@
             is_intermediate: false,
         ),
         (
+            name: "factory_game::stone_generation",
+            display_name: "Generate Stone from nothing",
+            possible_machines: [
+                "factory_game::assembler1",
+                "factory_game::assembler2",
+                "factory_game::assembler3",
+            ],
+            ings: [],
+            output: [
+                (
+                    item: "factory_game::stone",
+                    amount: 1,
+                ),
+            ],
+            time_to_craft: 1,
+            is_intermediate: false,
+        ),
+        (
             name: "factory_game::iron_smelting",
             display_name: "Smelt Iron Ore into Iron Plates",
             possible_machines: [
@@ -1310,6 +1328,7 @@
                 RecipeUnlock("factory_game::coal_generation"),
                 RecipeUnlock("factory_game::raw_oil_generation"),
                 RecipeUnlock("factory_game::water_generation"),
+                RecipeUnlock("factory_game::stone_generation"),
             ],
         ),
         (
