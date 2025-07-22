@@ -682,7 +682,7 @@
                ),
            ],
            time_to_craft: 192,
-           is_intermediate: false,
+           is_intermediate: true,
         ),
         (
            name: "factory_game::prod_module_1",
