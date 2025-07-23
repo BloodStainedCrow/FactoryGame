@@ -775,7 +775,6 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
     }
 
     fn update(&mut self, splitter_list: &[SushiSplitter<ItemIdxType>]) {
-        profiling::puffin::profile_function_if!(!self.is_circular && self.locs.len() > 1);
         if self.is_circular {
             self.zero_index += 1;
             return;
