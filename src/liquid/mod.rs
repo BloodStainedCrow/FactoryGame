@@ -608,6 +608,154 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
         }
     }
 
+    pub fn try_add_output<RecipeIdxType: IdxTrait>(
+        &mut self,
+        fluid_box_position: Position,
+        conn_fluid: Item<ItemIdxType>,
+        dest: Storage<RecipeIdxType>,
+        dest_pos: Position,
+        chest_store: &mut FullChestStore<ItemIdxType>,
+        inserter_store: &mut StorageStorageInserterStore,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Result<WeakIndex, CannotMixFluidsError<ItemIdxType>> {
+        let id = self.fluid_box_pos_to_network_id[&fluid_box_position];
+
+        match id.fluid {
+            Some(fluid) => {
+                if fluid != conn_fluid {
+                    return Err(CannotMixFluidsError {
+                        items: [fluid, conn_fluid],
+                    });
+                }
+                let weak_index = self.fluid_systems_with_fluid[fluid.into_usize()][id.index]
+                    .as_mut()
+                    .unwrap()
+                    .add_output(
+                        fluid,
+                        fluid_box_position,
+                        dest,
+                        dest_pos,
+                        inserter_store,
+                        data_store,
+                    );
+                Ok(weak_index)
+            },
+            None => {
+                let mut removed = self.empty_fluid_systems[id.index].take().unwrap();
+                let removed_id = id;
+                removed.set_fluid(conn_fluid, chest_store);
+                let weak_index = removed.add_output(
+                    conn_fluid,
+                    fluid_box_position,
+                    dest,
+                    dest_pos,
+                    inserter_store,
+                    data_store,
+                );
+
+                let new_idx = self.fluid_systems_with_fluid[conn_fluid.into_usize()]
+                    .iter()
+                    .position(Option::is_none);
+
+                let new_idx = if let Some(hole_idx) = new_idx {
+                    self.fluid_systems_with_fluid[conn_fluid.into_usize()][hole_idx] =
+                        Some(removed);
+                    hole_idx
+                } else {
+                    self.fluid_systems_with_fluid[conn_fluid.into_usize()].push(Some(removed));
+                    self.fluid_systems_with_fluid[conn_fluid.into_usize()].len() - 1
+                };
+
+                let new_id = FluidSystemId {
+                    fluid: Some(conn_fluid),
+                    index: new_idx,
+                };
+
+                for pos_id in self.fluid_box_pos_to_network_id.values_mut() {
+                    if *pos_id == removed_id {
+                        *pos_id = new_id;
+                    }
+                }
+
+                Ok(weak_index)
+            },
+        }
+    }
+
+    pub fn try_add_input<RecipeIdxType: IdxTrait>(
+        &mut self,
+        fluid_box_position: Position,
+        conn_fluid: Item<ItemIdxType>,
+        source: Storage<RecipeIdxType>,
+        source_pos: Position,
+        chest_store: &mut FullChestStore<ItemIdxType>,
+        inserter_store: &mut StorageStorageInserterStore,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Result<WeakIndex, CannotMixFluidsError<ItemIdxType>> {
+        let id = self.fluid_box_pos_to_network_id[&fluid_box_position];
+
+        match id.fluid {
+            Some(fluid) => {
+                if fluid != conn_fluid {
+                    return Err(CannotMixFluidsError {
+                        items: [fluid, conn_fluid],
+                    });
+                }
+                let weak_index = self.fluid_systems_with_fluid[fluid.into_usize()][id.index]
+                    .as_mut()
+                    .unwrap()
+                    .add_input(
+                        fluid,
+                        fluid_box_position,
+                        source,
+                        source_pos,
+                        inserter_store,
+                        data_store,
+                    );
+                Ok(weak_index)
+            },
+            None => {
+                let mut removed = self.empty_fluid_systems[id.index].take().unwrap();
+                let removed_id = id;
+                removed.set_fluid(conn_fluid, chest_store);
+                let weak_index = removed.add_input(
+                    conn_fluid,
+                    fluid_box_position,
+                    source,
+                    source_pos,
+                    inserter_store,
+                    data_store,
+                );
+
+                let new_idx = self.fluid_systems_with_fluid[conn_fluid.into_usize()]
+                    .iter()
+                    .position(Option::is_none);
+
+                let new_idx = if let Some(hole_idx) = new_idx {
+                    self.fluid_systems_with_fluid[conn_fluid.into_usize()][hole_idx] =
+                        Some(removed);
+                    hole_idx
+                } else {
+                    self.fluid_systems_with_fluid[conn_fluid.into_usize()].push(Some(removed));
+                    self.fluid_systems_with_fluid[conn_fluid.into_usize()].len() - 1
+                };
+
+                let new_id = FluidSystemId {
+                    fluid: Some(conn_fluid),
+                    index: new_idx,
+                };
+
+                for pos_id in self.fluid_box_pos_to_network_id.values_mut() {
+                    if *pos_id == removed_id {
+                        *pos_id = new_id;
+                    }
+                }
+
+                Ok(weak_index)
+            },
+        }
+    }
+
     fn merge_fluid_system<RecipeIdxType: IdxTrait>(
         &mut self,
         kept_id: FluidSystemId<ItemIdxType>,

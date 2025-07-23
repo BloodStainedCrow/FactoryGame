@@ -578,6 +578,202 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
         )
         .chain(
             assembler_store
+                .assemblers_2_2
+                .iter_mut()
+                .enumerate()
+                .flat_map(move |(recipe_id_2_2, multi)| {
+                    let mut items_in = data_store.recipe_to_items[&multi.recipe].iter().filter_map(
+                        |(dir, item)| {
+                            if *dir == ItemRecipeDir::Ing {
+                                Some(item)
+                            } else {
+                                None
+                            }
+                        },
+                    );
+
+                    let item_in0 = *items_in.next().unwrap();
+                    let item_in1 = *items_in.next().unwrap();
+
+                    let mut items_out = data_store.recipe_to_items[&multi.recipe]
+                        .iter()
+                        .filter_map(|(dir, item)| {
+                            if *dir == ItemRecipeDir::Out {
+                                Some(item)
+                            } else {
+                                None
+                            }
+                        });
+
+                    let item_out0 = *items_out.next().unwrap();
+                    let item_out1 = *items_out.next().unwrap();
+
+                    let (([ings0_max, ings1_max], [ings0, ings1]), [outputs0, outputs1]) =
+                        multi.get_all_mut();
+
+                    [
+                        (
+                            item_in0,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(2, 2)][recipe_id_2_2],
+                                    item_in0,
+                                )],
+                                index: 0,
+                            },
+                            ings0_max,
+                            ings0,
+                        ),
+                        (
+                            item_in1,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(2, 2)][recipe_id_2_2],
+                                    item_in1,
+                                )],
+                                index: 0,
+                            },
+                            ings1_max,
+                            ings1,
+                        ),
+                        (
+                            item_out0,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(2, 2)][recipe_id_2_2],
+                                    item_out0,
+                                )],
+                                index: 0,
+                            },
+                            ALWAYS_FULL,
+                            outputs0,
+                        ),
+                        (
+                            item_out1,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(2, 2)][recipe_id_2_2],
+                                    item_out1,
+                                )],
+                                index: 0,
+                            },
+                            ALWAYS_FULL,
+                            outputs1,
+                        ),
+                    ]
+                }),
+        )
+        .chain(
+            assembler_store
+                .assemblers_2_3
+                .iter_mut()
+                .enumerate()
+                .flat_map(move |(recipe_id_2_3, multi)| {
+                    let mut items_in = data_store.recipe_to_items[&multi.recipe].iter().filter_map(
+                        |(dir, item)| {
+                            if *dir == ItemRecipeDir::Ing {
+                                Some(item)
+                            } else {
+                                None
+                            }
+                        },
+                    );
+
+                    let item_in0 = *items_in.next().unwrap();
+                    let item_in1 = *items_in.next().unwrap();
+
+                    let mut items_out = data_store.recipe_to_items[&multi.recipe]
+                        .iter()
+                        .filter_map(|(dir, item)| {
+                            if *dir == ItemRecipeDir::Out {
+                                Some(item)
+                            } else {
+                                None
+                            }
+                        });
+
+                    let item_out0 = *items_out.next().unwrap();
+                    let item_out1 = *items_out.next().unwrap();
+                    let item_out2 = *items_out.next().unwrap();
+
+                    let (([ings0_max, ings1_max], [ings0, ings1]), [outputs0, outputs1, outputs2]) =
+                        multi.get_all_mut();
+
+                    [
+                        (
+                            item_in0,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(2, 3)][recipe_id_2_3],
+                                    item_in0,
+                                )],
+                                index: 0,
+                            },
+                            ings0_max,
+                            ings0,
+                        ),
+                        (
+                            item_in1,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(2, 3)][recipe_id_2_3],
+                                    item_in1,
+                                )],
+                                index: 0,
+                            },
+                            ings1_max,
+                            ings1,
+                        ),
+                        (
+                            item_out0,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(2, 3)][recipe_id_2_3],
+                                    item_out0,
+                                )],
+                                index: 0,
+                            },
+                            ALWAYS_FULL,
+                            outputs0,
+                        ),
+                        (
+                            item_out1,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(2, 3)][recipe_id_2_3],
+                                    item_out1,
+                                )],
+                                index: 0,
+                            },
+                            ALWAYS_FULL,
+                            outputs1,
+                        ),
+                        (
+                            item_out2,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(2, 3)][recipe_id_2_3],
+                                    item_out2,
+                                )],
+                                index: 0,
+                            },
+                            ALWAYS_FULL,
+                            outputs2,
+                        ),
+                    ]
+                }),
+        )
+        .chain(
+            assembler_store
                 .assemblers_3_1
                 .iter_mut()
                 .enumerate()
@@ -769,6 +965,277 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                                 grid,
                                 recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
                                     data_store.ing_out_num_to_recipe[&(4, 1)][recipe_id_4_1],
+                                    item_out,
+                                )],
+                                index: 0,
+                            },
+                            ALWAYS_FULL,
+                            outputs,
+                        ),
+                    ]
+                }),
+        )
+        .chain(
+            assembler_store
+                .assemblers_5_1
+                .iter_mut()
+                .enumerate()
+                .flat_map(move |(recipe_id_5_1, multi)| {
+                    let mut items_in = data_store.recipe_to_items[&multi.recipe].iter().filter_map(
+                        |(dir, item)| {
+                            if *dir == ItemRecipeDir::Ing {
+                                Some(item)
+                            } else {
+                                None
+                            }
+                        },
+                    );
+
+                    let item_in0 = *items_in.next().unwrap();
+                    let item_in1 = *items_in.next().unwrap();
+                    let item_in2 = *items_in.next().unwrap();
+                    let item_in3 = *items_in.next().unwrap();
+                    let item_in4 = *items_in.next().unwrap();
+
+                    let item_out = data_store.recipe_to_items[&multi.recipe]
+                        .iter()
+                        .filter_map(|(dir, item)| {
+                            if *dir == ItemRecipeDir::Out {
+                                Some(item)
+                            } else {
+                                None
+                            }
+                        })
+                        .nth(0)
+                        .copied()
+                        .unwrap();
+
+                    let (
+                        (
+                            [ings0_max, ings1_max, ings2_max, ings3_max, ings4_max],
+                            [ings0, ings1, ings2, ings3, ings4],
+                        ),
+                        [outputs],
+                    ) = multi.get_all_mut();
+
+                    [
+                        (
+                            item_in0,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(5, 1)][recipe_id_5_1],
+                                    item_in0,
+                                )],
+                                index: 0,
+                            },
+                            ings0_max,
+                            ings0,
+                        ),
+                        (
+                            item_in1,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(5, 1)][recipe_id_5_1],
+                                    item_in1,
+                                )],
+                                index: 0,
+                            },
+                            ings1_max,
+                            ings1,
+                        ),
+                        (
+                            item_in2,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(5, 1)][recipe_id_5_1],
+                                    item_in2,
+                                )],
+                                index: 0,
+                            },
+                            ings2_max,
+                            ings2,
+                        ),
+                        (
+                            item_in3,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(5, 1)][recipe_id_5_1],
+                                    item_in3,
+                                )],
+                                index: 0,
+                            },
+                            ings3_max,
+                            ings3,
+                        ),
+                        (
+                            item_in4,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(5, 1)][recipe_id_5_1],
+                                    item_in4,
+                                )],
+                                index: 0,
+                            },
+                            ings4_max,
+                            ings4,
+                        ),
+                        (
+                            item_out,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(5, 1)][recipe_id_5_1],
+                                    item_out,
+                                )],
+                                index: 0,
+                            },
+                            ALWAYS_FULL,
+                            outputs,
+                        ),
+                    ]
+                }),
+        )
+        .chain(
+            assembler_store
+                .assemblers_6_1
+                .iter_mut()
+                .enumerate()
+                .flat_map(move |(recipe_id_6_1, multi)| {
+                    let mut items_in = data_store.recipe_to_items[&multi.recipe].iter().filter_map(
+                        |(dir, item)| {
+                            if *dir == ItemRecipeDir::Ing {
+                                Some(item)
+                            } else {
+                                None
+                            }
+                        },
+                    );
+
+                    let item_in0 = *items_in.next().unwrap();
+                    let item_in1 = *items_in.next().unwrap();
+                    let item_in2 = *items_in.next().unwrap();
+                    let item_in3 = *items_in.next().unwrap();
+                    let item_in4 = *items_in.next().unwrap();
+                    let item_in5 = *items_in.next().unwrap();
+
+                    let item_out = data_store.recipe_to_items[&multi.recipe]
+                        .iter()
+                        .filter_map(|(dir, item)| {
+                            if *dir == ItemRecipeDir::Out {
+                                Some(item)
+                            } else {
+                                None
+                            }
+                        })
+                        .nth(0)
+                        .copied()
+                        .unwrap();
+
+                    let (
+                        (
+                            [
+                                ings0_max,
+                                ings1_max,
+                                ings2_max,
+                                ings3_max,
+                                ings4_max,
+                                ings5_max,
+                            ],
+                            [ings0, ings1, ings2, ings3, ings4, ings5],
+                        ),
+                        [outputs],
+                    ) = multi.get_all_mut();
+
+                    [
+                        (
+                            item_in0,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(6, 1)][recipe_id_6_1],
+                                    item_in0,
+                                )],
+                                index: 0,
+                            },
+                            ings0_max,
+                            ings0,
+                        ),
+                        (
+                            item_in1,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(6, 1)][recipe_id_6_1],
+                                    item_in1,
+                                )],
+                                index: 0,
+                            },
+                            ings1_max,
+                            ings1,
+                        ),
+                        (
+                            item_in2,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(6, 1)][recipe_id_6_1],
+                                    item_in2,
+                                )],
+                                index: 0,
+                            },
+                            ings2_max,
+                            ings2,
+                        ),
+                        (
+                            item_in3,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(6, 1)][recipe_id_6_1],
+                                    item_in3,
+                                )],
+                                index: 0,
+                            },
+                            ings3_max,
+                            ings3,
+                        ),
+                        (
+                            item_in4,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(6, 1)][recipe_id_6_1],
+                                    item_in4,
+                                )],
+                                index: 0,
+                            },
+                            ings4_max,
+                            ings4,
+                        ),
+                        (
+                            item_in5,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(6, 1)][recipe_id_6_1],
+                                    item_in5,
+                                )],
+                                index: 0,
+                            },
+                            ings5_max,
+                            ings5,
+                        ),
+                        (
+                            item_out,
+                            Storage::Assembler {
+                                grid,
+                                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                                    data_store.ing_out_num_to_recipe[&(6, 1)][recipe_id_6_1],
                                     item_out,
                                 )],
                                 index: 0,

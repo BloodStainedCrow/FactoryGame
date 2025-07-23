@@ -78,6 +78,8 @@ mod storage_list;
 
 pub mod split_arbitrary;
 
+pub mod join_many;
+
 mod chest;
 
 pub mod blueprint;

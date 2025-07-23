@@ -303,6 +303,8 @@ enum RawEntity {
     AssemblingMachine(AssemblingMachineString),
     Inserter(InserterString),
     Belt(()),
+    Accumulator(String),
+    SolarPanel(String),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
@@ -606,6 +608,8 @@ pub struct RecipeIngLookups {
     pub ing2: Vec<[ITEMCOUNTTYPE; 2]>,
     pub ing3: Vec<[ITEMCOUNTTYPE; 3]>,
     pub ing4: Vec<[ITEMCOUNTTYPE; 4]>,
+    pub ing5: Vec<[ITEMCOUNTTYPE; 5]>,
+    pub ing6: Vec<[ITEMCOUNTTYPE; 6]>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
@@ -903,6 +907,8 @@ impl RawDataStore {
             ing2: vec![],
             ing3: vec![],
             ing4: vec![],
+            ing5: vec![],
+            ing6: vec![],
         };
 
         let mut recipe_outputs = RecipeOutputLookups {
@@ -943,6 +949,18 @@ impl RawDataStore {
                         .ing4
                         .push(array::from_fn(|i| recipe.ings[i].amount));
                     recipe_ings.ing4.len()
+                },
+                5 => {
+                    recipe_ings
+                        .ing5
+                        .push(array::from_fn(|i| recipe.ings[i].amount));
+                    recipe_ings.ing5.len()
+                },
+                6 => {
+                    recipe_ings
+                        .ing6
+                        .push(array::from_fn(|i| recipe.ings[i].amount));
+                    recipe_ings.ing6.len()
                 },
                 n => {
                     unimplemented!("{n} ingredients in a single recipe are currently unsupported!!")

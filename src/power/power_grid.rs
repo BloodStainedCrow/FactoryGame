@@ -4,9 +4,9 @@ use std::{
     mem,
 };
 
-use itertools::Itertools;
-use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+use crate::join_many::join;
 
+use crate::assembler::MultiAssemblerStore;
 use crate::{
     assembler::{AssemblerOnclickInfo, AssemblerRemovalInfo, FullAssemblerStore},
     data::{DataStore, LazyPowerMachineInfo},
@@ -21,6 +21,8 @@ use crate::{
         recipe::{RecipeTickInfo, RecipeTickInfoParts, SingleRecipeTickInfo},
     },
 };
+use itertools::Itertools;
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
 use super::Watt;
 
@@ -939,6 +941,26 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 data_store,
             ),
 
+            (2, 2) => self.stores.assemblers_2_2
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+
+            (2, 3) => self.stores.assemblers_2_3
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+
             (3, 1) => self.stores.assemblers_3_1
                 [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
             .modify_modifiers(
@@ -950,6 +972,26 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             ),
 
             (4, 1) => self.stores.assemblers_4_1
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+
+            (5, 1) => self.stores.assemblers_5_1
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+
+            (6, 1) => self.stores.assemblers_6_1
                 [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
             .modify_modifiers(
                 id.assembler_index,
@@ -1018,6 +1060,26 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 data_store,
             ),
 
+            (2, 2) => self.stores.assemblers_2_2
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+
+            (2, 3) => self.stores.assemblers_2_3
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+
             (3, 1) => self.stores.assemblers_3_1
                 [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
             .modify_modifiers(
@@ -1029,6 +1091,26 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             ),
 
             (4, 1) => self.stores.assemblers_4_1
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+
+            (5, 1) => self.stores.assemblers_5_1
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+
+            (6, 1) => self.stores.assemblers_6_1
                 [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
             .modify_modifiers(
                 id.assembler_index,
@@ -1138,6 +1220,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 power_mod.into(),
                 data_store,
             ),
+            (2, 2) => self.stores.assemblers_2_2
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+            (2, 3) => self.stores.assemblers_2_3
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
             (3, 1) => self.stores.assemblers_3_1
                 [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
             .modify_modifiers(
@@ -1148,6 +1248,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 data_store,
             ),
             (4, 1) => self.stores.assemblers_4_1
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+            (5, 1) => self.stores.assemblers_5_1
+                [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
+            .modify_modifiers(
+                id.assembler_index,
+                speed_mod.into(),
+                prod_mod.into(),
+                power_mod.into(),
+                data_store,
+            ),
+            (6, 1) => self.stores.assemblers_6_1
                 [data_store.recipe_to_ing_out_combo_idx[id.recipe.id.into()]]
             .modify_modifiers(
                 id.assembler_index,
@@ -1232,6 +1350,26 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 &data_store.recipe_ings.ing2,
                 data_store,
             ),
+            (2, 2) => self.stores.assemblers_2_2
+                [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
+            .add_assembler(
+                ty,
+                modules,
+                assembler_position,
+                &data_store.recipe_index_lookups,
+                &data_store.recipe_ings.ing2,
+                data_store,
+            ),
+            (2, 3) => self.stores.assemblers_2_3
+                [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
+            .add_assembler(
+                ty,
+                modules,
+                assembler_position,
+                &data_store.recipe_index_lookups,
+                &data_store.recipe_ings.ing2,
+                data_store,
+            ),
 
             (3, 1) => self.stores.assemblers_3_1
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
@@ -1251,6 +1389,26 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 assembler_position,
                 &data_store.recipe_index_lookups,
                 &data_store.recipe_ings.ing4,
+                data_store,
+            ),
+            (5, 1) => self.stores.assemblers_5_1
+                [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
+            .add_assembler(
+                ty,
+                modules,
+                assembler_position,
+                &data_store.recipe_index_lookups,
+                &data_store.recipe_ings.ing5,
+                data_store,
+            ),
+            (6, 1) => self.stores.assemblers_6_1
+                [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
+            .add_assembler(
+                ty,
+                modules,
+                assembler_position,
+                &data_store.recipe_index_lookups,
+                &data_store.recipe_ings.ing6,
                 data_store,
             ),
 
@@ -1314,10 +1472,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             (2, 1) => self.stores.assemblers_2_1
                 [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
             .remove_assembler_data(old_assembler_id.assembler_index),
+
+            (2, 2) => self.stores.assemblers_2_2
+                [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
+            .remove_assembler_data(old_assembler_id.assembler_index),
+            (2, 3) => self.stores.assemblers_2_3
+                [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
+            .remove_assembler_data(old_assembler_id.assembler_index),
             (3, 1) => self.stores.assemblers_3_1
                 [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
             .remove_assembler_data(old_assembler_id.assembler_index),
             (4, 1) => self.stores.assemblers_4_1
+                [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
+            .remove_assembler_data(old_assembler_id.assembler_index),
+            (5, 1) => self.stores.assemblers_5_1
+                [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
+            .remove_assembler_data(old_assembler_id.assembler_index),
+            (6, 1) => self.stores.assemblers_6_1
                 [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
             .remove_assembler_data(old_assembler_id.assembler_index),
 
@@ -1379,6 +1550,40 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 pos,
                 data_store,
             ),
+            (2, 2) => self.stores.assemblers_2_2
+                [data_store.recipe_to_ing_out_combo_idx[new_recipe.id.into()]]
+            .add_assembler_with_data(
+                [10; 2],
+                [0; 2],
+                [0; 2],
+                0,
+                0,
+                base_power,
+                raw_power_mod,
+                raw_prod_mod,
+                base_speed,
+                raw_speed_mod,
+                ty,
+                pos,
+                data_store,
+            ),
+            (2, 3) => self.stores.assemblers_2_3
+                [data_store.recipe_to_ing_out_combo_idx[new_recipe.id.into()]]
+            .add_assembler_with_data(
+                [10; 2],
+                [0; 2],
+                [0; 3],
+                0,
+                0,
+                base_power,
+                raw_power_mod,
+                raw_prod_mod,
+                base_speed,
+                raw_speed_mod,
+                ty,
+                pos,
+                data_store,
+            ),
             (3, 1) => self.stores.assemblers_3_1
                 [data_store.recipe_to_ing_out_combo_idx[new_recipe.id.into()]]
             .add_assembler_with_data(
@@ -1401,6 +1606,40 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             .add_assembler_with_data(
                 [10; 4],
                 [0; 4],
+                [0; 1],
+                0,
+                0,
+                base_power,
+                raw_power_mod,
+                raw_prod_mod,
+                base_speed,
+                raw_speed_mod,
+                ty,
+                pos,
+                data_store,
+            ),
+            (5, 1) => self.stores.assemblers_5_1
+                [data_store.recipe_to_ing_out_combo_idx[new_recipe.id.into()]]
+            .add_assembler_with_data(
+                [10; 5],
+                [0; 5],
+                [0; 1],
+                0,
+                0,
+                base_power,
+                raw_power_mod,
+                raw_prod_mod,
+                base_speed,
+                raw_speed_mod,
+                ty,
+                pos,
+                data_store,
+            ),
+            (6, 1) => self.stores.assemblers_6_1
+                [data_store.recipe_to_ing_out_combo_idx[new_recipe.id.into()]]
+            .add_assembler_with_data(
+                [10; 6],
+                [0; 6],
                 [0; 1],
                 0,
                 0,
@@ -1480,10 +1719,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             (2, 1) => self.stores.assemblers_2_1
                 [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
             .remove_assembler(assembler_id.assembler_index),
+            (2, 2) => self.stores.assemblers_2_2
+                [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
+            .remove_assembler(assembler_id.assembler_index),
+            (2, 3) => self.stores.assemblers_2_3
+                [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
+            .remove_assembler(assembler_id.assembler_index),
             (3, 1) => self.stores.assemblers_3_1
                 [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
             .remove_assembler(assembler_id.assembler_index),
             (4, 1) => self.stores.assemblers_4_1
+                [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
+            .remove_assembler(assembler_id.assembler_index),
+            (5, 1) => self.stores.assemblers_5_1
+                [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
+            .remove_assembler(assembler_id.assembler_index),
+            (6, 1) => self.stores.assemblers_6_1
                 [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
             .remove_assembler(assembler_id.assembler_index),
 
@@ -1528,6 +1779,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                     [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]],
                 data_store,
             ),
+            (2, 2) => self.stores.assemblers_2_2
+                [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
+            .move_assembler(
+                index,
+                &mut other_stores.assemblers_2_2
+                    [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]],
+                data_store,
+            ),
+            (2, 3) => self.stores.assemblers_2_3
+                [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
+            .move_assembler(
+                index,
+                &mut other_stores.assemblers_2_3
+                    [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]],
+                data_store,
+            ),
             (3, 1) => self.stores.assemblers_3_1
                 [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
             .move_assembler(
@@ -1541,6 +1808,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             .move_assembler(
                 index,
                 &mut other_stores.assemblers_4_1
+                    [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]],
+                data_store,
+            ),
+            (5, 1) => self.stores.assemblers_5_1
+                [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
+            .move_assembler(
+                index,
+                &mut other_stores.assemblers_5_1
+                    [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]],
+                data_store,
+            ),
+            (6, 1) => self.stores.assemblers_6_1
+                [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]]
+            .move_assembler(
+                index,
+                &mut other_stores.assemblers_6_1
                     [data_store.recipe_to_ing_out_combo_idx[recipe.id.into()]],
                 data_store,
             ),
@@ -1839,6 +2122,79 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         originally_needed - power_needed
     }
 
+    // fn update_multi_assembler_stores<const INGS: usize, const OUT: usize>(last_power_mult: u8, stores: &mut Box<[MultiAssemblerStore<RecipeIdxType, INGS, OUT>]>, data_store: &DataStore<ItemIdxType, RecipeIdxType>, active_recipes: &[bool]) {
+    //     profiling::scope!(format!("assemblers_{}_{} updates", INGS, OUT));
+    //     let v = match (INGS, OUT) {
+    //         (0, 1) => {
+    //             stores
+    //                 .par_iter_mut().map(|s| {
+    //                     profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_display_names[usize_from(s.recipe.id)]).as_str());
+    //                     if active_recipes[s.recipe.into_usize()] {
+    //                         s.update_branchless::<RecipeIdxType>(
+    //                             last_power_mult,
+    //                             &data_store.recipe_index_lookups,
+    //                             &data_store.recipe_ings.ing0,
+    //                             &data_store.recipe_outputs.out1,
+    //                             &data_store.recipe_timers,
+    //                         )
+    //                     } else {
+    //                         (Watt(0), 0, 0)
+    //                     }
+    //                 })
+    //                 .map(|(power_used, times_ings_used, crafts_finished)| {
+    //                     (power_used, SingleRecipeTickInfo {
+    //                         full_crafts: times_ings_used as u64,
+    //                         prod_crafts: crafts_finished.checked_sub(times_ings_used).expect("More ingredients used than crafts finished?!? Negative productivity?") as u64,
+    //                     })
+    //                 })
+    //                 .fold_with((Watt(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
+    //                     infos.push(info);
+
+    //                     (acc_power + rhs_power, infos)
+    //                 }).reduce(|| (Watt(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
+    //                     infos.extend_from_slice(&info);
+
+    //                     (acc_power + rhs_power, infos)
+    //                 })
+    //         }
+
+    //         _ => unreachable!()
+    //     };
+    //     todo!()
+    // }
+
+    fn reduce_update(
+        iter: impl ParallelIterator<Item = (Watt, u32, u32)>,
+    ) -> (Watt, Vec<SingleRecipeTickInfo>) {
+        iter.map(|(power_used, times_ings_used, crafts_finished)| {
+            (
+                power_used,
+                SingleRecipeTickInfo {
+                    full_crafts: times_ings_used as u64,
+                    prod_crafts: crafts_finished.checked_sub(times_ings_used).expect(
+                        "More ingredients used than crafts finished?!? Negative productivity?",
+                    ) as u64,
+                },
+            )
+        })
+        .fold_with(
+            (Watt(0), vec![]),
+            |(acc_power, mut infos), (rhs_power, info)| {
+                infos.push(info);
+
+                (acc_power + rhs_power, infos)
+            },
+        )
+        .reduce(
+            || (Watt(0), vec![]),
+            |(acc_power, mut infos), (rhs_power, info)| {
+                infos.extend_from_slice(&info);
+
+                (acc_power + rhs_power, infos)
+            },
+        )
+    }
+
     #[profiling::function]
     pub fn update(
         &mut self,
@@ -1857,209 +2213,235 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
 
         let active_recipes = tech_state.get_active_recipes();
 
+        let (a, b, c) = join!(|| {}, || {}, || {});
+
         let (
-            (
-                (power_used_0_1, infos_0_1),
-                (
-                    (power_used_1_1, infos_1_1),
-                    (
-                        (power_used_2_1, infos_2_1),
-                        ((power_used_3_1, infos_3_1), (power_used_4_1, infos_4_1)),
-                    ),
-                ),
-            ),
+            (power_used_0_1, infos_0_1),
+            (power_used_1_1, infos_1_1),
+            (power_used_2_1, infos_2_1),
+            (power_used_2_2, infos_2_2),
+            (power_used_2_3, infos_2_3),
+            (power_used_3_1, infos_3_1),
+            (power_used_4_1, infos_4_1),
+            (power_used_5_1, infos_5_1),
+            (power_used_6_1, infos_6_1),
             (lab_power_used, times_labs_used_science, tech_progress),
-        ) = rayon::join(
+        ) = join!(
             || {
-                rayon::join(
-                    || {
-                        profiling::scope!("assemblers_0_1 updates");
-                        self.stores
-                            .assemblers_0_1
-                            .par_iter_mut()
-                            .map(|s| {
-                                profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_display_names[usize_from(s.recipe.id)]).as_str());
-                                if active_recipes[s.recipe.into_usize()] {
-                                    s.update_branchless::<RecipeIdxType>(
-                                        self.last_power_mult,
-                                        &data_store.recipe_index_lookups,
-                                        &data_store.recipe_ings.ing0,
-                                        &data_store.recipe_outputs.out1,
-                                        &data_store.recipe_timers,
-                                    )
-                                } else {
-                                    (Watt(0), 0, 0)
-                                }
-                            })
-                            .map(|(power_used, times_ings_used, crafts_finished)| {
-                                (power_used, SingleRecipeTickInfo {
-                                    full_crafts: times_ings_used as u64,
-                                    prod_crafts: crafts_finished.checked_sub(times_ings_used).expect("More ingredients used than crafts finished?!? Negative productivity?") as u64,
-                                })
-                            })
-                            .fold_with((Watt(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
-                                infos.push(info);
-
-                                (acc_power + rhs_power, infos)
-                            }).reduce(|| (Watt(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
-                                infos.extend_from_slice(&info);
-
-                                (acc_power + rhs_power, infos)
-                            })
-                    },
-                    || {
-                        rayon::join(
-                            || {
-                                profiling::scope!("assemblers_1_1 updates");
-                                self.stores
-                        .assemblers_1_1
-                        .par_iter_mut()
-                        .map(|s| {
-                            profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_display_names[usize_from(s.recipe.id)]).as_str());
-                            if active_recipes[s.recipe.into_usize()] {
-                                s.update_branchless::<RecipeIdxType>(
-                                    self.last_power_mult,
-                                    &data_store.recipe_index_lookups,
-                                    &data_store.recipe_ings.ing1,
-                                    &data_store.recipe_outputs.out1,
-                                    &data_store.recipe_timers,
-                                )
-                            } else {
-                                (Watt(0), 0, 0)
-                            }
-                        })
-                        .map(|(power_used, times_ings_used, crafts_finished)| {
-                            (power_used, SingleRecipeTickInfo {
-                                full_crafts: times_ings_used as u64,
-                                prod_crafts: crafts_finished.checked_sub(times_ings_used).expect("More ingredients used than crafts finished?!? Negative productivity?") as u64,
-                            })
-                        })
-                        .fold_with((Watt(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
-                            infos.push(info);
-
-                            (acc_power + rhs_power, infos)
-                        }).reduce(|| (Watt(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
-                            infos.extend_from_slice(&info);
-
-                            (acc_power + rhs_power, infos)
-                        })
-                            },
-                            || {
-                                rayon::join(
-                                    || {
-                                        profiling::scope!("assemblers_2_1 updates");
-                                        self.stores
-                                    .assemblers_2_1
-                                    .par_iter_mut()
-                                    .map(|s| {
-                                        profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_display_names[usize_from(s.recipe.id)]).as_str());
-                                        if active_recipes[s.recipe.into_usize()] {
-                                            s.update_branchless::<RecipeIdxType>(
-                                                self.last_power_mult,
-                                                &data_store.recipe_index_lookups,
-                                                &data_store.recipe_ings.ing2,
-                                                &data_store.recipe_outputs.out1,
-                                                &data_store.recipe_timers,
-                                            )
-                                        } else {
-                                            (Watt(0), 0, 0)
-                                        }
-                                    })
-                                    .map(|(power_used, times_ings_used, crafts_finished)| {
-                                        (power_used, SingleRecipeTickInfo {
-                                            full_crafts: times_ings_used as u64,
-                                            prod_crafts: crafts_finished.checked_sub(times_ings_used).expect("More ingredients used than crafts finished?!? Negative productivity?") as u64,
-                                        })
-                                    })
-                                    .fold_with((Watt(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
-                                        infos.push(info);
-
-                                        (acc_power + rhs_power, infos)
-                                    }).reduce(|| (Watt(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
-                                        infos.extend_from_slice(&info);
-
-                                        (acc_power + rhs_power, infos)
-                                    })
-                                    },
-                                    || {
-                                        rayon::join(
-                                            || {
-                                                profiling::scope!("assemblers_3_1 updates");
-                                                self.stores
-                                        .assemblers_3_1
-                                        .par_iter_mut()
-                                        .map(|s| {
-                                            profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_display_names[usize_from(s.recipe.id)]).as_str());
-                                            if active_recipes[s.recipe.into_usize()] {
-                                                s.update_branchless::<RecipeIdxType>(
-                                                    self.last_power_mult,
-                                                    &data_store.recipe_index_lookups,
-                                                    &data_store.recipe_ings.ing3,
-                                                    &data_store.recipe_outputs.out1,
-                                                    &data_store.recipe_timers,
-                                                )
-                                            } else {
-                                                (Watt(0), 0, 0)
-                                            }
-                                        })
-                                        .map(|(power_used, times_ings_used, crafts_finished)| {
-                                            (power_used, SingleRecipeTickInfo {
-                                                full_crafts: times_ings_used as u64,
-                                                prod_crafts: crafts_finished.checked_sub(times_ings_used).expect("More ingredients used than crafts finished?!? Negative productivity?") as u64,
-                                            })
-                                        })
-                                        .fold_with((Watt(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
-                                            infos.push(info);
-
-                                            (acc_power + rhs_power, infos)
-                                        }).reduce(|| (Watt(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
-                                            infos.extend_from_slice(&info);
-
-                                            (acc_power + rhs_power, infos)
-                                        })
-                                            },
-                                            || {
-                                                profiling::scope!("assemblers_4_1 updates");
-                                                self.stores
-                                        .assemblers_4_1
-                                        .par_iter_mut()
-                                        .map(|s| {
-                                            profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_display_names[usize_from(s.recipe.id)]).as_str());
-                                            if active_recipes[s.recipe.into_usize()] {
-                                                s.update_branchless::<RecipeIdxType>(
-                                                    self.last_power_mult,
-                                                    &data_store.recipe_index_lookups,
-                                                    &data_store.recipe_ings.ing4,
-                                                    &data_store.recipe_outputs.out1,
-                                                    &data_store.recipe_timers,
-                                                )
-                                            } else {
-                                                (Watt(0), 0, 0)
-                                            }
-                                        })
-                                        .map(|(power_used, times_ings_used, crafts_finished)| {
-                                            (power_used, SingleRecipeTickInfo {
-                                                full_crafts: times_ings_used as u64,
-                                                prod_crafts: crafts_finished.checked_sub(times_ings_used).expect("More ingredients used than crafts finished?!? Negative productivity?") as u64,
-                                            })
-                                        })
-                                        .fold_with((Watt(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
-                                            infos.push(info);
-
-                                            (acc_power + rhs_power, infos)
-                                        }).reduce(|| (Watt(0), vec![]), |(acc_power, mut infos), (rhs_power, info)| {
-                                            infos.extend_from_slice(&info);
-
-                                            (acc_power + rhs_power, infos)
-                                        })
-                                            },
-                                        )
-                                    },
-                                )
-                            },
+                profiling::scope!("assemblers_0_1 updates");
+                Self::reduce_update(self.stores.assemblers_0_1.par_iter_mut().map(|s| {
+                    profiling::scope!(
+                        "Assembler Update",
+                        format!(
+                            "Recipe: {}",
+                            data_store.recipe_display_names[usize_from(s.recipe.id)]
                         )
-                    },
-                )
+                        .as_str()
+                    );
+                    if active_recipes[s.recipe.into_usize()] {
+                        s.update_branchless::<RecipeIdxType>(
+                            self.last_power_mult,
+                            &data_store.recipe_index_lookups,
+                            &data_store.recipe_ings.ing0,
+                            &data_store.recipe_outputs.out1,
+                            &data_store.recipe_timers,
+                        )
+                    } else {
+                        (Watt(0), 0, 0)
+                    }
+                }))
+            },
+            || {
+                profiling::scope!("assemblers_1_1 updates");
+                Self::reduce_update(self.stores.assemblers_1_1.par_iter_mut().map(|s| {
+                    profiling::scope!(
+                        "Assembler Update",
+                        format!(
+                            "Recipe: {}",
+                            data_store.recipe_display_names[usize_from(s.recipe.id)]
+                        )
+                        .as_str()
+                    );
+                    if active_recipes[s.recipe.into_usize()] {
+                        s.update_branchless::<RecipeIdxType>(
+                            self.last_power_mult,
+                            &data_store.recipe_index_lookups,
+                            &data_store.recipe_ings.ing1,
+                            &data_store.recipe_outputs.out1,
+                            &data_store.recipe_timers,
+                        )
+                    } else {
+                        (Watt(0), 0, 0)
+                    }
+                }))
+            },
+            || {
+                profiling::scope!("assemblers_2_1 updates");
+                Self::reduce_update(self.stores.assemblers_2_1.par_iter_mut().map(|s| {
+                    profiling::scope!(
+                        "Assembler Update",
+                        format!(
+                            "Recipe: {}",
+                            data_store.recipe_display_names[usize_from(s.recipe.id)]
+                        )
+                        .as_str()
+                    );
+                    if active_recipes[s.recipe.into_usize()] {
+                        s.update_branchless::<RecipeIdxType>(
+                            self.last_power_mult,
+                            &data_store.recipe_index_lookups,
+                            &data_store.recipe_ings.ing2,
+                            &data_store.recipe_outputs.out1,
+                            &data_store.recipe_timers,
+                        )
+                    } else {
+                        (Watt(0), 0, 0)
+                    }
+                }))
+            },
+            || {
+                profiling::scope!("assemblers_2_2 updates");
+                Self::reduce_update(self.stores.assemblers_2_2.par_iter_mut().map(|s| {
+                    profiling::scope!(
+                        "Assembler Update",
+                        format!(
+                            "Recipe: {}",
+                            data_store.recipe_display_names[usize_from(s.recipe.id)]
+                        )
+                        .as_str()
+                    );
+                    if active_recipes[s.recipe.into_usize()] {
+                        s.update_branchless::<RecipeIdxType>(
+                            self.last_power_mult,
+                            &data_store.recipe_index_lookups,
+                            &data_store.recipe_ings.ing2,
+                            &data_store.recipe_outputs.out2,
+                            &data_store.recipe_timers,
+                        )
+                    } else {
+                        (Watt(0), 0, 0)
+                    }
+                }))
+            },
+            || {
+                profiling::scope!("assemblers_2_3 updates");
+                Self::reduce_update(self.stores.assemblers_2_3.par_iter_mut().map(|s| {
+                    profiling::scope!(
+                        "Assembler Update",
+                        format!(
+                            "Recipe: {}",
+                            data_store.recipe_display_names[usize_from(s.recipe.id)]
+                        )
+                        .as_str()
+                    );
+                    if active_recipes[s.recipe.into_usize()] {
+                        s.update_branchless::<RecipeIdxType>(
+                            self.last_power_mult,
+                            &data_store.recipe_index_lookups,
+                            &data_store.recipe_ings.ing2,
+                            &data_store.recipe_outputs.out3,
+                            &data_store.recipe_timers,
+                        )
+                    } else {
+                        (Watt(0), 0, 0)
+                    }
+                }))
+            },
+            || {
+                profiling::scope!("assemblers_3_1 updates");
+                Self::reduce_update(self.stores.assemblers_3_1.par_iter_mut().map(|s| {
+                    profiling::scope!(
+                        "Assembler Update",
+                        format!(
+                            "Recipe: {}",
+                            data_store.recipe_display_names[usize_from(s.recipe.id)]
+                        )
+                        .as_str()
+                    );
+                    if active_recipes[s.recipe.into_usize()] {
+                        s.update_branchless::<RecipeIdxType>(
+                            self.last_power_mult,
+                            &data_store.recipe_index_lookups,
+                            &data_store.recipe_ings.ing3,
+                            &data_store.recipe_outputs.out1,
+                            &data_store.recipe_timers,
+                        )
+                    } else {
+                        (Watt(0), 0, 0)
+                    }
+                }))
+            },
+            || {
+                profiling::scope!("assemblers_4_1 updates");
+                Self::reduce_update(self.stores.assemblers_4_1.par_iter_mut().map(|s| {
+                    profiling::scope!(
+                        "Assembler Update",
+                        format!(
+                            "Recipe: {}",
+                            data_store.recipe_display_names[usize_from(s.recipe.id)]
+                        )
+                        .as_str()
+                    );
+                    if active_recipes[s.recipe.into_usize()] {
+                        s.update_branchless::<RecipeIdxType>(
+                            self.last_power_mult,
+                            &data_store.recipe_index_lookups,
+                            &data_store.recipe_ings.ing4,
+                            &data_store.recipe_outputs.out1,
+                            &data_store.recipe_timers,
+                        )
+                    } else {
+                        (Watt(0), 0, 0)
+                    }
+                }))
+            },
+            || {
+                profiling::scope!("assemblers_5_1 updates");
+                Self::reduce_update(self.stores.assemblers_5_1.par_iter_mut().map(|s| {
+                    profiling::scope!(
+                        "Assembler Update",
+                        format!(
+                            "Recipe: {}",
+                            data_store.recipe_display_names[usize_from(s.recipe.id)]
+                        )
+                        .as_str()
+                    );
+                    if active_recipes[s.recipe.into_usize()] {
+                        s.update_branchless::<RecipeIdxType>(
+                            self.last_power_mult,
+                            &data_store.recipe_index_lookups,
+                            &data_store.recipe_ings.ing5,
+                            &data_store.recipe_outputs.out1,
+                            &data_store.recipe_timers,
+                        )
+                    } else {
+                        (Watt(0), 0, 0)
+                    }
+                }))
+            },
+            || {
+                profiling::scope!("assemblers_6_1 updates");
+                Self::reduce_update(self.stores.assemblers_6_1.par_iter_mut().map(|s| {
+                    profiling::scope!(
+                        "Assembler Update",
+                        format!(
+                            "Recipe: {}",
+                            data_store.recipe_display_names[usize_from(s.recipe.id)]
+                        )
+                        .as_str()
+                    );
+                    if active_recipes[s.recipe.into_usize()] {
+                        s.update_branchless::<RecipeIdxType>(
+                            self.last_power_mult,
+                            &data_store.recipe_index_lookups,
+                            &data_store.recipe_ings.ing6,
+                            &data_store.recipe_outputs.out1,
+                            &data_store.recipe_timers,
+                        )
+                    } else {
+                        (Watt(0), 0, 0)
+                    }
+                }))
             },
             || {
                 profiling::scope!("Lab updates");
@@ -2070,11 +2452,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         .as_ref()
                         .map(|tech| &*data_store.technology_costs[tech.id as usize].1),
                 )
-            },
+            }
         );
 
-        let assembler_power_used =
-            power_used_0_1 + power_used_1_1 + power_used_2_1 + power_used_3_1 + power_used_4_1;
+        let assembler_power_used = power_used_0_1
+            + power_used_1_1
+            + power_used_2_1
+            + power_used_3_1
+            + power_used_4_1
+            + power_used_5_1
+            + power_used_6_1;
 
         let beacon_power_used: Watt = self
             .num_beacons_of_type
@@ -2136,8 +2523,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             recipes_0_1: infos_0_1,
             recipes_1_1: infos_1_1,
             recipes_2_1: infos_2_1,
+            recipes_2_2: infos_2_2,
+            recipes_2_3: infos_2_3,
             recipes_3_1: infos_3_1,
             recipes_4_1: infos_4_1,
+            recipes_5_1: infos_5_1,
+            recipes_6_1: infos_6_1,
         };
 
         (

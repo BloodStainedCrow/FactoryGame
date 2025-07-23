@@ -31,7 +31,7 @@ use eframe::egui::{
     self, Align2, Color32, ComboBox, Context, CornerRadius, Label, Layout, ProgressBar, Stroke, Ui,
     Window,
 };
-use egui::{Modal, RichText, ScrollArea, Sense};
+use egui::{Button, Modal, RichText, ScrollArea, Sense};
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
 use log::{info, trace};
@@ -1643,12 +1643,21 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     });
 
     Window::new("BP").default_open(false).show(ctx, |ui| {
-        if let ActionStateMachineState::Holding(HeldObject::Blueprint(bp)) =
+        let bp = if let ActionStateMachineState::Holding(HeldObject::Blueprint(bp)) =
             &state_machine_ref.state
         {
-            let mut s: String =
-                ron::ser::to_string_pretty(&bp, ron::ser::PrettyConfig::default()).unwrap();
-            ui.text_edit_multiline(&mut s);
+            Some(bp)
+        } else {
+            None
+        };
+
+        if ui
+            .add_enabled(bp.is_some(), Button::new("Copy Blueprint String"))
+            .clicked()
+        {
+            let s: String =
+                ron::ser::to_string_pretty(bp.unwrap(), ron::ser::PrettyConfig::default()).unwrap();
+            ctx.copy_text(s);
         }
     });
 

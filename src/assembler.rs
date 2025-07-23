@@ -72,8 +72,12 @@ pub struct FullAssemblerStore<RecipeIdxType: WeakIdxTrait> {
     pub assemblers_0_1: Box<[MultiAssemblerStore<RecipeIdxType, 0, 1>]>,
     pub assemblers_1_1: Box<[MultiAssemblerStore<RecipeIdxType, 1, 1>]>,
     pub assemblers_2_1: Box<[MultiAssemblerStore<RecipeIdxType, 2, 1>]>,
+    pub assemblers_2_2: Box<[MultiAssemblerStore<RecipeIdxType, 2, 2>]>,
+    pub assemblers_2_3: Box<[MultiAssemblerStore<RecipeIdxType, 2, 3>]>,
     pub assemblers_3_1: Box<[MultiAssemblerStore<RecipeIdxType, 3, 1>]>,
     pub assemblers_4_1: Box<[MultiAssemblerStore<RecipeIdxType, 4, 1>]>,
+    pub assemblers_5_1: Box<[MultiAssemblerStore<RecipeIdxType, 5, 1>]>,
+    pub assemblers_6_1: Box<[MultiAssemblerStore<RecipeIdxType, 6, 1>]>,
 }
 
 #[derive(Debug, Clone)]
@@ -113,6 +117,20 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
             .iter()
             .map(|r| MultiAssemblerStore::new(*r))
             .collect();
+        let assemblers_2_2 = data_store
+            .ing_out_num_to_recipe
+            .get(&(2, 2))
+            .unwrap()
+            .iter()
+            .map(|r| MultiAssemblerStore::new(*r))
+            .collect();
+        let assemblers_2_3 = data_store
+            .ing_out_num_to_recipe
+            .get(&(2, 3))
+            .unwrap()
+            .iter()
+            .map(|r| MultiAssemblerStore::new(*r))
+            .collect();
         let assemblers_3_1 = data_store
             .ing_out_num_to_recipe
             .get(&(3, 1))
@@ -127,13 +145,31 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
             .iter()
             .map(|r| MultiAssemblerStore::new(*r))
             .collect();
+        let assemblers_5_1 = data_store
+            .ing_out_num_to_recipe
+            .get(&(5, 1))
+            .unwrap()
+            .iter()
+            .map(|r| MultiAssemblerStore::new(*r))
+            .collect();
+        let assemblers_6_1 = data_store
+            .ing_out_num_to_recipe
+            .get(&(6, 1))
+            .unwrap()
+            .iter()
+            .map(|r| MultiAssemblerStore::new(*r))
+            .collect();
 
         Self {
             assemblers_0_1,
             assemblers_1_1,
             assemblers_2_1,
+            assemblers_2_2,
+            assemblers_2_3,
             assemblers_3_1,
             assemblers_4_1,
+            assemblers_5_1,
+            assemblers_6_1,
         }
     }
 
@@ -172,6 +208,20 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
             .zip(other.assemblers_2_1.into_vec())
             .map(|(a, b)| a.join(b, new_grid_id, data_store))
             .unzip();
+        let (assemblers_2_2, assemblers_2_2_updates): (Vec<_>, Vec<_>) = self
+            .assemblers_2_2
+            .into_vec()
+            .into_iter()
+            .zip(other.assemblers_2_2.into_vec())
+            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .unzip();
+        let (assemblers_2_3, assemblers_2_3_updates): (Vec<_>, Vec<_>) = self
+            .assemblers_2_3
+            .into_vec()
+            .into_iter()
+            .zip(other.assemblers_2_3.into_vec())
+            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .unzip();
 
         let (assemblers_3_1, assemblers_3_1_updates): (Vec<_>, Vec<_>) = self
             .assemblers_3_1
@@ -189,12 +239,32 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
             .map(|(a, b)| a.join(b, new_grid_id, data_store))
             .unzip();
 
+        let (assemblers_5_1, assemblers_5_1_updates): (Vec<_>, Vec<_>) = self
+            .assemblers_5_1
+            .into_vec()
+            .into_iter()
+            .zip(other.assemblers_5_1.into_vec())
+            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .unzip();
+
+        let (assemblers_6_1, assemblers_6_1_updates): (Vec<_>, Vec<_>) = self
+            .assemblers_6_1
+            .into_vec()
+            .into_iter()
+            .zip(other.assemblers_6_1.into_vec())
+            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .unzip();
+
         let ret = Self {
             assemblers_0_1: assemblers_0_1.into_boxed_slice(),
             assemblers_1_1: assemblers_1_1.into_boxed_slice(),
             assemblers_2_1: assemblers_2_1.into_boxed_slice(),
+            assemblers_2_2: assemblers_2_2.into_boxed_slice(),
+            assemblers_2_3: assemblers_2_3.into_boxed_slice(),
             assemblers_3_1: assemblers_3_1.into_boxed_slice(),
             assemblers_4_1: assemblers_4_1.into_boxed_slice(),
+            assemblers_5_1: assemblers_5_1.into_boxed_slice(),
+            assemblers_6_1: assemblers_6_1.into_boxed_slice(),
         };
 
         (
@@ -204,8 +274,12 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
                 .flatten()
                 .chain(assemblers_1_1_updates.into_iter().flatten())
                 .chain(assemblers_2_1_updates.into_iter().flatten())
+                .chain(assemblers_2_2_updates.into_iter().flatten())
+                .chain(assemblers_2_3_updates.into_iter().flatten())
                 .chain(assemblers_3_1_updates.into_iter().flatten())
-                .chain(assemblers_4_1_updates.into_iter().flatten()),
+                .chain(assemblers_4_1_updates.into_iter().flatten())
+                .chain(assemblers_5_1_updates.into_iter().flatten())
+                .chain(assemblers_6_1_updates.into_iter().flatten()),
         )
     }
 
@@ -248,6 +322,26 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
                     .get_info(assembler_id.assembler_index, data_store)
             },
 
+            (2, 2) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_2_2[data_store.recipe_to_ing_out_combo_idx[recipe_id]].recipe
+                );
+
+                self.assemblers_2_2[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .get_info(assembler_id.assembler_index, data_store)
+            },
+
+            (2, 3) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_2_3[data_store.recipe_to_ing_out_combo_idx[recipe_id]].recipe
+                );
+
+                self.assemblers_2_3[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .get_info(assembler_id.assembler_index, data_store)
+            },
+
             (3, 1) => {
                 assert_eq!(
                     assembler_id.recipe,
@@ -265,6 +359,26 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
                 );
 
                 self.assemblers_4_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .get_info(assembler_id.assembler_index, data_store)
+            },
+
+            (5, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_5_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]].recipe
+                );
+
+                self.assemblers_5_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .get_info(assembler_id.assembler_index, data_store)
+            },
+
+            (6, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_6_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]].recipe
+                );
+
+                self.assemblers_6_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
                     .get_info(assembler_id.assembler_index, data_store)
             },
 

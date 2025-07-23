@@ -1945,10 +1945,11 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         {
             {
                 profiling::scope!("Prune Sushi Belts");
-                while self
-                    .inner
-                    .sushi_belt_holes
-                    .contains(&(self.inner.sushi_belts.len() - 1))
+                while !self.inner.sushi_belts.is_empty()
+                    && self
+                        .inner
+                        .sushi_belt_holes
+                        .contains(&(self.inner.sushi_belts.len() - 1))
                 {
                     let removed_idx = self.inner.sushi_belts.len() - 1;
                     let placeholder_sushi_belt = self.inner.sushi_belts.pop().unwrap();
@@ -1958,8 +1959,6 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     assert_eq!(self.inner.sushi_belt_holes.len(), old_len - 1);
                 }
             }
-            dbg!(self.inner.sushi_belts.len());
-            dbg!(&self.inner.sushi_belt_holes.len());
             profiling::scope!("SushiBelt Update");
             self.inner
                 .sushi_belts

@@ -386,9 +386,7 @@ fn try_attaching_fluids<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             }
                         }
                     },
-                    e => {
-                        dbg!(e);
-                    },
+                    _ => {},
                 });
         }),
     }

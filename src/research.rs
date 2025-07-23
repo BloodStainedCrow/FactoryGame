@@ -1,6 +1,6 @@
 use egui::{Button, CornerRadius, ProgressBar, SidePanel};
 use egui::{Color32, Ui};
-use egui_graphs::DefaultNodeShape;
+use egui_graphs::{DefaultNodeShape, LayoutRandom, LayoutStateRandom};
 use egui_graphs::Graph;
 use egui_graphs::GraphView;
 use egui_graphs::LayoutHierarchical;
@@ -363,7 +363,7 @@ impl TechState {
         );
 
         let mut view =
-            GraphView::<_, _, _, _, _, _, LayoutStateHierarchical, LayoutHierarchical>::new(
+            GraphView::<_, _, _, _, _, _, LayoutStateRandom, LayoutRandom>::new(
                 render_graph,
             )
             .with_navigations(&SettingsNavigation::new().with_zoom_and_pan_enabled(true))
