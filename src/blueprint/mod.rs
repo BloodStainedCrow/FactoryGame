@@ -992,138 +992,60 @@ impl Blueprint {
         &mut self,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        for action in self.actions.iter_mut() {
-            let e_size: [i32; 2] = action
-                .try_into_real_action(data_store)
-                .unwrap()
-                .get_building_size(data_store)
-                .unwrap_or([1, 1])
-                .map(|v| v.into());
-            match action {
-                BlueprintAction::PlaceEntity(blueprint_place_entity) => {
-                    match blueprint_place_entity {
-                        BlueprintPlaceEntity::Assembler { pos, .. } => {
-                            *pos = Position {
-                                x: -pos.x - e_size[0],
-                                y: pos.y,
-                            }
-                        },
-                        BlueprintPlaceEntity::Inserter { pos, dir, .. } => {
-                            *pos = Position {
-                                x: -pos.x - e_size[0],
-                                y: pos.y,
-                            };
-                            if dir.compare(Dir::North) == DirRelative::Turned {
-                                *dir = dir.reverse();
-                            }
-                        },
-                        BlueprintPlaceEntity::Belt { pos, direction, .. } => {
-                            *pos = Position {
-                                x: -pos.x - e_size[0],
-                                y: pos.y,
-                            };
-                            if direction.compare(Dir::North) == DirRelative::Turned {
-                                *direction = direction.reverse();
-                            }
-                        },
-                        BlueprintPlaceEntity::Underground { pos, direction, .. } => {
-                            *pos = Position {
-                                x: -pos.x - e_size[0],
-                                y: pos.y,
-                            };
-                            if direction.compare(Dir::North) == DirRelative::Turned {
-                                *direction = direction.reverse();
-                            }
-                        },
-                        BlueprintPlaceEntity::PowerPole { pos, .. } => {
-                            *pos = Position {
-                                x: -pos.x - e_size[0],
-                                y: pos.y,
-                            };
-                        },
-                        BlueprintPlaceEntity::Splitter { pos, direction, .. } => {
-                            *pos = Position {
-                                x: -pos.x - e_size[0],
-                                y: pos.y,
-                            };
-                            if direction.compare(Dir::North) == DirRelative::Turned {
-                                *direction = direction.reverse();
-                            }
-                        },
-                        BlueprintPlaceEntity::Chest { pos, .. } => {
-                            *pos = Position {
-                                x: -pos.x - e_size[0],
-                                y: pos.y,
-                            };
-                        },
-                        BlueprintPlaceEntity::SolarPanel { pos, .. } => {
-                            *pos = Position {
-                                x: -pos.x - e_size[0],
-                                y: pos.y,
-                            };
-                        },
-                        BlueprintPlaceEntity::Lab { pos, .. } => {
-                            *pos = Position {
-                                x: -pos.x - e_size[0],
-                                y: pos.y,
-                            };
-                        },
-                        BlueprintPlaceEntity::Beacon { pos, .. } => {
-                            *pos = Position {
-                                x: -pos.x - e_size[0],
-                                y: pos.y,
-                            };
-                        },
-                        BlueprintPlaceEntity::FluidTank { pos, rotation, .. } => {
-                            *pos = Position {
-                                x: -pos.x - e_size[0],
-                                y: pos.y,
-                            };
-                            if rotation.compare(Dir::North) == DirRelative::Turned {
-                                *rotation = rotation.reverse();
-                            }
-                        },
-                        BlueprintPlaceEntity::MiningDrill { pos, rotation, .. } => {
-                            *pos = Position {
-                                x: -pos.x - e_size[0],
-                                y: pos.y,
-                            };
-                            if rotation.compare(Dir::North) == DirRelative::Turned {
-                                *rotation = rotation.reverse();
-                            }
-                        },
-                    }
-                },
-                BlueprintAction::SetRecipe { pos, .. } => {
-                    *pos = Position {
-                        x: -pos.x - e_size[0],
-                        y: pos.y,
-                    }
-                },
-                BlueprintAction::OverrideInserterMovetime { pos, .. } => {
-                    *pos = Position {
-                        x: -pos.x - e_size[0],
-                        y: pos.y,
-                    }
-                },
-                BlueprintAction::AddModules { pos, .. } => {
-                    *pos = Position {
-                        x: -pos.x - e_size[0],
-                        y: pos.y,
-                    }
-                },
-                BlueprintAction::SetChestSlotLimit { pos, .. } => {
-                    *pos = Position {
-                        x: -pos.x - e_size[0],
-                        y: pos.y,
-                    }
-                },
-            }
-        }
+        self.modify(
+            |pos, e_size| Position {
+                x: -pos.x - e_size[0],
+                y: pos.y,
+            },
+            |dir| {
+                if dir.compare(Dir::North) == DirRelative::Turned {
+                    dir.reverse()
+                } else {
+                    *dir
+                }
+            },
+            data_store,
+        );
     }
 
     pub fn flip_vertical<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut self,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        self.modify(
+            |pos, e_size| Position {
+                x: pos.x,
+                y: -pos.y - e_size[1],
+            },
+            |dir| {
+                if dir.compare(Dir::East) == DirRelative::Turned {
+                    dir.reverse()
+                } else {
+                    *dir
+                }
+            },
+            data_store,
+        );
+    }
+
+    pub fn turn_right<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        &mut self,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        self.modify(
+            |pos, e_size| Position {
+                x: -pos.y - (e_size[1] - 1),
+                y: pos.x,
+            },
+            |dir| dir.turn_right(),
+            data_store,
+        );
+    }
+
+    fn modify<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        &mut self,
+        pos_fn: impl Fn(&Position, [i32; 2]) -> Position,
+        rotation_fn: impl Fn(&Dir) -> Dir,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         for action in self.actions.iter_mut() {
@@ -1137,120 +1059,60 @@ impl Blueprint {
                 BlueprintAction::PlaceEntity(blueprint_place_entity) => {
                     match blueprint_place_entity {
                         BlueprintPlaceEntity::Assembler { pos, .. } => {
-                            *pos = Position {
-                                x: pos.x,
-                                y: -pos.y - e_size[1],
-                            }
+                            *pos = pos_fn(pos, e_size);
                         },
                         BlueprintPlaceEntity::Inserter { pos, dir, .. } => {
-                            *pos = Position {
-                                x: pos.x,
-                                y: -pos.y - e_size[1],
-                            };
-                            if dir.compare(Dir::East) == DirRelative::Turned {
-                                *dir = dir.reverse();
-                            }
+                            *pos = pos_fn(pos, e_size);
+                            *dir = rotation_fn(&dir);
                         },
                         BlueprintPlaceEntity::Belt { pos, direction, .. } => {
-                            *pos = Position {
-                                x: pos.x,
-                                y: -pos.y - e_size[1],
-                            };
-                            if direction.compare(Dir::East) == DirRelative::Turned {
-                                *direction = direction.reverse();
-                            }
+                            *pos = pos_fn(pos, e_size);
+                            *direction = rotation_fn(&direction);
                         },
                         BlueprintPlaceEntity::Underground { pos, direction, .. } => {
-                            *pos = Position {
-                                x: pos.x,
-                                y: -pos.y - e_size[1],
-                            };
-                            if direction.compare(Dir::East) == DirRelative::Turned {
-                                *direction = direction.reverse();
-                            }
+                            *pos = pos_fn(pos, e_size);
+                            *direction = rotation_fn(&direction);
                         },
                         BlueprintPlaceEntity::PowerPole { pos, .. } => {
-                            *pos = Position {
-                                x: pos.x,
-                                y: -pos.y - e_size[1],
-                            };
+                            *pos = pos_fn(pos, e_size);
                         },
                         BlueprintPlaceEntity::Splitter { pos, direction, .. } => {
-                            *pos = Position {
-                                x: pos.x,
-                                y: -pos.y - e_size[1],
-                            };
-                            if direction.compare(Dir::East) == DirRelative::Turned {
-                                *direction = direction.reverse();
-                            }
+                            *pos = pos_fn(pos, e_size);
+                            *direction = rotation_fn(&direction);
                         },
                         BlueprintPlaceEntity::Chest { pos, .. } => {
-                            *pos = Position {
-                                x: pos.x,
-                                y: -pos.y - e_size[1],
-                            };
+                            *pos = pos_fn(pos, e_size);
                         },
                         BlueprintPlaceEntity::SolarPanel { pos, .. } => {
-                            *pos = Position {
-                                x: pos.x,
-                                y: -pos.y - e_size[1],
-                            };
+                            *pos = pos_fn(pos, e_size);
                         },
                         BlueprintPlaceEntity::Lab { pos, .. } => {
-                            *pos = Position {
-                                x: pos.x,
-                                y: -pos.y - e_size[1],
-                            };
+                            *pos = pos_fn(pos, e_size);
                         },
                         BlueprintPlaceEntity::Beacon { pos, .. } => {
-                            *pos = Position {
-                                x: pos.x,
-                                y: -pos.y - e_size[1],
-                            };
+                            *pos = pos_fn(pos, e_size);
                         },
                         BlueprintPlaceEntity::FluidTank { pos, rotation, .. } => {
-                            *pos = Position {
-                                x: pos.x,
-                                y: -pos.y - e_size[1],
-                            };
-                            if rotation.compare(Dir::East) == DirRelative::Turned {
-                                *rotation = rotation.reverse();
-                            }
+                            *pos = pos_fn(pos, e_size);
+                            *rotation = rotation_fn(&rotation);
                         },
                         BlueprintPlaceEntity::MiningDrill { pos, rotation, .. } => {
-                            *pos = Position {
-                                x: pos.x,
-                                y: -pos.y - e_size[1],
-                            };
-                            if rotation.compare(Dir::East) == DirRelative::Turned {
-                                *rotation = rotation.reverse();
-                            }
+                            *pos = pos_fn(pos, e_size);
+                            *rotation = rotation_fn(&rotation);
                         },
                     }
                 },
                 BlueprintAction::SetRecipe { pos, .. } => {
-                    *pos = Position {
-                        x: pos.x,
-                        y: -pos.y - e_size[1],
-                    }
+                    *pos = pos_fn(pos, e_size);
                 },
                 BlueprintAction::OverrideInserterMovetime { pos, .. } => {
-                    *pos = Position {
-                        x: pos.x,
-                        y: -pos.y - e_size[1],
-                    }
+                    *pos = pos_fn(pos, e_size);
                 },
                 BlueprintAction::AddModules { pos, .. } => {
-                    *pos = Position {
-                        x: pos.x,
-                        y: -pos.y - e_size[1],
-                    }
+                    *pos = pos_fn(pos, e_size);
                 },
                 BlueprintAction::SetChestSlotLimit { pos, .. } => {
-                    *pos = Position {
-                        x: pos.x,
-                        y: -pos.y - e_size[1],
-                    }
+                    *pos = pos_fn(pos, e_size);
                 },
             }
         }

@@ -1111,6 +1111,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 bp.flip_horizontal(data_store);
                 vec![]
             },
+            (ActionStateMachineState::Holding(HeldObject::Blueprint(bp)), Key::R) => {
+                bp.turn_right(data_store);
+                vec![]
+            },
 
             (_, Key::Esc) => {
                 self.escape_menu_open = !self.escape_menu_open;
