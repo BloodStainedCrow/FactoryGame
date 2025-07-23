@@ -774,8 +774,8 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
         BeltLenType::try_from(self.locs.len()).expect("Belt too long!")
     }
 
-    #[profiling::function]
     fn update(&mut self, splitter_list: &[SushiSplitter<ItemIdxType>]) {
+        profiling::puffin::profile_function_if!(!self.is_circular && self.locs.len() > 1);
         if self.is_circular {
             self.zero_index += 1;
             return;

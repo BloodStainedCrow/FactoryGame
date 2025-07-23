@@ -30,6 +30,7 @@ const NUM_TILES_PER_AXIS: [usize; NUM_MAP_TILE_SIZES] = {
 const TILE_PIXEL_TO_WORLD_TILE: [usize; NUM_MAP_TILE_SIZES] = [1, 4, 16, 64];
 const MIN_WIDTH: [usize; NUM_MAP_TILE_SIZES] = [0, 5_000, 10_000, 50_000];
 
+#[profiling::function]
 pub fn create_map_textures_if_needed<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     world: &World<ItemIdxType, RecipeIdxType>,
     renderer: &mut impl RendererTrait,
@@ -120,6 +121,7 @@ pub fn create_map_textures_if_needed<ItemIdxType: IdxTrait, RecipeIdxType: IdxTr
     }
 }
 
+#[profiling::function]
 pub fn apply_updates(
     updates: impl IntoIterator<Item = MapViewUpdate>,
     renderer: &mut impl RendererTrait,
@@ -167,6 +169,7 @@ pub fn apply_updates(
     }
 }
 
+#[profiling::function]
 pub fn render_map_view(
     renderer: &mut impl RendererTrait,
     camera_pos: Position,

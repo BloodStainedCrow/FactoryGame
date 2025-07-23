@@ -233,6 +233,7 @@ impl<ItemIdxType: WeakIdxTrait> SushiSplitter<ItemIdxType> {
 
 impl<ItemIdxType: IdxTrait> SushiSplitter<ItemIdxType> {
     // TODO: Test this
+    #[profiling::function]
     pub fn update(&mut self) {
         let num_items_possible_to_input = self
             .inputs

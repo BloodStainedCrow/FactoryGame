@@ -247,7 +247,10 @@ fn try_instantiating_inserters_for_belt<ItemIdxType: IdxTrait, RecipeIdxType: Id
             let by_belt = world.to_instantiate_by_belt.get_mut(&belt_id).unwrap();
 
             if by_belt.len() > 1_000 {
-                warn!("More than 1_000 inserters waiting to be instantiated. This will cause lag!");
+                warn!(
+                    "More than 1_000 inserters waiting to be instantiated: {}. This will cause lag!",
+                    by_belt.len()
+                );
             }
 
             let mut tmp = Vec::default();
@@ -328,7 +331,10 @@ fn try_instantiating_all_inserters_cascade<ItemIdxType: IdxTrait, RecipeIdxType:
         update: Box::new(|world, sim_state, updates, data_store| {
             profiling::scope!("try_instantiating_all_inserters_cascade");
             if world.to_instantiate.len() > 1_000 {
-                warn!("More than 1_000 inserters waiting to be instantiated. This will cause lag!");
+                warn!(
+                    "More than 1_000 inserters waiting to be instantiated: {}. This will cause lag!",
+                    world.to_instantiate.len()
+                );
             }
 
             let mut tmp = BTreeSet::default();
