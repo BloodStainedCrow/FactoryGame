@@ -1139,13 +1139,13 @@ impl Blueprint {
                         BlueprintPlaceEntity::Assembler { pos, .. } => {
                             *pos = Position {
                                 x: pos.x,
-                                y: pos.y - e_size[0],
+                                y: -pos.y - e_size[1],
                             }
                         },
                         BlueprintPlaceEntity::Inserter { pos, dir, .. } => {
                             *pos = Position {
                                 x: pos.x,
-                                y: pos.y - e_size[0],
+                                y: -pos.y - e_size[1],
                             };
                             if dir.compare(Dir::East) == DirRelative::Turned {
                                 *dir = dir.reverse();
@@ -1154,7 +1154,7 @@ impl Blueprint {
                         BlueprintPlaceEntity::Belt { pos, direction, .. } => {
                             *pos = Position {
                                 x: pos.x,
-                                y: pos.y - e_size[0],
+                                y: -pos.y - e_size[1],
                             };
                             if direction.compare(Dir::East) == DirRelative::Turned {
                                 *direction = direction.reverse();
@@ -1163,7 +1163,7 @@ impl Blueprint {
                         BlueprintPlaceEntity::Underground { pos, direction, .. } => {
                             *pos = Position {
                                 x: pos.x,
-                                y: pos.y - e_size[0],
+                                y: -pos.y - e_size[1],
                             };
                             if direction.compare(Dir::East) == DirRelative::Turned {
                                 *direction = direction.reverse();
@@ -1172,13 +1172,13 @@ impl Blueprint {
                         BlueprintPlaceEntity::PowerPole { pos, .. } => {
                             *pos = Position {
                                 x: pos.x,
-                                y: pos.y - e_size[0],
+                                y: -pos.y - e_size[1],
                             };
                         },
                         BlueprintPlaceEntity::Splitter { pos, direction, .. } => {
                             *pos = Position {
                                 x: pos.x,
-                                y: pos.y - e_size[0],
+                                y: -pos.y - e_size[1],
                             };
                             if direction.compare(Dir::East) == DirRelative::Turned {
                                 *direction = direction.reverse();
@@ -1187,31 +1187,31 @@ impl Blueprint {
                         BlueprintPlaceEntity::Chest { pos, .. } => {
                             *pos = Position {
                                 x: pos.x,
-                                y: pos.y - e_size[0],
+                                y: -pos.y - e_size[1],
                             };
                         },
                         BlueprintPlaceEntity::SolarPanel { pos, .. } => {
                             *pos = Position {
                                 x: pos.x,
-                                y: pos.y - e_size[0],
+                                y: -pos.y - e_size[1],
                             };
                         },
                         BlueprintPlaceEntity::Lab { pos, .. } => {
                             *pos = Position {
                                 x: pos.x,
-                                y: pos.y - e_size[0],
+                                y: -pos.y - e_size[1],
                             };
                         },
                         BlueprintPlaceEntity::Beacon { pos, .. } => {
                             *pos = Position {
                                 x: pos.x,
-                                y: pos.y - e_size[0],
+                                y: -pos.y - e_size[1],
                             };
                         },
                         BlueprintPlaceEntity::FluidTank { pos, rotation, .. } => {
                             *pos = Position {
                                 x: pos.x,
-                                y: pos.y - e_size[0],
+                                y: -pos.y - e_size[1],
                             };
                             if rotation.compare(Dir::East) == DirRelative::Turned {
                                 *rotation = rotation.reverse();
@@ -1220,7 +1220,7 @@ impl Blueprint {
                         BlueprintPlaceEntity::MiningDrill { pos, rotation, .. } => {
                             *pos = Position {
                                 x: pos.x,
-                                y: pos.y - e_size[0],
+                                y: -pos.y - e_size[1],
                             };
                             if rotation.compare(Dir::East) == DirRelative::Turned {
                                 *rotation = rotation.reverse();
@@ -1230,26 +1230,26 @@ impl Blueprint {
                 },
                 BlueprintAction::SetRecipe { pos, .. } => {
                     *pos = Position {
-                        x: -pos.x - e_size[0],
-                        y: pos.y,
+                        x: pos.x,
+                        y: -pos.y - e_size[1],
                     }
                 },
                 BlueprintAction::OverrideInserterMovetime { pos, .. } => {
                     *pos = Position {
-                        x: -pos.x - e_size[0],
-                        y: pos.y,
+                        x: pos.x,
+                        y: -pos.y - e_size[1],
                     }
                 },
                 BlueprintAction::AddModules { pos, .. } => {
                     *pos = Position {
-                        x: -pos.x - e_size[0],
-                        y: pos.y,
+                        x: pos.x,
+                        y: -pos.y - e_size[1],
                     }
                 },
                 BlueprintAction::SetChestSlotLimit { pos, .. } => {
                     *pos = Position {
-                        x: -pos.x - e_size[0],
-                        y: pos.y,
+                        x: pos.x,
+                        y: -pos.y - e_size[1],
                     }
                 },
             }
