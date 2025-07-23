@@ -2625,7 +2625,7 @@
         ),
         (
             name: "factory_game::logistics_2",
-            display_name: "Railway",
+            display_name: "Logistics 2",
             cost_of_single_research_unit: [
                 (
                     item: "factory_game::red_science",
@@ -2653,7 +2653,7 @@
         ),
         (
             name: "factory_game::logistics",
-            display_name: "Railway",
+            display_name: "Logistics",
             cost_of_single_research_unit: [
                 (
                     item: "factory_game::red_science",
