@@ -27,7 +27,7 @@ pub trait Belt<ItemIdxType: IdxTrait> {
     // TODO: I need to choose here. using impl Trait means no dyn-compatibility,
     //       but a vec adds another allocation
     // fn items(&self) -> impl Iterator<Item = Option<Item<ItemIdxType>>>;
-    fn items(&self) -> Vec<Option<Item<ItemIdxType>>>;
+    fn items(&self) -> impl Iterator<Item = Option<Item<ItemIdxType>>>;
 
     fn get_len(&self) -> BeltLenType;
     fn add_length(&mut self, amount: BeltLenType, side: Side) -> BeltLenType;

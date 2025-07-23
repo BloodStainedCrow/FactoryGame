@@ -1308,7 +1308,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
         }
     }
 
-    fn items(&self) -> Vec<Option<Item<ItemIdxType>>> {
+    fn items(&self) -> impl Iterator<Item = Option<Item<ItemIdxType>>> {
         let (start, end) = self
             .locs
             .split_at(usize::from(self.zero_index % self.get_len()));
@@ -1320,7 +1320,6 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
         end.iter()
             .chain(start.iter())
             .map(|loc| if *loc { Some(self.item) } else { None })
-            .collect()
     }
 
     fn item_hint(&self) -> Option<Vec<Item<ItemIdxType>>> {

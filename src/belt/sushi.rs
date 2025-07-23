@@ -757,7 +757,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
         }
     }
 
-    fn items(&self) -> Vec<Option<Item<ItemIdxType>>> {
+    fn items(&self) -> impl Iterator<Item = Option<Item<ItemIdxType>>> {
         let len = self.locs.len();
         let (start, end) = self
             .locs
@@ -767,7 +767,6 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
         end.iter()
             .chain(start.iter())
             .map(|loc| loc.map(|item| item))
-            .collect()
     }
 
     fn get_len(&self) -> super::belt::BeltLenType {

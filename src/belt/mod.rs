@@ -33,7 +33,7 @@ use crate::{
     item::Indexable,
 };
 use belt::{Belt, BeltLenType};
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use log::info;
 use petgraph::{
     Direction::Outgoing,
@@ -1325,11 +1325,11 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                 // Check the items on the belt
                 let items = self.inner.get_sushi(sushi_idx).items();
 
-                let belt_item_check = items.iter().flatten().all_equal_value();
+                let belt_item_check = items.flatten().all_equal_value();
 
                 match belt_item_check {
                     Ok(belt_items) => {
-                        if *belt_items == inserter_item {
+                        if belt_items == inserter_item {
                             // All items are the correct type!
                         } else {
                             return Err(MakePureError::ErrorSushi);
@@ -1362,13 +1362,13 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                 // Check the items on the belt
                 let items = self.inner.get_sushi(sushi_idx).items();
 
-                let belt_item_check = items.iter().flatten().all_equal_value();
+                let belt_item_check = items.flatten().all_equal_value();
 
                 let goal_item = match belt_item_check {
                     Ok(belt_items) => {
-                        if *belt_items == *incoming_belts_item.get_or_insert(*belt_items) {
+                        if belt_items == *incoming_belts_item.get_or_insert(belt_items) {
                             // All items are the correct type!
-                            *belt_items
+                            belt_items
                         } else {
                             return Err(MakePureError::ErrorSushi);
                         }
@@ -1690,7 +1690,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             BeltTileId::AnyBelt(index, _) => match self.any_belts[index] {
                 AnyBelt::Smart(belt_id) => {
                     let belt = self.inner.get_smart(belt_id);
-                    let items_all_empty = belt.items().iter().all(|loc| loc.is_none());
+                    let items_all_empty = belt.items().all(|loc| loc.is_none());
                     match (belt.inserters.inserters.is_empty(), items_all_empty) {
                         (true, true) => (vec![], vec![]),
                         (true, false) => (vec![], vec![belt_id.item]),
@@ -2656,11 +2656,18 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
     pub fn get_item_iter(
         &self,
         id: BeltTileId<ItemIdxType>,
-    ) -> impl Iterator<Item = Option<Item<ItemIdxType>>> + use<ItemIdxType> {
+    ) -> Either<
+        impl Iterator<Item = Option<Item<ItemIdxType>>>,
+        impl Iterator<Item = Option<Item<ItemIdxType>>>,
+    > {
         match id {
             BeltTileId::AnyBelt(index, _) => match &self.any_belts[index] {
-                AnyBelt::Smart(smart_belt) => self.inner.get_smart(*smart_belt).items().into_iter(),
-                AnyBelt::Sushi(sushi_belt) => self.inner.get_sushi(*sushi_belt).items().into_iter(),
+                AnyBelt::Smart(smart_belt) => {
+                    Either::Left(self.inner.get_smart(*smart_belt).items())
+                },
+                AnyBelt::Sushi(sushi_belt) => {
+                    Either::Right(self.inner.get_sushi(*sushi_belt).items())
+                },
             },
         }
     }
