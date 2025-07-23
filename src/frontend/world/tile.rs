@@ -1,3 +1,5 @@
+use egui::Color32;
+use log::error;
 use std::{
     cmp::min,
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -6,8 +8,6 @@ use std::{
     num::NonZero,
     ops::{Add, ControlFlow},
 };
-
-use egui::Color32;
 
 use enum_map::{Enum, EnumMap};
 use log::{info, warn};
@@ -23,11 +23,15 @@ use crate::{
         BeltBeltInserterAdditionInfo, BeltTileId, SplitterTileId,
         splitter::{SPLITTER_BELT_LEN, SplitterDistributionMode, SplitterSide},
     },
-    data::{DataStore, ItemRecipeDir},
+    data::{AllowedFluidDirection, DataStore, ItemRecipeDir},
     inserter::{
         HAND_SIZE, MOVETIME, StaticID, Storage, storage_storage_with_buckets::InserterIdentifier,
     },
     item::{IdxTrait, Item, Recipe, WeakIdxTrait, usize_from},
+    liquid::{
+        CannotMixFluidsError, FluidConnectionDir,
+        connection_logic::can_fluid_tanks_connect_to_single_connection,
+    },
     network_graph::WeakIndex,
     power::power_grid::{BeaconAffectedEntity, PowerGridEntity, PowerGridIdentifier},
     rendering::app_state::{
@@ -43,7 +47,10 @@ use std::ops::{Deref, DerefMut};
 use serde::Deserializer;
 use serde::Serializer;
 
+use std::iter;
+
 use noise::Seedable;
+use petgraph::prelude::Bfs;
 
 use super::{Position, sparse_grid::SparseGrid};
 use crate::liquid::FluidSystemId;
@@ -210,26 +217,200 @@ struct CascadingUpdate<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     >,
 }
 
+fn try_attaching_fluids<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    new_assembler_pos: Position,
+) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
+    CascadingUpdate {
+        update: Box::new(move |world, sim_state, updates, data_store| {
+            profiling::scope!("try_attaching_fluids");
+            let Some(
+                e @ Entity::Assembler {
+                    ty: assembler_ty,
+                    pos: assembler_pos,
+                    info:
+                        AssemblerInfo::Powered {
+                            id,
+                            pole_position,
+                            weak_index,
+                        },
+                    ..
+                },
+            ) = world
+                .get_entities_colliding_with(new_assembler_pos, (1, 1), data_store)
+                .into_iter()
+                .next()
+            else {
+                return;
+            };
+
+            assert_eq!(new_assembler_pos, *assembler_pos);
+
+            let e_size: [u16; 2] = e.get_size(data_store).into();
+
+            world
+                .get_entities_colliding_with(
+                    Position {
+                        x: assembler_pos.x - 1,
+                        y: assembler_pos.y - 1,
+                    },
+                    (e_size[0] + 2, e_size[1] + 2),
+                    data_store,
+                )
+                .into_iter()
+                .for_each(|e| match e {
+                    Entity::FluidTank {
+                        ty, pos, rotation, ..
+                    } => {
+                        dbg!("Found Tank");
+                        let assembler_size =
+                            data_store.assembler_info[usize::from(*assembler_ty)].size;
+                        let assembler_size = [assembler_size.0, assembler_size.1];
+
+                        let recipe_fluid_inputs: Vec<_> = data_store.recipe_to_items[&id.recipe]
+                            .iter()
+                            .filter_map(|(dir, item)| {
+                                (*dir == ItemRecipeDir::Ing
+                                    && data_store.item_is_fluid[item.into_usize()])
+                                .then_some(*item)
+                            })
+                            .collect();
+                        let recipe_fluid_outputs: Vec<_> = data_store.recipe_to_items[&id.recipe]
+                            .iter()
+                            .filter_map(|(dir, item)| {
+                                (*dir == ItemRecipeDir::Out
+                                    && data_store.item_is_fluid[item.into_usize()])
+                                .then_some(*item)
+                            })
+                            .collect();
+
+                        let fluid_pure_outputs: Vec<_> = data_store.assembler_info
+                            [usize::from(*assembler_ty)]
+                        .fluid_connections
+                        .iter()
+                        .filter(|(_conn, allowed)| {
+                            *allowed == AllowedFluidDirection::Single(ItemRecipeDir::Out)
+                                || matches!(*allowed, AllowedFluidDirection::Both { .. })
+                        })
+                        .collect();
+
+                        let fluid_pure_inputs: Vec<_> = data_store.assembler_info
+                            [usize::from(*assembler_ty)]
+                        .fluid_connections
+                        .iter()
+                        .filter(|(_conn, allowed)| {
+                            *allowed == AllowedFluidDirection::Single(ItemRecipeDir::Ing)
+                                || matches!(*allowed, AllowedFluidDirection::Both { .. })
+                        })
+                        .collect();
+
+                        // FIXME: FINISH IMPLEMENTING THIS
+
+                        let all_connections_with_items = recipe_fluid_inputs
+                            .into_iter()
+                            .cycle()
+                            .zip(fluid_pure_inputs)
+                            .zip(iter::repeat(FluidConnectionDir::Output))
+                            .chain(
+                                recipe_fluid_outputs
+                                    .into_iter()
+                                    .cycle()
+                                    .zip(fluid_pure_outputs)
+                                    .zip(iter::repeat(FluidConnectionDir::Input)),
+                            );
+
+                        let in_out_connections = all_connections_with_items.filter_map(
+                            move |((item, (fluid_conn, _allowed)), fluid_dir)| {
+                                can_fluid_tanks_connect_to_single_connection(
+                                    *pos,
+                                    *ty,
+                                    *rotation,
+                                    *assembler_pos,
+                                    *fluid_conn,
+                                    // FIXME: Pass in the assemblers rotation
+                                    Dir::North,
+                                    assembler_size,
+                                    data_store,
+                                )
+                                .map(
+                                    |(dest_conn, dest_conn_dir)| {
+                                        (
+                                            fluid_dir,
+                                            item,
+                                            Storage::Assembler {
+                                                grid: id.grid,
+                                                index: id.assembler_index,
+                                                recipe_idx_with_this_item: data_store
+                                                    .recipe_to_translated_index[&(id.recipe, item)],
+                                            },
+                                            dest_conn,
+                                            Box::new(|_weak_index: WeakIndex| {})
+                                                as Box<dyn FnOnce(WeakIndex) -> ()>,
+                                        )
+                                    },
+                                )
+                            },
+                        );
+                        for (dir, conn_fluid, conn_storage, conn_pos, cb) in in_out_connections {
+                            let res = match dir {
+                                FluidConnectionDir::Output => {
+                                    sim_state.factory.fluid_store.try_add_output(
+                                        *pos,
+                                        conn_fluid,
+                                        conn_storage,
+                                        conn_pos,
+                                        &mut sim_state.factory.chests,
+                                        &mut sim_state.factory.storage_storage_inserters,
+                                        data_store,
+                                    )
+                                },
+                                FluidConnectionDir::Input => {
+                                    sim_state.factory.fluid_store.try_add_input(
+                                        *pos,
+                                        conn_fluid,
+                                        conn_storage,
+                                        conn_pos,
+                                        &mut sim_state.factory.chests,
+                                        &mut sim_state.factory.storage_storage_inserters,
+                                        data_store,
+                                    )
+                                },
+                            };
+                            match res {
+                                Ok(weak_index) => cb(weak_index),
+                                Err(CannotMixFluidsError { items: fluids }) => {
+                                    let fluids = fluids.map(|item| {
+                                        &data_store.item_display_names[item.into_usize()]
+                                    });
+                                    error!("Cannot mix {} and {}", fluids[0], fluids[1]);
+                                },
+                            }
+                        }
+                    },
+                    e => {
+                        dbg!(e);
+                    },
+                });
+        }),
+    }
+}
+
 fn try_instantiating_inserters_for_belt_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     belt_id: BeltTileId<ItemIdxType>,
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
         update: Box::new(move |world, sim_state, updates, data_store| {
             profiling::scope!("try_instantiating_inserters_for_belt_cascade");
-            // FIXME:
-            // let mut reachable = Bfs::new(
-            //     &sim_state.factory.belts.belt_graph,
-            //     sim_state.factory.belts.belt_graph_lookup[&belt_id],
-            // );
-            // while let Some(idx) = reachable.next(&sim_state.factory.belts.belt_graph) {
-            //     let belt = sim_state.factory.belts.belt_graph.node_weight(idx).unwrap();
-            //     if !world.to_instantiate_by_belt[belt].is_empty() {
-            //         // FIXME: What if the graph contains cycles???
-            //         updates.push(try_instantiating_inserters_for_belt(*belt));
-            //     }
-            // }
-            // In order to avoid problems wit
-            updates.push(try_instantiating_all_inserters_cascade());
+            let mut reachable = Bfs::new(
+                &sim_state.factory.belts.belt_graph,
+                sim_state.factory.belts.belt_graph_lookup[&belt_id],
+            );
+            while let Some(idx) = reachable.next(&sim_state.factory.belts.belt_graph) {
+                let belt = sim_state.factory.belts.belt_graph.node_weight(idx).unwrap();
+                // FIXME: What if the graph contains cycles???
+                updates.push(try_instantiating_inserters_for_belt(*belt));
+            }
+            // // In order to avoid problems wit
+            // updates.push(try_instantiating_all_inserters_cascade());
         }),
     }
 }
@@ -865,6 +1046,7 @@ fn newly_working_assembler<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             let id = *id;
 
             updates.push(new_possible_inserter_connection(pos, size));
+            updates.push(try_attaching_fluids(pos));
 
             let beacon_search_start_pos = Position {
                 x: pos.x - data_store.max_beacon_range.0 as i32,
