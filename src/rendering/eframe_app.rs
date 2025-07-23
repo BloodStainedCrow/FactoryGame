@@ -78,6 +78,13 @@ impl eframe::App for App {
         ctx.request_repaint();
 
         match &mut self.state {
+            AppState::Ingame => {},
+            _ => {
+                self.raw_renderer.reset_runtime_textures();
+            },
+        }
+
+        match &mut self.state {
             AppState::Ingame => {
                 self.update_ingame(ctx, frame);
             },
