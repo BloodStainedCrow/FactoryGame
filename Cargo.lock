@@ -4533,7 +4533,7 @@ dependencies = [
 [[package]]
 name = "tilelib"
 version = "0.1.0"
-source = "git+https://github.com/BloodStainedCrow/tilelib.git#b6021e3964a46391e4b4b313666d7c99ffe64619"
+source = "git+https://github.com/BloodStainedCrow/tilelib.git#aa44854b8b9c571894a4a83b3ff65aecb6f78614"
 dependencies = [
  "bytemuck",
  "egui",

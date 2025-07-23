@@ -37,6 +37,7 @@ use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
 use log::{info, trace};
 use parking_lot::MutexGuard;
 use petgraph::dot::Dot;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::cmp::max;
 use std::fs::File;
 use std::sync::LazyLock;
@@ -61,6 +62,53 @@ pub const SWITCH_TO_MAPVIEW_ZOOM_LEVEL: LazyLock<f32> =
 //       Investigate!
 //       => This seems to happen at 992 -> 993 width, i.e. when the for loop range jumps from 31 to 32, very suspicous
 
+struct Layers {
+    tile_layer: Layer,
+    entity_layer: Layer,
+    entity_overlay_layer: Layer,
+    item_layer: Layer,
+    warning_layer: Layer,
+    range_layer: Layer,
+}
+
+impl Layers {
+    pub fn extend(&mut self, other: Self) {
+        let Self {
+            tile_layer,
+            entity_layer,
+            entity_overlay_layer,
+            item_layer,
+            warning_layer,
+            range_layer,
+        } = self;
+        let Self {
+            tile_layer: other_tile_layer,
+            entity_layer: other_entity_layer,
+            entity_overlay_layer: other_entity_overlay_layer,
+            item_layer: other_item_layer,
+            warning_layer: other_warning_layer,
+            range_layer: other_range_layer,
+        } = other;
+        tile_layer.extend(other_tile_layer);
+        entity_layer.extend(other_entity_layer);
+        entity_overlay_layer.extend(other_entity_overlay_layer);
+        item_layer.extend(other_item_layer);
+        warning_layer.extend(other_warning_layer);
+        range_layer.extend(other_range_layer);
+    }
+}
+
+fn layers_tile_grid(tilesize: f32, ar: f32) -> Layers {
+    Layers {
+        tile_layer: Layer::square_tile_grid(tilesize, ar),
+        entity_layer: Layer::square_tile_grid(tilesize, ar),
+        entity_overlay_layer: Layer::square_tile_grid(tilesize, ar),
+        item_layer: Layer::square_tile_grid(tilesize, ar),
+        warning_layer: Layer::square_tile_grid(tilesize, ar),
+        range_layer: Layer::square_tile_grid(tilesize, ar),
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 #[profiling::function]
 pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
@@ -74,16 +122,19 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     mem::swap(&mut updates, &mut game_state.world.map_updates);
 
-    map_view::apply_updates(
-        updates
-            .into_iter()
-            .flat_map(|v| v.into_iter())
-            .map(|pos| MapViewUpdate {
-                pos,
-                color: game_state.world.get_entity_color(pos, data_store),
-            }),
-        renderer,
-    );
+    {
+        profiling::scope!("map_view::apply_updates");
+        map_view::apply_updates(
+            updates
+                .into_iter()
+                .flat_map(|v| v.into_iter())
+                .map(|pos| MapViewUpdate {
+                    pos,
+                    color: game_state.world.get_entity_color(pos, data_store),
+                }),
+            renderer,
+        );
+    }
 
     let ar = renderer.get_aspect_ratio();
 
@@ -92,18 +143,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let num_tiles_across_screen_vertical = num_tiles_across_screen_horizontal / ar;
     let tilesize: f32 = 1.0 / num_tiles_across_screen_horizontal;
 
-    let mut tile_layer = Layer::square_tile_grid(tilesize, ar);
-    let mut entity_layer = Layer::square_tile_grid(tilesize, ar);
-
+    let mut state_machine_layer = Layer::square_tile_grid(tilesize, ar);
     let mut entity_overlay_layer = Layer::square_tile_grid(tilesize, ar);
-
-    let mut item_layer = Layer::square_tile_grid(tilesize, ar);
-
     let mut player_layer = Layer::square_tile_grid(tilesize, ar);
-
-    let mut warning_layer = Layer::square_tile_grid(tilesize, ar);
-
-    let mut range_layer = Layer::square_tile_grid(tilesize, ar);
 
     let camera_pos = match &state_machine.map_view_info {
         Some(map_view_pos) => *map_view_pos,
@@ -138,33 +180,39 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
         mem::drop(state_machine);
 
-        create_map_textures_if_needed(
-            &game_state.world,
-            renderer,
-            Position {
-                x: camera_pos.0 as i32,
-                y: camera_pos.1 as i32,
-            },
-            num_tiles_across_screen_horizontal as usize,
-            num_tiles_across_screen_vertical as usize,
-            data_store,
-        );
+        {
+            profiling::scope!("Create Map Textures");
+            create_map_textures_if_needed(
+                &game_state.world,
+                renderer,
+                Position {
+                    x: camera_pos.0 as i32,
+                    y: camera_pos.1 as i32,
+                },
+                num_tiles_across_screen_horizontal as usize,
+                num_tiles_across_screen_vertical as usize,
+                data_store,
+            );
+        }
         mem::drop(game_state);
 
-        map_view::render_map_view(
-            renderer,
-            Position {
-                x: camera_pos.0 as i32,
-                y: camera_pos.1 as i32,
-            },
-            num_tiles_across_screen_horizontal,
-            num_tiles_across_screen_vertical,
-            num_tiles_across_screen_horizontal as usize,
-            num_tiles_across_screen_vertical as usize,
-            tilesize,
-            ar,
-            camera_pos,
-        );
+        {
+            profiling::scope!("Render Map View");
+            map_view::render_map_view(
+                renderer,
+                Position {
+                    x: camera_pos.0 as i32,
+                    y: camera_pos.1 as i32,
+                },
+                num_tiles_across_screen_horizontal,
+                num_tiles_across_screen_vertical,
+                num_tiles_across_screen_horizontal as usize,
+                num_tiles_across_screen_vertical as usize,
+                tilesize,
+                ar,
+                camera_pos,
+            );
+        }
 
         renderer.draw(&entity_overlay_layer);
 
@@ -173,12 +221,16 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     // let mut storage_storage_inserter_batch = vec![];
 
-    for x_offs in -((num_tiles_across_screen_horizontal / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
-        ..=((num_tiles_across_screen_horizontal / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
-    {
-        for y_offs in -((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
-            ..=((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
-        {
+    let x_range = (-((num_tiles_across_screen_horizontal / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
+        ..=((num_tiles_across_screen_horizontal / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32))
+        .into_par_iter();
+    let y_range = (-((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
+        ..=((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32));
+
+    let pos_iter = x_range.flat_map_iter(|x| y_range.clone().map(move |y| (x, y)));
+
+    let folded_layers = pos_iter
+        .map(|(x_offs, y_offs)| {
             let chunk_draw_offs = (
                 x_offs as f32 * CHUNK_SIZE_FLOAT - camera_pos.0 % CHUNK_SIZE_FLOAT
                     + (0.5 * num_tiles_across_screen_horizontal),
@@ -197,32 +249,71 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     .unwrap(),
             );
 
-            match game_state.world.get_chunk(chunk_x, chunk_y) {
-                Some(chunk) => {
-                    for (x, row) in chunk
-                        .floor_tiles
-                        .as_ref()
-                        .unwrap_or(&Box::new(Default::default()))
-                        .iter()
-                        .enumerate()
-                    {
-                        for (y, tile) in row.iter().enumerate() {
-                            match tile {
-                                crate::frontend::world::tile::FloorTile::Empty => tile_layer
-                                    .draw_sprite(
-                                        &texture_atlas.blue,
-                                        DrawInstance {
-                                            position: [
-                                                chunk_draw_offs.0 + x as f32,
-                                                chunk_draw_offs.1 + y as f32,
-                                            ],
-                                            size: [1.0, 1.0],
-                                            animation_frame: 0,
-                                        },
-                                    ),
-                                _ => {
+            ((chunk_x, chunk_y), chunk_draw_offs)
+        })
+        .fold(
+            || layers_tile_grid(tilesize, ar),
+            |mut layers: Layers, ((chunk_x, chunk_y), chunk_draw_offs)| {
+                let Layers {
+                    tile_layer,
+                    entity_layer,
+                    entity_overlay_layer,
+                    item_layer,
+                    warning_layer,
+                    range_layer,
+                } = &mut layers;
+
+                profiling::scope!("Rendering Chunk", format!("{:?}", (chunk_x, chunk_y)));
+
+                match game_state.world.get_chunk(chunk_x, chunk_y) {
+                    Some(chunk) => {
+                        for (x, row) in chunk
+                            .floor_tiles
+                            .as_ref()
+                            .unwrap_or(&Box::new(Default::default()))
+                            .iter()
+                            .enumerate()
+                        {
+                            for (y, tile) in row.iter().enumerate() {
+                                match tile {
+                                    crate::frontend::world::tile::FloorTile::Empty => tile_layer
+                                        .draw_sprite(
+                                            &texture_atlas.blue,
+                                            DrawInstance {
+                                                position: [
+                                                    chunk_draw_offs.0 + x as f32,
+                                                    chunk_draw_offs.1 + y as f32,
+                                                ],
+                                                size: [1.0, 1.0],
+                                                animation_frame: 0,
+                                            },
+                                        ),
+                                    _ => {
+                                        tile_layer.draw_sprite(
+                                            &texture_atlas.default,
+                                            DrawInstance {
+                                                position: [
+                                                    chunk_draw_offs.0 + x as f32,
+                                                    chunk_draw_offs.1 + y as f32,
+                                                ],
+                                                size: [1.0, 1.0],
+                                                animation_frame: 0,
+                                            },
+                                        );
+                                    },
+                                }
+
+                                // TODO: Get current ore
+                                if game_state
+                                    .world
+                                    .get_original_ore_at_pos(Position {
+                                        x: chunk_x * CHUNK_SIZE as i32 + x as i32,
+                                        y: chunk_y * CHUNK_SIZE as i32 + y as i32,
+                                    })
+                                    .is_some()
+                                {
                                     tile_layer.draw_sprite(
-                                        &texture_atlas.default,
+                                        &texture_atlas.items[0],
                                         DrawInstance {
                                             position: [
                                                 chunk_draw_offs.0 + x as f32,
@@ -232,561 +323,563 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             animation_frame: 0,
                                         },
                                     );
-                                },
-                            }
-
-                            // TODO: Get current ore
-                            if game_state
-                                .world
-                                .get_original_ore_at_pos(Position {
-                                    x: chunk_x * CHUNK_SIZE as i32 + x as i32,
-                                    y: chunk_y * CHUNK_SIZE as i32 + y as i32,
-                                })
-                                .is_some()
-                            {
-                                tile_layer.draw_sprite(
-                                    &texture_atlas.items[0],
-                                    DrawInstance {
-                                        position: [
-                                            chunk_draw_offs.0 + x as f32,
-                                            chunk_draw_offs.1 + y as f32,
-                                        ],
-                                        size: [1.0, 1.0],
-                                        animation_frame: 0,
-                                    },
-                                );
+                                }
                             }
                         }
-                    }
 
-                    for entity in chunk.get_entities() {
-                        match entity {
-                            crate::frontend::world::tile::Entity::Assembler {
-                                ty,
-                                pos,
-                                info,
-                                ..
-                            } => {
-                                let size: [u16; 2] = [
-                                    data_store.assembler_info[usize::from(*ty)].size.0,
-                                    data_store.assembler_info[usize::from(*ty)].size.1,
-                                ];
-
-                                match info {
-                                    AssemblerInfo::UnpoweredNoRecipe => {
-                                        texture_atlas.not_connected.draw_centered_on(
-                                            &texture_atlas.assembler,
-                                            [
-                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                            ],
-                                            size,
-                                            0,
-                                            &mut warning_layer,
-                                        );
-
-                                        texture_atlas.assembler.draw(
-                                            [
-                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                            ],
-                                            size,
-                                            0,
-                                            &mut entity_layer,
-                                        );
-                                    },
-                                    AssemblerInfo::Unpowered(recipe) => {
-                                        texture_atlas.not_connected.draw_centered_on(
-                                            &texture_atlas.assembler,
-                                            [
-                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                            ],
-                                            size,
-                                            0,
-                                            &mut warning_layer,
-                                        );
-
-                                        texture_atlas.assembler.draw(
-                                            [
-                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                            ],
-                                            size,
-                                            0,
-                                            &mut entity_layer,
-                                        );
-
-                                        let item_idx = data_store.recipe_to_items[recipe]
-                                            .iter()
-                                            .find(|item| item.0 == ItemRecipeDir::Out)
-                                            .map(|item| item.1.into_usize())
-                                            .unwrap_or(0);
-
-                                        let icon_size: [f32; 2] = [
-                                            size[0] as f32 * ALT_MODE_ICON_SIZE,
-                                            size[1] as f32 * ALT_MODE_ICON_SIZE,
+                        {
+                            profiling::scope!("Render Entities");
+                            for entity in chunk.get_entities() {
+                                match entity {
+                                    crate::frontend::world::tile::Entity::Assembler {
+                                        ty,
+                                        pos,
+                                        info,
+                                        ..
+                                    } => {
+                                        let size: [u16; 2] = [
+                                            data_store.assembler_info[usize::from(*ty)].size.0,
+                                            data_store.assembler_info[usize::from(*ty)].size.1,
                                         ];
 
-                                        entity_overlay_layer.draw_sprite(
-                                            &texture_atlas.items[item_idx],
-                                            DrawInstance {
-                                                position: [
-                                                    chunk_draw_offs.0
-                                                        + (pos.x % 16) as f32
-                                                        + (size[0] as f32 - icon_size[0]) / 2.0,
-                                                    chunk_draw_offs.1
-                                                        + (pos.y % 16) as f32
-                                                        + (size[1] as f32 - icon_size[1]) / 2.0,
-                                                ],
-                                                size: icon_size,
-                                                animation_frame: 0,
+                                        match info {
+                                            AssemblerInfo::UnpoweredNoRecipe => {
+                                                texture_atlas.not_connected.draw_centered_on(
+                                                    &texture_atlas.assembler,
+                                                    [
+                                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                    ],
+                                                    size,
+                                                    0,
+                                                    warning_layer,
+                                                );
+
+                                                texture_atlas.assembler.draw(
+                                                    [
+                                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                    ],
+                                                    size,
+                                                    0,
+                                                    entity_layer,
+                                                );
                                             },
-                                        );
-                                    },
-                                    AssemblerInfo::PoweredNoRecipe(pole_position) => {
-                                        let grid = game_state
-                                            .simulation_state
-                                            .factory
-                                            .power_grids
-                                            .pole_pos_to_grid_id[pole_position];
+                                            AssemblerInfo::Unpowered(recipe) => {
+                                                texture_atlas.not_connected.draw_centered_on(
+                                                    &texture_atlas.assembler,
+                                                    [
+                                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                    ],
+                                                    size,
+                                                    0,
+                                                    warning_layer,
+                                                );
 
-                                        let last_power = game_state
-                                            .simulation_state
-                                            .factory
-                                            .power_grids
-                                            .power_grids[usize::from(grid)]
-                                        .last_power_mult;
+                                                texture_atlas.assembler.draw(
+                                                    [
+                                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                    ],
+                                                    size,
+                                                    0,
+                                                    entity_layer,
+                                                );
 
-                                        if last_power == 0 {
-                                            texture_atlas.no_power.draw_centered_on(
-                                                &texture_atlas.assembler,
-                                                [
-                                                    chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                    chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                                ],
-                                                size,
-                                                0,
-                                                &mut warning_layer,
-                                            );
+                                                let item_idx = data_store.recipe_to_items[recipe]
+                                                    .iter()
+                                                    .find(|item| item.0 == ItemRecipeDir::Out)
+                                                    .map(|item| item.1.into_usize())
+                                                    .unwrap_or(0);
+
+                                                let icon_size: [f32; 2] = [
+                                                    size[0] as f32 * ALT_MODE_ICON_SIZE,
+                                                    size[1] as f32 * ALT_MODE_ICON_SIZE,
+                                                ];
+
+                                                entity_overlay_layer.draw_sprite(
+                                                    &texture_atlas.items[item_idx],
+                                                    DrawInstance {
+                                                        position: [
+                                                            chunk_draw_offs.0
+                                                                + (pos.x % 16) as f32
+                                                                + (size[0] as f32 - icon_size[0])
+                                                                    / 2.0,
+                                                            chunk_draw_offs.1
+                                                                + (pos.y % 16) as f32
+                                                                + (size[1] as f32 - icon_size[1])
+                                                                    / 2.0,
+                                                        ],
+                                                        size: icon_size,
+                                                        animation_frame: 0,
+                                                    },
+                                                );
+                                            },
+                                            AssemblerInfo::PoweredNoRecipe(pole_position) => {
+                                                let grid = game_state
+                                                    .simulation_state
+                                                    .factory
+                                                    .power_grids
+                                                    .pole_pos_to_grid_id[pole_position];
+
+                                                let last_power = game_state
+                                                    .simulation_state
+                                                    .factory
+                                                    .power_grids
+                                                    .power_grids[usize::from(grid)]
+                                                .last_power_mult;
+
+                                                if last_power == 0 {
+                                                    texture_atlas.no_power.draw_centered_on(
+                                                        &texture_atlas.assembler,
+                                                        [
+                                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                        ],
+                                                        size,
+                                                        0,
+                                                        warning_layer,
+                                                    );
+                                                }
+
+                                                texture_atlas.assembler.draw(
+                                                    [
+                                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                    ],
+                                                    size,
+                                                    0,
+                                                    entity_layer,
+                                                );
+                                            },
+                                            AssemblerInfo::Powered {
+                                                id, pole_position, ..
+                                            } => {
+                                                let grid = game_state
+                                                    .simulation_state
+                                                    .factory
+                                                    .power_grids
+                                                    .pole_pos_to_grid_id[pole_position];
+
+                                                let last_power = game_state
+                                                    .simulation_state
+                                                    .factory
+                                                    .power_grids
+                                                    .power_grids[usize::from(grid)]
+                                                .last_power_mult;
+
+                                                if last_power == 0 {
+                                                    texture_atlas.no_power.draw_centered_on(
+                                                        &texture_atlas.assembler,
+                                                        [
+                                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                        ],
+                                                        size,
+                                                        0,
+                                                        warning_layer,
+                                                    );
+                                                }
+
+                                                let AssemblerOnclickInfo {
+                                                    inputs: _,
+                                                    outputs: _,
+                                                    timer_percentage,
+                                                    prod_timer_percentage: _,
+                                                    base_speed: _,
+                                                    speed_mod: _,
+                                                    prod_mod: _,
+                                                    power_consumption_mod: _,
+                                                    base_power_consumption: _,
+                                                } = game_state
+                                                    .simulation_state
+                                                    .factory
+                                                    .power_grids
+                                                    .get_assembler_info(*id, data_store);
+
+                                                texture_atlas.assembler.draw(
+                                                    [
+                                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                    ],
+                                                    size,
+                                                    (timer_percentage
+                                                        * (texture_atlas
+                                                            .assembler
+                                                            .sprite
+                                                            .texture
+                                                            .number_anim_frames
+                                                            as f32))
+                                                        .floor()
+                                                        as u32
+                                                        % texture_atlas
+                                                            .assembler
+                                                            .sprite
+                                                            .texture
+                                                            .number_anim_frames,
+                                                    entity_layer,
+                                                );
+
+                                                let item_idx = data_store.recipe_to_items
+                                                    [&id.recipe]
+                                                    .iter()
+                                                    .find(|item| item.0 == ItemRecipeDir::Out)
+                                                    .map(|item| item.1.into_usize())
+                                                    .unwrap_or(0);
+
+                                                let icon_size: [f32; 2] = [
+                                                    size[0] as f32 * ALT_MODE_ICON_SIZE,
+                                                    size[1] as f32 * ALT_MODE_ICON_SIZE,
+                                                ];
+
+                                                entity_overlay_layer.draw_sprite(
+                                                    &texture_atlas.items[item_idx],
+                                                    DrawInstance {
+                                                        position: [
+                                                            chunk_draw_offs.0
+                                                                + (pos.x % 16) as f32
+                                                                + (size[0] as f32 - icon_size[0])
+                                                                    / 2.0,
+                                                            chunk_draw_offs.1
+                                                                + (pos.y % 16) as f32
+                                                                + (size[1] as f32 - icon_size[1])
+                                                                    / 2.0,
+                                                        ],
+                                                        size: icon_size,
+                                                        animation_frame: 0,
+                                                    },
+                                                );
+                                            },
                                         }
-
-                                        texture_atlas.assembler.draw(
-                                            [
-                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                            ],
-                                            size,
-                                            0,
-                                            &mut entity_layer,
-                                        );
                                     },
-                                    AssemblerInfo::Powered {
-                                        id, pole_position, ..
+
+                                    crate::frontend::world::tile::Entity::Belt {
+                                        pos,
+                                        direction,
+                                        ty,
+                                        id,
+                                        belt_pos,
                                     } => {
-                                        let grid = game_state
-                                            .simulation_state
-                                            .factory
-                                            .power_grids
-                                            .pole_pos_to_grid_id[pole_position];
-
-                                        let last_power = game_state
-                                            .simulation_state
-                                            .factory
-                                            .power_grids
-                                            .power_grids[usize::from(grid)]
-                                        .last_power_mult;
-
-                                        if last_power == 0 {
-                                            texture_atlas.no_power.draw_centered_on(
-                                                &texture_atlas.assembler,
-                                                [
-                                                    chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                    chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                                ],
-                                                size,
-                                                0,
-                                                &mut warning_layer,
-                                            );
-                                        }
-
-                                        let AssemblerOnclickInfo {
-                                            inputs: _,
-                                            outputs: _,
-                                            timer_percentage,
-                                            prod_timer_percentage: _,
-                                            base_speed: _,
-                                            speed_mod: _,
-                                            prod_mod: _,
-                                            power_consumption_mod: _,
-                                            base_power_consumption: _,
-                                        } = game_state
-                                            .simulation_state
-                                            .factory
-                                            .power_grids
-                                            .get_assembler_info(*id, data_store);
-
-                                        texture_atlas.assembler.draw(
+                                        let inputs = game_state
+                                            .world
+                                            .get_belt_possible_inputs_no_cache(*pos);
+                                        let (sprite, corner) = match expected_belt_state(
+                                            *direction,
+                                            |dir| inputs[*dir],
+                                        ) {
+                                            BeltState::Straight => {
+                                                (&texture_atlas.belt[*direction], None)
+                                            },
+                                            BeltState::Curved => {
+                                                if inputs[direction.turn_right()] {
+                                                    (
+                                                        &texture_atlas.belt_corners[Corner {
+                                                            to_dir: *direction,
+                                                            from_dir:
+                                                                crate::rendering::BeltSide::Right,
+                                                        }],
+                                                        Some(crate::rendering::BeltSide::Right),
+                                                    )
+                                                } else {
+                                                    (
+                                                        &texture_atlas.belt_corners[Corner {
+                                                            to_dir: *direction,
+                                                            from_dir:
+                                                                crate::rendering::BeltSide::Left,
+                                                        }],
+                                                        Some(crate::rendering::BeltSide::Left),
+                                                    )
+                                                }
+                                            },
+                                            BeltState::Sideloading => {
+                                                (&texture_atlas.belt[*direction], None)
+                                            },
+                                            BeltState::DoubleSideloading => {
+                                                (&texture_atlas.belt[*direction], None)
+                                            },
+                                        };
+                                        sprite.draw(
                                             [
                                                 chunk_draw_offs.0 + (pos.x % 16) as f32,
                                                 chunk_draw_offs.1 + (pos.y % 16) as f32,
                                             ],
-                                            size,
-                                            (timer_percentage
-                                                * (texture_atlas
-                                                    .assembler
+                                            [1, 1],
+                                            (game_state
+                                                .simulation_state
+                                                .factory
+                                                .belts
+                                                .inner
+                                                .belt_update_timers_cumulative
+                                                [*ty as usize]
+                                                as f32
+                                                / 120.0
+                                                * BELT_ANIM_SPEED
+                                                * (texture_atlas.belt[*direction]
                                                     .sprite
                                                     .texture
                                                     .number_anim_frames
                                                     as f32))
-                                                .floor()
                                                 as u32
-                                                % texture_atlas
-                                                    .assembler
+                                                % texture_atlas.belt[*direction]
                                                     .sprite
                                                     .texture
                                                     .number_anim_frames,
-                                            &mut entity_layer,
+                                            entity_layer,
                                         );
 
-                                        let item_idx = data_store.recipe_to_items[&id.recipe]
-                                            .iter()
-                                            .find(|item| item.0 == ItemRecipeDir::Out)
-                                            .map(|item| item.1.into_usize())
-                                            .unwrap_or(0);
+                                        // Draw Items
+                                        // TODO: Draw items on corners not straight
+                                        let items_iter = game_state
+                                            .simulation_state
+                                            .factory
+                                            .belts
+                                            .get_item_iter(*id)
+                                            .into_iter()
+                                            .enumerate()
+                                            .skip(
+                                                (belt_pos
+                                                    .checked_sub(BELT_LEN_PER_TILE)
+                                                    .expect("Belt idx wrapped?!?"))
+                                                .into(),
+                                            )
+                                            .take(BELT_LEN_PER_TILE.into());
 
-                                        let icon_size: [f32; 2] = [
-                                            size[0] as f32 * ALT_MODE_ICON_SIZE,
-                                            size[1] as f32 * ALT_MODE_ICON_SIZE,
-                                        ];
+                                        let offs = direction.into_offset();
+                                        let item_render_offs = (
+                                            -f32::from(offs.0) / f32::from(BELT_LEN_PER_TILE),
+                                            -f32::from(offs.1) / f32::from(BELT_LEN_PER_TILE),
+                                        );
 
-                                        entity_overlay_layer.draw_sprite(
-                                            &texture_atlas.items[item_idx],
+                                        let centered_on_tile = (
+                                            chunk_draw_offs.0 + (pos.x % 16) as f32 + 0.5
+                                                - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
+                                            chunk_draw_offs.1 + (pos.y % 16) as f32 + 0.5
+                                                - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
+                                        );
+
+                                        let last_moved: BeltLenType = game_state
+                                            .simulation_state
+                                            .factory
+                                            .belts
+                                            .get_last_moved_pos(*id);
+
+                                        let belt_progress: u8 = game_state
+                                            .simulation_state
+                                            .factory
+                                            .belts
+                                            .get_belt_progress(*ty);
+
+                                        let offset_perc = belt_progress as f32 / 120.0;
+
+                                        let slow_offset = (
+                                            item_render_offs.0 * (1.0 - offset_perc),
+                                            item_render_offs.1 * (1.0 - offset_perc),
+                                        );
+
+                                        // TODO: This needs to be positions correctly and take rotation into account
+                                        let mut item_render_base_pos: (f32, f32) = (
+                                            centered_on_tile.0 + f32::from(offs.0) * 0.5
+                                                - 0.5
+                                                    * (f32::from(offs.0)
+                                                        / f32::from(BELT_LEN_PER_TILE)),
+                                            centered_on_tile.1 + f32::from(offs.1) * 0.5
+                                                - 0.5
+                                                    * (f32::from(offs.1)
+                                                        / f32::from(BELT_LEN_PER_TILE)),
+                                        );
+
+                                        for (belt_pos, item) in items_iter {
+                                            if let Some(item) = item {
+                                                let draw_pos = if belt_pos < last_moved.into() {
+                                                    [item_render_base_pos.0, item_render_base_pos.1]
+                                                } else {
+                                                    [
+                                                        item_render_base_pos.0 + slow_offset.0,
+                                                        item_render_base_pos.1 + slow_offset.1,
+                                                    ]
+                                                };
+
+                                                item_layer.draw_sprite(
+                                                    &texture_atlas.items[item.id.into()],
+                                                    // &texture_atlas.items[0],
+                                                    DrawInstance {
+                                                        position: draw_pos,
+                                                        size: [
+                                                            1.0 / f32::from(BELT_LEN_PER_TILE),
+                                                            1.0 / f32::from(BELT_LEN_PER_TILE),
+                                                        ],
+                                                        animation_frame: 0,
+                                                    },
+                                                );
+                                            }
+
+                                            item_render_base_pos = (
+                                                item_render_base_pos.0 + item_render_offs.0,
+                                                item_render_base_pos.1 + item_render_offs.1,
+                                            );
+                                        }
+                                    },
+
+                                    crate::frontend::world::tile::Entity::Underground {
+                                        pos,
+                                        direction,
+                                        ty,
+                                        id,
+                                        underground_dir,
+                                        belt_pos,
+                                    } => {
+                                        texture_atlas.belt[*direction].draw(
+                                            [
+                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                            ],
+                                            [1, 1],
+                                            (game_state
+                                                .simulation_state
+                                                .factory
+                                                .belts
+                                                .inner
+                                                .belt_update_timers_cumulative
+                                                [*ty as usize]
+                                                as f32
+                                                / 120.0
+                                                * BELT_ANIM_SPEED
+                                                * (texture_atlas.belt[*direction]
+                                                    .sprite
+                                                    .texture
+                                                    .number_anim_frames
+                                                    as f32))
+                                                as u32
+                                                % texture_atlas.belt[*direction]
+                                                    .sprite
+                                                    .texture
+                                                    .number_anim_frames,
+                                            entity_layer,
+                                        );
+
+                                        texture_atlas.underground[*direction][*underground_dir]
+                                            .draw(
+                                                [
+                                                    chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                    chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                ],
+                                                [1, 1],
+                                                0,
+                                                entity_overlay_layer,
+                                            );
+
+                                        // Draw Items
+                                        let items_iter = game_state
+                                            .simulation_state
+                                            .factory
+                                            .belts
+                                            .get_item_iter(*id)
+                                            .into_iter()
+                                            .enumerate()
+                                            .skip(
+                                                (belt_pos
+                                                    .checked_sub(BELT_LEN_PER_TILE)
+                                                    .expect("Belt idx wrapped?!?"))
+                                                .into(),
+                                            )
+                                            .take(BELT_LEN_PER_TILE.into());
+
+                                        let offs = direction.into_offset();
+                                        let item_render_offs = (
+                                            -f32::from(offs.0) / f32::from(BELT_LEN_PER_TILE),
+                                            -f32::from(offs.1) / f32::from(BELT_LEN_PER_TILE),
+                                        );
+
+                                        let centered_on_tile = (
+                                            chunk_draw_offs.0 + (pos.x % 16) as f32 + 0.5
+                                                - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
+                                            chunk_draw_offs.1 + (pos.y % 16) as f32 + 0.5
+                                                - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
+                                        );
+
+                                        let last_moved: BeltLenType = game_state
+                                            .simulation_state
+                                            .factory
+                                            .belts
+                                            .get_last_moved_pos(*id);
+
+                                        let belt_progress: u8 = game_state
+                                            .simulation_state
+                                            .factory
+                                            .belts
+                                            .get_belt_progress(*ty);
+
+                                        let offset_perc = belt_progress as f32 / 120.0;
+
+                                        let slow_offset = (
+                                            item_render_offs.0 * (1.0 - offset_perc),
+                                            item_render_offs.1 * (1.0 - offset_perc),
+                                        );
+
+                                        // TODO: This needs to be positions correctly and take rotation into account
+                                        let mut item_render_base_pos: (f32, f32) = (
+                                            centered_on_tile.0 + f32::from(offs.0) * 0.5
+                                                - 0.5
+                                                    * (f32::from(offs.0)
+                                                        / f32::from(BELT_LEN_PER_TILE)),
+                                            centered_on_tile.1 + f32::from(offs.1) * 0.5
+                                                - 0.5
+                                                    * (f32::from(offs.1)
+                                                        / f32::from(BELT_LEN_PER_TILE)),
+                                        );
+
+                                        for (belt_pos, item) in items_iter {
+                                            if let Some(item) = item {
+                                                let draw_pos = if belt_pos < last_moved.into() {
+                                                    [item_render_base_pos.0, item_render_base_pos.1]
+                                                } else {
+                                                    [
+                                                        item_render_base_pos.0 + slow_offset.0,
+                                                        item_render_base_pos.1 + slow_offset.1,
+                                                    ]
+                                                };
+
+                                                item_layer.draw_sprite(
+                                                    &texture_atlas.items[item.id.into()],
+                                                    // &texture_atlas.items[0],
+                                                    DrawInstance {
+                                                        position: draw_pos,
+                                                        size: [
+                                                            1.0 / f32::from(BELT_LEN_PER_TILE),
+                                                            1.0 / f32::from(BELT_LEN_PER_TILE),
+                                                        ],
+                                                        animation_frame: 0,
+                                                    },
+                                                );
+                                            }
+
+                                            item_render_base_pos = (
+                                                item_render_base_pos.0 + item_render_offs.0,
+                                                item_render_base_pos.1 + item_render_offs.1,
+                                            );
+                                        }
+                                    },
+
+                                    Entity::Inserter {
+                                        pos,
+                                        direction,
+                                        info,
+                                        ..
+                                    } => {
+                                        entity_layer.draw_sprite(
+                                            &texture_atlas.inserter[*direction],
                                             DrawInstance {
                                                 position: [
-                                                    chunk_draw_offs.0
-                                                        + (pos.x % 16) as f32
-                                                        + (size[0] as f32 - icon_size[0]) / 2.0,
-                                                    chunk_draw_offs.1
-                                                        + (pos.y % 16) as f32
-                                                        + (size[1] as f32 - icon_size[1]) / 2.0,
+                                                    chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                    chunk_draw_offs.1 + (pos.y % 16) as f32,
                                                 ],
-                                                size: icon_size,
+                                                size: [1.0, 1.0],
                                                 animation_frame: 0,
                                             },
                                         );
-                                    },
-                                }
-                            },
 
-                            crate::frontend::world::tile::Entity::Belt {
-                                pos,
-                                direction,
-                                ty,
-                                id,
-                                belt_pos,
-                            } => {
-                                let inputs =
-                                    game_state.world.get_belt_possible_inputs_no_cache(*pos);
-                                let (sprite, corner) =
-                                    match expected_belt_state(*direction, |dir| inputs[*dir]) {
-                                        BeltState::Straight => {
-                                            (&texture_atlas.belt[*direction], None)
-                                        },
-                                        BeltState::Curved => {
-                                            if inputs[direction.turn_right()] {
-                                                (
-                                                    &texture_atlas.belt_corners[Corner {
-                                                        to_dir: *direction,
-                                                        from_dir: crate::rendering::BeltSide::Right,
-                                                    }],
-                                                    Some(crate::rendering::BeltSide::Right),
-                                                )
-                                            } else {
-                                                (
-                                                    &texture_atlas.belt_corners[Corner {
-                                                        to_dir: *direction,
-                                                        from_dir: crate::rendering::BeltSide::Left,
-                                                    }],
-                                                    Some(crate::rendering::BeltSide::Left),
-                                                )
-                                            }
-                                        },
-                                        BeltState::Sideloading => {
-                                            (&texture_atlas.belt[*direction], None)
-                                        },
-                                        BeltState::DoubleSideloading => {
-                                            (&texture_atlas.belt[*direction], None)
-                                        },
-                                    };
-                                sprite.draw(
-                                    [
-                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                    ],
-                                    [1, 1],
-                                    (game_state
-                                        .simulation_state
-                                        .factory
-                                        .belts
-                                        .inner
-                                        .belt_update_timers_cumulative
-                                        [*ty as usize] as f32
-                                        / 120.0
-                                        * BELT_ANIM_SPEED
-                                        * (texture_atlas.belt[*direction]
-                                            .sprite
-                                            .texture
-                                            .number_anim_frames
-                                            as f32)) as u32
-                                        % texture_atlas.belt[*direction]
-                                            .sprite
-                                            .texture
-                                            .number_anim_frames,
-                                    &mut entity_layer,
-                                );
-
-                                // Draw Items
-                                // TODO: Draw items on corners not straight
-                                let items_iter = game_state
-                                    .simulation_state
-                                    .factory
-                                    .belts
-                                    .get_item_iter(*id)
-                                    .into_iter()
-                                    .enumerate()
-                                    .skip(
-                                        (belt_pos
-                                            .checked_sub(BELT_LEN_PER_TILE)
-                                            .expect("Belt idx wrapped?!?"))
-                                        .into(),
-                                    )
-                                    .take(BELT_LEN_PER_TILE.into());
-
-                                let offs = direction.into_offset();
-                                let item_render_offs = (
-                                    -f32::from(offs.0) / f32::from(BELT_LEN_PER_TILE),
-                                    -f32::from(offs.1) / f32::from(BELT_LEN_PER_TILE),
-                                );
-
-                                let centered_on_tile = (
-                                    chunk_draw_offs.0 + (pos.x % 16) as f32 + 0.5
-                                        - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
-                                    chunk_draw_offs.1 + (pos.y % 16) as f32 + 0.5
-                                        - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
-                                );
-
-                                let last_moved: BeltLenType = game_state
-                                    .simulation_state
-                                    .factory
-                                    .belts
-                                    .get_last_moved_pos(*id);
-
-                                let belt_progress: u8 = game_state
-                                    .simulation_state
-                                    .factory
-                                    .belts
-                                    .get_belt_progress(*ty);
-
-                                let offset_perc = belt_progress as f32 / 120.0;
-
-                                let slow_offset = (
-                                    item_render_offs.0 * (1.0 - offset_perc),
-                                    item_render_offs.1 * (1.0 - offset_perc),
-                                );
-
-                                // TODO: This needs to be positions correctly and take rotation into account
-                                let mut item_render_base_pos: (f32, f32) = (
-                                    centered_on_tile.0 + f32::from(offs.0) * 0.5
-                                        - 0.5 * (f32::from(offs.0) / f32::from(BELT_LEN_PER_TILE)),
-                                    centered_on_tile.1 + f32::from(offs.1) * 0.5
-                                        - 0.5 * (f32::from(offs.1) / f32::from(BELT_LEN_PER_TILE)),
-                                );
-
-                                for (belt_pos, item) in items_iter {
-                                    if let Some(item) = item {
-                                        let draw_pos = if belt_pos < last_moved.into() {
-                                            [item_render_base_pos.0, item_render_base_pos.1]
-                                        } else {
-                                            [
-                                                item_render_base_pos.0 + slow_offset.0,
-                                                item_render_base_pos.1 + slow_offset.1,
-                                            ]
-                                        };
-
-                                        item_layer.draw_sprite(
-                                            &texture_atlas.items[item.id.into()],
-                                            // &texture_atlas.items[0],
-                                            DrawInstance {
-                                                position: draw_pos,
-                                                size: [
-                                                    1.0 / f32::from(BELT_LEN_PER_TILE),
-                                                    1.0 / f32::from(BELT_LEN_PER_TILE),
-                                                ],
-                                                animation_frame: 0,
-                                            },
-                                        );
-                                    }
-
-                                    item_render_base_pos = (
-                                        item_render_base_pos.0 + item_render_offs.0,
-                                        item_render_base_pos.1 + item_render_offs.1,
-                                    );
-                                }
-                            },
-
-                            crate::frontend::world::tile::Entity::Underground {
-                                pos,
-                                direction,
-                                ty,
-                                id,
-                                underground_dir,
-                                belt_pos,
-                            } => {
-                                texture_atlas.belt[*direction].draw(
-                                    [
-                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                    ],
-                                    [1, 1],
-                                    (game_state
-                                        .simulation_state
-                                        .factory
-                                        .belts
-                                        .inner
-                                        .belt_update_timers_cumulative
-                                        [*ty as usize] as f32
-                                        / 120.0
-                                        * BELT_ANIM_SPEED
-                                        * (texture_atlas.belt[*direction]
-                                            .sprite
-                                            .texture
-                                            .number_anim_frames
-                                            as f32)) as u32
-                                        % texture_atlas.belt[*direction]
-                                            .sprite
-                                            .texture
-                                            .number_anim_frames,
-                                    &mut entity_layer,
-                                );
-
-                                texture_atlas.underground[*direction][*underground_dir].draw(
-                                    [
-                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                    ],
-                                    [1, 1],
-                                    0,
-                                    &mut entity_overlay_layer,
-                                );
-
-                                // Draw Items
-                                let items_iter = game_state
-                                    .simulation_state
-                                    .factory
-                                    .belts
-                                    .get_item_iter(*id)
-                                    .into_iter()
-                                    .enumerate()
-                                    .skip(
-                                        (belt_pos
-                                            .checked_sub(BELT_LEN_PER_TILE)
-                                            .expect("Belt idx wrapped?!?"))
-                                        .into(),
-                                    )
-                                    .take(BELT_LEN_PER_TILE.into());
-
-                                let offs = direction.into_offset();
-                                let item_render_offs = (
-                                    -f32::from(offs.0) / f32::from(BELT_LEN_PER_TILE),
-                                    -f32::from(offs.1) / f32::from(BELT_LEN_PER_TILE),
-                                );
-
-                                let centered_on_tile = (
-                                    chunk_draw_offs.0 + (pos.x % 16) as f32 + 0.5
-                                        - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
-                                    chunk_draw_offs.1 + (pos.y % 16) as f32 + 0.5
-                                        - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
-                                );
-
-                                let last_moved: BeltLenType = game_state
-                                    .simulation_state
-                                    .factory
-                                    .belts
-                                    .get_last_moved_pos(*id);
-
-                                let belt_progress: u8 = game_state
-                                    .simulation_state
-                                    .factory
-                                    .belts
-                                    .get_belt_progress(*ty);
-
-                                let offset_perc = belt_progress as f32 / 120.0;
-
-                                let slow_offset = (
-                                    item_render_offs.0 * (1.0 - offset_perc),
-                                    item_render_offs.1 * (1.0 - offset_perc),
-                                );
-
-                                // TODO: This needs to be positions correctly and take rotation into account
-                                let mut item_render_base_pos: (f32, f32) = (
-                                    centered_on_tile.0 + f32::from(offs.0) * 0.5
-                                        - 0.5 * (f32::from(offs.0) / f32::from(BELT_LEN_PER_TILE)),
-                                    centered_on_tile.1 + f32::from(offs.1) * 0.5
-                                        - 0.5 * (f32::from(offs.1) / f32::from(BELT_LEN_PER_TILE)),
-                                );
-
-                                for (belt_pos, item) in items_iter {
-                                    if let Some(item) = item {
-                                        let draw_pos = if belt_pos < last_moved.into() {
-                                            [item_render_base_pos.0, item_render_base_pos.1]
-                                        } else {
-                                            [
-                                                item_render_base_pos.0 + slow_offset.0,
-                                                item_render_base_pos.1 + slow_offset.1,
-                                            ]
-                                        };
-
-                                        item_layer.draw_sprite(
-                                            &texture_atlas.items[item.id.into()],
-                                            // &texture_atlas.items[0],
-                                            DrawInstance {
-                                                position: draw_pos,
-                                                size: [
-                                                    1.0 / f32::from(BELT_LEN_PER_TILE),
-                                                    1.0 / f32::from(BELT_LEN_PER_TILE),
-                                                ],
-                                                animation_frame: 0,
-                                            },
-                                        );
-                                    }
-
-                                    item_render_base_pos = (
-                                        item_render_base_pos.0 + item_render_offs.0,
-                                        item_render_base_pos.1 + item_render_offs.1,
-                                    );
-                                }
-                            },
-
-                            Entity::Inserter {
-                                pos,
-                                direction,
-                                info,
-                                ..
-                            } => {
-                                entity_layer.draw_sprite(
-                                    &texture_atlas.inserter[*direction],
-                                    DrawInstance {
-                                        position: [
-                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                        ],
-                                        size: [1.0, 1.0],
-                                        animation_frame: 0,
-                                    },
-                                );
-
-                                match info {
+                                        match info {
                                     crate::frontend::world::tile::InserterInfo::NotAttached {
                                         start_pos,
                                         end_pos,
@@ -806,326 +899,397 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         // }
                                     },
                                 }
-                            },
+                                    },
 
-                            Entity::PowerPole {
-                                ty,
-                                pos,
-                                connected_power_poles,
-                            } => {
-                                // TODO:
-                                // println!("Pole at {pos:?}, with grid: {grid_id}");
-                                let size = data_store.power_pole_data[usize::from(*ty)].size;
-                                let size = [size.0, size.1];
-                                texture_atlas.power_pole.draw(
-                                    [
-                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                    ],
-                                    size,
-                                    0,
-                                    &mut entity_layer,
-                                );
-
-                                let power_range =
-                                    data_store.power_pole_data[usize::from(*ty)].power_range;
-
-                                if let ActionStateMachineState::Holding(HeldObject::Entity(e)) =
-                                    state_machine.state
-                                {
-                                    if e.cares_about_power() {
-                                        range_layer.draw_sprite(
-                                            &texture_atlas.dark_square,
-                                            DrawInstance {
-                                                position: [
-                                                    chunk_draw_offs.0 + (pos.x % 16) as f32
-                                                        - power_range as f32,
-                                                    chunk_draw_offs.1 + (pos.y % 16) as f32
-                                                        - power_range as f32,
-                                                ],
-                                                size: [
-                                                    power_range as f32 * 2.0 + size[0] as f32,
-                                                    power_range as f32 * 2.0 + size[1] as f32,
-                                                ],
-                                                animation_frame: 0,
-                                            },
+                                    Entity::PowerPole {
+                                        ty,
+                                        pos,
+                                        connected_power_poles,
+                                    } => {
+                                        // TODO:
+                                        // println!("Pole at {pos:?}, with grid: {grid_id}");
+                                        let size =
+                                            data_store.power_pole_data[usize::from(*ty)].size;
+                                        let size = [size.0, size.1];
+                                        texture_atlas.power_pole.draw(
+                                            [
+                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                            ],
+                                            size,
+                                            0,
+                                            entity_layer,
                                         );
-                                    }
-                                }
-                            },
 
-                            Entity::Splitter { pos, direction, id } => {
-                                let [inputs, outputs] = game_state
-                                    .simulation_state
-                                    .factory
-                                    .belts
-                                    .get_splitter_belt_ids(*id);
+                                        let power_range = data_store.power_pole_data
+                                            [usize::from(*ty)]
+                                        .power_range;
 
-                                let (left_pos, right_pos) = match direction {
-                                    Dir::North => (*pos, *pos + Dir::East),
-                                    Dir::East => (*pos, *pos + Dir::South),
-                                    Dir::South => (*pos + Dir::East, *pos),
-                                    Dir::West => (*pos + Dir::South, *pos),
-                                };
+                                        if let ActionStateMachineState::Holding(
+                                            HeldObject::Entity(e),
+                                        ) = state_machine.state
+                                        {
+                                            if e.cares_about_power() {
+                                                range_layer.draw_sprite(
+                                                    &texture_atlas.dark_square,
+                                                    DrawInstance {
+                                                        position: [
+                                                            chunk_draw_offs.0 + (pos.x % 16) as f32
+                                                                - power_range as f32,
+                                                            chunk_draw_offs.1 + (pos.y % 16) as f32
+                                                                - power_range as f32,
+                                                        ],
+                                                        size: [
+                                                            power_range as f32 * 2.0
+                                                                + size[0] as f32,
+                                                            power_range as f32 * 2.0
+                                                                + size[1] as f32,
+                                                        ],
+                                                        animation_frame: 0,
+                                                    },
+                                                );
+                                            }
+                                        }
+                                    },
 
-                                // FIXME: We currently do not take partial movement (from slow belt speeds) into account, which leads to ugly jumping of the items on the belt
-                                for ((pos, input), output) in
-                                    [left_pos, right_pos].into_iter().zip(inputs).zip(outputs)
-                                {
-                                    texture_atlas.belt[*direction].draw(
-                                        [
-                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                        ],
-                                        [1, 1],
-                                        0,
-                                        &mut entity_layer,
-                                    );
-
-                                    let centered_on_tile = (
-                                        chunk_draw_offs.0 + (pos.x % 16) as f32 + 0.5
-                                            - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
-                                        chunk_draw_offs.1 + (pos.y % 16) as f32 + 0.5
-                                            - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
-                                    );
-                                    let offs = direction.into_offset();
-                                    render_items_straight::<ItemIdxType, RecipeIdxType>(
-                                        game_state
+                                    Entity::Splitter { pos, direction, id } => {
+                                        let [inputs, outputs] = game_state
                                             .simulation_state
                                             .factory
                                             .belts
-                                            .get_item_iter(input),
-                                        *direction,
-                                        SPLITTER_BELT_LEN,
-                                        SPLITTER_BELT_LEN,
-                                        (
-                                            centered_on_tile.0
-                                                - f32::from(offs.0)
-                                                    * (1.0 / f32::from(BELT_LEN_PER_TILE)),
-                                            centered_on_tile.1
-                                                - f32::from(offs.1)
-                                                    * (0.5 / f32::from(BELT_LEN_PER_TILE)),
-                                        ),
-                                        &mut item_layer,
-                                        texture_atlas,
-                                    );
-                                    let out_belt_len =
-                                        game_state.simulation_state.factory.belts.get_len(output);
-                                    let out_belt_iter = game_state
-                                        .simulation_state
-                                        .factory
-                                        .belts
-                                        .get_item_iter(output);
-                                    let offs = direction.into_offset();
-                                    let item_render_base_pos: (f32, f32) = (
-                                        centered_on_tile.0 + f32::from(offs.0) * 0.5
-                                            - 0.5
-                                                * (f32::from(offs.0)
-                                                    / f32::from(BELT_LEN_PER_TILE)),
-                                        centered_on_tile.1 + f32::from(offs.1) * 0.5
-                                            - 0.5
-                                                * (f32::from(offs.1)
-                                                    / f32::from(BELT_LEN_PER_TILE)),
-                                    );
-                                    render_items_straight::<ItemIdxType, RecipeIdxType>(
-                                        out_belt_iter,
-                                        *direction,
-                                        out_belt_len,
-                                        SPLITTER_BELT_LEN,
-                                        item_render_base_pos,
-                                        &mut item_layer,
-                                        texture_atlas,
-                                    );
+                                            .get_splitter_belt_ids(*id);
+
+                                        let (left_pos, right_pos) = match direction {
+                                            Dir::North => (*pos, *pos + Dir::East),
+                                            Dir::East => (*pos, *pos + Dir::South),
+                                            Dir::South => (*pos + Dir::East, *pos),
+                                            Dir::West => (*pos + Dir::South, *pos),
+                                        };
+
+                                        // FIXME: We currently do not take partial movement (from slow belt speeds) into account, which leads to ugly jumping of the items on the belt
+                                        for ((pos, input), output) in [left_pos, right_pos]
+                                            .into_iter()
+                                            .zip(inputs)
+                                            .zip(outputs)
+                                        {
+                                            texture_atlas.belt[*direction].draw(
+                                                [
+                                                    chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                    chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                ],
+                                                [1, 1],
+                                                0,
+                                                entity_layer,
+                                            );
+
+                                            let centered_on_tile = (
+                                                chunk_draw_offs.0 + (pos.x % 16) as f32 + 0.5
+                                                    - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
+                                                chunk_draw_offs.1 + (pos.y % 16) as f32 + 0.5
+                                                    - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
+                                            );
+                                            let offs = direction.into_offset();
+                                            render_items_straight::<ItemIdxType, RecipeIdxType>(
+                                                game_state
+                                                    .simulation_state
+                                                    .factory
+                                                    .belts
+                                                    .get_item_iter(input),
+                                                *direction,
+                                                SPLITTER_BELT_LEN,
+                                                SPLITTER_BELT_LEN,
+                                                (
+                                                    centered_on_tile.0
+                                                        - f32::from(offs.0)
+                                                            * (1.0 / f32::from(BELT_LEN_PER_TILE)),
+                                                    centered_on_tile.1
+                                                        - f32::from(offs.1)
+                                                            * (0.5 / f32::from(BELT_LEN_PER_TILE)),
+                                                ),
+                                                item_layer,
+                                                texture_atlas,
+                                            );
+                                            let out_belt_len = game_state
+                                                .simulation_state
+                                                .factory
+                                                .belts
+                                                .get_len(output);
+                                            let out_belt_iter = game_state
+                                                .simulation_state
+                                                .factory
+                                                .belts
+                                                .get_item_iter(output);
+                                            let offs = direction.into_offset();
+                                            let item_render_base_pos: (f32, f32) = (
+                                                centered_on_tile.0 + f32::from(offs.0) * 0.5
+                                                    - 0.5
+                                                        * (f32::from(offs.0)
+                                                            / f32::from(BELT_LEN_PER_TILE)),
+                                                centered_on_tile.1 + f32::from(offs.1) * 0.5
+                                                    - 0.5
+                                                        * (f32::from(offs.1)
+                                                            / f32::from(BELT_LEN_PER_TILE)),
+                                            );
+                                            render_items_straight::<ItemIdxType, RecipeIdxType>(
+                                                out_belt_iter,
+                                                *direction,
+                                                out_belt_len,
+                                                SPLITTER_BELT_LEN,
+                                                item_render_base_pos,
+                                                item_layer,
+                                                texture_atlas,
+                                            );
+                                        }
+                                        // todo!()
+                                    },
+                                    Entity::Chest {
+                                        ty,
+                                        pos,
+                                        item,
+                                        slot_limit: _,
+                                    } => {
+                                        let size = data_store.chest_tile_sizes[usize::from(*ty)];
+                                        let size = [size.0, size.1];
+                                        texture_atlas.chest.draw(
+                                            [
+                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                            ],
+                                            size,
+                                            0,
+                                            entity_layer,
+                                        );
+                                    },
+                                    Entity::SolarPanel { ty, pos, .. } => {
+                                        entity_layer.draw_sprite(
+                                            &texture_atlas.default,
+                                            DrawInstance {
+                                                position: [
+                                                    chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                    chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                ],
+                                                size: data_store.solar_panel_info[usize::from(*ty)]
+                                                    .size
+                                                    .map(|v| v as f32),
+                                                animation_frame: 0,
+                                            },
+                                        );
+                                    },
+                                    // TODO: Render if a lab is working!
+                                    Entity::Lab {
+                                        ty,
+                                        pos,
+                                        pole_position,
+                                        ..
+                                    } => {
+                                        let size = data_store.lab_info[usize::from(*ty)].size;
+                                        let size = [size.0, size.1];
+
+                                        texture_atlas.lab.draw(
+                                            [
+                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                            ],
+                                            size,
+                                            0,
+                                            entity_layer,
+                                        );
+
+                                        if let Some((pole_pos, _, _)) = pole_position {
+                                            let grid = game_state
+                                                .simulation_state
+                                                .factory
+                                                .power_grids
+                                                .pole_pos_to_grid_id[pole_pos];
+
+                                            let last_power = game_state
+                                                .simulation_state
+                                                .factory
+                                                .power_grids
+                                                .power_grids[usize::from(grid)]
+                                            .last_power_mult;
+
+                                            if last_power == 0 {
+                                                texture_atlas.no_power.draw_centered_on(
+                                                    &texture_atlas.lab,
+                                                    [
+                                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                    ],
+                                                    size,
+                                                    0,
+                                                    warning_layer,
+                                                );
+                                            }
+                                        } else {
+                                            texture_atlas.not_connected.draw_centered_on(
+                                                &texture_atlas.lab,
+                                                [
+                                                    chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                    chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                ],
+                                                size,
+                                                0,
+                                                warning_layer,
+                                            );
+                                        }
+                                    },
+
+                                    Entity::Beacon {
+                                        ty,
+                                        pos,
+                                        modules,
+                                        pole_position,
+                                    } => {
+                                        let size = data_store.beacon_info[usize::from(*ty)].size;
+                                        let size = [size.0, size.1];
+
+                                        texture_atlas.beacon.draw(
+                                            [
+                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                            ],
+                                            size,
+                                            0,
+                                            entity_layer,
+                                        );
+
+                                        if let Some((pole_pos, _)) = pole_position {
+                                            let grid = game_state
+                                                .simulation_state
+                                                .factory
+                                                .power_grids
+                                                .pole_pos_to_grid_id[pole_pos];
+
+                                            let last_power = game_state
+                                                .simulation_state
+                                                .factory
+                                                .power_grids
+                                                .power_grids[usize::from(grid)]
+                                            .last_power_mult;
+
+                                            if last_power == 0 {
+                                                texture_atlas.no_power.draw_centered_on(
+                                                    &texture_atlas.beacon,
+                                                    [
+                                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                    ],
+                                                    size,
+                                                    0,
+                                                    warning_layer,
+                                                );
+                                            }
+                                        } else {
+                                            texture_atlas.not_connected.draw_centered_on(
+                                                &texture_atlas.beacon,
+                                                [
+                                                    chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                    chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                ],
+                                                size,
+                                                0,
+                                                warning_layer,
+                                            );
+                                        }
+
+                                        // TODO: Render modules
+                                    },
+                                    Entity::FluidTank { ty, pos, rotation } => {
+                                        let size =
+                                            data_store.fluid_tank_infos[usize::from(*ty)].size;
+
+                                        texture_atlas.belt[*rotation].draw(
+                                            [
+                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                            ],
+                                            size,
+                                            0,
+                                            entity_layer,
+                                        );
+                                    },
+
+                                    e => todo!("{:?}", e),
                                 }
-                                // todo!()
-                            },
-                            Entity::Chest {
-                                ty,
-                                pos,
-                                item,
-                                slot_limit: _,
-                            } => {
-                                let size = data_store.chest_tile_sizes[usize::from(*ty)];
-                                let size = [size.0, size.1];
-                                texture_atlas.chest.draw(
-                                    [
-                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                    ],
-                                    size,
-                                    0,
-                                    &mut entity_layer,
-                                );
-                            },
-                            Entity::SolarPanel { ty, pos, .. } => {
-                                entity_layer.draw_sprite(
-                                    &texture_atlas.default,
+                            }
+                        }
+                    },
+                    None => {
+                        for y in 0..16 {
+                            for x in 0..16 {
+                                tile_layer.draw_sprite(
+                                    &texture_atlas.outside_world,
                                     DrawInstance {
                                         position: [
-                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                            chunk_draw_offs.0 + x as f32,
+                                            chunk_draw_offs.1 + y as f32,
                                         ],
-                                        size: data_store.solar_panel_info[usize::from(*ty)]
-                                            .size
-                                            .map(|v| v as f32),
+                                        size: [1.0, 1.0],
                                         animation_frame: 0,
                                     },
                                 );
-                            },
-                            // TODO: Render if a lab is working!
-                            Entity::Lab {
-                                ty,
-                                pos,
-                                pole_position,
-                                ..
-                            } => {
-                                let size = data_store.lab_info[usize::from(*ty)].size;
-                                let size = [size.0, size.1];
-
-                                texture_atlas.lab.draw(
-                                    [
-                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                    ],
-                                    size,
-                                    0,
-                                    &mut entity_layer,
-                                );
-
-                                if let Some((pole_pos, _, _)) = pole_position {
-                                    let grid = game_state
-                                        .simulation_state
-                                        .factory
-                                        .power_grids
-                                        .pole_pos_to_grid_id[pole_pos];
-
-                                    let last_power =
-                                        game_state.simulation_state.factory.power_grids.power_grids
-                                            [usize::from(grid)]
-                                        .last_power_mult;
-
-                                    if last_power == 0 {
-                                        texture_atlas.no_power.draw_centered_on(
-                                            &texture_atlas.lab,
-                                            [
-                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                            ],
-                                            size,
-                                            0,
-                                            &mut warning_layer,
-                                        );
-                                    }
-                                } else {
-                                    texture_atlas.not_connected.draw_centered_on(
-                                        &texture_atlas.lab,
-                                        [
-                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                        ],
-                                        size,
-                                        0,
-                                        &mut warning_layer,
-                                    );
-                                }
-                            },
-
-                            Entity::Beacon {
-                                ty,
-                                pos,
-                                modules,
-                                pole_position,
-                            } => {
-                                let size = data_store.beacon_info[usize::from(*ty)].size;
-                                let size = [size.0, size.1];
-
-                                texture_atlas.beacon.draw(
-                                    [
-                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                    ],
-                                    size,
-                                    0,
-                                    &mut entity_layer,
-                                );
-
-                                if let Some((pole_pos, _)) = pole_position {
-                                    let grid = game_state
-                                        .simulation_state
-                                        .factory
-                                        .power_grids
-                                        .pole_pos_to_grid_id[pole_pos];
-
-                                    let last_power =
-                                        game_state.simulation_state.factory.power_grids.power_grids
-                                            [usize::from(grid)]
-                                        .last_power_mult;
-
-                                    if last_power == 0 {
-                                        texture_atlas.no_power.draw_centered_on(
-                                            &texture_atlas.beacon,
-                                            [
-                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                            ],
-                                            size,
-                                            0,
-                                            &mut warning_layer,
-                                        );
-                                    }
-                                } else {
-                                    texture_atlas.not_connected.draw_centered_on(
-                                        &texture_atlas.beacon,
-                                        [
-                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                        ],
-                                        size,
-                                        0,
-                                        &mut warning_layer,
-                                    );
-                                }
-
-                                // TODO: Render modules
-                            },
-                            Entity::FluidTank { ty, pos, rotation } => {
-                                let size = data_store.fluid_tank_infos[usize::from(*ty)].size;
-
-                                texture_atlas.belt[*rotation].draw(
-                                    [
-                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                    ],
-                                    size,
-                                    0,
-                                    &mut entity_layer,
-                                );
-                            },
-
-                            e => todo!("{:?}", e),
+                            }
                         }
-                    }
-                },
-                None => {
-                    for y in 0..16 {
-                        for x in 0..16 {
-                            tile_layer.draw_sprite(
-                                &texture_atlas.outside_world,
-                                DrawInstance {
-                                    position: [
-                                        chunk_draw_offs.0 + x as f32,
-                                        chunk_draw_offs.1 + y as f32,
-                                    ],
-                                    size: [1.0, 1.0],
-                                    animation_frame: 0,
-                                },
-                            );
-                        }
-                    }
-                },
-            }
-        }
+                    },
+                }
+
+                layers
+            },
+        )
+        .reduce(
+            || layers_tile_grid(tilesize, ar),
+            |mut a, b| {
+                a.extend(b);
+                a
+            },
+        );
+
+    for (player_id, player) in game_state
+        .world
+        .players
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.visible)
+        .filter(|(i, _)| {
+            *i != state_machine.my_player_id as usize || state_machine.map_view_info.is_some()
+        })
+    {
+        player_layer.draw_sprite(
+            &texture_atlas.player,
+            DrawInstance {
+                position: [
+                    player.pos.0 - camera_pos.0 + num_tiles_across_screen_horizontal / 2.0,
+                    player.pos.1 - camera_pos.1 + num_tiles_across_screen_vertical / 2.0,
+                ],
+                size: [1.0, 2.0],
+                animation_frame: 0,
+            },
+        );
+        info!(
+            "Rendering other player {} at {:?}",
+            player_id,
+            [player.pos.0 - camera_pos.0, player.pos.1 - camera_pos.1,]
+        );
     }
+
+    if state_machine.map_view_info.is_none() {
+        player_layer.draw_sprite(
+            &texture_atlas.player,
+            DrawInstance {
+                // Always in the middle
+                position: [
+                    num_tiles_across_screen_horizontal / 2.0,
+                    num_tiles_across_screen_vertical / 2.0,
+                ],
+                size: [1.0, 2.0],
+                animation_frame: 0,
+            },
+        );
+        trace!("Rendering self at {:?}", state_machine.local_player_pos);
+    }
+
+    mem::drop(game_state);
 
     match &state_machine.state {
         ActionStateMachineState::CtrlCPressed => {},
@@ -1205,7 +1369,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             ],
                             size,
                             0,
-                            &mut entity_layer,
+                            &mut state_machine_layer,
                         );
                     },
                     crate::frontend::world::tile::PlaceEntityType::Inserter {
@@ -1214,7 +1378,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         filter,
                     } => {
                         let size: [u16; 2] = [1, 1];
-                        entity_layer.draw_sprite(
+                        state_machine_layer.draw_sprite(
                             &texture_atlas.inserter[*dir],
                             DrawInstance {
                                 position: [
@@ -1239,7 +1403,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             ],
                             size,
                             0,
-                            &mut entity_layer,
+                            &mut state_machine_layer,
                         );
                     },
                     crate::frontend::world::tile::PlaceEntityType::Underground {
@@ -1259,7 +1423,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             ],
                             size,
                             0,
-                            &mut entity_layer,
+                            &mut state_machine_layer,
                         );
 
                         texture_atlas.underground[*direction][*underground_dir].draw(
@@ -1288,12 +1452,12 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             ],
                             size,
                             0,
-                            &mut entity_layer,
+                            &mut state_machine_layer,
                         );
 
                         let power_range = data_store.power_pole_data[usize::from(*ty)].power_range;
 
-                        range_layer.draw_sprite(
+                        state_machine_layer.draw_sprite(
                             &texture_atlas.dark_square,
                             DrawInstance {
                                 position: [
@@ -1330,12 +1494,12 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             ],
                             size,
                             0,
-                            &mut entity_layer,
+                            &mut state_machine_layer,
                         );
                     },
                     crate::frontend::world::tile::PlaceEntityType::SolarPanel { pos, ty } => {
                         let size = data_store.solar_panel_info[usize::from(*ty)].size;
-                        entity_layer.draw_sprite(
+                        state_machine_layer.draw_sprite(
                             &texture_atlas.default,
                             DrawInstance {
                                 position: [
@@ -1362,7 +1526,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             ],
                             size,
                             0,
-                            &mut entity_layer,
+                            &mut state_machine_layer,
                         );
                     },
                     crate::frontend::world::tile::PlaceEntityType::Beacon { pos, ty } => {
@@ -1378,12 +1542,12 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             ],
                             size,
                             0,
-                            &mut entity_layer,
+                            &mut state_machine_layer,
                         );
 
                         let effect_range = data_store.beacon_info[usize::from(*ty)].effect_range;
 
-                        range_layer.draw_sprite(
+                        state_machine_layer.draw_sprite(
                             &texture_atlas.dark_square,
                             DrawInstance {
                                 position: [
@@ -1414,7 +1578,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             ],
                             size,
                             0,
-                            &mut entity_layer,
+                            &mut state_machine_layer,
                         );
                     },
                     crate::frontend::world::tile::PlaceEntityType::MiningDrill {
@@ -1435,13 +1599,13 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             ],
                             size,
                             0,
-                            &mut entity_layer,
+                            &mut state_machine_layer,
                         );
 
                         let mining_range =
                             data_store.mining_drill_info[usize::from(*ty)].mining_range;
 
-                        range_layer.draw_sprite(
+                        state_machine_layer.draw_sprite(
                             &texture_atlas.dark_square,
                             DrawInstance {
                                 position: [
@@ -1479,66 +1643,31 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         },
     }
 
-    for (player_id, player) in game_state
-        .world
-        .players
-        .iter()
-        .enumerate()
-        .filter(|(_, p)| p.visible)
-        .filter(|(i, _)| {
-            *i != state_machine.my_player_id as usize || state_machine.map_view_info.is_some()
-        })
-    {
-        player_layer.draw_sprite(
-            &texture_atlas.player,
-            DrawInstance {
-                position: [
-                    player.pos.0 - camera_pos.0 + num_tiles_across_screen_horizontal / 2.0,
-                    player.pos.1 - camera_pos.1 + num_tiles_across_screen_vertical / 2.0,
-                ],
-                size: [1.0, 2.0],
-                animation_frame: 0,
-            },
-        );
-        info!(
-            "Rendering other player {} at {:?}",
-            player_id,
-            [player.pos.0 - camera_pos.0, player.pos.1 - camera_pos.1,]
-        );
-    }
-
-    if state_machine.map_view_info.is_none() {
-        player_layer.draw_sprite(
-            &texture_atlas.player,
-            DrawInstance {
-                // Always in the middle
-                position: [
-                    num_tiles_across_screen_horizontal / 2.0,
-                    num_tiles_across_screen_vertical / 2.0,
-                ],
-                size: [1.0, 2.0],
-                animation_frame: 0,
-            },
-        );
-        trace!("Rendering self at {:?}", state_machine.local_player_pos);
-    }
-
     mem::drop(state_machine);
-    mem::drop(game_state);
 
-    renderer.draw(&tile_layer);
+    {
+        profiling::scope!("Draw layers");
+        let Layers {
+            tile_layer,
+            entity_layer,
+            entity_overlay_layer,
+            item_layer,
+            warning_layer,
+            range_layer,
+        } = folded_layers;
+        renderer.draw(&tile_layer);
 
-    renderer.draw(&entity_layer);
+        renderer.draw(&entity_layer);
 
-    renderer.draw(&item_layer);
+        renderer.draw(&item_layer);
 
-    renderer.draw(&entity_overlay_layer);
+        renderer.draw(&entity_overlay_layer);
 
-    renderer.draw(&range_layer);
+        renderer.draw(&range_layer);
 
-    renderer.draw(&warning_layer);
-
-    renderer.draw(&player_layer);
+        renderer.draw(&warning_layer);
+        renderer.draw(&player_layer);
+    }
 }
 
 pub(super) enum EscapeMenuOptions {
