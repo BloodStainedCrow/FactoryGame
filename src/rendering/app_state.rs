@@ -50,7 +50,6 @@ use crate::{
 use itertools::Itertools;
 use log::{info, trace, warn};
 use petgraph::graph::NodeIndex;
-use proptest::collection::vec;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::collections::{BTreeMap, HashMap};
 use std::iter;
@@ -327,8 +326,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         bp.apply(
             Position {
                 // x: 1590 + x,
-                x: 1590,
-                y: 1590,
+                x: 2000,
+                y: 2000,
             },
             &mut ret,
             data_store,
@@ -1210,15 +1209,35 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             }
                         },
                         crate::frontend::world::tile::PlaceEntityType::Splitter {
-                            pos,
-                            direction,
+                            pos: splitter_pos,
+                            direction: splitter_direction,
                             in_mode,
                             out_mode,
 
                             ty,
                         } => {
+                            let (left_pos, right_pos) = match splitter_direction {
+                                Dir::North => (splitter_pos, splitter_pos + Dir::East),
+                                Dir::East => (splitter_pos, splitter_pos + Dir::South),
+                                Dir::South => (splitter_pos + Dir::East, splitter_pos),
+                                Dir::West => (splitter_pos + Dir::South, splitter_pos),
+                            };
+                            let self_positions = [left_pos, right_pos];
+                            if self_positions
+                                .into_iter()
+                                .any(|pos| !self.world.can_fit(pos, (1, 1), data_store))
+                            {
+                                warn!("Tried to place splitter where it does not fit");
+                                continue;
+                            }
                             let splitter = handle_splitter_placement(
-                                self, pos, direction, ty, in_mode, out_mode, data_store,
+                                self,
+                                splitter_pos,
+                                splitter_direction,
+                                ty,
+                                in_mode,
+                                out_mode,
+                                data_store,
                             );
                         },
                         crate::frontend::world::tile::PlaceEntityType::Chest { pos, ty } => {
@@ -2024,8 +2043,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 }
             }
         }
-        dbg!(self.world.to_instantiate.len());
-        dbg!(self.world.to_instantiate.first());
+        info!(
+            "self.world.to_instantiate.len(): {:?}",
+            self.world.to_instantiate.len()
+        );
+        info!("{:?}", self.world.to_instantiate.first());
 
         self.simulation_state
             .factory

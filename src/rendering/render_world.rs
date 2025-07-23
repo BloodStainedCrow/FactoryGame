@@ -42,7 +42,6 @@ use std::fs::File;
 use std::sync::LazyLock;
 use std::{
     cmp::{Ordering, min},
-    iter::successors,
     mem,
     time::Duration,
 };

@@ -48,8 +48,6 @@ use noise::Seedable;
 use super::{Position, sparse_grid::SparseGrid};
 use crate::liquid::FluidSystemId;
 
-use petgraph::prelude::Bfs;
-
 pub const BELT_LEN_PER_TILE: u16 = 4;
 
 pub const CHUNK_SIZE: u16 = 16;
@@ -218,9 +216,6 @@ fn try_instantiating_inserters_for_belt_cascade<ItemIdxType: IdxTrait, RecipeIdx
     CascadingUpdate {
         update: Box::new(move |world, sim_state, updates, data_store| {
             profiling::scope!("try_instantiating_inserters_for_belt_cascade");
-            if !world.to_instantiate_by_belt.contains_key(&belt_id) {
-                return;
-            }
             // FIXME:
             // let mut reachable = Bfs::new(
             //     &sim_state.factory.belts.belt_graph,

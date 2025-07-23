@@ -7,7 +7,7 @@ use std::{
 };
 
 use itertools::Itertools;
-use log::warn;
+use log::{error, warn};
 use power_grid::{
     BeaconAffectedEntity, IndexUpdateInfo, MIN_BEACON_POWER_MULT, PowerGrid, PowerGridEntity,
     PowerGridIdentifier,
@@ -577,7 +577,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                         self.power_grids[usize::from(id.grid)]
                             .change_assembler_module_modifiers(id, update.1, data_store);
                     },
-                    power_grid::BeaconAffectedEntity::Lab { grid, index } => todo!(),
+                    power_grid::BeaconAffectedEntity::Lab { grid, index } => {
+                        // TODO:
+                        error!("Ignoring Beacon affect on lab");
+                    },
                 }
             }
         }
@@ -870,6 +873,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         current_time: u32,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (ResearchProgress, RecipeTickInfo, Option<LabTickInfo>) {
+        {
+            profiling::scope!("Trim Power Grids");
+            while self
+                .power_grids
+                .last()
+                .map(|grid| grid.is_placeholder)
+                .unwrap_or(false)
+            {
+                let removed_placeholder = self.power_grids.pop();
+                assert!(removed_placeholder.unwrap().is_placeholder);
+            }
+        }
+
         let (research_progress, production_info, times_labs_used_science, beacon_updates) = self
             .power_grids
             .par_iter_mut()

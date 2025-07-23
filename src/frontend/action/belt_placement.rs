@@ -833,7 +833,7 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                             ..
                         } => (*id, *belt_pos),
                         Entity::Splitter { .. } => todo!(),
-                        _ => unreachable!(),
+                        e => unreachable!("{:?}", e),
                     };
 
                     // Add Sideloading inserter
@@ -1271,10 +1271,6 @@ fn get_belt_out_dir<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     position: Position,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> Option<Dir> {
-    // if position.x == 1800 && position.y == 1659 {
-    dbg!(position);
-    // }
-
     world
         .get_entities_colliding_with(position, (1, 1), data_store)
         .into_iter()

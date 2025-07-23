@@ -1157,10 +1157,11 @@ impl RawDataStore {
                 instantly_finished_technologies.push(index);
             }
 
-            assert!(
-                name_to_node_index
-                    .insert(raw_tech.name.clone(), index)
-                    .is_none()
+            assert_eq!(
+                name_to_node_index.insert(raw_tech.name.clone(), index),
+                None,
+                "{}",
+                &raw_tech.name
             );
         }
 

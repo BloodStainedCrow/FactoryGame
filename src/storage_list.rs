@@ -291,6 +291,7 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     let all_storages_sorted: Box<[_]> = {
         let mut grids_by_item = {
+            // TODO: This is super slow with a lot of grids. To the point where it takes the majority of the processing time in some cases!
             profiling::scope!("grids_by_item");
             grids
                 .power_grids
@@ -306,7 +307,7 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         };
 
         for item in all_item_iter(data_store) {
-            let vec = grids_by_item.entry(item).or_default();
+            let _vec = grids_by_item.entry(item).or_default();
             // assert!(
             //     vec.is_sorted_by_key(|v| get_full_storage_index(
             //         v.0,
