@@ -424,8 +424,8 @@ impl App {
                             size, cb,
                         )));
 
-                        let mut game_state = loaded_game_sized.state.lock();
-                        let mut state_machine = loaded_game_sized.state_machine.lock();
+                        let game_state = loaded_game_sized.state.lock();
+                        let state_machine = loaded_game_sized.state_machine.lock();
                         let data_store = loaded_game_sized.data_store.lock();
 
                         let tick = game.tick.load(std::sync::atomic::Ordering::Relaxed);
@@ -439,7 +439,7 @@ impl App {
 
                         self.last_rendered_update = tick;
 
-                        match render_ui(ctx, ui, &mut state_machine, &mut game_state, &data_store) {
+                        match render_ui(ctx, ui, state_machine, game_state, data_store) {
                             Ok(render_actions) => {
                                 for action in render_actions {
                                     loaded_game_sized
@@ -454,10 +454,6 @@ impl App {
                                     self.last_rendered_update = 0;
                                     self.input_sender = None;
 
-                                    // Needed to make borrows happy
-                                    mem::drop(game_state);
-                                    mem::drop(state_machine);
-                                    mem::drop(data_store);
                                     self.currently_loaded_game = None;
                                 },
                             },

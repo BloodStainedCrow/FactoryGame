@@ -62,6 +62,7 @@ pub const SWITCH_TO_MAPVIEW_ZOOM_LEVEL: LazyLock<f32> =
 //       => This seems to happen at 992 -> 993 width, i.e. when the for loop range jumps from 31 to 32, very suspicous
 
 #[allow(clippy::too_many_lines)]
+#[profiling::function]
 pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     renderer: &mut impl RendererTrait,
     mut game_state: MutexGuard<GameState<ItemIdxType, RecipeIdxType>>,
@@ -1547,16 +1548,19 @@ pub(super) enum EscapeMenuOptions {
 pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     ctx: &Context,
     ui: &mut Ui,
-    state_machine: &mut ActionStateMachine<ItemIdxType, RecipeIdxType>,
-    game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
-    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    mut state_machine: MutexGuard<ActionStateMachine<ItemIdxType, RecipeIdxType>>,
+    mut game_state: MutexGuard<GameState<ItemIdxType, RecipeIdxType>>,
+    data_store: MutexGuard<DataStore<ItemIdxType, RecipeIdxType>>,
 ) -> Result<
     impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>,
     EscapeMenuOptions,
 > {
+    let state_machine_ref = &mut *state_machine;
+    let game_state_ref = &mut *game_state;
+    let data_store_ref = &*data_store;
     let mut actions = vec![];
 
-    if state_machine.escape_menu_open {
+    if state_machine_ref.escape_menu_open {
         if let Some(escape_action) = Modal::new("Pause Window".into())
             .show(ctx, |ui| {
                 ui.heading("Paused");
@@ -1579,11 +1583,11 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             format!(
                 "{:?}",
                 ActionStateMachine::<u8, u8>::player_mouse_to_tile(
-                    state_machine.zoom_level,
-                    state_machine
+                    state_machine_ref.zoom_level,
+                    state_machine_ref
                         .map_view_info
-                        .unwrap_or(state_machine.local_player_pos),
-                    state_machine.current_mouse_pos
+                        .unwrap_or(state_machine_ref.local_player_pos),
+                    state_machine_ref.current_mouse_pos
                 )
             )
             .as_str(),
@@ -1597,7 +1601,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 if let Some(path) = rfd::FileDialog::new().pick_file() {
                     if let Ok(file) = File::open(path) {
                         if let Ok(bp) = ron::de::from_reader(file) {
-                            state_machine.state =
+                            state_machine_ref.state =
                                 ActionStateMachineState::Holding(HeldObject::Blueprint(bp));
                         }
                     }
@@ -1609,20 +1613,20 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         .default_open(false)
         .show(ctx, |ui| {
             if ui.button("⚠️DEFRAGMENT GAMESTATE").clicked() {
-                let mut new_state = game_state.clone();
+                let mut new_state = game_state_ref.clone();
 
-                mem::swap(&mut new_state, game_state);
+                mem::swap(&mut new_state, &mut *game_state_ref);
 
                 mem::drop(new_state);
             }
             ui.checkbox(
-                &mut state_machine.show_graph_dot_output,
+                &mut state_machine_ref.show_graph_dot_output,
                 "Generate Belt Graph",
             );
-            if state_machine.show_graph_dot_output {
+            if state_machine_ref.show_graph_dot_output {
                 let mut graph = format!(
                     "{:?}",
-                    Dot::new(&game_state.simulation_state.factory.belts.belt_graph)
+                    Dot::new(&game_state_ref.simulation_state.factory.belts.belt_graph)
                 );
 
                 ui.text_edit_multiline(&mut graph);
@@ -1630,7 +1634,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         });
 
     Window::new("UPS").default_open(false).show(ctx, |ui| {
-        let points = &game_state.update_times.get_data_points(0)[0..30];
+        let points = &game_state_ref.update_times.get_data_points(0)[0..30];
         ui.label(format!(
             "{:.1} UPS",
             1.0 / (points.iter().map(|v| v.dur).sum::<Duration>() / points.len() as u32)
@@ -1639,7 +1643,9 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     });
 
     Window::new("BP").default_open(false).show(ctx, |ui| {
-        if let ActionStateMachineState::Holding(HeldObject::Blueprint(bp)) = &state_machine.state {
+        if let ActionStateMachineState::Holding(HeldObject::Blueprint(bp)) =
+            &state_machine_ref.state
+        {
             let mut s: String =
                 ron::ser::to_string_pretty(&bp, ron::ser::PrettyConfig::default()).unwrap();
             ui.text_edit_multiline(&mut s);
@@ -1654,10 +1660,8 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         ui.text_edit_multiline(&mut s);
     });
 
-    puffin_egui::profiler_window(ctx);
-
     ctx.set_cursor_icon(egui::CursorIcon::Default);
-    match &state_machine.state {
+    match &state_machine_ref.state {
         ActionStateMachineState::CtrlCPressed => {
             ctx.set_cursor_icon(egui::CursorIcon::Copy);
         },
@@ -1674,11 +1678,11 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         ) => {
             let mut viewing = true;
             Window::new("Viewing").open(&mut viewing).show(ctx, |ui| {
-                let chunk = game_state
+                let chunk = game_state_ref
                 .world
                 .get_chunk_for_tile(*position)
                 .expect("Cannot find chunk for viewing");
-            let entity = chunk.get_entity_at(*position, data_store);
+            let entity = chunk.get_entity_at(*position, data_store_ref);
 
             if let Some(entity) = entity {
                 match entity {
@@ -1690,9 +1694,9 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             AssemblerInfo::Powered { id, .. } => Some(id.recipe),
                         };
 
-                        ComboBox::new("Recipe list", "Recipes").selected_text(goal_recipe.map(|recipe| data_store.recipe_display_names[usize_from(recipe.id)].as_str()).unwrap_or("Choose a recipe!")).show_ui(ui, |ui| {
-                            data_store.recipe_display_names.iter().enumerate().filter(|(i, recipe_name)| {
-                                    (game_state.settings.show_unresearched_recipes || game_state.simulation_state.tech_state.get_active_recipes()[*i]) && data_store.recipe_allowed_assembling_machines[*i].contains(ty)
+                        ComboBox::new("Recipe list", "Recipes").selected_text(goal_recipe.map(|recipe| data_store_ref.recipe_display_names[usize_from(recipe.id)].as_str()).unwrap_or("Choose a recipe!")).show_ui(ui, |ui| {
+                            data_store_ref.recipe_display_names.iter().enumerate().filter(|(i, recipe_name)| {
+                                    (game_state_ref.settings.show_unresearched_recipes || game_state_ref.simulation_state.tech_state.get_active_recipes()[*i]) && data_store_ref.recipe_allowed_assembling_machines[*i].contains(ty)
                                 }).for_each(|(i, recipe_name)| {
 
                                 ui.selectable_value(&mut goal_recipe, Some(Recipe {id: i.try_into().unwrap()}), recipe_name);
@@ -1702,13 +1706,13 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                         match info {
                             crate::frontend::world::tile::AssemblerInfo::UnpoweredNoRecipe => {
-                                ui.label(&data_store.assembler_info[usize::from(*ty)].display_name);
+                                ui.label(&data_store_ref.assembler_info[usize::from(*ty)].display_name);
                                 if let Some(goal_recipe) = goal_recipe {
                                     actions.push(ActionType::SetRecipe(SetRecipeInfo { pos: *pos, recipe: goal_recipe }));
                                 }
                             },
                             crate::frontend::world::tile::AssemblerInfo::Unpowered(recipe) => {
-                                ui.label(&data_store.assembler_info[usize::from(*ty)].display_name);
+                                ui.label(&data_store_ref.assembler_info[usize::from(*ty)].display_name);
                                 if let Some(goal_recipe) = goal_recipe {
                                     if goal_recipe != *recipe {
                                         actions.push(ActionType::SetRecipe(SetRecipeInfo { pos: *pos, recipe: goal_recipe }));
@@ -1716,7 +1720,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 }
                             },
                             crate::frontend::world::tile::AssemblerInfo::PoweredNoRecipe(_) => {
-                                ui.label(&data_store.assembler_info[usize::from(*ty)].display_name);
+                                ui.label(&data_store_ref.assembler_info[usize::from(*ty)].display_name);
                                 if let Some(goal_recipe) = goal_recipe {
                                     actions.push(ActionType::SetRecipe(SetRecipeInfo { pos: *pos, recipe: goal_recipe }));
                                 }
@@ -1724,7 +1728,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             crate::frontend::world::tile::AssemblerInfo::Powered {
                                 id, ..
                             } => {
-                                ui.label(&data_store.assembler_info[usize::from(*ty)].display_name);
+                                ui.label(&data_store_ref.assembler_info[usize::from(*ty)].display_name);
 
                                 ui.label(format!("{:?}", *id));
 
@@ -1737,7 +1741,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 // TODO:
                                 // ui.label(data_store.recipe_names[usize_from(assembler_id.recipe.id)]);
 
-                                let time_per_recipe = data_store.recipe_timers[usize_from(id.recipe.id)] as f32;
+                                let time_per_recipe = data_store_ref.recipe_timers[usize_from(id.recipe.id)] as f32;
 
                                 let AssemblerOnclickInfo {
                                     inputs,
@@ -1749,11 +1753,11 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     prod_mod,
                                     power_consumption_mod,
                                     base_power_consumption,
-                                } = game_state
+                                } = game_state_ref
                                     .simulation_state
                                     .factory
                                     .power_grids
-                                    .get_assembler_info(*id, data_store);
+                                    .get_assembler_info(*id, data_store_ref);
 
                                 let main_pb = ProgressBar::new(timer_percentage).show_percentage().corner_radius(CornerRadius::ZERO);
                                 ui.add(main_pb);
@@ -1766,7 +1770,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         for module in modules {
                                             row.col(|ui| {
                                                 if let Some(module_id) = module {
-                                                    ui.label(&data_store.module_info[*module_id].display_name);
+                                                    ui.label(&data_store_ref.module_info[*module_id].display_name);
                                                 } else {
                                                     ui.label("Empty Module Slot");
                                                 }
@@ -1781,18 +1785,18 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 TableBuilder::new(ui).columns(Column::auto().resizable(false), inputs.len() + outputs.len()).body(|mut body| {
                                     body.row(5.0, |mut row| {
                                         for (item, count) in inputs.iter() {
-                                            let (_, _, count_in_recipe) = data_store.recipe_to_items_and_amounts[&id.recipe].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Ing && *item == *recipe_item).unwrap();
+                                            let (_, _, count_in_recipe) = data_store_ref.recipe_to_items_and_amounts[&id.recipe].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Ing && *item == *recipe_item).unwrap();
                                             row.col(|ui| {
-                                                ui.add(egui::Label::new(&data_store.item_display_names[usize_from(item.id)]).wrap_mode(egui::TextWrapMode::Extend));
+                                                ui.add(egui::Label::new(&data_store_ref.item_display_names[usize_from(item.id)]).wrap_mode(egui::TextWrapMode::Extend));
                                                 ui.add(egui::Label::new(format!("{}", *count)).wrap_mode(egui::TextWrapMode::Extend));
                                                 ui.add(egui::Label::new(format!("{}/s", (*count_in_recipe as f32) / (time_per_craft / 60.0))).wrap_mode(egui::TextWrapMode::Extend));
                                             });
                                         }
 
                                         for (item, count) in outputs.iter() {
-                                            let (_, _, count_in_recipe) = data_store.recipe_to_items_and_amounts[&id.recipe].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Out && *item == *recipe_item).unwrap();
+                                            let (_, _, count_in_recipe) = data_store_ref.recipe_to_items_and_amounts[&id.recipe].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Out && *item == *recipe_item).unwrap();
                                             row.col(|ui| {
-                                                ui.add(egui::Label::new(&data_store.item_display_names[usize_from(item.id)]).wrap_mode(egui::TextWrapMode::Extend));
+                                                ui.add(egui::Label::new(&data_store_ref.item_display_names[usize_from(item.id)]).wrap_mode(egui::TextWrapMode::Extend));
                                                 ui.add(egui::Label::new(format!("{}", *count)).wrap_mode(egui::TextWrapMode::Extend));
                                                 ui.add(egui::Label::new(format!("{:.2}/s", (*count_in_recipe as f32) / (time_per_craft / 60.0) * (1.0 + prod_mod))).wrap_mode(egui::TextWrapMode::Extend));
                                             });
@@ -1817,13 +1821,13 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         // let power_range = data_store.power_pole_data[usize::from(*ty)].power_range;
                         // let size = data_store.power_pole_data[usize::from(*ty)].size;
 
-                        let grid_id = game_state
+                        let grid_id = game_state_ref
                         .simulation_state
                         .factory
                         .power_grids
                         .pole_pos_to_grid_id[pos] as usize;
 
-                        let pg = &game_state.simulation_state.factory.power_grids.power_grids
+                        let pg = &game_state_ref.simulation_state.factory.power_grids.power_grids
                             [grid_id];
 
                         ui.label(format!("Power Grid number: {}", grid_id));
@@ -1846,7 +1850,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
 
                             // Power Storage
-                            let max_charge: Joule = pg.main_accumulator_count.iter().copied().zip(data_store.accumulator_info.iter().map(|info| info.max_charge)).map(|(count, charge)| charge * count).sum();
+                            let max_charge: Joule = pg.main_accumulator_count.iter().copied().zip(data_store_ref.accumulator_info.iter().map(|info| info.max_charge)).map(|(count, charge)| charge * count).sum();
                             let current_charge: Joule = pg.main_accumulator_count.iter().copied().zip(pg.main_accumulator_charge.iter().copied()).map(|(count, charge)| charge * count).sum();
 
                             ui_storage.add(Label::new(RichText::new("Accumulator charge").heading()).wrap_mode(egui::TextWrapMode::Extend));
@@ -1857,7 +1861,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         let max_value_at_timescale = (MAX_POWER_MULT as f64) * (RELATIVE_INTERVAL_MULTS[..=timescale].iter().copied().product::<usize>() as f64);
                         let num_samples = NUM_SAMPLES_AT_INTERVALS[timescale];
 
-                        let points = pg.power_mult_history.get_series(timescale, data_store, Some(|_| true)).into_iter().map(|(_, series)| (series.name, series.data.into_iter()
+                        let points = pg.power_mult_history.get_series(timescale, data_store_ref, Some(|_| true)).into_iter().map(|(_, series)| (series.name, series.data.into_iter()
                         .enumerate()
                         .map(|(i, v)| [i as f64, v.into()])
                         .collect::<Vec<_>>()));
@@ -1872,14 +1876,14 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                                 if i < pg.num_assemblers_of_type.len() {
                                     row.col(|ui| {
-                                        ui.add(Label::new(&data_store.assembler_info[i].display_name).extend());
+                                        ui.add(Label::new(&data_store_ref.assembler_info[i].display_name).extend());
 
                                     });
                                     row.col(|ui| {ui.add(Label::new(format!("{}", pg.num_assemblers_of_type[i])).extend());});
                                 } else {
                                     let i = i - pg.num_assemblers_of_type.len();
                                     row.col(|ui| {
-                                        ui.add(Label::new(&data_store.solar_panel_info[i].display_name).extend());
+                                        ui.add(Label::new(&data_store_ref.solar_panel_info[i].display_name).extend());
 
                                     });
                                     row.col(|ui| {ui.add(Label::new(format!("{}", pg.num_solar_panels_of_type[i])).extend());});
@@ -1921,14 +1925,14 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 ui.label(format!("Any Belt {}", *index).as_str());
                             },
                         }
-                        ui.label(format!("Item: {:?}", game_state.simulation_state.factory.belts.get_pure_item(*id)).as_str());
+                        ui.label(format!("Item: {:?}", game_state_ref.simulation_state.factory.belts.get_pure_item(*id)).as_str());
 
                         let mut dedup = Default::default();
                         let mut done = Default::default();
-                        game_state.simulation_state.factory.belts.get_items_which_could_end_up_on_that_belt(*id, &mut dedup, &mut done);
+                        game_state_ref.simulation_state.factory.belts.get_items_which_could_end_up_on_that_belt(*id, &mut dedup, &mut done);
                         ui.label(format!("Possible items: {:?}", done[id]).as_str());
 
-                        ui.label(format!("Inner: {:?}", game_state.simulation_state.factory.belts.inner.belt_belt_inserters).as_str());
+                        ui.label(format!("Inner: {:?}", game_state_ref.simulation_state.factory.belts.inner.belt_belt_inserters).as_str());
 
                         ui.label(format!("Belt Pos: {:?}", *belt_pos));
                     },
@@ -1944,14 +1948,14 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 ui.label(format!("Any Belt {}", *index).as_str());
                             },
                         }
-                        ui.label(format!("Item: {:?}", game_state.simulation_state.factory.belts.get_pure_item(*id)).as_str());
+                        ui.label(format!("Item: {:?}", game_state_ref.simulation_state.factory.belts.get_pure_item(*id)).as_str());
 
                         let mut dedup = Default::default();
                         let mut done = Default::default();
-                        game_state.simulation_state.factory.belts.get_items_which_could_end_up_on_that_belt(*id, &mut dedup, &mut done);
+                        game_state_ref.simulation_state.factory.belts.get_items_which_could_end_up_on_that_belt(*id, &mut dedup, &mut done);
                         ui.label(format!("Possible items: {:?}", done[id]).as_str());
 
-                        ui.label(format!("Inner: {:?}", game_state.simulation_state.factory.belts.inner.belt_belt_inserters).as_str());
+                        ui.label(format!("Inner: {:?}", game_state_ref.simulation_state.factory.belts.inner.belt_belt_inserters).as_str());
 
                         ui.label(format!("UndergroundDir: {:?}", *underground_dir));
 
@@ -1981,7 +1985,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     ui.label(format!("belt_id: {:?}", *id));
                                     ui.label(format!("belt_pos: {}", *belt_pos));
 
-                                    ui.label(format!("storage: {:?}", game_state.simulation_state.factory.belts.get_inserter_info_at(*id, *belt_pos).expect("No inserter at pos indicated in entity!")));
+                                    ui.label(format!("storage: {:?}", game_state_ref.simulation_state.factory.belts.get_inserter_info_at(*id, *belt_pos).expect("No inserter at pos indicated in entity!")));
 
                                     // TODO:
                                 },
@@ -1994,7 +1998,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 },
                                 crate::frontend::world::tile::AttachedInserter::StorageStorage { item,  .. } => {
                                     ui.label("StorageStorage");
-                                    ui.label(&data_store.item_display_names[usize_from(item.id)]);
+                                    ui.label(&data_store_ref.item_display_names[usize_from(item.id)]);
 
                                     // TODO:
                                 },
@@ -2018,7 +2022,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         }
                     },
                     Entity::Splitter { id, .. } => {
-                        let [inputs, outputs] = game_state
+                        let [inputs, outputs] = game_state_ref
                                     .simulation_state
                                     .factory
                                     .belts
@@ -2035,13 +2039,13 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         let Some((item, index)) = item else {
                             todo!()
                         };
-                        ui.label(&data_store.item_display_names[usize_from(item.id)]);
+                        ui.label(&data_store_ref.item_display_names[usize_from(item.id)]);
                         ui.label(format!("{}", *index));
 
-                        let stack_size: u16 = data_store.item_stack_sizes[usize_from(item.id)] as u16;
+                        let stack_size: u16 = data_store_ref.item_stack_sizes[usize_from(item.id)] as u16;
 
-                        let num_slots = data_store.chest_num_slots[*ty as usize];
-                        let (current_items, _max_items) = game_state.simulation_state.factory.chests.stores[usize_from(item.id)].get_chest(*index);
+                        let num_slots = data_store_ref.chest_num_slots[*ty as usize];
+                        let (current_items, _max_items) = game_state_ref.simulation_state.factory.chests.stores[usize_from(item.id)].get_chest(*index);
 
                         TableBuilder::new(ui).columns(Column::auto().resizable(false), 10).body(|body| {
                             body.rows(5.0, (num_slots / 10) as usize + (num_slots % 10 > 0) as usize, |mut row| {
@@ -2076,7 +2080,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         // TODO
                     },
                     Entity::FluidTank { ty, pos, rotation } => {
-                        let id = game_state.simulation_state.factory.fluid_store.fluid_box_pos_to_network_id[pos];
+                        let id = game_state_ref.simulation_state.factory.fluid_store.fluid_box_pos_to_network_id[pos];
 
                         ui.label(format!("{:?}", id));
                     }
@@ -2086,7 +2090,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             });
 
             if !viewing {
-                state_machine.state = ActionStateMachineState::Idle;
+                state_machine_ref.state = ActionStateMachineState::Idle;
             }
         },
         crate::frontend::action::action_state_machine::ActionStateMachineState::Deconstructing(
@@ -2127,26 +2131,29 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         });
 
     Window::new("Technology")
-        .open(&mut state_machine.technology_panel_open)
+        .open(&mut state_machine_ref.technology_panel_open)
         .show(ctx, |ui| {
-            let research_actions = game_state.simulation_state.tech_state.render_tech_window(
-                ui,
-                state_machine.tech_tree_render.get_or_insert(
-                    game_state
-                        .simulation_state
-                        .tech_state
-                        .generate_render_graph(data_store),
-                ),
-                data_store,
-            );
+            let research_actions = game_state_ref
+                .simulation_state
+                .tech_state
+                .render_tech_window(
+                    ui,
+                    state_machine_ref.tech_tree_render.get_or_insert(
+                        game_state_ref
+                            .simulation_state
+                            .tech_state
+                            .generate_render_graph(data_store_ref),
+                    ),
+                    data_store_ref,
+                );
 
             actions.extend(research_actions);
         });
 
     Window::new("Statistics")
-        .open(&mut state_machine.statistics_panel_open)
+        .open(&mut state_machine_ref.statistics_panel_open)
         .show(ctx, |ui| {
-            let time_scale = match &mut state_machine.statistics_panel {
+            let time_scale = match &mut state_machine_ref.statistics_panel {
                 StatisticsPanel::Items(timescale) => timescale,
                 StatisticsPanel::Fluids(timescale) => timescale,
             };
@@ -2158,10 +2165,12 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
             let time_scale = *time_scale;
 
-            match state_machine.statistics_panel {
+            match state_machine_ref.statistics_panel {
                 StatisticsPanel::Items(scale) | StatisticsPanel::Fluids(scale) => {
-                    let take_fluids =
-                        matches!(state_machine.statistics_panel, StatisticsPanel::Fluids(_));
+                    let take_fluids = matches!(
+                        state_machine_ref.statistics_panel,
+                        StatisticsPanel::Fluids(_)
+                    );
 
                     ui.columns_const(|[ui_production, ui_consumption]: &mut [Ui; 2]| {
                         ui_production.heading("Production");
@@ -2169,14 +2178,14 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         ui_consumption.heading("Consumption");
                         ui_consumption.separator();
 
-                        let prod_points: Vec<(String, usize, f32, PlotPoints)> = game_state
+                        let prod_points: Vec<(String, usize, f32, PlotPoints)> = game_state_ref
                             .statistics
                             .production
                             .get_series(
                                 scale,
-                                data_store,
+                                data_store_ref,
                                 Some(|item: Item<ItemIdxType>| {
-                                    data_store.item_is_fluid[usize_from(item.id)] == take_fluids
+                                    data_store_ref.item_is_fluid[usize_from(item.id)] == take_fluids
                                 }),
                             )
                             .into_iter()
@@ -2222,10 +2231,10 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                         let lines = prod_points
                             .into_iter()
-                            .filter(|(_, id, _, _)| state_machine.production_filters[*id])
+                            .filter(|(_, id, _, _)| state_machine_ref.production_filters[*id])
                             .map(|(name, id, _sum, points)| {
                                 Line::new(name, points)
-                                    .stroke(Stroke::new(2.0, data_store.item_to_colour[id]))
+                                    .stroke(Stroke::new(2.0, data_store_ref.item_to_colour[id]))
                             });
 
                         let ticks_per_value = RELATIVE_INTERVAL_MULTS[..=scale]
@@ -2301,7 +2310,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             .product::<usize>();
                         let ticks_total = min(
                             ticks_per_sample * NUM_SAMPLES_AT_INTERVALS[time_scale],
-                            game_state
+                            game_state_ref
                                 .statistics
                                 .production
                                 .num_samples_pushed
@@ -2323,7 +2332,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         body.rows(row_height, sum_list_prod.len(), |mut row| {
                                             let idx = row.index();
                                             row.col(|ui| {
-                                                if state_machine.production_filters
+                                                if state_machine_ref.production_filters
                                                     [sum_list_prod[idx].1]
                                                 {
                                                     ui.add(
@@ -2350,7 +2359,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                         sum_list_prod[idx].2 / max_prod,
                                                     )
                                                     .fill(
-                                                        data_store.item_to_colour
+                                                        data_store_ref.item_to_colour
                                                             [sum_list_prod[idx].1],
                                                     )
                                                     .corner_radius(CornerRadius::ZERO),
@@ -2373,8 +2382,8 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 );
                                             });
                                             if row.response().clicked() {
-                                                state_machine.production_filters
-                                                    [sum_list_prod[idx].1] = !state_machine
+                                                state_machine_ref.production_filters
+                                                    [sum_list_prod[idx].1] = !state_machine_ref
                                                     .production_filters[sum_list_prod[idx].1];
                                             }
                                         });
@@ -2382,14 +2391,14 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             },
                         );
 
-                        let cons_points: Vec<(String, usize, f32, PlotPoints)> = game_state
+                        let cons_points: Vec<(String, usize, f32, PlotPoints)> = game_state_ref
                             .statistics
                             .consumption
                             .get_series(
                                 scale,
-                                data_store,
+                                data_store_ref,
                                 Some(|item: Item<ItemIdxType>| {
-                                    data_store.item_is_fluid[usize_from(item.id)] == take_fluids
+                                    data_store_ref.item_is_fluid[usize_from(item.id)] == take_fluids
                                 }),
                             )
                             .into_iter()
@@ -2435,10 +2444,10 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                         let lines = cons_points
                             .into_iter()
-                            .filter(|(_, id, _, _)| state_machine.consumption_filters[*id])
+                            .filter(|(_, id, _, _)| state_machine_ref.consumption_filters[*id])
                             .map(|(name, id, _sum, points)| {
                                 Line::new(name, points)
-                                    .stroke(Stroke::new(2.0, data_store.item_to_colour[id]))
+                                    .stroke(Stroke::new(2.0, data_store_ref.item_to_colour[id]))
                             });
 
                         let ticks_per_value = RELATIVE_INTERVAL_MULTS[..=scale]
@@ -2521,7 +2530,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         body.rows(row_height, sum_list_cons.len(), |mut row| {
                                             let idx = row.index();
                                             row.col(|ui| {
-                                                if state_machine.consumption_filters
+                                                if state_machine_ref.consumption_filters
                                                     [sum_list_cons[idx].1]
                                                 {
                                                     ui.add(
@@ -2548,7 +2557,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                         sum_list_cons[idx].2 / max_cons,
                                                     )
                                                     .fill(
-                                                        data_store.item_to_colour
+                                                        data_store_ref.item_to_colour
                                                             [sum_list_cons[idx].1],
                                                     )
                                                     .corner_radius(CornerRadius::ZERO),
@@ -2571,8 +2580,8 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 );
                                             });
                                             if row.response().clicked() {
-                                                state_machine.consumption_filters
-                                                    [sum_list_cons[idx].1] = !state_machine
+                                                state_machine_ref.consumption_filters
+                                                    [sum_list_cons[idx].1] = !state_machine_ref
                                                     .consumption_filters[sum_list_cons[idx].1];
                                             }
                                         });
@@ -2583,6 +2592,12 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 },
             }
         });
+
+    mem::drop(game_state);
+    mem::drop(state_machine);
+    mem::drop(data_store);
+
+    puffin_egui::profiler_window(ctx);
 
     Ok(actions.into_iter())
 }
