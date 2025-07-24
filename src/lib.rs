@@ -86,8 +86,6 @@ pub mod blueprint;
 
 mod network_graph;
 
-mod canonical;
-
 pub mod liquid;
 
 impl WeakIdxTrait for u8 {}
