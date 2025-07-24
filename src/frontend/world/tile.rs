@@ -233,6 +233,7 @@ fn try_attaching_fluids<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             pole_position,
                             weak_index,
                         },
+                    rotation: assembler_rotation,
                     ..
                 },
             ) = world
@@ -261,10 +262,7 @@ fn try_attaching_fluids<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     Entity::FluidTank {
                         ty, pos, rotation, ..
                     } => {
-                        dbg!("Found Tank");
-                        let assembler_size =
-                            data_store.assembler_info[usize::from(*assembler_ty)].size;
-                        let assembler_size = [assembler_size.0, assembler_size.1];
+                        let assembler_size = e_size.into();
 
                         let recipe_fluid_inputs: Vec<_> = data_store.recipe_to_items[&id.recipe]
                             .iter()
@@ -326,8 +324,7 @@ fn try_attaching_fluids<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     *rotation,
                                     *assembler_pos,
                                     *fluid_conn,
-                                    // FIXME: Pass in the assemblers rotation
-                                    Dir::North,
+                                    *assembler_rotation,
                                     assembler_size,
                                     data_store,
                                 )
@@ -427,7 +424,8 @@ fn try_instantiating_inserters_for_belt<ItemIdxType: IdxTrait, RecipeIdxType: Id
 
             if by_belt.len() > 1_000 {
                 warn!(
-                    "More than 1_000 inserters waiting to be instantiated: {}. This will cause lag!",
+                    "More than 1_000 inserters waiting to be instantiated on belt {:?}: {}. This will cause lag!",
+                    belt_id,
                     by_belt.len()
                 );
             }
@@ -818,6 +816,7 @@ fn new_power_pole<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 pos,
                                 modules,
                                 info: info @ AssemblerInfo::Unpowered(_),
+                                ..
                             } => {
                                 let AssemblerInfo::Unpowered(recipe) = info else {
                                     unreachable!();
@@ -972,15 +971,13 @@ fn new_powered_beacon_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             ) {
                 match affected_entity {
                     Entity::Assembler {
-                        ty: _,
-                        pos: _,
-                        modules: _,
                         info:
                             AssemblerInfo::Powered {
                                 id,
                                 pole_position: _,
                                 weak_index: _,
                             },
+                        ..
                     } => {
                         sim_state.factory.power_grids.add_beacon_affected_entity(
                             *pole_pos,
@@ -1020,17 +1017,20 @@ fn newly_working_assembler<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     CascadingUpdate {
         update: Box::new(move |world, sim_state, updates, data_store| {
             profiling::scope!("newly_working_assembler");
-            let Some(Entity::Assembler {
-                ty,
-                pos,
-                modules: _,
-                info:
-                    AssemblerInfo::Powered {
-                        id,
-                        pole_position: _,
-                        weak_index: _,
-                    },
-            }) = world
+            let Some(
+                e @ Entity::Assembler {
+                    ty,
+                    pos,
+                    modules: _,
+                    info:
+                        AssemblerInfo::Powered {
+                            id,
+                            pole_position: _,
+                            weak_index: _,
+                        },
+                    rotation,
+                },
+            ) = world
                 .get_entities_colliding_with(pos, (1, 1), data_store)
                 .into_iter()
                 .next()
@@ -1040,7 +1040,7 @@ fn newly_working_assembler<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             };
 
             let pos = *pos;
-            let size = data_store.assembler_info[usize::from(*ty)].size;
+            let size = e.get_size(data_store);
             let id = *id;
 
             updates.push(new_possible_inserter_connection(pos, size));
@@ -1322,12 +1322,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             pole_position,
                             weak_index,
                         },
+                    rotation,
                 } => {
+                    let assembler_size = data_store.assembler_info[*ty as usize].size(*rotation);
+
                     for module_slot in modules.iter_mut() {
                         *module_slot = cheated_modules;
                     }
-
-                    let assembler_size = data_store.assembler_info[usize::from(*ty)].size;
 
                     if id.recipe == new_recipe {
                         return ControlFlow::Break(());
@@ -1363,6 +1364,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     pos,
                     modules,
                     info: info @ AssemblerInfo::PoweredNoRecipe(_),
+                    rotation,
                 } => {
                     for module_slot in modules.iter_mut() {
                         *module_slot = cheated_modules;
@@ -1798,7 +1800,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         pole_position: _,
                         weak_index: _
                     },
-                    modules: _
+                    modules: _,
+                    rotation: _
                     // FIXME: Translate the recipe_idx to
                 } => Some(InserterConnectionPossibility {
                     conn: InserterConnection::Storage(Static::Done(Storage::Assembler {
@@ -1921,7 +1924,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         pole_position: _,
                         weak_index: _
                     },
-                    modules: _
+                    modules: _,
+                    rotation: _,
                     // FIXME: Translate the recipe_idx to
                 } => Some(InserterConnectionPossibility {
                     conn: InserterConnection::Storage(Static::Done(Storage::Assembler {
@@ -2801,11 +2805,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             Color32::LIGHT_BLUE
                         } else {
                             // TODO: Get floor color
-                            Color32::BLUE
+                            Color32::from_hex("#3f3f3f").unwrap()
                         }
                     } else {
                         // TODO: Get floor color
-                        Color32::BLUE
+                        Color32::from_hex("#3f3f3f").unwrap()
                     }
                 }
             })
@@ -3017,6 +3021,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     pos,
                     info,
                     modules,
+                    rotation,
                 } => match info {
                     AssemblerInfo::UnpoweredNoRecipe
                     | AssemblerInfo::Unpowered(_)
@@ -3099,129 +3104,129 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                 },
                             );
 
-                            let assembler_size: (u16, u16) =
-                                data_store.assembler_info[usize::from(ty)].size;
+                            // let assembler_size: (u16, u16) =
+                            //     data_store.assembler_info[usize::from(*ty)].size(*rotation);
 
-                            let inserter_search_area = (
-                                Position {
-                                    x: index_update.position.x - i32::from(max_inserter_range),
-                                    y: index_update.position.y - i32::from(max_inserter_range),
-                                },
-                                (
-                                    2 * max_inserter_range as u16 + assembler_size.0,
-                                    2 * max_inserter_range as u16 + assembler_size.1,
-                                ),
-                            );
+                            // let inserter_search_area = (
+                            //     Position {
+                            //         x: index_update.position.x - i32::from(max_inserter_range),
+                            //         y: index_update.position.y - i32::from(max_inserter_range),
+                            //     },
+                            //     (
+                            //         2 * max_inserter_range as u16 + assembler_size.0,
+                            //         2 * max_inserter_range as u16 + assembler_size.1,
+                            //     ),
+                            // );
 
-                            let new_storages: Vec<_> = match index_update.new_pg_entity {
-                                PowerGridEntity::Assembler { ty, recipe, index } => data_store
-                                    .recipe_to_items[&recipe]
-                                    .iter()
-                                    .map(|(_dir, item)| {
-                                        (
-                                            item,
-                                            Storage::Assembler {
-                                                grid: index_update.new_grid,
-                                                recipe_idx_with_this_item: data_store
-                                                    .recipe_to_translated_index[&(recipe, *item)],
-                                                index,
-                                            },
-                                        )
-                                    })
-                                    .collect(),
-                                PowerGridEntity::Lab { index, ty } => todo!(),
-                                PowerGridEntity::LazyPowerProducer { item, index } => {
-                                    todo!("Expand Storage type")
-                                },
-                                PowerGridEntity::SolarPanel { .. } => {
-                                    vec![]
-                                },
-                                PowerGridEntity::Accumulator { .. } => {
-                                    vec![]
-                                },
-                                PowerGridEntity::Beacon { .. } => {
-                                    vec![]
-                                },
-                            };
+                            // let new_storages: Vec<_> = match index_update.new_pg_entity {
+                            //     PowerGridEntity::Assembler { ty, recipe, index } => data_store
+                            //         .recipe_to_items[&recipe]
+                            //         .iter()
+                            //         .map(|(_dir, item)| {
+                            //             (
+                            //                 item,
+                            //                 Storage::Assembler {
+                            //                     grid: index_update.new_grid,
+                            //                     recipe_idx_with_this_item: data_store
+                            //                         .recipe_to_translated_index[&(recipe, *item)],
+                            //                     index,
+                            //                 },
+                            //             )
+                            //         })
+                            //         .collect(),
+                            //     PowerGridEntity::Lab { index, ty } => todo!(),
+                            //     PowerGridEntity::LazyPowerProducer { item, index } => {
+                            //         todo!("Expand Storage type")
+                            //     },
+                            //     PowerGridEntity::SolarPanel { .. } => {
+                            //         vec![]
+                            //     },
+                            //     PowerGridEntity::Accumulator { .. } => {
+                            //         vec![]
+                            //     },
+                            //     PowerGridEntity::Beacon { .. } => {
+                            //         vec![]
+                            //     },
+                            // };
 
-                            assert!(
-                                new_storages
-                                    .iter()
-                                    .map(|(item, _storage)| item)
-                                    .all_unique()
-                            );
+                            // assert!(
+                            //     new_storages
+                            //         .iter()
+                            //         .map(|(item, _storage)| item)
+                            //         .all_unique()
+                            // );
 
-                            self.mutate_entities_colliding_with(
-                                inserter_search_area.0,
-                                inserter_search_area.1,
-                                data_store,
-                                |e| {
-                                    match e {
-                                        Entity::Inserter {
-                                            pos,
-                                            direction,
-                                            info: InserterInfo::NotAttached { .. },
-                                            ..
-                                        } => {
-                                            // Nothing to do
-                                        },
-                                        Entity::Inserter {
-                                            pos,
-                                            direction,
-                                            info,
-                                            ..
-                                        } => {
-                                            let (start_pos, end_pos) =
-                                                calculate_inserter_positions(*pos, *direction);
+                            // self.mutate_entities_colliding_with(
+                            //     inserter_search_area.0,
+                            //     inserter_search_area.1,
+                            //     data_store,
+                            //     |e| {
+                            //         match e {
+                            //             Entity::Inserter {
+                            //                 pos,
+                            //                 direction,
+                            //                 info: InserterInfo::NotAttached { .. },
+                            //                 ..
+                            //             } => {
+                            //                 // Nothing to do
+                            //             },
+                            //             Entity::Inserter {
+                            //                 pos,
+                            //                 direction,
+                            //                 info,
+                            //                 ..
+                            //             } => {
+                            //                 let (start_pos, end_pos) =
+                            //                     calculate_inserter_positions(*pos, *direction);
 
-                                            if start_pos
-                                                .contained_in(index_update.position, assembler_size)
-                                                || end_pos.contained_in(
-                                                    index_update.position,
-                                                    assembler_size,
-                                                )
-                                            {
-                                                // This Inserter is connected to the entity we are removing!
-                                                match info {
-                                                    InserterInfo::NotAttached {
-                                                        start_pos,
-                                                        end_pos,
-                                                    } => {
-                                                        unreachable!()
-                                                    },
-                                                    InserterInfo::Attached {
-                                                        info: attached_inserter,
-                                                        ..
-                                                    } => {
-                                                        match attached_inserter {
-                                                            AttachedInserter::BeltStorage {
-                                                                id,
-                                                                belt_pos,
-                                                            } => sim_state
-                                                                .factory
-                                                                .belts
-                                                                .remove_inserter(*id, *belt_pos),
-                                                            AttachedInserter::BeltBelt {
-                                                                item,
-                                                                inserter,
-                                                            } => todo!(),
-                                                            AttachedInserter::StorageStorage {
-                                                                ..
-                                                            } => {
-                                                                todo!()
-                                                            },
-                                                        }
-                                                        todo!();
-                                                    },
-                                                }
-                                            }
-                                        },
+                            //                 if start_pos
+                            //                     .contained_in(index_update.position, assembler_size)
+                            //                     || end_pos.contained_in(
+                            //                         index_update.position,
+                            //                         assembler_size,
+                            //                     )
+                            //                 {
+                            //                     // This Inserter is connected to the entity we are removing!
+                            //                     match info {
+                            //                         InserterInfo::NotAttached {
+                            //                             start_pos,
+                            //                             end_pos,
+                            //                         } => {
+                            //                             unreachable!()
+                            //                         },
+                            //                         InserterInfo::Attached {
+                            //                             info: attached_inserter,
+                            //                             ..
+                            //                         } => {
+                            //                             match attached_inserter {
+                            //                                 AttachedInserter::BeltStorage {
+                            //                                     id,
+                            //                                     belt_pos,
+                            //                                 } => sim_state
+                            //                                     .factory
+                            //                                     .belts
+                            //                                     .remove_inserter(*id, *belt_pos),
+                            //                                 AttachedInserter::BeltBelt {
+                            //                                     item,
+                            //                                     inserter,
+                            //                                 } => todo!(),
+                            //                                 AttachedInserter::StorageStorage {
+                            //                                     ..
+                            //                                 } => {
+                            //                                     todo!()
+                            //                                 },
+                            //                             }
+                            //                             todo!();
+                            //                         },
+                            //                     }
+                            //                 }
+                            //             },
 
-                                        _ => {},
-                                    }
-                                    ControlFlow::Continue(())
-                                },
-                            );
+                            //             _ => {},
+                            //         }
+                            //         ControlFlow::Continue(())
+                            //     },
+                            // );
                         }
                     }
 
@@ -3245,6 +3250,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                         pos,
                                         info,
                                         modules,
+                                        rotation,
                                     } => match info {
                                         AssemblerInfo::UnpoweredNoRecipe => unreachable!(),
                                         AssemblerInfo::Unpowered(recipe) => unreachable!(),
@@ -3658,7 +3664,9 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         /// List of all the module slots of this assembler
         modules: Box<[Option<usize>]>,
         info: AssemblerInfo<RecipeIdxType>,
-        // fluid_connections: Vec<PipeConnection>,
+
+        #[serde(default = "Dir::default")]
+        rotation: Dir,
     },
     PowerPole {
         // This means at most 256 different types of power poles can exist, should be fine :)
@@ -3780,7 +3788,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
     pub fn get_size(&self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> (u16, u16) {
         // FIXME: Use data_store for everything
         match self {
-            Self::Assembler { ty, .. } => data_store.assembler_info[usize::from(*ty)].size,
+            Self::Assembler { ty, rotation, .. } => {
+                data_store.assembler_info[usize::from(*ty)].size(*rotation)
+            },
             Self::PowerPole { ty, .. } => data_store.power_pole_data[usize::from(*ty)].size,
             Self::Belt { .. } => (1, 1),
             Self::Inserter { .. } => (1, 1),
@@ -3868,6 +3878,9 @@ pub enum PlaceEntityType<ItemIdxType: WeakIdxTrait> {
     Assembler {
         pos: Position,
         ty: u8,
+
+        #[serde(default = "Dir::default")]
+        rotation: Dir,
     },
     Inserter {
         pos: Position,
@@ -3947,9 +3960,10 @@ impl<ItemIdxType: IdxTrait> PlaceEntityType<ItemIdxType> {
 }
 
 #[derive(
-    Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq, Enum, EnumIter,
+    Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize, PartialEq, Eq, Enum, EnumIter,
 )]
 pub enum Dir {
+    #[default]
     North,
     East,
     South,

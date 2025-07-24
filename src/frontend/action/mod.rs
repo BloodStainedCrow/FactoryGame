@@ -107,9 +107,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, Rec
             ActionType::PlaceEntity(place_entity_info) => match &place_entity_info.entities {
                 place_entity::EntityPlaceOptions::Single(place_entity_type) => {
                     match place_entity_type {
-                        PlaceEntityType::Assembler { ty, .. } => {
-                            Some(data_store.assembler_info[*ty as usize].size.into())
-                        },
+                        PlaceEntityType::Assembler { ty, rotation, .. } => Some(
+                            data_store.assembler_info[usize::from(*ty)]
+                                .size(*rotation)
+                                .into(),
+                        ),
                         // FIXME: ty
                         PlaceEntityType::Inserter {
                             pos: _,

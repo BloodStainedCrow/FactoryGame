@@ -312,7 +312,7 @@ pub struct AssemblerInfo {
     pub name: String,
     pub display_name: String,
 
-    pub size: (u16, u16),
+    size: (u16, u16),
     pub num_module_slots: u8,
 
     pub fluid_connections: Vec<(FluidConnection, AllowedFluidDirection)>,
@@ -321,6 +321,17 @@ pub struct AssemblerInfo {
     pub base_speed: u8,
     pub base_prod: u8,
     pub base_power_consumption: Watt,
+}
+
+impl AssemblerInfo {
+    pub fn size(&self, rotation: Dir) -> (u16, u16) {
+        let base_size = self.size;
+        let size = match rotation {
+            Dir::North | Dir::South => base_size,
+            Dir::East | Dir::West => (base_size.0, base_size.1),
+        };
+        size
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]

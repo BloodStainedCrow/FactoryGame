@@ -3213,7 +3213,7 @@
             connections: [
                 ((0, 0), North, Direct),
                 ((0, 0), South, Underground (
-                    max_distance: 9,
+                    max_distance: 10,
                     underground_allowed_kinds: ["default"]
                 )),
             ],

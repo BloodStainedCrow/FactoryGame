@@ -257,7 +257,7 @@ impl MultiLabStore {
         current_research_costs: Option<&[u8]>,
     ) -> (Joule, u32, u16) {
         const POWER_CONSUMPTION: Watt = Watt(600);
-        const TICKS_PER_SCIENCE: TIMERTYPE = 60;
+        const TICKS_PER_SCIENCE: TIMERTYPE = 10;
 
         let Some(current_research_costs) = current_research_costs else {
             // We are not currently researching anything. This means we do not use any items any power or gained any progress

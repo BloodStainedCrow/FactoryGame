@@ -724,6 +724,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                         });
                 }
 
+                pg.potential_beacon_affected_powergrids.remove(&removed_id);
+
                 let to_change: Vec<_> = {
                     profiling::scope!("Extract beacon_affected_entities");
                     pg.beacon_affected_entities

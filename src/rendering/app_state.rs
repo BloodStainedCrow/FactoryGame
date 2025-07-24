@@ -835,13 +835,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     crate::frontend::action::place_entity::EntityPlaceOptions::Single(
                         place_entity_type,
                     ) => match place_entity_type {
-                        crate::frontend::world::tile::PlaceEntityType::Assembler { pos, ty } => {
+                        crate::frontend::world::tile::PlaceEntityType::Assembler {
+                            pos,
+                            ty,
+                            rotation,
+                        } => {
                             info!("Trying to place assembler at {pos:?}");
-                            if !self.world.can_fit(
-                                pos,
-                                data_store.assembler_info[ty as usize].size,
-                                data_store,
-                            ) {
+                            let size = data_store.assembler_info[ty as usize].size(rotation);
+                            if !self.world.can_fit(pos, size, data_store) {
                                 warn!("Tried to place assembler where it does not fit");
                                 continue;
                             }
@@ -849,7 +850,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             let powered_by = self.world.is_powered_by(
                                 &self.simulation_state,
                                 pos,
-                                data_store.assembler_info[ty as usize].size,
+                                size,
                                 data_store,
                             );
 
@@ -868,6 +869,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         pos,
                                         info: AssemblerInfo::PoweredNoRecipe(pole_position),
                                         modules,
+                                        rotation,
                                     },
                                     &mut self.simulation_state,
                                     data_store,
@@ -879,6 +881,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         pos,
                                         info: AssemblerInfo::UnpoweredNoRecipe,
                                         modules,
+                                        rotation,
                                     },
                                     &mut self.simulation_state,
                                     data_store,
@@ -989,8 +992,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         let mut entity_size = None;
                                         self.world.mutate_entities_colliding_with(storage_update.position, (1,1), data_store, |e| {
                                         match (e, storage_update.new_pg_entity.clone()) {
-                                            (Entity::Assembler { ty, pos: _, info: AssemblerInfo::Powered { id, pole_position: _, weak_index }, modules: _ }, crate::power::power_grid::PowerGridEntity::Assembler { ty: _, recipe, index }) => {
-                                                entity_size = Some(data_store.assembler_info[usize::from(*ty)].size);
+                                            (Entity::Assembler { ty, pos: _, info: AssemblerInfo::Powered { id, pole_position: _, weak_index }, modules: _, rotation }, crate::power::power_grid::PowerGridEntity::Assembler { ty: _, recipe, index }) => {
+                                                entity_size = Some(data_store.assembler_info[usize::from(*ty)].size(*rotation));
 
                                                 assert_eq!(id.recipe, recipe);
                                                 id.grid = storage_update.new_grid;
@@ -1441,8 +1444,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     Entity::Assembler {
                                         ty,
                                         pos,
-                                        modules,
                                         info,
+                                        rotation,
+                                        ..
                                     } => {
                                         // FIXME: Implement assembler flowthough
                                         None
@@ -1501,11 +1505,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                 pole_position,
                                                 weak_index,
                                             },
+                                        rotation: assembler_rotation,
                                         ..
                                     } => {
                                         let assembler_size = data_store.assembler_info
                                             [usize::from(*assembler_ty)]
-                                        .size;
+                                        .size(*assembler_rotation);
                                         let assembler_size = [assembler_size.0, assembler_size.1];
 
                                         let recipe_fluid_inputs: Vec<_> = data_store
@@ -1578,8 +1583,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                     rotation,
                                                     *assembler_pos,
                                                     *fluid_conn,
-                                                    // FIXME: Pass in the assemblers rotation
-                                                    Dir::North,
+                                                    *assembler_rotation,
                                                     assembler_size,
                                                     data_store,
                                                 )

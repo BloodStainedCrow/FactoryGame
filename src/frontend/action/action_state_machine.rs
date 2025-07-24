@@ -330,7 +330,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         );
                         if let Some(e) = world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next() {
                             match e {
-                                Entity::Assembler { ty, pos, modules, info } => match info {
+                                Entity::Assembler { ty, pos, modules, info, rotation } => match info {
                                     AssemblerInfo::UnpoweredNoRecipe => {},
                                     AssemblerInfo::Unpowered(recipe) => self.copy_info = Some(CopyInfo::Recipe { recipe: *recipe }),
                                     AssemblerInfo::PoweredNoRecipe(position) => {},
@@ -430,7 +430,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             HeldObject::Entity(place_entity_type) => match place_entity_type {
                                 PlaceEntityType::Assembler {
                                                                 pos: position,
-                                                                ty: _
+                                                                ty: _,
+                                                                rotation: _,
                                                             } => {
                                                                 *position = Self::player_mouse_to_tile(
                                                                     self.zoom_level,
@@ -594,7 +595,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     .into_iter()
                     .next()
                 {
-                    Some(Entity::Assembler { ty, .. }) => {
+                    Some(Entity::Assembler { ty, rotation, .. }) => {
                         self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                             PlaceEntityType::Assembler {
                                 pos: Self::player_mouse_to_tile(
@@ -603,6 +604,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                     self.current_mouse_pos,
                                 ),
                                 ty: *ty,
+                                rotation: *rotation,
                             },
                         ));
                     },
@@ -747,6 +749,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Assembler {
                     pos,
                     ty,
+                    rotation,
+                })),
+                Key::R,
+            ) => {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::Assembler {
+                        pos: *pos,
+                        ty: *ty,
+                        rotation: rotation.turn_right(),
+                    },
+                ));
+                vec![]
+            },
+            (
+                ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Assembler {
+                    pos,
+                    ty,
+                    rotation,
                 })),
                 Key::Key2,
             ) => {
@@ -754,6 +774,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     PlaceEntityType::Assembler {
                         pos: *pos,
                         ty: (*ty + 1) % data_store.assembler_info.len() as u8,
+                        rotation: *rotation,
                     },
                 ));
                 vec![]
@@ -768,6 +789,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         ),
                         // TODO:
                         ty: 0,
+                        rotation: Dir::North,
                     },
                 ));
                 vec![]

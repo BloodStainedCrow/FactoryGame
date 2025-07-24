@@ -72,6 +72,8 @@ enum BlueprintPlaceEntity {
     Assembler {
         pos: Position,
         ty: String,
+        #[serde(default = "Dir::default")]
+        rotation: Dir,
     },
     Inserter {
         pos: Position,
@@ -141,10 +143,11 @@ impl BlueprintAction {
                 match place_entity_info.entities.clone() {
                     EntityPlaceOptions::Single(place_entity_type) => {
                         let ty = match place_entity_type {
-                            PlaceEntityType::Assembler { pos, ty } => {
+                            PlaceEntityType::Assembler { pos, ty, rotation } => {
                                 BlueprintPlaceEntity::Assembler {
                                     pos,
                                     ty: data_store.assembler_info[ty as usize].name.clone(),
+                                    rotation,
                                 }
                             },
                             PlaceEntityType::Inserter { pos, dir, filter } => {
@@ -269,14 +272,17 @@ impl BlueprintAction {
         let action = match self {
             BlueprintAction::PlaceEntity(blueprint_place_entity) => {
                 let entity = match blueprint_place_entity {
-                    BlueprintPlaceEntity::Assembler { pos, ty } => PlaceEntityType::Assembler {
-                        pos: *pos,
-                        ty: data_store
-                            .assembler_info
-                            .iter()
-                            .position(|info| info.name == *ty)
-                            .map(|v| v.try_into().unwrap())
-                            .ok_or(())?,
+                    BlueprintPlaceEntity::Assembler { pos, ty, rotation } => {
+                        PlaceEntityType::Assembler {
+                            pos: *pos,
+                            ty: data_store
+                                .assembler_info
+                                .iter()
+                                .position(|info| info.name == *ty)
+                                .map(|v| v.try_into().unwrap())
+                                .ok_or(())?,
+                            rotation: *rotation,
+                        }
                     },
                     BlueprintPlaceEntity::Inserter { pos, dir, filter } => {
                         PlaceEntityType::Inserter {
@@ -492,7 +498,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     player,
                 }),
                 ActionType::PlaceEntity(PlaceEntityInfo {
-                    entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler { pos, ty }),
+                    entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler { pos, ty, rotation }),
                 }) => ActionType::PlaceEntity(PlaceEntityInfo {
                     entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler {
                         pos: Position {
@@ -500,6 +506,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                             y: base_pos.y + pos.y,
                         },
                         ty,
+                        rotation,
                     }),
                 }),
                 ActionType::PlaceEntity(PlaceEntityInfo {
@@ -761,6 +768,7 @@ impl Blueprint {
                     pos,
                     info: AssemblerInfo::PoweredNoRecipe(_) | AssemblerInfo::UnpoweredNoRecipe,
                     modules,
+                    rotation,
                 } => vec![
                     ActionType::PlaceEntity(PlaceEntityInfo {
                         entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler {
@@ -769,6 +777,7 @@ impl Blueprint {
                                 y: pos.y - base_pos.y,
                             },
                             ty: *ty,
+                            rotation: *rotation,
                         }),
                     }),
                     ActionType::AddModules {
@@ -789,6 +798,7 @@ impl Blueprint {
                         }
                         | AssemblerInfo::Unpowered(recipe),
                     modules,
+                    rotation,
                 } => vec![
                     ActionType::PlaceEntity(PlaceEntityInfo {
                         entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler {
@@ -797,6 +807,7 @@ impl Blueprint {
                                 y: pos.y - base_pos.y,
                             },
                             ty: *ty,
+                            rotation: *rotation,
                         }),
                     }),
                     ActionType::SetRecipe(SetRecipeInfo {
@@ -1058,8 +1069,9 @@ impl Blueprint {
             match action {
                 BlueprintAction::PlaceEntity(blueprint_place_entity) => {
                     match blueprint_place_entity {
-                        BlueprintPlaceEntity::Assembler { pos, .. } => {
+                        BlueprintPlaceEntity::Assembler { pos, rotation, .. } => {
                             *pos = pos_fn(pos, e_size);
+                            *rotation = rotation_fn(&rotation);
                         },
                         BlueprintPlaceEntity::Inserter { pos, dir, .. } => {
                             *pos = pos_fn(pos, e_size);
@@ -1270,7 +1282,11 @@ pub fn random_entity_to_place<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> impl Strategy<Value = PlaceEntityType<ItemIdxType>> + use<ItemIdxType, RecipeIdxType> {
     prop_oneof![
-        random_blueprint_offs().prop_map(|pos| PlaceEntityType::Assembler { pos, ty: 0 }),
+        random_blueprint_offs().prop_map(|pos| PlaceEntityType::Assembler {
+            pos,
+            ty: 0,
+            rotation: Dir::North
+        }),
         (random_blueprint_offs(), 0..data_store.chest_num_slots.len()).prop_map(|(pos, ty)| {
             PlaceEntityType::Chest {
                 pos,

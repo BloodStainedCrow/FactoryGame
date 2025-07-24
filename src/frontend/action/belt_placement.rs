@@ -1544,7 +1544,7 @@ mod test {
     use crate::frontend::action::ActionType;
     use crate::frontend::action::set_recipe::SetRecipeInfo;
     use crate::frontend::world::Position;
-    use crate::frontend::world::tile::{AssemblerInfo, Entity, InserterInfo, PlaceEntityType};
+    use crate::frontend::world::tile::{AssemblerInfo, Dir, Entity, InserterInfo, PlaceEntityType};
     use crate::item::Recipe;
     use crate::rendering::app_state::GameState;
 
@@ -1553,6 +1553,7 @@ mod test {
             place(PlaceEntityType::Assembler {
                 pos: Position { x: 0, y: 3 },
                 ty: 0,
+                rotation: Dir::North,
             }),
             ActionType::SetRecipe(SetRecipeInfo {
                 pos: Position { x: 0, y: 3 },

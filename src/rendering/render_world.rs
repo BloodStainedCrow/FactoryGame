@@ -338,12 +338,13 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             ty,
                                             pos,
                                             info,
+                                            rotation,
                                             ..
                                         } => {
-                                            let size: [u16; 2] = [
-                                                data_store.assembler_info[usize::from(*ty)].size.0,
-                                                data_store.assembler_info[usize::from(*ty)].size.1,
-                                            ];
+                                            let size: [u16; 2] = data_store.assembler_info
+                                                [usize::from(*ty)]
+                                            .size(*rotation)
+                                            .into();
 
                                             match info {
                                                 AssemblerInfo::UnpoweredNoRecipe => {
@@ -1385,11 +1386,14 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 crate::frontend::action::action_state_machine::HeldObject::Entity(
                     place_entity_type,
                 ) => match place_entity_type {
-                    crate::frontend::world::tile::PlaceEntityType::Assembler { ty, pos } => {
-                        let size: [u16; 2] = [
-                            data_store.assembler_info[usize::from(*ty)].size.0,
-                            data_store.assembler_info[usize::from(*ty)].size.1,
-                        ];
+                    crate::frontend::world::tile::PlaceEntityType::Assembler {
+                        ty,
+                        pos,
+                        rotation,
+                    } => {
+                        let size: [u16; 2] = data_store.assembler_info[usize::from(*ty)]
+                            .size(*rotation)
+                            .into();
                         texture_atlas.assembler.draw(
                             [
                                 pos.x as f32 - camera_pos.0
@@ -1851,7 +1855,8 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
             if let Some(entity) = entity {
                 match entity {
-                    crate::frontend::world::tile::Entity::Assembler { ty, pos, info, modules } => {
+                    crate::frontend::world::tile::Entity::Assembler { ty, pos, info, modules, rotation } => {
+                        // FIXME: Rotate sprite
                         let mut goal_recipe: Option<Recipe<RecipeIdxType>> = match info {
                             AssemblerInfo::UnpoweredNoRecipe => None,
                             AssemblerInfo::Unpowered(recipe) => Some(*recipe),
