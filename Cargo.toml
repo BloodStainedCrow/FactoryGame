@@ -100,7 +100,7 @@ incremental = true
 # codegen-units = 1
 
 [features]
-default = ["profiler"]
+default = ["profiler", "graphics"]
 # Use Krastorio2 graphics. Since I have not properly added licensing information, I currently do not push them, therefore this feature is broken
 graphics = []
 # dhat-rs memory profiling (https://docs.rs/dhat/latest/dhat/)
