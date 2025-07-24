@@ -11,6 +11,10 @@ use crate::{
 
 const CHEST_GOAL_AMOUNT: ITEMCOUNTTYPE = ITEMCOUNTTYPE::MAX / 2;
 
+// TODO: Add specilised chests for different sizes
+pub type ChestSize = u32;
+pub type SignedChestSize = i32;
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct FullChestStore<ItemIdxType: WeakIdxTrait> {
     pub stores: Box<[MultiChestStore<ItemIdxType>]>,
@@ -40,9 +44,9 @@ pub struct MultiChestStore<ItemIdxType: WeakIdxTrait> {
     item: Item<ItemIdxType>,
     max_insert: Vec<ITEMCOUNTTYPE>,
     pub inout: Vec<ITEMCOUNTTYPE>,
-    storage: Vec<u16>,
+    storage: Vec<ChestSize>,
     // TODO: Any way to not have to store this a billion times?
-    max_items: Vec<u16>,
+    max_items: Vec<ChestSize>,
     holes: Vec<usize>,
 }
 
@@ -68,14 +72,14 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         let stack_size = data_store.item_stack_sizes[usize_from(self.item.id)];
         assert!(slot_limit <= data_store.chest_num_slots[usize::from(ty)]);
         let num_stacks = slot_limit;
-        let max_items = u16::from(stack_size) * u16::from(num_stacks);
+        let max_items = ChestSize::from(stack_size) * ChestSize::from(num_stacks);
 
         if let Some(hole) = self.holes.pop() {
             self.inout[hole] = 0;
             self.storage[hole] = 0;
             self.max_insert[hole] = max_items.try_into().unwrap_or(ITEMCOUNTTYPE::MAX);
 
-            self.max_items[hole] = max_items.saturating_sub(u16::from(ITEMCOUNTTYPE::MAX));
+            self.max_items[hole] = max_items.saturating_sub(ChestSize::from(ITEMCOUNTTYPE::MAX));
             hole.try_into().unwrap()
         } else {
             self.inout.push(0);
@@ -84,18 +88,18 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
                 .push(max_items.try_into().unwrap_or(ITEMCOUNTTYPE::MAX));
 
             self.max_items
-                .push(max_items.saturating_sub(u16::from(ITEMCOUNTTYPE::MAX)));
+                .push(max_items.saturating_sub(ChestSize::from(ITEMCOUNTTYPE::MAX)));
             (self.inout.len() - 1).try_into().unwrap()
         }
     }
 
-    pub fn add_custom_chest(&mut self, max_items: u16) -> u32 {
+    pub fn add_custom_chest(&mut self, max_items: ChestSize) -> u32 {
         if let Some(hole) = self.holes.pop() {
             self.inout[hole] = 0;
             self.storage[hole] = 0;
             self.max_insert[hole] = max_items.try_into().unwrap_or(ITEMCOUNTTYPE::MAX);
 
-            self.max_items[hole] = max_items.saturating_sub(u16::from(ITEMCOUNTTYPE::MAX));
+            self.max_items[hole] = max_items.saturating_sub(ChestSize::from(ITEMCOUNTTYPE::MAX));
             hole.try_into().unwrap()
         } else {
             self.inout.push(0);
@@ -104,26 +108,26 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
                 .push(max_items.try_into().unwrap_or(ITEMCOUNTTYPE::MAX));
 
             self.max_items
-                .push(max_items.saturating_sub(u16::from(ITEMCOUNTTYPE::MAX)));
+                .push(max_items.saturating_sub(ChestSize::from(ITEMCOUNTTYPE::MAX)));
             (self.inout.len() - 1).try_into().unwrap()
         }
     }
 
-    pub fn remove_chest(&mut self, index: u32) -> u16 {
+    pub fn remove_chest(&mut self, index: u32) -> ChestSize {
         let index = index as usize;
         self.holes.push(index);
 
-        let items = u16::from(self.inout[index]) + self.storage[index];
+        let items = ChestSize::from(self.inout[index]) + self.storage[index];
         self.inout[index] = 0;
         self.storage[index] = 0;
         self.max_items[index] = 0;
         items
     }
 
-    pub fn get_chest(&self, index: u32) -> (u16, u16) {
+    pub fn get_chest(&self, index: u32) -> (ChestSize, ChestSize) {
         (
-            self.storage[index as usize] + u16::from(self.inout[index as usize]),
-            self.max_items[index as usize] + u16::from(self.max_insert[index as usize]),
+            self.storage[index as usize] + ChestSize::from(self.inout[index as usize]),
+            self.max_items[index as usize] + ChestSize::from(self.max_insert[index as usize]),
         )
     }
 
@@ -136,19 +140,19 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
             let to_move = inout.abs_diff(CHEST_GOAL_AMOUNT);
 
             if *inout >= CHEST_GOAL_AMOUNT {
-                let moved: ITEMCOUNTTYPE = min(u16::from(to_move), max_items - *storage)
+                let moved: ITEMCOUNTTYPE = min(ChestSize::from(to_move), max_items - *storage)
                     .try_into()
                     .expect("since to_move was a ITEMCOUNTTYPE, this always fits");
                 *inout -= moved;
-                *storage += u16::from(to_move);
+                *storage += ChestSize::from(to_move);
 
                 debug_assert!(*storage <= max_items);
             } else {
-                let moved: ITEMCOUNTTYPE = min(u16::from(to_move), *storage)
+                let moved: ITEMCOUNTTYPE = min(ChestSize::from(to_move), *storage)
                     .try_into()
                     .expect("since to_move was a ITEMCOUNTTYPE, this always fits");
                 *inout += moved;
-                *storage -= u16::from(to_move);
+                *storage -= ChestSize::from(to_move);
             }
         }
     }
@@ -161,26 +165,31 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         {
             let to_move = inout.abs_diff(CHEST_GOAL_AMOUNT);
 
-            let switch = u16::from(*inout >= CHEST_GOAL_AMOUNT);
+            let switch = ChestSize::from(*inout >= CHEST_GOAL_AMOUNT);
 
-            let moved: i16 = (switch as i16 + (1 - switch as i16) * -1)
+            let moved: SignedChestSize = (switch as SignedChestSize
+                + (1 - switch as SignedChestSize) * -1)
                 * (min(
-                    u16::from(to_move),
+                    ChestSize::from(to_move),
                     (max_items - *storage) * switch + (1 - switch) * *storage,
-                ) as i16);
+                ) as SignedChestSize);
 
-            *inout = (u16::from(*inout)).wrapping_sub_signed(moved) as u8;
-            *storage = (*storage).wrapping_add_signed(moved) as u16;
+            *inout = (ChestSize::from(*inout)).wrapping_sub_signed(moved) as u8;
+            *storage = (*storage).wrapping_add_signed(moved) as ChestSize;
 
             debug_assert!(*storage <= max_items);
         }
     }
 
-    pub fn add_items_to_chest(&mut self, index: u32, new_items: u16) -> Result<(), u16> {
+    pub fn add_items_to_chest(
+        &mut self,
+        index: u32,
+        new_items: ChestSize,
+    ) -> Result<(), ChestSize> {
         let index = index as usize;
 
-        let storage_size = self.max_items[index] + u16::from(self.max_insert[index]);
-        let current_items = self.inout[index] as u16 + self.storage[index];
+        let storage_size = self.max_items[index] + ChestSize::from(self.max_insert[index]);
+        let current_items = self.inout[index] as ChestSize + self.storage[index];
 
         if current_items + new_items > storage_size {
             let not_inserted = (current_items + new_items) - storage_size;
@@ -205,10 +214,14 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         }
     }
 
-    pub fn remove_items_from_chest(&mut self, index: u32, to_remove: u16) -> Result<(), u16> {
+    pub fn remove_items_from_chest(
+        &mut self,
+        index: u32,
+        to_remove: ChestSize,
+    ) -> Result<(), ChestSize> {
         let index = index as usize;
 
-        let current_items = self.inout[index] as u16 + self.storage[index];
+        let current_items = self.inout[index] as ChestSize + self.storage[index];
 
         if current_items >= to_remove {
             if self.storage[index] >= to_remove {
@@ -229,40 +242,40 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
     }
 
     /// Returns the number of items no longer part of the box
-    pub fn change_chest_size(&mut self, index: u32, new_size: u16) -> u16 {
+    pub fn change_chest_size(&mut self, index: u32, new_size: ChestSize) -> ChestSize {
         let index = index as usize;
 
-        let removed_items = if new_size < max(self.max_items[index], self.max_insert[index] as u16)
-        {
-            let current_items = self.inout[index] as u16 + self.storage[index];
+        let removed_items =
+            if new_size < max(self.max_items[index], self.max_insert[index] as ChestSize) {
+                let current_items = self.inout[index] as ChestSize + self.storage[index];
 
-            if current_items > new_size {
-                let items_to_remove = current_items - new_size;
+                if current_items > new_size {
+                    let items_to_remove = current_items - new_size;
 
-                if self.storage[index] >= items_to_remove {
-                    self.storage[index] -= items_to_remove;
+                    if self.storage[index] >= items_to_remove {
+                        self.storage[index] -= items_to_remove;
+                    } else {
+                        self.inout[index] = self.inout[index]
+                            .checked_sub(
+                                items_to_remove
+                                    .checked_sub(self.storage[index])
+                                    .unwrap()
+                                    .try_into()
+                                    .unwrap(),
+                            )
+                            .unwrap();
+                        self.storage[index] = 0;
+                    }
+
+                    items_to_remove
                 } else {
-                    self.inout[index] = self.inout[index]
-                        .checked_sub(
-                            items_to_remove
-                                .checked_sub(self.storage[index])
-                                .unwrap()
-                                .try_into()
-                                .unwrap(),
-                        )
-                        .unwrap();
-                    self.storage[index] = 0;
+                    0
                 }
-
-                items_to_remove
             } else {
                 0
-            }
-        } else {
-            0
-        };
+            };
 
-        self.max_items[index] = new_size.saturating_sub(u16::from(ITEMCOUNTTYPE::MAX));
+        self.max_items[index] = new_size.saturating_sub(ChestSize::from(ITEMCOUNTTYPE::MAX));
         self.max_insert[index] = new_size.try_into().unwrap_or(ITEMCOUNTTYPE::MAX);
 
         removed_items
@@ -283,10 +296,12 @@ mod test {
     use proptest::proptest;
 
     use crate::chest::CHEST_GOAL_AMOUNT;
+    use crate::chest::ChestSize;
     use crate::chest::ITEMCOUNTTYPE;
+    use crate::chest::SignedChestSize;
 
-    fn max_items_and_storage() -> impl Strategy<Value = (u16, u16)> {
-        (0..u16::MAX).prop_flat_map(|max_items| (Just(max_items), 0..max_items))
+    fn max_items_and_storage() -> impl Strategy<Value = (ChestSize, ChestSize)> {
+        (0..ChestSize::MAX).prop_flat_map(|max_items| (Just(max_items), 0..max_items))
     }
 
     proptest! {
@@ -300,34 +315,34 @@ mod test {
             let mut inout_naive = inout;
 
             if inout_naive >= CHEST_GOAL_AMOUNT {
-                let moved: ITEMCOUNTTYPE = min(u16::from(to_move), max_items - storage)
+                let moved: ITEMCOUNTTYPE = min(ChestSize::from(to_move), max_items - storage)
                     .try_into()
                     .expect("since to_move was a ITEMCOUNTTYPE, this always fits");
                 inout_naive -= moved;
-                storage_naive += u16::from(moved);
+                storage_naive += ChestSize::from(moved);
 
                 debug_assert!(storage_naive <= max_items);
             } else {
-                let moved: ITEMCOUNTTYPE = min(u16::from(to_move), storage)
+                let moved: ITEMCOUNTTYPE = min(ChestSize::from(to_move), storage)
                     .try_into()
                     .expect("since to_move was a ITEMCOUNTTYPE, this always fits");
                 inout_naive += moved;
-                storage_naive -= u16::from(moved);
+                storage_naive -= ChestSize::from(moved);
             }
 
             let mut storage_simd = storage;
             let mut inout_simd = inout;
 
-            let switch = u16::from(inout_simd >= CHEST_GOAL_AMOUNT);
+            let switch = ChestSize::from(inout_simd >= CHEST_GOAL_AMOUNT);
 
-            let moved: i16 = (switch as i16 + (1 - switch as i16) * -1)
+            let moved: SignedChestSize = (switch as SignedChestSize + (1 - switch as SignedChestSize) * -1)
                 * (min(
-                    to_move as u16,
+                    to_move as ChestSize,
                     (max_items - storage_simd) * switch + (1 - switch) * storage_simd,
-                ) as i16);
+                ) as SignedChestSize);
 
-            inout_simd = (inout_simd as u16).checked_sub_signed(moved).unwrap() as u8;
-            storage_simd = (storage_simd as u16).checked_add_signed(moved).unwrap();
+            inout_simd = (inout_simd as ChestSize).checked_sub_signed(moved).unwrap() as u8;
+            storage_simd = (storage_simd as ChestSize).checked_add_signed(moved).unwrap();
 
             debug_assert!(storage_simd <= max_items);
 

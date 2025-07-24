@@ -1,3 +1,4 @@
+use crate::chest::ChestSize;
 use crate::frontend::action::belt_placement::{BeltState, expected_belt_state};
 use crate::item::Indexable;
 use crate::rendering::Corner;
@@ -2226,7 +2227,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         break;
                                     }
                                     row.col(|ui| {
-                                        let this_slots_stack_count = min(current_items.saturating_sub(slot_id as u16 * stack_size), stack_size);
+                                        let this_slots_stack_count = min(current_items.saturating_sub(slot_id as ChestSize * stack_size as ChestSize), stack_size as ChestSize);
 
                                         let clicked = ui.add(Label::new(format!("{}", this_slots_stack_count)).extend()).clicked();
                                         let mut shift = false;

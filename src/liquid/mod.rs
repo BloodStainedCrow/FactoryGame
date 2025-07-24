@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use itertools::Itertools;
 use log::warn;
 
+use crate::chest::ChestSize;
 use crate::inserter::storage_storage_with_buckets::InserterIdentifier;
 use crate::item::Indexable;
 use crate::{
@@ -956,7 +957,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
     fn new_from_graph(
         graph: Network<Position, FluidBox, FluidSystemEntity>,
         old_fluid: Option<Item<ItemIdxType>>,
-        fluid_level_to_distribute: &mut u16,
+        fluid_level_to_distribute: &mut ChestSize,
         fluid_capacity_to_distribute: &mut u32,
         chest_store: &mut FullChestStore<ItemIdxType>,
     ) -> Self {
@@ -974,7 +975,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
 
         // Clamp the fluid in this network to the capacity
         let fluid_left_for_us =
-            u16::try_from(min(our_share_of_fluid.into(), new_capacity)).unwrap();
+            ChestSize::try_from(min(our_share_of_fluid.into(), new_capacity)).unwrap();
         *fluid_level_to_distribute -= fluid_left_for_us;
         *fluid_capacity_to_distribute -= new_capacity;
 
@@ -1531,7 +1532,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         self.storage_capacity -= removed_fluid_box.capacity;
 
         let fluid_left_for_us =
-            u16::try_from(min(fluid_distribution.into(), self.storage_capacity)).unwrap();
+            ChestSize::try_from(min(fluid_distribution.into(), self.storage_capacity)).unwrap();
 
         if self.graph.nodes().into_iter().next().is_none() {
             // We no longer exist
@@ -1665,7 +1666,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
             .collect();
 
         let fluid_left_for_us =
-            u16::try_from(min(fluid_distribution.into(), self.storage_capacity)).unwrap();
+            ChestSize::try_from(min(fluid_distribution.into(), self.storage_capacity)).unwrap();
 
         if self.graph.nodes().into_iter().next().is_none() {
             // We no longer exist

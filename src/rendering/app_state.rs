@@ -1,4 +1,5 @@
 use crate::belt::BeltTileId;
+use crate::chest::ChestSize;
 use crate::data::AllowedFluidDirection;
 use crate::frontend::world::tile::UndergroundDir;
 use crate::inserter::storage_storage_with_buckets::InserterIdentifier;
@@ -766,8 +767,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         [usize_from(item.id)]
                                     .change_chest_size(
                                         *index,
-                                        data_store.item_stack_sizes[usize_from(item.id)] as u16
-                                            * u16::from(num_slots),
+                                        data_store.item_stack_sizes[usize_from(item.id)]
+                                            as ChestSize
+                                            * ChestSize::from(num_slots),
                                     );
                                 }
                                 *slot_limit = num_slots;
