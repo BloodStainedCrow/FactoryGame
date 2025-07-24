@@ -309,7 +309,7 @@
             output: [
                 (
                     item: "factory_game::water",
-                    amount: 1,
+                    amount: 30,
                 ),
             ],
             time_to_craft: 5,
@@ -599,6 +599,56 @@
                ),
            ],
            time_to_craft: 300,
+           is_intermediate: true,
+        ),
+        (
+           name: "factory_game::heavy_oil_cracking",
+           display_name: "Heavy Oil Cracking",
+           possible_machines: [
+               "factory_game::chemical_plant",
+           ],
+           ings: [
+               (
+                   item: "factory_game::heavy_oil",
+                   amount: 40,
+               ),
+               (
+                   item: "factory_game::water",
+                   amount: 30,
+               ),
+           ],
+           output: [
+               (
+                   item: "factory_game::light_oil",
+                   amount: 30,
+               ),
+           ],
+           time_to_craft: 120,
+           is_intermediate: true,
+        ),
+        (
+           name: "factory_game::light_oil_cracking",
+           display_name: "Heavy Oil Cracking",
+           possible_machines: [
+               "factory_game::chemical_plant",
+           ],
+           ings: [
+               (
+                   item: "factory_game::light_oil",
+                   amount: 30,
+               ),
+               (
+                   item: "factory_game::water",
+                   amount: 30,
+               ),
+           ],
+           output: [
+               (
+                   item: "factory_game::petroleum_gas",
+                   amount: 20,
+               ),
+           ],
+           time_to_craft: 120,
            is_intermediate: true,
         ),
         (
@@ -2815,6 +2865,8 @@
             infinite: None,
             effects: [
                 RecipeUnlock("factory_game::advanced_oil_processing"),
+                RecipeUnlock("factory_game::heavy_oil_cracking"),
+                RecipeUnlock("factory_game::light_oil_cracking"),
             ],
         ),
         (
