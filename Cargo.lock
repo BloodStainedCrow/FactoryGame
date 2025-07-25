@@ -563,12 +563,6 @@ dependencies = [
 
 [[package]]
 name = "base64"
-version = "0.21.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
-
-[[package]]
-name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
@@ -1189,8 +1183,17 @@ version = "0.31.1"
 source = "git+https://github.com/BloodStainedCrow/egui?branch=removeProfiling#4e11a02615078f509d9acc474ae13a66b411eaf7"
 dependencies = [
  "bytemuck",
- "emath 0.31.1 (git+https://github.com/BloodStainedCrow/egui?branch=removeProfiling)",
+ "emath 0.31.1",
  "serde",
+]
+
+[[package]]
+name = "ecolor"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a631732d995184114016fab22fc7e3faf73d6841c2d7650395fe251fbcd9285"
+dependencies = [
+ "emath 0.32.0",
 ]
 
 [[package]]
@@ -1201,7 +1204,7 @@ dependencies = [
  "ahash",
  "bytemuck",
  "document-features",
- "egui",
+ "egui 0.31.1",
  "egui-wgpu",
  "egui-winit",
  "egui_glow",
@@ -1238,13 +1241,29 @@ dependencies = [
  "accesskit",
  "ahash",
  "bitflags 2.9.1",
- "emath 0.31.1 (git+https://github.com/BloodStainedCrow/egui?branch=removeProfiling)",
- "epaint",
+ "emath 0.31.1",
+ "epaint 0.31.1",
  "log",
  "nohash-hasher",
  "profiling",
- "ron 0.10.1",
+ "ron",
  "serde",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "egui"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8470210c95a42cc985d9ffebfd5067eea55bdb1c3f7611484907db9639675e28"
+dependencies = [
+ "ahash",
+ "bitflags 2.9.1",
+ "emath 0.32.0",
+ "epaint 0.32.0",
+ "nohash-hasher",
+ "profiling",
+ "smallvec",
  "unicode-segmentation",
 ]
 
@@ -1256,8 +1275,8 @@ dependencies = [
  "ahash",
  "bytemuck",
  "document-features",
- "egui",
- "epaint",
+ "egui 0.31.1",
+ "epaint 0.31.1",
  "log",
  "profiling",
  "thiserror 1.0.69",
@@ -1276,7 +1295,7 @@ dependencies = [
  "ahash",
  "arboard",
  "bytemuck",
- "egui",
+ "egui 0.31.1",
  "log",
  "profiling",
  "raw-window-handle",
@@ -1293,12 +1312,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "624659a2e972a46f4d5f646557906c55f1cd5a0836eddbe610fdf1afba1b4226"
 dependencies = [
  "ahash",
- "egui",
+ "egui 0.31.1",
+ "enum-map",
+ "log",
+ "profiling",
+ "serde",
+]
+
+[[package]]
+name = "egui_extras"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f791a5937f518249016b276b3639ad2aa3824048b6f2161ec2b431ab325880a"
+dependencies = [
+ "ahash",
+ "egui 0.32.0",
  "enum-map",
  "log",
  "mime_guess2",
  "profiling",
- "serde",
 ]
 
 [[package]]
@@ -1308,7 +1340,7 @@ source = "git+https://github.com/BloodStainedCrow/egui?branch=removeProfiling#4e
 dependencies = [
  "ahash",
  "bytemuck",
- "egui",
+ "egui 0.31.1",
  "glow",
  "log",
  "memoffset",
@@ -1324,7 +1356,7 @@ version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4779b6849bda09572523f4dedbfbf80179253f801f4eb1aaa0ef231894634ba6"
 dependencies = [
- "egui",
+ "egui 0.31.1",
  "petgraph",
  "rand 0.9.2",
  "serde",
@@ -1332,13 +1364,13 @@ dependencies = [
 
 [[package]]
 name = "egui_plot"
-version = "0.32.1"
+version = "0.33.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14ae092b46ea532f6c69d3e71036fb3b688fd00fd09c2a1e43d17051a8ae43e6"
+checksum = "524318041a8ea90c81c738e8985f8ad9e3f9bed636b03c2ff37b218113ed5121"
 dependencies = [
  "ahash",
- "egui",
- "emath 0.31.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "egui 0.32.0",
+ "emath 0.32.0",
 ]
 
 [[package]]
@@ -1350,17 +1382,17 @@ checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 [[package]]
 name = "emath"
 version = "0.31.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e4cadcff7a5353ba72b7fea76bf2122b5ebdbc68e8155aa56dfdea90083fe1b"
-
-[[package]]
-name = "emath"
-version = "0.31.1"
 source = "git+https://github.com/BloodStainedCrow/egui?branch=removeProfiling#4e11a02615078f509d9acc474ae13a66b411eaf7"
 dependencies = [
  "bytemuck",
  "serde",
 ]
+
+[[package]]
+name = "emath"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "45f057b141e7e46340c321400be74b793543b1b213036f0f989c35d35957c32e"
 
 [[package]]
 name = "embedded-io"
@@ -1441,14 +1473,29 @@ dependencies = [
  "ab_glyph",
  "ahash",
  "bytemuck",
- "ecolor",
- "emath 0.31.1 (git+https://github.com/BloodStainedCrow/egui?branch=removeProfiling)",
+ "ecolor 0.31.1",
+ "emath 0.31.1",
  "epaint_default_fonts",
  "log",
  "nohash-hasher",
  "parking_lot",
  "profiling",
  "serde",
+]
+
+[[package]]
+name = "epaint"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94cca02195f0552c17cabdc02f39aa9ab6fbd815dac60ab1cd3d5b0aa6f9551c"
+dependencies = [
+ "ab_glyph",
+ "ahash",
+ "ecolor 0.32.0",
+ "emath 0.32.0",
+ "nohash-hasher",
+ "parking_lot",
+ "profiling",
 ]
 
 [[package]]
@@ -1554,8 +1601,8 @@ dependencies = [
  "dhat",
  "directories",
  "eframe",
- "egui",
- "egui_extras",
+ "egui 0.31.1",
+ "egui_extras 0.32.0",
  "egui_graphs",
  "egui_plot",
  "enum-map",
@@ -1573,10 +1620,10 @@ dependencies = [
  "proptest",
  "puffin",
  "puffin_egui",
- "rand 0.8.5",
+ "rand 0.9.2",
  "rayon",
  "rfd",
- "ron 0.8.1",
+ "ron",
  "rstest",
  "serde",
  "serde_path_to_error",
@@ -3343,9 +3390,9 @@ checksum = "f84267b20a16ea918e43c6a88433c2d54fa145c92a811b5b047ccbe153674483"
 
 [[package]]
 name = "postcard"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c1de96e20f51df24ca73cafcc4690e044854d803259db27a00a461cb3b9d17a"
+checksum = "6764c3b5dd454e283a30e6dfe78e9b31096d9e32036b5d1eaac7a6119ccb9a24"
 dependencies = [
  "cobs",
  "embedded-io 0.4.0",
@@ -3495,8 +3542,8 @@ name = "puffin_egui"
 version = "0.29.1"
 source = "git+https://github.com/BloodStainedCrow/puffin#a3f7ff67ec940258ca010609b256d4126e560002"
 dependencies = [
- "egui",
- "egui_extras",
+ "egui 0.31.1",
+ "egui_extras 0.31.1",
  "indexmap",
  "natord",
  "once_cell",
@@ -3846,23 +3893,11 @@ dependencies = [
 
 [[package]]
 name = "ron"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b91f7eff05f748767f183df4320a63d6936e9c6107d97c9e6bdd9784f4289c94"
-dependencies = [
- "base64 0.21.7",
- "bitflags 2.9.1",
- "serde",
- "serde_derive",
-]
-
-[[package]]
-name = "ron"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "beceb6f7bf81c73e73aeef6dd1356d9a1b2b4909e1f0fc3e59b034f9572d7b7f"
 dependencies = [
- "base64 0.22.1",
+ "base64",
  "bitflags 2.9.1",
  "serde",
  "serde_derive",
@@ -4536,7 +4571,7 @@ version = "0.1.0"
 source = "git+https://github.com/BloodStainedCrow/tilelib.git#aa44854b8b9c571894a4a83b3ff65aecb6f78614"
 dependencies = [
  "bytemuck",
- "egui",
+ "egui 0.31.1",
  "egui-wgpu",
  "image",
  "itertools 0.14.0",
@@ -4827,7 +4862,7 @@ version = "0.45.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80be9b06fbae3b8b303400ab20778c80bbaf338f563afe567cf3c9eea17b47ef"
 dependencies = [
- "base64 0.22.1",
+ "base64",
  "data-url",
  "flate2",
  "fontdb",
