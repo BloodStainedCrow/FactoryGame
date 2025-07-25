@@ -1239,7 +1239,7 @@ impl RawDataStore {
                     display_name: "Fast Transport Belt".to_string(),
                     has_underground: Some(BeltUndergroundInfo { max_distance: 9 }),
                     has_splitter: None,
-                    timer_increase: 15 * 2,
+                    timer_increase: 45 * 2,
                 },
                 BeltInfo {
                     name: "factory_game::transport_belt".to_string(),
