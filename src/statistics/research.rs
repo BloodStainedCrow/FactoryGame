@@ -1,22 +1,10 @@
 use std::iter;
 
-use crate::{
-    item::{IdxTrait, WeakIdxTrait},
-    research::ResearchProgress,
-    NewWithDataStore,
-};
+use crate::{item::IdxTrait, research::ResearchProgress};
 
 use super::IntoSeries;
 
 pub struct ResearchInfo {}
-
-impl NewWithDataStore for u64 {
-    fn new<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>(
-        _data_store: impl std::borrow::Borrow<crate::data::DataStore<ItemIdxType, RecipeIdxType>>,
-    ) -> Self {
-        Self::default()
-    }
-}
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> IntoSeries<(), ItemIdxType, RecipeIdxType>
     for ResearchProgress
@@ -25,8 +13,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> IntoSeries<(), ItemIdxType,
         values: &[Self],
         filter: Option<impl Fn(()) -> bool>,
         _data_store: &crate::data::DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<Item = charts_rs::Series> {
-        iter::once(
+    ) -> impl Iterator<Item = (usize, charts_rs::Series)> {
+        iter::once((
+            0,
             (
                 "Research",
                 values
@@ -36,6 +25,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> IntoSeries<(), ItemIdxType,
                     .collect(),
             )
                 .into(),
-        )
+        ))
     }
 }

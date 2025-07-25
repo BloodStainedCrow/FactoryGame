@@ -1,26 +1,26 @@
-use std::{array, cmp::max, simd::Simd};
-
-use itertools::Itertools;
+use std::{array, i32, simd::Simd, u8};
 
 use crate::{
     data::{DataStore, ItemRecipeDir},
-    frontend::world::{tile::AssemblerID, Position},
-    item::{IdxTrait, Item, Recipe, WeakIdxTrait, ITEMCOUNTTYPE},
+    frontend::world::{Position, tile::AssemblerID},
+    inserter::HAND_SIZE,
+    item::{ITEMCOUNTTYPE, IdxTrait, Item, Recipe, WeakIdxTrait},
     power::{
-        power_grid::{IndexUpdateInfo, PowerGridEntity, PowerGridIdentifier, MAX_POWER_MULT},
-        Joule, Watt,
+        Watt,
+        power_grid::{IndexUpdateInfo, MAX_POWER_MULT, PowerGridEntity, PowerGridIdentifier},
     },
 };
+use itertools::Itertools;
+use std::cmp::max;
 
 pub type Simdtype = Simd<u8, 32>;
 
-// TODO: Is u8 bit enough?
 pub type TIMERTYPE = u16;
 
-// TODO: Do I want these generics or just get it at runtime?
 // FIXME: We store the same slice length n times!
-// TODO: Do I want to use SimdTypes for this?
 // TODO: Don´t clump update data and data for adding/removing assemblers together!
+
+// FIXME: Using Boxed slices here is probably the main contributor to the time usage for building large power grids, since this means reallocation whenever we add assemblers!
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MultiAssemblerStore<
     RecipeIdxType: WeakIdxTrait,
@@ -43,6 +43,7 @@ pub struct MultiAssemblerStore<
     /// Power Consumption in 5% increments
     /// i.e. 28 => 140% Crafting speed
     /// Maximum is 1275% x Base Power Consumption
+    // TODO: We could just store base_power_consumption * power_consumption_modifier instead of doing this calculation every tick
     power_consumption_modifier: Box<[u8]>,
 
     raw_speed_mod: Box<[i16]>,
@@ -61,7 +62,8 @@ pub struct MultiAssemblerStore<
     prod_timers: Box<[TIMERTYPE]>,
 
     holes: Vec<usize>,
-    positions: Vec<Position>,
+    positions: Box<[Position]>,
+    types: Box<[u8]>,
     len: usize,
 }
 
@@ -70,6 +72,12 @@ pub struct FullAssemblerStore<RecipeIdxType: WeakIdxTrait> {
     pub assemblers_0_1: Box<[MultiAssemblerStore<RecipeIdxType, 0, 1>]>,
     pub assemblers_1_1: Box<[MultiAssemblerStore<RecipeIdxType, 1, 1>]>,
     pub assemblers_2_1: Box<[MultiAssemblerStore<RecipeIdxType, 2, 1>]>,
+    pub assemblers_2_2: Box<[MultiAssemblerStore<RecipeIdxType, 2, 2>]>,
+    pub assemblers_2_3: Box<[MultiAssemblerStore<RecipeIdxType, 2, 3>]>,
+    pub assemblers_3_1: Box<[MultiAssemblerStore<RecipeIdxType, 3, 1>]>,
+    pub assemblers_4_1: Box<[MultiAssemblerStore<RecipeIdxType, 4, 1>]>,
+    pub assemblers_5_1: Box<[MultiAssemblerStore<RecipeIdxType, 5, 1>]>,
+    pub assemblers_6_1: Box<[MultiAssemblerStore<RecipeIdxType, 6, 1>]>,
 }
 
 #[derive(Debug, Clone)]
@@ -78,6 +86,11 @@ pub struct AssemblerOnclickInfo<ItemIdxType: WeakIdxTrait> {
     pub outputs: Vec<(Item<ItemIdxType>, ITEMCOUNTTYPE)>,
     pub timer_percentage: f32,
     pub prod_timer_percentage: f32,
+    pub base_speed: f32,
+    pub speed_mod: f32,
+    pub prod_mod: f32,
+    pub power_consumption_mod: f32,
+    pub base_power_consumption: Watt,
 }
 
 impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
@@ -104,11 +117,59 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
             .iter()
             .map(|r| MultiAssemblerStore::new(*r))
             .collect();
+        let assemblers_2_2 = data_store
+            .ing_out_num_to_recipe
+            .get(&(2, 2))
+            .unwrap()
+            .iter()
+            .map(|r| MultiAssemblerStore::new(*r))
+            .collect();
+        let assemblers_2_3 = data_store
+            .ing_out_num_to_recipe
+            .get(&(2, 3))
+            .unwrap()
+            .iter()
+            .map(|r| MultiAssemblerStore::new(*r))
+            .collect();
+        let assemblers_3_1 = data_store
+            .ing_out_num_to_recipe
+            .get(&(3, 1))
+            .unwrap()
+            .iter()
+            .map(|r| MultiAssemblerStore::new(*r))
+            .collect();
+        let assemblers_4_1 = data_store
+            .ing_out_num_to_recipe
+            .get(&(4, 1))
+            .unwrap()
+            .iter()
+            .map(|r| MultiAssemblerStore::new(*r))
+            .collect();
+        let assemblers_5_1 = data_store
+            .ing_out_num_to_recipe
+            .get(&(5, 1))
+            .unwrap()
+            .iter()
+            .map(|r| MultiAssemblerStore::new(*r))
+            .collect();
+        let assemblers_6_1 = data_store
+            .ing_out_num_to_recipe
+            .get(&(6, 1))
+            .unwrap()
+            .iter()
+            .map(|r| MultiAssemblerStore::new(*r))
+            .collect();
 
         Self {
             assemblers_0_1,
             assemblers_1_1,
             assemblers_2_1,
+            assemblers_2_2,
+            assemblers_2_3,
+            assemblers_3_1,
+            assemblers_4_1,
+            assemblers_5_1,
+            assemblers_6_1,
         }
     }
 
@@ -120,7 +181,8 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
         Self,
-        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
+        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>
+        + use<ItemIdxType, RecipeIdxType>,
     ) {
         // TODO: This just works with box::into_iter in edition 2024
         let (assemblers_0_1, assemblers_0_1_updates): (Vec<_>, Vec<_>) = self
@@ -146,11 +208,63 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
             .zip(other.assemblers_2_1.into_vec())
             .map(|(a, b)| a.join(b, new_grid_id, data_store))
             .unzip();
+        let (assemblers_2_2, assemblers_2_2_updates): (Vec<_>, Vec<_>) = self
+            .assemblers_2_2
+            .into_vec()
+            .into_iter()
+            .zip(other.assemblers_2_2.into_vec())
+            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .unzip();
+        let (assemblers_2_3, assemblers_2_3_updates): (Vec<_>, Vec<_>) = self
+            .assemblers_2_3
+            .into_vec()
+            .into_iter()
+            .zip(other.assemblers_2_3.into_vec())
+            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .unzip();
+
+        let (assemblers_3_1, assemblers_3_1_updates): (Vec<_>, Vec<_>) = self
+            .assemblers_3_1
+            .into_vec()
+            .into_iter()
+            .zip(other.assemblers_3_1.into_vec())
+            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .unzip();
+
+        let (assemblers_4_1, assemblers_4_1_updates): (Vec<_>, Vec<_>) = self
+            .assemblers_4_1
+            .into_vec()
+            .into_iter()
+            .zip(other.assemblers_4_1.into_vec())
+            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .unzip();
+
+        let (assemblers_5_1, assemblers_5_1_updates): (Vec<_>, Vec<_>) = self
+            .assemblers_5_1
+            .into_vec()
+            .into_iter()
+            .zip(other.assemblers_5_1.into_vec())
+            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .unzip();
+
+        let (assemblers_6_1, assemblers_6_1_updates): (Vec<_>, Vec<_>) = self
+            .assemblers_6_1
+            .into_vec()
+            .into_iter()
+            .zip(other.assemblers_6_1.into_vec())
+            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .unzip();
 
         let ret = Self {
             assemblers_0_1: assemblers_0_1.into_boxed_slice(),
             assemblers_1_1: assemblers_1_1.into_boxed_slice(),
             assemblers_2_1: assemblers_2_1.into_boxed_slice(),
+            assemblers_2_2: assemblers_2_2.into_boxed_slice(),
+            assemblers_2_3: assemblers_2_3.into_boxed_slice(),
+            assemblers_3_1: assemblers_3_1.into_boxed_slice(),
+            assemblers_4_1: assemblers_4_1.into_boxed_slice(),
+            assemblers_5_1: assemblers_5_1.into_boxed_slice(),
+            assemblers_6_1: assemblers_6_1.into_boxed_slice(),
         };
 
         (
@@ -159,7 +273,13 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
                 .into_iter()
                 .flatten()
                 .chain(assemblers_1_1_updates.into_iter().flatten())
-                .chain(assemblers_2_1_updates.into_iter().flatten()),
+                .chain(assemblers_2_1_updates.into_iter().flatten())
+                .chain(assemblers_2_2_updates.into_iter().flatten())
+                .chain(assemblers_2_3_updates.into_iter().flatten())
+                .chain(assemblers_3_1_updates.into_iter().flatten())
+                .chain(assemblers_4_1_updates.into_iter().flatten())
+                .chain(assemblers_5_1_updates.into_iter().flatten())
+                .chain(assemblers_6_1_updates.into_iter().flatten()),
         )
     }
 
@@ -202,6 +322,66 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
                     .get_info(assembler_id.assembler_index, data_store)
             },
 
+            (2, 2) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_2_2[data_store.recipe_to_ing_out_combo_idx[recipe_id]].recipe
+                );
+
+                self.assemblers_2_2[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .get_info(assembler_id.assembler_index, data_store)
+            },
+
+            (2, 3) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_2_3[data_store.recipe_to_ing_out_combo_idx[recipe_id]].recipe
+                );
+
+                self.assemblers_2_3[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .get_info(assembler_id.assembler_index, data_store)
+            },
+
+            (3, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_3_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]].recipe
+                );
+
+                self.assemblers_3_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .get_info(assembler_id.assembler_index, data_store)
+            },
+
+            (4, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_4_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]].recipe
+                );
+
+                self.assemblers_4_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .get_info(assembler_id.assembler_index, data_store)
+            },
+
+            (5, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_5_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]].recipe
+                );
+
+                self.assemblers_5_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .get_info(assembler_id.assembler_index, data_store)
+            },
+
+            (6, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_6_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]].recipe
+                );
+
+                self.assemblers_6_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .get_info(assembler_id.assembler_index, data_store)
+            },
+
             _ => unreachable!(),
         }
     }
@@ -241,8 +421,8 @@ impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
 // }
 
 pub struct AssemblerRemovalInfo {
-    ings: Vec<ITEMCOUNTTYPE>,
-    outputs: Vec<ITEMCOUNTTYPE>,
+    pub ings: Vec<ITEMCOUNTTYPE>,
+    pub outputs: Vec<ITEMCOUNTTYPE>,
 }
 
 // TODO: Maybe also add a defragmentation routine to mend the ineffeciencies left by deconstruction large amounts of assemblers
@@ -272,7 +452,8 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             base_power_consumption: vec![].into_boxed_slice(),
 
             holes: vec![],
-            positions: vec![],
+            positions: vec![].into_boxed_slice(),
+            types: vec![].into_boxed_slice(),
             len: 0,
         }
     }
@@ -285,9 +466,32 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
         Self,
-        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
+        impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>
+        + use<ItemIdxType, RecipeIdxType, NUM_INGS, NUM_OUTPUTS>,
     ) {
-        let old_len = self.positions.len();
+        #[cfg(debug_assertions)]
+        {
+            for (i, pos) in self.positions.iter().enumerate() {
+                assert_eq!(
+                    (self.holes.contains(&i) || i >= self.len),
+                    (pos.x == i32::MAX)
+                );
+            }
+
+            for (i, pos) in other.positions.iter().enumerate() {
+                assert_eq!(
+                    (other.holes.contains(&i) || i >= other.len),
+                    (pos.x == i32::MAX)
+                );
+            }
+        }
+
+        let old_len_stored = self.positions.len();
+
+        for i in self.len..old_len_stored {
+            self.holes.push(i);
+        }
+        self.len = old_len_stored;
 
         let new_ings_max: [Box<[u8]>; NUM_INGS] = self
             .ings_max_insert
@@ -299,6 +503,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                     o.into_vec()
                         .into_iter()
                         .enumerate()
+                        .take(other.len)
                         .filter(|(i, _)| !other.holes.contains(i))
                         .map(|(_, v)| v),
                 );
@@ -317,6 +522,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                     o.into_vec()
                         .into_iter()
                         .enumerate()
+                        .take(other.len)
                         .filter(|(i, _)| !other.holes.contains(i))
                         .map(|(_, v)| v),
                 );
@@ -334,6 +540,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                     o.into_vec()
                         .into_iter()
                         .enumerate()
+                        .take(other.len)
                         .filter(|(i, _)| !other.holes.contains(i))
                         .map(|(_, v)| v),
                 );
@@ -348,6 +555,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .into_vec()
                 .into_iter()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
@@ -359,6 +567,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .into_vec()
                 .into_iter()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
@@ -370,6 +579,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .into_vec()
                 .into_iter()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
@@ -381,6 +591,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .into_vec()
                 .into_iter()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
@@ -392,6 +603,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .into_vec()
                 .into_iter()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
@@ -403,6 +615,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .into_vec()
                 .into_iter()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
@@ -414,6 +627,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .into_vec()
                 .into_iter()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
@@ -425,6 +639,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .into_vec()
                 .into_iter()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
@@ -436,6 +651,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .into_vec()
                 .into_iter()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
@@ -447,34 +663,97 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .into_vec()
                 .into_iter()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
 
-        self.positions.extend(
+        let mut new_positions = self.positions.into_vec();
+        new_positions.extend(
             other
                 .positions
                 .iter()
                 .copied()
                 .enumerate()
+                .take(other.len)
                 .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
 
-        let updates = other
-            .positions
-            .into_iter()
+        let mut new_types = self.types.into_vec();
+        new_types.extend(
+            other
+                .types
+                .iter()
+                .copied()
+                .enumerate()
+                .take(other.len)
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        let updates = IntoIterator::into_iter(other.positions)
+            .take(other.len)
+            .zip(other.types)
             .enumerate()
+            .take(other.len)
             .filter(move |(i, _)| !other.holes.contains(i))
             .enumerate()
-            .map(move |(new_index_offs, (old_index, pos))| IndexUpdateInfo {
-                position: pos,
-                new_storage: PowerGridEntity::Assembler {
-                    recipe: self.recipe,
-                    index: (old_len + new_index_offs).try_into().unwrap(),
-                },
-                new_grid: new_grid_id,
+            .map(move |(new_index_offs, (old_index, (pos, ty)))| {
+                assert!(new_index_offs <= old_index);
+                IndexUpdateInfo {
+                    position: pos,
+                    old_pg_entity: PowerGridEntity::Assembler {
+                        ty,
+                        recipe: self.recipe,
+                        index: old_index.try_into().unwrap(),
+                    },
+                    new_pg_entity: PowerGridEntity::Assembler {
+                        ty,
+                        recipe: self.recipe,
+                        index: (old_len_stored + new_index_offs).try_into().unwrap(),
+                    },
+                    new_grid: new_grid_id,
+                }
             });
+
+        // #[cfg(debug_assertions)]
+        // let updates = {
+        //     let updates = updates.collect::<Vec<_>>();
+
+        //     assert_eq!(updates.len(), other.len - other.holes.len());
+
+        //     assert!(updates.iter().all(|update| {
+        //         let IndexUpdateInfo {
+        //             new_pg_entity: PowerGridEntity::Assembler { index, .. },
+        //             ..
+        //         } = update
+        //         else {
+        //             unreachable!()
+        //         };
+
+        //         !self.holes.contains(&(*index as usize))
+        //     }));
+
+        //     assert_eq!(
+        //         new_positions.len(),
+        //         old_len_stored + (other.len - other.holes.len())
+        //     );
+
+        //     assert!(updates.iter().all(|update| {
+        //         let IndexUpdateInfo {
+        //             new_pg_entity: PowerGridEntity::Assembler { index, .. },
+        //             ..
+        //         } = update
+        //         else {
+        //             unreachable!()
+        //         };
+
+        //         new_positions[*index as usize].x < i32::MAX
+        //     }));
+
+        //     updates
+        // };
 
         let ret = Self {
             recipe: self.recipe,
@@ -484,7 +763,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             timers: new_timers.into(),
             prod_timers: new_prod_timers.into(),
             holes: self.holes,
-            len: self.positions.len(),
+            len: new_positions.len(),
             base_speed: new_base_speed.into_boxed_slice(),
             combined_speed_mod: new_speed.into_boxed_slice(),
             bonus_productivity: new_prod.into_boxed_slice(),
@@ -495,15 +774,26 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             raw_power_consumption_modifier: new_raw_power_consumption_modifier.into_boxed_slice(),
 
             base_power_consumption: new_base_power_consumption.into_boxed_slice(),
-            positions: self.positions,
+            positions: new_positions.into_boxed_slice(),
+            types: new_types.into_boxed_slice(),
         };
+
+        #[cfg(debug_assertions)]
+        {
+            for (i, pos) in ret.positions.iter().enumerate() {
+                assert_eq!(
+                    (ret.holes.contains(&i) || i >= ret.len),
+                    (pos.x == i32::MAX)
+                );
+            }
+        }
 
         (ret, updates)
     }
 
     fn get_info<ItemIdxType: IdxTrait>(
         &self,
-        index: u16,
+        index: u32,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> AssemblerOnclickInfo<ItemIdxType> {
         let items = data_store.recipe_to_items.get(&self.recipe).unwrap();
@@ -546,6 +836,13 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             timer_percentage: f32::from(self.timers[index as usize]) / f32::from(TIMERTYPE::MAX),
             prod_timer_percentage: f32::from(self.prod_timers[index as usize])
                 / f32::from(TIMERTYPE::MAX),
+            base_speed: f32::from(self.base_speed[index as usize]) * 0.05,
+            speed_mod: f32::from(self.raw_speed_mod[index as usize]) * 0.05,
+            prod_mod: f32::from(self.bonus_productivity[index as usize]) * 0.01,
+            power_consumption_mod: f32::from(self.power_consumption_modifier[index as usize])
+                * 0.05
+                - 1.0,
+            base_power_consumption: self.base_power_consumption[index as usize],
         }
     }
 
@@ -651,10 +948,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
     //     }
     // }
 
-    #[inline(never)]
-    // TODO: Do i want this to also do the power calculation, or will that be done in another step?
     // TODO: Currently power demand and supply are offset by a single tick. Is this acceptable?
-    // TODO: Write tests to ensure this works as expected.
     /// # Panics
     /// If `power_mult` > `MAX_POWER_MULT` = 64
     pub fn update_branchless<ItemIdxType: IdxTrait>(
@@ -664,59 +958,30 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         recipe_ings: &[[ITEMCOUNTTYPE; NUM_INGS]],
         recipe_outputs: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
         times: &[TIMERTYPE],
-    ) -> (Joule, u32, u32) {
-        // FIXME: These depend on which machine we are.
-        const POWER_DRAIN: Watt = Watt(2_500);
-        const POWER_CONSUMPTION: Watt = Watt(75_000);
-
+    ) -> (Watt, u32, u32) {
         let (ing_idx, out_idx) = recipe_lookup[self.recipe.id.into()];
 
         let our_ings: &[ITEMCOUNTTYPE; NUM_INGS] = &recipe_ings[ing_idx];
         let our_outputs: &[ITEMCOUNTTYPE; NUM_OUTPUTS] = &recipe_outputs[out_idx];
 
-        // TODO: For SOME reason, this is actually faster if this is a u32.
-        // It is also better, since it allows possibly having more than u16::max assembers of a single recipe
-        let mut running: u32 = 0;
-
         let mut times_ings_used = 0;
         let mut num_finished_crafts = 0;
 
-        // TODO: With power calculations being done on the fly, we cannot return early, since we then do not know the power demands of the base :(
-        // It might be fine, since it only applies if the power is so low, NOTHING happens and as soon as any power is connected it will start running again.
-        // My guess is that returning 0 (or just the drain power) would lead to flickering.
-        // if power_mult == 0 {
-        //     return;
-        // }
+        assert!(power_mult <= MAX_POWER_MULT);
 
-        debug_assert!(power_mult <= MAX_POWER_MULT);
+        // TODO: Is this amount of accuracy enough?
+        let increase: TIMERTYPE = (u32::from(power_mult) * u32::from(TIMERTYPE::MAX)
+            / u32::from(MAX_POWER_MULT)
+            / u32::from(times[self.recipe.id.into()]))
+        .try_into()
+        .unwrap_or(TIMERTYPE::MAX);
 
-        // FIXME:
-        // assert_eq!(self.outputs.len(), self.timers.len());
-        // assert_eq!(self.input1.len(), self.timers.len());
-        // assert!(self.outputs.len() % Simdtype::LEN == 0);
+        let mut power = Watt(0);
 
-        // TODO: This does not round correctly
-        let increase: TIMERTYPE = (TIMERTYPE::from(power_mult)
-            * (TIMERTYPE::MAX / TIMERTYPE::from(MAX_POWER_MULT)))
-            / times[self.recipe.id.into()];
-
-        // TODO: I don't think this holds anymore, now that we cannot bail early at 0 power_mult
-        // debug_assert!(increase > 0);
-
-        let ings_arr = ZipArray {
-            array: self.ings.each_mut().map(|r| r.iter_mut()),
-        };
-
-        let outputs_arr = ZipArray {
-            array: self.outputs.each_mut().map(|r| r.iter_mut()),
-        };
-
-        for (
-            mut outputs,
-            (mut ings, (timer, (prod_timer, (speed_mod, (bonus_prod, (base_power, power_mod)))))),
-        ) in outputs_arr.zip(
-            ings_arr.zip(
-                self.timers.iter_mut().zip(
+        for (index, (timer, (prod_timer, (speed_mod, (bonus_prod, (base_power, power_mod)))))) in
+            self.timers
+                .iter_mut()
+                .zip(
                     self.prod_timers.iter_mut().zip(
                         self.combined_speed_mod.iter().copied().zip(
                             self.bonus_productivity.iter().copied().zip(
@@ -727,58 +992,65 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                             ),
                         ),
                     ),
-                ),
-            ),
-        ) {
-            let increase = increase * (speed_mod as u16) / 20;
+                )
+                .enumerate()
+        {
+            // ~~Remove the items from the ings at the start of the crafting process~~
+            // We will do this as part of the frontend ui!
 
-            let ing_mul = ings
-                .iter()
-                .zip(our_ings.iter())
-                .fold(1, |acc, (have, want)| acc * u16::from(**have >= *want));
-            let new_timer_output_space = timer.wrapping_add(increase * ing_mul);
-            let new_timer_output_full = timer.saturating_add(increase * ing_mul);
+            let increase = (u32::from(increase) * u32::from(speed_mod) / 20) as u16;
 
-            let space_mul: u8 =
-                outputs
-                    .iter()
-                    .zip(our_outputs.iter())
-                    .fold(1, |acc, (have, new_from_recipe)| {
-                        // TODO: 100 output amount hardcoded!!!!
-                        acc * u8::from((have.saturating_add(*new_from_recipe)) <= 100)
-                    });
+            let mut ing_mul: u8 = 1;
+            for i in 0..NUM_INGS {
+                ing_mul *= u8::from(self.ings[i][index] >= our_ings[i]);
+            }
+
+            let mut ing_mul_for_two_crafts: u16 = 1;
+            for i in 0..NUM_INGS {
+                ing_mul_for_two_crafts *= u16::from(self.ings[i][index] >= our_ings[i] * 2);
+            }
+
+            let new_timer_output_space = timer.wrapping_add(increase * u16::from(ing_mul));
+            let new_timer_output_full = timer.saturating_add(increase * u16::from(ing_mul));
+
+            let mut space_mul: u8 = 1;
+            for i in 0..NUM_OUTPUTS {
+                space_mul *=
+                    u8::from((self.outputs[i][index].saturating_add(our_outputs[i])) <= 100);
+            }
 
             let new_timer = new_timer_output_space * u16::from(space_mul)
                 + new_timer_output_full * (1 - u16::from(space_mul));
 
-            let new_prod_timer =
-                prod_timer.wrapping_add(new_timer.wrapping_sub(*timer) * (bonus_prod as u16) / 100);
+            let timer_mul: u8 = u8::from(new_timer < *timer);
 
-            let timer_mul: u8 = (new_timer < *timer).into();
+            // if we have enough items for another craft keep the wrapped value, else clamp it to 0
+            let new_timer = u16::from(timer_mul) * (ing_mul_for_two_crafts * new_timer)
+                + (1 - u16::from(timer_mul)) * new_timer;
+
+            let new_prod_timer = prod_timer.wrapping_add(
+                (u32::from(new_timer.wrapping_sub(*timer)) * (bonus_prod as u32) / 100) as u16,
+            );
+
             let prod_timer_mul: u8 = (new_prod_timer < *prod_timer).into();
 
             // Power calculation
             // We use power if any work was done
-            running += u32::from(ing_mul * u16::from(space_mul));
+            power = power + base_power * u64::from(ing_mul * space_mul) * u64::from(power_mod) / 20;
 
             *timer = new_timer;
             *prod_timer = new_prod_timer;
-            outputs
-                .iter_mut()
-                .zip(our_outputs.iter())
-                .for_each(|(output, new)| **output += (timer_mul + prod_timer_mul) * new);
-            ings.iter_mut()
-                .zip(our_ings.iter())
-                .for_each(|(ing, used)| **ing -= timer_mul * used);
+            for i in 0..NUM_OUTPUTS {
+                self.outputs[i][index] += (timer_mul + prod_timer_mul) * our_outputs[i];
+            }
+            for i in 0..NUM_INGS {
+                self.ings[i][index] -= timer_mul * our_ings[i];
+            }
             times_ings_used += u32::from(timer_mul);
             num_finished_crafts += u32::from(timer_mul + prod_timer_mul);
         }
 
-        (
-            POWER_CONSUMPTION.joules_per_tick() * u64::from(running),
-            times_ings_used,
-            num_finished_crafts,
-        )
+        (power, times_ings_used, num_finished_crafts)
     }
 
     pub fn get_all_mut(
@@ -807,44 +1079,41 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         self.ings.each_mut().map(|b| &mut **b)
     }
 
-    pub fn get_outputs_mut(&mut self, idx: usize) -> &mut [ITEMCOUNTTYPE] {
-        &mut self.outputs[idx]
+    pub fn get_outputs_mut(&mut self, idx: u32) -> &mut [ITEMCOUNTTYPE] {
+        &mut self.outputs[idx as usize]
     }
 
-    pub fn get_ings_mut(&mut self, idx: usize) -> &mut [ITEMCOUNTTYPE] {
-        &mut self.ings[idx]
+    pub fn get_ings_mut(&mut self, idx: u32) -> &mut [ITEMCOUNTTYPE] {
+        &mut self.ings[idx as usize]
     }
 
-    pub fn get_output_mut(
-        &mut self,
-        output_idx: usize,
-        index: usize,
-    ) -> Option<&mut ITEMCOUNTTYPE> {
-        if index < self.len {
-            Some(&mut self.outputs[output_idx][index])
+    pub fn get_output_mut(&mut self, output_idx: usize, index: u32) -> Option<&mut ITEMCOUNTTYPE> {
+        if (index as usize) < self.len {
+            Some(&mut self.outputs[output_idx][index as usize])
         } else {
             None
         }
     }
 
-    pub fn get_output(&self, output_idx: usize, index: usize) -> Option<&ITEMCOUNTTYPE> {
-        if index < self.len {
-            Some(&self.outputs[output_idx][index])
+    pub fn get_output(&self, output_idx: usize, index: u32) -> Option<&ITEMCOUNTTYPE> {
+        if (index as usize) < self.len {
+            Some(&self.outputs[output_idx][index as usize])
         } else {
             None
         }
     }
 
-    pub fn get_ing_mut(&mut self, input_idx: usize, index: usize) -> Option<&mut ITEMCOUNTTYPE> {
-        if index < self.len {
-            Some(&mut self.ings[input_idx][index])
+    pub fn get_ing_mut(&mut self, input_idx: usize, index: u32) -> Option<&mut ITEMCOUNTTYPE> {
+        if (index as usize) < self.len {
+            Some(&mut self.ings[input_idx][index as usize])
         } else {
             None
         }
     }
 
     /// The caller must make sure, that this index is not used in any other machine, since it will either crash/work on a nonexistant Assembler or be reused for another machine!
-    pub fn remove_assembler(&mut self, index: usize) -> AssemblerRemovalInfo {
+    pub fn remove_assembler(&mut self, index: u32) -> AssemblerRemovalInfo {
+        let index = index as usize;
         debug_assert!(!self.holes.contains(&index));
         self.holes.push(index);
 
@@ -858,13 +1127,54 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         for out in &mut self.outputs {
             out[index] = ITEMCOUNTTYPE::MAX;
         }
+        self.timers[index] = 0;
+        self.prod_timers[index] = 0;
+        self.positions[index] = Position {
+            x: i32::MAX,
+            y: i32::MAX,
+        };
 
         ret
     }
 
-    fn remove_assembler_data(
+    pub fn remove_assembler_data(
         &mut self,
-        index: usize,
+        index: u32,
+    ) -> (
+        Vec<ITEMCOUNTTYPE>,
+        Vec<ITEMCOUNTTYPE>,
+        Vec<ITEMCOUNTTYPE>,
+        TIMERTYPE,
+        TIMERTYPE,
+        Watt,
+        i16,
+        i16,
+        u8,
+        i16,
+        u8,
+        Position,
+    ) {
+        let data = self.remove_assembler_data_inner(index);
+
+        (
+            data.0.into(),
+            data.1.into(),
+            data.2.into(),
+            data.3.into(),
+            data.4.into(),
+            data.5.into(),
+            data.6.into(),
+            data.7.into(),
+            data.8.into(),
+            data.9.into(),
+            data.10.into(),
+            data.11.into(),
+        )
+    }
+
+    fn remove_assembler_data_inner(
+        &mut self,
+        index: u32,
     ) -> (
         [ITEMCOUNTTYPE; NUM_INGS],
         [ITEMCOUNTTYPE; NUM_INGS],
@@ -876,8 +1186,10 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         i16,
         u8,
         i16,
+        u8,
         Position,
     ) {
+        let index = index as usize;
         debug_assert!(!self.holes.contains(&index));
         self.holes.push(index);
 
@@ -901,6 +1213,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             self.raw_bonus_productivity[index],
             self.base_speed[index],
             self.raw_speed_mod[index],
+            self.types[index],
             self.positions[index],
         );
         for ing in &mut self.ings {
@@ -909,7 +1222,13 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         for out in &mut self.outputs {
             out[index] = ITEMCOUNTTYPE::MAX;
         }
+        self.timers[index] = 0;
+        self.prod_timers[index] = 0;
         self.base_power_consumption[index] = Watt(0);
+        self.positions[index] = Position {
+            x: i32::MAX,
+            y: i32::MAX,
+        };
 
         ret
     }
@@ -919,8 +1238,10 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         ty: u8,
         modules: &[Option<usize>],
         position: Position,
+        recipe_lookup: &[(usize, usize)],
+        recipe_ings: &[[ITEMCOUNTTYPE; NUM_INGS]],
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> usize {
+    ) -> u32 {
         assert_eq!(
             modules.len(),
             data_store.assembler_info[usize::from(ty)].num_module_slots as usize
@@ -953,9 +1274,18 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             .map(|module| i16::from(data_store.module_info[module].power_mod))
             .sum();
 
+        let (ing_idx, out_idx) = recipe_lookup[self.recipe.id.into()];
+
+        let our_ings: &[ITEMCOUNTTYPE; NUM_INGS] = &recipe_ings[ing_idx];
+
         self.add_assembler_with_data(
             // TODO: Make the automatic insertion limit dependent on the speed of the machine and recipe
-            array::from_fn(|ing| 10),
+            array::from_fn(|ing| {
+                max(
+                    HAND_SIZE,
+                    our_ings[ing].saturating_mul(3).saturating_add(12),
+                )
+            }),
             array::from_fn(|_| 0),
             array::from_fn(|_| 0),
             0,
@@ -965,6 +1295,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             prod,
             base_speed,
             speed_mod,
+            ty,
             position,
             data_store,
         )
@@ -972,19 +1303,19 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
     pub fn move_assembler<ItemIdxType: IdxTrait>(
         &mut self,
-        index: usize,
+        index: u32,
         dest: &mut Self,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> usize {
-        let data = self.remove_assembler_data(index);
+    ) -> u32 {
+        let data = self.remove_assembler_data_inner(index);
 
         dest.add_assembler_with_data(
             data.0, data.1, data.2, data.3, data.4, data.5, data.6, data.7, data.8, data.9,
-            data.10, data_store,
+            data.10, data.11, data_store,
         )
     }
 
-    fn add_assembler_with_data<ItemIdxType: IdxTrait>(
+    pub fn add_assembler_with_data<ItemIdxType: IdxTrait>(
         &mut self,
         ings_max_insert: [ITEMCOUNTTYPE; NUM_INGS],
         ings: [ITEMCOUNTTYPE; NUM_INGS],
@@ -996,9 +1327,10 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         bonus_productiviy: i16,
         base_speed: u8,
         speed_mod: i16,
+        ty: u8,
         position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> usize {
+    ) -> u32 {
         let len = self.timers.len();
         // debug_assert!(len % Simdtype::LEN == 0);
 
@@ -1043,8 +1375,9 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 .try_into()
                 .expect("Value clamped already");
 
+            self.types[hole_index] = ty;
             self.positions[hole_index] = position;
-            return hole_index;
+            return hole_index.try_into().unwrap();
         }
 
         if self.len == self.timers.len() {
@@ -1159,6 +1492,30 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 speed.resize(new_len, 0);
                 speed.into_boxed_slice()
             });
+
+            take_mut::take(&mut self.combined_speed_mod, |speed| {
+                let mut speed = speed.into_vec();
+                speed.resize(new_len, 0);
+                speed.into_boxed_slice()
+            });
+
+            take_mut::take(&mut self.positions, |pos| {
+                let mut pos = pos.into_vec();
+                pos.resize(
+                    new_len,
+                    Position {
+                        x: i32::MAX,
+                        y: i32::MAX,
+                    },
+                );
+                pos.into_boxed_slice()
+            });
+
+            take_mut::take(&mut self.types, |ty| {
+                let mut ty = ty.into_vec();
+                ty.resize(new_len, u8::MAX);
+                ty.into_boxed_slice()
+            });
         }
 
         for (output, new_val) in self.outputs.iter_mut().zip(out) {
@@ -1192,28 +1549,22 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             .try_into()
             .expect("Values already clamped");
 
-        self.positions.reserve(1);
-        assert_eq!(
-            self.positions.len(),
-            self.len,
-            "{:?}, {:?}",
-            self.positions,
-            self.len
-        );
-        self.positions.push(position);
+        self.positions[self.len] = position;
+        self.types[self.len] = ty;
 
         self.len += 1;
-        self.len - 1
+        (self.len - 1).try_into().unwrap()
     }
 
     pub fn modify_modifiers<ItemIdxType: IdxTrait>(
         &mut self,
-        index: u16,
+        index: u32,
         speed: i16,
         prod: i16,
         power: i16,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
+        let index = index as usize;
         self.raw_speed_mod[usize::from(index)] = self.raw_speed_mod[usize::from(index)]
             .checked_add(speed)
             .expect("Over/Underflowed");
@@ -1239,7 +1590,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         self.combined_speed_mod[usize::from(index)] = ((self.raw_speed_mod[usize::from(index)]
             + 20)
             * i16::from(self.base_speed[usize::from(index)])
-            / 10)
+            / 20)
             .clamp(0, u8::MAX.into())
             .try_into()
             .expect("Values already clamped");
@@ -1262,13 +1613,13 @@ impl<T: Iterator, const N: usize> Iterator for ZipArray<T, N> {
     }
 }
 
-mod arrays {
+pub mod arrays {
     use std::{convert::TryInto, marker::PhantomData};
 
     use serde::{
+        Deserialize, Deserializer, Serialize, Serializer,
         de::{SeqAccess, Visitor},
         ser::SerializeTuple,
-        Deserialize, Deserializer, Serialize, Serializer,
     };
     pub fn serialize<S: Serializer, T: Serialize, const N: usize>(
         data: &[T; N],

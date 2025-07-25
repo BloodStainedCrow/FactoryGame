@@ -2,8 +2,8 @@
 [package]
 name = "factory"
 version = "0.1.0"
-edition = "2021"
-rust-version = "1.81"
+edition = "2024"
+rust-version = "1.85"
 
 [dependencies]
 enum-map = { version = "2.7.3", features = ["serde"] }
@@ -22,7 +22,7 @@ take_mut = "0.2.2"
 static_assertions = "1.1.0"
 itertools = "0.14.0"
 genawaiter = "0.99.1"
-petgraph = { version = "0.7.1", features = ["rayon", "serde", "serde-1", "serde_derive"] }
+petgraph = { version = "0.8.2", features = ["rayon", "serde", "serde-1", "serde_derive"] }
 sha2 = "0.10.8"
 hex = "0.4.3"
 postcard = { version = "1.1.1", features = ["use-std"] }
@@ -35,8 +35,30 @@ egui_extras = "0.31.1"
 egui_plot = "0.32.1"
 rand = "0.8.5"
 bitcode = { version = "0.6.6", features = ["serde"] }
+egui = { version = "0.31.1", features = ["serde"] }
+flate2 = {version = "1.1.1", features = ["zlib-rs"]}
+rstest = "0.25.0"
+parking_lot = { version = "0.12.3", features = ["serde"] }
+profiling = { version = "1.0.16" }
+puffin_egui = "0.29"
+puffin = "0.19"
+dhat = "0.3.3"
+noise = { version = "0.9.0", features = ["std"] }
+rfd = "0.15.3"
+egui_graphs = "0.25.1"
+serde_path_to_error = "0.1.17"
 
-[dev-dependencies]
+[patch.crates-io]
+puffin_egui = { git = "https://github.com/BloodStainedCrow/puffin" }
+puffin = { git = "https://github.com/BloodStainedCrow/puffin" }
+egui = { git = "https://github.com/BloodStainedCrow/egui", branch = "removeProfiling" }
+eframe = { git = "https://github.com/BloodStainedCrow/egui", branch = "removeProfiling" }
+egui-wgpu = { git = "https://github.com/BloodStainedCrow/egui", branch = "removeProfiling" }
+
+petgraph = { git = "https://github.com/petgraph/petgraph" }
+
+# [patch."https://github.com/BloodStainedCrow/tilelib"]
+# tilelib = { path = "../tilelib" }
 
 [lints.rust]
 # TODO:
@@ -50,12 +72,21 @@ unwrap_used = { level = "deny", priority = -1 }
 wildcard_enum_match_arm = { level = "deny", priority = -1 }
 match_same_arms = { level = "deny", priority = -1 }
 
+
+redundant_closure_for_method_calls = { level = "allow", priority = 1 }
 suboptimal_flops = { level = "allow", priority = 1 }
 module_name_repetitions = { level = "allow", priority = 1 }
 
 [profile.release-with-debug]
 inherits = "release"
 debug = true
+strip = false
+
+[profile.release-with-debug-asserts]
+inherits = "release"
+debug = true
+strip = false
+debug-assertions = true
 
 [profile.fast-compile]
 inherits = "dev"
@@ -65,8 +96,13 @@ strip = "none"
 lto = false
 codegen-units = 256
 incremental = true
-# codegen-backend = "cranelift"
-
-[profile.release]
-lto = true
+# lto = true
 # codegen-units = 1
+
+[features]
+default = ["profiler", "graphics"]
+# Use Krastorio2 graphics. Since I have not properly added licensing information, I currently do not push them, therefore this feature is broken
+graphics = []
+# dhat-rs memory profiling (https://docs.rs/dhat/latest/dhat/)
+dhat-heap = []
+profiler = ["profiling/profile-with-puffin"]

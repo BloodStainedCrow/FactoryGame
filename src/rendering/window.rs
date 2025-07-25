@@ -1,12 +1,18 @@
 use std::{
-    sync::{atomic::AtomicU64, mpsc::Sender, Arc, Mutex},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64},
+        mpsc::Sender,
+    },
     time::{Duration, Instant},
 };
+
+use parking_lot::Mutex;
 
 use crate::{
     data::DataStore,
     frontend::{
-        action::{action_state_machine::ActionStateMachine, ActionType},
+        action::{ActionType, action_state_machine::ActionStateMachine},
         input::Input,
     },
     item::WeakIdxTrait,
@@ -14,17 +20,17 @@ use crate::{
     saving::save,
 };
 use log::{info, warn};
-use tilelib::types::{Display, Sprite, Texture};
+use tilelib::types::Display;
 use winit::{
     event::{ElementState, MouseButton, WindowEvent},
     window::WindowAttributes,
 };
 
 use super::{
+    TextureAtlas,
     app_state::{AppState, GameState},
-    texture_atlas, TextureAtlas,
+    texture_atlas,
 };
-use image::GenericImageView;
 
 pub struct App {
     window: Window,
@@ -53,8 +59,19 @@ pub enum LoadedGame {
 pub struct LoadedGameSized<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub state: Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
     pub state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
-    pub data_store: Arc<DataStore<ItemIdxType, RecipeIdxType>>,
+    pub data_store: Arc<Mutex<DataStore<ItemIdxType, RecipeIdxType>>>,
     pub ui_action_sender: Sender<ActionType<ItemIdxType, RecipeIdxType>>,
+
+    pub stop_update_thread: Arc<AtomicBool>,
+}
+
+impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> Drop
+    for LoadedGameSized<ItemIdxType, RecipeIdxType>
+{
+    fn drop(&mut self) {
+        self.stop_update_thread
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 pub struct Window {
@@ -81,7 +98,7 @@ impl winit::application::ApplicationHandler for App {
     fn window_event(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
-        window_id: winit::window::WindowId,
+        _window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
         assert!(self.window.display.is_some());
@@ -93,22 +110,18 @@ impl winit::application::ApplicationHandler for App {
                 info!("EXITING");
                 if let Some(state) = &self.currently_loaded_game {
                     match &state.state {
-                        LoadedGame::ItemU8RecipeU8(state) => save(
-                            &state.state.lock().unwrap(),
-                            state.data_store.checksum.clone(),
-                        ),
-                        LoadedGame::ItemU8RecipeU16(state) => save(
-                            &state.state.lock().unwrap(),
-                            state.data_store.checksum.clone(),
-                        ),
-                        LoadedGame::ItemU16RecipeU8(state) => save(
-                            &state.state.lock().unwrap(),
-                            state.data_store.checksum.clone(),
-                        ),
-                        LoadedGame::ItemU16RecipeU16(state) => save(
-                            &state.state.lock().unwrap(),
-                            state.data_store.checksum.clone(),
-                        ),
+                        LoadedGame::ItemU8RecipeU8(state) => {
+                            save(&state.state.lock(), &state.data_store.lock())
+                        },
+                        LoadedGame::ItemU8RecipeU16(state) => {
+                            save(&state.state.lock(), &state.data_store.lock())
+                        },
+                        LoadedGame::ItemU16RecipeU8(state) => {
+                            save(&state.state.lock(), &state.data_store.lock())
+                        },
+                        LoadedGame::ItemU16RecipeU16(state) => {
+                            save(&state.state.lock(), &state.data_store.lock())
+                        },
                     }
                 }
 
@@ -121,7 +134,7 @@ impl winit::application::ApplicationHandler for App {
             },
 
             WindowEvent::KeyboardInput {
-                device_id,
+                device_id: _,
                 event,
                 is_synthetic,
             } => {
@@ -138,7 +151,7 @@ impl winit::application::ApplicationHandler for App {
             },
 
             WindowEvent::MouseWheel {
-                device_id,
+                device_id: _,
                 delta,
                 phase,
             } => {
@@ -159,14 +172,18 @@ impl winit::application::ApplicationHandler for App {
             },
 
             WindowEvent::MouseInput {
-                device_id,
+                device_id: _,
                 state,
                 button,
             } => {
                 let input = match (state, button) {
-                    (ElementState::Pressed, MouseButton::Left) => Input::LeftClickPressed,
+                    (ElementState::Pressed, MouseButton::Left) => {
+                        Input::LeftClickPressed { shift: false }
+                    },
                     (ElementState::Released, MouseButton::Left) => Input::LeftClickReleased,
-                    (ElementState::Pressed, MouseButton::Right) => Input::RightClickPressed,
+                    (ElementState::Pressed, MouseButton::Right) => {
+                        Input::RightClickPressed { shift: false }
+                    },
                     (ElementState::Released, MouseButton::Right) => Input::RightClickReleased,
                     v => todo!("{:?}", v),
                 };
@@ -183,7 +200,9 @@ impl winit::application::ApplicationHandler for App {
                 let fps =
                     Duration::from_secs(1).div_duration_f32(self.window.last_frame_time.elapsed());
 
-                match self.state {
+                match &self.state {
+                    AppState::MainMenu { in_ip_box } => todo!(),
+
                     AppState::Ingame => {
                         if let Some(loaded) = &self.currently_loaded_game {
                             let current_tick =
@@ -197,15 +216,14 @@ impl winit::application::ApplicationHandler for App {
 
                                 match &loaded.state {
                                     LoadedGame::ItemU8RecipeU8(loaded_game_sized) => {
-                                        let game_state = loaded_game_sized.state.lock().unwrap();
-                                        let state_machine =
-                                            loaded_game_sized.state_machine.lock().unwrap();
+                                        let game_state = loaded_game_sized.state.lock();
+                                        let state_machine = loaded_game_sized.state_machine.lock();
                                         render_world(
                                             renderer,
-                                            &game_state,
+                                            game_state,
                                             &self.texture_atlas,
-                                            &state_machine,
-                                            &loaded_game_sized.data_store,
+                                            state_machine,
+                                            &loaded_game_sized.data_store.lock(),
                                         )
                                     },
                                     LoadedGame::ItemU8RecipeU16(loaded_game_sized) => todo!(),
@@ -229,7 +247,7 @@ impl winit::application::ApplicationHandler for App {
                             warn!("No Game loaded");
                         }
                     },
-                    AppState::Loading => {
+                    AppState::Loading { .. } => {
                         // TODO:
                     },
                 }
@@ -262,7 +280,7 @@ impl Window {
 impl App {
     pub fn new(input_sender: Sender<Input>) -> Self {
         Self {
-            state: AppState::Loading,
+            state: AppState::MainMenu { in_ip_box: None },
             window: Window::new(),
             last_rendered_update: 0,
             currently_loaded_game: None,

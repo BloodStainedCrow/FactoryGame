@@ -1,15 +1,9 @@
 let
-  rust_overlay = import (builtins.fetchTarball "https://github.com/oxalica/rust-overlay/archive/master.tar.gz");
-  pkgs = import (fetchTarball("https://github.com/NixOS/nixpkgs/archive/929116e316068c7318c54eb4d827f7d9756d5e9c.tar.gz")) { overlays = [ rust_overlay ]; };
-  rust = pkgs.rust-bin.nightly."2025-04-10".default.override {
-    extensions = [
-      "rust-src" # for rust-analyzer
-      "rust-analyzer"
-    ];
-  };
+  pkgs = import (fetchTarball("https://github.com/NixOS/nixpkgs/archive/929116e316068c7318c54eb4d827f7d9756d5e9c.tar.gz")) { overlays = [  ]; };
   buildInputs = [
-    rust
   ] ++ (with pkgs; [
+    rustup
+
     pkg-config
 
     # perf for cargo-flamegraph
