@@ -2189,6 +2189,9 @@
                 RecipeUnlock("factory_game::raw_oil_generation"),
                 RecipeUnlock("factory_game::water_generation"),
                 RecipeUnlock("factory_game::stone_generation"),
+
+                // TODO:
+                RecipeUnlock("factory_game::solid_fuel_from_light_oil"),
             ],
         ),
         (
@@ -3185,6 +3188,9 @@
                 // RecipeUnlock("factory_game::rocket_silo"),
                 RecipeUnlock("factory_game::rocket_part"),
                 RecipeUnlock("factory_game::rocket_launch"),
+                // TODO:
+                RecipeUnlock("factory_game::rcu"),
+                RecipeUnlock("factory_game::speed_module_1"),
             ],
         ),
         (

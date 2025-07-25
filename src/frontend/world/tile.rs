@@ -2553,10 +2553,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
     pub fn update_belt_id_after(
         &mut self,
+        sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
         old_id: BeltTileId<ItemIdxType>,
         new_id: BeltTileId<ItemIdxType>,
         belt_pos_earliest: u16,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
+        if belt_pos_earliest != 0 {
+            if let Some(waiting) = self.to_instantiate_by_belt.get(&old_id) {
+                let waiting = waiting.clone();
+                self.to_instantiate_by_belt
+                    .entry(new_id)
+                    .or_default()
+                    .extend(waiting);
+            }
+        }
+
         let old_chunks = self.belt_lookup.belt_id_to_chunks.remove(&old_id);
 
         for chunk_pos in old_chunks.iter().flatten() {
@@ -2606,15 +2618,28 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             .entry(new_id)
             .or_default()
             .extend(old_chunks.into_iter().flatten());
+
+        let mut cascading_updates = vec![try_instantiating_inserters_for_belt_cascade(new_id)];
+        while let Some(update) = cascading_updates.pop() {
+            (update.update)(self, sim_state, &mut cascading_updates, data_store);
+        }
     }
 
     pub fn update_belt_id(
         &mut self,
+        sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
         old_id: BeltTileId<ItemIdxType>,
         new_id: BeltTileId<ItemIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
+        if let Some(waiting) = self.to_instantiate_by_belt.remove(&old_id) {
+            self.to_instantiate_by_belt
+                .entry(new_id)
+                .or_default()
+                .extend(waiting);
+        }
         // Do it for ALL belt_pos
-        self.update_belt_id_after(old_id, new_id, 0);
+        self.update_belt_id_after(sim_state, old_id, new_id, 0, data_store);
     }
 
     pub fn modify_belt_pos(&mut self, id_to_change: BeltTileId<ItemIdxType>, offs: i16) {

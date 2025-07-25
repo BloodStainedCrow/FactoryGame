@@ -156,6 +156,42 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     }
 
     #[must_use]
+    pub fn new_with_gigabase(
+        progress: Arc<AtomicU64>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
+        let mut ret = GameState::new(data_store);
+
+        let file = File::open("test_blueprints/murphy/megabase.bp").unwrap();
+        let bp: Blueprint = ron::de::from_reader(file).unwrap();
+        let bp = bp.get_reusable(data_store);
+
+        puffin::set_scopes_on(false);
+        let y_range = (1590..30000).step_by(6000);
+        let x_range = (1590..30000).step_by(6000);
+
+        let total = y_range.size_hint().0 * x_range.size_hint().0;
+
+        let mut current = 0;
+
+        for y_pos in y_range {
+            for x_pos in x_range.clone() {
+                progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
+                current += 1;
+
+                if rand::random::<u16>() < u16::MAX / 100 {
+                    ret.update(data_store);
+                }
+
+                bp.apply(Position { x: x_pos, y: y_pos }, &mut ret, data_store);
+            }
+        }
+        puffin::set_scopes_on(true);
+
+        ret
+    }
+
+    #[must_use]
     pub fn new_with_beacon_production(
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,

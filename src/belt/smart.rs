@@ -17,6 +17,8 @@ use super::{
 use crate::inserter::FakeUnionStorage;
 use crate::inserter::HAND_SIZE;
 
+type TEST = SmartBelt<u8>;
+
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SmartBelt<ItemIdxType: WeakIdxTrait> {

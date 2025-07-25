@@ -421,9 +421,19 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         .modify_belt_pos(back_id, self_len.try_into().unwrap());
                 }
                 if final_id == back_id {
-                    game_state.world.update_belt_id(self_id, final_id);
+                    game_state.world.update_belt_id(
+                        &mut game_state.simulation_state,
+                        self_id,
+                        final_id,
+                        data_store,
+                    );
                 } else {
-                    game_state.world.update_belt_id(back_id, final_id);
+                    game_state.world.update_belt_id(
+                        &mut game_state.simulation_state,
+                        back_id,
+                        final_id,
+                        data_store,
+                    );
                 }
             } else if let Some((id, belt_pos)) =
                 should_sideload(game_state, dir, new_belt_pos, data_store)
@@ -703,9 +713,19 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                         data_store,
                     );
                     if final_id == self_id {
-                        game_state.world.update_belt_id(back_id, final_id);
+                        game_state.world.update_belt_id(
+                            &mut game_state.simulation_state,
+                            back_id,
+                            final_id,
+                            data_store,
+                        );
                     } else {
-                        game_state.world.update_belt_id(self_id, final_id);
+                        game_state.world.update_belt_id(
+                            &mut game_state.simulation_state,
+                            self_id,
+                            final_id,
+                            data_store,
+                        );
                     }
                     (final_id, final_len)
                 } else {
@@ -923,9 +943,19 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                                 .modify_belt_pos(entrance_id, res.new_belt_len.try_into().unwrap());
                         }
                         if new_id == self_id {
-                            game_state.world.update_belt_id(entrance_id, new_id);
+                            game_state.world.update_belt_id(
+                                &mut game_state.simulation_state,
+                                entrance_id,
+                                new_id,
+                                data_store,
+                            );
                         } else {
-                            game_state.world.update_belt_id(self_id, new_id);
+                            game_state.world.update_belt_id(
+                                &mut game_state.simulation_state,
+                                self_id,
+                                new_id,
+                                data_store,
+                            );
                         }
                     },
                     UndergroundDir::Exit => {
@@ -1071,9 +1101,11 @@ fn handle_belt_breaking<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         Side::BACK => {
                             // FIXME: Understand this + 1
                             game_state.world.update_belt_id_after(
+                                &mut game_state.simulation_state,
                                 res.kept_id,
                                 new_id,
                                 belt_pos_to_break_at + 1,
+                                data_store,
                             );
                             game_state.world.modify_belt_pos(
                                 new_id,
@@ -1188,13 +1220,19 @@ fn attach_to_back_of_belt<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             );
 
             if final_belt_id == front_belt_id {
-                game_state
-                    .world
-                    .update_belt_id(back_belt_id_in_sim, final_belt_id);
+                game_state.world.update_belt_id(
+                    &mut game_state.simulation_state,
+                    back_belt_id_in_sim,
+                    final_belt_id,
+                    data_store,
+                );
             } else {
-                game_state
-                    .world
-                    .update_belt_id(final_belt_id, back_belt_id_in_sim);
+                game_state.world.update_belt_id(
+                    &mut game_state.simulation_state,
+                    final_belt_id,
+                    back_belt_id_in_sim,
+                    data_store,
+                );
             }
 
             (final_belt_id, final_belt_len)

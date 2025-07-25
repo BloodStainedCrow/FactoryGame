@@ -1239,7 +1239,7 @@ impl RawDataStore {
                     display_name: "Fast Transport Belt".to_string(),
                     has_underground: Some(BeltUndergroundInfo { max_distance: 9 }),
                     has_splitter: None,
-                    timer_increase: 45 * 2,
+                    timer_increase: 15 * 2,
                 },
                 BeltInfo {
                     name: "factory_game::transport_belt".to_string(),
@@ -1413,7 +1413,7 @@ impl RawDataStore {
             min_power_mod: 4,
 
             // TODO:
-            max_entity_size: (5, 5),
+            max_entity_size: (9, 9),
 
             recipe_names: self.recipes.iter().map(|r| r.name.clone()).collect(),
             recipe_display_names: self

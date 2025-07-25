@@ -296,7 +296,23 @@ impl eframe::App for App {
                             progress,
                             game_state_receiver: recv,
                         };
-                    } else if ui.button("With bp file").clicked() {
+                    }  else if ui.button("Gigabase").clicked() {
+                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
+                        let (send, recv) = channel();
+
+                        let progress_send = progress.clone();
+                        thread::spawn(move || {
+                            send.send(run_integrated_server(
+                                progress_send,
+                                StartGameInfo::Create(GameCreationInfo::Gigabase),
+                            ));
+                        });
+
+                        self.state = AppState::Loading {
+                            progress,
+                            game_state_receiver: recv,
+                        };
+                    }  else if ui.button("With bp file").clicked() {
                         if let Some(path) = rfd::FileDialog::new().pick_file() {
                             let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
                             let (send, recv) = channel();
