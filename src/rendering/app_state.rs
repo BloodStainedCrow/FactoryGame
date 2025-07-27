@@ -48,6 +48,7 @@ use crate::{
     item::Indexable,
     liquid::{CannotMixFluidsError, FluidSystemStore},
 };
+use get_size::GetSize;
 use itertools::Itertools;
 use log::{info, trace, warn};
 use petgraph::graph::NodeIndex;
@@ -71,7 +72,7 @@ use crate::frontend::action::place_tile::PositionInfo;
 
 use std::ops::AddAssign;
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct GameState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub current_tick: u64,
 
@@ -87,12 +88,12 @@ pub struct GameState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub settings: GameSettings,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct GameSettings {
     pub show_unresearched_recipes: bool,
 }
 
-#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct UpdateTime {
     pub dur: Duration,
 }
@@ -397,7 +398,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct SimulationState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub tech_state: TechState,
     pub factory: Factory<ItemIdxType, RecipeIdxType>,
@@ -414,7 +415,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SimulationState<ItemIdxType
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub power_grids: PowerGridStorage<ItemIdxType, RecipeIdxType>,
     pub belts: BeltStore<ItemIdxType>,
@@ -424,7 +425,7 @@ pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub fluid_store: FluidSystemStore<ItemIdxType>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct StorageStorageInserterStore {
     pub inserters: Box<
         [BTreeMap<

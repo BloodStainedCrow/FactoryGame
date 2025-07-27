@@ -1,6 +1,5 @@
 use egui::{Button, CornerRadius, ProgressBar, SidePanel};
 use egui::{Color32, Ui};
-use egui_graphs::{DefaultNodeShape, LayoutRandom, LayoutStateRandom};
 use egui_graphs::Graph;
 use egui_graphs::GraphView;
 use egui_graphs::LayoutHierarchical;
@@ -8,6 +7,7 @@ use egui_graphs::LayoutStateHierarchical;
 use egui_graphs::SettingsInteraction;
 use egui_graphs::SettingsNavigation;
 use egui_graphs::{DefaultEdgeShape, SettingsStyle};
+use egui_graphs::{DefaultNodeShape, LayoutRandom, LayoutStateRandom};
 use petgraph::Directed;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
@@ -24,8 +24,10 @@ use crate::IdxTrait;
 use crate::frontend::action::ActionType;
 use crate::item::Recipe;
 
+use get_size::GetSize;
+
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Deserialize, serde::Serialize,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Deserialize, serde::Serialize, GetSize,
 )]
 pub struct Technology {
     pub id: u16, //65k Technologies should suffice :)
@@ -38,7 +40,7 @@ pub struct LabTickInfo {
 
 pub type ResearchProgress = u16;
 
-#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct TechState {
     pub current_technology: Option<Technology>,
     pub finished_technologies: HashSet<Technology>,
@@ -363,12 +365,10 @@ impl TechState {
         );
 
         let mut view =
-            GraphView::<_, _, _, _, _, _, LayoutStateRandom, LayoutRandom>::new(
-                render_graph,
-            )
-            .with_navigations(&SettingsNavigation::new().with_zoom_and_pan_enabled(true))
-            .with_interactions(&SettingsInteraction::new().with_node_selection_enabled(true))
-            .with_styles(&SettingsStyle::new().with_labels_always(true));
+            GraphView::<_, _, _, _, _, _, LayoutStateRandom, LayoutRandom>::new(render_graph)
+                .with_navigations(&SettingsNavigation::new().with_zoom_and_pan_enabled(true))
+                .with_interactions(&SettingsInteraction::new().with_node_selection_enabled(true))
+                .with_styles(&SettingsStyle::new().with_labels_always(true));
 
         ui.add(&mut view);
 

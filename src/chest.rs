@@ -9,13 +9,15 @@ use crate::{
     item::{ITEMCOUNTTYPE, IdxTrait, Item, WeakIdxTrait, usize_from},
 };
 
+use get_size::GetSize;
+
 const CHEST_GOAL_AMOUNT: ITEMCOUNTTYPE = ITEMCOUNTTYPE::MAX / 2;
 
 // TODO: Add specilised chests for different sizes
 pub type ChestSize = u32;
 pub type SignedChestSize = i32;
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct FullChestStore<ItemIdxType: WeakIdxTrait> {
     pub stores: Box<[MultiChestStore<ItemIdxType>]>,
 }
@@ -39,7 +41,7 @@ impl<ItemIdxType: IdxTrait> FullChestStore<ItemIdxType> {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct MultiChestStore<ItemIdxType: WeakIdxTrait> {
     item: Item<ItemIdxType>,
     max_insert: Vec<ITEMCOUNTTYPE>,

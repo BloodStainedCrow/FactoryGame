@@ -9,8 +9,10 @@ use crate::{
     },
 };
 
+use get_size::GetSize;
+
 // TODO: Add variable power consumption and speed
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct MultiLabStore {
     pub max_insert: Box<[Vec<ITEMCOUNTTYPE>]>,
     pub sciences: Box<[Vec<ITEMCOUNTTYPE>]>,

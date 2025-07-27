@@ -2,6 +2,7 @@ use crate::chest::ChestSize;
 use crate::frontend::action::belt_placement::{BeltState, expected_belt_state};
 use crate::item::Indexable;
 use crate::rendering::Corner;
+use get_size::GetSize;
 use crate::{
     TICKS_PER_SECOND_LOGIC,
     assembler::AssemblerOnclickInfo,
@@ -1755,6 +1756,13 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         )
     });
 
+    Window::new("Size").default_open(false).show(ctx, |ui| {
+        ui.label(format!(
+            "Simulation State: {} bytes",
+            game_state_ref.simulation_state.get_size()
+        ))
+    });
+
     Window::new("Import BP")
         .default_open(false)
         .show(ctx, |ui| {
@@ -1787,7 +1795,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             if state_machine_ref.show_graph_dot_output {
                 let mut graph = format!(
                     "{:?}",
-                    Dot::new(&game_state_ref.simulation_state.factory.belts.belt_graph)
+                    Dot::new(&*game_state_ref.simulation_state.factory.belts.belt_graph)
                 );
 
                 ui.text_edit_multiline(&mut graph);

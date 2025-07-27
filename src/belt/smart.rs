@@ -17,10 +17,12 @@ use super::{
 use crate::inserter::FakeUnionStorage;
 use crate::inserter::HAND_SIZE;
 
+use get_size::GetSize;
+
 type TEST = SmartBelt<u8>;
 
 #[allow(clippy::module_name_repetitions)]
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct SmartBelt<ItemIdxType: WeakIdxTrait> {
     pub(super) ty: u8,
 
@@ -39,7 +41,7 @@ pub struct SmartBelt<ItemIdxType: WeakIdxTrait> {
     pub(super) output_splitter: Option<(SplitterID, SplitterSide)>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default, GetSize)]
 pub struct EmptyBelt {
     ty: u8,
 
@@ -47,7 +49,7 @@ pub struct EmptyBelt {
     pub len: u16,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct InserterStore {
     pub(super) inserters: Box<[Inserter]>,
     pub(super) offsets: Box<[u16]>,

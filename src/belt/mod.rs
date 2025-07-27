@@ -1,5 +1,8 @@
+use get_size::GetSize;
+
 #[allow(clippy::module_inception)]
 pub mod belt;
+
 pub mod smart;
 
 pub mod splitter;
@@ -14,7 +17,11 @@ use std::{
     mem, usize,
 };
 
-use crate::inserter::HAND_SIZE;
+use crate::{
+    get_size::{Mutex, StableGraph},
+    inserter::HAND_SIZE,
+};
+use petgraph::stable_graph::DefaultIx;
 
 use serde::ser::{SerializeSeq, SerializeStruct};
 use strum::IntoEnumIterator;
@@ -36,38 +43,49 @@ use belt::{Belt, BeltLenType};
 use itertools::{Either, Itertools};
 use log::info;
 use petgraph::{
+    Directed,
     Direction::Outgoing,
-    graph::NodeIndex,
     prelude::StableDiGraph,
     visit::{EdgeRef, IntoNodeReferences},
 };
+
+use crate::get_size::NodeIndex;
+
 use rayon::iter::IntoParallelRefMutIterator;
 use rayon::iter::{IndexedParallelIterator, ParallelIterator};
 use smart::{BeltInserterInfo, InserterAdditionError, Side, SmartBelt, SpaceOccupiedError};
 use splitter::{PureSplitter, SplitterDistributionMode, SplitterSide, SushiSplitter};
 use sushi::{SushiBelt, SushiInfo};
 
-use parking_lot::Mutex;
-
-#[derive(Debug, PartialEq, Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, PartialEq, Clone, Copy, serde::Deserialize, serde::Serialize, GetSize)]
 enum FreeIndex {
     FreeIndex(BeltLenType),
     OldFreeIndex(BeltLenType),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, GetSize)]
 struct SplitterID {
     index: u32,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 enum Inserter {
     Out(BeltStorageInserter<{ Dir::BeltToStorage }>),
     In(BeltStorageInserter<{ Dir::StorageToBelt }>),
 }
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize, PartialOrd, Ord,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Deserialize,
+    serde::Serialize,
+    PartialOrd,
+    Ord,
+    GetSize,
 )]
 pub enum BeltTileId<ItemIdxType: WeakIdxTrait> {
     AnyBelt(usize, PhantomData<ItemIdxType>),
@@ -102,7 +120,7 @@ fn do_update_test_bools(items: &mut [bool]) {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct BeltStore<ItemIdxType: WeakIdxTrait> {
     pub inner: InnerBeltStore<ItemIdxType>,
 
@@ -112,11 +130,12 @@ pub struct BeltStore<ItemIdxType: WeakIdxTrait> {
     any_splitters: Vec<AnySplitter<ItemIdxType>>,
     any_splitter_holes: Vec<usize>,
 
-    pub belt_graph: StableDiGraph<BeltTileId<ItemIdxType>, BeltGraphConnection<ItemIdxType>>,
+    pub belt_graph:
+        StableGraph<BeltTileId<ItemIdxType>, BeltGraphConnection<ItemIdxType>, Directed, DefaultIx>,
     pub belt_graph_lookup: HashMap<BeltTileId<ItemIdxType>, NodeIndex>,
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, GetSize)]
 pub enum BeltGraphConnection<ItemIdxType: WeakIdxTrait> {
     Sideload {
         dest_belt_pos: BeltLenType,
@@ -133,7 +152,7 @@ pub enum BeltGraphConnection<ItemIdxType: WeakIdxTrait> {
     },
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, GetSize)]
 pub struct InnerBeltStore<ItemIdxType: WeakIdxTrait> {
     sushi_belts: Vec<SushiBelt<ItemIdxType>>,
     sushi_belt_holes: Vec<usize>,
@@ -242,7 +261,7 @@ where
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 struct SplitterStore<ItemIdxType: WeakIdxTrait> {
     // TODO: Holes
     pub pure_splitters: Vec<PureSplitter>,
@@ -252,7 +271,7 @@ struct SplitterStore<ItemIdxType: WeakIdxTrait> {
 
 impl<ItemIdxType: IdxTrait> SplitterStore<ItemIdxType> {}
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 enum AnyBeltBeltInserter {
     PurePure(usize),
     PureSushi(usize),
@@ -260,7 +279,7 @@ enum AnyBeltBeltInserter {
     SushiSushi(usize),
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct BeltBeltInserterStore<ItemIdxType: WeakIdxTrait> {
     // FIXME: This is likely VERY slow
     pub pure_to_pure_inserters: Box<
@@ -311,7 +330,7 @@ pub struct BeltBeltInserterStore<ItemIdxType: WeakIdxTrait> {
     )>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct BeltBeltInserterInfo<ItemIdxType: WeakIdxTrait> {
     source: (BeltTileId<ItemIdxType>, u16),
     dest: (BeltTileId<ItemIdxType>, u16),
@@ -319,7 +338,7 @@ pub struct BeltBeltInserterInfo<ItemIdxType: WeakIdxTrait> {
     item: PhantomData<ItemIdxType>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub enum BeltBeltInserterType {
     Normal,
     Sideload,
@@ -1122,18 +1141,18 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
     }
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, GetSize)]
 pub enum SplitterTileId {
     Any(usize),
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 enum AnySplitter<ItemIdxType: WeakIdxTrait> {
     Pure(Item<ItemIdxType>, usize),
     Sushi(SplitterID),
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct SplitterInfo<ItemIdxType: WeakIdxTrait> {
     pub in_mode: SplitterDistributionMode,
     pub out_mode: SplitterDistributionMode,
@@ -1197,7 +1216,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             any_splitters: vec![],
             any_splitter_holes: vec![],
 
-            belt_graph: StableDiGraph::default(),
+            belt_graph: StableGraph::default(),
             belt_graph_lookup: HashMap::default(),
         }
     }
@@ -1221,7 +1240,10 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             store: &mut BeltStore<ItemIdxType>,
             tile_id: BeltTileId<ItemIdxType>,
             mut goal_item: Option<Item<ItemIdxType>>,
-            incoming_edges: &[(NodeIndex, BeltGraphConnection<ItemIdxType>)],
+            incoming_edges: &[(
+                petgraph::stable_graph::NodeIndex,
+                BeltGraphConnection<ItemIdxType>,
+            )],
             bias: Option<Item<ItemIdxType>>,
         ) -> Result<Item<ItemIdxType>, MakePureError> {
             // Make sure that all belts which feed into this belt ALSO are pure
@@ -1298,7 +1320,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         let incoming_edges: Vec<_> = self
             .belt_graph
             .edges_directed(
-                *self.belt_graph_lookup.get(&tile_id).unwrap(),
+                **self.belt_graph_lookup.get(&tile_id).unwrap(),
                 petgraph::Direction::Incoming,
             )
             .map(|edge| (edge.source(), *edge.weight()))
@@ -1428,8 +1450,8 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         let inner_edges: Vec<_> = self
             .belt_graph
             .edges_connecting(
-                self.belt_graph_lookup[&front_tile_id],
-                self.belt_graph_lookup[&back_tile_id],
+                *self.belt_graph_lookup[&front_tile_id],
+                *self.belt_graph_lookup[&back_tile_id],
             )
             .map(|edge| edge.id())
             .collect();
@@ -1454,14 +1476,14 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         let edges: Vec<_> = self
             .belt_graph
             .edges_directed(
-                self.belt_graph_lookup[&back_tile_id],
+                *self.belt_graph_lookup[&back_tile_id],
                 petgraph::Direction::Incoming,
             )
             .map(|edge| (edge.source(), edge.target(), edge.id()))
             .chain(
                 self.belt_graph
                     .edges_directed(
-                        self.belt_graph_lookup[&back_tile_id],
+                        *self.belt_graph_lookup[&back_tile_id],
                         petgraph::Direction::Outgoing,
                     )
                     .map(|edge| (edge.source(), edge.target(), edge.id())),
@@ -1474,9 +1496,9 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             // FIXME: Fix the simulation entities as well!!!!
             let new_conn = match conn {
                 BeltGraphConnection::Sideload { dest_belt_pos } => {
-                    if source == self.belt_graph_lookup[&back_tile_id] {
+                    if source == *self.belt_graph_lookup[&back_tile_id] {
                         BeltGraphConnection::Sideload { dest_belt_pos }
-                    } else if target == self.belt_graph_lookup[&back_tile_id] {
+                    } else if target == *self.belt_graph_lookup[&back_tile_id] {
                         BeltGraphConnection::Sideload {
                             dest_belt_pos: dest_belt_pos + front_len,
                         }
@@ -1490,18 +1512,18 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     filter,
                 } => BeltGraphConnection::BeltBeltInserter {
                     source_belt_pos: {
-                        if source == self.belt_graph_lookup[&back_tile_id] {
+                        if source == *self.belt_graph_lookup[&back_tile_id] {
                             source_belt_pos + front_len
-                        } else if target == self.belt_graph_lookup[&back_tile_id] {
+                        } else if target == *self.belt_graph_lookup[&back_tile_id] {
                             source_belt_pos
                         } else {
                             unreachable!()
                         }
                     },
                     dest_belt_pos: {
-                        if source == self.belt_graph_lookup[&back_tile_id] {
+                        if source == *self.belt_graph_lookup[&back_tile_id] {
                             dest_belt_pos
-                        } else if target == self.belt_graph_lookup[&back_tile_id] {
+                        } else if target == *self.belt_graph_lookup[&back_tile_id] {
                             dest_belt_pos + front_len
                         } else {
                             unreachable!()
@@ -1512,19 +1534,19 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                 // TODO: Is this correct?
                 BeltGraphConnection::Connected { filter } => {
                     assert_eq!(
-                        target, self.belt_graph_lookup[&back_tile_id],
+                        target, *self.belt_graph_lookup[&back_tile_id],
                         "Any end of belt connections must be at the end of the back belt, since the front is being merged"
                     );
                     BeltGraphConnection::Connected { filter }
                 },
             };
 
-            if source == self.belt_graph_lookup[&back_tile_id] {
+            if source == *self.belt_graph_lookup[&back_tile_id] {
                 self.belt_graph
-                    .add_edge(self.belt_graph_lookup[&front_tile_id], target, new_conn);
-            } else if target == self.belt_graph_lookup[&back_tile_id] {
+                    .add_edge(*self.belt_graph_lookup[&front_tile_id], target, new_conn);
+            } else if target == *self.belt_graph_lookup[&back_tile_id] {
                 self.belt_graph
-                    .add_edge(source, self.belt_graph_lookup[&front_tile_id], new_conn);
+                    .add_edge(source, *self.belt_graph_lookup[&front_tile_id], new_conn);
             } else {
                 unreachable!()
             }
@@ -1533,14 +1555,14 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         assert!(
             self.belt_graph
                 .edges_directed(
-                    self.belt_graph_lookup[&back_tile_id],
+                    *self.belt_graph_lookup[&back_tile_id],
                     petgraph::Direction::Incoming,
                 )
                 .map(|edge| (edge.source(), edge.target(), edge.id()))
                 .chain(
                     self.belt_graph
                         .edges_directed(
-                            self.belt_graph_lookup[&back_tile_id],
+                            *self.belt_graph_lookup[&back_tile_id],
                             petgraph::Direction::Outgoing,
                         )
                         .map(|edge| (edge.source(), edge.target(), edge.id())),
@@ -1550,7 +1572,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         );
 
         self.belt_graph
-            .remove_node(self.belt_graph_lookup[&back_tile_id])
+            .remove_node(*self.belt_graph_lookup[&back_tile_id])
             .expect("Node not found");
 
         self.belt_graph_lookup
@@ -1562,14 +1584,14 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             assert!(
                 self.belt_graph_lookup
                     .iter()
-                    .all(|(k, v)| { self.belt_graph.node_weight(*v).unwrap() == k })
+                    .all(|(k, v)| { self.belt_graph.node_weight(**v).unwrap() == k })
             );
 
             assert!(
                 self.belt_graph
                     .node_references()
                     .all(|(node_index, tile_id)| {
-                        self.belt_graph_lookup.get(tile_id).unwrap() == &node_index
+                        **self.belt_graph_lookup.get(tile_id).unwrap() == node_index
                     })
             );
         }
@@ -1593,8 +1615,8 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         belt_connection: BeltGraphConnection<ItemIdxType>,
     ) {
         self.belt_graph.add_edge(
-            self.belt_graph_lookup[&source_tile_id],
-            self.belt_graph_lookup[&dest_tile_id],
+            *self.belt_graph_lookup[&source_tile_id],
+            *self.belt_graph_lookup[&dest_tile_id],
             belt_connection,
         );
 
@@ -1665,7 +1687,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         }
         let outgoing_edges: Vec<_> = self
             .belt_graph
-            .edges_directed(self.belt_graph_lookup[&tile_id], Outgoing)
+            .edges_directed(*self.belt_graph_lookup[&tile_id], Outgoing)
             .map(|edge| *self.belt_graph.node_weight(edge.target()).unwrap())
             .collect();
 
@@ -1719,7 +1741,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         let incoming_belts: Vec<_> = self
             .belt_graph
             .edges_directed(
-                self.belt_graph_lookup[&tile_id],
+                *self.belt_graph_lookup[&tile_id],
                 petgraph::Direction::Incoming,
             )
             .map(|edge| {
@@ -1804,7 +1826,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         inputs.into_iter().all(|id| {
                             self.belt_graph
                                 .edges_directed(
-                                    self.belt_graph_lookup[&id],
+                                    *self.belt_graph_lookup[&id],
                                     petgraph::Direction::Outgoing,
                                 )
                                 .count()
@@ -1812,7 +1834,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         }) && outputs.into_iter().all(|id| {
                             self.belt_graph
                                 .edges_directed(
-                                    self.belt_graph_lookup[&id],
+                                    *self.belt_graph_lookup[&id],
                                     petgraph::Direction::Incoming,
                                 )
                                 .count()
@@ -2037,7 +2059,8 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         let new_id = self.add_smart_to_any_list(id);
 
         let index = self.belt_graph.add_node(new_id);
-        self.belt_graph_lookup.insert(new_id, index);
+        self.belt_graph_lookup
+            .insert(new_id, NodeIndex { node_index: index });
 
         new_id
     }
@@ -2048,7 +2071,8 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         let new_id = self.add_sushi_to_any_list(sushi_idx);
 
         let index = self.belt_graph.add_node(new_id);
-        self.belt_graph_lookup.insert(new_id, index);
+        self.belt_graph_lookup
+            .insert(new_id, NodeIndex { node_index: index });
 
         new_id
     }
@@ -2059,7 +2083,8 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         let new_id = self.add_sushi_to_any_list(sushi_idx);
 
         let index = self.belt_graph.add_node(new_id);
-        self.belt_graph_lookup.insert(new_id, index);
+        self.belt_graph_lookup
+            .insert(new_id, NodeIndex { node_index: index });
 
         new_id
     }
@@ -2136,7 +2161,8 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
 
         if let Some((new_id, new_side)) = ret.new_belt {
             let index = self.belt_graph.add_node(new_id);
-            self.belt_graph_lookup.insert(new_id, index);
+            self.belt_graph_lookup
+                .insert(new_id, NodeIndex { node_index: index });
 
             // TODO: Update the graph to reflect the moved connections!
             // let outgoing_edges = self
@@ -2387,7 +2413,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
 
                     let edges = self
                         .belt_graph
-                        .edges_directed(idx, petgraph::Direction::Incoming);
+                        .edges_directed(*idx, petgraph::Direction::Incoming);
 
                     edges.map(|edge| match edge.weight() {
                         BeltGraphConnection::BeltBeltInserter {
@@ -2840,7 +2866,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         inputs.into_iter().all(|id| {
                             self.belt_graph
                                 .edges_directed(
-                                    self.belt_graph_lookup[&id],
+                                    *self.belt_graph_lookup[&id],
                                     petgraph::Direction::Outgoing,
                                 )
                                 .count()
@@ -2848,7 +2874,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         }) && outputs.into_iter().all(|id| {
                             self.belt_graph
                                 .edges_directed(
-                                    self.belt_graph_lookup[&id],
+                                    *self.belt_graph_lookup[&id],
                                     petgraph::Direction::Incoming,
                                 )
                                 .count()
@@ -3068,7 +3094,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct MultiBeltStore<ItemIdxType: WeakIdxTrait> {
     pub belt_ty: Vec<u8>,
     pub belts: Vec<SmartBelt<ItemIdxType>>,
@@ -3116,7 +3142,7 @@ impl<ItemIdxType: IdxTrait> MultiBeltStore<ItemIdxType> {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq, Eq, GetSize)]
 enum AnyBelt<ItemIdxType: WeakIdxTrait> {
     Smart(BeltId<ItemIdxType>),
     Sushi(usize),

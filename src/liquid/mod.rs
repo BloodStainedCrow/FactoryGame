@@ -17,17 +17,21 @@ use crate::{
     rendering::app_state::StorageStorageInserterStore,
 };
 
+use get_size::GetSize;
+
 pub mod connection_logic;
 
 const FLUID_INSERTER_MOVETIME: u16 = 1;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize, GetSize,
+)]
 pub struct FluidSystemId<ItemIdxType: WeakIdxTrait> {
     pub fluid: Option<Item<ItemIdxType>>,
     index: usize,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct FluidSystemStore<ItemIdxType: WeakIdxTrait> {
     fluid_systems_with_fluid: Box<[Vec<Option<FluidSystem<ItemIdxType>>>]>,
     empty_fluid_systems: Vec<Option<FluidSystem<ItemIdxType>>>,
@@ -39,7 +43,7 @@ pub struct CannotMixFluidsError<ItemIdxType: WeakIdxTrait> {
     pub items: [Item<ItemIdxType>; 2],
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, GetSize)]
 pub enum FluidConnectionDir {
     Output,
     Input,
@@ -836,7 +840,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 enum FluidSystemEntity {
     OutgoingPump {
         inserter_id: InserterIdentifier,
@@ -854,12 +858,12 @@ enum FluidSystemEntity {
     },
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 struct FluidBox {
     capacity: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, GetSize)]
 enum FluidSystemState<ItemIdxType: WeakIdxTrait> {
     NoFluid,
     HasFluid {
@@ -868,7 +872,7 @@ enum FluidSystemState<ItemIdxType: WeakIdxTrait> {
     },
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 struct FluidSystem<ItemIdxType: WeakIdxTrait> {
     graph: Network<Position, FluidBox, FluidSystemEntity>,
     storage_capacity: u32,

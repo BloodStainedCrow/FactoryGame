@@ -4,7 +4,9 @@ use super::{InserterState, SushiInserterState};
 
 use crate::item::ITEMCOUNTTYPE;
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+use get_size::GetSize;
+
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct BeltBeltInserter {
     state: InserterState,
 }

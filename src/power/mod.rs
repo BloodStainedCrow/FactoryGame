@@ -32,6 +32,8 @@ use crate::{
 use rayon::iter::ParallelIterator;
 use rayon::iter::{IntoParallelRefMutIterator, ParallelBridge};
 
+use get_size::GetSize;
+
 pub mod power_grid;
 
 #[derive(
@@ -45,6 +47,7 @@ pub mod power_grid;
     Default,
     serde::Deserialize,
     serde::Serialize,
+    GetSize,
 )]
 pub struct Joule(pub u64);
 
@@ -116,7 +119,16 @@ impl Joule {
 }
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize, serde::Serialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Deserialize,
+    serde::Serialize,
+    GetSize,
 )]
 pub struct Watt(pub u64);
 
@@ -179,7 +191,7 @@ impl Sum<Watt> for Watt {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct PowerGridStorage<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub power_grids: Vec<PowerGrid<ItemIdxType, RecipeIdxType>>,
     pub pole_pos_to_grid_id: HashMap<Position, PowerGridIdentifier>,

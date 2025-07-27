@@ -1,7 +1,8 @@
+use get_size::GetSize;
 use std::collections::HashMap;
 use std::hash::Hash;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, GetSize)]
 pub struct SparseGrid<I: PartialEq + Eq + Hash + Copy, T> {
     values: HashMap<(I, I), T>,
 }

@@ -9,9 +9,13 @@ use crate::item::{IdxTrait, Item, WeakIdxTrait};
 
 use strum::EnumIter;
 
+use get_size::GetSize;
+
 pub const SPLITTER_BELT_LEN: u16 = 2;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, EnumIter)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, EnumIter, GetSize,
+)]
 pub enum SplitterSide {
     Left,
     Right,
@@ -44,7 +48,7 @@ impl SplitterSide {
     }
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, GetSize)]
 pub enum SplitterDistributionMode {
     Fair { next: SplitterSide },
     Priority(SplitterSide),
@@ -59,7 +63,7 @@ impl Default for SplitterDistributionMode {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct PureSplitter {
     pub in_mode: SplitterDistributionMode,
     pub out_mode: SplitterDistributionMode,
@@ -148,6 +152,8 @@ pub(super) struct SushiSplitter<ItemIdxType: WeakIdxTrait> {
     /// 0 is left
     pub(super) outputs: [UnsafeCell<Option<Item<ItemIdxType>>>; 2],
 }
+
+impl<ItemIdxType: WeakIdxTrait> GetSize for SushiSplitter<ItemIdxType> {}
 
 // SAFETY:
 // Since all accesses to the UnsafeCells are tightly controlled inside the super module, we can share this between threads

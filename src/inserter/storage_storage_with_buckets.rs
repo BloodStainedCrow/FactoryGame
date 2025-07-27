@@ -11,10 +11,12 @@ use crate::{
 use log::{info, trace, warn};
 use std::{cmp::min, iter};
 
+use get_size::GetSize;
+
 const NUM_BUCKETS: usize = 120;
 const MAX_MOVE_TIME: usize = NUM_BUCKETS * u8::MAX as usize;
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct Inserter {
     pub storage_id_in: FakeUnionStorage,
     pub storage_id_out: FakeUnionStorage,
@@ -24,7 +26,9 @@ pub struct Inserter {
     pub id: InserterId,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize, GetSize,
+)]
 pub enum LargeInserterState {
     WaitingForSourceItems(ITEMCOUNTTYPE),
     WaitingForSpaceInDestination(ITEMCOUNTTYPE),
@@ -33,16 +37,18 @@ pub enum LargeInserterState {
 }
 
 // This means at most u8::MAX inserters connecting any pair of Storages, that seems plenty
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize, GetSize,
+)]
 pub struct InserterId(u8);
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct BucketedStorageStorageInserterStoreFrontend {
     lookup: HashMap<InserterIdentifier, (u32, LargeInserterState)>,
     next_tick: NextTick,
 }
 
-#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, GetSize)]
 struct NextTick {
     time: u32,
     waiting_for_item: Vec<InserterIdentifier>,
@@ -51,7 +57,9 @@ struct NextTick {
     waiting_for_space_result: Vec<Inserter>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize, GetSize,
+)]
 pub struct InserterIdentifier {
     pub source: FakeUnionStorage,
     pub dest: FakeUnionStorage,

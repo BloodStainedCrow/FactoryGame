@@ -15,7 +15,9 @@ use crate::{
 
 use super::{IntoSeries, recipe::RecipeTickInfo};
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+use get_size::GetSize;
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct ProductionInfo {
     pub items_produced: Vec<u64>,
 }

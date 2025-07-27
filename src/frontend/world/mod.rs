@@ -1,9 +1,21 @@
+use get_size::GetSize;
+
 mod sparse_grid;
 pub mod tile;
 
 // TODO: Do not use usize for anything that might go to another machine, where it could be different size!
 #[derive(
-    Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord,
+    Debug,
+    Clone,
+    Copy,
+    serde::Serialize,
+    serde::Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    GetSize,
 )]
 pub struct Position {
     pub x: i32,

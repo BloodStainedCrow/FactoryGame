@@ -1,5 +1,5 @@
+use get_size::GetSize;
 use std::fmt::Debug;
-
 use std::hash::Hash;
 
 pub type ITEMCOUNTTYPE = u8;
@@ -23,6 +23,7 @@ pub trait WeakIdxTrait:
     + Eq
     + Hash
     + Ord
+    + GetSize
     + 'static
 {
 }
@@ -38,7 +39,17 @@ pub fn usize_from<T: IdxTrait>(t: T) -> usize {
 //}
 
 #[derive(
-    Debug, PartialEq, Eq, Hash, Clone, Copy, serde::Serialize, serde::Deserialize, PartialOrd, Ord,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    Clone,
+    Copy,
+    serde::Serialize,
+    serde::Deserialize,
+    PartialOrd,
+    Ord,
+    GetSize,
 )]
 pub struct Item<ItemIdxType: WeakIdxTrait> {
     pub id: ItemIdxType,
@@ -63,7 +74,17 @@ impl<ItemIdxType: IdxTrait> Item<ItemIdxType> {
 }
 
 #[derive(
-    Debug, PartialEq, Eq, Hash, Clone, Copy, serde::Serialize, serde::Deserialize, PartialOrd, Ord,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    Clone,
+    Copy,
+    serde::Serialize,
+    serde::Deserialize,
+    PartialOrd,
+    Ord,
+    GetSize,
 )]
 pub struct Recipe<RecipeIdxType: WeakIdxTrait> {
     pub id: RecipeIdxType,

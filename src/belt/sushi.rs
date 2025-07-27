@@ -2,6 +2,8 @@ use std::{iter::repeat, mem};
 
 use itertools::Itertools;
 
+use get_size::GetSize;
+
 use crate::{
     belt::belt::NoSpaceError,
     inserter::belt_storage_inserter::BeltStorageInserter,
@@ -16,7 +18,7 @@ use super::{
 };
 use crate::inserter::FakeUnionStorage;
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub(super) struct SushiBelt<ItemIdxType: WeakIdxTrait> {
     pub(super) ty: u8,
 
@@ -34,7 +36,7 @@ pub(super) struct SushiBelt<ItemIdxType: WeakIdxTrait> {
     pub(super) output_splitter: Option<(SplitterID, SplitterSide)>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub(super) struct SushiInserterStore<ItemIdxType: WeakIdxTrait> {
     pub(super) inserters: Box<[(Inserter, Item<ItemIdxType>)]>,
     pub(super) offsets: Box<[u16]>,

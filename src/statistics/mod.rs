@@ -11,6 +11,8 @@ use crate::{
     research::ResearchProgress,
 };
 
+use get_size::GetSize;
+
 pub mod consumption;
 mod power;
 pub mod production;
@@ -31,7 +33,7 @@ pub const TIMESCALE_LEGEND: [fn(f64) -> String; NUM_DIFFERENT_TIMESCALES] = [
     |t| format!("{:.0}m", t),
 ];
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct GenStatistics {
     pub production: Timeline<ProductionInfo>,
     pub consumption: Timeline<ConsumptionInfo>,
@@ -87,7 +89,7 @@ pub trait IntoSeries<T, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>: Sized {
     ) -> impl Iterator<Item = (usize, Series)>;
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct Timeline<T> {
     pub num_samples_pushed: usize,
     samples: [Vec<T>; NUM_DIFFERENT_TIMESCALES],

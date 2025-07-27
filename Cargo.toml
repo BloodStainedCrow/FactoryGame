@@ -47,6 +47,7 @@ noise = { version = "0.9.0", features = ["std"] }
 rfd = "0.15.3"
 egui_graphs = "0.25.1"
 serde_path_to_error = "0.1.17"
+get-size = { version = "0.1.4", features = ["derive"] }
 
 [patch.crates-io]
 puffin_egui = { git = "https://github.com/BloodStainedCrow/puffin" }

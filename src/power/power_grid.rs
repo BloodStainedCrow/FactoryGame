@@ -26,41 +26,14 @@ use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
 use super::Watt;
 
+use get_size::GetSize;
+
 pub const MAX_POWER_MULT: u8 = 64;
 pub const MIN_BEACON_POWER_MULT: u8 = MAX_POWER_MULT / 2;
 
 pub const MAX_BURNER_RATE: Watt = Watt(1_800_000);
 
-pub enum PowerGridEntityFIXME {
-    Assembler {
-        ty: u8,
-        recipe: Recipe<u8>,
-        index: u32,
-    },
-    Lab {
-        ty: u8,
-        index: u32,
-    },
-    LazyPowerProducer {
-        item: Item<u8>,
-        index: u32,
-    },
-    SolarPanel {
-        ty: u8,
-    },
-    Accumulator {
-        ty: u8,
-    },
-    Beacon {
-        ty: u8,
-        speed: i16,
-        prod: i16,
-        power: i16,
-        pos: Position,
-    },
-}
-
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Assembler {
         ty: u8,
@@ -88,7 +61,9 @@ pub enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize, GetSize,
+)]
 pub enum BeaconAffectedEntity<RecipeIdxType: WeakIdxTrait> {
     Assembler {
         id: AssemblerID<RecipeIdxType>,
@@ -108,7 +83,7 @@ impl<RecipeIdxType: WeakIdxTrait> BeaconAffectedEntity<RecipeIdxType> {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct PowerGrid<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub stores: FullAssemblerStore<RecipeIdxType>,
     pub lab_stores: MultiLabStore,
@@ -147,7 +122,9 @@ pub struct PowerGrid<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub beacon_affected_entities: HashMap<BeaconAffectedEntity<RecipeIdxType>, (i16, i16, i16)>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize, serde::Serialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize, serde::Serialize, GetSize,
+)]
 enum BurnableFuelForAccumulators {
     Yes,
     #[default]
@@ -2716,7 +2693,7 @@ struct UniqueAccumulator {
     charge: Joule,
 }
 
-#[derive(Debug, Default, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Default, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct SteamPowerProducerStore {
     all_producers: Box<[MultiLazyPowerProducer]>,
 }
@@ -2804,7 +2781,7 @@ impl SteamPowerProducerStore {
     }
 }
 
-#[derive(Debug, Default, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Default, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 struct MultiLazyPowerProducer {
     // TODO: For now turbines can only have a single input and no outputs
     ingredient: Vec<ITEMCOUNTTYPE>,

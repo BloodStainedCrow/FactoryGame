@@ -13,6 +13,8 @@ use crate::{
 use itertools::Itertools;
 use std::cmp::max;
 
+use get_size::GetSize;
+
 pub type Simdtype = Simd<u8, 32>;
 
 pub type TIMERTYPE = u16;
@@ -21,7 +23,7 @@ pub type TIMERTYPE = u16;
 // TODO: Don´t clump update data and data for adding/removing assemblers together!
 
 // FIXME: Using Boxed slices here is probably the main contributor to the time usage for building large power grids, since this means reallocation whenever we add assemblers!
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, GetSize)]
 pub struct MultiAssemblerStore<
     RecipeIdxType: WeakIdxTrait,
     const NUM_INGS: usize,
@@ -67,7 +69,7 @@ pub struct MultiAssemblerStore<
     len: usize,
 }
 
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, GetSize)]
 pub struct FullAssemblerStore<RecipeIdxType: WeakIdxTrait> {
     pub assemblers_0_1: Box<[MultiAssemblerStore<RecipeIdxType, 0, 1>]>,
     pub assemblers_1_1: Box<[MultiAssemblerStore<RecipeIdxType, 1, 1>]>,

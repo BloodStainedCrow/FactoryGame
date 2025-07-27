@@ -17,7 +17,9 @@ use crate::research::LabTickInfo;
 
 use super::{IntoSeries, recipe::RecipeTickInfo};
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+use get_size::GetSize;
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct ConsumptionInfo {
     items_consumed: Vec<u64>,
 }

@@ -9,7 +9,9 @@ use std::{
     ops::{Add, ControlFlow},
 };
 
-use enum_map::{Enum, EnumMap};
+use crate::get_size::EnumMap;
+use enum_map::Enum;
+use get_size::GetSize;
 use log::{info, warn};
 use strum::EnumIter;
 
@@ -60,7 +62,7 @@ pub const BELT_LEN_PER_TILE: u16 = 4;
 pub const CHUNK_SIZE: u16 = 16;
 pub const CHUNK_SIZE_FLOAT: f32 = 16.0;
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize, GetSize)]
 pub enum FloorTile {
     #[default]
     Empty,
@@ -78,14 +80,14 @@ pub enum InserterInstantiationNewOptions<ItemIdxType: WeakIdxTrait> {
 // We rely on this, by storing entity indices as u8 in the chunk
 const_assert!(CHUNK_SIZE * CHUNK_SIZE - 1 <= u8::MAX as u16);
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct Chunk<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub floor_tiles: Option<Box<[[FloorTile; CHUNK_SIZE as usize]; CHUNK_SIZE as usize]>>,
     chunk_tile_to_entity_into: Option<Box<[[u8; CHUNK_SIZE as usize]; CHUNK_SIZE as usize]>>,
     entities: Vec<Entity<ItemIdxType, RecipeIdxType>>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 enum FloorOre<ItemIdxType: WeakIdxTrait> {
     AllSame {
         ore: Item<ItemIdxType>,
@@ -101,7 +103,7 @@ fn is_default<T: Default + PartialEq>(val: &T) -> bool {
     *val == T::default()
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct PlayerInfo {
     pub pos: (f32, f32),
     pub visible: bool,
@@ -121,7 +123,7 @@ impl Default for PlayerInfo {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     noise: SerializableSimplex,
 
@@ -146,6 +148,8 @@ pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 struct SerializableSimplex {
     inner: Simplex,
 }
+
+impl GetSize for SerializableSimplex {}
 
 impl Deref for SerializableSimplex {
     type Target = Simplex;
@@ -182,18 +186,18 @@ impl<'de> serde::Deserialize<'de> for SerializableSimplex {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 enum WorldUpdate {
     EntityNewlyPowered { pos: Position },
     NewEntity { pos: Position },
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 struct PowerGridConnectedDevicesLookup {
     grid_to_chunks: BTreeMap<PowerGridIdentifier, BTreeSet<(i32, i32)>>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
 struct BeltIdLookup<ItemIdxType: WeakIdxTrait> {
     belt_id_to_chunks: BTreeMap<BeltTileId<ItemIdxType>, BTreeSet<(i32, i32)>>,
 }
@@ -246,7 +250,7 @@ fn try_attaching_fluids<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
             assert_eq!(new_assembler_pos, *assembler_pos);
 
-            let e_size: [u16; 2] = e.get_size(data_store).into();
+            let e_size: [u16; 2] = e.get_entity_size(data_store).into();
 
             world
                 .get_entities_colliding_with(
@@ -396,10 +400,10 @@ fn try_instantiating_inserters_for_belt_cascade<ItemIdxType: IdxTrait, RecipeIdx
         update: Box::new(move |world, sim_state, updates, data_store| {
             profiling::scope!("try_instantiating_inserters_for_belt_cascade");
             let mut reachable = Bfs::new(
-                &sim_state.factory.belts.belt_graph,
-                sim_state.factory.belts.belt_graph_lookup[&belt_id],
+                &*sim_state.factory.belts.belt_graph,
+                *sim_state.factory.belts.belt_graph_lookup[&belt_id],
             );
-            while let Some(idx) = reachable.next(&sim_state.factory.belts.belt_graph) {
+            while let Some(idx) = reachable.next(&*sim_state.factory.belts.belt_graph) {
                 let belt = sim_state.factory.belts.belt_graph.node_weight(idx).unwrap();
                 // FIXME: What if the graph contains cycles???
                 updates.push(try_instantiating_inserters_for_belt(*belt));
@@ -1040,7 +1044,7 @@ fn newly_working_assembler<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             };
 
             let pos = *pos;
-            let size = e.get_size(data_store);
+            let size = e.get_entity_size(data_store);
             let id = *id;
 
             updates.push(new_possible_inserter_connection(pos, size));
@@ -1430,14 +1434,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Result<(), ()> {
-        if !self.can_fit(entity.get_pos(), entity.get_size(data_store), data_store) {
+        if !self.can_fit(
+            entity.get_pos(),
+            entity.get_entity_size(data_store),
+            data_store,
+        ) {
             return Err(());
         }
 
         profiling::scope!("add_entity {}", entity.get_type_name());
 
         let pos = entity.get_pos();
-        let size = entity.get_size(data_store);
+        let size = entity.get_entity_size(data_store);
 
         let chunk_pos = self.get_chunk_pos_for_tile(pos);
 
@@ -1633,8 +1641,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         };
 
         if let Some(map_updates) = &mut self.map_updates {
-            for x_offs in 0..entity.get_size(data_store).0 {
-                for y_offs in 0..entity.get_size(data_store).1 {
+            for x_offs in 0..entity.get_entity_size(data_store).0 {
+                for y_offs in 0..entity.get_entity_size(data_store).1 {
                     let e_pos = entity.get_pos();
 
                     map_updates.push(Position {
@@ -1659,7 +1667,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         };
 
         let e_pos: Position = entity.get_pos();
-        let e_size = entity.get_size(data_store);
+        let e_size = entity.get_entity_size(data_store);
 
         chunk.entities.push(entity);
 
@@ -2814,7 +2822,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                 .flat_map(|chunk| chunk.entities.iter())
                                 .find(|e| {
                                     let e_pos = e.get_pos();
-                                    let e_size = e.get_size(data_store);
+                                    let e_size = e.get_entity_size(data_store);
 
                                     pos.contained_in(e_pos, (e_size.0.into(), e_size.1.into()))
                                 })
@@ -2886,7 +2894,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     if index as usize >= chunk.entities.len() {
                         debug_assert!(chunk.entities.iter().all(|e| {
                             let e_pos = e.get_pos();
-                            let e_size = e.get_size(data_store);
+                            let e_size = e.get_entity_size(data_store);
 
                             !pos.overlap(size, e_pos, (e_size.0.into(), e_size.1.into()))
                         }));
@@ -2895,7 +2903,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         assert!(chunk.entities[(index as usize)..(index as usize + 1)].len() == 1);
                         {
                             let e_pos = chunk.entities[index as usize].get_pos();
-                            let e_size = chunk.entities[index as usize].get_size(data_store);
+                            let e_size = chunk.entities[index as usize].get_entity_size(data_store);
 
                             assert!(pos.contained_in(e_pos, e_size))
                         }
@@ -2908,7 +2916,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             .flatten()
             .filter(move |e| {
                 let e_pos = e.get_pos();
-                let e_size = e.get_size(data_store);
+                let e_size = e.get_entity_size(data_store);
 
                 pos.overlap(size, e_pos, (e_size.0.into(), e_size.1.into()))
             })
@@ -2943,7 +2951,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
                 for e in chunk.entities.iter_mut() {
                     let e_pos = e.get_pos();
-                    let e_size = e.get_size(data_store);
+                    let e_size = e.get_entity_size(data_store);
 
                     if (pos.x + i32::from(size.0)) <= e_pos.x
                         || (pos.y + i32::from(size.1)) <= e_pos.y
@@ -2979,7 +2987,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
         if let Some(entity) = entity {
             let e_pos = entity.get_pos();
-            let e_size = entity.get_size(data_store);
+            let e_size = entity.get_entity_size(data_store);
             let max_inserter_range = data_store.max_inserter_search_range;
 
             match entity {
@@ -3558,7 +3566,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
     ) -> Option<&Entity<ItemIdxType, RecipeIdxType>> {
         self.entities.iter().find(|e| {
             let e_pos = e.get_pos();
-            let e_size = e.get_size(data_store);
+            let e_size = e.get_entity_size(data_store);
 
             pos.contained_in(e_pos, (e_size.0.into(), e_size.1.into()))
         })
@@ -3571,7 +3579,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
     ) -> Option<&mut Entity<ItemIdxType, RecipeIdxType>> {
         self.entities.iter_mut().find(|e| {
             let e_pos = e.get_pos();
-            let e_size = e.get_size(data_store);
+            let e_size = e.get_entity_size(data_store);
 
             pos.contained_in(e_pos, (e_size.0.into(), e_size.1.into()))
         })
@@ -3588,7 +3596,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
             .iter()
             .all(|e: &Entity<ItemIdxType, RecipeIdxType>| {
                 let e_pos = e.get_pos();
-                let e_size = e.get_size(data_store);
+                let e_size = e.get_entity_size(data_store);
 
                 (pos.x + i32::from(size.0)) <= e_pos.x
                     || (pos.y + i32::from(size.1)) <= e_pos.y
@@ -3603,7 +3611,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
     }
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, GetSize)]
 pub enum AssemblerInfo<RecipeIdxType: WeakIdxTrait> {
     UnpoweredNoRecipe,
     Unpowered(Recipe<RecipeIdxType>),
@@ -3615,7 +3623,7 @@ pub enum AssemblerInfo<RecipeIdxType: WeakIdxTrait> {
     },
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, GetSize)]
 pub enum InserterInfo<ItemIdxType: WeakIdxTrait> {
     NotAttached {
         start_pos: Position,
@@ -3628,7 +3636,7 @@ pub enum InserterInfo<ItemIdxType: WeakIdxTrait> {
     },
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, GetSize)]
 pub enum InternalInserterInfo<ItemIdxType: WeakIdxTrait> {
     NotAttached {
         end_pos: Position,
@@ -3639,7 +3647,7 @@ pub enum InternalInserterInfo<ItemIdxType: WeakIdxTrait> {
     },
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, GetSize)]
 pub enum AttachedInserter<ItemIdxType: WeakIdxTrait> {
     BeltStorage {
         id: BeltTileId<ItemIdxType>,
@@ -3656,7 +3664,7 @@ pub enum AttachedInserter<ItemIdxType: WeakIdxTrait> {
     },
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, GetSize)]
 pub enum AttachedInternalInserter<ItemIdxType: WeakIdxTrait> {
     BeltStorage {
         id: BeltTileId<ItemIdxType>,
@@ -3669,19 +3677,21 @@ pub enum AttachedInternalInserter<ItemIdxType: WeakIdxTrait> {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, Enum)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, Enum, GetSize,
+)]
 pub enum UndergroundDir {
     Entrance,
     Exit,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq, GetSize)]
 struct PipeConnection {
     pipe_pos: Position,
     connection_weak_index: WeakIndex,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq, GetSize)]
 pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Assembler {
         ty: u8,
@@ -3810,7 +3820,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
         }
     }
 
-    pub fn get_size(&self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> (u16, u16) {
+    pub fn get_entity_size(
+        &self,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> (u16, u16) {
         // FIXME: Use data_store for everything
         match self {
             Self::Assembler { ty, rotation, .. } => {
@@ -3891,7 +3904,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
 }
 
 #[derive(
-    Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, Hash, PartialOrd, Ord,
+    Debug,
+    Clone,
+    Copy,
+    serde::Deserialize,
+    serde::Serialize,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    GetSize,
 )]
 pub struct BeltId<ItemIdxType: WeakIdxTrait> {
     pub item: Item<ItemIdxType>,
@@ -3985,7 +4008,17 @@ impl<ItemIdxType: IdxTrait> PlaceEntityType<ItemIdxType> {
 }
 
 #[derive(
-    Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize, PartialEq, Eq, Enum, EnumIter,
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+    PartialEq,
+    Eq,
+    Enum,
+    EnumIter,
+    GetSize,
 )]
 pub enum Dir {
     #[default]
@@ -4046,7 +4079,17 @@ impl Dir {
 }
 
 #[derive(
-    Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, PartialOrd, Ord, Hash,
+    Debug,
+    Clone,
+    Copy,
+    serde::Deserialize,
+    serde::Serialize,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    GetSize,
 )]
 pub struct AssemblerID<RecipeIdxType: WeakIdxTrait> {
     pub recipe: Recipe<RecipeIdxType>,
@@ -4054,7 +4097,17 @@ pub struct AssemblerID<RecipeIdxType: WeakIdxTrait> {
     pub assembler_index: u32,
 }
 #[derive(
-    Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, PartialOrd, Ord, Hash,
+    Debug,
+    Clone,
+    Copy,
+    serde::Deserialize,
+    serde::Serialize,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    GetSize,
 )]
 pub enum MachineID<RecipeIdxType: WeakIdxTrait> {
     Assembler(AssemblerID<RecipeIdxType>),
@@ -4122,7 +4175,7 @@ mod test {
             let mut e_size = None;
             state.world.get_entities_colliding_with(position, (100, 100), &DATA_STORE).into_iter().for_each(|v| {
                 e_pos = Some(v.get_pos());
-                e_size = Some(v.get_size(&DATA_STORE));
+                e_size = Some(v.get_entity_size(&DATA_STORE));
             });
 
             prop_assert!(e_pos.is_some());
