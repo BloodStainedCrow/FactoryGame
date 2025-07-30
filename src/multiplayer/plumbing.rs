@@ -11,13 +11,11 @@ use parking_lot::Mutex;
 
 use log::{error, warn};
 
+#[cfg(feature = "client")]
+use crate::frontend::action::action_state_machine::ActionStateMachine;
 use crate::{
     data::DataStore,
-    frontend::{
-        action::{ActionType, action_state_machine::ActionStateMachine},
-        input::Input,
-        world::tile::World,
-    },
+    frontend::{action::ActionType, input::Input, world::tile::World},
     item::{IdxTrait, WeakIdxTrait},
 };
 
@@ -27,6 +25,7 @@ use super::{
     server::{ActionSource, HandledActionConsumer},
 };
 
+#[cfg(feature = "client")]
 pub(super) struct Client<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub(super) local_input: Receiver<Input>,
     pub(super) local_actions: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
@@ -51,6 +50,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Server<ItemIdxType, RecipeI
     }
 }
 
+#[cfg(feature = "client")]
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, RecipeIdxType>
     for Client<ItemIdxType, RecipeIdxType>
 {
@@ -90,6 +90,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
     }
 }
 
+#[cfg(feature = "client")]
 impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
     HandledActionConsumer<ItemIdxType, RecipeIdxType> for Client<ItemIdxType, RecipeIdxType>
 {
@@ -173,6 +174,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     }
 }
 
+#[cfg(feature = "client")]
 pub(super) struct IntegratedServer<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub(super) local_actions: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
     pub(super) local_input: Receiver<Input>,
@@ -180,6 +182,7 @@ pub(super) struct IntegratedServer<ItemIdxType: WeakIdxTrait, RecipeIdxType: Wea
     pub(super) ui_actions: Receiver<ActionType<ItemIdxType, RecipeIdxType>>,
 }
 
+#[cfg(feature = "client")]
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, RecipeIdxType>
     for IntegratedServer<ItemIdxType, RecipeIdxType>
 {
@@ -224,6 +227,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
     }
 }
 
+#[cfg(feature = "client")]
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     HandledActionConsumer<ItemIdxType, RecipeIdxType>
     for IntegratedServer<ItemIdxType, RecipeIdxType>

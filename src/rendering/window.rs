@@ -10,6 +10,7 @@ use std::{
 use parking_lot::Mutex;
 
 use crate::{
+    app_state::{AppState, GameState},
     data::DataStore,
     frontend::{
         action::{ActionType, action_state_machine::ActionStateMachine},
@@ -26,11 +27,7 @@ use winit::{
     window::WindowAttributes,
 };
 
-use super::{
-    TextureAtlas,
-    app_state::{AppState, GameState},
-    texture_atlas,
-};
+use super::{TextureAtlas, texture_atlas};
 
 pub struct App {
     window: Window,
@@ -155,7 +152,7 @@ impl winit::application::ApplicationHandler for App {
                 delta,
                 phase,
             } => {
-                let input = Input::MouseScoll(*delta);
+                let input = Input::MouseScoll(todo!());
                 self.input_sender.send(input);
             },
 

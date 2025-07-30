@@ -7,10 +7,10 @@ use std::{
 };
 
 use crate::{
+    app_state::GameState,
     data::DataStore,
     frontend::{action::ActionType, world::tile::World},
     item::{IdxTrait, WeakIdxTrait},
-    rendering::app_state::GameState,
     replays::Replay,
 };
 

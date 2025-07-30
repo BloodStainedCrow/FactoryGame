@@ -1,13 +1,15 @@
-use egui::{Button, CornerRadius, ProgressBar, SidePanel};
-use egui::{Color32, Ui};
-use egui_graphs::Graph;
-use egui_graphs::GraphView;
-use egui_graphs::LayoutHierarchical;
-use egui_graphs::LayoutStateHierarchical;
-use egui_graphs::SettingsInteraction;
-use egui_graphs::SettingsNavigation;
-use egui_graphs::{DefaultEdgeShape, SettingsStyle};
-use egui_graphs::{DefaultNodeShape, LayoutRandom, LayoutStateRandom};
+#[cfg(feature = "client")]
+use egui::{Button, Color32, CornerRadius, ProgressBar, SidePanel, Ui};
+#[cfg(feature = "client")]
+use egui_graphs::{
+    DefaultEdgeShape, DefaultNodeShape, Graph, GraphView, LayoutRandom, LayoutStateRandom,
+    SettingsInteraction, SettingsNavigation, SettingsStyle,
+};
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
+use get_size::GetSize;
+
 use petgraph::Directed;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
@@ -24,10 +26,9 @@ use crate::IdxTrait;
 use crate::frontend::action::ActionType;
 use crate::item::Recipe;
 
-use get_size::GetSize;
-
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Deserialize, serde::Serialize, GetSize,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Deserialize, serde::Serialize,
 )]
 pub struct Technology {
     pub id: u16, //65k Technologies should suffice :)
@@ -40,7 +41,8 @@ pub struct LabTickInfo {
 
 pub type ResearchProgress = u16;
 
-#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 pub struct TechState {
     pub current_technology: Option<Technology>,
     pub finished_technologies: HashSet<Technology>,
@@ -187,6 +189,7 @@ impl TechState {
         }
     }
 
+    #[cfg(feature = "client")]
     pub fn generate_render_graph<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &self,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -226,6 +229,7 @@ impl TechState {
         )
     }
 
+    #[cfg(feature = "client")]
     pub fn render_tech_window<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &self,
         ui: &mut Ui,

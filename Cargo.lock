@@ -1294,6 +1294,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "egui-show-info"
+version = "0.1.0"
+dependencies = [
+ "bimap",
+ "egui",
+ "enum-map",
+ "parking_lot",
+ "petgraph",
+]
+
+[[package]]
+name = "egui-show-info-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.104",
+]
+
+[[package]]
 name = "egui-wgpu"
 version = "0.31.1"
 source = "git+https://github.com/BloodStainedCrow/egui?branch=removeProfiling#4e11a02615078f509d9acc474ae13a66b411eaf7"
@@ -1600,6 +1620,8 @@ dependencies = [
  "directories",
  "eframe",
  "egui",
+ "egui-show-info",
+ "egui-show-info-derive",
  "egui_extras",
  "egui_graphs",
  "egui_plot",
@@ -1876,8 +1898,6 @@ dependencies = [
 [[package]]
 name = "get-size"
 version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47b61e2dab7eedce93a83ab3468b919873ff16bac5a3e704011ff836d22b2120"
 dependencies = [
  "get-size-derive",
 ]
@@ -1885,8 +1905,6 @@ dependencies = [
 [[package]]
 name = "get-size-derive"
 version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13a1bcfb855c1f340d5913ab542e36f25a1c56f57de79022928297632435dec2"
 dependencies = [
  "attribute-derive",
  "quote",
@@ -3265,7 +3283,6 @@ checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
 [[package]]
 name = "petgraph"
 version = "0.8.2"
-source = "git+https://github.com/petgraph/petgraph#46c4cb8e59294ab1330010de6d4b3744928b07e5"
 dependencies = [
  "fixedbitset",
  "hashbrown",

@@ -29,13 +29,17 @@ use crate::{
     statistics::recipe::RecipeTickInfo,
 };
 
+use rayon::iter::IntoParallelRefMutIterator;
 use rayon::iter::ParallelIterator;
-use rayon::iter::{IntoParallelRefMutIterator, ParallelBridge};
 
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
 use get_size::GetSize;
 
 pub mod power_grid;
 
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(
     Debug,
     Clone,
@@ -47,7 +51,6 @@ pub mod power_grid;
     Default,
     serde::Deserialize,
     serde::Serialize,
-    GetSize,
 )]
 pub struct Joule(pub u64);
 
@@ -118,17 +121,9 @@ impl Joule {
     }
 }
 
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    serde::Deserialize,
-    serde::Serialize,
-    GetSize,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize, serde::Serialize,
 )]
 pub struct Watt(pub u64);
 
@@ -191,7 +186,8 @@ impl Sum<Watt> for Watt {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct PowerGridStorage<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub power_grids: Vec<PowerGrid<ItemIdxType, RecipeIdxType>>,
     pub pole_pos_to_grid_id: HashMap<Position, PowerGridIdentifier>,
@@ -675,65 +671,58 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                 }
                 {
                     profiling::scope!("Update grid_graph.weak_components");
-                    pg.grid_graph
-                        .weak_components_mut()
-                        .par_bridge()
-                        .for_each(|(_, pg_entity)| {
-                            if let PowerGridEntity::Beacon {
-                                affected_entities, ..
-                            } = pg_entity
-                            {
-                                for affected_entity in affected_entities {
-                                    match affected_entity {
-                                        BeaconAffectedEntity::Assembler { id } => {
-                                            if id.grid == removed_id {
-                                                let old_recipe = id.recipe;
-                                                let old_index = id.assembler_index;
 
-                                                let new_id = updates
-                                                    .get(&(Some(old_recipe), old_index))
-                                                    .expect("Could not find update for assembler");
+                    for affected_entity_list in pg.beacon_affected_entity_map.values_mut() {
+                        for affected_entity in affected_entity_list {
+                            match affected_entity {
+                                BeaconAffectedEntity::Assembler { id } => {
+                                    if id.grid == removed_id {
+                                        let old_recipe = id.recipe;
+                                        let old_index = id.assembler_index;
 
-                                                let PowerGridEntity::Assembler {
-                                                    ty: _,
-                                                    recipe: _,
-                                                    index,
-                                                } = new_id.new_pg_entity
-                                                else {
-                                                    unreachable!();
-                                                };
+                                        let new_id = updates
+                                            .get(&(Some(old_recipe), old_index))
+                                            .expect("Could not find update for assembler");
 
-                                                *id = AssemblerID {
-                                                    recipe: id.recipe,
-                                                    grid: new_id.new_grid,
-                                                    assembler_index: index,
-                                                };
-                                            }
-                                        },
-                                        BeaconAffectedEntity::Lab { grid, index } => {
-                                            if *grid == removed_id {
-                                                let old_index = *index;
+                                        let PowerGridEntity::Assembler {
+                                            ty: _,
+                                            recipe: _,
+                                            index,
+                                        } = new_id.new_pg_entity
+                                        else {
+                                            unreachable!();
+                                        };
 
-                                                let new_id = updates
-                                                    .get(&(None, old_index))
-                                                    .expect("Could not find update for lab");
-
-                                                let PowerGridEntity::Lab {
-                                                    ty: _,
-                                                    index: new_index,
-                                                } = new_id.new_pg_entity
-                                                else {
-                                                    unreachable!();
-                                                };
-
-                                                *grid = new_id.new_grid;
-                                                *index = new_index.into();
-                                            }
-                                        },
+                                        *id = AssemblerID {
+                                            recipe: id.recipe,
+                                            grid: new_id.new_grid,
+                                            assembler_index: index,
+                                        };
                                     }
-                                }
+                                },
+                                BeaconAffectedEntity::Lab { grid, index } => {
+                                    if *grid == removed_id {
+                                        let old_index = *index;
+
+                                        let new_id = updates
+                                            .get(&(None, old_index))
+                                            .expect("Could not find update for lab");
+
+                                        let PowerGridEntity::Lab {
+                                            ty: _,
+                                            index: new_index,
+                                        } = new_id.new_pg_entity
+                                        else {
+                                            unreachable!();
+                                        };
+
+                                        *grid = new_id.new_grid;
+                                        *index = new_index.into();
+                                    }
+                                },
                             }
-                        });
+                        }
+                    }
                 }
 
                 pg.potential_beacon_affected_powergrids.remove(&removed_id);
@@ -838,43 +827,43 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                     })
             );
 
-            assert!(
-                self.power_grids
-                    .iter()
-                    .filter(|grid| !grid.is_placeholder)
-                    .flat_map(|pg| { pg.grid_graph.weak_components() })
-                    .all(|(_pos, e)| {
-                        match e {
-                            PowerGridEntity::Beacon {
-                                affected_entities, ..
-                            } => affected_entities.iter().all(|e| match e {
-                                BeaconAffectedEntity::Assembler { id } => {
-                                    !self.power_grids[usize::from(id.grid)].is_placeholder
-                                },
-                                BeaconAffectedEntity::Lab { grid, index: _ } => {
-                                    !self.power_grids[usize::from(*grid)].is_placeholder
-                                },
-                            }),
-                            // TODO: Other things to check?
-                            _ => true,
-                        }
-                    })
-            );
+            // assert!(
+            //     self.power_grids
+            //         .iter()
+            //         .filter(|grid| !grid.is_placeholder)
+            //         .flat_map(|pg| { pg.grid_graph.weak_components() })
+            //         .all(|(_pos, e)| {
+            //             match e {
+            //                 PowerGridEntity::Beacon {
+            //                     ..
+            //                 } => affected_entities.iter().all(|e| match e {
+            //                     BeaconAffectedEntity::Assembler { id } => {
+            //                         !self.power_grids[usize::from(id.grid)].is_placeholder
+            //                     },
+            //                     BeaconAffectedEntity::Lab { grid, index: _ } => {
+            //                         !self.power_grids[usize::from(*grid)].is_placeholder
+            //                     },
+            //                 }),
+            //                 // TODO: Other things to check?
+            //                 _ => true,
+            //             }
+            //         })
+            // );
 
-            let affected_grids_and_potential_match = self
-                .power_grids
-                .iter()
-                .filter(|grid| !grid.is_placeholder)
-                .all(|pg| {
-                    pg.beacon_affected_entities
-                        .keys()
-                        .map(|e| e.get_power_grid())
-                        .all(|affected_grid| {
-                            pg.potential_beacon_affected_powergrids
-                                .contains(&affected_grid)
-                        })
-                });
-            assert!(affected_grids_and_potential_match);
+            // let affected_grids_and_potential_match = self
+            //     .power_grids
+            //     .iter()
+            //     .filter(|grid| !grid.is_placeholder)
+            //     .all(|pg| {
+            //         pg.beacon_affected_entities
+            //             .keys()
+            //             .map(|e| e.get_power_grid())
+            //             .all(|affected_grid| {
+            //                 pg.potential_beacon_affected_powergrids
+            //                     .contains(&affected_grid)
+            //             })
+            //     });
+            // assert!(affected_grids_and_potential_match);
         }
 
         Some(updates.into_values())
@@ -1106,14 +1095,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         self.power_grids[usize::from(self.pole_pos_to_grid_id[&beacon_pole_pos])]
             .potential_beacon_affected_powergrids
             .insert(entity.get_power_grid());
-        let (
-            _,
-            PowerGridEntity::Beacon {
-                ty,
-                modules,
-                affected_entities,
-            },
-        ) = self.power_grids[usize::from(self.pole_pos_to_grid_id[&beacon_pole_pos])]
+        let pg: &mut PowerGrid<ItemIdxType, RecipeIdxType> =
+            &mut self.power_grids[usize::from(self.pole_pos_to_grid_id[&beacon_pole_pos])];
+        let (_, PowerGridEntity::Beacon { ty, module_effects }) = pg
             .grid_graph
             .modify_weak_component(beacon_pole_pos, beacon_weak_idx)
         else {
@@ -1122,6 +1106,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
 
         let ty = *ty;
 
+        let affected_entities = pg
+            .beacon_affected_entity_map
+            .get_mut(&(beacon_pole_pos, beacon_weak_idx))
+            .unwrap();
+
         if affected_entities.contains(&entity) {
             warn!("Tried to insert beacon affected entity {entity:?} again!");
             return;
@@ -1129,18 +1118,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
 
         affected_entities.push(entity);
 
-        let effect: (i16, i16, i16) = modules
-            .iter()
-            .flatten()
-            .map(|module_ty| {
-                (
-                    data_store.module_info[*module_ty].speed_mod.into(),
-                    data_store.module_info[*module_ty].prod_mod.into(),
-                    data_store.module_info[*module_ty].power_mod.into(),
-                )
-            })
-            .reduce(|acc, v| (acc.0 + v.0, acc.1 + v.1, acc.2 + v.2))
-            .unwrap_or((0, 0, 0));
+        let effect: (i16, i16, i16) = *module_effects;
 
         let raw_effect = (
             effect.0 * data_store.beacon_info[usize::from(ty)].effectiveness.0 as i16

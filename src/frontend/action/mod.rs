@@ -12,6 +12,7 @@ use crate::{
 
 use super::world::{Position, tile::PlaceEntityType};
 
+#[cfg(feature = "client")]
 pub mod action_state_machine;
 pub mod belt_placement;
 pub mod place_entity;

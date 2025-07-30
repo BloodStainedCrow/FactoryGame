@@ -9,6 +9,9 @@ use crate::{
     item::{ITEMCOUNTTYPE, IdxTrait, Item, WeakIdxTrait, usize_from},
 };
 
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
 use get_size::GetSize;
 
 const CHEST_GOAL_AMOUNT: ITEMCOUNTTYPE = ITEMCOUNTTYPE::MAX / 2;
@@ -17,7 +20,8 @@ const CHEST_GOAL_AMOUNT: ITEMCOUNTTYPE = ITEMCOUNTTYPE::MAX / 2;
 pub type ChestSize = u32;
 pub type SignedChestSize = i32;
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct FullChestStore<ItemIdxType: WeakIdxTrait> {
     pub stores: Box<[MultiChestStore<ItemIdxType>]>,
 }
@@ -41,7 +45,8 @@ impl<ItemIdxType: IdxTrait> FullChestStore<ItemIdxType> {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct MultiChestStore<ItemIdxType: WeakIdxTrait> {
     item: Item<ItemIdxType>,
     max_insert: Vec<ITEMCOUNTTYPE>,

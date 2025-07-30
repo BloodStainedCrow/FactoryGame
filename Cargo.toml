@@ -8,10 +8,10 @@ rust-version = "1.85"
 [dependencies]
 enum-map = { version = "2.7.3", features = ["serde"] }
 proptest = "1.4.0"
-winit = "0.30.8"
-tilelib = { git = "https://github.com/BloodStainedCrow/tilelib.git" }
+winit = { version = "0.30.8", optional = true }
+tilelib = { git = "https://github.com/BloodStainedCrow/tilelib.git", optional = true }
 spin_sleep_util = "0.1.1"
-image = "0.25.5"
+image = { version = "0.25.5", optional = true }
 log = "0.4.25"
 simple_logger = "5.0.0"
 rayon = "1.10.0"
@@ -30,24 +30,27 @@ charts-rs = { version = "0.3.20", features = ["resvg"] }
 strum = { version = "0.27.1", features = ["derive"] }
 bitvec = "1.0.1"
 bimap = { version = "0.6.3", features = ["serde"] }
-eframe = { version = "0.31.1", features = ["wgpu"] }
-egui_extras = "0.31.1"
-egui_plot = "0.32.1"
+eframe = { version = "0.31.1", features = ["wgpu"], optional = true }
+egui_extras = { version = "0.31.1", optional = true }
+egui_plot = { version = "0.32.1", optional = true }
 rand = "0.8.5"
 bitcode = { version = "0.6.6", features = ["serde"] }
-egui = { version = "0.31.1", features = ["serde"] }
-flate2 = {version = "1.1.1", features = ["zlib-rs"]}
+egui = { version = "0.31.1", features = ["serde"], optional = true }
+flate2 = { version = "1.1.1", features = ["zlib-rs"]}
 rstest = "0.25.0"
 parking_lot = { version = "0.12.3", features = ["serde"] }
 profiling = { version = "1.0.16" }
-puffin_egui = "0.29"
+puffin_egui = { version = "0.29", optional = true }
 puffin = "0.19"
 dhat = "0.3.3"
 noise = { version = "0.9.0", features = ["std"] }
-rfd = "0.15.3"
-egui_graphs = "0.25.1"
+rfd = { version = "0.15.3", optional = true }
+egui_graphs = { version = "0.25.1", optional = true }
 serde_path_to_error = "0.1.17"
-get-size = { version = "0.1.4", features = ["derive"] }
+get-size = { version = "0.1.4", features = ["derive"], optional = true }
+
+egui-show-info = { path = "../egui-show-info", features = ["petgraph", "parking_lot", "enum-map", "bimap"], optional = true }
+egui-show-info-derive = { path = "../egui-show-info/egui-show-info-derive", optional = true }
 
 [patch.crates-io]
 puffin_egui = { git = "https://github.com/BloodStainedCrow/puffin" }
@@ -56,7 +59,8 @@ egui = { git = "https://github.com/BloodStainedCrow/egui", branch = "removeProfi
 eframe = { git = "https://github.com/BloodStainedCrow/egui", branch = "removeProfiling" }
 egui-wgpu = { git = "https://github.com/BloodStainedCrow/egui", branch = "removeProfiling" }
 
-petgraph = { git = "https://github.com/petgraph/petgraph" }
+get-size = { path = "../get-size" }
+petgraph = { path = "../petgraph" }
 
 # [patch."https://github.com/BloodStainedCrow/tilelib"]
 # tilelib = { path = "../tilelib" }
@@ -101,9 +105,10 @@ incremental = true
 # codegen-units = 1
 
 [features]
-default = ["profiler", "graphics"]
+default = ["profiler", "graphics", "client"]
 # Use Krastorio2 graphics. Since I have not properly added licensing information, I currently do not push them, therefore this feature is broken
 graphics = []
 # dhat-rs memory profiling (https://docs.rs/dhat/latest/dhat/)
 dhat-heap = []
 profiler = ["profiling/profile-with-puffin"]
+client = ["dep:winit", "dep:eframe", "dep:egui", "dep:egui_extras", "dep:egui_plot", "dep:puffin_egui", "dep:egui_graphs", "dep:egui-show-info", "dep:egui-show-info-derive", "dep:tilelib", "dep:image", "dep:rfd", "dep:get-size"]

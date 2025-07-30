@@ -3,7 +3,6 @@ use tilelib::types::{DrawInstance, Layer, Sprite, Texture};
 
 use crate::frontend::world::tile::{Dir, UndergroundDir};
 
-pub mod app_state;
 pub mod eframe_app;
 pub mod render_world;
 pub mod window;

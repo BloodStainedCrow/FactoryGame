@@ -12,19 +12,19 @@ use std::{
 
 use parking_lot::Mutex;
 
-use plumbing::{Client, IntegratedServer, Server};
+use plumbing::Server;
+#[cfg(feature = "client")]
+use plumbing::{Client, IntegratedServer};
 use server::{ActionSource, GameStateUpdateHandler, HandledActionConsumer};
 
+#[cfg(feature = "client")]
+use crate::frontend::action::action_state_machine::ActionStateMachine;
 use crate::{
     TICKS_PER_SECOND_RUNSPEED,
+    app_state::GameState,
     data::DataStore,
-    frontend::{
-        action::{ActionType, action_state_machine::ActionStateMachine},
-        input::Input,
-        world::tile::World,
-    },
+    frontend::{action::ActionType, input::Input, world::tile::World},
     item::{IdxTrait, WeakIdxTrait},
-    rendering::app_state::GameState,
     replays::Replay,
     saving::save,
 };
@@ -36,6 +36,8 @@ mod server;
 pub mod connection_reciever;
 
 pub(super) enum Game<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+    #[cfg(feature = "client")]
+    #[cfg(feature = "client")]
     Client(
         Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
         GameStateUpdateHandler<ItemIdxType, RecipeIdxType, Client<ItemIdxType, RecipeIdxType>>,
@@ -48,6 +50,7 @@ pub(super) enum Game<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
         Box<dyn FnMut() + Send + Sync>,
     ),
     /// Integrated Server is also how Singleplayer works
+    #[cfg(feature = "client")]
     IntegratedServer(
         Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
         Replay<ItemIdxType, RecipeIdxType, DataStore<ItemIdxType, RecipeIdxType>>,
@@ -64,10 +67,12 @@ pub(super) enum Game<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Drop for Game<ItemIdxType, RecipeIdxType> {
     fn drop(&mut self) {
         match self {
+            #[cfg(feature = "client")]
             Game::Client(mutex, game_state_update_handler, atomic_u64) => {},
             Game::DedicatedServer(game_state, replay, game_state_update_handler, cancel_socket) => {
                 cancel_socket()
             },
+            #[cfg(feature = "client")]
             Game::IntegratedServer(
                 mutex,
                 replay,
@@ -88,6 +93,7 @@ pub struct ServerInfo {
 }
 
 pub enum GameInitData<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+    #[cfg(feature = "client")]
     Client {
         game_state: Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
         action_state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
@@ -101,6 +107,7 @@ pub enum GameInitData<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         ServerInfo,
         Box<dyn FnMut() + Send + Sync>,
     ),
+    #[cfg(feature = "client")]
     IntegratedServer {
         game_state: Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
         action_state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
@@ -124,6 +131,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Result<Self, std::io::Error> {
         match init {
+            #[cfg(feature = "client")]
             GameInitData::Client {
                 game_state,
                 action_state_machine,
@@ -156,6 +164,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                     cancel_socket,
                 ))
             },
+            #[cfg(feature = "client")]
             GameInitData::IntegratedServer {
                 game_state,
                 tick_counter,
@@ -216,6 +225,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> ControlFlow<ExitReason> {
         match self {
+            #[cfg(feature = "client")]
             Game::Client(game_state, game_state_update_handler, tick_counter) => {
                 game_state_update_handler.update::<&DataStore<ItemIdxType, RecipeIdxType>>(
                     &mut game_state.lock(),
@@ -230,6 +240,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 game_state_update_handler,
                 _cancel_socket,
             ) => game_state_update_handler.update(game_state, Some(replay), data_store),
+            #[cfg(feature = "client")]
             Game::IntegratedServer(
                 game_state,
                 replay,

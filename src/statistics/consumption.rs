@@ -17,9 +17,13 @@ use crate::research::LabTickInfo;
 
 use super::{IntoSeries, recipe::RecipeTickInfo};
 
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
 use get_size::GetSize;
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ConsumptionInfo {
     items_consumed: Vec<u64>,
 }

@@ -32,11 +32,11 @@ use crate::{
 
 use super::{
     TextureAtlas,
-    app_state::{AppState, GameState},
     render_world::{render_ui, render_world},
     texture_atlas,
     window::{LoadedGame, LoadedGameInfo},
 };
+use crate::app_state::{AppState, GameState};
 
 use crate::saving::save;
 
@@ -296,7 +296,7 @@ impl eframe::App for App {
                             progress,
                             game_state_receiver: recv,
                         };
-                    }  else if ui.button("Gigabase").clicked() {
+                    } else if ui.button("Gigabase").clicked() {
                         let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
                         let (send, recv) = channel();
 
@@ -312,7 +312,7 @@ impl eframe::App for App {
                             progress,
                             game_state_receiver: recv,
                         };
-                    }  else if ui.button("With bp file").clicked() {
+                    } else if ui.button("With bp file").clicked() {
                         if let Some(path) = rfd::FileDialog::new().pick_file() {
                             let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
                             let (send, recv) = channel();

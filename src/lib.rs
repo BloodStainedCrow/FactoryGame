@@ -10,7 +10,6 @@ extern crate test;
 use std::{
     array,
     borrow::Borrow,
-    env,
     net::{SocketAddr, TcpStream},
     process::exit,
     simd::cmp::SimdPartialEq,
@@ -24,17 +23,19 @@ use std::{
 
 use parking_lot::Mutex;
 
+use app_state::GameState;
 use data::{DataStore, factorio_1_1::get_raw_data_test};
+#[cfg(feature = "client")]
 use eframe::NativeOptions;
-use frontend::{
-    action::action_state_machine::ActionStateMachine, input::Input, world::tile::CHUNK_SIZE_FLOAT,
-};
+use frontend::world::tile::CHUNK_SIZE_FLOAT;
+#[cfg(feature = "client")]
+use frontend::{action::action_state_machine::ActionStateMachine, input::Input};
 use item::{IdxTrait, WeakIdxTrait};
 use multiplayer::{
     ClientConnectionInfo, Game, GameInitData, ServerInfo, connection_reciever::accept_continously,
 };
+#[cfg(feature = "client")]
 use rendering::{
-    app_state::GameState,
     eframe_app,
     window::{LoadedGame, LoadedGameSized},
 };
@@ -50,8 +51,6 @@ const TICKS_PER_SECOND_RUNSPEED: u64 = 60;
 
 pub mod get_size;
 
-pub mod egui_show_info;
-
 pub mod assembler;
 pub mod belt;
 pub mod inserter;
@@ -66,6 +65,9 @@ pub mod mod_manager;
 
 pub mod frontend;
 
+pub mod app_state;
+
+#[cfg(feature = "client")]
 pub mod rendering;
 
 pub mod bot_system;
@@ -134,11 +136,8 @@ pub fn main() -> Result<(), ()> {
         .init()
         .unwrap();
 
-    let mode = env::args().nth(1);
-
-    if Some("--dedicated") == mode.as_deref() {
-        run_dedicated_server(StartGameInfo::Load("".try_into().unwrap()));
-    } else {
+    #[cfg(feature = "client")]
+    {
         eframe::run_native(
             "FactoryGame",
             NativeOptions {
@@ -154,6 +153,11 @@ pub fn main() -> Result<(), ()> {
         .unwrap();
 
         Ok(())
+    }
+
+    #[cfg(not(feature = "client"))]
+    {
+        run_dedicated_server(StartGameInfo::Load("".try_into().unwrap()));
     }
 }
 
@@ -175,6 +179,7 @@ enum GameCreationInfo {
     FromBP(PathBuf),
 }
 
+#[cfg(feature = "client")]
 fn run_integrated_server(
     progress: Arc<AtomicU64>,
     start_game_info: StartGameInfo,
@@ -346,6 +351,7 @@ fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
     }
 }
 
+#[cfg(feature = "client")]
 fn run_client(remote_addr: SocketAddr) -> (LoadedGame, Arc<AtomicU64>, Sender<Input>) {
     // TODO: Do mod loading here
     let raw_data = get_raw_data_test();
@@ -505,9 +511,9 @@ mod tests {
 
     use crate::{
         DATA_STORE, TICKS_PER_SECOND_LOGIC,
+        app_state::GameState,
         data::{DataStore, factorio_1_1::get_raw_data_test},
         frontend::{action::ActionType, world::Position},
-        rendering::app_state::GameState,
         replays::{Replay, run_till_finished},
     };
 

@@ -27,11 +27,11 @@ const REQUIRED_VRAM_MB: usize = REQUIRED_VRAM / 1_000_000;
 use log::info;
 
 use crate::{
+    app_state::SimulationState,
     frontend::world::{Position, tile::World},
     item::{ITEMCOUNTTYPE, IdxTrait, Item, WeakIdxTrait, usize_from},
     network_graph::{Network, WeakIndex},
     power::{Joule, Watt},
-    rendering::app_state::SimulationState,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

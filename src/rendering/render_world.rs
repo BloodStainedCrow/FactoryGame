@@ -1,8 +1,14 @@
 use crate::chest::ChestSize;
 use crate::frontend::action::belt_placement::{BeltState, expected_belt_state};
+use crate::get_size::RAMExtractor;
+use crate::get_size::RamUsage;
+use crate::inserter::FakeUnionStorage;
 use crate::item::Indexable;
+use crate::liquid::FluidBox;
+use crate::liquid::FluidSystemEntity;
+use crate::liquid::FluidSystemState;
+use crate::network_graph::Network;
 use crate::rendering::Corner;
-use get_size::GetSize;
 use crate::{
     TICKS_PER_SECOND_LOGIC,
     assembler::AssemblerOnclickInfo,
@@ -36,6 +42,8 @@ use eframe::egui::{
 use egui::{Button, Modal, RichText, ScrollArea, Sense};
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
+use egui_show_info::ShowInfo;
+use get_size::GetSize;
 use log::{info, trace};
 use parking_lot::MutexGuard;
 use petgraph::dot::Dot;
@@ -50,7 +58,8 @@ use std::{
 };
 use tilelib::types::{DrawInstance, Layer, RendererTrait};
 
-use super::{TextureAtlas, app_state::GameState};
+use super::TextureAtlas;
+use crate::app_state::GameState;
 
 const BELT_ANIM_SPEED: f32 = 1.0 / (BELT_LEN_PER_TILE as f32);
 
@@ -1707,7 +1716,10 @@ pub(super) enum EscapeMenuOptions {
     BackToMainMenu,
 }
 
-pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+pub fn render_ui<
+    ItemIdxType: IdxTrait + ShowInfo<RAMExtractor, RamUsage>,
+    RecipeIdxType: IdxTrait + ShowInfo<RAMExtractor, RamUsage>,
+>(
     ctx: &Context,
     ui: &mut Ui,
     mut state_machine: MutexGuard<ActionStateMachine<ItemIdxType, RecipeIdxType>>,
@@ -1757,10 +1769,13 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     });
 
     Window::new("Size").default_open(false).show(ctx, |ui| {
-        ui.label(format!(
-            "Simulation State: {} bytes",
-            game_state_ref.simulation_state.get_size()
-        ))
+        profiling::scope!("Show SimState Size");
+        ShowInfo::<RAMExtractor, RamUsage>::show_info(
+            &game_state_ref.simulation_state,
+            &mut RAMExtractor,
+            ui,
+            "",
+        );
     });
 
     Window::new("Import BP")
@@ -2262,6 +2277,18 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         let id = game_state_ref.simulation_state.factory.fluid_store.fluid_box_pos_to_network_id[pos];
 
                         ui.label(format!("{:?}", id));
+                        if let Some(fluid) = id.fluid {
+                            ui.label(&data_store.item_display_names[fluid.into_usize()]);
+                            let FluidSystemState::HasFluid { fluid, chest_id } = game_state_ref.simulation_state.factory.fluid_store.fluid_systems_with_fluid[fluid.into_usize()][id.index].as_ref().unwrap().state else {
+                                unreachable!();
+                            };
+
+                            let (units, _max_units) = game_state_ref.simulation_state.factory.chests.stores[fluid.into_usize()].get_chest(chest_id);
+
+                            ui.label(format!("{} units", units));
+                        } else {
+                            ui.label("Empty");
+                        }
                     }
                     _ => todo!(),
                 }
@@ -2341,8 +2368,19 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 ui.radio_value(time_scale, 1, "1 Minute");
                 ui.radio_value(time_scale, 2, "1 Hour");
             });
-
             let time_scale = *time_scale;
+            ui.with_layout(Layout::left_to_right(egui::Align::Min), |ui| {
+                ui.radio_value(
+                    &mut state_machine_ref.statistics_panel,
+                    StatisticsPanel::Items(time_scale),
+                    "Items",
+                );
+                ui.radio_value(
+                    &mut state_machine_ref.statistics_panel,
+                    StatisticsPanel::Fluids(time_scale),
+                    "Fluids",
+                );
+            });
 
             match state_machine_ref.statistics_panel {
                 StatisticsPanel::Items(scale) | StatisticsPanel::Fluids(scale) => {

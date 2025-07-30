@@ -12,7 +12,7 @@ use directories::ProjectDirs;
 use log::error;
 use ron::ser::PrettyConfig;
 
-use crate::{data::DataStore, item::IdxTrait, rendering::app_state::GameState};
+use crate::{app_state::GameState, data::DataStore, item::IdxTrait};
 
 #[derive(Debug, Encode, serde::Deserialize, serde::Serialize)]
 pub struct SaveGame<

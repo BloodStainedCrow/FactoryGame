@@ -9,10 +9,14 @@ use crate::{
     },
 };
 
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
 use get_size::GetSize;
 
 // TODO: Add variable power consumption and speed
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct MultiLabStore {
     pub max_insert: Box<[Vec<ITEMCOUNTTYPE>]>,
     pub sciences: Box<[Vec<ITEMCOUNTTYPE>]>,

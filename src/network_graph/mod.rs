@@ -15,22 +15,28 @@ use crate::get_size::StableGraph;
 use std::hash::Hash;
 
 use crate::get_size::NodeIndex;
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
 use get_size::GetSize;
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Network<NodeKey: Eq + Hash, S, W> {
     // We use stableUnGraph here to allow remove_node to not invalidate any other indices
     graph: StableGraph<NetworkNode<S, W>, (), Undirected, DefaultIx>,
     key_map: BiMap<NodeKey, crate::get_size::NodeIndex>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct NetworkNode<S, W> {
     node_info: S,
     connected_weak_components: Vec<Option<W>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub struct WeakIndex {
     index: usize,
 }
@@ -76,6 +82,26 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
             .flatten()
     }
 
+    pub fn weak_components_indexed_mut(
+        &mut self,
+    ) -> impl Iterator<Item = ((&NodeKey, WeakIndex), &mut W)> {
+        self.graph
+            .node_weights_mut_indexed()
+            .flat_map(|(index, n)| {
+                std::iter::repeat(
+                    self.key_map
+                        .get_by_right(&NodeIndex { node_index: index })
+                        .unwrap(),
+                )
+                .zip(n.connected_weak_components.iter_mut().enumerate())
+            })
+            .map(|(node_key, (weak_index, w))| {
+                w.as_mut()
+                    .map(|w| ((node_key, WeakIndex { index: weak_index }), w))
+            })
+            .flatten()
+    }
+
     pub fn add_node(
         &mut self,
         value: S,
@@ -109,7 +135,7 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
         key: NodeKey,
     ) -> (
         S,
-        impl IntoIterator<Item = W> + use<'a, NodeKey, S, W>,
+        impl IntoIterator<Item = (WeakIndex, W)> + use<'a, NodeKey, S, W>,
         Option<
             impl IntoIterator<Item = (Self, impl IntoIterator<Item = NodeKey> + use<NodeKey, S, W>)>
             + use<'a, NodeKey, S, W>,
@@ -131,6 +157,8 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
             petgraph::algo::kosaraju_scc(&*self.graph)
         };
 
+        let map = |(i, v): (usize, Option<W>)| v.map(|v| (WeakIndex { index: i }, v));
+
         // Pop the first component, (which will stay in this network)
         // TODO: It is probably good to have the largest component stay, but testing is required
         components.sort_by_key(|v| -(v.len() as isize));
@@ -139,7 +167,10 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
             info!("The last node in a network was removed, the network can be deleted");
             return (
                 node_info,
-                connected_weak_components.into_iter().flatten(),
+                connected_weak_components
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(map),
                 None,
             );
         }
@@ -216,7 +247,10 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
 
         (
             node_info,
-            connected_weak_components.into_iter().flatten(),
+            connected_weak_components
+                .into_iter()
+                .enumerate()
+                .filter_map(map),
             Some(new_networks),
         )
     }

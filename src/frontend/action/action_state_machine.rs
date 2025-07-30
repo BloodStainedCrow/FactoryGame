@@ -7,7 +7,7 @@ use std::{
 };
 
 use egui_graphs::{DefaultEdgeShape, DefaultNodeShape, Graph};
-use log::warn;
+use log::{error, warn};
 use petgraph::Directed;
 
 use crate::{
@@ -537,11 +537,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     let old_width = WIDTH_PER_LEVEL as f32 * 1.5f32.powf(self.zoom_level);
                     let Position {x: mouse_x, y: mouse_y} = Self::player_mouse_to_tile(self.zoom_level, self.map_view_info.unwrap_or(self.local_player_pos), self.current_mouse_pos);
                     match delta {
-                        winit::event::MouseScrollDelta::LineDelta(_, y) => {
-                            self.zoom_level -=  y / 10.0;
-                        },
-                        winit::event::MouseScrollDelta::PixelDelta(physical_position) => {
-                            self.zoom_level -= physical_position.y as f32 / 10.0;
+                        (_, y) => {
+                            self.zoom_level -=  y as f32 / 10.0;
                         },
                     }
                     if let Some(view_center) = &mut self.map_view_info {
@@ -563,10 +560,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     }
                     vec![]
                 },
-
-                Input::UnknownInput(..) => {
+                Input::UnknownInput => {
+                    error!("Encountered unknown input");
                     vec![]
-                },
+                }
             };
 
             actions

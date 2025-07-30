@@ -6,15 +6,20 @@ use crate::{
 };
 
 use super::{FakeUnionStorage, InserterState};
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
 use get_size::GetSize;
 
-#[derive(Debug, ConstParamTy, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, ConstParamTy, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 pub enum Dir {
     BeltToStorage = 0,
     StorageToBelt = 1,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BeltStorageInserter<const DIR: Dir> {
     pub storage_id: FakeUnionStorage,
     pub state: InserterState,

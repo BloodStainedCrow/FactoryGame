@@ -11,6 +11,9 @@ use crate::{
     research::ResearchProgress,
 };
 
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
 use get_size::GetSize;
 
 pub mod consumption;
@@ -33,7 +36,8 @@ pub const TIMESCALE_LEGEND: [fn(f64) -> String; NUM_DIFFERENT_TIMESCALES] = [
     |t| format!("{:.0}m", t),
 ];
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct GenStatistics {
     pub production: Timeline<ProductionInfo>,
     pub consumption: Timeline<ConsumptionInfo>,
@@ -89,7 +93,8 @@ pub trait IntoSeries<T, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>: Sized {
     ) -> impl Iterator<Item = (usize, Series)>;
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Timeline<T> {
     pub num_samples_pushed: usize,
     samples: [Vec<T>; NUM_DIFFERENT_TIMESCALES],

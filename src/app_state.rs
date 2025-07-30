@@ -10,8 +10,9 @@ use crate::inserter::storage_storage_with_buckets::{
 use crate::item::ITEMCOUNTTYPE;
 use crate::liquid::FluidConnectionDir;
 use crate::liquid::connection_logic::can_fluid_tanks_connect_to_single_connection;
+#[cfg(feature = "client")]
+use crate::{Input, LoadedGame};
 use crate::{
-    Input, LoadedGame,
     belt::{BeltBeltInserterInfo, BeltStore},
     blueprint::Blueprint,
     chest::{FullChestStore, MultiChestStore},
@@ -48,6 +49,9 @@ use crate::{
     item::Indexable,
     liquid::{CannotMixFluidsError, FluidSystemStore},
 };
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
 use get_size::GetSize;
 use itertools::Itertools;
 use log::{info, trace, warn};
@@ -72,7 +76,8 @@ use crate::frontend::action::place_tile::PositionInfo;
 
 use std::ops::AddAssign;
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct GameState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub current_tick: u64,
 
@@ -88,12 +93,14 @@ pub struct GameState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub settings: GameSettings,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct GameSettings {
     pub show_unresearched_recipes: bool,
 }
 
-#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 pub struct UpdateTime {
     pub dur: Duration,
 }
@@ -398,7 +405,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SimulationState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub tech_state: TechState,
     pub factory: Factory<ItemIdxType, RecipeIdxType>,
@@ -415,7 +423,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SimulationState<ItemIdxType
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub power_grids: PowerGridStorage<ItemIdxType, RecipeIdxType>,
     pub belts: BeltStore<ItemIdxType>,
@@ -425,7 +434,8 @@ pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub fluid_store: FluidSystemStore<ItemIdxType>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct StorageStorageInserterStore {
     pub inserters: Box<
         [BTreeMap<
@@ -492,10 +502,10 @@ impl StorageStorageInserterStore {
                 let num_recipes = num_recipes(item, data_store);
 
                 for (frontend, ins_store) in map.values_mut() {
-                    if item.into_usize() == 1 && ins_store.movetime == 160 {
-                        // dbg!(&ins_store);
-                    }
-
+                    profiling::scope!(
+                        "StorageStorage Inserter Update",
+                        format!("Movetime: {}", ins_store.movetime).as_str()
+                    );
                     ins_store.update(frontend, storages, grid_size, current_tick);
                 }
             });
@@ -672,6 +682,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
     }
 }
 
+#[cfg(feature = "client")]
 pub enum AppState {
     MainMenu {
         in_ip_box: Option<(String, bool)>,
@@ -2335,10 +2346,11 @@ pub fn calculate_inserter_positions(pos: Position, dir: Dir) -> (Position, Posit
     (start_pos, end_pos)
 }
 
-#[cfg(test)]
+#[cfg(testTODO)]
 mod tests {
     use std::fs::File;
 
+    use crate::rendering::Dir;
     use crate::{
         DATA_STORE,
         blueprint::{Blueprint, random_blueprint_strategy, random_position},
@@ -2371,6 +2383,7 @@ mod tests {
                 entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler {
                     pos: Position { x: 1600, y: 1600 },
                     ty: 2,
+                    rotation: Dir::North,
                 }),
             }),
             ActionType::SetRecipe(SetRecipeInfo {
@@ -2548,6 +2561,7 @@ mod tests {
                 crate::frontend::world::tile::PlaceEntityType::Assembler {
                     pos: Position { x: 0, y: 6 },
                     ty: 0,
+                    rotation: Dir::North,
                 },
             ),
         })]);

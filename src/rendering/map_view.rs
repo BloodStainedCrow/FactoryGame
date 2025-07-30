@@ -57,25 +57,25 @@ pub fn create_map_textures_if_needed<ItemIdxType: IdxTrait, RecipeIdxType: IdxTr
     };
 
     let tile_x_left_edge = (usize::try_from(camera_pos.x + 1_000_000)
-        .unwrap()
+        .unwrap_or(0)
         .saturating_sub(view_width_in_tiles.div_ceil(2)))
         / pixel_to_tile
         / map_tile_size;
     let tile_y_left_edge = (usize::try_from(camera_pos.y + 1_000_000)
-        .unwrap()
+        .unwrap_or(0)
         .saturating_sub(view_height_in_tiles.div_ceil(2)))
         / pixel_to_tile
         / map_tile_size;
     let tile_x_right_edge = min(
         usize::try_from(camera_pos.x + 1_000_000)
-            .unwrap()
+            .unwrap_or(0)
             .saturating_add(view_width_in_tiles.div_ceil(2)),
         2_000_000,
     ) / pixel_to_tile
         / map_tile_size;
     let tile_y_right_edge = min(
         usize::try_from(camera_pos.y + 1_000_000)
-            .unwrap()
+            .unwrap_or(0)
             .saturating_add(view_height_in_tiles.div_ceil(2)),
         2_000_000,
     ) / pixel_to_tile

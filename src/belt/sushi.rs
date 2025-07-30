@@ -2,6 +2,9 @@ use std::{iter::repeat, mem};
 
 use itertools::Itertools;
 
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
 use get_size::GetSize;
 
 use crate::{
@@ -18,7 +21,8 @@ use super::{
 };
 use crate::inserter::FakeUnionStorage;
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub(super) struct SushiBelt<ItemIdxType: WeakIdxTrait> {
     pub(super) ty: u8,
 
@@ -36,7 +40,8 @@ pub(super) struct SushiBelt<ItemIdxType: WeakIdxTrait> {
     pub(super) output_splitter: Option<(SplitterID, SplitterSide)>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub(super) struct SushiInserterStore<ItemIdxType: WeakIdxTrait> {
     pub(super) inserters: Box<[(Inserter, Item<ItemIdxType>)]>,
     pub(super) offsets: Box<[u16]>,

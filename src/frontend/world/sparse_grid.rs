@@ -1,8 +1,12 @@
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
 use get_size::GetSize;
 use std::collections::HashMap;
 use std::hash::Hash;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SparseGrid<I: PartialEq + Eq + Hash + Copy, T> {
     values: HashMap<(I, I), T>,
 }

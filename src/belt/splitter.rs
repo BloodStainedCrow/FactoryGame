@@ -6,16 +6,20 @@ use itertools::Itertools;
 use serde::ser::SerializeSeq;
 
 use crate::item::{IdxTrait, Item, WeakIdxTrait};
+#[cfg(feature = "client")]
+use egui_show_info::{EguiDisplayable, InfoExtractor, ShowInfo};
 
 use strum::EnumIter;
 
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
 use get_size::GetSize;
 
 pub const SPLITTER_BELT_LEN: u16 = 2;
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, EnumIter, GetSize,
-)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, EnumIter)]
 pub enum SplitterSide {
     Left,
     Right,
@@ -48,7 +52,8 @@ impl SplitterSide {
     }
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub enum SplitterDistributionMode {
     Fair { next: SplitterSide },
     Priority(SplitterSide),
@@ -63,7 +68,8 @@ impl Default for SplitterDistributionMode {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct PureSplitter {
     pub in_mode: SplitterDistributionMode,
     pub out_mode: SplitterDistributionMode,
@@ -153,6 +159,22 @@ pub(super) struct SushiSplitter<ItemIdxType: WeakIdxTrait> {
     pub(super) outputs: [UnsafeCell<Option<Item<ItemIdxType>>>; 2],
 }
 
+#[cfg(feature = "client")]
+impl<
+    ItemIdxType: WeakIdxTrait,
+    E: InfoExtractor<Self, Info>
+        + InfoExtractor<SplitterDistributionMode, Info>
+        + InfoExtractor<SplitterSide, Info>,
+    Info: EguiDisplayable,
+> ShowInfo<E, Info> for SushiSplitter<ItemIdxType>
+{
+    fn show_fields(&self, extractor: &mut E, ui: &mut egui::Ui, path: String) {
+        self.in_mode.show_info(extractor, ui, &path);
+        self.out_mode.show_info(extractor, ui, &path);
+    }
+}
+
+#[cfg(feature = "client")]
 impl<ItemIdxType: WeakIdxTrait> GetSize for SushiSplitter<ItemIdxType> {}
 
 // SAFETY:

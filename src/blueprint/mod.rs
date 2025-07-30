@@ -5,6 +5,7 @@ use proptest::{
 };
 use std::num::NonZero;
 use std::{borrow::Borrow, ops::Range};
+#[cfg(feature = "client")]
 use tilelib::types::{DrawInstance, Layer};
 
 use crate::{
@@ -12,7 +13,11 @@ use crate::{
 };
 use crate::{frontend::world::tile::UndergroundDir, item::WeakIdxTrait};
 
+#[cfg(feature = "client")]
+use crate::rendering::TextureAtlas;
+
 use crate::{
+    app_state::GameState,
     data::DataStore,
     frontend::{
         action::{
@@ -27,7 +32,6 @@ use crate::{
         },
     },
     item::{IdxTrait, Item, Recipe},
-    rendering::{TextureAtlas, app_state::GameState},
     replays::Replay,
 };
 
@@ -1130,6 +1134,7 @@ impl Blueprint {
         }
     }
 
+    #[cfg(feature = "client")]
     pub fn draw<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &self,
         base_pos: (f32, f32),

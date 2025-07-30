@@ -15,6 +15,9 @@ use std::cmp::min;
 
 use crate::item::usize_from;
 
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
 use get_size::GetSize;
 
 pub mod belt_belt_inserter;
@@ -32,9 +35,8 @@ const_assert!(HAND_SIZE < 64);
 // TODO: This could be minified using a union or similar,
 // But since Inserters are the same size, whether this is 2 or 1 byte (atleast in a Vec of Structs)
 // I will leave this be for now.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize, GetSize,
-)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub enum InserterState {
     WaitingForSourceItems(ITEMCOUNTTYPE),
     WaitingForSpaceInDestination(ITEMCOUNTTYPE),
@@ -43,7 +45,8 @@ pub enum InserterState {
     EmptyAndMovingBack(u8),
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 enum SushiInserterState<ItemIdxType: WeakIdxTrait> {
     Empty,
     FullAndWaitingForSlot(Item<ItemIdxType>),
@@ -61,7 +64,8 @@ enum SushiInserterState<ItemIdxType: WeakIdxTrait> {
 // TODO: maybe do this differently
 
 // TODO: Since I collect the "all storage" list anyway I should be able to flatten it?
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct StorageID<RecipeIdxType: WeakIdxTrait> {
     pub grid: PowerGridIdentifier,
     pub storage_list_idx: u16,
@@ -76,9 +80,8 @@ pub const MAX_GRID_COUNT: usize = u16::MAX as usize - 1;
 pub const MAX_TIMES_AN_ITEM_CAN_APPEAR_IN_RECIPES: usize = u16::MAX as usize;
 pub const MAX_RECIPE_COUNT: usize = u16::MAX as usize;
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize, GetSize,
-)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub struct FakeUnionStorage {
     pub index: u32,
     pub grid_or_static_flag: u16,
@@ -202,18 +205,9 @@ impl FakeUnionStorage {
     }
 }
 
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    serde::Deserialize,
-    serde::Serialize,
-    PartialEq,
-    Eq,
-    Hash,
-    PartialOrd,
-    Ord,
-    GetSize,
+    Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, Hash, PartialOrd, Ord,
 )]
 pub enum Storage<RecipeIdxType: WeakIdxTrait> {
     Assembler {
@@ -342,6 +336,7 @@ impl<RecipeIdxType: IdxTrait> Storage<RecipeIdxType> {
     }
 }
 
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(
     Debug,
     Clone,
@@ -354,7 +349,6 @@ impl<RecipeIdxType: IdxTrait> Storage<RecipeIdxType> {
     PartialOrd,
     Ord,
     EnumIter,
-    GetSize,
 )]
 #[repr(u8)]
 pub enum StaticID {

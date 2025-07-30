@@ -8,33 +8,36 @@ use crate::chest::ChestSize;
 use crate::inserter::storage_storage_with_buckets::InserterIdentifier;
 use crate::item::Indexable;
 use crate::{
+    app_state::StorageStorageInserterStore,
     chest::FullChestStore,
     data::DataStore,
     frontend::world::Position,
     inserter::{StaticID, Storage},
     item::{IdxTrait, Item, WeakIdxTrait},
     network_graph::{Network, WeakIndex},
-    rendering::app_state::StorageStorageInserterStore,
 };
 
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
 use get_size::GetSize;
 
 pub mod connection_logic;
 
 const FLUID_INSERTER_MOVETIME: u16 = 1;
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize, GetSize,
-)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub struct FluidSystemId<ItemIdxType: WeakIdxTrait> {
     pub fluid: Option<Item<ItemIdxType>>,
-    index: usize,
+    pub index: usize,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct FluidSystemStore<ItemIdxType: WeakIdxTrait> {
-    fluid_systems_with_fluid: Box<[Vec<Option<FluidSystem<ItemIdxType>>>]>,
-    empty_fluid_systems: Vec<Option<FluidSystem<ItemIdxType>>>,
+    pub fluid_systems_with_fluid: Box<[Vec<Option<FluidSystem<ItemIdxType>>>]>,
+    pub empty_fluid_systems: Vec<Option<FluidSystem<ItemIdxType>>>,
     pub fluid_box_pos_to_network_id: HashMap<Position, FluidSystemId<ItemIdxType>>,
 }
 
@@ -43,7 +46,8 @@ pub struct CannotMixFluidsError<ItemIdxType: WeakIdxTrait> {
     pub items: [Item<ItemIdxType>; 2],
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum FluidConnectionDir {
     Output,
     Input,
@@ -840,8 +844,9 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
-enum FluidSystemEntity {
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub enum FluidSystemEntity {
     OutgoingPump {
         inserter_id: InserterIdentifier,
     },
@@ -858,13 +863,15 @@ enum FluidSystemEntity {
     },
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
-struct FluidBox {
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct FluidBox {
     capacity: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, GetSize)]
-enum FluidSystemState<ItemIdxType: WeakIdxTrait> {
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub enum FluidSystemState<ItemIdxType: WeakIdxTrait> {
     NoFluid,
     HasFluid {
         fluid: Item<ItemIdxType>,
@@ -872,11 +879,12 @@ enum FluidSystemState<ItemIdxType: WeakIdxTrait> {
     },
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
-struct FluidSystem<ItemIdxType: WeakIdxTrait> {
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct FluidSystem<ItemIdxType: WeakIdxTrait> {
     graph: Network<Position, FluidBox, FluidSystemEntity>,
     storage_capacity: u32,
-    state: FluidSystemState<ItemIdxType>,
+    pub state: FluidSystemState<ItemIdxType>,
 }
 
 impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
@@ -1440,7 +1448,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         };
         let mut fluid_distribution = old_fluid_level;
 
-        for connection_to_remove in connections_to_remove {
+        for (_weak_index, connection_to_remove) in connections_to_remove {
             let fluid = old_fluid.expect("If we have any connections we MUST have a fluid set");
             match connection_to_remove {
                 FluidSystemEntity::OutgoingPump { inserter_id } => {

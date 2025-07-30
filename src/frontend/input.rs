@@ -1,5 +1,7 @@
+#[cfg(feature = "client")]
 use eframe::egui;
-use winit::{dpi::PhysicalPosition, event::MouseScrollDelta, keyboard::KeyCode};
+#[cfg(feature = "client")]
+use winit::{event::MouseScrollDelta, keyboard::KeyCode};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Input {
@@ -13,16 +15,12 @@ pub enum Input {
 
     Copy,
 
-    MouseScoll(MouseScrollDelta),
+    MouseScoll((f64, f64)),
 
-    UnknownInput(UnknownInput),
+    UnknownInput,
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
-enum UnknownInput {
-    UnknownKeyInput(winit::keyboard::NativeKeyCode),
-}
-
+#[cfg(feature = "client")]
 impl TryFrom<winit::event::KeyEvent> for Input {
     type Error = ();
 
@@ -34,15 +32,14 @@ impl TryFrom<winit::event::KeyEvent> for Input {
                 winit::event::ElementState::Pressed => Self::KeyPress(key_code.try_into()?),
                 winit::event::ElementState::Released => Self::KeyRelease(key_code.try_into()?),
             },
-            winit::keyboard::PhysicalKey::Unidentified(native_key_code) => {
-                Self::UnknownInput(UnknownInput::UnknownKeyInput(native_key_code))
-            },
+            winit::keyboard::PhysicalKey::Unidentified(native_key_code) => Self::UnknownInput,
         };
 
         Ok(ret)
     }
 }
 
+#[cfg(feature = "client")]
 impl TryFrom<egui::Event> for Input {
     type Error = ();
 
@@ -94,15 +91,12 @@ impl TryFrom<egui::Event> for Input {
                 delta,
                 modifiers,
             } => match unit {
-                eframe::egui::MouseWheelUnit::Point => Ok(Input::MouseScoll(
-                    MouseScrollDelta::PixelDelta(PhysicalPosition {
-                        x: delta.x as f64,
-                        y: delta.y as f64,
-                    }),
-                )),
-                eframe::egui::MouseWheelUnit::Line => Ok(Input::MouseScoll(
-                    MouseScrollDelta::LineDelta(delta.x, delta.y),
-                )),
+                eframe::egui::MouseWheelUnit::Point => {
+                    Ok(Input::MouseScoll((delta.x as f64, delta.y as f64)))
+                },
+                eframe::egui::MouseWheelUnit::Line => {
+                    Ok(Input::MouseScoll((delta.x as f64, delta.y as f64)))
+                },
                 eframe::egui::MouseWheelUnit::Page => Err(()),
             },
             egui::Event::Copy => Ok(Self::Copy),
@@ -142,6 +136,7 @@ pub enum Key {
     Esc,
 }
 
+#[cfg(feature = "client")]
 impl TryFrom<winit::keyboard::KeyCode> for Key {
     type Error = ();
 
@@ -174,12 +169,14 @@ impl TryFrom<winit::keyboard::KeyCode> for Key {
     }
 }
 
+#[cfg(feature = "client")]
 struct EguiInputState {
     key: egui::Key,
     shift: bool,
     ctrl: bool,
 }
 
+#[cfg(feature = "client")]
 impl TryFrom<EguiInputState> for Key {
     type Error = ();
 

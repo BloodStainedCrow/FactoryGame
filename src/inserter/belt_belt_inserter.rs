@@ -4,9 +4,13 @@ use super::{InserterState, SushiInserterState};
 
 use crate::item::ITEMCOUNTTYPE;
 
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
 use get_size::GetSize;
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub struct BeltBeltInserter {
     state: InserterState,
 }

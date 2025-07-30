@@ -15,10 +15,10 @@ use genawaiter::rc::{Gen, r#gen};
 use itertools::Itertools;
 
 use crate::{
+    app_state::GameState,
     data::DataStore,
     frontend::action::ActionType,
     item::{IdxTrait, WeakIdxTrait},
-    rendering::app_state::GameState,
 };
 
 // TODO: Keyframe support

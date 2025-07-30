@@ -1,3 +1,6 @@
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
 use get_size::GetSize;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -13,6 +16,7 @@ pub trait IdxTrait:
 {
 }
 
+#[cfg(feature = "client")]
 pub trait WeakIdxTrait:
     Into<usize>
     + Copy
@@ -23,7 +27,22 @@ pub trait WeakIdxTrait:
     + Eq
     + Hash
     + Ord
+    + 'static
     + GetSize
+{
+}
+
+#[cfg(not(feature = "client"))]
+pub trait WeakIdxTrait:
+    Into<usize>
+    + Copy
+    + Send
+    + Sync
+    + From<u8>
+    + TryFrom<usize, Error: Debug>
+    + Eq
+    + Hash
+    + Ord
     + 'static
 {
 }
@@ -38,18 +57,9 @@ pub fn usize_from<T: IdxTrait>(t: T) -> usize {
 //    }
 //}
 
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    Hash,
-    Clone,
-    Copy,
-    serde::Serialize,
-    serde::Deserialize,
-    PartialOrd,
-    Ord,
-    GetSize,
+    Debug, PartialEq, Eq, Hash, Clone, Copy, serde::Serialize, serde::Deserialize, PartialOrd, Ord,
 )]
 pub struct Item<ItemIdxType: WeakIdxTrait> {
     pub id: ItemIdxType,
@@ -73,18 +83,9 @@ impl<ItemIdxType: IdxTrait> Item<ItemIdxType> {
     }
 }
 
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    Hash,
-    Clone,
-    Copy,
-    serde::Serialize,
-    serde::Deserialize,
-    PartialOrd,
-    Ord,
-    GetSize,
+    Debug, PartialEq, Eq, Hash, Clone, Copy, serde::Serialize, serde::Deserialize, PartialOrd, Ord,
 )]
 pub struct Recipe<RecipeIdxType: WeakIdxTrait> {
     pub id: RecipeIdxType,

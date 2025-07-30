@@ -5,6 +5,7 @@ use std::{
     iter,
 };
 
+#[cfg(feature = "client")]
 use eframe::egui::Color32;
 use itertools::Itertools;
 use log::{error, warn};
@@ -490,6 +491,7 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub recipe_to_translated_index:
         HashMap<(Recipe<RecipeIdxType>, Item<ItemIdxType>), RecipeIdxType>,
 
+    #[cfg(feature = "client")]
     pub item_to_colour: Vec<Color32>,
 
     pub technology_tree: StableGraph<Technology<RecipeIdxType>, (), Directed, u16>,
@@ -1522,6 +1524,7 @@ impl RawDataStore {
                 })
                 .collect(),
 
+            #[cfg(feature = "client")]
             item_to_colour: self
                 .items
                 .iter()

@@ -1,3 +1,4 @@
+#[cfg(feature = "client")]
 use egui::Color32;
 use log::error;
 use std::{
@@ -10,7 +11,10 @@ use std::{
 };
 
 use crate::get_size::EnumMap;
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
 use enum_map::Enum;
+#[cfg(feature = "client")]
 use get_size::GetSize;
 use log::{info, warn};
 use strum::EnumIter;
@@ -21,6 +25,7 @@ use noise::{NoiseFn, Simplex};
 
 use crate::{
     TICKS_PER_SECOND_LOGIC,
+    app_state::{InstantiateInserterError, SimulationState, calculate_inserter_positions},
     belt::{
         BeltBeltInserterAdditionInfo, BeltTileId, SplitterTileId,
         splitter::{SPLITTER_BELT_LEN, SplitterDistributionMode, SplitterSide},
@@ -36,9 +41,6 @@ use crate::{
     },
     network_graph::WeakIndex,
     power::power_grid::{BeaconAffectedEntity, PowerGridEntity, PowerGridIdentifier},
-    rendering::app_state::{
-        InstantiateInserterError, SimulationState, calculate_inserter_positions,
-    },
 };
 use crate::{inserter::FakeUnionStorage, item::Indexable};
 use static_assertions::const_assert;
@@ -62,7 +64,8 @@ pub const BELT_LEN_PER_TILE: u16 = 4;
 pub const CHUNK_SIZE: u16 = 16;
 pub const CHUNK_SIZE_FLOAT: f32 = 16.0;
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Default, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum FloorTile {
     #[default]
     Empty,
@@ -80,14 +83,16 @@ pub enum InserterInstantiationNewOptions<ItemIdxType: WeakIdxTrait> {
 // We rely on this, by storing entity indices as u8 in the chunk
 const_assert!(CHUNK_SIZE * CHUNK_SIZE - 1 <= u8::MAX as u16);
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Chunk<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub floor_tiles: Option<Box<[[FloorTile; CHUNK_SIZE as usize]; CHUNK_SIZE as usize]>>,
     chunk_tile_to_entity_into: Option<Box<[[u8; CHUNK_SIZE as usize]; CHUNK_SIZE as usize]>>,
     entities: Vec<Entity<ItemIdxType, RecipeIdxType>>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 enum FloorOre<ItemIdxType: WeakIdxTrait> {
     AllSame {
         ore: Item<ItemIdxType>,
@@ -103,7 +108,8 @@ fn is_default<T: Default + PartialEq>(val: &T) -> bool {
     *val == T::default()
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct PlayerInfo {
     pub pos: (f32, f32),
     pub visible: bool,
@@ -123,7 +129,8 @@ impl Default for PlayerInfo {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     noise: SerializableSimplex,
 
@@ -149,6 +156,7 @@ struct SerializableSimplex {
     inner: Simplex,
 }
 
+#[cfg(feature = "client")]
 impl GetSize for SerializableSimplex {}
 
 impl Deref for SerializableSimplex {
@@ -186,18 +194,21 @@ impl<'de> serde::Deserialize<'de> for SerializableSimplex {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 enum WorldUpdate {
     EntityNewlyPowered { pos: Position },
     NewEntity { pos: Position },
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct PowerGridConnectedDevicesLookup {
     grid_to_chunks: BTreeMap<PowerGridIdentifier, BTreeSet<(i32, i32)>>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct BeltIdLookup<ItemIdxType: WeakIdxTrait> {
     belt_id_to_chunks: BTreeMap<BeltTileId<ItemIdxType>, BTreeSet<(i32, i32)>>,
 }
@@ -2780,6 +2791,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         })
     }
 
+    #[cfg(feature = "client")]
     pub fn get_entity_color(
         &self,
         pos: Position,
@@ -3611,7 +3623,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
     }
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum AssemblerInfo<RecipeIdxType: WeakIdxTrait> {
     UnpoweredNoRecipe,
     Unpowered(Recipe<RecipeIdxType>),
@@ -3623,7 +3636,8 @@ pub enum AssemblerInfo<RecipeIdxType: WeakIdxTrait> {
     },
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum InserterInfo<ItemIdxType: WeakIdxTrait> {
     NotAttached {
         start_pos: Position,
@@ -3636,7 +3650,8 @@ pub enum InserterInfo<ItemIdxType: WeakIdxTrait> {
     },
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum InternalInserterInfo<ItemIdxType: WeakIdxTrait> {
     NotAttached {
         end_pos: Position,
@@ -3647,7 +3662,8 @@ pub enum InternalInserterInfo<ItemIdxType: WeakIdxTrait> {
     },
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum AttachedInserter<ItemIdxType: WeakIdxTrait> {
     BeltStorage {
         id: BeltTileId<ItemIdxType>,
@@ -3664,7 +3680,8 @@ pub enum AttachedInserter<ItemIdxType: WeakIdxTrait> {
     },
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum AttachedInternalInserter<ItemIdxType: WeakIdxTrait> {
     BeltStorage {
         id: BeltTileId<ItemIdxType>,
@@ -3677,21 +3694,22 @@ pub enum AttachedInternalInserter<ItemIdxType: WeakIdxTrait> {
     },
 }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, Enum, GetSize,
-)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, Enum)]
 pub enum UndergroundDir {
     Entrance,
     Exit,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
 struct PipeConnection {
     pipe_pos: Position,
     connection_weak_index: WeakIndex,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Assembler {
         ty: u8,
@@ -3790,12 +3808,14 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     // },
 }
 
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 enum DrillID {
     OnlySolo(u32),
     WithShared(u32),
 }
 
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 pub struct UndergroundPipeConnection<ItemIdxType: WeakIdxTrait> {
     connected_pipe_pos: Position,
@@ -3851,6 +3871,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
         }
     }
 
+    #[cfg(feature = "client")]
     pub fn get_map_color(&self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Color32 {
         match self {
             Self::Assembler { .. } => Color32::from_hex("#0086c9").unwrap(),
@@ -3903,18 +3924,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
     }
 }
 
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    serde::Deserialize,
-    serde::Serialize,
-    PartialEq,
-    Eq,
-    Hash,
-    PartialOrd,
-    Ord,
-    GetSize,
+    Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, Hash, PartialOrd, Ord,
 )]
 pub struct BeltId<ItemIdxType: WeakIdxTrait> {
     pub item: Item<ItemIdxType>,
@@ -4007,18 +4019,9 @@ impl<ItemIdxType: IdxTrait> PlaceEntityType<ItemIdxType> {
     }
 }
 
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    Default,
-    serde::Serialize,
-    serde::Deserialize,
-    PartialEq,
-    Eq,
-    Enum,
-    EnumIter,
-    GetSize,
+    Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize, PartialEq, Eq, Enum, EnumIter,
 )]
 pub enum Dir {
     #[default]
@@ -4078,36 +4081,19 @@ impl Dir {
     }
 }
 
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    serde::Deserialize,
-    serde::Serialize,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    GetSize,
+    Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]
 pub struct AssemblerID<RecipeIdxType: WeakIdxTrait> {
     pub recipe: Recipe<RecipeIdxType>,
     pub grid: PowerGridIdentifier,
     pub assembler_index: u32,
 }
+
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    serde::Deserialize,
-    serde::Serialize,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    GetSize,
+    Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]
 pub enum MachineID<RecipeIdxType: WeakIdxTrait> {
     Assembler(AssemblerID<RecipeIdxType>),
@@ -4148,12 +4134,12 @@ mod test {
 
     use crate::{
         DATA_STORE,
+        app_state::GameState,
         blueprint::{Blueprint, random_entity_to_place, random_position},
         frontend::{
             action::{ActionType, place_entity::PlaceEntityInfo},
             world::Position,
         },
-        rendering::app_state::GameState,
         replays::Replay,
     };
 

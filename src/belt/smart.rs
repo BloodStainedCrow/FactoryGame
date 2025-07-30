@@ -17,12 +17,16 @@ use super::{
 use crate::inserter::FakeUnionStorage;
 use crate::inserter::HAND_SIZE;
 
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
 use get_size::GetSize;
 
 type TEST = SmartBelt<u8>;
 
 #[allow(clippy::module_name_repetitions)]
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SmartBelt<ItemIdxType: WeakIdxTrait> {
     pub(super) ty: u8,
 
@@ -41,7 +45,8 @@ pub struct SmartBelt<ItemIdxType: WeakIdxTrait> {
     pub(super) output_splitter: Option<(SplitterID, SplitterSide)>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default)]
 pub struct EmptyBelt {
     ty: u8,
 
@@ -49,7 +54,8 @@ pub struct EmptyBelt {
     pub len: u16,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, GetSize)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct InserterStore {
     pub(super) inserters: Box<[Inserter]>,
     pub(super) offsets: Box<[u16]>,
