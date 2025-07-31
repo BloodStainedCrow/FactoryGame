@@ -1492,10 +1492,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 .into_iter()
                                 .filter_map(|e| match e {
                                     Entity::Assembler {
-                                        ty,
-                                        pos,
-                                        info,
-                                        rotation,
+                                        
+                                        
+                                        
+                                        
                                         ..
                                     } => {
                                         // FIXME: Implement assembler flowthough

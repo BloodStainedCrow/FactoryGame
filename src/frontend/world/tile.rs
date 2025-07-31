@@ -1,5 +1,7 @@
 #[cfg(feature = "client")]
 use egui::Color32;
+#[cfg(feature = "client")]
+use egui_show_info::{EguiDisplayable, InfoExtractor, ShowInfo};
 use log::error;
 use std::{
     cmp::min,
@@ -25,7 +27,7 @@ use noise::{NoiseFn, Simplex};
 
 use crate::{
     TICKS_PER_SECOND_LOGIC,
-    app_state::{InstantiateInserterError, SimulationState, calculate_inserter_positions},
+    app_state::{InstantiateInserterError, SimulationState},
     belt::{
         BeltBeltInserterAdditionInfo, BeltTileId, SplitterTileId,
         splitter::{SPLITTER_BELT_LEN, SplitterDistributionMode, SplitterSide},
@@ -158,6 +160,20 @@ struct SerializableSimplex {
 
 #[cfg(feature = "client")]
 impl GetSize for SerializableSimplex {}
+
+#[cfg(feature = "client")]
+impl<E: InfoExtractor<Self, Info>, Info: EguiDisplayable> ShowInfo<E, Info>
+    for SerializableSimplex
+{
+    fn show_fields<C: egui_show_info::Cache<String, Info>>(
+        &self,
+        _extractor: &mut E,
+        _ui: &mut egui::Ui,
+        _path: String,
+        _cache: &mut C,
+    ) {
+    }
+}
 
 impl Deref for SerializableSimplex {
     type Target = Simplex;

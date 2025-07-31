@@ -1,13 +1,10 @@
 use std::{
     cmp::min,
     collections::{HashMap, HashSet},
-    iter::repeat,
-    mem,
 };
 
 use crate::join_many::join;
 
-use crate::assembler::MultiAssemblerStore;
 use crate::{
     assembler::{AssemblerOnclickInfo, AssemblerRemovalInfo, FullAssemblerStore},
     data::{DataStore, LazyPowerMachineInfo},

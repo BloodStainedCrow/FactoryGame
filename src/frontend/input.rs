@@ -1,7 +1,7 @@
 #[cfg(feature = "client")]
 use eframe::egui;
 #[cfg(feature = "client")]
-use winit::{event::MouseScrollDelta, keyboard::KeyCode};
+use winit::keyboard::KeyCode;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Input {

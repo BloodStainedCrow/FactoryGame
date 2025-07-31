@@ -7,7 +7,7 @@ use serde::ser::SerializeSeq;
 
 use crate::item::{IdxTrait, Item, WeakIdxTrait};
 #[cfg(feature = "client")]
-use egui_show_info::{EguiDisplayable, InfoExtractor, ShowInfo};
+use egui_show_info::{Cache, EguiDisplayable, InfoExtractor, ShowInfo};
 
 use strum::EnumIter;
 
@@ -168,9 +168,15 @@ impl<
     Info: EguiDisplayable,
 > ShowInfo<E, Info> for SushiSplitter<ItemIdxType>
 {
-    fn show_fields(&self, extractor: &mut E, ui: &mut egui::Ui, path: String) {
-        self.in_mode.show_info(extractor, ui, &path);
-        self.out_mode.show_info(extractor, ui, &path);
+    fn show_fields<C: Cache<String, Info>>(
+        &self,
+        extractor: &mut E,
+        ui: &mut egui::Ui,
+        path: String,
+        cache: &mut C,
+    ) {
+        self.in_mode.show_info(extractor, ui, &path, cache);
+        self.out_mode.show_info(extractor, ui, &path, cache);
     }
 }
 

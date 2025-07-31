@@ -1,6 +1,6 @@
 use std::{
     cmp::{max, min},
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     marker::PhantomData,
     num::NonZero,
     sync::mpsc::Receiver,
@@ -26,6 +26,7 @@ use crate::{
             tile::{AssemblerInfo, Dir, Entity, FloorTile, PlaceEntityType, UndergroundDir, World},
         },
     },
+    get_size::RamUsage,
     item::{ITEMCOUNTTYPE, IdxTrait, Item, Recipe, WeakIdxTrait},
     rendering::render_world::SWITCH_TO_MAPVIEW_ZOOM_LEVEL,
 };
@@ -72,6 +73,9 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     pub show_graph_dot_output: bool,
 
     recipe: PhantomData<RecipeIdxType>,
+
+    // #[serde(skip)]
+    pub get_size_cache: std::collections::HashMap<String, RamUsage>,
 }
 
 #[derive(Debug)]
@@ -159,6 +163,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             show_graph_dot_output: false,
 
             recipe: PhantomData,
+
+            get_size_cache: HashMap::new(),
         }
     }
 

@@ -2,19 +2,19 @@
 use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
 use get_size::GetSize;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::hash::Hash;
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SparseGrid<I: PartialEq + Eq + Hash + Copy, T> {
-    values: HashMap<(I, I), T>,
+pub struct SparseGrid<I: PartialEq + Eq + Copy + Ord, T> {
+    values: BTreeMap<(I, I), T>,
 }
 
-impl<I: PartialEq + Eq + Hash + Copy, T> SparseGrid<I, T> {
+impl<I: PartialEq + Eq + Hash + Copy + Ord, T> SparseGrid<I, T> {
     pub fn new() -> Self {
         Self {
-            values: HashMap::new(),
+            values: BTreeMap::new(),
         }
     }
 

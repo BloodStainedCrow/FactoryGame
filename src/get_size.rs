@@ -1,7 +1,5 @@
 #[cfg(feature = "client")]
-use egui_show_info::{EguiDisplayable, InfoExtractor, RemoveSuffix, ShowInfo};
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
+use egui_show_info::{Cache, EguiDisplayable, InfoExtractor, RemoveSuffix, ShowInfo};
 #[cfg(feature = "client")]
 use get_size::GetSize;
 use petgraph::Directed;
@@ -23,7 +21,14 @@ pub struct NodeIndex<Ix: IndexType = petgraph::stable_graph::DefaultIx> {
 impl<E: InfoExtractor<Self, Info>, Info: EguiDisplayable, Ix: IndexType> ShowInfo<E, Info>
     for NodeIndex<Ix>
 {
-    fn show_fields(&self, extractor: &mut E, ui: &mut egui::Ui, _path: String) {}
+    fn show_fields<C: Cache<String, Info>>(
+        &self,
+        _extractor: &mut E,
+        _ui: &mut egui::Ui,
+        _path: String,
+        _cache: &mut C,
+    ) {
+    }
 }
 
 impl Deref for NodeIndex {
@@ -111,14 +116,20 @@ impl<
         + InfoExtractor<Ix, Info>,
 > ShowInfo<Extractor, Info> for StableGraph<N, E, Ty, Ix>
 {
-    fn show_fields(&self, extractor: &mut Extractor, ui: &mut egui::Ui, mut path: String) {
+    fn show_fields<C: Cache<String, Info>>(
+        &self,
+        extractor: &mut Extractor,
+        ui: &mut egui::Ui,
+        mut path: String,
+        cache: &mut C,
+    ) {
         egui::CollapsingHeader::new("Nodes")
             .default_open(false)
             .show(ui, |ui| {
                 for (i, node) in self.node_weights().enumerate() {
                     let index = format!("{}", i);
                     path.push_str(&index);
-                    node.show_info(extractor, ui, &path);
+                    node.show_info(extractor, ui, &path, cache);
                     path.remove_suffix(&index);
                 }
             });
@@ -129,14 +140,13 @@ impl<
                 for (i, edge) in self.edge_weights().enumerate() {
                     let index = format!("{}", i);
                     path.push_str(&index);
-                    edge.show_info(extractor, ui, &path);
+                    edge.show_info(extractor, ui, &path, cache);
                     path.remove_suffix(&index);
                 }
             });
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo))]
 #[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
 pub struct EnumMap<K: EnumArray<V> + EnumArray<Option<V>>, V> {
     pub enum_map: enum_map::EnumMap<K, V>,
@@ -174,6 +184,30 @@ impl<K: EnumArray<V> + EnumArray<Option<V>>, V> DerefMut for EnumMap<K, V> {
 impl<K: EnumArray<V> + EnumArray<Option<V>>, V: GetSize> GetSize for EnumMap<K, V> {
     fn get_heap_size(&self) -> usize {
         self.values().map(|v| v.get_heap_size()).sum()
+    }
+}
+
+#[cfg(feature = "client")]
+impl<
+    K: EnumArray<V> + EnumArray<Option<V>>,
+    V: ShowInfo<E, Info>,
+    E: InfoExtractor<Self, Info> + InfoExtractor<V, Info>,
+    Info: EguiDisplayable,
+> ShowInfo<E, Info> for EnumMap<K, V>
+{
+    fn show_fields<C: Cache<String, Info>>(
+        &self,
+        extractor: &mut E,
+        ui: &mut egui::Ui,
+        mut path: String,
+        cache: &mut C,
+    ) {
+        for (i, v) in self.values().enumerate() {
+            let str = format!("{}", i);
+            path.push_str(&str);
+            v.show_info(extractor, ui, &path, cache);
+            path.remove_suffix(&str);
+        }
     }
 }
 
@@ -217,8 +251,14 @@ impl<
     Info: EguiDisplayable,
 > ShowInfo<E, Info> for Mutex<T>
 {
-    fn show_fields(&self, extractor: &mut E, ui: &mut egui::Ui, path: String) {
-        self.lock().show_info(extractor, ui, &path);
+    fn show_fields<C: Cache<String, Info>>(
+        &self,
+        extractor: &mut E,
+        ui: &mut egui::Ui,
+        path: String,
+        cache: &mut C,
+    ) {
+        self.lock().show_info(extractor, ui, &path, cache);
     }
 }
 
@@ -272,9 +312,17 @@ impl<
     Extractor: InfoExtractor<Self, Info> + InfoExtractor<A, Info> + InfoExtractor<B, Info>,
 > ShowInfo<Extractor, Info> for BiMap<A, B>
 {
-    fn show_fields(&self, extractor: &mut Extractor, ui: &mut egui::Ui, path: String) {}
+    fn show_fields<C: Cache<String, Info>>(
+        &self,
+        _extractor: &mut Extractor,
+        _ui: &mut egui::Ui,
+        _path: String,
+        _cache: &mut C,
+    ) {
+    }
 }
 
+#[derive(Debug, Clone)]
 pub struct RamUsage(usize);
 
 #[cfg(feature = "client")]

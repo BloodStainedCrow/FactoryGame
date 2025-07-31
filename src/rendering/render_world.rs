@@ -2,12 +2,8 @@ use crate::chest::ChestSize;
 use crate::frontend::action::belt_placement::{BeltState, expected_belt_state};
 use crate::get_size::RAMExtractor;
 use crate::get_size::RamUsage;
-use crate::inserter::FakeUnionStorage;
 use crate::item::Indexable;
-use crate::liquid::FluidBox;
-use crate::liquid::FluidSystemEntity;
 use crate::liquid::FluidSystemState;
-use crate::network_graph::Network;
 use crate::rendering::Corner;
 use crate::{
     TICKS_PER_SECOND_LOGIC,
@@ -43,7 +39,6 @@ use egui::{Button, Modal, RichText, ScrollArea, Sense};
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
 use egui_show_info::ShowInfo;
-use get_size::GetSize;
 use log::{info, trace};
 use parking_lot::MutexGuard;
 use petgraph::dot::Dot;
@@ -235,8 +230,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let x_range = (-((num_tiles_across_screen_horizontal / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
         ..=((num_tiles_across_screen_horizontal / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32))
         .into_par_iter();
-    let y_range = (-((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
-        ..=((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32));
+    let y_range = -((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
+        ..=((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32);
 
     let pos_iter = x_range.flat_map_iter(|x| y_range.clone().map(move |y| (x, y)));
 
@@ -1770,11 +1765,15 @@ pub fn render_ui<
 
     Window::new("Size").default_open(false).show(ctx, |ui| {
         profiling::scope!("Show SimState Size");
+        if ui.button("Reset Cache").clicked() {
+            state_machine_ref.get_size_cache.clear();
+        }
         ShowInfo::<RAMExtractor, RamUsage>::show_info(
-            &game_state_ref.simulation_state,
+            game_state_ref,
             &mut RAMExtractor,
             ui,
             "",
+            &mut state_machine_ref.get_size_cache,
         );
     });
 
