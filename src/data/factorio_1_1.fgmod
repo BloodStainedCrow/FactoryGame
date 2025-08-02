@@ -2173,6 +2173,78 @@
             ],
         ),
         (
+            name: "factory_game::sink_red_green_blue_purple_yellow",
+            display_name: "Sink Red Green Blue Purple Yellow",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::green_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::blue_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::purple_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::yellow_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 1_000_000_000_000,
+            precursors: [],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: [
+            ],
+        ),
+        (
+            name: "factory_game::sink_red_green_blue_purple_yellow_white",
+            display_name: "Sink Red Green Blue Purple Yellow White",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::green_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::blue_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::purple_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::yellow_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::white_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 1_000_000_000_000,
+            precursors: [],
+
+            pre_unlocked: false,
+
+            infinite: None,
+            effects: [
+            ],
+        ),
+        (
             name: "factory_game::debug",
             display_name: "DEBUG",
             cost_of_single_research_unit: [],

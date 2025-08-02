@@ -1,6 +1,7 @@
 use std::iter::successors;
 
 use itertools::Itertools;
+use log::info;
 use strum::IntoEnumIterator;
 
 use crate::{
@@ -142,7 +143,6 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             };
 
             let back_pos = self_pos + splitter_direction.reverse();
-            dbg!(back_pos);
             let belt_dir = get_belt_out_dir(&game_state.world, back_pos, data_store);
             let (self_back_id, self_back_len) = if let Some(belt_dir) = belt_dir {
                 if belt_dir == splitter_direction {
@@ -200,18 +200,21 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         .belts
         .add_splitter(splitter);
 
-    game_state.world.add_entity(
-        Entity::Splitter {
-            pos: Position {
-                x: self_positions.into_iter().map(|pos| pos.x).min().unwrap(),
-                y: self_positions.into_iter().map(|pos| pos.y).min().unwrap(),
+    game_state
+        .world
+        .add_entity(
+            Entity::Splitter {
+                pos: Position {
+                    x: self_positions.into_iter().map(|pos| pos.x).min().unwrap(),
+                    y: self_positions.into_iter().map(|pos| pos.y).min().unwrap(),
+                },
+                direction: splitter_direction,
+                id,
             },
-            direction: splitter_direction,
-            id,
-        },
-        &mut game_state.simulation_state,
-        data_store,
-    );
+            &mut game_state.simulation_state,
+            data_store,
+        )
+        .expect("Called handle_splitter_placement without enough space");
 
     #[cfg(debug_assertions)]
     {
@@ -274,6 +277,188 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     }
 }
 
+pub fn handle_belt_removal<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    world: &mut World<ItemIdxType, RecipeIdxType>,
+    sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
+    our_belt_id: BeltTileId<ItemIdxType>,
+    our_belt_pos: BeltLenType,
+    belt_pos: Position,
+    belt_dir: Dir,
+    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+) {
+    world.check_inserters(sim_state);
+    // Handle outgoing direction (front_pos)
+    let front_pos = belt_pos + belt_dir;
+
+    let (front_id, back_id) =
+        split_belt_at(world, sim_state, our_belt_id, our_belt_pos, data_store);
+
+    world.check_inserters(sim_state);
+
+    shorten(world, sim_state, front_id, BELT_LEN_PER_TILE, Side::BACK);
+
+    world.check_inserters(sim_state);
+
+    let front_entity = world
+        .get_entities_colliding_with(front_pos, (1, 1), data_store)
+        .into_iter()
+        .next();
+
+    if let Some(e) = front_entity {
+        match e {
+            Entity::Belt {
+                pos,
+                direction,
+                ty,
+                id,
+                belt_pos: front_belt_pos,
+            } => {
+                let inputs = world.get_belt_possible_inputs_no_cache(*pos);
+                let front_state = expected_belt_state(*direction, |dir| inputs[*dir]);
+
+                match (front_state, belt_dir.compare(*direction)) {
+                    (_, DirRelative::Opposite) => {},
+
+                    (BeltState::Straight, DirRelative::SameDir)
+                    | (BeltState::Curved, DirRelative::Turned)
+                    | (BeltState::DoubleSideloading, DirRelative::SameDir) => {
+                        assert_eq!(our_belt_id, *id);
+                    },
+                    (BeltState::Straight, DirRelative::Turned) => unreachable!(),
+                    (BeltState::Curved, DirRelative::SameDir) => unreachable!(),
+                    (BeltState::Sideloading, DirRelative::SameDir) => {
+                        todo!("Switch from sideloading to curved")
+                    },
+                    (BeltState::Sideloading, DirRelative::Turned)
+                    | (BeltState::DoubleSideloading, DirRelative::Turned) => {
+                        todo!("Remove Sideloading")
+                    },
+                }
+            },
+
+            _ => {},
+        }
+    }
+    world.check_inserters(sim_state);
+
+    // Any incoming direction could either be attached to us, which is handled by split_belt_at.
+    // Or it is sideloading which will be removed by shorten
+}
+
+pub fn handle_underground_removal<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    world: &mut World<ItemIdxType, RecipeIdxType>,
+    sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
+    our_belt_id: BeltTileId<ItemIdxType>,
+    our_belt_pos: BeltLenType,
+    underground_belt_pos: Position,
+    underground_belt_dir: Dir,
+    underground_belt_kind: UndergroundDir,
+    underground_belt_ty: u8,
+    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+) {
+    let max_len = data_store.belt_infos[underground_belt_ty as usize]
+        .has_underground
+        .unwrap()
+        .max_distance;
+    let search_dir = match underground_belt_kind {
+        UndergroundDir::Entrance => underground_belt_dir,
+        UndergroundDir::Exit => underground_belt_dir.reverse(),
+    };
+    let self_len = 'self_len: {
+        let mut pos = underground_belt_pos;
+        for i in 1..max_len {
+            pos = pos + search_dir;
+
+            if let Some(Entity::Underground {
+                pos: _,
+                underground_dir,
+                direction,
+                ty,
+                id,
+                belt_pos,
+            }) = world
+                .get_entities_colliding_with(pos, (1, 1), data_store)
+                .into_iter()
+                .next()
+            {
+                if *ty == underground_belt_ty && *direction == underground_belt_dir {
+                    let self_len = i as u16 * BELT_LEN_PER_TILE;
+                    assert_ne!(
+                        *underground_dir, underground_belt_kind,
+                        "The underground we are removing seems to be attached through another {:?} underground",
+                        underground_belt_kind
+                    );
+                    assert_eq!(*id, our_belt_id);
+
+                    break 'self_len self_len;
+                }
+            }
+        }
+        BELT_LEN_PER_TILE
+    };
+
+    let removal_start_pos = match underground_belt_kind {
+        UndergroundDir::Entrance => our_belt_pos,
+        UndergroundDir::Exit => our_belt_pos
+            .checked_add(self_len - BELT_LEN_PER_TILE)
+            .unwrap(),
+    };
+
+    // Handle outgoing direction (front_pos)
+    let front_pos = underground_belt_pos + underground_belt_dir;
+
+    let (front_id, _back_id) =
+        split_belt_at(world, sim_state, our_belt_id, removal_start_pos, data_store);
+
+    shorten(world, sim_state, front_id, self_len, Side::BACK);
+
+    if underground_belt_kind == UndergroundDir::Exit {
+        let front_entity = world
+            .get_entities_colliding_with(front_pos, (1, 1), data_store)
+            .into_iter()
+            .next();
+
+        if let Some(e) = front_entity {
+            match e {
+                Entity::Belt {
+                    pos,
+                    direction,
+                    ty,
+                    id,
+                    belt_pos: front_belt_pos,
+                } => {
+                    let inputs = world.get_belt_possible_inputs_no_cache(*pos);
+                    let front_state = expected_belt_state(*direction, |dir| inputs[*dir]);
+
+                    match (front_state, underground_belt_dir.compare(*direction)) {
+                        (_, DirRelative::Opposite) => {},
+
+                        (BeltState::Straight, DirRelative::SameDir)
+                        | (BeltState::Curved, DirRelative::Turned)
+                        | (BeltState::DoubleSideloading, DirRelative::SameDir) => {
+                            assert_eq!(our_belt_id, *id);
+                        },
+                        (BeltState::Straight, DirRelative::Turned) => unreachable!(),
+                        (BeltState::Curved, DirRelative::SameDir) => unreachable!(),
+                        (BeltState::Sideloading, DirRelative::SameDir) => {
+                            todo!("Switch from sideloading to curved")
+                        },
+                        (BeltState::Sideloading, DirRelative::Turned)
+                        | (BeltState::DoubleSideloading, DirRelative::Turned) => {
+                            todo!("Remove Sideloading")
+                        },
+                    }
+                },
+
+                _ => {},
+            }
+        }
+    }
+
+    // Any incoming direction could either be attached to us, which is handled by split_belt_at.
+    // Or it is sideloading which will be removed by shorten
+}
+
 #[allow(unreachable_code)]
 pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
@@ -282,6 +467,10 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     new_belt_ty: u8,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
+    game_state
+        .world
+        .check_inserters(&game_state.simulation_state);
+
     let front_pos = new_belt_pos + new_belt_direction;
 
     handle_belt_breaking(game_state, front_pos, new_belt_direction, data_store);
@@ -292,17 +481,20 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 should_sideload(game_state, new_belt_direction, front_pos, data_store).is_none()
             );
             let result = lengthen(game_state, id, BELT_LEN_PER_TILE, Side::BACK);
-            game_state.world.add_entity(
-                Entity::Belt {
-                    pos: new_belt_pos,
-                    direction: new_belt_direction,
-                    ty: new_belt_ty,
-                    id,
-                    belt_pos: result.belt_pos_of_segment,
-                },
-                &mut game_state.simulation_state,
-                data_store,
-            );
+            game_state
+                .world
+                .add_entity(
+                    Entity::Belt {
+                        pos: new_belt_pos,
+                        direction: new_belt_direction,
+                        ty: new_belt_ty,
+                        id,
+                        belt_pos: result.belt_pos_of_segment,
+                    },
+                    &mut game_state.simulation_state,
+                    data_store,
+                )
+                .expect("Called handle_belt_placement without enough space");
             (id, result.new_belt_len)
         } else if let Some((id, pos)) =
             should_sideload(game_state, new_belt_direction, front_pos, data_store)
@@ -320,17 +512,20 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 .belts
                 .add_sideloading_inserter(new_belt, (id, pos));
 
-            game_state.world.add_entity(
-                Entity::Belt {
-                    pos: new_belt_pos,
-                    direction: new_belt_direction,
-                    ty: new_belt_ty,
-                    id: new_belt,
-                    belt_pos: BELT_LEN_PER_TILE,
-                },
-                &mut game_state.simulation_state,
-                data_store,
-            );
+            game_state
+                .world
+                .add_entity(
+                    Entity::Belt {
+                        pos: new_belt_pos,
+                        direction: new_belt_direction,
+                        ty: new_belt_ty,
+                        id: new_belt,
+                        belt_pos: BELT_LEN_PER_TILE,
+                    },
+                    &mut game_state.simulation_state,
+                    data_store,
+                )
+                .expect("Called handle_belt_placement without enough space");
             (new_belt, BELT_LEN_PER_TILE)
         } else {
             let id = game_state
@@ -338,17 +533,20 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 .factory
                 .belts
                 .add_empty_belt(new_belt_ty, BELT_LEN_PER_TILE);
-            game_state.world.add_entity(
-                Entity::Belt {
-                    pos: new_belt_pos,
-                    direction: new_belt_direction,
-                    ty: new_belt_ty,
-                    id,
-                    belt_pos: BELT_LEN_PER_TILE,
-                },
-                &mut game_state.simulation_state,
-                data_store,
-            );
+            game_state
+                .world
+                .add_entity(
+                    Entity::Belt {
+                        pos: new_belt_pos,
+                        direction: new_belt_direction,
+                        ty: new_belt_ty,
+                        id,
+                        belt_pos: BELT_LEN_PER_TILE,
+                    },
+                    &mut game_state.simulation_state,
+                    data_store,
+                )
+                .expect("Called handle_belt_placement without enough space");
             (id, BELT_LEN_PER_TILE)
         };
 
@@ -417,9 +615,7 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 );
                 // TODO: try_into could fail even if the belt len is fine
                 if self_id != back_id {
-                    game_state
-                        .world
-                        .modify_belt_pos(back_id, self_len.try_into().unwrap());
+                    game_state.world.modify_belt_pos(back_id, false, self_len);
                 }
                 if final_id == back_id {
                     game_state.world.update_belt_id(
@@ -527,6 +723,10 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 );
             }
         }
+
+        game_state
+            .world
+            .check_inserters(&game_state.simulation_state);
     }
 }
 
@@ -539,6 +739,10 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
     new_underground_dir: UndergroundDir,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
+    game_state
+        .world
+        .check_inserters(&game_state.simulation_state);
+
     let max_distance: u8 = data_store.belt_infos[usize::from(new_belt_ty)]
         .has_underground
         .expect("Tried to place underground of type without underground support")
@@ -583,7 +787,7 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                     ty,
                     id,
                     belt_pos,
-                } = e
+                } = e.clone()
                 else {
                     unreachable!()
                 };
@@ -597,57 +801,116 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                             .factory
                             .belts
                             .add_empty_belt(new_belt_ty, BELT_LEN_PER_TILE);
-                        game_state.world.add_entity(
-                            Entity::Underground {
-                                pos: new_belt_pos,
-                                direction: new_belt_direction,
-                                ty: new_belt_ty,
-                                underground_dir: new_underground_dir,
-                                id,
-                                belt_pos: BELT_LEN_PER_TILE,
-                            },
-                            &mut game_state.simulation_state,
-                            data_store,
-                        );
+                        game_state
+                            .world
+                            .add_entity(
+                                Entity::Underground {
+                                    pos: new_belt_pos,
+                                    direction: new_belt_direction,
+                                    ty: new_belt_ty,
+                                    underground_dir: new_underground_dir,
+                                    id,
+                                    belt_pos: BELT_LEN_PER_TILE,
+                                },
+                                &mut game_state.simulation_state,
+                                data_store,
+                            )
+                            .expect("Called handle_underground_placement without enough space");
                         (id, BELT_LEN_PER_TILE)
                     },
                     UndergroundDir::Exit => {
-                        if *belt_pos == game_state.simulation_state.factory.belts.get_len(*id) {
+                        let exit_id = if belt_pos
+                            == game_state.simulation_state.factory.belts.get_len(id)
+                        {
                             // This is the start of the belt
                             // no breaking necessary
-                        } else {
-                            todo!("Break its connection");
-                        }
 
-                        let exit_id: BeltTileId<ItemIdxType> = *id;
+                            id
+                        } else {
+                            info!("Breaking underground connection");
+                            let (front_id, back_id) =
+                                break_belt_at(game_state, id, belt_pos, data_store);
+                            let shorten_by_amount = 'amount: {
+                                let mut pos = pos;
+                                for i in 1..=max_distance {
+                                    pos = pos + direction.reverse();
+
+                                    if let Some(Entity::Underground {
+                                        pos: _,
+                                        underground_dir: found_underground_dir,
+                                        direction: found_direction,
+                                        ty: found_ty,
+                                        id: found_id,
+                                        belt_pos: found_belt_pos,
+                                    }) = game_state
+                                        .world
+                                        .get_entities_colliding_with(pos, (1, 1), data_store)
+                                        .into_iter()
+                                        .next()
+                                    {
+                                        if *found_ty == ty && *found_direction == direction {
+                                            let underground_len =
+                                                (i as u16 - 1) * BELT_LEN_PER_TILE;
+                                            assert_eq!(
+                                                UndergroundDir::Entrance,
+                                                *found_underground_dir,
+                                            );
+                                            assert_eq!(*found_id, back_id);
+                                            assert_eq!(
+                                                *found_belt_pos - underground_len,
+                                                BELT_LEN_PER_TILE
+                                            );
+
+                                            break 'amount underground_len;
+                                        }
+                                    }
+                                }
+                                unreachable!(
+                                    "A underground that is attached, does not have a matching underground in range"
+                                )
+                            };
+                            shorten(
+                                &mut game_state.world,
+                                &mut game_state.simulation_state,
+                                back_id,
+                                shorten_by_amount,
+                                Side::FRONT,
+                            );
+                            front_id
+                        };
+
+                        game_state
+                            .world
+                            .check_inserters(&game_state.simulation_state);
 
                         // Add the "underground" belt locs
                         let res = lengthen(
                             game_state,
-                            *id,
+                            id,
                             // Underground
                             BELT_LEN_PER_TILE
                                 * u16::try_from(
                                     new_belt_pos.x.abs_diff(pos.x) + new_belt_pos.y.abs_diff(pos.y),
                                 )
-                                .unwrap() +
-                                // The newly placed tile itself
-                                BELT_LEN_PER_TILE,
+                                .unwrap(),
                             Side::BACK,
                         );
 
-                        game_state.world.add_entity(
-                            Entity::Underground {
-                                pos: new_belt_pos,
-                                direction: new_belt_direction,
-                                ty: new_belt_ty,
-                                underground_dir: new_underground_dir,
-                                id: exit_id,
-                                belt_pos: res.new_belt_len,
-                            },
-                            &mut game_state.simulation_state,
-                            data_store,
-                        );
+                        game_state
+                            .world
+                            .add_entity(
+                                Entity::Underground {
+                                    pos: new_belt_pos,
+                                    direction: new_belt_direction,
+                                    ty: new_belt_ty,
+                                    underground_dir: new_underground_dir,
+                                    id: exit_id,
+                                    belt_pos: res.new_belt_len,
+                                },
+                                &mut game_state.simulation_state,
+                                data_store,
+                            )
+                            .expect("Called handle_underground_placement without enough space");
 
                         (exit_id, res.new_belt_len)
                     },
@@ -659,18 +922,21 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                     .factory
                     .belts
                     .add_empty_belt(new_belt_ty, BELT_LEN_PER_TILE);
-                game_state.world.add_entity(
-                    Entity::Underground {
-                        pos: new_belt_pos,
-                        direction: new_belt_direction,
-                        ty: new_belt_ty,
-                        underground_dir: new_underground_dir,
-                        id,
-                        belt_pos: BELT_LEN_PER_TILE,
-                    },
-                    &mut game_state.simulation_state,
-                    data_store,
-                );
+                game_state
+                    .world
+                    .add_entity(
+                        Entity::Underground {
+                            pos: new_belt_pos,
+                            direction: new_belt_direction,
+                            ty: new_belt_ty,
+                            underground_dir: new_underground_dir,
+                            id,
+                            belt_pos: BELT_LEN_PER_TILE,
+                        },
+                        &mut game_state.simulation_state,
+                        data_store,
+                    )
+                    .expect("Called handle_underground_placement without enough space");
                 (id, BELT_LEN_PER_TILE)
             };
 
@@ -704,9 +970,7 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                 };
 
                 if let Some(back_id) = back_id {
-                    game_state
-                        .world
-                        .modify_belt_pos(back_id, self_len.try_into().unwrap());
+                    game_state.world.modify_belt_pos(back_id, false, self_len);
                     let (final_id, final_len) = merge_belts(
                         &mut game_state.simulation_state,
                         self_id,
@@ -754,18 +1018,21 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                         .is_none()
                 );
                 let result = lengthen(game_state, id, BELT_LEN_PER_TILE, Side::BACK);
-                game_state.world.add_entity(
-                    Entity::Underground {
-                        pos: new_belt_pos,
-                        underground_dir: new_underground_dir,
-                        direction: new_belt_direction,
-                        ty: new_belt_ty,
-                        id,
-                        belt_pos: result.belt_pos_of_segment,
-                    },
-                    &mut game_state.simulation_state,
-                    data_store,
-                );
+                game_state
+                    .world
+                    .add_entity(
+                        Entity::Underground {
+                            pos: new_belt_pos,
+                            underground_dir: new_underground_dir,
+                            direction: new_belt_direction,
+                            ty: new_belt_ty,
+                            id,
+                            belt_pos: result.belt_pos_of_segment,
+                        },
+                        &mut game_state.simulation_state,
+                        data_store,
+                    )
+                    .expect("Called handle_underground_placement without enough space");
                 (id, result.new_belt_len)
             } else if let Some((id, pos)) =
                 should_sideload(game_state, new_belt_direction, front_pos, data_store)
@@ -783,18 +1050,21 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                     .belts
                     .add_sideloading_inserter(new_belt, (id, pos));
 
-                game_state.world.add_entity(
-                    Entity::Underground {
-                        pos: new_belt_pos,
-                        underground_dir: new_underground_dir,
-                        direction: new_belt_direction,
-                        ty: new_belt_ty,
-                        id,
-                        belt_pos: BELT_LEN_PER_TILE,
-                    },
-                    &mut game_state.simulation_state,
-                    data_store,
-                );
+                game_state
+                    .world
+                    .add_entity(
+                        Entity::Underground {
+                            pos: new_belt_pos,
+                            underground_dir: new_underground_dir,
+                            direction: new_belt_direction,
+                            ty: new_belt_ty,
+                            id,
+                            belt_pos: BELT_LEN_PER_TILE,
+                        },
+                        &mut game_state.simulation_state,
+                        data_store,
+                    )
+                    .expect("Called handle_underground_placement without enough space");
                 (new_belt, BELT_LEN_PER_TILE)
             } else {
                 let id = game_state
@@ -802,18 +1072,21 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                     .factory
                     .belts
                     .add_empty_belt(new_belt_ty, BELT_LEN_PER_TILE);
-                game_state.world.add_entity(
-                    Entity::Underground {
-                        pos: new_belt_pos,
-                        direction: new_belt_direction,
-                        ty: new_belt_ty,
-                        underground_dir: new_underground_dir,
-                        id,
-                        belt_pos: BELT_LEN_PER_TILE,
-                    },
-                    &mut game_state.simulation_state,
-                    data_store,
-                );
+                game_state
+                    .world
+                    .add_entity(
+                        Entity::Underground {
+                            pos: new_belt_pos,
+                            direction: new_belt_direction,
+                            ty: new_belt_ty,
+                            underground_dir: new_underground_dir,
+                            id,
+                            belt_pos: BELT_LEN_PER_TILE,
+                        },
+                        &mut game_state.simulation_state,
+                        data_store,
+                    )
+                    .expect("Called handle_underground_placement without enough space");
                 (id, BELT_LEN_PER_TILE)
             };
 
@@ -902,32 +1175,94 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                     ty,
                     id,
                     belt_pos,
-                } = e
+                } = e.clone()
                 else {
                     unreachable!()
                 };
 
                 match underground_dir {
                     UndergroundDir::Entrance => {
-                        if *belt_pos == BELT_LEN_PER_TILE {
+                        let entrance_id = if belt_pos == BELT_LEN_PER_TILE {
                             // This is the end of the belt
                             // no breaking necessary
+                            id
                         } else {
-                            // Find the connected
-                            todo!("Break its connection");
-                        }
+                            info!("Breaking underground connection");
+                            let (front_id, back_id) = break_belt_at(
+                                game_state,
+                                id,
+                                belt_pos - BELT_LEN_PER_TILE,
+                                data_store,
+                            );
+                            let shorten_by_amount = 'amount: {
+                                let mut pos = pos;
+                                for i in 1..=max_distance {
+                                    pos = pos + direction;
 
-                        let entrance_id: BeltTileId<ItemIdxType> = *id;
+                                    if let Some(Entity::Underground {
+                                        pos: _,
+                                        underground_dir: found_underground_dir,
+                                        direction: found_direction,
+                                        ty: found_ty,
+                                        id: found_id,
+                                        belt_pos: found_belt_pos,
+                                    }) = game_state
+                                        .world
+                                        .get_entities_colliding_with(pos, (1, 1), data_store)
+                                        .into_iter()
+                                        .next()
+                                    {
+                                        if *found_ty == ty
+                                            && *found_direction == direction
+                                            && *found_id == front_id
+                                        {
+                                            let underground_len =
+                                                (i as u16 - 1) * BELT_LEN_PER_TILE;
+                                            assert_eq!(
+                                                UndergroundDir::Exit,
+                                                *found_underground_dir,
+                                            );
+                                            assert_eq!(
+                                                *found_belt_pos + underground_len,
+                                                game_state
+                                                    .simulation_state
+                                                    .factory
+                                                    .belts
+                                                    .get_len(*found_id)
+                                            );
+
+                                            break 'amount underground_len;
+                                        }
+                                    }
+                                }
+                                unreachable!(
+                                    "A underground that is attached, does not have a matching underground in range"
+                                )
+                            };
+                            shorten(
+                                &mut game_state.world,
+                                &mut game_state.simulation_state,
+                                front_id,
+                                shorten_by_amount,
+                                Side::BACK,
+                            );
+                            back_id
+                        };
+
+                        game_state
+                            .world
+                            .check_inserters(&game_state.simulation_state);
 
                         // Add the "underground" belt locs
                         let res = lengthen(
                             game_state,
                             self_id,
                             BELT_LEN_PER_TILE
-                                * u16::try_from(
+                                * (u16::try_from(
                                     new_belt_pos.x.abs_diff(pos.x) + new_belt_pos.y.abs_diff(pos.y),
                                 )
-                                .unwrap(),
+                                .unwrap()
+                                    - 1), // We need to subract 1 here to account for the BELT_LEN_PER_TILE we already added before
                             Side::BACK,
                         );
 
@@ -942,7 +1277,7 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                         if self_id != entrance_id {
                             game_state
                                 .world
-                                .modify_belt_pos(entrance_id, res.new_belt_len.try_into().unwrap());
+                                .modify_belt_pos(entrance_id, false, res.new_belt_len);
                         }
                         if new_id == self_id {
                             game_state.world.update_belt_id(
@@ -1024,6 +1359,10 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                 );
             }
         }
+
+        game_state
+            .world
+            .check_inserters(&game_state.simulation_state);
     }
 }
 
@@ -1109,10 +1448,9 @@ fn handle_belt_breaking<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 belt_pos_to_break_at + 1,
                                 data_store,
                             );
-                            game_state.world.modify_belt_pos(
-                                new_id,
-                                -i16::try_from(belt_pos_to_break_at).unwrap(),
-                            );
+                            game_state
+                                .world
+                                .modify_belt_pos(new_id, true, belt_pos_to_break_at);
 
                             let new_len = game_state.simulation_state.factory.belts.get_len(new_id);
 
@@ -1201,40 +1539,48 @@ fn handle_belt_breaking<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 fn break_belt_at<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
     old_belt_id: BeltTileId<ItemIdxType>,
-    belt_pos_to_break_at: BeltLenType,
+    first_belt_pos_belonging_to_back: BeltLenType,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> (BeltTileId<ItemIdxType>, BeltTileId<ItemIdxType>) {
+    game_state
+        .world
+        .check_inserters(&game_state.simulation_state);
+
     let res = game_state
         .simulation_state
         .factory
         .belts
-        .break_belt_at(old_belt_id, belt_pos_to_break_at);
+        .break_belt_at(old_belt_id, first_belt_pos_belonging_to_back);
 
-    match res.new_belt {
-        Some((new_id, new_belt_side)) => {
-            match new_belt_side {
-                Side::FRONT => {
-                    unimplemented!("In the currerent implementation we will always keep the Front.")
-                },
-                Side::BACK => {
-                    // FIXME: Understand this + 1
-                    game_state.world.update_belt_id_after(
-                        &mut game_state.simulation_state,
-                        res.kept_id,
-                        new_id,
-                        belt_pos_to_break_at + 1,
-                        data_store,
-                    );
-                    game_state
-                        .world
-                        .modify_belt_pos(new_id, -i16::try_from(belt_pos_to_break_at).unwrap());
+    let ret = match res.new_belt {
+        Some((new_id, new_belt_side)) => match new_belt_side {
+            Side::FRONT => {
+                unimplemented!("In the currerent implementation we will always keep the Front.")
+            },
+            Side::BACK => {
+                game_state.world.update_belt_id_after(
+                    &mut game_state.simulation_state,
+                    res.kept_id,
+                    new_id,
+                    first_belt_pos_belonging_to_back + 1,
+                    data_store,
+                );
+                let reduce_amount = first_belt_pos_belonging_to_back;
+                assert_eq!(reduce_amount % BELT_LEN_PER_TILE, 0);
+                game_state
+                    .world
+                    .modify_belt_pos(new_id, true, reduce_amount);
 
-                    (old_belt_id, new_id)
-                },
-            }
+                (old_belt_id, new_id)
+            },
         },
         None => (old_belt_id, old_belt_id),
-    }
+    };
+
+    game_state
+        .world
+        .check_inserters(&game_state.simulation_state);
+    ret
 }
 
 fn attach_to_back_of_belt<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
@@ -1246,12 +1592,9 @@ fn attach_to_back_of_belt<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 ) -> (BeltTileId<ItemIdxType>, u16) {
     let (final_belt_id, final_belt_len) = match back_belt_id {
         Some(back_belt_id_in_sim) => {
-            game_state.world.modify_belt_pos(
-                back_belt_id_in_sim,
-                back_belt_len
-                    .try_into()
-                    .expect("FIXME: This could fail without a belt being too long!"),
-            );
+            game_state
+                .world
+                .modify_belt_pos(back_belt_id_in_sim, false, back_belt_len);
 
             let (final_belt_id, final_belt_len) = merge_belts(
                 &mut game_state.simulation_state,
@@ -1388,12 +1731,7 @@ fn lengthen<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     match side {
         Side::FRONT => {
-            game_state.world.modify_belt_pos(
-                belt,
-                amount
-                    .try_into()
-                    .expect("TODO: This could fail even if the belt is not too long!"),
-            );
+            game_state.world.modify_belt_pos(belt, false, amount);
             LengthenResult {
                 belt_pos_of_segment: amount,
                 new_belt_len: new_len,
@@ -1402,6 +1740,76 @@ fn lengthen<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         Side::BACK => LengthenResult {
             belt_pos_of_segment: new_len,
             new_belt_len: new_len,
+        },
+    }
+}
+
+/// Removes some length from a belt, updates the world entities and removes inserters if connected to the removed part
+fn shorten<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    world: &mut World<ItemIdxType, RecipeIdxType>,
+    simulation_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
+    belt: BeltTileId<ItemIdxType>,
+    amount: u16,
+    side: Side,
+) {
+    let (removed_items, new_len) = simulation_state
+        .factory
+        .belts
+        .remove_length(belt, amount, side);
+
+    // FIXME: Remove belt belt inserters
+
+    if new_len == 0 {
+        // The belt no longer exists
+        return;
+    }
+
+    match side {
+        Side::FRONT => {
+            world.modify_belt_pos(belt, true, amount);
+        },
+        Side::BACK => {},
+    }
+}
+
+fn split_belt_at<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    world: &mut World<ItemIdxType, RecipeIdxType>,
+    simulation_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
+    old_id: BeltTileId<ItemIdxType>,
+    belt_pos_to_break_at: BeltLenType,
+    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+) -> (BeltTileId<ItemIdxType>, BeltTileId<ItemIdxType>) {
+    let res = simulation_state
+        .factory
+        .belts
+        .break_belt_at(old_id, belt_pos_to_break_at);
+
+    match res.new_belt {
+        Some((new_id, new_belt_side)) => {
+            match new_belt_side {
+                Side::FRONT => {
+                    unimplemented!("In the currerent implementation we will always keep the Front.")
+                },
+                Side::BACK => {
+                    // FIXME: Understand this + 1
+                    world.update_belt_id_after(
+                        simulation_state,
+                        res.kept_id,
+                        new_id,
+                        belt_pos_to_break_at + 1,
+                        data_store,
+                    );
+                    world.modify_belt_pos(new_id, true, belt_pos_to_break_at);
+
+                    // FIXME: Fix belt belt inserter ids and positions
+
+                    (old_id, new_id)
+                },
+            }
+        },
+        None => {
+            // The belt was circular before. Both sides still have the same id
+            (old_id, old_id)
         },
     }
 }

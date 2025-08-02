@@ -136,7 +136,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         let file = File::open("test_blueprints/red_sci.bp").unwrap();
         let bp: Blueprint = ron::de::from_reader(file).unwrap();
-        let bp = bp.get_reusable(data_store);
+        let bp = bp.get_reusable(false, data_store);
 
         puffin::set_scopes_on(false);
         let y_range = (1590..30000).step_by(7);
@@ -170,13 +170,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     ) -> Self {
         let mut ret = GameState::new(data_store);
 
-        let file = File::open("test_blueprints/murphy/megabase.bp").unwrap();
+        let file = File::open("test_blueprints/murphy/megabase_running.bp").unwrap();
         let bp: Blueprint = ron::de::from_reader(file).unwrap();
-        let bp = bp.get_reusable(data_store);
+        let bp = bp.get_reusable(false, data_store);
+
+        // TODO: Measure if this is actually faster
+        // let bp = bp.optimize();
 
         puffin::set_scopes_on(false);
-        let y_range = (1590..30000).step_by(6000);
-        let x_range = (1590..30000).step_by(6000);
+        let y_range = (1590..60000).step_by(10000);
+        let x_range = (1590..20000).step_by(4000);
 
         let total = y_range.size_hint().0 * x_range.size_hint().0;
 
@@ -216,7 +219,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         let file = File::open("test_blueprints/red_and_green_with_clocking.bp").unwrap();
         let bp: Blueprint = ron::de::from_reader(file).unwrap();
-        let bp = bp.get_reusable(data_store);
+        let bp = bp.get_reusable(false, data_store);
 
         puffin::set_scopes_on(false);
         let y_range = (0..40_000).step_by(4_000);
@@ -261,7 +264,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         let file = File::open("test_blueprints/red_sci_with_beacons_and_belts.bp").unwrap();
         let bp: Blueprint = ron::de::from_reader(file).unwrap();
-        let bp = bp.get_reusable(data_store);
+        let bp = bp.get_reusable(false, data_store);
 
         let y_range = (0..20_000).step_by(6_000);
 
@@ -304,7 +307,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         let file = File::open("test_blueprints/lots_of_belts.bp").unwrap();
         let bp: Blueprint = ron::de::from_reader(file).unwrap();
-        let bp = bp.get_reusable(data_store);
+        let bp = bp.get_reusable(false, data_store);
 
         puffin::set_scopes_on(false);
         for y_pos in (1600..60_000).step_by(3) {
@@ -325,7 +328,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         let file = File::open("test_blueprints/solar_farm.bp").unwrap();
         let bp: Blueprint = ron::de::from_reader(file).unwrap();
-        let bp = bp.get_reusable(data_store);
+        let bp = bp.get_reusable(false, data_store);
 
         puffin::set_scopes_on(false);
         for y_pos in (1600..30_000).step_by(18) {
@@ -347,7 +350,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         let red = File::open("test_blueprints/eight_beacon_red_sci_with_storage.bp").unwrap();
         let red: Blueprint = ron::de::from_reader(red).unwrap();
-        let red = red.get_reusable(data_store);
+        let red = red.get_reusable(false, data_store);
 
         puffin::set_scopes_on(false);
         for y_pos in (1600..=30_000).step_by(20) {
@@ -369,6 +372,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         // for x in (0..60).map(|p| p * 15) {
         bp.apply(
+            false,
             Position {
                 // x: 1590 + x,
                 x: 2000,
@@ -766,6 +770,34 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     }
                 },
 
+                ActionType::CheatRelockTechnology { tech } => {
+                    self.simulation_state
+                        .tech_state
+                        .finished_technologies
+                        .remove(&tech);
+
+                    for recipe in &mut self.simulation_state.tech_state.recipe_active {
+                        *recipe = false;
+                    }
+                    for recipe in self
+                        .simulation_state
+                        .tech_state
+                        .finished_technologies
+                        .iter()
+                        .flat_map(|tech| {
+                            data_store
+                                .technology_tree
+                                .node_weight(NodeIndex::from(tech.id))
+                                .unwrap()
+                                .effect
+                                .unlocked_recipes
+                                .iter()
+                        })
+                    {
+                        self.simulation_state.tech_state.recipe_active[recipe.into_usize()] = true;
+                    }
+                },
+
                 ActionType::PlaceFloorTile(place_floor_tile_by_hand_info) => {
                     let num_items_needed = match place_floor_tile_by_hand_info.ghost_info.position {
                         PositionInfo::Rect { pos, width, height } => width * height,
@@ -881,166 +913,198 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         }
                         ControlFlow::Break(())
                     }),
-                ActionType::PlaceEntity(place_entity_info) => match place_entity_info.entities {
-                    crate::frontend::action::place_entity::EntityPlaceOptions::Single(
-                        place_entity_type,
-                    ) => match place_entity_type {
-                        crate::frontend::world::tile::PlaceEntityType::Assembler {
-                            pos,
-                            ty,
-                            rotation,
-                        } => {
-                            info!("Trying to place assembler at {pos:?}");
-                            let size = data_store.assembler_info[ty as usize].size(rotation);
-                            if !self.world.can_fit(pos, size, data_store) {
-                                warn!("Tried to place assembler where it does not fit");
-                                continue;
-                            }
+                ActionType::PlaceEntity(place_entity_info) => {
+                    let force = place_entity_info.force;
+                    if force {
+                        let pos = action.borrow().get_pos().unwrap();
+                        let size = action.borrow().get_building_size(data_store).unwrap();
 
-                            let powered_by = self.world.is_powered_by(
-                                &self.simulation_state,
+                        for x in 0..size[0] {
+                            for y in 0..size[1] {
+                                let position = Position {
+                                    x: pos.x + x as i32,
+                                    y: pos.y + y as i32,
+                                };
+
+                                self.world.remove_entity_at(
+                                    position,
+                                    &mut self.simulation_state,
+                                    data_store,
+                                );
+                            }
+                        }
+                    }
+                    match place_entity_info.entities {
+                        crate::frontend::action::place_entity::EntityPlaceOptions::Single(
+                            place_entity_type,
+                        ) => match place_entity_type {
+                            crate::frontend::world::tile::PlaceEntityType::Assembler {
                                 pos,
-                                size,
-                                data_store,
-                            );
+                                ty,
+                                rotation,
+                            } => {
+                                info!("Trying to place assembler at {pos:?}");
+                                let size = data_store.assembler_info[ty as usize].size(rotation);
+                                if !self.world.can_fit(pos, size, data_store) {
+                                    warn!("Tried to place assembler where it does not fit");
+                                    continue;
+                                }
 
-                            let modules = vec![
-                                None;
-                                data_store.assembler_info[usize::from(ty)]
-                                    .num_module_slots
-                                    .into()
-                            ]
-                            .into_boxed_slice();
-
-                            if let Some(pole_position) = powered_by {
-                                self.world.add_entity(
-                                    crate::frontend::world::tile::Entity::Assembler {
-                                        ty,
-                                        pos,
-                                        info: AssemblerInfo::PoweredNoRecipe(pole_position),
-                                        modules,
-                                        rotation,
-                                    },
-                                    &mut self.simulation_state,
+                                let powered_by = self.world.is_powered_by(
+                                    &self.simulation_state,
+                                    pos,
+                                    size,
                                     data_store,
                                 );
-                            } else {
-                                self.world.add_entity(
-                                    crate::frontend::world::tile::Entity::Assembler {
-                                        ty,
-                                        pos,
-                                        info: AssemblerInfo::UnpoweredNoRecipe,
-                                        modules,
-                                        rotation,
-                                    },
-                                    &mut self.simulation_state,
+
+                                let modules = vec![
+                                    None;
+                                    data_store.assembler_info[usize::from(ty)]
+                                        .num_module_slots
+                                        .into()
+                                ]
+                                .into_boxed_slice();
+
+                                if let Some(pole_position) = powered_by {
+                                    self.world.add_entity(
+                                        crate::frontend::world::tile::Entity::Assembler {
+                                            ty,
+                                            pos,
+                                            info: AssemblerInfo::PoweredNoRecipe(pole_position),
+                                            modules,
+                                            rotation,
+                                        },
+                                        &mut self.simulation_state,
+                                        data_store,
+                                    );
+                                } else {
+                                    self.world.add_entity(
+                                        crate::frontend::world::tile::Entity::Assembler {
+                                            ty,
+                                            pos,
+                                            info: AssemblerInfo::UnpoweredNoRecipe,
+                                            modules,
+                                            rotation,
+                                        },
+                                        &mut self.simulation_state,
+                                        data_store,
+                                    );
+                                }
+                            },
+                            crate::frontend::world::tile::PlaceEntityType::Inserter {
+                                pos,
+                                dir,
+                                filter,
+                            } => {
+                                // TODO: Add ty
+                                let ret = self.add_inserter(0, pos, dir, filter, data_store);
+                                trace!("{:?}", ret);
+                            },
+                            crate::frontend::world::tile::PlaceEntityType::Belt {
+                                pos,
+                                direction,
+                                ty,
+                            } => {
+                                if !self.world.can_fit(pos, (1, 1), data_store) {
+                                    warn!("Tried to place belt where it does not fit");
+                                    continue;
+                                }
+
+                                handle_belt_placement(self, pos, direction, ty, data_store);
+
+                                self.update_inserters(
+                                    InserterUpdateInfo::NewBelt { pos },
                                     data_store,
                                 );
-                            }
-                        },
-                        crate::frontend::world::tile::PlaceEntityType::Inserter {
-                            pos,
-                            dir,
-                            filter,
-                        } => {
-                            // TODO: Add ty
-                            let ret = self.add_inserter(0, pos, dir, filter, data_store);
-                            trace!("{:?}", ret);
-                        },
-                        crate::frontend::world::tile::PlaceEntityType::Belt {
-                            pos,
-                            direction,
-                            ty,
-                        } => {
-                            if !self.world.can_fit(pos, (1, 1), data_store) {
-                                warn!("Tried to place belt where it does not fit");
-                                continue;
-                            }
-
-                            handle_belt_placement(self, pos, direction, ty, data_store);
-
-                            self.update_inserters(InserterUpdateInfo::NewBelt { pos }, data_store);
-                        },
-                        crate::frontend::world::tile::PlaceEntityType::Underground {
-                            pos,
-                            direction,
-                            ty,
-                            underground_dir,
-                        } => {
-                            if !self.world.can_fit(pos, (1, 1), data_store) {
-                                warn!("Tried to place underground_belt where it does not fit");
-                                continue;
-                            }
-
-                            handle_underground_belt_placement(
-                                self,
+                            },
+                            crate::frontend::world::tile::PlaceEntityType::Underground {
                                 pos,
                                 direction,
                                 ty,
                                 underground_dir,
-                                data_store,
-                            );
+                            } => {
+                                if !self.world.can_fit(pos, (1, 1), data_store) {
+                                    warn!("Tried to place underground_belt where it does not fit");
+                                    continue;
+                                }
 
-                            self.update_inserters(InserterUpdateInfo::NewBelt { pos }, data_store);
-                        },
-                        crate::frontend::world::tile::PlaceEntityType::PowerPole {
-                            pos: pole_pos,
-                            ty,
-                        } => {
-                            // Check if the powerpole fits
-                            if !self.world.can_fit(
-                                pole_pos,
-                                data_store.power_pole_data[usize::from(ty)].size,
-                                data_store,
-                            ) {
-                                warn!("Tried to place power pole where it does not fit");
-                                continue;
-                            }
+                                handle_underground_belt_placement(
+                                    self,
+                                    pos,
+                                    direction,
+                                    ty,
+                                    underground_dir,
+                                    data_store,
+                                );
 
-                            // Check which poles are in range to connect to
-                            let connection_candidates: Vec<_> = self
-                                .world
-                                .get_power_poles_which_could_connect_to_pole_at(
+                                self.update_inserters(
+                                    InserterUpdateInfo::NewBelt { pos },
+                                    data_store,
+                                );
+                            },
+                            crate::frontend::world::tile::PlaceEntityType::PowerPole {
+                                pos: pole_pos,
+                                ty,
+                            } => {
+                                // Check if the powerpole fits
+                                if !self.world.can_fit(
                                     pole_pos,
                                     data_store.power_pole_data[usize::from(ty)].size,
-                                    data_store.power_pole_data[usize::from(ty)].connection_range,
                                     data_store,
-                                )
-                                .into_iter()
-                                .map(|e| e.get_pos())
-                                .collect();
+                                ) {
+                                    warn!("Tried to place power pole where it does not fit");
+                                    continue;
+                                }
 
-                            match self.simulation_state.factory.power_grids.add_pole(
-                                pole_pos,
-                                connection_candidates.iter().copied(),
-                                data_store,
-                            ) {
-                                Some((pole_updates, storage_updates)) => {
-                                    // Handle Entities that are now part of another power_grid
-                                    for pole_position in pole_updates {
-                                        let grid = self
-                                            .simulation_state
-                                            .factory
-                                            .power_grids
-                                            .pole_pos_to_grid_id[&pole_position];
+                                // Check which poles are in range to connect to
+                                let connection_candidates: Vec<_> = self
+                                    .world
+                                    .get_power_poles_which_could_connect_to_pole_at(
+                                        pole_pos,
+                                        data_store.power_pole_data[usize::from(ty)].size,
+                                        data_store.power_pole_data[usize::from(ty)]
+                                            .connection_range,
+                                        data_store,
+                                    )
+                                    .into_iter()
+                                    .map(|e| e.get_pos())
+                                    .collect();
 
-                                        assert!(
-                                            !self.simulation_state.factory.power_grids.power_grids
-                                                [grid as usize]
-                                                .is_placeholder
-                                        );
+                                match self.simulation_state.factory.power_grids.add_pole(
+                                    pole_pos,
+                                    connection_candidates.iter().copied(),
+                                    data_store,
+                                ) {
+                                    Some((pole_updates, storage_updates)) => {
+                                        // Handle Entities that are now part of another power_grid
+                                        for pole_position in pole_updates {
+                                            let grid = self
+                                                .simulation_state
+                                                .factory
+                                                .power_grids
+                                                .pole_pos_to_grid_id[&pole_position];
 
-                                        self.world.update_pole_power(
-                                            pole_position,
-                                            grid,
-                                            data_store,
-                                        );
-                                    }
+                                            assert!(
+                                                !self
+                                                    .simulation_state
+                                                    .factory
+                                                    .power_grids
+                                                    .power_grids
+                                                    [grid as usize]
+                                                    .is_placeholder
+                                            );
 
-                                    // Handle storage updates
-                                    for storage_update in storage_updates {
-                                        let mut entity_size = None;
-                                        self.world.mutate_entities_colliding_with(storage_update.position, (1,1), data_store, |e| {
+                                            self.world.update_pole_power(
+                                                pole_position,
+                                                grid,
+                                                data_store,
+                                            );
+                                        }
+
+                                        // Handle storage updates
+                                        for storage_update in storage_updates {
+                                            let mut entity_size = None;
+                                            self.world.mutate_entities_colliding_with(storage_update.position, (1,1), data_store, |e| {
                                         match (e, storage_update.new_pg_entity.clone()) {
                                             (Entity::Assembler { ty, pos: _, info: AssemblerInfo::Powered { id, pole_position: _, weak_index }, modules: _, rotation }, crate::power::power_grid::PowerGridEntity::Assembler { ty: _, recipe, index }) => {
                                                 entity_size = Some(data_store.assembler_info[usize::from(*ty)].size(*rotation));
@@ -1063,12 +1127,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         ControlFlow::Break(())
                                     });
 
-                                        // FIXME: Rotation
-                                        let e_size = entity_size.unwrap();
+                                            // FIXME: Rotation
+                                            let e_size = entity_size.unwrap();
 
-                                        let inserter_range = data_store.max_inserter_search_range;
+                                            let inserter_range =
+                                                data_store.max_inserter_search_range;
 
-                                        self.world.mutate_entities_colliding_with(
+                                            self.world.mutate_entities_colliding_with(
                                         Position {
                                             x: storage_update.position.x
                                                 - i32::from(inserter_range),
@@ -1195,437 +1260,452 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             ControlFlow::Continue(())
                                         },
                                     );
+                                        }
+                                    },
+                                    _ => {
+                                        // No updates needed
+                                    },
+                                }
+
+                                #[cfg(debug_assertions)]
+                                {
+                                    let affected_grids_and_potential_match = self
+                                        .simulation_state
+                                        .factory
+                                        .power_grids
+                                        .power_grids
+                                        .iter()
+                                        .filter(|grid| !grid.is_placeholder)
+                                        .all(|pg| {
+                                            pg.beacon_affected_entities
+                                                .keys()
+                                                .map(|e| e.get_power_grid())
+                                                .all(|affected_grid| {
+                                                    pg.potential_beacon_affected_powergrids
+                                                        .contains(&affected_grid)
+                                                })
+                                        });
+                                    if !affected_grids_and_potential_match {
+                                        dbg!(action.borrow());
                                     }
-                                },
-                                _ => {
-                                    // No updates needed
-                                },
-                            }
-
-                            #[cfg(debug_assertions)]
-                            {
-                                let affected_grids_and_potential_match = self
-                                    .simulation_state
-                                    .factory
-                                    .power_grids
-                                    .power_grids
-                                    .iter()
-                                    .filter(|grid| !grid.is_placeholder)
-                                    .all(|pg| {
-                                        pg.beacon_affected_entities
-                                            .keys()
-                                            .map(|e| e.get_power_grid())
-                                            .all(|affected_grid| {
-                                                pg.potential_beacon_affected_powergrids
-                                                    .contains(&affected_grid)
-                                            })
-                                    });
-                                if !affected_grids_and_potential_match {
-                                    dbg!(action.borrow());
+                                    assert!(affected_grids_and_potential_match);
                                 }
-                                assert!(affected_grids_and_potential_match);
-                            }
 
-                            // Add the powerpole entity to the correct chunk
-                            self.world.add_entity(
-                                Entity::PowerPole {
-                                    ty,
-                                    pos: pole_pos,
-                                    connected_power_poles: connection_candidates,
-                                },
-                                &mut self.simulation_state,
-                                data_store,
-                            );
+                                // Add the powerpole entity to the correct chunk
+                                self.world.add_entity(
+                                    Entity::PowerPole {
+                                        ty,
+                                        pos: pole_pos,
+                                        connected_power_poles: connection_candidates,
+                                    },
+                                    &mut self.simulation_state,
+                                    data_store,
+                                );
 
-                            #[cfg(debug_assertions)]
-                            {
-                                let affected_grids_and_potential_match = self
-                                    .simulation_state
-                                    .factory
-                                    .power_grids
-                                    .power_grids
-                                    .iter()
-                                    .filter(|grid| !grid.is_placeholder)
-                                    .all(|pg| {
-                                        pg.beacon_affected_entities
-                                            .keys()
-                                            .map(|e| e.get_power_grid())
-                                            .all(|affected_grid| {
-                                                pg.potential_beacon_affected_powergrids
-                                                    .contains(&affected_grid)
-                                            })
-                                    });
-                                if !affected_grids_and_potential_match {
-                                    dbg!(action.borrow());
+                                #[cfg(debug_assertions)]
+                                {
+                                    let affected_grids_and_potential_match = self
+                                        .simulation_state
+                                        .factory
+                                        .power_grids
+                                        .power_grids
+                                        .iter()
+                                        .filter(|grid| !grid.is_placeholder)
+                                        .all(|pg| {
+                                            pg.beacon_affected_entities
+                                                .keys()
+                                                .map(|e| e.get_power_grid())
+                                                .all(|affected_grid| {
+                                                    pg.potential_beacon_affected_powergrids
+                                                        .contains(&affected_grid)
+                                                })
+                                        });
+                                    if !affected_grids_and_potential_match {
+                                        dbg!(action.borrow());
+                                    }
+                                    assert!(affected_grids_and_potential_match);
                                 }
-                                assert!(affected_grids_and_potential_match);
-                            }
-                        },
-                        crate::frontend::world::tile::PlaceEntityType::Splitter {
-                            pos: splitter_pos,
-                            direction: splitter_direction,
-                            in_mode,
-                            out_mode,
-
-                            ty,
-                        } => {
-                            let (left_pos, right_pos) = match splitter_direction {
-                                Dir::North => (splitter_pos, splitter_pos + Dir::East),
-                                Dir::East => (splitter_pos, splitter_pos + Dir::South),
-                                Dir::South => (splitter_pos + Dir::East, splitter_pos),
-                                Dir::West => (splitter_pos + Dir::South, splitter_pos),
-                            };
-                            let self_positions = [left_pos, right_pos];
-                            if self_positions
-                                .into_iter()
-                                .any(|pos| !self.world.can_fit(pos, (1, 1), data_store))
-                            {
-                                warn!("Tried to place splitter where it does not fit");
-                                continue;
-                            }
-                            let splitter = handle_splitter_placement(
-                                self,
-                                splitter_pos,
-                                splitter_direction,
-                                ty,
+                            },
+                            crate::frontend::world::tile::PlaceEntityType::Splitter {
+                                pos: splitter_pos,
+                                direction: splitter_direction,
                                 in_mode,
                                 out_mode,
-                                data_store,
-                            );
-                        },
-                        crate::frontend::world::tile::PlaceEntityType::Chest { pos, ty } => {
-                            info!("Trying to place chest at {pos:?}");
-                            if !self.world.can_fit(
-                                pos,
-                                data_store.chest_tile_sizes[usize::from(ty)],
-                                data_store,
-                            ) {
-                                warn!("Tried to place chest where it does not fit");
-                                continue;
-                            }
 
-                            self.world.add_entity(
-                                Entity::Chest {
+                                ty,
+                            } => {
+                                let (left_pos, right_pos) = match splitter_direction {
+                                    Dir::North => (splitter_pos, splitter_pos + Dir::East),
+                                    Dir::East => (splitter_pos, splitter_pos + Dir::South),
+                                    Dir::South => (splitter_pos + Dir::East, splitter_pos),
+                                    Dir::West => (splitter_pos + Dir::South, splitter_pos),
+                                };
+                                let self_positions = [left_pos, right_pos];
+                                if self_positions
+                                    .into_iter()
+                                    .any(|pos| !self.world.can_fit(pos, (1, 1), data_store))
+                                {
+                                    warn!("Tried to place splitter where it does not fit");
+                                    continue;
+                                }
+                                let splitter = handle_splitter_placement(
+                                    self,
+                                    splitter_pos,
+                                    splitter_direction,
                                     ty,
+                                    in_mode,
+                                    out_mode,
+                                    data_store,
+                                );
+                            },
+                            crate::frontend::world::tile::PlaceEntityType::Chest { pos, ty } => {
+                                info!("Trying to place chest at {pos:?}");
+                                if !self.world.can_fit(
                                     pos,
-                                    item: None,
-                                    slot_limit: data_store.chest_num_slots[usize::from(ty)],
-                                },
-                                &mut self.simulation_state,
-                                data_store,
-                            );
-                        },
-                        crate::frontend::world::tile::PlaceEntityType::SolarPanel { pos, ty } => {
-                            info!("Trying to place solar_panel at {pos:?}");
-                            let size = data_store.solar_panel_info[usize::from(ty)].size;
-                            let size = size.into();
+                                    data_store.chest_tile_sizes[usize::from(ty)],
+                                    data_store,
+                                ) {
+                                    warn!("Tried to place chest where it does not fit");
+                                    continue;
+                                }
 
-                            if !self.world.can_fit(pos, size, data_store) {
-                                warn!("Tried to place solar_panel where it does not fit");
-                                continue;
-                            }
-
-                            let powered_by = self.world.is_powered_by(
-                                &self.simulation_state,
+                                self.world.add_entity(
+                                    Entity::Chest {
+                                        ty,
+                                        pos,
+                                        item: None,
+                                        slot_limit: data_store.chest_num_slots[usize::from(ty)],
+                                    },
+                                    &mut self.simulation_state,
+                                    data_store,
+                                );
+                            },
+                            crate::frontend::world::tile::PlaceEntityType::SolarPanel {
                                 pos,
-                                size,
-                                data_store,
-                            );
+                                ty,
+                            } => {
+                                info!("Trying to place solar_panel at {pos:?}");
+                                let size = data_store.solar_panel_info[usize::from(ty)].size;
+                                let size = size.into();
 
-                            let powered_by = if let Some(pole_pos) = powered_by {
-                                let grid = self
-                                    .simulation_state
-                                    .factory
-                                    .power_grids
-                                    .pole_pos_to_grid_id[&pole_pos];
+                                if !self.world.can_fit(pos, size, data_store) {
+                                    warn!("Tried to place solar_panel where it does not fit");
+                                    continue;
+                                }
 
-                                let grid =
-                                    &mut self.simulation_state.factory.power_grids.power_grids
-                                        [usize::from(grid)];
-
-                                let weak_idx = grid.add_solar_panel(pos, ty, pole_pos, data_store);
-
-                                Some((pole_pos, weak_idx))
-                            } else {
-                                None
-                            };
-
-                            self.world.add_entity(
-                                Entity::SolarPanel {
+                                let powered_by = self.world.is_powered_by(
+                                    &self.simulation_state,
                                     pos,
-                                    ty,
-                                    pole_position: powered_by,
-                                },
-                                &mut self.simulation_state,
-                                data_store,
-                            );
-                        },
-                        crate::frontend::world::tile::PlaceEntityType::Lab { pos, ty } => {
-                            info!("Trying to place lab at {pos:?}");
-                            if !self.world.can_fit(
-                                pos,
-                                data_store.lab_info[usize::from(ty)].size,
-                                data_store,
-                            ) {
-                                warn!("Tried to place lab where it does not fit");
-                                continue;
-                            }
+                                    size,
+                                    data_store,
+                                );
 
-                            let modules =
-                                vec![
+                                let powered_by = if let Some(pole_pos) = powered_by {
+                                    let grid = self
+                                        .simulation_state
+                                        .factory
+                                        .power_grids
+                                        .pole_pos_to_grid_id[&pole_pos];
+
+                                    let grid =
+                                        &mut self.simulation_state.factory.power_grids.power_grids
+                                            [usize::from(grid)];
+
+                                    let weak_idx =
+                                        grid.add_solar_panel(pos, ty, pole_pos, data_store);
+
+                                    Some((pole_pos, weak_idx))
+                                } else {
+                                    None
+                                };
+
+                                self.world.add_entity(
+                                    Entity::SolarPanel {
+                                        pos,
+                                        ty,
+                                        pole_position: powered_by,
+                                    },
+                                    &mut self.simulation_state,
+                                    data_store,
+                                );
+                            },
+                            crate::frontend::world::tile::PlaceEntityType::Lab { pos, ty } => {
+                                info!("Trying to place lab at {pos:?}");
+                                if !self.world.can_fit(
+                                    pos,
+                                    data_store.lab_info[usize::from(ty)].size,
+                                    data_store,
+                                ) {
+                                    warn!("Tried to place lab where it does not fit");
+                                    continue;
+                                }
+
+                                let modules = vec![
                                     None;
-                                    data_store.lab_info[usize::from(ty)].num_module_slots.into()
+                                    data_store.lab_info[usize::from(ty)]
+                                        .num_module_slots
+                                        .into()
                                 ]
                                 .into_boxed_slice();
 
-                            let powered_by = self.world.is_powered_by(
-                                &self.simulation_state,
-                                pos,
-                                data_store.lab_info[usize::from(ty)].size,
-                                data_store,
-                            );
-
-                            let powered_by = if let Some(pole_pos) = powered_by {
-                                let grid = self
-                                    .simulation_state
-                                    .factory
-                                    .power_grids
-                                    .pole_pos_to_grid_id[&pole_pos];
-
-                                let grid =
-                                    &mut self.simulation_state.factory.power_grids.power_grids
-                                        [usize::from(grid)];
-
-                                let weak_idx =
-                                    grid.add_lab(pos, ty, &modules, pole_pos, data_store);
-
-                                Some((pole_pos, weak_idx.0, weak_idx.1))
-                            } else {
-                                None
-                            };
-
-                            self.world.add_entity(
-                                Entity::Lab {
+                                let powered_by = self.world.is_powered_by(
+                                    &self.simulation_state,
                                     pos,
-                                    ty,
-                                    modules,
-                                    pole_position: powered_by,
-                                },
-                                &mut self.simulation_state,
-                                data_store,
-                            );
-                        },
-                        crate::frontend::world::tile::PlaceEntityType::Beacon { pos, ty } => {
-                            info!("Trying to place beacon at {pos:?}");
-                            let size = data_store.beacon_info[usize::from(ty)].size;
+                                    data_store.lab_info[usize::from(ty)].size,
+                                    data_store,
+                                );
 
-                            if !self.world.can_fit(pos, size, data_store) {
-                                warn!("Tried to place beacon where it does not fit");
-                                continue;
-                            }
+                                let powered_by = if let Some(pole_pos) = powered_by {
+                                    let grid = self
+                                        .simulation_state
+                                        .factory
+                                        .power_grids
+                                        .pole_pos_to_grid_id[&pole_pos];
 
-                            let modules = vec![
+                                    let grid =
+                                        &mut self.simulation_state.factory.power_grids.power_grids
+                                            [usize::from(grid)];
+
+                                    let weak_idx =
+                                        grid.add_lab(pos, ty, &modules, pole_pos, data_store);
+
+                                    Some((pole_pos, weak_idx.0, weak_idx.1))
+                                } else {
+                                    None
+                                };
+
+                                self.world.add_entity(
+                                    Entity::Lab {
+                                        pos,
+                                        ty,
+                                        modules,
+                                        pole_position: powered_by,
+                                    },
+                                    &mut self.simulation_state,
+                                    data_store,
+                                );
+                            },
+                            crate::frontend::world::tile::PlaceEntityType::Beacon { pos, ty } => {
+                                info!("Trying to place beacon at {pos:?}");
+                                let size = data_store.beacon_info[usize::from(ty)].size;
+
+                                if !self.world.can_fit(pos, size, data_store) {
+                                    warn!("Tried to place beacon where it does not fit");
+                                    continue;
+                                }
+
+                                let modules = vec![
                                 // TODO: Do not add modules immediately
                                 Some(0);
                                 data_store.beacon_info[usize::from(ty)]
                                     .num_module_slots
                                     .into()
                             ]
-                            .into_boxed_slice();
+                                .into_boxed_slice();
 
-                            let powered_by = self.world.is_powered_by(
-                                &self.simulation_state,
-                                pos,
-                                data_store.beacon_info[usize::from(ty)].size,
-                                data_store,
-                            );
-
-                            let powered_by = if let Some(pole_pos) = powered_by {
-                                let weak_idx = self
-                                    .simulation_state
-                                    .factory
-                                    .power_grids
-                                    .add_beacon(ty, pos, pole_pos, modules.clone(), [], data_store);
-
-                                Some((pole_pos, weak_idx))
-                            } else {
-                                None
-                            };
-
-                            self.world.add_entity(
-                                Entity::Beacon {
+                                let powered_by = self.world.is_powered_by(
+                                    &self.simulation_state,
                                     pos,
-                                    ty,
-                                    modules,
-                                    pole_position: powered_by,
-                                },
-                                &mut self.simulation_state,
-                                data_store,
-                            );
-                        },
-                        crate::frontend::world::tile::PlaceEntityType::FluidTank {
-                            ty,
-                            pos,
-                            rotation,
-                        } => {
-                            let size = data_store.fluid_tank_infos[usize::from(ty)].size;
-                            // FIXME: Stop ignoring rotation
-                            if !self.world.can_fit(pos, size.into(), data_store) {
-                                warn!("Tried to place storage tank where it does not fit");
-                                continue;
-                            }
-
-                            let search_range =
-                                data_store.fluid_tank_infos[usize::from(ty)].max_search_range;
-
-                            // Get connecting entities:
-                            let connecting_fluid_box_positions: Vec<_> = self
-                                .world
-                                .get_entities_colliding_with(
-                                    Position {
-                                        x: pos.x - i32::from(search_range),
-                                        y: pos.y - i32::from(search_range),
-                                    },
-                                    (size[0] + 2 * search_range, size[1] + 2 * search_range),
+                                    data_store.beacon_info[usize::from(ty)].size,
                                     data_store,
-                                )
-                                .into_iter()
-                                .filter_map(|e| match e {
-                                    Entity::Assembler {
-                                        
-                                        
-                                        
-                                        
-                                        ..
-                                    } => {
-                                        // FIXME: Implement assembler flowthough
-                                        None
-                                    },
-                                    Entity::Lab {
-                                        pos,
-                                        ty,
-                                        modules,
-                                        pole_position,
-                                    } => {
-                                        // TODO: Do I want to support fluid science? Would be really easy
-                                        None
-                                    },
+                                );
 
-                                    Entity::FluidTank {
-                                        ty: other_ty,
-                                        pos: other_pos,
-                                        rotation: other_rotation,
-                                    } => {
-                                        let we_can_connect = can_fluid_tanks_connect(
-                                            pos,
+                                let powered_by = if let Some(pole_pos) = powered_by {
+                                    let weak_idx =
+                                        self.simulation_state.factory.power_grids.add_beacon(
                                             ty,
-                                            rotation,
-                                            *other_pos,
-                                            *other_ty,
-                                            *other_rotation,
+                                            pos,
+                                            pole_pos,
+                                            modules.clone(),
+                                            [],
                                             data_store,
                                         );
 
-                                        we_can_connect
-                                    },
+                                    Some((pole_pos, weak_idx))
+                                } else {
+                                    None
+                                };
 
-                                    // TODO: There are some future entities which might need connections like mining drills
-                                    _ => None,
-                                })
-                                .collect();
-
-                            let in_out_connections = self
-                                .world
-                                .get_entities_colliding_with(
-                                    Position {
-                                        x: pos.x - 1,
-                                        y: pos.y - 1,
+                                self.world.add_entity(
+                                    Entity::Beacon {
+                                        pos,
+                                        ty,
+                                        modules,
+                                        pole_position: powered_by,
                                     },
-                                    (size[0] + 2, size[1] + 2),
+                                    &mut self.simulation_state,
                                     data_store,
-                                )
-                                .into_iter()
-                                .filter_map(|e| match e {
-                                    Entity::Assembler {
-                                        ty: assembler_ty,
-                                        pos: assembler_pos,
-                                        info:
-                                            AssemblerInfo::Powered {
-                                                id,
-                                                pole_position,
-                                                weak_index,
-                                            },
-                                        rotation: assembler_rotation,
-                                        ..
-                                    } => {
-                                        let assembler_size = data_store.assembler_info
-                                            [usize::from(*assembler_ty)]
-                                        .size(*assembler_rotation);
-                                        let assembler_size = [assembler_size.0, assembler_size.1];
+                                );
+                            },
+                            crate::frontend::world::tile::PlaceEntityType::FluidTank {
+                                ty,
+                                pos,
+                                rotation,
+                            } => {
+                                let size = data_store.fluid_tank_infos[usize::from(ty)].size;
+                                // FIXME: Stop ignoring rotation
+                                if !self.world.can_fit(pos, size.into(), data_store) {
+                                    warn!("Tried to place storage tank where it does not fit");
+                                    continue;
+                                }
 
-                                        let recipe_fluid_inputs: Vec<_> = data_store
-                                            .recipe_to_items[&id.recipe]
-                                            .iter()
-                                            .filter_map(|(dir, item)| {
-                                                (*dir == ItemRecipeDir::Ing
-                                                    && data_store.item_is_fluid[item.into_usize()])
-                                                .then_some(*item)
-                                            })
-                                            .collect();
-                                        let recipe_fluid_outputs: Vec<_> = data_store
-                                            .recipe_to_items[&id.recipe]
-                                            .iter()
-                                            .filter_map(|(dir, item)| {
-                                                (*dir == ItemRecipeDir::Out
-                                                    && data_store.item_is_fluid[item.into_usize()])
-                                                .then_some(*item)
-                                            })
-                                            .collect();
+                                let search_range =
+                                    data_store.fluid_tank_infos[usize::from(ty)].max_search_range;
 
-                                        let fluid_pure_outputs: Vec<_> = data_store.assembler_info
-                                            [usize::from(*assembler_ty)]
-                                        .fluid_connections
-                                        .iter()
-                                        .filter(|(_conn, allowed)| {
-                                            *allowed
-                                                == AllowedFluidDirection::Single(ItemRecipeDir::Out)
-                                                || matches!(
-                                                    *allowed,
-                                                    AllowedFluidDirection::Both { .. }
-                                                )
-                                        })
-                                        .collect();
+                                // Get connecting entities:
+                                let connecting_fluid_box_positions: Vec<_> = self
+                                    .world
+                                    .get_entities_colliding_with(
+                                        Position {
+                                            x: pos.x - i32::from(search_range),
+                                            y: pos.y - i32::from(search_range),
+                                        },
+                                        (size[0] + 2 * search_range, size[1] + 2 * search_range),
+                                        data_store,
+                                    )
+                                    .into_iter()
+                                    .filter_map(|e| match e {
+                                        Entity::Assembler { .. } => {
+                                            // FIXME: Implement assembler flowthough
+                                            None
+                                        },
+                                        Entity::Lab {
+                                            pos,
+                                            ty,
+                                            modules,
+                                            pole_position,
+                                        } => {
+                                            // TODO: Do I want to support fluid science? Would be really easy
+                                            None
+                                        },
 
-                                        let fluid_pure_inputs: Vec<_> = data_store.assembler_info
-                                            [usize::from(*assembler_ty)]
-                                        .fluid_connections
-                                        .iter()
-                                        .filter(|(_conn, allowed)| {
-                                            *allowed
-                                                == AllowedFluidDirection::Single(ItemRecipeDir::Ing)
-                                                || matches!(
-                                                    *allowed,
-                                                    AllowedFluidDirection::Both { .. }
-                                                )
-                                        })
-                                        .collect();
-
-                                        // FIXME: FINISH IMPLEMENTING THIS
-
-                                        let all_connections_with_items = recipe_fluid_inputs
-                                            .into_iter()
-                                            .cycle()
-                                            .zip(fluid_pure_inputs)
-                                            .zip(iter::repeat(FluidConnectionDir::Output))
-                                            .chain(
-                                                recipe_fluid_outputs
-                                                    .into_iter()
-                                                    .cycle()
-                                                    .zip(fluid_pure_outputs)
-                                                    .zip(iter::repeat(FluidConnectionDir::Input)),
+                                        Entity::FluidTank {
+                                            ty: other_ty,
+                                            pos: other_pos,
+                                            rotation: other_rotation,
+                                        } => {
+                                            let we_can_connect = can_fluid_tanks_connect(
+                                                pos,
+                                                ty,
+                                                rotation,
+                                                *other_pos,
+                                                *other_ty,
+                                                *other_rotation,
+                                                data_store,
                                             );
 
-                                        Some(all_connections_with_items.filter_map(
+                                            we_can_connect
+                                        },
+
+                                        // TODO: There are some future entities which might need connections like mining drills
+                                        _ => None,
+                                    })
+                                    .collect();
+
+                                let in_out_connections =
+                                    self.world
+                                        .get_entities_colliding_with(
+                                            Position {
+                                                x: pos.x - 1,
+                                                y: pos.y - 1,
+                                            },
+                                            (size[0] + 2, size[1] + 2),
+                                            data_store,
+                                        )
+                                        .into_iter()
+                                        .filter_map(|e| match e {
+                                            Entity::Assembler {
+                                                ty: assembler_ty,
+                                                pos: assembler_pos,
+                                                info:
+                                                    AssemblerInfo::Powered {
+                                                        id,
+                                                        pole_position,
+                                                        weak_index,
+                                                    },
+                                                rotation: assembler_rotation,
+                                                ..
+                                            } => {
+                                                let assembler_size = data_store.assembler_info
+                                                    [usize::from(*assembler_ty)]
+                                                .size(*assembler_rotation);
+                                                let assembler_size =
+                                                    [assembler_size.0, assembler_size.1];
+
+                                                let recipe_fluid_inputs: Vec<_> = data_store
+                                                    .recipe_to_items[&id.recipe]
+                                                    .iter()
+                                                    .filter_map(|(dir, item)| {
+                                                        (*dir == ItemRecipeDir::Ing
+                                                            && data_store.item_is_fluid
+                                                                [item.into_usize()])
+                                                        .then_some(*item)
+                                                    })
+                                                    .collect();
+                                                let recipe_fluid_outputs: Vec<_> = data_store
+                                                    .recipe_to_items[&id.recipe]
+                                                    .iter()
+                                                    .filter_map(|(dir, item)| {
+                                                        (*dir == ItemRecipeDir::Out
+                                                            && data_store.item_is_fluid
+                                                                [item.into_usize()])
+                                                        .then_some(*item)
+                                                    })
+                                                    .collect();
+
+                                                let fluid_pure_outputs: Vec<_> = data_store
+                                                    .assembler_info[usize::from(*assembler_ty)]
+                                                .fluid_connections
+                                                .iter()
+                                                .filter(|(_conn, allowed)| {
+                                                    *allowed
+                                                        == AllowedFluidDirection::Single(
+                                                            ItemRecipeDir::Out,
+                                                        )
+                                                        || matches!(
+                                                            *allowed,
+                                                            AllowedFluidDirection::Both { .. }
+                                                        )
+                                                })
+                                                .collect();
+
+                                                let fluid_pure_inputs: Vec<_> = data_store
+                                                    .assembler_info[usize::from(*assembler_ty)]
+                                                .fluid_connections
+                                                .iter()
+                                                .filter(|(_conn, allowed)| {
+                                                    *allowed
+                                                        == AllowedFluidDirection::Single(
+                                                            ItemRecipeDir::Ing,
+                                                        )
+                                                        || matches!(
+                                                            *allowed,
+                                                            AllowedFluidDirection::Both { .. }
+                                                        )
+                                                })
+                                                .collect();
+
+                                                // FIXME: FINISH IMPLEMENTING THIS
+
+                                                let all_connections_with_items =
+                                                    recipe_fluid_inputs
+                                                        .into_iter()
+                                                        .cycle()
+                                                        .zip(fluid_pure_inputs)
+                                                        .zip(iter::repeat(
+                                                            FluidConnectionDir::Output,
+                                                        ))
+                                                        .chain(
+                                                            recipe_fluid_outputs
+                                                                .into_iter()
+                                                                .cycle()
+                                                                .zip(fluid_pure_outputs)
+                                                                .zip(iter::repeat(
+                                                                    FluidConnectionDir::Input,
+                                                                )),
+                                                        );
+
+                                                Some(all_connections_with_items.filter_map(
                                             move |((item, (fluid_conn, _allowed)), fluid_dir)| {
                                                 can_fluid_tanks_connect_to_single_connection(
                                                     pos,
@@ -1655,117 +1735,124 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                 })
                                             },
                                         ))
-                                    },
-                                    Entity::Lab {
+                                            },
+                                            Entity::Lab {
+                                                pos,
+                                                ty,
+                                                modules,
+                                                pole_position,
+                                            } => {
+                                                // TODO: Do I want to support fluid science? Would be really easy
+                                                None
+                                            },
+
+                                            // TODO: There are some future entities which might need connections like mining drills
+                                            _ => None,
+                                        })
+                                        .flatten();
+
+                                // TODO: Only keep the closest connection for each connection
+                                // connecting_fluid_box_positions.retain(
+                                //     |(dest_pos, conn_dir_of_destination)| {
+                                //         let mut current_pos = *dest_pos;
+
+                                //         loop {
+                                //             if current_pos.contained_in(pos, size.into()) {
+                                //                 return true;
+                                //             }
+
+                                //             if let Some(e) = self
+                                //                 .world
+                                //                 .get_entities_colliding_with(
+                                //                     current_pos,
+                                //                     (1, 1),
+                                //                     data_store,
+                                //                 )
+                                //                 .into_iter()
+                                //                 .next()
+                                //             {
+                                //                 match e {
+                                //                     Entity::FluidTank {
+                                //                         ty: found_ty,
+                                //                         pos: found_pos,
+                                //                         rotation: found_rotation,
+                                //                     } => {
+                                //                         if can_fluid_tanks_connect(
+                                //                             pos,
+                                //                             ty,
+                                //                             rotation,
+                                //                             *found_pos,
+                                //                             *found_ty,
+                                //                             *found_rotation,
+                                //                             data_store,
+                                //                         )
+                                //                         .is_some()
+                                //                         {
+                                //                             // The underground should connect with the found fluid tank instead
+                                //                             return false;
+                                //                         }
+                                //                     },
+                                //                     Entity::Assembler { ty: found_ty, pos: found_pos, modules: found_modules, info: found_info } => {
+                                //                         for conn in data_store.assembler_info[usize::from(*found_ty)].fluid_connections {
+                                //                             if can_fluid_tanks_connect_to_single_connection(pos, ty, rotation, *found_pos, conn.0, Dir::North, data_store.assembler_info[usize::from(*found_ty)].size.into(), data_store).is_some() {
+                                //                                 // The underground should connect with the found machine instead
+                                //                                 return false;
+                                //                             }
+                                //                         }
+                                //                     }
+                                //                     _ => {},
+                                //                 }
+                                //             }
+
+                                //             current_pos = current_pos + *conn_dir_of_destination;
+                                //         }
+                                //     },
+                                // );
+
+                                // TODO: Check if us connecting might break any already existing connections
+
+                                let ret =
+                                    self.simulation_state.factory.fluid_store.try_add_fluid_box(
                                         pos,
-                                        ty,
-                                        modules,
-                                        pole_position,
-                                    } => {
-                                        // TODO: Do I want to support fluid science? Would be really easy
-                                        None
-                                    },
-
-                                    // TODO: There are some future entities which might need connections like mining drills
-                                    _ => None,
-                                })
-                                .flatten();
-
-                            // TODO: Only keep the closest connection for each connection
-                            // connecting_fluid_box_positions.retain(
-                            //     |(dest_pos, conn_dir_of_destination)| {
-                            //         let mut current_pos = *dest_pos;
-
-                            //         loop {
-                            //             if current_pos.contained_in(pos, size.into()) {
-                            //                 return true;
-                            //             }
-
-                            //             if let Some(e) = self
-                            //                 .world
-                            //                 .get_entities_colliding_with(
-                            //                     current_pos,
-                            //                     (1, 1),
-                            //                     data_store,
-                            //                 )
-                            //                 .into_iter()
-                            //                 .next()
-                            //             {
-                            //                 match e {
-                            //                     Entity::FluidTank {
-                            //                         ty: found_ty,
-                            //                         pos: found_pos,
-                            //                         rotation: found_rotation,
-                            //                     } => {
-                            //                         if can_fluid_tanks_connect(
-                            //                             pos,
-                            //                             ty,
-                            //                             rotation,
-                            //                             *found_pos,
-                            //                             *found_ty,
-                            //                             *found_rotation,
-                            //                             data_store,
-                            //                         )
-                            //                         .is_some()
-                            //                         {
-                            //                             // The underground should connect with the found fluid tank instead
-                            //                             return false;
-                            //                         }
-                            //                     },
-                            //                     Entity::Assembler { ty: found_ty, pos: found_pos, modules: found_modules, info: found_info } => {
-                            //                         for conn in data_store.assembler_info[usize::from(*found_ty)].fluid_connections {
-                            //                             if can_fluid_tanks_connect_to_single_connection(pos, ty, rotation, *found_pos, conn.0, Dir::North, data_store.assembler_info[usize::from(*found_ty)].size.into(), data_store).is_some() {
-                            //                                 // The underground should connect with the found machine instead
-                            //                                 return false;
-                            //                             }
-                            //                         }
-                            //                     }
-                            //                     _ => {},
-                            //                 }
-                            //             }
-
-                            //             current_pos = current_pos + *conn_dir_of_destination;
-                            //         }
-                            //     },
-                            // );
-
-                            // TODO: Check if us connecting might break any already existing connections
-
-                            let ret = self.simulation_state.factory.fluid_store.try_add_fluid_box(
-                                pos,
-                                data_store.fluid_tank_infos[usize::from(ty)].capacity,
-                                connecting_fluid_box_positions.iter().map(|v| v.0),
-                                in_out_connections,
-                                &mut self.simulation_state.factory.chests,
-                                &mut self.simulation_state.factory.storage_storage_inserters,
-                                data_store,
-                            );
-                            match ret {
-                                Ok(id) => {
-                                    self.world.add_entity(
-                                        Entity::FluidTank { pos, ty, rotation },
-                                        &mut self.simulation_state,
+                                        data_store.fluid_tank_infos[usize::from(ty)].capacity,
+                                        connecting_fluid_box_positions.iter().map(|v| v.0),
+                                        in_out_connections,
+                                        &mut self.simulation_state.factory.chests,
+                                        &mut self
+                                            .simulation_state
+                                            .factory
+                                            .storage_storage_inserters,
                                         data_store,
                                     );
-                                },
-                                Err(CannotMixFluidsError { items: [a, b] }) => {
-                                    warn!(
-                                        "Cannot connect systems containing {} and {}",
-                                        data_store.item_display_names[a.into_usize()],
-                                        data_store.item_display_names[b.into_usize()]
-                                    )
-                                },
-                            }
+                                match ret {
+                                    Ok(id) => {
+                                        self.world.add_entity(
+                                            Entity::FluidTank { pos, ty, rotation },
+                                            &mut self.simulation_state,
+                                            data_store,
+                                        );
+                                    },
+                                    Err(CannotMixFluidsError { items: [a, b] }) => {
+                                        warn!(
+                                            "Cannot connect systems containing {} and {}",
+                                            data_store.item_display_names[a.into_usize()],
+                                            data_store.item_display_names[b.into_usize()]
+                                        )
+                                    },
+                                }
+                            },
+                            crate::frontend::world::tile::PlaceEntityType::MiningDrill {
+                                ty,
+                                pos,
+                                rotation,
+                            } => todo!("Place Mining Drill"),
                         },
-                        crate::frontend::world::tile::PlaceEntityType::MiningDrill {
-                            ty,
-                            pos,
-                            rotation,
-                        } => todo!("Place Mining Drill"),
-                    },
-                    crate::frontend::action::place_entity::EntityPlaceOptions::Multiple(vec) => {
-                        todo!()
-                    },
+                        crate::frontend::action::place_entity::EntityPlaceOptions::Multiple(
+                            vec,
+                        ) => {
+                            todo!()
+                        },
+                    }
                 },
                 ActionType::Position(id, pos) => {
                     self.world.players[usize::from(id)].visible = true;

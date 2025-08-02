@@ -197,6 +197,8 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                             .iter()
                             .position(Option::is_none);
 
+                        let fluid_box_positions = network.graph.keys().copied().collect_vec();
+
                         let index = if let Some(hole_idx) = index {
                             assert!(
                                 self.fluid_systems_with_fluid[fluid.into_usize()][hole_idx]
@@ -215,10 +217,18 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                             index,
                         };
 
-                        for rhs in self.fluid_box_pos_to_network_id.values_mut() {
-                            if *rhs == network_to_join_into {
-                                *rhs = new_id;
-                            }
+                        for box_pos in fluid_box_positions {
+                            assert_eq!(
+                                self.fluid_box_pos_to_network_id
+                                    .insert(box_pos, new_id)
+                                    .unwrap(),
+                                network_to_join_into
+                            );
+                            debug_assert!(
+                                self.fluid_box_pos_to_network_id
+                                    .values()
+                                    .all(|v| *v != network_to_join_into)
+                            );
                         }
 
                         (
@@ -662,6 +672,8 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                     data_store,
                 );
 
+                let fluid_box_positions = removed.graph.keys().copied().collect_vec();
+
                 let new_idx = self.fluid_systems_with_fluid[conn_fluid.into_usize()]
                     .iter()
                     .position(Option::is_none);
@@ -680,10 +692,18 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                     index: new_idx,
                 };
 
-                for pos_id in self.fluid_box_pos_to_network_id.values_mut() {
-                    if *pos_id == removed_id {
-                        *pos_id = new_id;
-                    }
+                for box_pos in fluid_box_positions {
+                    assert_eq!(
+                        self.fluid_box_pos_to_network_id
+                            .insert(box_pos, new_id)
+                            .unwrap(),
+                        removed_id
+                    );
+                    debug_assert!(
+                        self.fluid_box_pos_to_network_id
+                            .values()
+                            .all(|v| *v != removed_id)
+                    );
                 }
 
                 Ok(weak_index)
@@ -736,6 +756,8 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                     data_store,
                 );
 
+                let fluid_box_positions = removed.graph.keys().copied().collect_vec();
+
                 let new_idx = self.fluid_systems_with_fluid[conn_fluid.into_usize()]
                     .iter()
                     .position(Option::is_none);
@@ -754,10 +776,18 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                     index: new_idx,
                 };
 
-                for pos_id in self.fluid_box_pos_to_network_id.values_mut() {
-                    if *pos_id == removed_id {
-                        *pos_id = new_id;
-                    }
+                for box_pos in fluid_box_positions {
+                    assert_eq!(
+                        self.fluid_box_pos_to_network_id
+                            .insert(box_pos, new_id)
+                            .unwrap(),
+                        removed_id
+                    );
+                    debug_assert!(
+                        self.fluid_box_pos_to_network_id
+                            .values()
+                            .all(|v| *v != removed_id)
+                    );
                 }
 
                 Ok(weak_index)
@@ -805,8 +835,17 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                 self.fluid_box_pos_to_network_id[box_pos_in_removed],
                 removed_id
             );
-            self.fluid_box_pos_to_network_id
-                .insert(*box_pos_in_removed, kept_id);
+            assert_eq!(
+                self.fluid_box_pos_to_network_id
+                    .insert(*box_pos_in_removed, kept_id)
+                    .unwrap(),
+                removed_id
+            );
+            debug_assert!(
+                self.fluid_box_pos_to_network_id
+                    .values()
+                    .all(|v| *v != removed_id)
+            );
         }
 
         match kept_id.fluid {
@@ -834,12 +873,6 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                     inserter_store,
                     data_store,
                 ),
-        }
-
-        for rhs in self.fluid_box_pos_to_network_id.values_mut() {
-            if *rhs == removed_id {
-                *rhs = kept_id;
-            }
         }
     }
 }
@@ -945,7 +978,6 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                             new_storage,
                             data_store,
                         );
-                        dbg!(inserter_id);
                     }
                 },
                 FluidSystemEntity::Output {

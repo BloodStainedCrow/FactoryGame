@@ -968,13 +968,18 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
         id: BeltId<ItemIdxType>,
         amount: BeltLenType,
         side: Side,
-    ) -> BeltLenType {
-        todo!()
+    ) -> (Vec<(Item<ItemIdxType>, u32)>, BeltLenType) {
+        self.get_smart_mut(id).remove_length(amount, side)
     }
 
     /// Returns the new length of the belt
-    fn remove_length_sushi(&mut self, id: usize, amount: BeltLenType, side: Side) -> BeltLenType {
-        todo!()
+    fn remove_length_sushi(
+        &mut self,
+        id: usize,
+        amount: BeltLenType,
+        side: Side,
+    ) -> (Vec<(Item<ItemIdxType>, u32)>, BeltLenType) {
+        self.get_sushi_mut(id).remove_length(amount, side)
     }
 
     // TODO: What does this return?
@@ -2051,11 +2056,40 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         ]
     }
 
-    pub fn add_length(&mut self, belt: BeltTileId<ItemIdxType>, amount: u16, side: Side) -> u16 {
+    pub fn add_length(
+        &mut self,
+        belt: BeltTileId<ItemIdxType>,
+        amount: BeltLenType,
+        side: Side,
+    ) -> BeltLenType {
         match belt {
             BeltTileId::AnyBelt(index, _) => match self.any_belts[index] {
                 AnyBelt::Smart(belt_id) => self.inner.add_length_smart(belt_id, amount, side),
                 AnyBelt::Sushi(id) => self.inner.add_length_sushi(id, amount, side),
+            },
+        }
+    }
+
+    pub fn remove_length(
+        &mut self,
+        belt: BeltTileId<ItemIdxType>,
+        amount: BeltLenType,
+        side: Side,
+    ) -> (Vec<(Item<ItemIdxType>, u32)>, BeltLenType) {
+        match belt {
+            BeltTileId::AnyBelt(index, _) => {
+                let (removed_items, new_len) = match self.any_belts[index] {
+                    AnyBelt::Smart(belt_id) => {
+                        self.inner.remove_length_smart(belt_id, amount, side)
+                    },
+                    AnyBelt::Sushi(id) => self.inner.remove_length_sushi(id, amount, side),
+                };
+                if new_len == 0 {
+                    self.any_belt_holes.push(index);
+                    let node_id = self.belt_graph_lookup.remove(&belt).unwrap();
+                    self.belt_graph.remove_node(*node_id);
+                }
+                (removed_items, new_len)
             },
         }
     }
@@ -2501,6 +2535,30 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         }
     }
 
+    pub fn get_inserter_positions(&self, belt: BeltTileId<ItemIdxType>) -> Vec<BeltLenType> {
+        match belt {
+            BeltTileId::AnyBelt(idx, _) => match self.any_belts[idx] {
+                AnyBelt::Smart(belt_id) => (0..self.inner.smart_belts[belt_id.item.into_usize()]
+                    .belts[belt_id.index as usize]
+                    .get_len())
+                    .filter_map(|pos| {
+                        self.inner.smart_belts[belt_id.item.into_usize()].belts
+                            [belt_id.index as usize]
+                            .get_inserter_info_at(pos)
+                            .map(|_| pos)
+                    })
+                    .collect(),
+                AnyBelt::Sushi(index) => (0..self.inner.sushi_belts[index].get_len())
+                    .filter_map(|pos| {
+                        self.inner.sushi_belts[index]
+                            .get_inserter_info_at(pos)
+                            .map(|_| pos)
+                    })
+                    .collect(),
+            },
+        }
+    }
+
     pub fn get_inserter_item(
         &self,
         belt: BeltTileId<ItemIdxType>,
@@ -2741,7 +2799,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         // self.merge_and_fix(front_tile_id, back_tile_id);
 
         if front_tile_id == back_tile_id {
-            // Make them cicular
+            // Make them circular
             match front_tile_id {
                 BeltTileId::AnyBelt(idx, _) => match self.any_belts[idx] {
                     AnyBelt::Smart(belt_id) => self.inner.merge_smart_belts(belt_id, belt_id),

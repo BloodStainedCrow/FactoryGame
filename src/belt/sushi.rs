@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::{iter::repeat, mem};
 
 use itertools::Itertools;
@@ -477,6 +478,10 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             return None;
         }
 
+        if belt_pos_to_break_at == 0 || belt_pos_to_break_at == self.get_len() {
+            return None;
+        }
+
         let mut new_locs = None;
         take_mut::take(&mut self.locs, |locs| {
             let mut locs_vec = locs.into_vec();
@@ -503,16 +508,20 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
 
         let mut current_pos = 0;
 
-        let split_at_inserters = loop {
+        let (split_at_inserters, new_offs) = loop {
             let Some((i, next_offset)) = offsets.next() else {
-                break self.inserters.offsets.len();
+                break (self.inserters.offsets.len(), 0);
             };
 
+            // Skip next_offset spots
             current_pos += next_offset;
 
             if current_pos >= belt_pos_to_break_at {
-                break i;
+                break (i, current_pos - belt_pos_to_break_at);
             }
+
+            // The spot, the inserter corresponding to this offset is placed
+            current_pos += 1;
         };
 
         let mut new_inserters = None;
@@ -531,7 +540,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         let mut new_offsets = new_offsets.unwrap();
 
         if let Some(offs) = new_offsets.get_mut(0) {
-            *offs -= belt_pos_to_break_at
+            *offs = new_offs;
         }
 
         // Since self will end up as the front half, any inputting splitter will end up at the back belt
@@ -781,6 +790,9 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
     }
 
     fn update(&mut self, splitter_list: &[SushiSplitter<ItemIdxType>]) {
+        if self.locs.len() == 0 {
+            return;
+        }
         if self.is_circular {
             self.zero_index += 1;
             return;
@@ -869,7 +881,12 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
 
         let (end_slice, start_slice) = slice.split_at_mut(self.zero_index.into());
 
-        if self.zero_index + first_free_index_real >= len {
+        // Prevent this addition from overflowing
+        if u32::from(self.zero_index)
+            .checked_add(u32::from(first_free_index_real))
+            .unwrap()
+            >= u32::from(len)
+        {
             // We have two stuck and one moving slice
             let (middle_stuck_slice, moving_slice) =
                 end_slice.split_at_mut(((self.zero_index + first_free_index_real) % len).into());
@@ -976,6 +993,94 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
     fn item_hint(&self) -> Option<Vec<Item<ItemIdxType>>> {
         // TODO: Maybe Return something here
         None
+    }
+
+    fn remove_length(
+        &mut self,
+        amount: BeltLenType,
+        side: Side,
+    ) -> (Vec<(Item<ItemIdxType>, u32)>, BeltLenType) {
+        if amount == 0 {
+            return (vec![], self.get_len());
+        }
+
+        assert!(!self.is_circular);
+        assert!(amount <= self.get_len());
+
+        self.locs
+            .rotate_left(self.zero_index as usize % self.locs.len());
+        self.zero_index = 0;
+        let mut item_counts = HashMap::default();
+        take_mut::take(&mut self.locs, |locs| {
+            let mut locs = locs.into_vec();
+
+            let removed_items = match side {
+                Side::FRONT => locs.drain(..(amount as usize)),
+                Side::BACK => locs.drain((locs.len() - (amount as usize))..),
+            };
+
+            item_counts = removed_items.flatten().counts();
+
+            locs.into_boxed_slice()
+        });
+
+        let kept_range = match side {
+            Side::FRONT => (amount..(self.get_len() + amount)),
+            Side::BACK => (0..self.get_len()),
+        };
+
+        let mut pos_after_last_inserter = 0;
+        let mut pos_after_last_removed_inserter = 0;
+
+        take_mut::take(&mut self.inserters.offsets, |offsets| {
+            let mut offsets = offsets.into_vec();
+
+            offsets.retain(|offset| {
+                let next_inserter_pos = pos_after_last_inserter + offset;
+                pos_after_last_inserter = next_inserter_pos + 1;
+
+                if !kept_range.contains(&next_inserter_pos) {
+                    // FIXME: This is awful, but it should work
+                    take_mut::take(&mut self.inserters.inserters, |ins| {
+                        let mut ins = ins.into_vec();
+
+                        match side {
+                            Side::FRONT => {
+                                ins.remove(0);
+                            },
+                            Side::BACK => {
+                                ins.pop();
+                            },
+                        }
+
+                        ins.into_boxed_slice()
+                    });
+                    pos_after_last_removed_inserter = pos_after_last_inserter;
+                    false
+                } else {
+                    true
+                }
+            });
+
+            offsets.into_boxed_slice()
+        });
+
+        if side == Side::FRONT {
+            if let Some(offs) = self.inserters.offsets.first_mut() {
+                *offs -= (amount - pos_after_last_removed_inserter);
+            }
+        }
+
+        self.first_free_index = FreeIndex::OldFreeIndex(0);
+
+        (
+            item_counts
+                .into_iter()
+                .sorted_by_key(|(k, _)| *k)
+                .map(|(k, v)| (k, v.try_into().unwrap()))
+                .collect_vec(),
+            self.get_len(),
+        )
     }
 
     fn add_length(&mut self, amount: BeltLenType, side: super::smart::Side) -> BeltLenType {

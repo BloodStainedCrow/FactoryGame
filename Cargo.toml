@@ -89,8 +89,6 @@ strip = false
 
 [profile.release-with-debug-asserts]
 inherits = "release"
-debug = true
-strip = false
 debug-assertions = true
 
 [profile.fast-compile]

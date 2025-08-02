@@ -35,7 +35,7 @@ use eframe::egui::{
     self, Align2, Color32, ComboBox, Context, CornerRadius, Label, Layout, ProgressBar, Stroke, Ui,
     Window,
 };
-use egui::{Button, Modal, RichText, ScrollArea, Sense};
+use egui::{Button, CollapsingHeader, Modal, RichText, ScrollArea, Sense};
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
 use egui_show_info::ShowInfo;
@@ -1814,6 +1814,15 @@ pub fn render_ui<
 
                 ui.text_edit_multiline(&mut graph);
             }
+
+            CollapsingHeader::new("BeltStore")
+                .default_open(false)
+                .show(ui, |ui| {
+                    ui.code_editor(&mut format!(
+                        "{:?}",
+                        game_state_ref.simulation_state.factory.belts
+                    ));
+                });
         });
 
     Window::new("UPS").default_open(false).show(ctx, |ui| {

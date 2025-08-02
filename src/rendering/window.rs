@@ -174,8 +174,9 @@ impl winit::application::ApplicationHandler for App {
                 button,
             } => {
                 let input = match (state, button) {
-                    (ElementState::Pressed, MouseButton::Left) => {
-                        Input::LeftClickPressed { shift: false }
+                    (ElementState::Pressed, MouseButton::Left) => Input::LeftClickPressed {
+                        shift: false,
+                        ctrl: false,
                     },
                     (ElementState::Released, MouseButton::Left) => Input::LeftClickReleased,
                     (ElementState::Pressed, MouseButton::Right) => {

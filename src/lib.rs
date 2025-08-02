@@ -39,6 +39,12 @@ use rendering::{
     eframe_app,
     window::{LoadedGame, LoadedGameSized},
 };
+
+use log::info;
+
+#[cfg(not(feature = "client"))]
+use directories::ProjectDirs;
+
 use saving::{load, load_readable};
 use simple_logger::SimpleLogger;
 use std::path::PathBuf;
@@ -157,7 +163,15 @@ pub fn main() -> Result<(), ()> {
 
     #[cfg(not(feature = "client"))]
     {
-        run_dedicated_server(StartGameInfo::Load("".try_into().unwrap()));
+        info!("Running Dedicated server!");
+        // let dir = ProjectDirs::from("de", "aschhoff", "factory_game").expect("No Home path found");
+        // let save_file_dir = dir.data_dir().join("save.save");
+        // run_dedicated_server(StartGameInfo::Load(save_file_dir));
+        run_dedicated_server(StartGameInfo::Load(
+            "/home/tim/.local/share/factory_game/save.save"
+                .try_into()
+                .unwrap(),
+        ));
     }
 }
 

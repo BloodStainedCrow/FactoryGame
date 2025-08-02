@@ -60,6 +60,10 @@ pub enum ActionType<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         tech: Technology,
     },
 
+    CheatRelockTechnology {
+        tech: Technology,
+    },
+
     Ping(Position),
 }
 
@@ -95,6 +99,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, Rec
             ActionType::Remove(position) => Some(*position),
             ActionType::SetActiveResearch { .. } => None,
             ActionType::CheatUnlockTechnology { .. } => None,
+            ActionType::CheatRelockTechnology { .. } => None,
             ActionType::Ping(position) => Some(*position),
         }
     }
@@ -162,6 +167,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, Rec
             ActionType::Remove(_) => None,
             ActionType::SetActiveResearch { .. } => None,
             ActionType::CheatUnlockTechnology { .. } => None,
+            ActionType::CheatRelockTechnology { .. } => None,
             ActionType::Ping(_) => None,
         }
     }
@@ -185,6 +191,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, Rec
             ActionType::Remove(position) => Some([1, 1]),
             ActionType::SetActiveResearch { .. } => None,
             ActionType::CheatUnlockTechnology { .. } => None,
+            ActionType::CheatRelockTechnology { .. } => None,
             ActionType::Ping(position) => None,
         })
     }

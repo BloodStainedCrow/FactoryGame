@@ -5,7 +5,7 @@ use winit::keyboard::KeyCode;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Input {
-    LeftClickPressed { shift: bool },
+    LeftClickPressed { shift: bool, ctrl: bool },
     LeftClickReleased,
     RightClickPressed { shift: bool },
     RightClickReleased,
@@ -73,6 +73,7 @@ impl TryFrom<egui::Event> for Input {
             } => match (pressed, button) {
                 (true, eframe::egui::PointerButton::Primary) => Ok(Input::LeftClickPressed {
                     shift: modifiers.shift,
+                    ctrl: modifiers.ctrl,
                 }),
                 (true, eframe::egui::PointerButton::Secondary) => Ok(Input::RightClickPressed {
                     shift: modifiers.shift,

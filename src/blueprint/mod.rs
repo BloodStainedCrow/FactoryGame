@@ -1,4 +1,4 @@
-use log::error;
+use log::{error, info};
 use proptest::{
     prelude::{Just, Strategy, prop},
     prop_oneof,
@@ -265,12 +265,14 @@ impl BlueprintAction {
             ActionType::Remove(_) => unimplemented!(),
             ActionType::SetActiveResearch { .. } => unimplemented!(),
             ActionType::CheatUnlockTechnology { .. } => unimplemented!(),
+            ActionType::CheatRelockTechnology { .. } => unimplemented!(),
             ActionType::Ping(_) => unimplemented!(),
         }
     }
 
     fn try_into_real_action<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &self,
+        force: bool,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Result<ActionType<ItemIdxType, RecipeIdxType>, ()> {
         let action = match self {
@@ -419,6 +421,7 @@ impl BlueprintAction {
                 };
 
                 ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities: EntityPlaceOptions::Single(entity),
                 })
             },
@@ -465,6 +468,70 @@ impl BlueprintAction {
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxType, RecipeIdxType> {
+    pub fn optimize(mut self) -> Self {
+        info!("Optimizing Blueprint");
+        // self.actions.sort_by(|a, b| match (a, b) {
+        //     (ActionType::Position(_, _), _) | (_, ActionType::Position(_, _)) => unimplemented!(),
+        //     (ActionType::Ping(_), _) | (_, ActionType::Ping(_)) => unimplemented!(),
+        //     (ActionType::Remove(_), _) | (_, ActionType::Remove(_)) => unimplemented!(),
+        //     (ActionType::RemoveModules { .. }, _) | (_, ActionType::RemoveModules { .. }) => {
+        //         unimplemented!()
+        //     },
+        //     (ActionType::SetActiveResearch { .. }, _)
+        //     | (_, ActionType::SetActiveResearch { .. }) => unimplemented!(),
+        //     (ActionType::CheatUnlockTechnology { .. }, _)
+        //     | (_, ActionType::CheatUnlockTechnology { .. }) => unimplemented!(),
+        //     (ActionType::CheatRelockTechnology { .. }, _)
+        //     | (_, ActionType::CheatRelockTechnology { .. }) => unimplemented!(),
+        //     (ActionType::PlaceFloorTile(a), ActionType::PlaceFloorTile(b)) => {
+        //         std::cmp::Ordering::Equal
+        //     },
+        //     (ActionType::PlaceFloorTile(_), _) => std::cmp::Ordering::Less,
+        //     (_, ActionType::PlaceFloorTile(_)) => std::cmp::Ordering::Greater,
+        //     (
+        //         ActionType::PlaceEntity(PlaceEntityInfo {
+        //             entities: EntityPlaceOptions::Single(a),
+        //             ..
+        //         }),
+        //         ActionType::PlaceEntity(PlaceEntityInfo {
+        //             entities: EntityPlaceOptions::Single(b),
+        //             ..
+        //         }),
+        //     ) => a.order_for_optimization(b),
+        // });
+
+        self.actions.sort_by_key(|v| match v {
+            ActionType::PlaceFloorTile(_) => (0, 0, v.get_pos(), 0),
+
+            ActionType::PlaceEntity(PlaceEntityInfo {
+                entities: EntityPlaceOptions::Single(e),
+                ..
+            }) => match e {
+                PlaceEntityType::Assembler { .. } => (1, 3, v.get_pos(), 0),
+                PlaceEntityType::Inserter { .. } => (1, 5, v.get_pos(), 0),
+                PlaceEntityType::Belt { .. } => (1, 4, v.get_pos(), 0),
+                PlaceEntityType::Underground { .. } => (1, 4, v.get_pos(), 0),
+                PlaceEntityType::PowerPole { .. } => (1, 0, v.get_pos(), 0),
+                PlaceEntityType::Splitter { .. } => (1, 4, v.get_pos(), 0),
+                PlaceEntityType::Chest { .. } => (1, 3, v.get_pos(), 0),
+                PlaceEntityType::SolarPanel { .. } => (1, 1, v.get_pos(), 0),
+                PlaceEntityType::Lab { .. } => (1, 3, v.get_pos(), 0),
+                PlaceEntityType::Beacon { .. } => (1, 3, v.get_pos(), 0),
+                PlaceEntityType::FluidTank { .. } => (1, 4, v.get_pos(), 0),
+                PlaceEntityType::MiningDrill { .. } => (1, 3, v.get_pos(), 0),
+            },
+            ActionType::SetRecipe(_) => (1, 3, v.get_pos(), 1),
+            ActionType::OverrideInserterMovetime { .. } => (1, 5, v.get_pos(), 1),
+            ActionType::AddModules { .. } => (1, 3, v.get_pos(), 1),
+            ActionType::SetChestSlotLimit { .. } => (1, 3, v.get_pos(), 1),
+
+            _ => unimplemented!(),
+        });
+
+        info!("Done Optimizing Blueprint");
+        self
+    }
+
     pub fn apply(
         &self,
         base_pos: Position,
@@ -502,8 +569,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     player,
                 }),
                 ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler { pos, ty, rotation }),
                 }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler {
                         pos: Position {
                             x: base_pos.x + pos.x,
@@ -514,9 +583,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     }),
                 }),
                 ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities:
                         EntityPlaceOptions::Single(PlaceEntityType::Belt { pos, direction, ty }),
                 }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities: EntityPlaceOptions::Single(PlaceEntityType::Belt {
                         pos: Position {
                             x: base_pos.x + pos.x,
@@ -527,6 +598,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     }),
                 }),
                 ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities:
                         EntityPlaceOptions::Single(PlaceEntityType::Underground {
                             pos,
@@ -535,6 +607,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                             underground_dir,
                         }),
                 }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities: EntityPlaceOptions::Single(PlaceEntityType::Underground {
                         pos: Position {
                             x: base_pos.x + pos.x,
@@ -546,8 +619,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     }),
                 }),
                 ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities: EntityPlaceOptions::Single(PlaceEntityType::Chest { pos, ty }),
                 }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities: EntityPlaceOptions::Single(PlaceEntityType::Chest {
                         pos: Position {
                             x: base_pos.x + pos.x,
@@ -557,9 +632,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     }),
                 }),
                 ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities:
                         EntityPlaceOptions::Single(PlaceEntityType::Inserter { pos, dir, filter }),
                 }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities: EntityPlaceOptions::Single(PlaceEntityType::Inserter {
                         pos: Position {
                             x: base_pos.x + pos.x,
@@ -570,8 +647,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     }),
                 }),
                 ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities: EntityPlaceOptions::Single(PlaceEntityType::PowerPole { pos, ty }),
                 }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities: EntityPlaceOptions::Single(PlaceEntityType::PowerPole {
                         pos: Position {
                             x: base_pos.x + pos.x,
@@ -581,6 +660,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     }),
                 }),
                 ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities:
                         EntityPlaceOptions::Single(PlaceEntityType::Splitter {
                             pos,
@@ -590,6 +670,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                             out_mode,
                         }),
                 }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities: EntityPlaceOptions::Single(PlaceEntityType::Splitter {
                         pos: Position {
                             x: base_pos.x + pos.x,
@@ -602,8 +683,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     }),
                 }),
                 ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities: EntityPlaceOptions::Single(PlaceEntityType::SolarPanel { pos, ty }),
                 }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities: EntityPlaceOptions::Single(PlaceEntityType::SolarPanel {
                         pos: Position {
                             x: base_pos.x + pos.x,
@@ -613,8 +696,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     }),
                 }),
                 ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities: EntityPlaceOptions::Single(PlaceEntityType::Lab { pos, ty }),
                 }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities: EntityPlaceOptions::Single(PlaceEntityType::Lab {
                         pos: Position {
                             x: base_pos.x + pos.x,
@@ -624,8 +709,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     }),
                 }),
                 ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities: EntityPlaceOptions::Single(PlaceEntityType::Beacon { pos, ty }),
                 }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities: EntityPlaceOptions::Single(PlaceEntityType::Beacon {
                         pos: Position {
                             x: base_pos.x + pos.x,
@@ -635,8 +722,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     }),
                 }),
                 ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities: EntityPlaceOptions::Single(PlaceEntityType::FluidTank { pos, ty, rotation }),
                 }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                    force,
                     entities: EntityPlaceOptions::Single(PlaceEntityType::FluidTank {
                         pos: Position {
                             x: base_pos.x + pos.x,
@@ -690,6 +779,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
 impl Blueprint {
     pub fn get_reusable<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &self,
+        force: bool,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> ReusableBlueprint<ItemIdxType, RecipeIdxType> {
         ReusableBlueprint {
@@ -697,7 +787,7 @@ impl Blueprint {
                 .actions
                 .iter()
                 .map(|bp_action| {
-                    bp_action.try_into_real_action(data_store).expect(
+                    bp_action.try_into_real_action(force, data_store).expect(
                         format!("Action not possible with current mod set: {:?}", bp_action)
                             .as_str(),
                     )
@@ -708,11 +798,12 @@ impl Blueprint {
 
     pub fn apply<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &self,
+        force: bool,
         base_pos: Position,
         game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        let reusable = self.get_reusable(data_store);
+        let reusable = self.get_reusable(force, data_store);
         game_state.apply_actions(reusable.actions_with_base_pos(base_pos), data_store);
     }
 
@@ -766,6 +857,7 @@ impl Blueprint {
         // FIXME: This could be unreproducable if the power connection order matters
         // FIXME: This will underflow if a entity extends past the edge of the selected area
         for e in entities {
+            let force = false;
             let actions = match e {
                 crate::frontend::world::tile::Entity::Assembler {
                     ty,
@@ -775,6 +867,7 @@ impl Blueprint {
                     rotation,
                 } => vec![
                     ActionType::PlaceEntity(PlaceEntityInfo {
+                        force,
                         entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler {
                             pos: Position {
                                 x: pos.x - base_pos.x,
@@ -805,6 +898,7 @@ impl Blueprint {
                     rotation,
                 } => vec![
                     ActionType::PlaceEntity(PlaceEntityInfo {
+                        force,
                         entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler {
                             pos: Position {
                                 x: pos.x - base_pos.x,
@@ -831,6 +925,7 @@ impl Blueprint {
                 ],
                 crate::frontend::world::tile::Entity::PowerPole { ty, pos, .. } => {
                     vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                        force,
                         entities: EntityPlaceOptions::Single(PlaceEntityType::PowerPole {
                             pos: Position {
                                 x: pos.x - base_pos.x,
@@ -844,6 +939,7 @@ impl Blueprint {
                     pos, ty, direction, ..
                 } => {
                     vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                        force,
                         entities: EntityPlaceOptions::Single(PlaceEntityType::Belt {
                             pos: Position {
                                 x: pos.x - base_pos.x,
@@ -862,6 +958,7 @@ impl Blueprint {
                     ..
                 } => {
                     vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                        force,
                         entities: EntityPlaceOptions::Single(PlaceEntityType::Underground {
                             pos: Position {
                                 x: pos.x - base_pos.x,
@@ -875,6 +972,7 @@ impl Blueprint {
                 },
                 crate::frontend::world::tile::Entity::Splitter { pos, direction, id } => {
                     vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                        force,
                         entities: EntityPlaceOptions::Single(PlaceEntityType::Splitter {
                             pos: Position {
                                 x: pos.x - base_pos.x,
@@ -895,6 +993,7 @@ impl Blueprint {
                     ..
                 } => {
                     let mut ret = vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                        force,
                         entities: EntityPlaceOptions::Single(PlaceEntityType::Inserter {
                             pos: Position {
                                 x: pos.x - base_pos.x,
@@ -919,6 +1018,7 @@ impl Blueprint {
                 },
                 crate::frontend::world::tile::Entity::Chest { pos, ty, .. } => {
                     vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                        force,
                         entities: EntityPlaceOptions::Single(PlaceEntityType::Chest {
                             pos: Position {
                                 x: pos.x - base_pos.x,
@@ -937,6 +1037,7 @@ impl Blueprint {
                 } => todo!(),
                 crate::frontend::world::tile::Entity::SolarPanel { pos, ty, .. } => {
                     vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                        force,
                         entities: EntityPlaceOptions::Single(PlaceEntityType::SolarPanel {
                             ty: *ty,
                             pos: Position {
@@ -948,6 +1049,7 @@ impl Blueprint {
                 },
                 crate::frontend::world::tile::Entity::Lab { pos, ty, .. } => {
                     vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                        force,
                         entities: EntityPlaceOptions::Single(PlaceEntityType::Lab {
                             ty: *ty,
                             pos: Position {
@@ -962,6 +1064,7 @@ impl Blueprint {
                 } => {
                     vec![
                         ActionType::PlaceEntity(PlaceEntityInfo {
+                            force,
                             entities: EntityPlaceOptions::Single(PlaceEntityType::Beacon {
                                 ty: *ty,
                                 pos: Position {
@@ -981,6 +1084,7 @@ impl Blueprint {
                 },
                 crate::frontend::world::tile::Entity::FluidTank { ty, pos, rotation } => {
                     vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                        force,
                         entities: EntityPlaceOptions::Single(PlaceEntityType::FluidTank {
                             ty: *ty,
                             pos: Position {
@@ -1065,7 +1169,7 @@ impl Blueprint {
     ) {
         for action in self.actions.iter_mut() {
             let e_size: [i32; 2] = action
-                .try_into_real_action(data_store)
+                .try_into_real_action(false, data_store)
                 .unwrap()
                 .get_building_size(data_store)
                 .unwrap_or([1, 1])
@@ -1193,7 +1297,7 @@ impl Blueprint {
         // );
 
         for action in &self.actions {
-            let Ok(action) = action.try_into_real_action(data_store) else {
+            let Ok(action) = action.try_into_real_action(false, data_store) else {
                 error!("Could not draw blueprint!");
                 return;
             };
@@ -1251,6 +1355,7 @@ pub fn random_action<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             .prop_map(|(pos, recipe)| ActionType::SetRecipe(SetRecipeInfo { pos, recipe })),
         random_entity_to_place(data_store).prop_map(|ty| {
             ActionType::PlaceEntity(PlaceEntityInfo {
+                force: false,
                 entities: EntityPlaceOptions::Single(ty),
             })
         }),
@@ -1276,6 +1381,7 @@ pub fn random_blueprint_action<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             .prop_map(|(pos, recipe)| ActionType::SetRecipe(SetRecipeInfo { pos, recipe })),
         random_entity_to_place(data_store).prop_map(|ty| {
             ActionType::PlaceEntity(PlaceEntityInfo {
+                force: false,
                 entities: EntityPlaceOptions::Single(ty),
             })
         }),

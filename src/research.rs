@@ -364,6 +364,16 @@ impl TechState {
                             }),
                         });
                     }
+
+                    if already_researched {
+                        if ui.button("[CHEAT] Undo Technology").clicked() {
+                            ret.push(ActionType::CheatRelockTechnology {
+                                tech: Technology {
+                                    id: selected_node.index().try_into().unwrap(),
+                                },
+                            });
+                        }
+                    }
                 }
             },
         );

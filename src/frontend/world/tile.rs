@@ -12,7 +12,7 @@ use std::{
     ops::{Add, ControlFlow},
 };
 
-use crate::get_size::EnumMap;
+use crate::{frontend::action::belt_placement, get_size::EnumMap};
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
 use enum_map::Enum;
@@ -147,7 +147,7 @@ pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     remaining_updates: Vec<WorldUpdate>,
 
     pub to_instantiate: BTreeSet<Position>,
-    pub to_instantiate_by_belt: HashMap<BeltTileId<ItemIdxType>, Vec<Position>>,
+    pub to_instantiate_by_belt: HashMap<BeltTileId<ItemIdxType>, BTreeSet<Position>>,
 
     #[serde(skip)]
     pub map_updates: Option<Vec<Position>>,
@@ -461,7 +461,7 @@ fn try_instantiating_inserters_for_belt<ItemIdxType: IdxTrait, RecipeIdxType: Id
                 );
             }
 
-            let mut tmp = Vec::default();
+            let mut tmp = BTreeSet::default();
 
             mem::swap(&mut tmp, &mut *by_belt);
 
@@ -511,7 +511,7 @@ fn try_instantiating_inserters_for_belt<ItemIdxType: IdxTrait, RecipeIdxType: Id
                             if belt_id != belt {
                                 let by_belt = world.to_instantiate_by_belt.entry(belt).or_default();
                                 if !by_belt.contains(pos) {
-                                    by_belt.push(*pos);
+                                    by_belt.insert(*pos);
                                 }
                             }
                         }
@@ -597,7 +597,7 @@ fn try_instantiating_all_inserters_cascade<ItemIdxType: IdxTrait, RecipeIdxType:
                         for belt in belts_which_could_help {
                             let by_belt = world.to_instantiate_by_belt.entry(belt).or_default();
                             if !by_belt.contains(pos) {
-                                by_belt.push(*pos);
+                                by_belt.insert(*pos);
                             }
                         }
                         true
@@ -663,7 +663,7 @@ fn instantiate_inserter_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     for belt in belts_which_could_help {
                         let by_belt = world.to_instantiate_by_belt.entry(belt).or_default();
                         if !by_belt.contains(&new_instantiate_pos) {
-                            by_belt.push(new_instantiate_pos);
+                            by_belt.insert(new_instantiate_pos);
                         }
                     }
                 },
@@ -2594,6 +2594,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         belt_pos_earliest: u16,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
+        if old_id == new_id {
+            return;
+        }
+        info!(
+            "Change belt_id at >= {} {:?} to {:?}",
+            belt_pos_earliest, old_id, new_id
+        );
         if belt_pos_earliest != 0 {
             if let Some(waiting) = self.to_instantiate_by_belt.get(&old_id) {
                 let waiting = waiting.clone();
@@ -2604,9 +2611,48 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             }
         }
 
-        let old_chunks = self.belt_lookup.belt_id_to_chunks.remove(&old_id);
+        let old_chunks: BTreeSet<_> = if belt_pos_earliest == 0 {
+            let Some(old_chunks) = self.belt_lookup.belt_id_to_chunks.remove(&old_id) else {
+                debug_assert!(
+                    self.get_chunks()
+                        .flat_map(|chunk| chunk.get_entities())
+                        .all(|e| match e {
+                            Entity::Belt { id, .. } => *id != old_id,
+                            Entity::Underground { id, .. } => *id != old_id,
+                            Entity::Splitter { .. } => {
+                                // Nothing, since a splitter does not stores its belt_ids
+                                true
+                            },
+                            Entity::Inserter { info, .. } => match info {
+                                InserterInfo::NotAttached { .. } => true,
+                                InserterInfo::Attached { info, .. } => match info {
+                                    AttachedInserter::BeltStorage { id, belt_pos } => *id != old_id,
+                                    AttachedInserter::BeltBelt { item, inserter } => {
+                                        // TODO:
+                                        true
+                                    },
+                                    AttachedInserter::StorageStorage { item, inserter } => true,
+                                },
+                            },
+                            _ => true,
+                        })
+                );
+                return;
+            };
+            old_chunks
+        } else {
+            self.belt_lookup
+                .belt_id_to_chunks
+                .get(&old_id)
+                .iter()
+                .flat_map(|v| v.iter())
+                .copied()
+                .collect()
+        };
 
-        for chunk_pos in old_chunks.iter().flatten() {
+        info!("Checking {} chunks to change belt_id", old_chunks.len());
+
+        for chunk_pos in old_chunks.iter().copied() {
             let chunk = self
                 .chunks
                 .get_mut(chunk_pos.0, chunk_pos.1)
@@ -2652,7 +2698,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             .belt_id_to_chunks
             .entry(new_id)
             .or_default()
-            .extend(old_chunks.into_iter().flatten());
+            .extend(old_chunks);
 
         let mut cascading_updates = vec![try_instantiating_inserters_for_belt_cascade(new_id)];
         while let Some(update) = cascading_updates.pop() {
@@ -2667,6 +2713,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         new_id: BeltTileId<ItemIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
+        info!("Change belt_id {:?} to {:?}", old_id, new_id);
         if let Some(waiting) = self.to_instantiate_by_belt.remove(&old_id) {
             self.to_instantiate_by_belt
                 .entry(new_id)
@@ -2677,7 +2724,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         self.update_belt_id_after(sim_state, old_id, new_id, 0, data_store);
     }
 
-    pub fn modify_belt_pos(&mut self, id_to_change: BeltTileId<ItemIdxType>, offs: i16) {
+    pub fn modify_belt_pos(&mut self, id_to_change: BeltTileId<ItemIdxType>, sub: bool, offs: u16) {
         let chunks = self.belt_lookup.belt_id_to_chunks.get(&id_to_change);
 
         for chunk_pos in chunks.into_iter().flatten() {
@@ -2699,9 +2746,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     Entity::Belt { id, belt_pos, .. }
                     | Entity::Underground { id, belt_pos, .. } => {
                         if *id == id_to_change {
-                            *belt_pos = belt_pos
-                                .checked_add_signed(offs)
-                                .expect("belt_pos wrapped!");
+                            if sub {
+                                *belt_pos = belt_pos.checked_sub(offs).expect("belt_pos wrapped!");
+                            } else {
+                                *belt_pos = belt_pos.checked_add(offs).expect("belt_pos wrapped!");
+                            }
                         }
                     },
                     Entity::Splitter { .. } => {},
@@ -2713,9 +2762,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         } => match attached_inserter {
                             AttachedInserter::BeltStorage { id, belt_pos, .. } => {
                                 if *id == id_to_change {
-                                    *belt_pos = belt_pos
-                                        .checked_add_signed(offs)
-                                        .expect("belt_pos wrapped!");
+                                    if sub {
+                                        *belt_pos =
+                                            belt_pos.checked_sub(offs).expect("belt_pos wrapped!");
+                                    } else {
+                                        *belt_pos =
+                                            belt_pos.checked_add(offs).expect("belt_pos wrapped!");
+                                    }
                                 }
                             },
                             AttachedInserter::BeltBelt { item, inserter } => todo!(),
@@ -2724,6 +2777,42 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     },
                 }
             }
+        }
+    }
+
+    pub fn check_inserters(&self, sim_state: &SimulationState<ItemIdxType, RecipeIdxType>) {
+        #[cfg(debug_assertions)]
+        {
+            self.get_chunks()
+                .flat_map(|chunk| chunk.entities.iter())
+                .filter_map(|e| match e {
+                    Entity::Inserter {
+                        info: InserterInfo::Attached { info, .. },
+                        ..
+                    } => Some(*info),
+                    _ => None,
+                })
+                .all(|info| {
+                    match info {
+                        AttachedInserter::BeltStorage { id, belt_pos } => {
+                            let Some(_) = sim_state
+                                .factory
+                                .belts
+                                .get_inserter_info_at(id, belt_pos) else {
+                                    panic!("No inserter at pos {} for belt {:?}, which has inserters at {:?}", belt_pos, id, sim_state
+                                    .factory
+                                    .belts.get_inserter_positions(id));
+                                };
+                        },
+                        AttachedInserter::BeltBelt { item, inserter } => {
+                            // TODO:
+                        },
+                        AttachedInserter::StorageStorage { item, inserter } => {
+                            // TODO:
+                        },
+                    }
+                    true
+                });
         }
     }
 
@@ -3389,7 +3478,25 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     ty,
                     id,
                     belt_pos,
-                } => todo!(),
+                } => {
+                    let pos = *pos;
+                    let direction = *direction;
+
+                    belt_placement::handle_belt_removal(
+                        self, sim_state, *id, *belt_pos, pos, direction, data_store,
+                    );
+                    cascading_updates.push(removal_of_possible_inserter_connection(
+                        pos,
+                        (1, 1),
+                        data_store,
+                    ));
+
+                    let front_pos = pos + direction;
+                    if let Some(inputs) = self.belt_recieving_input_directions.get_mut(&front_pos) {
+                        assert_eq!(inputs[direction.reverse()], true);
+                        inputs[direction.reverse()] = false;
+                    }
+                },
                 Entity::Underground {
                     pos,
                     underground_dir,
@@ -3397,7 +3504,38 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     ty,
                     id,
                     belt_pos,
-                } => todo!(),
+                } => {
+                    let pos = *pos;
+                    let direction = *direction;
+                    let underground_dir = *underground_dir;
+
+                    belt_placement::handle_underground_removal(
+                        self,
+                        sim_state,
+                        *id,
+                        *belt_pos,
+                        pos,
+                        direction,
+                        underground_dir,
+                        *ty,
+                        data_store,
+                    );
+                    cascading_updates.push(removal_of_possible_inserter_connection(
+                        pos,
+                        (1, 1),
+                        data_store,
+                    ));
+
+                    if underground_dir == UndergroundDir::Exit {
+                        let front_pos = pos + direction;
+                        if let Some(inputs) =
+                            self.belt_recieving_input_directions.get_mut(&front_pos)
+                        {
+                            assert_eq!(inputs[direction.reverse()], true);
+                            inputs[direction.reverse()] = false;
+                        }
+                    }
+                },
                 Entity::Splitter { pos, direction, id } => todo!(),
 
                 Entity::Chest {
@@ -4015,6 +4153,12 @@ pub enum PlaceEntityType<ItemIdxType: WeakIdxTrait> {
     },
 }
 
+impl<ItemIdxType: WeakIdxTrait> PlaceEntityType<ItemIdxType> {
+    pub fn order_for_optimization(&self, other: &Self) -> std::cmp::Ordering {
+        todo!()
+    }
+}
+
 impl<ItemIdxType: IdxTrait> PlaceEntityType<ItemIdxType> {
     pub fn cares_about_power(&self) -> bool {
         match self {
@@ -4167,11 +4311,11 @@ mod test {
 
             let mut rep = Replay::new(&state, None, &*DATA_STORE);
 
-            rep.append_actions([ActionType::PlaceEntity(PlaceEntityInfo { entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(ent) })]);
+            rep.append_actions([ActionType::PlaceEntity(PlaceEntityInfo { force: false, entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(ent) })]);
 
             let bp = Blueprint::from_replay(&rep);
 
-            bp.apply(position, &mut state, &DATA_STORE);
+            bp.apply(false, position, &mut state, &DATA_STORE);
 
             let mut e_pos = None;
             let mut e_size = None;

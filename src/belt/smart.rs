@@ -5,6 +5,7 @@ use crate::{
     item::{IdxTrait, Item, WeakIdxTrait},
     storage_list::SingleItemStorages,
 };
+use itertools::Itertools;
 use log::trace;
 use std::mem;
 
@@ -103,7 +104,10 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
     }
 
     fn into_loc_index(&self, pos: BeltLenType) -> usize {
-        usize::from((self.zero_index + pos) % self.get_len())
+        (usize::from(self.zero_index)
+            .checked_add(usize::from(pos))
+            .unwrap())
+            % self.locs.len()
     }
 
     pub(super) fn into_sushi_belt(self) -> SushiBelt<ItemIdxType> {
@@ -348,12 +352,10 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         None
     }
 
-    pub fn remove_inserter(&mut self, pos: BeltLenType) -> FakeUnionStorage {
-        assert!(
-            usize::from(pos) < self.locs.len(),
-            "Bounds check {pos} >= {}",
-            self.locs.len()
-        );
+    pub fn remove_inserter(&mut self, pos: BeltLenType) -> Result<FakeUnionStorage, ()> {
+        if usize::from(pos) >= self.locs.len() {
+            return Err(());
+        }
 
         let mut pos_after_last_inserter = 0;
         let mut i = 0;
@@ -393,10 +395,12 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             *next_offs += removed + 1
         }
 
-        match old_inserter {
+        let id = match old_inserter {
             Inserter::Out(inserter) => inserter.storage_id,
             Inserter::In(inserter) => inserter.storage_id,
-        }
+        };
+
+        Ok(id)
     }
 
     // FIXME: This is horrendously slow. it breaks my tests since they are compiled without optimizations!!!
@@ -544,6 +548,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         storages: SingleItemStorages<'a, 'b>,
         grid_size: usize,
     ) {
+        if self.get_len() == 0 {
+            return;
+        }
         debug_assert_eq!(self.inserters.inserters.len(), self.inserters.offsets.len());
         let mut items_mut_iter = Self::items_mut(&mut self.locs, self.zero_index);
 
@@ -953,6 +960,11 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             self.is_circular = false;
             self.first_free_index = FreeIndex::OldFreeIndex(0);
             self.zero_index = belt_pos_to_break_at;
+            // FIXME: This will teleport items
+            return None;
+        }
+
+        if belt_pos_to_break_at == 0 || belt_pos_to_break_at == self.get_len() {
             return None;
         }
 
@@ -987,11 +999,15 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
                 break (self.inserters.offsets.len(), 0);
             };
 
+            // Skip next_offset spots
             current_pos += next_offset;
 
             if current_pos >= belt_pos_to_break_at {
                 break (i, current_pos - belt_pos_to_break_at);
             }
+
+            // The spot, the inserter corresponding to this offset is placed
+            current_pos += 1;
         };
 
         let mut new_inserters = None;
@@ -1010,7 +1026,6 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         let mut new_offsets = new_offsets.unwrap();
 
         if let Some(offs) = new_offsets.get_mut(0) {
-            // TODO: Make sure this is correct!
             *offs = new_offs;
         }
 
@@ -1115,6 +1130,133 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
         self.get_len()
     }
 
+    fn remove_length(
+        &mut self,
+        amount: BeltLenType,
+        side: Side,
+    ) -> (Vec<(Item<ItemIdxType>, u32)>, BeltLenType) {
+        if amount == 0 {
+            return (vec![], self.get_len());
+        }
+
+        let before_inserter_positions = (0..self.inserters.offsets.len())
+            .map(|i| {
+                let offsets: u16 = self.inserters.offsets[..=i].iter().sum();
+                let occupied_spaces = i;
+                let pos = offsets as usize + occupied_spaces;
+                pos
+            })
+            .collect_vec();
+
+        assert!(!self.is_circular);
+        assert!(amount <= self.get_len());
+
+        self.locs
+            .rotate_left(self.zero_index as usize % self.locs.len());
+        self.zero_index = 0;
+        let mut item_count = 0;
+        take_mut::take(&mut self.locs, |locs| {
+            let mut locs = locs.into_vec();
+
+            let removed_items = match side {
+                Side::FRONT => locs.drain(..(amount as usize)),
+                Side::BACK => locs.drain((locs.len() - (amount as usize))..),
+            };
+
+            item_count = removed_items.filter(|loc| *loc).count() as u32;
+
+            locs.into_boxed_slice()
+        });
+
+        let kept_range = match side {
+            Side::FRONT => (amount..(self.get_len() + amount)),
+            Side::BACK => (0..self.get_len()),
+        };
+
+        let mut pos_after_last_inserter = 0;
+        let mut pos_after_last_removed_inserter = 0;
+
+        take_mut::take(&mut self.inserters.offsets, |offsets| {
+            let mut offsets = offsets.into_vec();
+
+            offsets.retain(|offset| {
+                let next_inserter_pos = pos_after_last_inserter + offset;
+                pos_after_last_inserter = next_inserter_pos + 1;
+
+                if !kept_range.contains(&next_inserter_pos) {
+                    // FIXME: This is awful, but it should work
+                    take_mut::take(&mut self.inserters.inserters, |ins| {
+                        let mut ins = ins.into_vec();
+
+                        match side {
+                            Side::FRONT => {
+                                ins.remove(0);
+                            },
+                            Side::BACK => {
+                                ins.pop();
+                            },
+                        }
+
+                        ins.into_boxed_slice()
+                    });
+                    pos_after_last_removed_inserter = pos_after_last_inserter;
+                    false
+                } else {
+                    true
+                }
+            });
+
+            offsets.into_boxed_slice()
+        });
+
+        assert_eq!(self.inserters.inserters.len(), self.inserters.offsets.len());
+
+        if side == Side::FRONT {
+            if let Some(offs) = self.inserters.offsets.first_mut() {
+                *offs -= (amount - pos_after_last_removed_inserter);
+            }
+        }
+
+        self.first_free_index = FreeIndex::OldFreeIndex(0);
+
+        let after_inserter_positions = (0..self.inserters.offsets.len())
+            .map(|i| {
+                let offsets: u16 = self.inserters.offsets[..=i].iter().sum();
+                let occupied_spaces = i;
+                let pos = offsets as usize + occupied_spaces;
+                pos
+            })
+            .collect_vec();
+
+        match side {
+            Side::FRONT => {
+                for (before, after) in before_inserter_positions
+                    .iter()
+                    .rev()
+                    .zip(after_inserter_positions.iter().rev())
+                {
+                    assert_eq!(
+                        *before - amount as usize,
+                        *after,
+                        "before: {:?}\n after: {:?}",
+                        before_inserter_positions,
+                        after_inserter_positions
+                    );
+                }
+            },
+            Side::BACK => {
+                for (before, after) in before_inserter_positions
+                    .iter()
+                    .zip(after_inserter_positions.iter())
+                {
+                    assert_eq!(before, after);
+                }
+            },
+        }
+
+        (vec![(self.item, item_count)], self.get_len())
+    }
+
     fn try_insert_item(
         &mut self,
         pos: BeltLenType,
@@ -1146,10 +1288,11 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
 
     #[allow(clippy::bool_assert_comparison)]
     fn update(&mut self, splitter_list: &[SushiSplitter<ItemIdxType>]) {
+        if self.locs.len() == 0 {
+            return;
+        }
         if self.is_circular {
-            // Correctness: Since we always % len henever we access using self.zero_index, we do not need to % len here
-            // TODO: This could overflow after usize::MAX ticks which is 9749040289 Years. Should be fine!
-            self.zero_index += 1;
+            self.zero_index = (self.zero_index.checked_add(1).unwrap()) % self.get_len();
             return;
         }
 
@@ -1166,6 +1309,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
                 if splitter_loc.is_none() {
                     *splitter_loc = Some(item);
                     let _ = self.remove_item(0);
+                    assert_eq!(self.first_free_index, FreeIndex::FreeIndex(0));
                 }
             }
         }
@@ -1199,7 +1343,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
             // Correctness: Since we always % len whenever we access using self.zero_index, we do not need to % len here
             // TODO: This could overflow after usize::MAX ticks which is 9749040289 Years. Should be fine!
             self.zero_index %= self.get_len();
-            self.zero_index += 1;
+            self.zero_index = self.zero_index.checked_add(1).unwrap();
             self.last_moving_spot = 0;
             match self.first_free_index {
                 FreeIndex::FreeIndex(0) | FreeIndex::OldFreeIndex(0) => {
@@ -1211,12 +1355,14 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
                 },
                 FreeIndex::FreeIndex(_) => {
                     unreachable!(
-                        "FreeIndex should always point at the earliest known empty spot and we know that index 0 WAS an empty spot"
+                        "FreeIndex should always point at the earliest empty spot and we know that index 0 WAS an empty spot: {:?}",
+                        self.first_free_index
                     )
                 },
                 FreeIndex::OldFreeIndex(_) => {
                     unreachable!(
-                        "OldFreeIndex should always point at the earliest potential empty spot and we know that index 0 WAS an empty spot"
+                        "OldFreeIndex should always point at the earliest potential empty spot and we know that index 0 WAS an empty spot: {:?}",
+                        self.first_free_index
                     )
                 },
             }
@@ -1249,10 +1395,17 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
 
         let (end_slice, start_slice) = slice.split_at_mut(usize::from(self.zero_index));
 
-        if self.zero_index + first_free_index_real >= len {
+        // Prevent this addition from overflowing
+        if u32::from(self.zero_index)
+            .checked_add(u32::from(first_free_index_real))
+            .unwrap()
+            >= u32::from(len)
+        {
             // We have two stuck and one moving slice
-            let (middle_stuck_slice, moving_slice) = end_slice
-                .split_at_mut(usize::from((self.zero_index + first_free_index_real) % len));
+            let (middle_stuck_slice, moving_slice) = end_slice.split_at_mut(
+                (usize::from(self.zero_index) + usize::from(first_free_index_real))
+                    % usize::from(len),
+            );
 
             // By definition, we know starting_stuck_slice is fully compressed with items!
             // Also by definition we know that moving_slice[0] MUST be empty (otherwise it would not be moving and part of the stuck slice)
@@ -1266,11 +1419,13 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
                 debug_assert_eq!(moving_slice[0], false);
                 moving_slice[0] = true;
 
-                self.zero_index += 1;
+                self.zero_index = self.zero_index.checked_add(1).unwrap();
             }
         } else {
-            let (starting_stuck_slice, middle_moving_slice) =
-                start_slice.split_at_mut(usize::from(first_free_index_real));
+            let start_len = start_slice.len();
+            let (starting_stuck_slice, middle_moving_slice) = start_slice
+                .split_at_mut_checked(usize::from(first_free_index_real))
+                .expect(&format!("{} > {}", first_free_index_real, start_len));
 
             assert!(!middle_moving_slice.is_empty());
             assert!(!starting_stuck_slice.is_empty());
@@ -1287,7 +1442,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
                 debug_assert_eq!(middle_moving_slice[0], false);
                 middle_moving_slice[0] = true;
 
-                self.zero_index += 1;
+                self.zero_index = self.zero_index.checked_add(1).unwrap();
             }
         }
 

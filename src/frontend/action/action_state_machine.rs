@@ -196,7 +196,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     self.state = ActionStateMachineState::CtrlCPressed;
                     vec![]
                 },
-                Input::LeftClickPressed { shift } => {
+                Input::LeftClickPressed { shift, ctrl } => {
                     if shift {
                         if let Some(copy_info) = &self.copy_info {
                             let pos = Self::player_mouse_to_tile(
@@ -264,9 +264,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             ActionStateMachineState::Holding(held_object) => {
                                 // TODO: Check if what we are trying to place would collide
 
+                                let force = ctrl;
+
                                 match held_object {
                                     HeldObject::Blueprint(bp) => {
-                                        bp.get_reusable(data_store).actions_with_base_pos(Self::player_mouse_to_tile(
+                                        bp.get_reusable(force, data_store).actions_with_base_pos(Self::player_mouse_to_tile(
                                             self.zoom_level,
                                             self.map_view_info.unwrap_or(self.local_player_pos),
                                             self.current_mouse_pos,
@@ -290,6 +292,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                     },
                                     HeldObject::Entity(place_entity_type) => {
                                         let ret = vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                                            force,
                                             entities: EntityPlaceOptions::Single(*place_entity_type),
                                         })];
 
@@ -369,7 +372,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                     self.current_mouse_pos,
                                 );
                                 if world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next().is_some() {
-                                    self.state = ActionStateMachineState::Deconstructing(pos, 100);
+                                    self.state = ActionStateMachineState::Deconstructing(pos, 30);
                                 }
                                 vec![]
                             },

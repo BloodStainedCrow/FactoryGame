@@ -31,6 +31,12 @@ pub trait Belt<ItemIdxType: IdxTrait> {
 
     fn get_len(&self) -> BeltLenType;
     fn add_length(&mut self, amount: BeltLenType, side: Side) -> BeltLenType;
+    /// Returns the items removed from the belt and the new length
+    fn remove_length(
+        &mut self,
+        amount: BeltLenType,
+        side: Side,
+    ) -> (Vec<(Item<ItemIdxType>, u32)>, BeltLenType);
 
     fn update(&mut self, splitter_list: &[SushiSplitter<ItemIdxType>]);
 

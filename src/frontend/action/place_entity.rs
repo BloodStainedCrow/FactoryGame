@@ -3,6 +3,7 @@ use crate::{frontend::world::tile::PlaceEntityType, item::WeakIdxTrait};
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PlaceEntityInfo<ItemIdxType: WeakIdxTrait> {
     pub entities: EntityPlaceOptions<ItemIdxType>,
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
