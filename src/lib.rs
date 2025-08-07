@@ -59,6 +59,7 @@ pub mod get_size;
 
 pub mod assembler;
 pub mod belt;
+pub mod complex_inserter;
 pub mod inserter;
 pub mod item;
 pub mod lab;

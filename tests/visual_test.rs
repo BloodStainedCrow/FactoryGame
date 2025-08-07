@@ -1,5 +1,5 @@
 use eframe::EventLoopBuilderHook;
-use factory::rendering::app_state::AppState;
+use factory::app_state::AppState;
 use factory::rendering::eframe_app;
 use factory::rendering::window::LoadedGameSized;
 
@@ -16,9 +16,9 @@ use std::thread::spawn;
 use std::time::Duration;
 use winit::platform::wayland::EventLoopBuilderExtWayland;
 
+use factory::app_state::GameState;
 use factory::data::DataStore;
 use factory::frontend::action::action_state_machine::ActionStateMachine;
-use factory::rendering::app_state::GameState;
 use factory::rendering::window::LoadedGame;
 use factory::rendering::window::LoadedGameInfo;
 use factory::replays::Replay;
