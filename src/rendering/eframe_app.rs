@@ -90,6 +90,7 @@ impl eframe::App for App {
             },
 
             AppState::Loading {
+                start_time,
                 progress,
                 game_state_receiver,
             } => {
@@ -99,8 +100,31 @@ impl eframe::App for App {
                     Window::new("Loading")
                         .default_pos((0.5, 0.5))
                         .show(ctx, |ui| {
-                            ui.add(ProgressBar::new(progress as f32).corner_radius(0));
+                            let mul: f64 = 1.0 / progress;
+                            let text = if mul.is_infinite() {
+                                format!("Calculating Remaining Time...")
+                            } else {
+                                format!(
+                                    "Est Remaining: {:?} min",
+                                    start_time.elapsed().mul_f64(mul - 1.0).as_secs() / 60
+                                )
+                            };
+                            ui.add(
+                                ProgressBar::new(progress as f32)
+                                    .corner_radius(0)
+                                    .text(text),
+                            );
+                            if mul.is_finite() {
+                                ui.label(format!(
+                                    "Est Full Time: {:?} min",
+                                    start_time.elapsed().mul_f64(mul).as_secs() / 60
+                                ));
+                            }
                         });
+
+                    // Window::new("Actions per second").show(ctx, |ui| {
+                    //     ui.add(ProgressBar::new(progress as f32).corner_radius(0));
+                    // });
                 });
 
                 if let Ok((new_state, current_tick, input_sender)) = game_state_receiver.try_recv()
@@ -167,6 +191,7 @@ impl eframe::App for App {
                         send.send(run_client(ip));
 
                         self.state = AppState::Loading {
+                            start_time: Instant::now(),
                             progress,
                             game_state_receiver: recv,
                         };
@@ -197,6 +222,7 @@ impl eframe::App for App {
                             });
 
                             self.state = AppState::Loading {
+                                start_time: Instant::now(),
                                 progress,
                                 game_state_receiver: recv,
                             };
@@ -222,6 +248,7 @@ impl eframe::App for App {
                             });
 
                             self.state = AppState::Loading {
+                                start_time: Instant::now(),
                                 progress,
                                 game_state_receiver: recv,
                             };
@@ -245,6 +272,7 @@ impl eframe::App for App {
                         });
 
                         self.state = AppState::Loading {
+                            start_time: Instant::now(),
                             progress,
                             game_state_receiver: recv,
                         };
@@ -261,6 +289,7 @@ impl eframe::App for App {
                         });
 
                         self.state = AppState::Loading {
+                            start_time: Instant::now(),
                             progress,
                             game_state_receiver: recv,
                         };
@@ -277,6 +306,7 @@ impl eframe::App for App {
                         });
 
                         self.state = AppState::Loading {
+                            start_time: Instant::now(),
                             progress,
                             game_state_receiver: recv,
                         };
@@ -293,6 +323,7 @@ impl eframe::App for App {
                         });
 
                         self.state = AppState::Loading {
+                            start_time: Instant::now(),
                             progress,
                             game_state_receiver: recv,
                         };
@@ -309,6 +340,7 @@ impl eframe::App for App {
                         });
 
                         self.state = AppState::Loading {
+                            start_time: Instant::now(),
                             progress,
                             game_state_receiver: recv,
                         };
@@ -326,6 +358,7 @@ impl eframe::App for App {
                             });
 
                             self.state = AppState::Loading {
+                                start_time: Instant::now(),
                                 progress,
                                 game_state_receiver: recv,
                             };

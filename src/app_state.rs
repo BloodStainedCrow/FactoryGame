@@ -175,7 +175,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let bp = bp.get_reusable(false, data_store);
 
         // TODO: Measure if this is actually faster
-        // let bp = bp.optimize();
+        let bp = bp.optimize();
 
         puffin::set_scopes_on(false);
         let y_range = (1590..60000).step_by(10000);
@@ -693,6 +693,7 @@ pub enum AppState {
     },
     Ingame,
     Loading {
+        start_time: Instant,
         /// WARNING: This is a f64!
         progress: Arc<AtomicU64>,
         game_state_receiver: Receiver<(LoadedGame, Arc<AtomicU64>, Sender<Input>)>,
