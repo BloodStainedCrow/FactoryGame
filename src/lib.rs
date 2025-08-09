@@ -41,12 +41,10 @@ use rendering::{
     window::{LoadedGame, LoadedGameSized},
 };
 
-
 #[cfg(not(feature = "client"))]
 use directories::ProjectDirs;
 
 use saving::{load, load_readable};
-use simple_logger::SimpleLogger;
 use std::path::PathBuf;
 
 use crate::item::Indexable;
@@ -136,7 +134,8 @@ impl<T: Default> NewWithDataStore for T {
 pub fn main() -> Result<(), ()> {
     puffin::set_scopes_on(true);
 
-    SimpleLogger::new()
+    #[cfg(logging)]
+    simple_logger::SimpleLogger::new()
         .with_level(log::LevelFilter::Warn)
         .env()
         .init()

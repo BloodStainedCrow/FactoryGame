@@ -116,7 +116,25 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     pub fn new(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         Self {
             current_tick: 0,
-            world: World::new(),
+            world: World::default(),
+            simulation_state: SimulationState::new(data_store),
+            statistics: GenStatistics::new(data_store),
+            update_times: Timeline::new(false, data_store),
+            last_update_time: None,
+            settings: GameSettings {
+                show_unresearched_recipes: true,
+            },
+        }
+    }
+
+    fn new_with_world_area(
+        top_left: Position,
+        bottom_right: Position,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
+        Self {
+            current_tick: 0,
+            world: World::new_with_area(top_left, bottom_right),
             simulation_state: SimulationState::new(data_store),
             statistics: GenStatistics::new(data_store),
             update_times: Timeline::new(false, data_store),
@@ -132,7 +150,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        let mut ret = GameState::new(data_store);
+        let mut ret = GameState::new_with_world_area(
+            Position { x: 0, y: 0 },
+            Position { x: 3500, y: 31000 },
+            data_store,
+        );
 
         let file = File::open("test_blueprints/red_sci.bp").unwrap();
         let bp: Blueprint = ron::de::from_reader(file).unwrap();
@@ -168,7 +190,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        let mut ret = GameState::new(data_store);
+        let mut ret = GameState::new_with_world_area(
+            Position { x: 0, y: 0 },
+            Position { x: 25000, y: 70000 },
+            data_store,
+        );
 
         let file = File::open("test_blueprints/murphy/megabase_running.bp").unwrap();
         let bp: Blueprint = ron::de::from_reader(file).unwrap();
@@ -215,7 +241,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        let mut ret = GameState::new(data_store);
+        let mut ret = GameState::new_with_world_area(
+            Position { x: 0, y: 0 },
+            Position { x: 44000, y: 44000 },
+            data_store,
+        );
 
         let file = File::open("test_blueprints/red_and_green_with_clocking.bp").unwrap();
         let bp: Blueprint = ron::de::from_reader(file).unwrap();
@@ -260,7 +290,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        let mut ret = GameState::new(data_store);
+        let mut ret = GameState::new_with_world_area(
+            Position { x: 0, y: 0 },
+            Position { x: 10000, y: 20000 },
+            data_store,
+        );
 
         let file = File::open("test_blueprints/red_sci_with_beacons_and_belts.bp").unwrap();
         let bp: Blueprint = ron::de::from_reader(file).unwrap();

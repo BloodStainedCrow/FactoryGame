@@ -1240,17 +1240,25 @@ impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> GetGridIndex<i32>
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeIdxType> {
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new_with_starting_area(center: Position, width_chunks: u16, height_chunks: u16) -> Self {
         let mut grid = PerfectGrid::new();
-        #[cfg(debug_assertions)]
-        const WORLDSIZE_CHUNKS: i32 = 200;
-        #[cfg(not(debug_assertions))]
-        const WORLDSIZE_CHUNKS: i32 = 4000;
 
         let noise = Simplex::new(1);
 
-        let positions = (50..WORLDSIZE_CHUNKS)
-            .cartesian_product(50..WORLDSIZE_CHUNKS)
+        let positions = (0..i32::from(width_chunks))
+            .cartesian_product(0..i32::from(height_chunks))
+            .map(|(x, y)| {
+                (
+                    x - i32::from(width_chunks) / 2,
+                    y - i32::from(height_chunks) / 2,
+                )
+            })
+            .map(|(x, y)| {
+                (
+                    center.x / i32::from(CHUNK_SIZE) + x,
+                    center.y / i32::from(CHUNK_SIZE) + y,
+                )
+            })
             .collect_vec();
         let chunks = positions.iter().copied().map(|(x, y)| Chunk {
             base_pos: (x * i32::from(CHUNK_SIZE), y * i32::from(CHUNK_SIZE)),
@@ -1280,6 +1288,27 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
             map_updates: None,
         }
+    }
+
+    pub fn new_with_area(top_left: Position, bottom_right: Position) -> Self {
+        Self::new_with_starting_area(
+            Position {
+                x: top_left.x + (bottom_right.x - top_left.x) / 2,
+                y: top_left.y + (bottom_right.y - top_left.y) / 2,
+            },
+            (top_left
+                .x
+                .abs_diff(bottom_right.x)
+                .div_ceil(u32::from(CHUNK_SIZE)))
+            .try_into()
+            .unwrap(),
+            (top_left
+                .y
+                .abs_diff(bottom_right.y)
+                .div_ceil(u32::from(CHUNK_SIZE)))
+            .try_into()
+            .unwrap(),
+        )
     }
 
     pub fn get_original_ore_at_pos(&self, pos: Position) -> Option<(Item<ItemIdxType>, u32)> {
@@ -4172,7 +4201,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Default for World<ItemIdxType, RecipeIdxType> {
     fn default() -> Self {
-        Self::new()
+        #[cfg(debug_assertions)]
+        const WORLDSIZE_CHUNKS: u16 = 200;
+        #[cfg(not(debug_assertions))]
+        const WORLDSIZE_CHUNKS: u16 = 4000;
+        Self::new_with_starting_area(
+            Position { x: 1600, y: 1600 },
+            WORLDSIZE_CHUNKS,
+            WORLDSIZE_CHUNKS,
+        )
     }
 }
 

@@ -106,7 +106,11 @@ impl eframe::App for App {
                             } else {
                                 format!(
                                     "Est Remaining: {:?} min",
-                                    start_time.elapsed().mul_f64(mul - 1.0).as_secs() / 60
+                                    start_time
+                                        .elapsed()
+                                        .mul_f64(mul - 1.0)
+                                        .as_secs()
+                                        .div_ceil(60)
                                 )
                             };
                             ui.add(
@@ -117,7 +121,7 @@ impl eframe::App for App {
                             if mul.is_finite() {
                                 ui.label(format!(
                                     "Est Full Time: {:?} min",
-                                    start_time.elapsed().mul_f64(mul).as_secs() / 60
+                                    start_time.elapsed().mul_f64(mul).as_secs().div_ceil(60)
                                 ));
                             }
                         });
