@@ -1969,6 +1969,7 @@ dependencies = [
  "strum 0.27.2",
  "take_mut",
  "tilelib",
+ "winit",
 ]
 
 [[package]]

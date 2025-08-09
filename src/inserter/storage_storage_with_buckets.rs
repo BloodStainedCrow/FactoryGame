@@ -1037,9 +1037,10 @@ impl BucketedStorageStorageInserterStore {
 
 #[cfg(test)]
 mod test {
-    const NUM_INSERTERS: usize = 2_000_000;
+    const MOVETIME: u16 = 120;
+    const NUM_INSERTERS: usize = 20_000_000;
     const NUM_ITEMS: usize = 5;
-    const NUM_VISIBLE: usize = 1000;
+    const NUM_VISIBLE: usize = 100;
 
     use std::array;
 
@@ -1060,7 +1061,7 @@ mod test {
     #[bench]
     fn bench_update_storage_storage_inserter_store_buckets(b: &mut Bencher) {
         let mut store: [_; NUM_ITEMS] =
-            array::from_fn(|_| BucketedStorageStorageInserterStore::new(120));
+            array::from_fn(|_| BucketedStorageStorageInserterStore::new(MOVETIME));
         let mut frontend: [_; NUM_ITEMS] =
             array::from_fn(|_| BucketedStorageStorageInserterStoreFrontend::new());
 
@@ -1086,8 +1087,12 @@ mod test {
                     );
 
                     if storages_in[item][0] < 20 {
-                        storages_in[item] = vec![200u8; NUM_INSERTERS];
-                        storages_out[item] = vec![0u8; NUM_INSERTERS];
+                        for v in &mut storages_in[item] {
+                            *v = 200u8;
+                        }
+                        for v in &mut storages_out[item] {
+                            *v = 0u8;
+                        }
                     }
                 }
 
@@ -1123,8 +1128,12 @@ mod test {
                 )
                 .for_each(|(storage_in, (storage_out, (store, frontend)))| {
                     if storage_in[0] < 20 {
-                        *storage_in = vec![200u8; NUM_INSERTERS];
-                        *storage_out = vec![0u8; NUM_INSERTERS];
+                        for v in storage_in.iter_mut() {
+                            *v = 200u8;
+                        }
+                        for v in storage_out.iter_mut() {
+                            *v = 0u8;
+                        }
                     }
                     store.update(
                         frontend,
@@ -1149,7 +1158,7 @@ mod test {
     fn bench_storage_storage_inserter_store_find_batched_with_next_tick_optimization(
         b: &mut Bencher,
     ) {
-        let mut store = BucketedStorageStorageInserterStore::new(120);
+        let mut store = BucketedStorageStorageInserterStore::new(MOVETIME);
 
         let mut frontend = BucketedStorageStorageInserterStoreFrontend::new();
 
@@ -1162,7 +1171,7 @@ mod test {
 
         let mut current_time: u32 = 0;
 
-        for i in values {
+        for i in values.iter().copied() {
             if random::<u16>() < 10 {
                 store.update(
                     &mut frontend,
@@ -1175,8 +1184,12 @@ mod test {
                 );
 
                 if storages_in[0] < 20 {
-                    storages_in = vec![200u8; NUM_INSERTERS];
-                    storages_out = vec![0u8; NUM_INSERTERS];
+                    for v in &mut storages_in {
+                        *v = 200u8;
+                    }
+                    for v in &mut storages_out {
+                        *v = 0u8;
+                    }
                 }
             }
 
@@ -1200,20 +1213,15 @@ mod test {
         storages_in = vec![200u8; NUM_INSERTERS];
         storages_out = vec![0u8; NUM_INSERTERS];
 
-        let to_find: Vec<u32> = (0..(NUM_VISIBLE as u32)).collect();
-
-        // let to_find = vec![0u16];
-
-        let to_find: Vec<_> = to_find
-            .into_iter()
+        let mut to_find: Vec<_> = (0..(NUM_VISIBLE as u32))
             .map(|i| InserterIdentifier {
                 source: FakeUnionStorage {
-                    index: i.into(),
+                    index: values[i as usize],
                     grid_or_static_flag: 0,
                     recipe_idx_with_this_item: 0,
                 },
                 dest: FakeUnionStorage {
-                    index: i.into(),
+                    index: values[i as usize],
                     grid_or_static_flag: 0,
                     recipe_idx_with_this_item: 1,
                 },
@@ -1225,9 +1233,32 @@ mod test {
             let ret =
                 frontend.get_info_batched(to_find.iter().copied(), &store, true, current_time);
 
+            assert_eq!(ret.len(), to_find.len());
+
             if storages_in[0] < 20 {
-                storages_in = vec![200u8; NUM_INSERTERS];
-                storages_out = vec![0u8; NUM_INSERTERS];
+                for v in &mut storages_in {
+                    *v = 200u8;
+                }
+                for v in &mut storages_out {
+                    *v = 0u8;
+                }
+                values.shuffle(&mut rand::thread_rng());
+                to_find = (0..(NUM_VISIBLE as u32))
+                    .into_iter()
+                    .map(|i| InserterIdentifier {
+                        source: FakeUnionStorage {
+                            index: values[i as usize],
+                            grid_or_static_flag: 0,
+                            recipe_idx_with_this_item: 0,
+                        },
+                        dest: FakeUnionStorage {
+                            index: values[i as usize],
+                            grid_or_static_flag: 0,
+                            recipe_idx_with_this_item: 1,
+                        },
+                        id: InserterId(0),
+                    })
+                    .collect();
             }
             store.update(
                 &mut frontend,
@@ -1251,7 +1282,7 @@ mod test {
     fn bench_storage_storage_inserter_store_find_batched_without_next_tick_optimization(
         b: &mut Bencher,
     ) {
-        let mut store = BucketedStorageStorageInserterStore::new(120);
+        let mut store = BucketedStorageStorageInserterStore::new(MOVETIME);
 
         let mut frontend = BucketedStorageStorageInserterStoreFrontend::new();
 
@@ -1264,7 +1295,7 @@ mod test {
 
         let mut current_time: u32 = 0;
 
-        for i in values {
+        for i in values.iter().copied() {
             if random::<u16>() < 10 {
                 store.update(
                     &mut frontend,
@@ -1277,8 +1308,12 @@ mod test {
                 );
 
                 if storages_in[0] < 20 {
-                    storages_in = vec![200u8; NUM_INSERTERS];
-                    storages_out = vec![0u8; NUM_INSERTERS];
+                    for v in &mut storages_in {
+                        *v = 200u8;
+                    }
+                    for v in &mut storages_out {
+                        *v = 0u8;
+                    }
                 }
             }
 
@@ -1310,12 +1345,12 @@ mod test {
             .into_iter()
             .map(|i| InserterIdentifier {
                 source: FakeUnionStorage {
-                    index: i.into(),
+                    index: values[i as usize],
                     grid_or_static_flag: 0,
                     recipe_idx_with_this_item: 0,
                 },
                 dest: FakeUnionStorage {
-                    index: i.into(),
+                    index: values[i as usize],
                     grid_or_static_flag: 0,
                     recipe_idx_with_this_item: 1,
                 },
@@ -1327,9 +1362,15 @@ mod test {
             let ret =
                 frontend.get_info_batched(to_find.iter().copied(), &store, false, current_time);
 
+            assert_eq!(ret.len(), to_find.len());
+
             if storages_in[0] < 20 {
-                storages_in = vec![200u8; NUM_INSERTERS];
-                storages_out = vec![0u8; NUM_INSERTERS];
+                for v in &mut storages_in {
+                    *v = 200u8;
+                }
+                for v in &mut storages_out {
+                    *v = 0u8;
+                }
             }
             store.update(
                 &mut frontend,

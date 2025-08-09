@@ -180,7 +180,7 @@ impl eframe::App for App {
 
                             if *error_pupup {
                                 ui.label(
-                                    RichText::new("Invalid IP. Example: 127.0.0.1:8080")
+                                    RichText::new("Invalid IP. Example: 127.0.0.1:4242")
                                         .color(Color32::RED),
                                 );
                             }

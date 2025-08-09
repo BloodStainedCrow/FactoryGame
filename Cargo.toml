@@ -53,6 +53,9 @@ egui-show-info-derive = { path = "../egui-show-info/egui-show-info-derive", opti
 bytemuck = "1.23.1"
 ph = "0.9.6"
 
+[dev-dependencies]
+winit = "0.30.12"
+
 [patch.crates-io]
 puffin_egui = { git = "https://github.com/BloodStainedCrow/puffin" }
 puffin = { git = "https://github.com/BloodStainedCrow/puffin" }

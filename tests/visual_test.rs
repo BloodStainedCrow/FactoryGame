@@ -14,6 +14,7 @@ use std::sync::mpsc::channel;
 use std::thread::sleep;
 use std::thread::spawn;
 use std::time::Duration;
+use winit::platform::wayland::EventLoopBuilderExtWayland;
 
 use factory::app_state::GameState;
 use factory::data::DataStore;
