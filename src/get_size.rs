@@ -12,7 +12,9 @@ use enum_map::EnumArray;
 use std::cmp::Eq;
 use std::hash::Hash;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize, serde::Serialize, Hash,
+)]
 pub struct NodeIndex<Ix: IndexType = petgraph::stable_graph::DefaultIx> {
     pub node_index: petgraph::stable_graph::NodeIndex<Ix>,
 }
@@ -263,51 +265,51 @@ impl<
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-pub struct BiMap<A: Hash + Eq, B: Hash + Eq> {
-    pub map: bimap::BiHashMap<A, B>,
+pub struct BiMap<A: Hash + Eq + Ord, B: Hash + Eq + Ord> {
+    pub map: bimap::BiBTreeMap<A, B>,
 }
 
-impl<A: Hash + Eq, B: Hash + Eq> BiMap<A, B> {
+impl<A: Hash + Eq + Ord, B: Hash + Eq + Ord> BiMap<A, B> {
     pub fn new() -> Self {
         Self {
-            map: bimap::BiHashMap::new(),
+            map: bimap::BiBTreeMap::new(),
         }
     }
 }
 
-impl<A: Hash + Eq, B: Hash + Eq> Deref for BiMap<A, B> {
-    type Target = bimap::BiHashMap<A, B>;
+impl<A: Hash + Eq + Ord, B: Hash + Eq + Ord> Deref for BiMap<A, B> {
+    type Target = bimap::BiBTreeMap<A, B>;
     fn deref(&self) -> &Self::Target {
         &self.map
     }
 }
 
-impl<A: Hash + Eq, B: Hash + Eq> DerefMut for BiMap<A, B> {
+impl<A: Hash + Eq + Ord, B: Hash + Eq + Ord> DerefMut for BiMap<A, B> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.map
     }
 }
 
 #[cfg(feature = "client")]
-impl<A: Hash + Eq + GetSize, B: Hash + Eq + GetSize> GetSize for BiMap<A, B> {
+impl<A: Hash + Eq + Ord + GetSize, B: Hash + Eq + Ord + GetSize> GetSize for BiMap<A, B> {
     fn get_heap_size(&self) -> usize {
         self.map.left_values().map(|v| v.get_size()).sum::<usize>()
             + self.map.right_values().map(|v| v.get_size()).sum::<usize>()
     }
 }
 
-impl<A: Hash + Eq, B: Hash + Eq> FromIterator<(A, B)> for BiMap<A, B> {
+impl<A: Hash + Eq + Ord, B: Hash + Eq + Ord> FromIterator<(A, B)> for BiMap<A, B> {
     fn from_iter<T: IntoIterator<Item = (A, B)>>(iter: T) -> Self {
         Self {
-            map: bimap::BiMap::from_iter(iter),
+            map: iter.into_iter().collect(),
         }
     }
 }
 
 #[cfg(feature = "client")]
 impl<
-    A: ShowInfo<Extractor, Info> + Eq + Hash,
-    B: ShowInfo<Extractor, Info> + Eq + Hash,
+    A: ShowInfo<Extractor, Info> + Eq + Ord + Hash,
+    B: ShowInfo<Extractor, Info> + Eq + Ord + Hash,
     Info: EguiDisplayable,
     Extractor: InfoExtractor<Self, Info> + InfoExtractor<A, Info> + InfoExtractor<B, Info>,
 > ShowInfo<Extractor, Info> for BiMap<A, B>

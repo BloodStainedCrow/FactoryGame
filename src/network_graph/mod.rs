@@ -22,7 +22,7 @@ use get_size::GetSize;
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct Network<NodeKey: Eq + Hash, S, W> {
+pub struct Network<NodeKey: Eq + Hash + Ord, S, W> {
     // We use stableUnGraph here to allow remove_node to not invalidate any other indices
     graph: StableGraph<NetworkNode<S, W>, (), Undirected, DefaultIx>,
     key_map: BiMap<NodeKey, crate::get_size::NodeIndex>,
@@ -41,7 +41,7 @@ pub struct WeakIndex {
     index: usize,
 }
 
-impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
+impl<NodeKey: Eq + Ord + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
     pub fn new(first_node: S, key: NodeKey) -> Self {
         let mut graph = StableGraph::default();
 
@@ -446,7 +446,7 @@ impl<NodeKey: Eq + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
 }
 
 #[profiling::function]
-fn join_graphs<NodeKey: Eq + Hash + Clone + Debug, T: Debug, S>(
+fn join_graphs<NodeKey: Eq + Ord + Hash + Clone + Debug, T: Debug, S>(
     first: &mut StableGraph<T, S, Undirected>,
     first_map: &mut BiMap<NodeKey, NodeIndex>,
     second: StableGraph<T, S, Undirected>,
@@ -457,13 +457,13 @@ fn join_graphs<NodeKey: Eq + Hash + Clone + Debug, T: Debug, S>(
     #[cfg(debug_assertions)]
     let second_components = petgraph::algo::tarjan_scc(&*second).len();
 
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     let first_max_edge_count = first
         .node_references()
         .map(|n| first.edges(n.0).count())
         .max();
 
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     let second_max_edge_count = second
         .node_references()
         .map(|n| second.edges(n.0).count())
@@ -480,17 +480,19 @@ fn join_graphs<NodeKey: Eq + Hash + Clone + Debug, T: Debug, S>(
          }| {
             let new_idx = first.add_node(weight);
 
-            first_map.insert(
-                second_map
-                    .remove_by_right(&NodeIndex {
-                        node_index: old_idx,
-                    })
-                    .expect("Missing value in map")
-                    .0,
-                NodeIndex {
-                    node_index: new_idx,
-                },
-            );
+            first_map
+                .insert_no_overwrite(
+                    second_map
+                        .remove_by_right(&NodeIndex {
+                            node_index: old_idx,
+                        })
+                        .expect("Missing value in map")
+                        .0,
+                    NodeIndex {
+                        node_index: new_idx,
+                    },
+                )
+                .unwrap();
 
             (old_idx, new_idx)
         },
@@ -523,11 +525,14 @@ fn join_graphs<NodeKey: Eq + Hash + Clone + Debug, T: Debug, S>(
     //         .map(|(old, new)| (second_map.remove_by_right(old).unwrap().0, new)),
     // );
 
-    assert_eq!(
-        first
-            .node_references()
-            .map(|n| first.edges(n.0).count())
-            .max(),
-        max(first_max_edge_count, second_max_edge_count)
-    )
+    #[cfg(debug_assertions)]
+    {
+        assert_eq!(
+            first
+                .node_references()
+                .map(|n| first.edges(n.0).count())
+                .max(),
+            max(first_max_edge_count, second_max_edge_count)
+        );
+    }
 }
