@@ -149,7 +149,7 @@ impl PureSplitter {
 }
 
 #[derive(Debug)]
-pub(super) struct SushiSplitter<ItemIdxType: WeakIdxTrait> {
+pub struct SushiSplitter<ItemIdxType: WeakIdxTrait> {
     pub in_mode: SplitterDistributionMode,
     pub out_mode: SplitterDistributionMode,
 

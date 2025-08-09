@@ -156,13 +156,13 @@ pub struct InnerBeltStore<ItemIdxType: WeakIdxTrait> {
     sushi_belts: Vec<SushiBelt<ItemIdxType>>,
     sushi_belt_holes: Vec<usize>,
 
-    smart_belts: Box<[MultiBeltStore<ItemIdxType>]>,
+    pub smart_belts: Box<[MultiBeltStore<ItemIdxType>]>,
 
     pub belt_belt_inserters: BeltBeltInserterStore<ItemIdxType>,
 
     pure_splitters: Box<[SplitterStore<ItemIdxType>]>,
 
-    sushi_splitters: Vec<SushiSplitter<ItemIdxType>>,
+    pub sushi_splitters: Vec<SushiSplitter<ItemIdxType>>,
     sushi_splitter_connections: Mutex<Vec<[[AnyBelt<ItemIdxType>; 2]; 2]>>,
     sushi_splitter_holes: Vec<usize>,
 
@@ -1798,14 +1798,11 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         );
     }
 
-    #[profiling::function]
-    pub fn update<'a, 'b, RecipeIdxType: IdxTrait>(
+    pub fn pre_pure_update<RecipeIdxType: IdxTrait>(
         &mut self,
-        storages_by_item: impl IndexedParallelIterator<Item = SingleItemStorages<'a, 'b>>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) where
-        'b: 'a,
-    {
+    ) {
+        // TODO: Once every (maybe more or less) check a single belt and check if it still needs to be sushi
         #[cfg(debug_assertions)]
         {
             assert!(
@@ -1856,7 +1853,6 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     })
             );
         }
-        // TODO: Once every (maybe more or less) check a single belt and check if it still needs to be sushi
 
         // Increase the belt timers
         for ((current_timer, increase), cumulative) in self
@@ -1880,103 +1876,17 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                 .par_iter_mut()
                 .for_each(|splitter| splitter.update());
         }
+    }
 
-        // Update all the "Pure Belts"
-        self.inner
-            .smart_belts
-            .par_iter_mut()
-            .zip(storages_by_item)
-            .zip(
-                self.inner
-                    .belt_belt_inserters
-                    .pure_to_pure_inserters
-                    .par_iter_mut(),
-            )
-            .zip(self.inner.pure_splitters.par_iter_mut())
-            .enumerate()
-            .for_each(
-                |(item_id, (((belt_store, item_storages), pure_to_pure_inserters), splitters))| {
-                    let item = Item {
-                        id: item_id.try_into().unwrap(),
-                    };
-                    profiling::scope!(
-                        "Pure Belt Update",
-                        format!("Item: {}", data_store.item_display_names[item_id]).as_str()
-                    );
-
-                    let grid_size = grid_size(item, data_store);
-
-                    {
-                        profiling::scope!("Update Belt");
-                        for (belt, ty) in belt_store.belts.iter_mut().zip(&belt_store.belt_ty) {
-                            // TODO: Avoid last minute decision making
-                            if self.inner.belt_update_timers[usize::from(*ty)] >= 120 {
-                                belt.update(&self.inner.sushi_splitters);
-                            }
-                            belt.update_inserters(item_storages, grid_size);
-                        }
-                    }
-                    // {
-                    //     profiling::scope!("Update BeltStorageInserters");
-                    //     for belt in &mut belt_store.belts {
-
-                    //     }
-                    // }
-
-                    {
-                        profiling::scope!("Update PurePure Inserters");
-                        for (ins, ((source, source_pos), (dest, dest_pos), cooldown, filter)) in
-                            pure_to_pure_inserters.iter_mut().flatten()
-                        {
-                            let [source_loc, dest_loc] = if *source == *dest {
-                                assert_ne!(
-                                    source_pos, dest_pos,
-                                    "An inserter cannot take and drop off on the same tile"
-                                );
-                                // We are taking and placing onto the same belt
-                                let belt = &mut belt_store.belts[*source];
-
-                                belt.get_two([(*source_pos).into(), (*dest_pos).into()])
-                            } else {
-                                let [inp, out] =
-                                    belt_store.belts.get_disjoint_mut([*source, *dest]).unwrap();
-
-                                [inp.get_mut(*source_pos), out.get_mut(*dest_pos)]
-                            };
-
-                            if *cooldown == 0 {
-                                ins.update_instant(source_loc, dest_loc);
-                            } else {
-                                ins.update(source_loc, dest_loc, *cooldown, HAND_SIZE, (), |_| {
-                                    filter
-                                        .map(|filter_item| filter_item == item)
-                                        .unwrap_or(true)
-                                });
-                            }
-
-                            let source_loc = *source_loc;
-                            let dest_loc = *dest_loc;
-
-                            {
-                                profiling::scope!("Update update_first_free_pos");
-                                if !source_loc {
-                                    belt_store.belts[*source].update_first_free_pos(*source_pos);
-                                }
-
-                                if dest_loc {
-                                    belt_store.belts[*dest].remove_first_free_pos_maybe(*dest_pos);
-                                }
-                            }
-                        }
-                    }
-
-                    for splitter in &mut splitters.pure_splitters {
-                        // TODO: Assert that the item is the same!
-                        //splitter.update(belt_store);
-                    }
-                },
-            );
-
+    #[profiling::function]
+    pub fn sushi_belt_update<'a, 'b, 'c, RecipeIdxType: IdxTrait>(
+        &mut self,
+        storages_by_item: impl IndexedParallelIterator<Item = &'c mut SingleItemStorages<'a, 'b>>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) where
+        'b: 'a,
+        'a: 'c,
+    {
         {
             // {
             //     profiling::scope!("Prune Sushi Belts");
