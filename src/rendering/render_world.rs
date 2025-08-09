@@ -197,6 +197,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 },
                 num_tiles_across_screen_horizontal as usize,
                 num_tiles_across_screen_vertical as usize,
+                Some(Duration::from_millis(10)),
                 data_store,
             );
         }

@@ -1,6 +1,10 @@
-use std::cmp::min;
+use std::{
+    cmp::min,
+    time::{Duration, Instant},
+};
 
 use egui::Color32;
+use itertools::Itertools;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use tilelib::types::{DrawInstance, Layer, RendererTrait};
 
@@ -37,8 +41,10 @@ pub fn create_map_textures_if_needed<ItemIdxType: IdxTrait, RecipeIdxType: IdxTr
     camera_pos: Position,
     view_width_in_tiles: usize,
     view_height_in_tiles: usize,
+    allowed_time: Option<Duration>,
     data_store: &crate::data::DataStore<ItemIdxType, RecipeIdxType>,
 ) {
+    let start_time = Instant::now();
     let (map_tile_size, pixel_to_tile, num_per_axis, texture_id_offset) = {
         let idx = MIN_WIDTH
             .iter()
@@ -55,6 +61,11 @@ pub fn create_map_textures_if_needed<ItemIdxType: IdxTrait, RecipeIdxType: IdxTr
                 .sum::<usize>(),
         )
     };
+
+    let tile_x_center =
+        usize::try_from(camera_pos.x + 1_000_000).unwrap_or(0) / pixel_to_tile / map_tile_size;
+    let tile_y_center =
+        usize::try_from(camera_pos.y + 1_000_000).unwrap_or(0) / pixel_to_tile / map_tile_size;
 
     let tile_x_left_edge = (usize::try_from(camera_pos.x + 1_000_000)
         .unwrap_or(0)
@@ -81,43 +92,100 @@ pub fn create_map_textures_if_needed<ItemIdxType: IdxTrait, RecipeIdxType: IdxTr
     ) / pixel_to_tile
         / map_tile_size;
 
-    for tile_x in tile_x_left_edge..=(min(tile_x_right_edge, num_per_axis)) {
-        for tile_y in tile_y_left_edge..=(min(tile_y_right_edge, num_per_axis)) {
-            let tile_texture_id = tile_x * num_per_axis + tile_y + texture_id_offset;
+    let tile_x = tile_x_left_edge..=(min(tile_x_right_edge, num_per_axis));
+    let tile_y = tile_y_left_edge..=(min(tile_y_right_edge, num_per_axis));
 
-            renderer.create_runtime_texture_if_missing(tile_texture_id, [map_tile_size; 2], || {
-                profiling::scope!("Collect Entity Colors");
-                let data: Vec<u8> = ((tile_y * map_tile_size)..((tile_y + 1) * map_tile_size))
-                    .into_par_iter()
-                    .flat_map(|y_pos| {
-                        rayon::iter::repeat(y_pos).zip(
-                            ((tile_x * map_tile_size)..((tile_x + 1) * map_tile_size))
-                                .into_par_iter(),
-                        )
-                    })
-                    .flat_map_iter(|(y_pos, x_pos)| {
-                        let x_pos_world =
-                            (i32::try_from(x_pos * pixel_to_tile).unwrap() - 1_000_000) as i32;
-                        let y_pos_world =
-                            (i32::try_from(y_pos * pixel_to_tile).unwrap() - 1_000_000) as i32;
+    let full_tile_iter = tile_x.flat_map(|tile_x| std::iter::repeat(tile_x).zip(tile_y.clone()));
 
-                        let color = world.get_entity_color(
-                            Position {
-                                x: x_pos_world,
-                                y: y_pos_world,
-                            },
-                            data_store,
-                        );
+    for (tile_x, tile_y) in full_tile_iter.sorted_unstable_by_key(|(tile_x, tile_y)| {
+        let x_dist = tile_x.abs_diff(tile_x_center);
+        let y_dist = tile_y.abs_diff(tile_y_center);
 
-                        let color = [color.r(), color.g(), color.b(), 255];
+        x_dist * x_dist + y_dist * y_dist
+    }) {
+        let tile_texture_id = tile_x * num_per_axis + tile_y + texture_id_offset;
 
-                        color
-                    })
-                    .collect();
+        profiling::scope!(
+            "Create Runtime texture",
+            format!(
+                "Size: {:?}, tile_per_pixel: {}",
+                [map_tile_size; 2], pixel_to_tile
+            )
+        );
+        renderer.create_runtime_texture_if_missing(tile_texture_id, [map_tile_size; 2], || {
+            collect_colors(
+                world,
+                [tile_x, tile_y],
+                map_tile_size,
+                pixel_to_tile,
+                data_store,
+            )
+        });
 
-                data
-            });
+        if let Some(allowed_time) = allowed_time {
+            if start_time.elapsed() > allowed_time {
+                break;
+            }
         }
+    }
+}
+
+#[profiling::function]
+#[inline(never)]
+fn collect_colors<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    world: &World<ItemIdxType, RecipeIdxType>,
+    [tile_x, tile_y]: [usize; 2],
+    map_tile_size: usize,
+    pixel_to_tile: usize,
+    data_store: &crate::data::DataStore<ItemIdxType, RecipeIdxType>,
+) -> Vec<u8> {
+    let data = ((tile_y * map_tile_size)..((tile_y + 1) * map_tile_size))
+        .into_par_iter()
+        .flat_map_iter(|y_pos| {
+            std::iter::repeat(y_pos).zip((tile_x * map_tile_size)..((tile_x + 1) * map_tile_size))
+        })
+        .map(|(y_pos, x_pos)| {
+            let x_pos_world = (i32::try_from(x_pos * pixel_to_tile).unwrap() - 1_000_000) as i32;
+            let y_pos_world = (i32::try_from(y_pos * pixel_to_tile).unwrap() - 1_000_000) as i32;
+
+            let color = world.get_entity_color(
+                Position {
+                    x: x_pos_world,
+                    y: y_pos_world,
+                },
+                data_store,
+            );
+
+            color
+        })
+        .collect();
+
+    // let size = map_tile_size * map_tile_size;
+    // let mut data = {
+    //     profiling::scope!("Allocate vec");
+    //     vec![Color32::BLACK; size]
+    // };
+
+    // let start_x =
+    //     (i32::try_from((tile_x * map_tile_size) * pixel_to_tile).unwrap() - 1_000_000) as i32;
+    // let end_x =
+    //     (i32::try_from(((tile_x + 1) * map_tile_size) * pixel_to_tile).unwrap() - 1_000_000) as i32;
+    // let start_y =
+    //     (i32::try_from((tile_y * map_tile_size) * pixel_to_tile).unwrap() - 1_000_000) as i32;
+    // let end_y =
+    //     (i32::try_from(((tile_y + 1) * map_tile_size) * pixel_to_tile).unwrap() - 1_000_000) as i32;
+
+    // world.get_area_colors(
+    //     start_x..end_x,
+    //     start_y..end_y,
+    //     pixel_to_tile,
+    //     &mut data,
+    //     data_store,
+    // );
+
+    {
+        profiling::scope!("Color32 to u8");
+        bytemuck::cast_vec(data)
     }
 }
 
@@ -235,14 +303,16 @@ pub fn render_map_view(
                     + (0.5 * view_height),
             );
 
-            map_layer.draw_runtime_texture(
-                texture_id,
-                DrawInstance {
-                    position: [tile_draw_offs.0, tile_draw_offs.1],
-                    size: [(map_tile_size * pixel_to_tile) as f32; 2],
-                    animation_frame: 0,
-                },
-            );
+            if renderer.has_runtime_texture(texture_id) {
+                map_layer.draw_runtime_texture(
+                    texture_id,
+                    DrawInstance {
+                        position: [tile_draw_offs.0, tile_draw_offs.1],
+                        size: [(map_tile_size * pixel_to_tile) as f32; 2],
+                        animation_frame: 0,
+                    },
+                );
+            }
             // map_layer.draw_sprite(
             //     &Sprite::new(Texture::default()),
             //     DrawInstance {
