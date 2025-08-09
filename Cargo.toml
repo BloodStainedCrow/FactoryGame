@@ -8,12 +8,11 @@ rust-version = "1.85"
 [dependencies]
 enum-map = { version = "2.7.3", features = ["serde"] }
 proptest = "1.4.0"
-winit = { version = "0.30.8", optional = true }
 tilelib = { git = "https://github.com/BloodStainedCrow/tilelib.git", optional = true }
 spin_sleep_util = "0.1.1"
 image = { version = "0.25.5", optional = true }
 log = "0.4.25"
-simple_logger = "5.0.0"
+simple_logger = {version = "5.0.0", optional = true }
 rayon = "1.10.0"
 serde = { version = "1.0.217", features = ["derive"] }
 directories = "6.0.0"
@@ -105,10 +104,11 @@ incremental = true
 # codegen-units = 1
 
 [features]
-default = ["profiler", "graphics", "client"]
+default = ["profiler", "graphics", "client", "logging"]
 # Use Krastorio2 graphics. Since I have not properly added licensing information, I currently do not push them, therefore this feature is broken
 graphics = []
 # dhat-rs memory profiling (https://docs.rs/dhat/latest/dhat/)
 dhat-heap = []
 profiler = ["profiling/profile-with-puffin"]
-client = ["dep:winit", "dep:eframe", "dep:egui", "dep:egui_extras", "dep:egui_plot", "dep:puffin_egui", "dep:egui_graphs", "dep:egui-show-info", "dep:egui-show-info-derive", "dep:tilelib", "dep:image", "dep:rfd", "dep:get-size"]
+client = [ "dep:eframe", "dep:egui", "dep:egui_extras", "dep:egui_plot", "dep:puffin_egui", "dep:egui_graphs", "dep:egui-show-info", "dep:egui-show-info-derive", "dep:tilelib", "dep:image", "dep:rfd", "dep:get-size"]
+logging = ["simple_logger"]

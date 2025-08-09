@@ -1,7 +1,5 @@
 #[cfg(feature = "client")]
 use eframe::egui;
-#[cfg(feature = "client")]
-use winit::keyboard::KeyCode;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Input {
@@ -18,25 +16,6 @@ pub enum Input {
     MouseScoll((f64, f64)),
 
     UnknownInput,
-}
-
-#[cfg(feature = "client")]
-impl TryFrom<winit::event::KeyEvent> for Input {
-    type Error = ();
-
-    // TODO: Instead of just using the physical key, it might be better to use other info aswell, for accessability?
-    // But maybe that is just fixed with implementing key remapping?
-    fn try_from(event: winit::event::KeyEvent) -> Result<Self, Self::Error> {
-        let ret = match event.physical_key {
-            winit::keyboard::PhysicalKey::Code(key_code) => match event.state {
-                winit::event::ElementState::Pressed => Self::KeyPress(key_code.try_into()?),
-                winit::event::ElementState::Released => Self::KeyRelease(key_code.try_into()?),
-            },
-            winit::keyboard::PhysicalKey::Unidentified(native_key_code) => Self::UnknownInput,
-        };
-
-        Ok(ret)
-    }
 }
 
 #[cfg(feature = "client")]
@@ -135,39 +114,6 @@ pub enum Key {
     R,
     ShiftR,
     Esc,
-}
-
-#[cfg(feature = "client")]
-impl TryFrom<winit::keyboard::KeyCode> for Key {
-    type Error = ();
-
-    fn try_from(value: winit::keyboard::KeyCode) -> Result<Self, Self::Error> {
-        let ret = match value {
-            KeyCode::KeyW => Key::W,
-            KeyCode::KeyA => Key::A,
-            KeyCode::KeyS => Key::S,
-            KeyCode::KeyD => Key::D,
-            KeyCode::KeyQ => Key::Q,
-            KeyCode::KeyR => Key::R,
-            KeyCode::KeyP => Key::P,
-            KeyCode::KeyT => Key::T,
-            KeyCode::Digit0 => Key::Key0,
-            KeyCode::Digit1 => Key::Key1,
-            KeyCode::Digit2 => Key::Key2,
-            KeyCode::Digit3 => Key::Key3,
-            KeyCode::Digit4 => Key::Key4,
-            KeyCode::Digit5 => Key::Key5,
-            KeyCode::Digit6 => Key::Key6,
-            KeyCode::Digit7 => Key::Key7,
-            KeyCode::Digit8 => Key::Key8,
-            KeyCode::Digit9 => Key::Key9,
-            KeyCode::ShiftLeft | KeyCode::ShiftRight => Key::Shift,
-
-            _ => return Err(()),
-        };
-
-        Ok(ret)
-    }
 }
 
 #[cfg(feature = "client")]
