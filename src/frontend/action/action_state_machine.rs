@@ -204,7 +204,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 self.map_view_info.unwrap_or(self.local_player_pos),
                                 self.current_mouse_pos,
                             );
-                            match world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next() { Some(e) => {
+                            match world.get_entity_at(pos, data_store) { Some(e) => {
                                 match (e, copy_info) {
                                     (Entity::Assembler { .. }, CopyInfo::Recipe { recipe }) => {
                                         vec![ActionType::SetRecipe(SetRecipeInfo { pos, recipe: *recipe })]
@@ -237,7 +237,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                     self.current_mouse_pos,
                                 );
 
-                                if let Some(e) = world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next() {
+                                if let Some(e) = world.get_entity_at(pos, data_store) {
                                     self.state = ActionStateMachineState::Viewing(e.get_pos());
                                 }
 
@@ -315,7 +315,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                     self.current_mouse_pos,
                                 );
 
-                                if let Some(e) = world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next() {
+                                if let Some(e) = world.get_entity_at(pos, data_store) {
                                     self.state = ActionStateMachineState::Viewing(e.get_pos());
                                 }
 
@@ -337,7 +337,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             self.map_view_info.unwrap_or(self.local_player_pos),
                             self.current_mouse_pos,
                         );
-                        if let Some(e) = world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next() {
+                        if let Some(e) = world.get_entity_at(pos, data_store) {
                             match e {
                                 Entity::Assembler { ty, pos, modules, info, rotation } => match info {
                                     AssemblerInfo::UnpoweredNoRecipe => {},
@@ -371,7 +371,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                     self.map_view_info.unwrap_or(self.local_player_pos),
                                     self.current_mouse_pos,
                                 );
-                                if world.get_entities_colliding_with(pos, (1,1), data_store).into_iter().next().is_some() {
+                                if world.get_entity_at(pos, data_store).is_some() {
                                     self.state = ActionStateMachineState::Deconstructing(pos, 30);
                                 }
                                 vec![]
@@ -588,19 +588,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     {
         let ret = match (&mut self.state, key) {
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Q) => {
-                match world
-                    .get_entities_colliding_with(
-                        Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        ),
-                        (1, 1),
-                        data_store,
-                    )
-                    .into_iter()
-                    .next()
-                {
+                match world.get_entity_at(
+                    Self::player_mouse_to_tile(
+                        self.zoom_level,
+                        self.map_view_info.unwrap_or(self.local_player_pos),
+                        self.current_mouse_pos,
+                    ),
+                    data_store,
+                ) {
                     Some(Entity::Assembler { ty, rotation, .. }) => {
                         self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                             PlaceEntityType::Assembler {
@@ -1199,22 +1194,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
         if let ActionStateMachineState::Deconstructing(pos, timer) = &mut self.state {
             // Check if we are still over the thing we were deconstructing
-            if world
-                .get_entities_colliding_with(*pos, (1, 1), data_store)
-                .into_iter()
-                .next()
-                == world
-                    .get_entities_colliding_with(
-                        Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        ),
-                        (1, 1),
-                        data_store,
-                    )
-                    .into_iter()
-                    .next()
+            if world.get_entity_at(*pos, data_store)
+                == world.get_entity_at(
+                    Self::player_mouse_to_tile(
+                        self.zoom_level,
+                        self.map_view_info.unwrap_or(self.local_player_pos),
+                        self.current_mouse_pos,
+                    ),
+                    data_store,
+                )
             {
                 *timer -= 1;
                 if *timer == 0 {

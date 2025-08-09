@@ -3,14 +3,19 @@ use egui::Color32;
 #[cfg(feature = "client")]
 use egui_show_info::{EguiDisplayable, InfoExtractor, ShowInfo};
 use log::error;
+use rayon::iter::IndexedParallelIterator;
+use rayon::iter::ParallelIterator;
+use rayon::prelude::ParallelSliceMut;
 use std::{
     cmp::min,
     collections::{BTreeMap, BTreeSet, HashMap},
     marker::PhantomData,
     mem,
     num::NonZero,
-    ops::{Add, ControlFlow},
+    ops::{Add, ControlFlow, Range},
 };
+
+use crate::frontend::world::sparse_grid::GetGridIndex;
 
 use crate::{frontend::action::belt_placement, get_size::EnumMap};
 #[cfg(feature = "client")]
@@ -58,7 +63,7 @@ use std::iter;
 use noise::Seedable;
 use petgraph::prelude::Bfs;
 
-use super::{Position, sparse_grid::SparseGrid};
+use super::{Position, sparse_grid::perfect_grid::PerfectGrid};
 use crate::liquid::FluidSystemId;
 
 pub const BELT_LEN_PER_TILE: u16 = 4;
@@ -86,8 +91,9 @@ pub enum InserterInstantiationNewOptions<ItemIdxType: WeakIdxTrait> {
 const_assert!(CHUNK_SIZE * CHUNK_SIZE - 1 <= u8::MAX as u16);
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct Chunk<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+    base_pos: (i32, i32),
     pub floor_tiles: Option<Box<[[FloorTile; CHUNK_SIZE as usize]; CHUNK_SIZE as usize]>>,
     chunk_tile_to_entity_into: Option<Box<[[u8; CHUNK_SIZE as usize]; CHUNK_SIZE as usize]>>,
     entities: Vec<Entity<ItemIdxType, RecipeIdxType>>,
@@ -138,7 +144,7 @@ pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     // TODO: I don´t think I want FP
     pub players: Vec<PlayerInfo>,
-    chunks: SparseGrid<i32, Chunk<ItemIdxType, RecipeIdxType>>,
+    chunks: PerfectGrid<i32, Chunk<ItemIdxType, RecipeIdxType>>,
 
     belt_lookup: BeltIdLookup<ItemIdxType>,
     belt_recieving_input_directions: HashMap<Position, EnumMap<Dir, bool>>,
@@ -267,10 +273,7 @@ fn try_attaching_fluids<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     rotation: assembler_rotation,
                     ..
                 },
-            ) = world
-                .get_entities_colliding_with(new_assembler_pos, (1, 1), data_store)
-                .into_iter()
-                .next()
+            ) = world.get_entity_at(new_assembler_pos, data_store)
             else {
                 return;
             };
@@ -736,10 +739,7 @@ fn new_lab_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 ty,
                 modules,
                 pole_position: Some((pole_pos, weak_index, index)),
-            }) = world
-                .get_entities_colliding_with(pos, (1, 1), data_store)
-                .into_iter()
-                .next()
+            }) = world.get_entity_at(pos, data_store)
             else {
                 warn!("Lab missing in new lab cascade");
                 return;
@@ -814,10 +814,7 @@ fn new_power_pole<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     CascadingUpdate {
         update: Box::new(move |world, sim_state, updates, data_store| {
             profiling::scope!("new_power_pole");
-            let pole = world
-                .get_entities_colliding_with(pos, (1, 1), data_store)
-                .into_iter()
-                .next();
+            let pole = world.get_entity_at(pos, data_store);
 
             if let Some(Entity::PowerPole {
                 ty, pos: pole_pos, ..
@@ -952,10 +949,7 @@ fn new_chest_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 pos,
                 item: _,
                 slot_limit: _,
-            }) = world
-                .get_entities_colliding_with(pos, (1, 1), data_store)
-                .into_iter()
-                .next()
+            }) = world.get_entity_at(pos, data_store)
             else {
                 return;
             };
@@ -979,10 +973,7 @@ fn new_powered_beacon_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 pos,
                 modules: _,
                 pole_position: Some((pole_pos, weak_idx)),
-            }) = world
-                .get_entities_colliding_with(pos, (1, 1), data_store)
-                .into_iter()
-                .next()
+            }) = world.get_entity_at(pos, data_store)
             else {
                 return;
             };
@@ -1061,10 +1052,7 @@ fn newly_working_assembler<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         },
                     rotation,
                 },
-            ) = world
-                .get_entities_colliding_with(pos, (1, 1), data_store)
-                .into_iter()
-                .next()
+            ) = world.get_entity_at(pos, data_store)
             else {
                 warn!("Assembler missing in new assembler cascade");
                 return;
@@ -1215,10 +1203,45 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
 const ORE_THRESHHOLD: f64 = 0.95;
 const ORE_DISTANCE_MULT: f64 = 1.0 / 80.0;
 
+enum ChunkTileState {
+    Index(usize),
+    Empty,
+    OtherChunk,
+    EmptyOrOtherChunk,
+}
+
+const EMPTY: u8 = 254;
+const OTHER_CHUNK: u8 = 255;
+const EMPTY_OR_OTHER_CHUNK: u8 = 255;
+
+fn arr_val_to_state(entities_len: usize, value: u8) -> ChunkTileState {
+    match value {
+        v if usize::from(v) < entities_len => ChunkTileState::Index(usize::from(v)),
+        EMPTY_OR_OTHER_CHUNK if entities_len == usize::from(min(EMPTY, OTHER_CHUNK) + 1) => {
+            ChunkTileState::EmptyOrOtherChunk
+        },
+
+        OTHER_CHUNK => ChunkTileState::OtherChunk,
+        EMPTY => ChunkTileState::Empty,
+        _ => unreachable!(),
+    }
+}
+
+impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> GetGridIndex<i32>
+    for Chunk<ItemIdxType, RecipeIdxType>
+{
+    fn get_grid_index(&self) -> (i32, i32) {
+        (
+            self.base_pos.0 / i32::from(CHUNK_SIZE),
+            self.base_pos.1 / i32::from(CHUNK_SIZE),
+        )
+    }
+}
+
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeIdxType> {
     #[must_use]
     pub fn new() -> Self {
-        let mut grid = SparseGrid::new();
+        let mut grid = PerfectGrid::new();
         #[cfg(debug_assertions)]
         const WORLDSIZE_CHUNKS: i32 = 200;
         #[cfg(not(debug_assertions))]
@@ -1226,19 +1249,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
         let noise = Simplex::new(1);
 
-        for x in 50..WORLDSIZE_CHUNKS {
-            for y in 50..WORLDSIZE_CHUNKS {
-                grid.insert(
-                    x,
-                    y,
-                    Chunk {
-                        floor_tiles: None,
-                        chunk_tile_to_entity_into: None,
-                        entities: vec![],
-                    },
-                );
-            }
-        }
+        let positions = (50..WORLDSIZE_CHUNKS)
+            .cartesian_product(50..WORLDSIZE_CHUNKS)
+            .collect_vec();
+        let chunks = positions.iter().copied().map(|(x, y)| Chunk {
+            base_pos: (x * i32::from(CHUNK_SIZE), y * i32::from(CHUNK_SIZE)),
+            floor_tiles: None,
+            chunk_tile_to_entity_into: None,
+            entities: vec![],
+        });
+        grid.insert_many(positions.iter().copied(), chunks);
 
         Self {
             noise: SerializableSimplex { inner: noise },
@@ -1311,8 +1331,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         self.chunks.occupied_entries().map(|(_, chunk)| chunk)
     }
 
-    pub fn get_chunk(&self, x: i32, y: i32) -> Option<&Chunk<ItemIdxType, RecipeIdxType>> {
-        self.chunks.get(x, y)
+    pub fn get_chunk(
+        &self,
+        chunk_x: i32,
+        chunk_y: i32,
+    ) -> Option<&Chunk<ItemIdxType, RecipeIdxType>> {
+        self.chunks.get(chunk_x, chunk_y)
+    }
+
+    pub fn extent_chunk_positions(&self) -> [Range<i32>; 2] {
+        match self.chunks.get_extent() {
+            Some(ranges) => ranges.map(|range| *range.start()..(*range.end() + 1)),
+            None => Default::default(),
+        }
     }
 
     pub fn set_floor_tile(&mut self, pos: Position, floor_tile: FloorTile) -> Result<(), ()> {
@@ -1341,7 +1372,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
         let mut cascading_updates = vec![];
 
-        self.mutate_entities_colliding_with(pos, (1, 1), data_store, |e| {
+        self.get_entity_at_mut(pos, data_store).map(|e| {
             match e {
                 Entity::Assembler {
                     ty,
@@ -1362,7 +1393,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     }
 
                     if id.recipe == new_recipe {
-                        return ControlFlow::Break(());
+                        return;
                     }
 
                     // Change assembler recipe
@@ -1445,7 +1476,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 },
                 e => unreachable!("Called change recipe on non assembler: {e:?}"),
             }
-            ControlFlow::Break(())
         });
 
         // CORRECTNESS: We rely on the updates being processed in a LIFO order!
@@ -1477,7 +1507,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         let chunk_pos = self.get_chunk_pos_for_tile(pos);
 
         if self.get_chunk_for_tile_mut(pos).is_none() {
-            todo!();
+            todo!("Chunk missing");
             return Err(());
         }
 
@@ -1680,15 +1710,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             }
         }
 
+        let chunk_x = pos.x / i32::from(CHUNK_SIZE);
+        let chunk_y = pos.y / i32::from(CHUNK_SIZE);
         let chunk = self
-            .get_chunk_for_tile_mut(pos)
+            .get_chunk_mut((chunk_x, chunk_y))
             .expect("Chunk outside the world!");
 
         let map = if let Some(map) = &mut chunk.chunk_tile_to_entity_into {
             map
         } else {
             chunk.chunk_tile_to_entity_into = Some(Box::new(
-                [[u8::MAX; CHUNK_SIZE as usize]; CHUNK_SIZE as usize],
+                [[EMPTY; CHUNK_SIZE as usize]; CHUNK_SIZE as usize],
             ));
             chunk.chunk_tile_to_entity_into.as_mut().unwrap()
         };
@@ -1700,14 +1732,54 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
         let index = u8::try_from(chunk.entities.len() - 1).expect("Into a chunk of size 16 x 16 we can fit at most 256 entitites. This assumes all entities are at least 1x1");
 
+        if index == min(EMPTY, OTHER_CHUNK) {
+            // This could cause confusion with tiles marked empty
+            // if map[x][y] == min(EMPTY, OTHER_CHUNK) {
+            //     map[x][y] = EMPTY_OR_OTHER_CHUNK;
+            // }
+            todo!()
+        }
+
+        let x_in_chunk = usize::try_from((e_pos.x).rem_euclid(CHUNK_SIZE as i32)).unwrap();
+        let y_in_chunk = usize::try_from((e_pos.y).rem_euclid(CHUNK_SIZE as i32)).unwrap();
         for x_offs in 0..e_size.0 {
             for y_offs in 0..e_size.1 {
-                let x_in_chunk = usize::try_from((e_pos.x).rem_euclid(CHUNK_SIZE as i32)).unwrap();
                 let x = min(x_in_chunk + usize::from(x_offs), CHUNK_SIZE as usize - 1);
-                let y_in_chunk = usize::try_from((e_pos.y).rem_euclid(CHUNK_SIZE as i32)).unwrap();
                 let y = min(y_in_chunk + usize::from(y_offs), CHUNK_SIZE as usize - 1);
 
+                // TODO: We write the same index multiple times here
+                assert!(
+                    map[x][y] == EMPTY || map[x][y] == EMPTY_OR_OTHER_CHUNK || map[x][y] == index,
+                    "Tile was not empty, but was {}",
+                    map[x][y]
+                );
                 map[x][y] = index;
+            }
+        }
+
+        for x_offs in 0..e_size.0 {
+            for y_offs in 0..e_size.1 {
+                let x_rel = x_in_chunk + usize::from(x_offs);
+                let y_rel = y_in_chunk + usize::from(y_offs);
+
+                match (
+                    x_rel >= usize::from(CHUNK_SIZE),
+                    y_rel >= usize::from(CHUNK_SIZE),
+                ) {
+                    (false, false) => {},
+                    (x, y) => {
+                        let chunk = self
+                            .get_chunk_mut((chunk_x + i32::from(x), chunk_y + i32::from(y)))
+                            .expect("Trying to place entitty outside the world");
+
+                        let arr = chunk.chunk_tile_to_entity_into.get_or_insert(Box::new(
+                            [[EMPTY; CHUNK_SIZE as usize]; CHUNK_SIZE as usize],
+                        ));
+
+                        arr[x_rel - (usize::from(x) * usize::from(CHUNK_SIZE))]
+                            [y_rel - (usize::from(y) * usize::from(CHUNK_SIZE))] = OTHER_CHUNK;
+                    },
+                }
             }
         }
 
@@ -1715,29 +1787,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         for x_offs in 0..e_size.0 {
             for y_offs in 0..e_size.1 {
                 assert!(
-                    self.get_entities_colliding_with(
+                    self.get_entity_at(
                         Position {
                             x: e_pos.x + i32::from(x_offs),
                             y: e_pos.y + i32::from(y_offs)
                         },
-                        (1, 1),
                         data_store
                     )
-                    .into_iter()
-                    .next()
                     .is_some()
                 );
                 assert!(
-                    self.get_entities_colliding_with(
+                    self.get_entity_at(
                         Position {
                             x: e_pos.x + i32::from(x_offs),
                             y: e_pos.y + i32::from(y_offs)
                         },
-                        (1, 1),
                         data_store
                     )
-                    .into_iter()
-                    .next()
                     .unwrap()
                     .get_pos()
                         == e_pos
@@ -1804,10 +1870,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             direction,
             info: InserterInfo::NotAttached { start_pos, end_pos },
             filter,
-        }) = self
-            .get_entities_colliding_with(pos, (1, 1), data_store)
-            .into_iter()
-            .next()
+        }) = self.get_entity_at(pos, data_store)
         else {
             return Err(InstantiateInserterError::NotUnattachedInserter);
         };
@@ -1815,9 +1878,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         let movetime = user_movetime.map(|v| v.into()).unwrap_or(*type_movetime);
 
         let start_conn: Option<InserterConnectionPossibility<ItemIdxType, RecipeIdxType>> = self
-            .get_entities_colliding_with(*start_pos, (1, 1), data_store)
-            .into_iter()
-            .next()
+            .get_entity_at(*start_pos, data_store)
             .map(|e| match e {
                 Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }| Entity::FluidTank { .. }  => None,
 
@@ -1939,9 +2000,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         };
 
         let dest_conn: Option<InserterConnectionPossibility<ItemIdxType, RecipeIdxType>> = self
-            .get_entities_colliding_with(*end_pos, (1, 1), data_store)
-            .into_iter()
-            .next()
+            .get_entity_at(*end_pos, data_store)
             .map(|e| match e {
                 Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }| Entity::FluidTank { .. }  => None,
 
@@ -2229,8 +2288,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     Static::Done(storage) => storage,
                     Static::ToInstantiate => {
                         let mut storage = None;
-                        self.mutate_entities_colliding_with(end_pos, (1, 1), data_store, |e| {
-                            match e {
+                        self.get_entity_at_mut(end_pos, data_store)
+                            .map(|e| match e {
                                 Entity::Chest {
                                     ty,
                                     pos: chest_pos,
@@ -2247,9 +2306,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     })
                                 },
                                 _ => unreachable!(),
-                            }
-                            ControlFlow::Break(())
-                        });
+                            });
                         storage.unwrap()
                     },
                 };
@@ -2311,8 +2368,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     Static::Done(storage) => storage,
                     Static::ToInstantiate => {
                         let mut storage = None;
-                        self.mutate_entities_colliding_with(start_pos, (1, 1), data_store, |e| {
-                            match e {
+                        self.get_entity_at_mut(start_pos, data_store)
+                            .map(|e| match e {
                                 Entity::Chest {
                                     ty,
                                     pos: chest_pos,
@@ -2329,9 +2386,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     })
                                 },
                                 _ => unreachable!(),
-                            }
-                            ControlFlow::Break(())
-                        });
+                            });
                         storage.unwrap()
                     },
                 };
@@ -2394,8 +2449,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     Static::Done(storage) => storage,
                     Static::ToInstantiate => {
                         let mut storage = None;
-                        self.mutate_entities_colliding_with(start_pos, (1, 1), data_store, |e| {
-                            match e {
+                        self.get_entity_at_mut(start_pos, data_store)
+                            .map(|e| match e {
                                 Entity::Chest {
                                     ty,
                                     pos: chest_pos,
@@ -2418,9 +2473,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     });
                                 },
                                 _ => unreachable!(),
-                            }
-                            ControlFlow::Break(())
-                        });
+                            });
                         storage.unwrap()
                     },
                 };
@@ -2429,8 +2482,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     Static::Done(storage) => storage,
                     Static::ToInstantiate => {
                         let mut storage = None;
-                        self.mutate_entities_colliding_with(end_pos, (1, 1), data_store, |e| {
-                            match e {
+                        self.get_entity_at_mut(end_pos, data_store)
+                            .map(|e| match e {
                                 Entity::Chest {
                                     ty,
                                     pos: chest_pos,
@@ -2453,9 +2506,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     });
                                 },
                                 _ => unreachable!(),
-                            }
-                            ControlFlow::Break(())
-                        });
+                            });
                         storage.unwrap()
                     },
                 };
@@ -2651,12 +2702,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         };
 
         info!("Checking {} chunks to change belt_id", old_chunks.len());
+        if old_chunks.len() > 150 {
+            warn!("Having to check a lot of chunks: {}", old_chunks.len());
+        }
 
-        for chunk_pos in old_chunks.iter().copied() {
+        let old_chunks_filtered = old_chunks.iter().copied().filter(|&chunk_pos| {
             let chunk = self
                 .chunks
                 .get_mut(chunk_pos.0, chunk_pos.1)
                 .expect("Ungenerated chunk in belt map!");
+
+            let mut found_anything = false;
 
             for entity in &mut chunk.entities {
                 match entity {
@@ -2672,6 +2728,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     | Entity::Underground { id, belt_pos, .. } => {
                         if *id == old_id && belt_pos_earliest <= *belt_pos {
                             *id = new_id;
+                            found_anything = true;
                         }
                     },
                     Entity::Splitter { .. } => {},
@@ -2684,6 +2741,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             AttachedInserter::BeltStorage { id, belt_pos } => {
                                 if *id == old_id && belt_pos_earliest <= *belt_pos {
                                     *id = new_id;
+                                    found_anything = true;
                                 }
                             },
                             AttachedInserter::BeltBelt { item, inserter } => todo!(),
@@ -2692,13 +2750,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     },
                 }
             }
-        }
+
+            found_anything
+        });
 
         self.belt_lookup
             .belt_id_to_chunks
             .entry(new_id)
             .or_default()
-            .extend(old_chunks);
+            .extend(old_chunks_filtered);
 
         let mut cascading_updates = vec![try_instantiating_inserters_for_belt_cascade(new_id)];
         while let Some(update) = cascading_updates.pop() {
@@ -2725,58 +2785,74 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     }
 
     pub fn modify_belt_pos(&mut self, id_to_change: BeltTileId<ItemIdxType>, sub: bool, offs: u16) {
-        let chunks = self.belt_lookup.belt_id_to_chunks.get(&id_to_change);
+        let chunks = self.belt_lookup.belt_id_to_chunks.get_mut(&id_to_change);
 
-        for chunk_pos in chunks.into_iter().flatten() {
-            let chunk = self
-                .chunks
-                .get_mut(chunk_pos.0, chunk_pos.1)
-                .expect("Ungenerated chunk in belt map!");
+        let num_chunks = chunks.as_ref().map(|v| v.len()).unwrap_or(0);
+        info!("Checking {} chunks to modify pos", num_chunks);
+        if num_chunks > 150 {
+            warn!("Having to check a lot of chunks: {}", num_chunks);
+        }
 
-            for entity in &mut chunk.entities {
-                match entity {
-                    Entity::Beacon { .. } => {},
-                    Entity::Lab { .. } => {},
-                    Entity::SolarPanel { .. } => {},
-                    Entity::Assembler { .. } => {},
-                    Entity::PowerPole { .. } => {},
-                    Entity::Chest { .. } => {},
-                    Entity::Roboport { .. } => {},
-                    Entity::FluidTank { .. } => {},
-                    Entity::Belt { id, belt_pos, .. }
-                    | Entity::Underground { id, belt_pos, .. } => {
-                        if *id == id_to_change {
-                            if sub {
-                                *belt_pos = belt_pos.checked_sub(offs).expect("belt_pos wrapped!");
-                            } else {
-                                *belt_pos = belt_pos.checked_add(offs).expect("belt_pos wrapped!");
-                            }
-                        }
-                    },
-                    Entity::Splitter { .. } => {},
-                    Entity::Inserter { info, .. } => match info {
-                        InserterInfo::NotAttached { .. } => {},
-                        InserterInfo::Attached {
-                            info: attached_inserter,
-                            ..
-                        } => match attached_inserter {
-                            AttachedInserter::BeltStorage { id, belt_pos, .. } => {
-                                if *id == id_to_change {
-                                    if sub {
-                                        *belt_pos =
-                                            belt_pos.checked_sub(offs).expect("belt_pos wrapped!");
-                                    } else {
-                                        *belt_pos =
-                                            belt_pos.checked_add(offs).expect("belt_pos wrapped!");
-                                    }
+        if let Some(chunks) = chunks {
+            chunks.retain(|chunk_pos| {
+                let chunk = self
+                    .chunks
+                    .get_mut(chunk_pos.0, chunk_pos.1)
+                    .expect("Ungenerated chunk in belt map!");
+
+                let mut found_anything = false;
+                for entity in &mut chunk.entities {
+                    match entity {
+                        Entity::Beacon { .. } => {},
+                        Entity::Lab { .. } => {},
+                        Entity::SolarPanel { .. } => {},
+                        Entity::Assembler { .. } => {},
+                        Entity::PowerPole { .. } => {},
+                        Entity::Chest { .. } => {},
+                        Entity::Roboport { .. } => {},
+                        Entity::FluidTank { .. } => {},
+                        Entity::Belt { id, belt_pos, .. }
+                        | Entity::Underground { id, belt_pos, .. } => {
+                            if *id == id_to_change {
+                                found_anything = true;
+                                if sub {
+                                    *belt_pos =
+                                        belt_pos.checked_sub(offs).expect("belt_pos wrapped!");
+                                } else {
+                                    *belt_pos =
+                                        belt_pos.checked_add(offs).expect("belt_pos wrapped!");
                                 }
-                            },
-                            AttachedInserter::BeltBelt { item, inserter } => todo!(),
-                            AttachedInserter::StorageStorage { .. } => {},
+                            }
                         },
-                    },
+                        Entity::Splitter { .. } => {},
+                        Entity::Inserter { info, .. } => match info {
+                            InserterInfo::NotAttached { .. } => {},
+                            InserterInfo::Attached {
+                                info: attached_inserter,
+                                ..
+                            } => match attached_inserter {
+                                AttachedInserter::BeltStorage { id, belt_pos, .. } => {
+                                    if *id == id_to_change {
+                                        found_anything = true;
+                                        if sub {
+                                            *belt_pos = belt_pos
+                                                .checked_sub(offs)
+                                                .expect("belt_pos wrapped!");
+                                        } else {
+                                            *belt_pos = belt_pos
+                                                .checked_add(offs)
+                                                .expect("belt_pos wrapped!");
+                                        }
+                                    }
+                                },
+                                AttachedInserter::BeltBelt { item, inserter } => todo!(),
+                                AttachedInserter::StorageStorage { .. } => {},
+                            },
+                        },
+                    }
                 }
-            }
+                found_anything
+            });
         }
     }
 
@@ -2897,7 +2973,254 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     }
 
     #[cfg(feature = "client")]
+    pub fn get_area_colors(
+        &self,
+        x_range_tiles: Range<i32>,
+        y_range_tiles: Range<i32>,
+        pixel_to_tile: usize,
+        data: &mut [Color32],
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        use std::cmp::max;
+
+        let full_len = data.len();
+
+        let width_tiles = x_range_tiles.len();
+
+        assert!(x_range_tiles.start % pixel_to_tile as i32 == 0);
+        assert!(x_range_tiles.end % pixel_to_tile as i32 == 0);
+        assert!(y_range_tiles.start % pixel_to_tile as i32 == 0);
+        assert!(y_range_tiles.end % pixel_to_tile as i32 == 0);
+        assert!(width_tiles % pixel_to_tile == 0);
+
+        let width_pixels = width_tiles / pixel_to_tile;
+
+        let height_tiles = y_range_tiles.len();
+        let height_pixels = height_tiles / pixel_to_tile;
+
+        assert_eq!(width_pixels * height_pixels, full_len);
+
+        // More chunks than threads to allow work stealing, to avoid having all the work end up on a single thread
+        let num_threads = rayon::current_num_threads() * 8;
+        let chunk_size = height_pixels.div_ceil(num_threads) * width_pixels;
+
+        // We use the extent of the world here, to skip looking for chunks that can neveer exist in the first place
+        let [x_extent, y_extent] = self.extent_chunk_positions();
+
+        // Since building can span chunk boundries, we also need to check chunks outside the simple chunk area
+        // TODO: This depends on the size of the largest building
+        const OVERLAP: i32 = 1;
+        let chunk_x_start = max(
+            x_extent.start,
+            (x_range_tiles.start / i32::from(CHUNK_SIZE)) - OVERLAP,
+        );
+        let chunk_x_end = min(
+            x_extent.end - 1,
+            (x_range_tiles.end / i32::from(CHUNK_SIZE)) + OVERLAP,
+        );
+
+        data.par_chunks_mut(chunk_size)
+            .enumerate()
+            .for_each(|(i, data)| {
+                profiling::scope!("par_chunks_mut", format!("Index: {i}"));
+                let start_index = i * chunk_size;
+                let end_index = start_index + data.len();
+
+                assert_eq!(start_index % width_pixels, 0);
+                assert_eq!(end_index % width_pixels, 0);
+                let my_y_start_pixel = start_index / width_pixels;
+                let my_y_end_pixel = end_index / width_pixels;
+
+                let my_y_start_tile =
+                    (my_y_start_pixel * pixel_to_tile) as i32 + y_range_tiles.start;
+                let my_y_end_tile = (my_y_end_pixel * pixel_to_tile) as i32 + y_range_tiles.start;
+
+                let chunk_y_start = my_y_start_tile / i32::from(CHUNK_SIZE);
+                let chunk_y_end = my_y_end_tile / i32::from(CHUNK_SIZE);
+
+
+                {
+                    profiling::scope!("Get Floor");
+                    for x in x_range_tiles.clone().step_by(pixel_to_tile) {
+                        for y in (my_y_start_tile..my_y_end_tile).step_by(pixel_to_tile) {
+                            let pixel_index: usize = (usize::try_from(y - my_y_start_tile)
+                                .expect(
+                                    "Since y is in range, this should always be positive",
+                                )
+                                / pixel_to_tile)
+                                * width_pixels
+                                + usize::try_from(x - x_range_tiles.start).expect(
+                                    "Since x is in range, this should always be positive",
+                                ) / pixel_to_tile;
+
+                            let floor_color = self.get_floor_color(Position { x, y }, data_store);
+
+                            data[pixel_index] = floor_color;
+                        }
+                    }
+                }
+
+                {
+                    profiling::scope!("Handle Entities by chunk");
+                    // Since building can span chunk boundries, we also need to check chunks outside the simple chunk area
+                    let y_range = max(y_extent.start, chunk_y_start - OVERLAP)..=min(y_extent.end - 1, chunk_y_end + OVERLAP);
+                    for chunk_x in chunk_x_start..=chunk_x_end {
+                        for chunk_y in y_range.clone() {
+                            let chunk = {
+                                self.get_chunk(chunk_x, chunk_y)
+                            };
+                            let Some(chunk) = chunk else {
+                                continue;
+                            };
+
+                            let base_pos = [
+                                chunk_x * i32::from(CHUNK_SIZE),
+                                chunk_y * i32::from(CHUNK_SIZE),
+                            ];
+
+                            if let Some(arr) = &chunk.chunk_tile_to_entity_into {
+                                for x in 0..CHUNK_SIZE {
+                                    let world_x = i32::from(x) + base_pos[0];
+                                    if world_x % i32::try_from(pixel_to_tile).unwrap() != 0 {
+                                        continue;
+                                    }
+                                    for y in 0..CHUNK_SIZE {
+                                        let world_y = i32::from(y) + base_pos[1];
+                                        if world_y % i32::try_from(pixel_to_tile).unwrap() != 0 {
+                                            continue;
+                                        }
+
+                                        if !x_range_tiles.contains(&world_x) || !(my_y_start_tile..my_y_end_tile).contains(&world_y) {
+                                            continue;
+                                        }
+
+
+                                        let idx = arr[usize::from(x)][usize::from(y)];
+                                        if usize::from(idx) < chunk.entities.len() {
+                                            let color = chunk.entities[usize::from(idx)].get_map_color(data_store);
+                                            let pixel_index: usize = (usize::try_from(world_y - my_y_start_tile)
+                                                .expect(
+                                                    "Since y is in range, this should always be positive",
+                                                )
+                                                / pixel_to_tile)
+                                                * width_pixels
+                                                + usize::try_from(world_x - x_range_tiles.start).expect(
+                                                    "Since x is in range, this should always be positive",
+                                                ) / pixel_to_tile;
+                                            if pixel_index >= data.len() {
+                                                // FIXME: This should not be needed :/
+                                                continue;
+                                            }
+                                            data[pixel_index] = color;
+                                        } else {
+                                            // No entity here, nothing to do
+                                        }
+                                    }
+                                }
+                            } else {
+                                // This chunk does not contain any entities
+                                assert!(chunk.entities.is_empty());
+                            }
+
+                            for entity in chunk.get_entities() {
+                                let e_pos = entity.get_pos();
+                                let e_size = entity.get_entity_size(data_store);
+
+                                if e_pos.x + i32::from(e_size.0) <= base_pos[0] + i32::from(CHUNK_SIZE) {
+                                    // Handled by the array loop
+                                    continue;
+                                }
+                                if e_pos.y + i32::from(e_size.1) <= base_pos[1] + i32::from(CHUNK_SIZE) {
+                                    // Handled by the array loop
+                                    continue;
+                                }
+
+                                let color = entity.get_map_color(data_store);
+
+                                for x in base_pos[0] + i32::from(CHUNK_SIZE)..(e_pos.x + i32::from(e_size.0)) {
+                                    if x % i32::try_from(pixel_to_tile).unwrap() != 0 {
+                                        continue;
+                                    }
+                                    for y in base_pos[1] + i32::from(CHUNK_SIZE)..(e_pos.y + i32::from(e_size.1)) {
+                                        if y % i32::try_from(pixel_to_tile).unwrap() != 0 {
+                                            continue;
+                                        }
+
+                                        if !x_range_tiles.contains(&x)
+                                            || !(my_y_start_tile..my_y_end_tile).contains(&y)
+                                        {
+                                            continue;
+                                        }
+
+                                        assert!((my_y_start_pixel..my_y_end_pixel).contains(
+                                            &(usize::try_from(y - my_y_start_tile).expect(
+                                                "Since y is in range, this should always be positive",
+                                            ) / pixel_to_tile + my_y_start_pixel)
+                                        ), "{:?} does not contain {:?}", (my_y_start_pixel..my_y_end_pixel), usize::try_from(y - my_y_start_tile).expect(
+                                                "Since y is in range, this should always be positive",
+                                            ) / pixel_to_tile + my_y_start_pixel);
+
+                                        let pixel_index: usize = (usize::try_from(y - my_y_start_tile)
+                                            .expect(
+                                                "Since y is in range, this should always be positive",
+                                            )
+                                            / pixel_to_tile)
+                                            * width_pixels
+                                            + usize::try_from(x - x_range_tiles.start).expect(
+                                                "Since x is in range, this should always be positive",
+                                            ) / pixel_to_tile;
+
+
+                                        if pixel_index >= data.len() {
+                                            // FIXME: This should not be needed :/
+                                            continue;
+                                        }
+
+                                        data[pixel_index] = color;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+    }
+
+    #[cfg(feature = "client")]
     pub fn get_entity_color(
+        &self,
+        pos: Position,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Color32 {
+        // self.get_tile_arr_debug_color(pos)
+        self.get_entity_at(pos, data_store)
+            .map(|e| e.get_map_color(data_store))
+            .unwrap_or(self.get_floor_color(pos, data_store))
+    }
+
+    fn get_tile_arr_debug_color(&self, pos: Position) -> Color32 {
+        self.get_chunk_for_tile(pos)
+            .map(|chunk| {
+                let arr_val = chunk
+                    .chunk_tile_to_entity_into
+                    .as_ref()
+                    .map(|arr| {
+                        arr[pos.x.rem_euclid(i32::from(CHUNK_SIZE)) as usize]
+                            [pos.y.rem_euclid(i32::from(CHUNK_SIZE)) as usize]
+                    })
+                    .unwrap_or(EMPTY);
+
+                match arr_val {
+                    OTHER_CHUNK => Color32::PURPLE,
+                    EMPTY => Color32::BLACK,
+                    index => Color32::from_gray(u8::MAX - index),
+                }
+            })
+            .unwrap_or(Color32::RED)
+    }
+
+    #[cfg(feature = "client")]
+    pub fn get_floor_color(
         &self,
         pos: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -2906,61 +3229,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
         chunk
             .map(|chunk| {
-                let index = if let Some(map) = &chunk.chunk_tile_to_entity_into {
-                    map[usize::try_from(pos.x.rem_euclid(CHUNK_SIZE as i32)).unwrap()]
-                        [usize::try_from(pos.y.rem_euclid(CHUNK_SIZE as i32)).unwrap()]
-                } else {
-                    u8::MAX
-                };
-
-                if (index as usize) < chunk.entities.len() {
-                    chunk.entities[index as usize].get_map_color(data_store)
-                } else {
-                    // This could be part of an entity in a different chunk
-                    let our_chunk_x = pos.x / i32::from(CHUNK_SIZE);
-                    let our_chunk_y = pos.y / i32::from(CHUNK_SIZE);
-
-                    let chunk_range_x = ((pos.x - i32::from(data_store.max_entity_size.0))
-                        / i32::from(CHUNK_SIZE))
-                        ..=our_chunk_x;
-
-                    for chunk_x in chunk_range_x {
-                        let chunk_range_y = ((pos.y - i32::from(data_store.max_entity_size.1))
-                            / i32::from(CHUNK_SIZE))
-                            ..=our_chunk_y;
-                        for chunk_y in chunk_range_y {
-                            if chunk_x == our_chunk_x && chunk_y == our_chunk_y {
-                                continue;
-                            }
-
-                            if let Some(colliding) = self
-                                .get_chunk(chunk_x, chunk_y)
-                                .iter()
-                                .flat_map(|chunk| chunk.entities.iter())
-                                .find(|e| {
-                                    let e_pos = e.get_pos();
-                                    let e_size = e.get_entity_size(data_store);
-
-                                    pos.contained_in(e_pos, (e_size.0.into(), e_size.1.into()))
-                                })
-                            {
-                                return colliding.get_map_color(data_store);
-                            }
-                        }
-                    }
-
-                    if let Some(ore) = self.get_original_ore_at_pos(pos) {
-                        if ore.1 > 0 {
-                            // TODO ORE COLOR
-                            Color32::LIGHT_BLUE
-                        } else {
-                            // TODO: Get floor color
-                            Color32::from_hex("#3f3f3f").unwrap()
-                        }
+                if let Some(ore) = self.get_original_ore_at_pos(pos) {
+                    if ore.1 > 0 {
+                        // TODO ORE COLOR
+                        Color32::LIGHT_BLUE
                     } else {
                         // TODO: Get floor color
                         Color32::from_hex("#3f3f3f").unwrap()
                     }
+                } else {
+                    // TODO: Get floor color
+                    Color32::from_hex("#3f3f3f").unwrap()
                 }
             })
             .unwrap_or(Color32::BLACK)
@@ -2989,54 +3268,253 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
         chunk_range_x
             .cartesian_product(chunk_range_y)
-            .filter_map(|(chunk_x, chunk_y)| {
-                self.chunks
-                    .get(chunk_x, chunk_y)
-                    .map(|c| (chunk_x, chunk_y, c))
-            })
-            .map(move |(chunk_x, chunk_y, chunk)| {
-                if size == (1, 1)
-                    && pos.x >= chunk_x * i32::from(CHUNK_SIZE)
-                    && pos.x < (chunk_x + 1) * i32::from(CHUNK_SIZE)
-                    && pos.y >= chunk_y * i32::from(CHUNK_SIZE)
-                    && pos.y < (chunk_y + 1) * i32::from(CHUNK_SIZE)
-                {
-                    let index = if let Some(map) = &chunk.chunk_tile_to_entity_into {
-                        map[usize::try_from(pos.x.rem_euclid(i32::from(CHUNK_SIZE))).unwrap()]
-                            [usize::try_from(pos.y.rem_euclid(i32::from(CHUNK_SIZE))).unwrap()]
-                    } else {
-                        u8::MAX
-                    };
-
-                    if index as usize >= chunk.entities.len() {
-                        debug_assert!(chunk.entities.iter().all(|e| {
-                            let e_pos = e.get_pos();
-                            let e_size = e.get_entity_size(data_store);
-
-                            !pos.overlap(size, e_pos, (e_size.0.into(), e_size.1.into()))
-                        }));
-                        [].iter()
-                    } else {
-                        assert!(chunk.entities[(index as usize)..(index as usize + 1)].len() == 1);
-                        {
-                            let e_pos = chunk.entities[index as usize].get_pos();
-                            let e_size = chunk.entities[index as usize].get_entity_size(data_store);
-
-                            assert!(pos.contained_in(e_pos, e_size))
-                        }
-                        chunk.entities[(index as usize)..(index as usize + 1)].iter()
-                    }
-                } else {
-                    chunk.entities.iter()
-                }
-            })
-            .flatten()
+            .filter_map(|(chunk_x, chunk_y)| self.chunks.get(chunk_x, chunk_y))
+            .flat_map(move |chunk| chunk.entities.iter())
             .filter(move |e| {
                 let e_pos = e.get_pos();
                 let e_size = e.get_entity_size(data_store);
 
                 pos.overlap(size, e_pos, (e_size.0.into(), e_size.1.into()))
             })
+    }
+
+    pub fn get_entity_at_mut(
+        &mut self,
+        pos: Position,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Option<&mut Entity<ItemIdxType, RecipeIdxType>> {
+        let max_size = data_store.max_entity_size;
+
+        let chunk = self.get_chunk_for_tile_mut(pos);
+        let state = match &chunk {
+            Some(chunk) => arr_val_to_state(
+                chunk.entities.len(),
+                chunk
+                    .chunk_tile_to_entity_into
+                    .as_ref()
+                    .map(|arr| {
+                        arr[usize::try_from(pos.x.rem_euclid(i32::from(CHUNK_SIZE))).unwrap()]
+                            [usize::try_from(pos.y.rem_euclid(i32::from(CHUNK_SIZE))).unwrap()]
+                    })
+                    .unwrap_or(EMPTY),
+            ),
+            None => return None,
+        };
+
+        match state {
+            ChunkTileState::Index(idx) => {
+                return Some(&mut self.get_chunk_for_tile_mut(pos).unwrap().entities[idx]);
+            },
+            ChunkTileState::Empty => return None,
+            ChunkTileState::OtherChunk | ChunkTileState::EmptyOrOtherChunk => {
+                // x axis
+                let x_positions = iter::once(pos.x)
+                    .chain(iter::once(pos.x - 1))
+                    .chain(
+                        iter::successors(
+                            Some(
+                                pos.x.next_multiple_of(i32::from(CHUNK_SIZE))
+                                    - i32::from(CHUNK_SIZE),
+                            ),
+                            |x| Some(x - i32::from(CHUNK_SIZE)),
+                        )
+                        .map(|v| v - 1),
+                    )
+                    // .take(5);
+                    .take_while(|v| v.abs_diff(pos.x) <= u32::from(max_size.0));
+                let y_positions = iter::once(pos.y)
+                    .chain(iter::once(pos.y - 1))
+                    .chain(
+                        iter::successors(
+                            Some(
+                                pos.y.next_multiple_of(i32::from(CHUNK_SIZE))
+                                    - i32::from(CHUNK_SIZE),
+                            ),
+                            |y| Some(y - i32::from(CHUNK_SIZE)),
+                        )
+                        .map(|v| v - 1),
+                    )
+                    // .take(5);
+                    .take_while(|v| v.abs_diff(pos.y) <= u32::from(max_size.1));
+
+                assert!(x_positions.clone().all(|x| x <= pos.x));
+                assert!(y_positions.clone().all(|y| y <= pos.y));
+                for x in x_positions {
+                    for y in y_positions.clone() {
+                        let next_chunk_pos = Position { x, y };
+
+                        if next_chunk_pos == pos {
+                            continue;
+                        }
+
+                        info!("Checking other chunk pos: {:?}", next_chunk_pos);
+                        // FIXME: This sucks, but the borrow checker is unhappy otherwise
+                        match self.get_entity_at_mut_no_recursion(next_chunk_pos) {
+                            Some(e) => {
+                                if pos.contained_in(e.get_pos(), e.get_entity_size(data_store)) {
+                                    return self.get_entity_at_mut_no_recursion(next_chunk_pos);
+                                }
+                            },
+                            None => {},
+                        }
+                    }
+                }
+
+                // assert!(
+                //     chunk.is_none(),
+                //     "We indicated there to be an entity in another chunk, but there wasn't"
+                // );
+                return None;
+            },
+        };
+
+        unreachable!()
+    }
+
+    pub fn get_entity_at(
+        &self,
+        pos: Position,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Option<&Entity<ItemIdxType, RecipeIdxType>> {
+        let max_size = data_store.max_entity_size;
+
+        let chunk = self.get_chunk_for_tile(pos);
+        let state = match chunk {
+            Some(chunk) => arr_val_to_state(
+                chunk.entities.len(),
+                chunk
+                    .chunk_tile_to_entity_into
+                    .as_ref()
+                    .map(|arr| {
+                        arr[usize::try_from(pos.x.rem_euclid(i32::from(CHUNK_SIZE))).unwrap()]
+                            [usize::try_from(pos.y.rem_euclid(i32::from(CHUNK_SIZE))).unwrap()]
+                    })
+                    .unwrap_or(EMPTY),
+            ),
+            None => return None,
+        };
+
+        match state {
+            ChunkTileState::Index(idx) => Some(&chunk.unwrap().entities[idx]),
+            ChunkTileState::Empty => None,
+            ChunkTileState::OtherChunk | ChunkTileState::EmptyOrOtherChunk => {
+                // x axis
+                let x_positions = iter::once(pos.x)
+                    .chain(iter::once(pos.x - 1))
+                    .chain(
+                        iter::successors(
+                            Some(
+                                pos.x.next_multiple_of(i32::from(CHUNK_SIZE))
+                                    - i32::from(CHUNK_SIZE),
+                            ),
+                            |x| Some(x - i32::from(CHUNK_SIZE)),
+                        )
+                        .map(|v| v - 1),
+                    )
+                    // .take(5);
+                    .take_while(|v| v.abs_diff(pos.x) <= u32::from(max_size.0));
+                let y_positions = iter::once(pos.y)
+                    .chain(iter::once(pos.y - 1))
+                    .chain(
+                        iter::successors(
+                            Some(
+                                pos.y.next_multiple_of(i32::from(CHUNK_SIZE))
+                                    - i32::from(CHUNK_SIZE),
+                            ),
+                            |y| Some(y - i32::from(CHUNK_SIZE)),
+                        )
+                        .map(|v| v - 1),
+                    )
+                    // .take(5);
+                    .take_while(|v| v.abs_diff(pos.y) <= u32::from(max_size.1));
+
+                assert!(x_positions.clone().all(|x| x <= pos.x));
+                assert!(y_positions.clone().all(|y| y <= pos.y));
+                for x in x_positions {
+                    for y in y_positions.clone() {
+                        let next_chunk_pos = Position { x, y };
+
+                        if next_chunk_pos == pos {
+                            continue;
+                        }
+
+                        info!("Checking other chunk pos: {:?}", next_chunk_pos);
+                        match self.get_entity_at_no_recursion(next_chunk_pos) {
+                            Some(e) => {
+                                if pos.contained_in(e.get_pos(), e.get_entity_size(data_store)) {
+                                    return Some(e);
+                                }
+                            },
+                            None => {},
+                        }
+                    }
+                }
+
+                assert!(
+                    chunk.is_none(),
+                    "We indicated there to be an entity in another chunk, but there wasn't"
+                );
+                return None;
+            },
+        }
+    }
+
+    fn get_entity_at_no_recursion(
+        &self,
+        pos: Position,
+    ) -> Option<&Entity<ItemIdxType, RecipeIdxType>> {
+        let chunk = self.get_chunk_for_tile(pos);
+        let state = match chunk {
+            Some(chunk) => arr_val_to_state(
+                chunk.entities.len(),
+                chunk
+                    .chunk_tile_to_entity_into
+                    .as_ref()
+                    .map(|arr| {
+                        arr[usize::try_from(pos.x.rem_euclid(i32::from(CHUNK_SIZE))).unwrap()]
+                            [usize::try_from(pos.y.rem_euclid(i32::from(CHUNK_SIZE))).unwrap()]
+                    })
+                    .unwrap_or(EMPTY),
+            ),
+            None => ChunkTileState::EmptyOrOtherChunk,
+        };
+
+        match state {
+            ChunkTileState::Index(idx) => Some(&chunk.unwrap().entities[idx]),
+            ChunkTileState::Empty => None,
+            ChunkTileState::OtherChunk | ChunkTileState::EmptyOrOtherChunk => {
+                return None;
+            },
+        }
+    }
+
+    fn get_entity_at_mut_no_recursion(
+        &mut self,
+        pos: Position,
+    ) -> Option<&mut Entity<ItemIdxType, RecipeIdxType>> {
+        let chunk = self.get_chunk_for_tile_mut(pos);
+        let state = match &chunk {
+            Some(chunk) => arr_val_to_state(
+                chunk.entities.len(),
+                chunk
+                    .chunk_tile_to_entity_into
+                    .as_ref()
+                    .map(|arr| {
+                        arr[usize::try_from(pos.x.rem_euclid(i32::from(CHUNK_SIZE))).unwrap()]
+                            [usize::try_from(pos.y.rem_euclid(i32::from(CHUNK_SIZE))).unwrap()]
+                    })
+                    .unwrap_or(EMPTY),
+            ),
+            None => ChunkTileState::EmptyOrOtherChunk,
+        };
+
+        match state {
+            ChunkTileState::Index(idx) => Some(&mut chunk.unwrap().entities[idx]),
+            ChunkTileState::Empty => None,
+            ChunkTileState::OtherChunk | ChunkTileState::EmptyOrOtherChunk => {
+                return None;
+            },
+        }
     }
 
     pub fn mutate_entities_colliding_with<'a, 'b>(
@@ -3095,10 +3573,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        let entity = self
-            .get_entities_colliding_with(pos, (1, 1), data_store)
-            .into_iter()
-            .next();
+        let entity = self.get_entity_at(pos, data_store);
 
         let mut cascading_updates = vec![];
 
@@ -3212,11 +3687,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     {
                         profiling::scope!("Apply Index updates");
                         for index_update in machines_which_changed {
-                            self.mutate_entities_colliding_with(
-                                index_update.position,
-                                (1, 1),
-                                data_store,
-                                |e| {
+                            self.get_entity_at_mut(index_update.position, data_store)
+                                .map(|e| {
                                     match (e, index_update.new_pg_entity.clone()) {
                                         (
                                             Entity::Assembler {
@@ -3250,9 +3722,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                             )
                                         },
                                     }
-                                    ControlFlow::Break(())
-                                },
-                            );
+                                });
 
                             // let assembler_size: (u16, u16) =
                             //     data_store.assembler_info[usize::from(*ty)].size(*rotation);
@@ -3389,11 +3859,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             data_store,
                         );
 
-                        self.mutate_entities_colliding_with(
-                            unconnected_position,
-                            (1, 1),
-                            data_store,
-                            |e| {
+                        self.get_entity_at_mut(unconnected_position, data_store)
+                            .map(|e| {
                                 match e {
                                     Entity::Assembler {
                                         ty,
@@ -3466,9 +3933,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
                                     e => unreachable!("Tried to unpower {e:?}"),
                                 }
-                                ControlFlow::Continue(())
-                            },
-                        );
+                            });
                     }
                 },
 
@@ -3617,18 +4082,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         },
                         std::cmp::Ordering::Equal => {
                             // Remove it
-                            *v = u8::MAX;
+                            *v = EMPTY;
                         },
                         std::cmp::Ordering::Greater => {
-                            // Vec::remove will move us one step to the left
-                            *v -= 1;
+                            if (chunk.entities.len() - 1) == usize::from(*v) {
+                                *v = old_idx;
+                            }
                         },
                     }
                 }
             }
 
             // Actually remove the entity
-            chunk.entities.remove(old_idx as usize);
+            chunk.entities.swap_remove(old_idx as usize);
         } else {
             // Nothing to do
         }
@@ -3645,11 +4111,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         size: (u16, u16),
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> bool {
-        // TODO: Make sure all chunks are generated
-        self.get_entities_colliding_with(pos, (size.0 as u16, size.1 as u16), data_store)
+        self.get_entities_colliding_with(pos, size, data_store)
             .into_iter()
             .next()
             .is_none()
+        // let chunk_range_x = (pos.x / i32::from(CHUNK_SIZE))
+        //     ..=((pos.x + i32::from(size.0) - 1) / i32::from(CHUNK_SIZE));
+        // let chunk_range_y = (pos.y / i32::from(CHUNK_SIZE))
+        //     ..=((pos.y + i32::from(size.1) - 1) / i32::from(CHUNK_SIZE));
+
+        // chunk_range_x
+        //     .cartesian_product(chunk_range_y)
+        //     .all(
+        //         |(chunk_x, chunk_y)| match self.get_chunk(chunk_x, chunk_y) {
+        //             Some(chunk) => chunk.can_fit(pos, size, data_store),
+        //             None => false,
+        //         },
+        //     )
     }
 
     pub fn get_power_poles_which_could_connect_to_pole_at<'a, 'b>(
@@ -3676,37 +4154,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         .filter(|e| matches!(e, Entity::PowerPole { .. }))
     }
 
-    // TODO: Does this need to return something
-    pub fn update_pole_power(
-        &mut self,
-        pole_position: Position,
-        grid: PowerGridIdentifier,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) {
-        let Entity::PowerPole {
-            ty,
-            pos: pole_position,
-            ..
-        } = self
-            .get_entities_colliding_with(pole_position, (1, 1), data_store)
-            .into_iter()
-            .next()
-            .unwrap()
-        else {
-            unreachable!()
-        };
-    }
-
     fn get_power_pole_range(
         &self,
         pole_pos: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (u8, (u16, u16)) {
-        let Some(Entity::PowerPole { ty, .. }) = self
-            .get_entities_colliding_with(pole_pos, (1, 1), data_store)
-            .into_iter()
-            .next()
-        else {
+        let Some(Entity::PowerPole { ty, .. }) = self.get_entity_at(pole_pos, data_store) else {
             unreachable!()
         };
 
@@ -3755,20 +4208,36 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
     fn can_fit(
         &self,
         pos: Position,
-        size: (u8, u8),
+        size: (u16, u16),
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> bool {
-        self.entities
-            .iter()
-            .all(|e: &Entity<ItemIdxType, RecipeIdxType>| {
-                let e_pos = e.get_pos();
-                let e_size = e.get_entity_size(data_store);
-
-                (pos.x + i32::from(size.0)) <= e_pos.x
-                    || (pos.y + i32::from(size.1)) <= e_pos.y
-                    || (pos.x) >= (e_pos.x + i32::from(e_size.0))
-                    || (pos.y) >= (e_pos.y + i32::from(e_size.1))
-            })
+        if let Some(arr) = &self.chunk_tile_to_entity_into {
+            let x_in_chunk = pos.x.rem_euclid(i32::from(CHUNK_SIZE)) as usize;
+            let y_in_chunk = pos.y.rem_euclid(i32::from(CHUNK_SIZE)) as usize;
+            for x in x_in_chunk
+                ..min(
+                    x_in_chunk + usize::from(size.0),
+                    usize::from(CHUNK_SIZE) - 1,
+                )
+            {
+                for y in y_in_chunk
+                    ..min(
+                        y_in_chunk + usize::from(size.1),
+                        usize::from(CHUNK_SIZE) - 1,
+                    )
+                {
+                    match arr_val_to_state(self.entities.len(), arr[x][y]) {
+                        ChunkTileState::Index(_) => return false,
+                        ChunkTileState::Empty => {},
+                        ChunkTileState::OtherChunk => return false,
+                        ChunkTileState::EmptyOrOtherChunk => return true,
+                    }
+                }
+            }
+            return true;
+        } else {
+            return true;
+        }
     }
 
     #[must_use]

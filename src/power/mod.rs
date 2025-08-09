@@ -277,11 +277,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         pole_position: Position,
         connected_poles: T,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Option<(
-        impl IntoIterator<Item = Position> + use<ItemIdxType, RecipeIdxType, T>,
+    ) -> Option<
         impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>
         + use<ItemIdxType, RecipeIdxType, T>,
-    )> {
+    > {
         #[cfg(debug_assertions)]
         {
             let affected_grids_and_potential_match = self
@@ -321,25 +320,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             self.pole_pos_to_grid_id.insert(pole_position, grid);
 
             if need_to_merge {
-                let poles_to_update: Vec<_> = {
-                    profiling::scope!("Find poles_to_update");
-                    connected_poles
-                        .iter()
-                        .copied()
-                        .filter_map(|pos| {
-                            (self.pole_pos_to_grid_id[&pos] != grid)
-                                .then_some(self.pole_pos_to_grid_id[&pos])
-                        })
-                        .unique()
-                        .flat_map(|merged_grid| {
-                            assert_ne!(merged_grid, grid);
-                            self.pole_pos_to_grid_id
-                                .iter()
-                                .filter_map(move |(k, v)| (*v == merged_grid).then_some(*k))
-                        })
-                        .collect()
-                };
-
                 let mut storage_update_vec = vec![];
 
                 let mut ran_once = false;
@@ -385,7 +365,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                     );
                 }
 
-                Some((poles_to_update, storage_update_vec))
+                Some(storage_update_vec)
             } else {
                 self.power_grids[grid as usize].add_pole(pole_position, connected_poles);
                 None

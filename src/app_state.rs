@@ -833,10 +833,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         },
                     }
                 },
-                ActionType::SetChestSlotLimit { pos, num_slots } => self
-                    .world
-                    .mutate_entities_colliding_with(pos, (1, 1), data_store, |e| {
-                        match e {
+                ActionType::SetChestSlotLimit { pos, num_slots } => {
+                    self.world
+                        .get_entity_at_mut(pos, data_store)
+                        .map(|e| match e {
                             Entity::Chest {
                                 ty,
                                 pos,
@@ -858,13 +858,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             _ => {
                                 warn!("Tried to set slot limit on non chest");
                             },
-                        }
-                        ControlFlow::Break(())
-                    }),
-                ActionType::OverrideInserterMovetime { pos, new_movetime } => self
-                    .world
-                    .mutate_entities_colliding_with(pos, (1, 1), data_store, |e| {
-                        match e {
+                        });
+                },
+                ActionType::OverrideInserterMovetime { pos, new_movetime } => {
+                    self.world
+                        .get_entity_at_mut(pos, data_store)
+                        .map(|e| match e {
                             Entity::Inserter {
                                 user_movetime,
                                 type_movetime,
@@ -911,9 +910,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             _ => {
                                 warn!("Tried to set Inserter Settings on non inserter");
                             },
-                        }
-                        ControlFlow::Break(())
-                    }),
+                        });
+                },
                 ActionType::PlaceEntity(place_entity_info) => {
                     let force = place_entity_info.force;
                     if force {
@@ -1076,36 +1074,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     connection_candidates.iter().copied(),
                                     data_store,
                                 ) {
-                                    Some((pole_updates, storage_updates)) => {
-                                        // Handle Entities that are now part of another power_grid
-                                        for pole_position in pole_updates {
-                                            let grid = self
-                                                .simulation_state
-                                                .factory
-                                                .power_grids
-                                                .pole_pos_to_grid_id[&pole_position];
-
-                                            assert!(
-                                                !self
-                                                    .simulation_state
-                                                    .factory
-                                                    .power_grids
-                                                    .power_grids
-                                                    [grid as usize]
-                                                    .is_placeholder
-                                            );
-
-                                            self.world.update_pole_power(
-                                                pole_position,
-                                                grid,
-                                                data_store,
-                                            );
-                                        }
-
+                                    Some(storage_updates) => {
                                         // Handle storage updates
                                         for storage_update in storage_updates {
                                             let mut entity_size = None;
-                                            self.world.mutate_entities_colliding_with(storage_update.position, (1,1), data_store, |e| {
+                                            self.world.get_entity_at_mut(storage_update.position, data_store).map(|e| {
                                         match (e, storage_update.new_pg_entity.clone()) {
                                             (Entity::Assembler { ty, pos: _, info: AssemblerInfo::Powered { id, pole_position: _, weak_index }, modules: _, rotation }, crate::power::power_grid::PowerGridEntity::Assembler { ty: _, recipe, index }) => {
                                                 entity_size = Some(data_store.assembler_info[usize::from(*ty)].size(*rotation));
@@ -1125,7 +1098,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                                             (_, _) => todo!("Handler storage_update {storage_update:?}")
                                         }
-                                        ControlFlow::Break(())
                                     });
 
                                             // FIXME: Rotation
@@ -1868,11 +1840,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     pos: assembler_pos,
                     recipe,
                 }) => {
-                    let Some(Entity::Assembler { .. }) = self
-                        .world
-                        .get_entities_colliding_with(assembler_pos, (1, 1), data_store)
-                        .into_iter()
-                        .next()
+                    let Some(Entity::Assembler { .. }) =
+                        self.world.get_entity_at(assembler_pos, data_store)
                     else {
                         warn!("Tried to set recipe on non assembler");
                         continue;
@@ -1893,175 +1862,163 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     pos,
                     modules: new_modules,
                 } => {
-                    self.world
-                        .mutate_entities_colliding_with(pos, (1, 1), data_store, |e| {
-                            match e {
-                                Entity::Assembler { modules, info, .. } => {
-                                    let num_free_module_slots =
-                                        modules.iter().filter(|slot| slot.is_none()).count();
+                    self.world.get_entity_at_mut(pos, data_store).map(|e| {
+                        match e {
+                            Entity::Assembler { modules, info, .. } => {
+                                let num_free_module_slots =
+                                    modules.iter().filter(|slot| slot.is_none()).count();
 
-                                    if new_modules.len() > num_free_module_slots {
-                                        // Not enough space in the module slots
-                                        info!(
-                                            "Tried to insert more modules than space is available"
-                                        );
-                                    } else {
-                                        // We are okay!
+                                if new_modules.len() > num_free_module_slots {
+                                    // Not enough space in the module slots
+                                    info!("Tried to insert more modules than space is available");
+                                } else {
+                                    // We are okay!
 
-                                        modules
-                                            .iter_mut()
-                                            .filter(|slot| slot.is_none())
-                                            .zip(new_modules.iter().copied())
-                                            .for_each(|(slot, new_module)| {
-                                                assert!(slot.is_none());
-                                                *slot = Some(new_module);
-                                            });
+                                    modules
+                                        .iter_mut()
+                                        .filter(|slot| slot.is_none())
+                                        .zip(new_modules.iter().copied())
+                                        .for_each(|(slot, new_module)| {
+                                            assert!(slot.is_none());
+                                            *slot = Some(new_module);
+                                        });
 
-                                        match info {
-                                            AssemblerInfo::UnpoweredNoRecipe
-                                            | AssemblerInfo::Unpowered(_)
-                                            | AssemblerInfo::PoweredNoRecipe(_) => {},
-                                            AssemblerInfo::Powered {
-                                                id,
-                                                pole_position,
-                                                weak_index,
-                                            } => {
-                                                for module in &new_modules {
+                                    match info {
+                                        AssemblerInfo::UnpoweredNoRecipe
+                                        | AssemblerInfo::Unpowered(_)
+                                        | AssemblerInfo::PoweredNoRecipe(_) => {},
+                                        AssemblerInfo::Powered {
+                                            id,
+                                            pole_position,
+                                            weak_index,
+                                        } => {
+                                            for module in &new_modules {
+                                                self.simulation_state
+                                                    .factory
+                                                    .power_grids
+                                                    .power_grids[usize::from(id.grid)]
+                                                .add_module_to_assembler(*id, *module, data_store);
+                                            }
+                                        },
+                                    }
+                                }
+                            },
+                            Entity::Lab {
+                                pos,
+                                ty,
+                                modules,
+                                pole_position,
+                            } => {
+                                let num_free_module_slots =
+                                    modules.iter().filter(|slot| slot.is_none()).count();
+
+                                if new_modules.len() > num_free_module_slots {
+                                    // Not enough space in the module slots
+                                    info!("Tried to insert more modules than space is available");
+                                } else {
+                                    // We are okay!
+
+                                    modules
+                                        .iter_mut()
+                                        .filter(|slot| slot.is_none())
+                                        .zip(new_modules.iter().copied())
+                                        .for_each(|(slot, new_module)| {
+                                            assert!(slot.is_none());
+                                            *slot = Some(new_module);
+                                        });
+
+                                    match pole_position {
+                                        None => {},
+                                        Some((pole_pos, weak_index, index)) => {
+                                            for module in &new_modules {
+                                                self.simulation_state
+                                                    .factory
+                                                    .power_grids
+                                                    .power_grids[usize::from(
                                                     self.simulation_state
                                                         .factory
                                                         .power_grids
-                                                        .power_grids[usize::from(id.grid)]
-                                                    .add_module_to_assembler(
-                                                        *id, *module, data_store,
-                                                    );
-                                                }
-                                            },
-                                        }
+                                                        .pole_pos_to_grid_id[pole_pos],
+                                                )]
+                                                .add_module_to_lab(*index, *module, data_store);
+                                            }
+                                        },
                                     }
-                                },
-                                Entity::Lab {
-                                    pos,
-                                    ty,
-                                    modules,
-                                    pole_position,
-                                } => {
-                                    let num_free_module_slots =
-                                        modules.iter().filter(|slot| slot.is_none()).count();
-
-                                    if new_modules.len() > num_free_module_slots {
-                                        // Not enough space in the module slots
-                                        info!(
-                                            "Tried to insert more modules than space is available"
-                                        );
-                                    } else {
-                                        // We are okay!
-
-                                        modules
-                                            .iter_mut()
-                                            .filter(|slot| slot.is_none())
-                                            .zip(new_modules.iter().copied())
-                                            .for_each(|(slot, new_module)| {
-                                                assert!(slot.is_none());
-                                                *slot = Some(new_module);
-                                            });
-
-                                        match pole_position {
-                                            None => {},
-                                            Some((pole_pos, weak_index, index)) => {
-                                                for module in &new_modules {
-                                                    self.simulation_state
-                                                        .factory
-                                                        .power_grids
-                                                        .power_grids[usize::from(
-                                                        self.simulation_state
-                                                            .factory
-                                                            .power_grids
-                                                            .pole_pos_to_grid_id[pole_pos],
-                                                    )]
-                                                    .add_module_to_lab(*index, *module, data_store);
-                                                }
-                                            },
-                                        }
-                                    }
-                                },
-                                Entity::Beacon {
-                                    ty,
-                                    pos,
-                                    modules,
-                                    pole_position,
-                                } => {
-                                    // TODO:
-                                    // todo!();
-                                },
-                                _ => {
-                                    warn!(
-                                        "Tried to insert modules into entity without module slots"
-                                    );
-                                },
-                            }
-                            ControlFlow::Break(())
-                        });
+                                }
+                            },
+                            Entity::Beacon {
+                                ty,
+                                pos,
+                                modules,
+                                pole_position,
+                            } => {
+                                // TODO:
+                                // todo!();
+                            },
+                            _ => {
+                                warn!("Tried to insert modules into entity without module slots");
+                            },
+                        }
+                    });
                 },
                 ActionType::RemoveModules { pos, indices } => {
-                    self.world
-                        .mutate_entities_colliding_with(pos, (1, 1), data_store, |e| {
-                            match e {
-                                Entity::Assembler { modules, info, .. } => {
-                                    let num_used_module_slots =
-                                        modules.iter().filter(|slot| slot.is_some()).count();
+                    self.world.get_entity_at_mut(pos, data_store).map(|e| {
+                        match e {
+                            Entity::Assembler { modules, info, .. } => {
+                                let num_used_module_slots =
+                                    modules.iter().filter(|slot| slot.is_some()).count();
 
-                                    if indices.len() > num_used_module_slots {
-                                        // Not enough space in the module slots
-                                        warn!("Tried to remove more modules than exist in machine");
-                                    } else {
-                                        // We are okay!
+                                if indices.len() > num_used_module_slots {
+                                    // Not enough space in the module slots
+                                    warn!("Tried to remove more modules than exist in machine");
+                                } else {
+                                    // We are okay!
 
-                                        assert!(indices.iter().all_unique());
+                                    assert!(indices.iter().all_unique());
 
-                                        assert!(indices.iter().all(|v| *v < modules.len()));
+                                    assert!(indices.iter().all(|v| *v < modules.len()));
 
-                                        let modules_to_remove = modules
-                                            .iter_mut()
-                                            .enumerate()
-                                            .filter(|(i, _)| indices.contains(i))
-                                            .map(|(_, slot)| {
-                                                let Some(module) = slot else {
-                                                    todo!("How do I want to handle this");
-                                                };
+                                    let modules_to_remove = modules
+                                        .iter_mut()
+                                        .enumerate()
+                                        .filter(|(i, _)| indices.contains(i))
+                                        .map(|(_, slot)| {
+                                            let Some(module) = slot else {
+                                                todo!("How do I want to handle this");
+                                            };
 
-                                                let module = *module;
+                                            let module = *module;
 
-                                                *slot = None;
+                                            *slot = None;
 
-                                                module
-                                            });
+                                            module
+                                        });
 
-                                        match info {
-                                            AssemblerInfo::UnpoweredNoRecipe
-                                            | AssemblerInfo::Unpowered(_)
-                                            | AssemblerInfo::PoweredNoRecipe(_) => {},
-                                            AssemblerInfo::Powered { id, .. } => {
-                                                for removed_module in modules_to_remove {
-                                                    self.simulation_state
-                                                        .factory
-                                                        .power_grids
-                                                        .power_grids[usize::from(id.grid)]
-                                                    .remove_module_from_assembler(
-                                                        *id,
-                                                        removed_module,
-                                                        data_store,
-                                                    );
-                                                }
-                                            },
-                                        }
+                                    match info {
+                                        AssemblerInfo::UnpoweredNoRecipe
+                                        | AssemblerInfo::Unpowered(_)
+                                        | AssemblerInfo::PoweredNoRecipe(_) => {},
+                                        AssemblerInfo::Powered { id, .. } => {
+                                            for removed_module in modules_to_remove {
+                                                self.simulation_state
+                                                    .factory
+                                                    .power_grids
+                                                    .power_grids[usize::from(id.grid)]
+                                                .remove_module_from_assembler(
+                                                    *id,
+                                                    removed_module,
+                                                    data_store,
+                                                );
+                                            }
+                                        },
                                     }
-                                },
-                                _ => {
-                                    warn!("Tried to insert modules into non assembler");
-                                },
-                            }
-                            ControlFlow::Break(())
-                        });
+                                }
+                            },
+                            _ => {
+                                warn!("Tried to insert modules into non assembler");
+                            },
+                        }
+                    });
                 },
             }
 
@@ -2167,11 +2124,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 });
 
             for (belt_pos, check_dir, id_that_should_exist) in all_belt_connections {
-                if let Some(Entity::Splitter { pos, direction, id }) = self
-                    .world
-                    .get_entities_colliding_with(belt_pos + check_dir, (1, 1), data_store)
-                    .into_iter()
-                    .next()
+                if let Some(Entity::Splitter { pos, direction, id }) =
+                    self.world.get_entity_at(belt_pos + check_dir, data_store)
                 {
                     assert!(
                         self.simulation_state
@@ -2566,8 +2520,8 @@ mod tests {
                 game_state.update(&DATA_STORE);
             }
 
-            let Some(Entity::Assembler { info: AssemblerInfo::Powered { id, .. }, .. }) = game_state.world.get_entities_colliding_with(Position { x: 1600, y: 1600 }, (1,1), &DATA_STORE).into_iter().next() else {
-                unreachable!("{:?}", game_state.world.get_entities_colliding_with(Position { x: 1600, y: 1600 }, (1,1), &DATA_STORE).into_iter().next());
+            let Some(Entity::Assembler { info: AssemblerInfo::Powered { id, .. }, .. }) = game_state.world.get_entity_at(Position { x: 1600, y: 1600 }, &DATA_STORE) else {
+                unreachable!("{:?}", game_state.world.get_entity_at(Position { x: 1600, y: 1600 }, &DATA_STORE));
             };
 
             prop_assume!(game_state.simulation_state.factory.power_grids.power_grids[usize::from(id.grid)].last_power_mult == MAX_POWER_MULT);
@@ -2603,8 +2557,8 @@ mod tests {
                 game_state.update(&DATA_STORE);
             }
 
-            let Some(Entity::Assembler { info: AssemblerInfo::Powered { id, .. }, .. }) = game_state.world.get_entities_colliding_with(Position { x: 1624, y: 1621 }, (1,1), &DATA_STORE).into_iter().next() else {
-                unreachable!("{:?}", game_state.world.get_entities_colliding_with(Position { x: 1624, y: 1621 }, (1,1), &DATA_STORE).into_iter().next());
+            let Some(Entity::Assembler { info: AssemblerInfo::Powered { id, .. }, .. }) = game_state.world.get_entity_at(Position { x: 1624, y: 1621 }, &DATA_STORE) else {
+                unreachable!("{:?}", game_state.world.get_entity_at(Position { x: 1624, y: 1621 }, &DATA_STORE));
             };
 
             prop_assume!(game_state.simulation_state.factory.power_grids.power_grids[usize::from(id.grid)].last_power_mult == MAX_POWER_MULT);

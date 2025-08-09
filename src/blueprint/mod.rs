@@ -517,7 +517,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                 PlaceEntityType::SolarPanel { .. } => (1, 1, v.get_pos(), 0),
                 PlaceEntityType::Lab { .. } => (1, 3, v.get_pos(), 0),
                 PlaceEntityType::Beacon { .. } => (1, 3, v.get_pos(), 0),
-                PlaceEntityType::FluidTank { .. } => (1, 4, v.get_pos(), 0),
+                PlaceEntityType::FluidTank { .. } => (1, 2, v.get_pos(), 0),
                 PlaceEntityType::MiningDrill { .. } => (1, 3, v.get_pos(), 0),
             },
             ActionType::SetRecipe(_) => (1, 3, v.get_pos(), 1),

@@ -519,10 +519,16 @@ impl BucketedStorageStorageInserterStore {
             *old_id -= 1;
         }
 
+        // We iterate backwards here, since when setting an inserters movetime, it is likely just been placed, so it is at the end of its vec
         if let Some(idx) = self
             .waiting_for_item
             .iter()
-            .position(|i| i.storage_id_in == source && i.storage_id_out == dest && i.id == id)
+            .enumerate()
+            .rev()
+            .find(|(_, ins)| {
+                ins.storage_id_in == source && ins.storage_id_out == dest && ins.id == id
+            })
+            .map(|(i, _)| i)
         {
             let removed = self.waiting_for_item.swap_remove(idx);
             return removed;
@@ -531,7 +537,12 @@ impl BucketedStorageStorageInserterStore {
         if let Some(idx) = self
             .waiting_for_space_in_destination
             .iter()
-            .position(|i| i.storage_id_in == source && i.storage_id_out == dest && i.id == id)
+            .enumerate()
+            .rev()
+            .find(|(_, ins)| {
+                ins.storage_id_in == source && ins.storage_id_out == dest && ins.id == id
+            })
+            .map(|(i, _)| i)
         {
             let removed = self.waiting_for_space_in_destination.swap_remove(idx);
             return removed;
@@ -540,7 +551,12 @@ impl BucketedStorageStorageInserterStore {
         for moving_out in &mut self.full_and_moving_out {
             if let Some(idx) = moving_out
                 .iter()
-                .position(|i| i.storage_id_in == source && i.storage_id_out == dest && i.id == id)
+                .enumerate()
+                .rev()
+                .find(|(_, ins)| {
+                    ins.storage_id_in == source && ins.storage_id_out == dest && ins.id == id
+                })
+                .map(|(i, _)| i)
             {
                 let removed = moving_out.swap_remove(idx);
                 return removed;
@@ -550,7 +566,12 @@ impl BucketedStorageStorageInserterStore {
         for moving_in in &mut self.empty_and_moving_back {
             if let Some(idx) = moving_in
                 .iter()
-                .position(|i| i.storage_id_in == source && i.storage_id_out == dest && i.id == id)
+                .enumerate()
+                .rev()
+                .find(|(_, ins)| {
+                    ins.storage_id_in == source && ins.storage_id_out == dest && ins.id == id
+                })
+                .map(|(i, _)| i)
             {
                 let removed = moving_in.swap_remove(idx);
                 return removed;

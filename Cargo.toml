@@ -29,13 +29,13 @@ postcard = { version = "1.1.1", features = ["use-std"] }
 charts-rs = { version = "0.3.20", features = ["resvg"] }
 strum = { version = "0.27.1", features = ["derive"] }
 bitvec = "1.0.1"
-bimap = { version = "0.6.3", features = ["serde"] }
+bimap = { version = "0.6.3", features = ["serde", "std"], default-features = false }
 eframe = { version = "0.31.1", features = ["wgpu"], optional = true }
 egui_extras = { version = "0.31.1", optional = true }
 egui_plot = { version = "0.32.1", optional = true }
 rand = "0.8.5"
 bitcode = { version = "0.6.6", features = ["serde"] }
-egui = { version = "0.31.1", features = ["serde"], optional = true }
+egui = { version = "0.31.1", features = ["bytemuck", "serde"], optional = true }
 flate2 = { version = "1.1.1", features = ["zlib-rs"]}
 rstest = "0.25.0"
 parking_lot = { version = "0.12.3", features = ["serde"] }
@@ -51,6 +51,8 @@ get-size = { version = "0.1.4", features = ["derive"], optional = true }
 
 egui-show-info = { path = "../egui-show-info", features = ["petgraph", "parking_lot", "enum-map", "bimap"], optional = true }
 egui-show-info-derive = { path = "../egui-show-info/egui-show-info-derive", optional = true }
+bytemuck = "1.23.1"
+ph = "0.9.6"
 
 [patch.crates-io]
 puffin_egui = { git = "https://github.com/BloodStainedCrow/puffin" }
@@ -62,8 +64,8 @@ egui-wgpu = { git = "https://github.com/BloodStainedCrow/egui", branch = "remove
 get-size = { path = "../get-size" }
 petgraph = { path = "../petgraph" }
 
-# [patch."https://github.com/BloodStainedCrow/tilelib"]
-# tilelib = { path = "../tilelib" }
+[patch."https://github.com/BloodStainedCrow/tilelib"]
+tilelib = { path = "../tilelib" }
 
 [lints.rust]
 # TODO:

@@ -83,7 +83,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                 Position,
                 Box<dyn FnOnce(WeakIndex) -> ()>,
             ),
-        >,
+        > + Clone,
 
         chest_store: &mut FullChestStore<ItemIdxType>,
         inserter_store: &mut StorageStorageInserterStore,
@@ -91,11 +91,11 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Result<(), CannotMixFluidsError<ItemIdxType>> {
         let connected_boxes: Vec<_> = connected_fluid_box_positions.into_iter().collect();
-        let connected_storages: Vec<_> = connected_storages.into_iter().collect();
 
         let connected_storages_fluid = match connected_storages
-            .iter()
-            .map(|(_dir, fluid, _storage, _pos, _cb)| *fluid)
+            .clone()
+            .into_iter()
+            .map(|(_dir, fluid, _storage, _pos, _cb)| fluid)
             .all_equal_value()
         {
             Ok(fluid) => Some(fluid),
@@ -128,7 +128,27 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                 let network_to_join_into = connected_boxes
                     .iter()
                     .map(|pos| self.fluid_box_pos_to_network_id[pos])
-                    .find(|id| id.fluid == merge_fluid)
+                    .filter(|id| id.fluid == merge_fluid)
+                    // Always merge into the largest possible fluid network, to minimize update work
+                    .max_by_key(|id: &FluidSystemId<ItemIdxType>| {
+                        let Some(fluid) = id.fluid else {
+                            return 0;
+                        };
+
+                        let FluidSystemState::HasFluid { fluid, chest_id } = self
+                            .fluid_systems_with_fluid[fluid.into_usize()][id.index]
+                            .as_ref()
+                            .unwrap()
+                            .state
+                        else {
+                            unreachable!();
+                        };
+
+                        let (_units, max_units) =
+                            chest_store.stores[fluid.into_usize()].get_chest(chest_id);
+
+                        max_units
+                    })
                     .unwrap();
 
                 assert_eq!(network_to_join_into.fluid, merge_fluid);
@@ -831,16 +851,11 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
         };
 
         for box_pos_in_removed in removed.graph.keys() {
-            assert_eq!(
-                self.fluid_box_pos_to_network_id[box_pos_in_removed],
-                removed_id
-            );
-            assert_eq!(
-                self.fluid_box_pos_to_network_id
-                    .insert(*box_pos_in_removed, kept_id)
-                    .unwrap(),
-                removed_id
-            );
+            let id_removed_from_map = self
+                .fluid_box_pos_to_network_id
+                .insert(*box_pos_in_removed, kept_id)
+                .unwrap();
+            assert_eq!(id_removed_from_map, removed_id);
             debug_assert!(
                 self.fluid_box_pos_to_network_id
                     .values()

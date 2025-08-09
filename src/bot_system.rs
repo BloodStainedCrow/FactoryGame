@@ -34,7 +34,7 @@ use crate::{
     power::{Joule, Watt},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 struct RoboportId {
     index: u32,
 }

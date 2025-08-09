@@ -77,9 +77,7 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         for (belt_pos, check_dir, id_that_should_exist) in all_belt_connections {
             if let Some(Entity::Splitter { pos, direction, id }) = game_state
                 .world
-                .get_entities_colliding_with(belt_pos + check_dir, (1, 1), data_store)
-                .into_iter()
-                .next()
+                .get_entity_at(belt_pos + check_dir, data_store)
             {
                 assert!(
                     game_state
@@ -149,9 +147,7 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     // The belt at this position is pointing at the back of the splitter
                     let back_id = match game_state
                         .world
-                        .get_entities_colliding_with(back_pos, (1, 1), data_store)
-                        .into_iter()
-                        .next()
+                        .get_entity_at(back_pos, data_store)
                         .unwrap()
                     {
                         Entity::Belt { id, .. } => *id,
@@ -256,9 +252,7 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         for (belt_pos, check_dir, id_that_should_exist) in all_belt_connections {
             if let Some(Entity::Splitter { pos, direction, id }) = game_state
                 .world
-                .get_entities_colliding_with(belt_pos + check_dir, (1, 1), data_store)
-                .into_iter()
-                .next()
+                .get_entity_at(belt_pos + check_dir, data_store)
             {
                 assert!(
                     game_state
@@ -299,10 +293,7 @@ pub fn handle_belt_removal<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     world.check_inserters(sim_state);
 
-    let front_entity = world
-        .get_entities_colliding_with(front_pos, (1, 1), data_store)
-        .into_iter()
-        .next();
+    let front_entity = world.get_entity_at(front_pos, data_store);
 
     if let Some(e) = front_entity {
         match e {
@@ -376,10 +367,7 @@ pub fn handle_underground_removal<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                 ty,
                 id,
                 belt_pos,
-            }) = world
-                .get_entities_colliding_with(pos, (1, 1), data_store)
-                .into_iter()
-                .next()
+            }) = world.get_entity_at(pos, data_store)
             {
                 if *ty == underground_belt_ty && *direction == underground_belt_dir {
                     let self_len = i as u16 * BELT_LEN_PER_TILE;
@@ -413,10 +401,7 @@ pub fn handle_underground_removal<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
     shorten(world, sim_state, front_id, self_len, Side::BACK);
 
     if underground_belt_kind == UndergroundDir::Exit {
-        let front_entity = world
-            .get_entities_colliding_with(front_pos, (1, 1), data_store)
-            .into_iter()
-            .next();
+        let front_entity = world.get_entity_at(front_pos, data_store);
 
         if let Some(e) = front_entity {
             match e {
@@ -568,9 +553,7 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                 let back_id = match game_state
                     .world
-                    .get_entities_colliding_with(potentially_incoming_pos, (1, 1), data_store)
-                    .into_iter()
-                    .next()
+                    .get_entity_at(potentially_incoming_pos, data_store)
                     .unwrap()
                 {
                     Entity::Belt { id, .. }
@@ -639,9 +622,7 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                 let (back_id, back_pos) = match game_state
                     .world
-                    .get_entities_colliding_with(potentially_incoming_pos, (1, 1), data_store)
-                    .into_iter()
-                    .next()
+                    .get_entity_at(potentially_incoming_pos, data_store)
                     .unwrap()
                 {
                     Entity::Belt { id, belt_pos, .. }
@@ -707,9 +688,7 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         for (belt_pos, check_dir, id_that_should_exist) in all_belt_connections {
             if let Some(Entity::Splitter { pos, direction, id }) = game_state
                 .world
-                .get_entities_colliding_with(belt_pos + check_dir, (1, 1), data_store)
-                .into_iter()
-                .next()
+                .get_entity_at(belt_pos + check_dir, data_store)
             {
                 assert!(
                     game_state
@@ -757,11 +736,7 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                     .skip(1)
                     .take(max_distance.into())
                     .find_map(|check_pos| {
-                        let e = game_state
-                            .world
-                            .get_entities_colliding_with(check_pos, (1, 1), data_store)
-                            .into_iter()
-                            .next();
+                        let e = game_state.world.get_entity_at(check_pos, data_store);
 
                         if let Some(Entity::Underground { ty, direction, .. }) = e {
                             if *direction == new_belt_direction {
@@ -842,11 +817,7 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                                         ty: found_ty,
                                         id: found_id,
                                         belt_pos: found_belt_pos,
-                                    }) = game_state
-                                        .world
-                                        .get_entities_colliding_with(pos, (1, 1), data_store)
-                                        .into_iter()
-                                        .next()
+                                    }) = game_state.world.get_entity_at(pos, data_store)
                                     {
                                         if *found_ty == ty && *found_direction == direction {
                                             let underground_len =
@@ -954,9 +925,7 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
 
                 let back_id = match game_state
                     .world
-                    .get_entities_colliding_with(potentially_incoming_pos, (1, 1), data_store)
-                    .into_iter()
-                    .next()
+                    .get_entity_at(potentially_incoming_pos, data_store)
                 {
                     Some(Entity::Belt { id, .. })
                     | Some(Entity::Underground {
@@ -1114,9 +1083,7 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
 
                     let (back_id, back_pos) = match game_state
                         .world
-                        .get_entities_colliding_with(potentially_incoming_pos, (1, 1), data_store)
-                        .into_iter()
-                        .next()
+                        .get_entity_at(potentially_incoming_pos, data_store)
                         .unwrap()
                     {
                         Entity::Belt { id, belt_pos, .. }
@@ -1145,11 +1112,7 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
             .skip(1)
             .take(max_distance.into())
             .find_map(|check_pos| {
-                let e = game_state
-                    .world
-                    .get_entities_colliding_with(check_pos, (1, 1), data_store)
-                    .into_iter()
-                    .next();
+                let e = game_state.world.get_entity_at(check_pos, data_store);
 
                 if let Some(Entity::Underground { ty, direction, .. }) = e {
                     if *direction == new_belt_direction {
@@ -1206,11 +1169,7 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                                         ty: found_ty,
                                         id: found_id,
                                         belt_pos: found_belt_pos,
-                                    }) = game_state
-                                        .world
-                                        .get_entities_colliding_with(pos, (1, 1), data_store)
-                                        .into_iter()
-                                        .next()
+                                    }) = game_state.world.get_entity_at(pos, data_store)
                                     {
                                         if *found_ty == ty
                                             && *found_direction == direction
@@ -1343,9 +1302,7 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
         for (belt_pos, check_dir, id_that_should_exist) in all_belt_connections {
             if let Some(Entity::Splitter { pos, direction, id }) = game_state
                 .world
-                .get_entities_colliding_with(belt_pos + check_dir, (1, 1), data_store)
-                .into_iter()
-                .next()
+                .get_entity_at(belt_pos + check_dir, data_store)
             {
                 assert!(
                     game_state
@@ -1409,9 +1366,7 @@ fn handle_belt_breaking<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         | (BeltState::Curved, BeltState::DoubleSideloading) => {
             let entity = game_state
                 .world
-                .get_entities_colliding_with(pos_which_might_break, (1, 1), data_store)
-                .into_iter()
-                .next()
+                .get_entity_at(pos_which_might_break, data_store)
                 .unwrap();
 
             let (id, belt_pos_to_break_at) = match entity {
@@ -1517,9 +1472,7 @@ fn handle_belt_breaking<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         for (belt_pos, check_dir, id_that_should_exist) in all_belt_connections {
             if let Some(Entity::Splitter { pos, direction, id }) = game_state
                 .world
-                .get_entities_colliding_with(belt_pos + check_dir, (1, 1), data_store)
-                .into_iter()
-                .next()
+                .get_entity_at(belt_pos + check_dir, data_store)
             {
                 assert!(
                     game_state
@@ -1654,9 +1607,7 @@ fn get_belt_dir_for_sideloading<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> Option<Dir> {
     world
-        .get_entities_colliding_with(position, (1, 1), data_store)
-        .into_iter()
-        .next()
+        .get_entity_at(position, data_store)
         .map(|e| match e {
             Entity::Belt { direction, .. } => Some(*direction),
             Entity::Underground { direction, .. } => Some(*direction),
@@ -1672,9 +1623,7 @@ fn get_belt_in_dir<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> Option<Dir> {
     world
-        .get_entities_colliding_with(position, (1, 1), data_store)
-        .into_iter()
-        .next()
+        .get_entity_at(position, data_store)
         .map(|e| match e {
             Entity::Belt { direction, .. } => Some(*direction),
             Entity::Underground {
@@ -1694,9 +1643,7 @@ fn get_belt_out_dir<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> Option<Dir> {
     world
-        .get_entities_colliding_with(position, (1, 1), data_store)
-        .into_iter()
-        .next()
+        .get_entity_at(position, data_store)
         .map(|e| match e {
             Entity::Belt { direction, .. } => Some(*direction),
             Entity::Underground {
@@ -1841,9 +1788,7 @@ fn should_merge<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 if front_belt_dir == self_dir {
                     match game_state
                         .world
-                        .get_entities_colliding_with(front_pos, (1, 1), data_store)
-                        .into_iter()
-                        .next()
+                        .get_entity_at(front_pos, data_store)
                         .unwrap()
                     {
                         Entity::Belt { id, .. } => Some(*id),
@@ -1896,9 +1841,7 @@ fn should_merge<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     DirRelative::Turned => {
                         match game_state
                             .world
-                            .get_entities_colliding_with(front_pos, (1, 1), data_store)
-                            .into_iter()
-                            .next()
+                            .get_entity_at(front_pos, data_store)
                             .unwrap()
                         {
                             Entity::Belt { id, .. } => Some(*id),
@@ -1949,9 +1892,7 @@ fn should_sideload<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     DirRelative::Turned => {
                         match game_state
                             .world
-                            .get_entities_colliding_with(front_pos, (1, 1), data_store)
-                            .into_iter()
-                            .next()
+                            .get_entity_at(front_pos, data_store)
                             .unwrap()
                         {
                             Entity::Belt { id, belt_pos, .. }
@@ -2120,7 +2061,7 @@ mod test {
 
             bp.apply(Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
 
-            let ent = state.world.get_entities_colliding_with(Position { x: 1600, y: 1603 }, (1, 1), &DATA_STORE).into_iter().next().unwrap();
+            let ent = state.world.get_entity_at(Position { x: 1600, y: 1603 }, &DATA_STORE).unwrap();
 
             let assembler_powered = matches!(ent, Entity::Assembler { info: AssemblerInfo::Powered { .. } |  AssemblerInfo::PoweredNoRecipe { .. }, .. });
 
@@ -2130,7 +2071,7 @@ mod test {
 
             prop_assume!(assembler_working, "{:?}", ent);
 
-            let ent = state.world.get_entities_colliding_with(Position { x: 1602, y: 1602 }, (1, 1), &DATA_STORE).into_iter().next().unwrap();
+            let ent = state.world.get_entity_at(Position { x: 1602, y: 1602 }, &DATA_STORE).unwrap();
 
             let inserter_attached = matches!(ent, Entity::Inserter { info: InserterInfo::Attached { .. }, .. });
 
@@ -2145,7 +2086,7 @@ mod test {
 
             bp.apply(Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
 
-            let ent = state.world.get_entities_colliding_with(Position { x: 1600, y: 1603 }, (1, 1), &DATA_STORE).into_iter().next().unwrap();
+            let ent = state.world.get_entity_at(Position { x: 1600, y: 1603 }, &DATA_STORE).unwrap();
 
             let assembler_powered = matches!(ent, Entity::Assembler { info: AssemblerInfo::Powered { .. } |  AssemblerInfo::PoweredNoRecipe { .. }, .. });
 
@@ -2155,7 +2096,7 @@ mod test {
 
             prop_assume!(assembler_working, "{:?}", ent);
 
-            let ent = state.world.get_entities_colliding_with(Position { x: 1602, y: 1602 }, (1, 1), &DATA_STORE).into_iter().next().unwrap();
+            let ent = state.world.get_entity_at(Position { x: 1602, y: 1602 }, &DATA_STORE).unwrap();
 
             let inserter_attached = matches!(ent, Entity::Inserter { info: InserterInfo::Attached { .. }, .. });
 
@@ -2188,13 +2129,13 @@ mod test {
 
             bp.apply(Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
 
-            let assembler = state.world.get_entities_colliding_with(Position { x: 1600, y: 1603 }, (1, 1), &DATA_STORE).into_iter().next().unwrap();
+            let assembler = state.world.get_entity_at(Position { x: 1600, y: 1603 }, &DATA_STORE).unwrap();
 
             let assembler_working = matches!(assembler, Entity::Assembler { info: AssemblerInfo::Powered { .. }, .. });
 
             prop_assume!(assembler_working, "{:?}", assembler);
 
-            let ent = state.world.get_entities_colliding_with(Position { x: 1602, y: 1602 }, (1, 1), &DATA_STORE).into_iter().next().unwrap();
+            let ent = state.world.get_entity_at(Position { x: 1602, y: 1602 }, &DATA_STORE).unwrap();
 
             let inserter_attached = matches!(ent, Entity::Inserter { info: InserterInfo::Attached { .. }, .. });
 
@@ -2204,7 +2145,7 @@ mod test {
                 state.update(&DATA_STORE);
             }
 
-            let Some(Entity::Belt { id, .. }) = state.world.get_entities_colliding_with(Position { x: 1602, y: 1601 }, (1, 1), &DATA_STORE).into_iter().next() else {
+            let Some(Entity::Belt { id, .. }) = state.world.get_entity_at(Position { x: 1602, y: 1601 }, &DATA_STORE) else {
                 unreachable!()
             };
 
@@ -2223,7 +2164,7 @@ mod test {
 
             bp.apply(Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
 
-            let ent = state.world.get_entities_colliding_with(Position { x: 1600, y: 1603 }, (1, 1), &DATA_STORE).into_iter().next().unwrap();
+            let ent = state.world.get_entity_at(Position { x: 1600, y: 1603 }, &DATA_STORE).unwrap();
 
             let assembler_powered = matches!(ent, Entity::Assembler { info: AssemblerInfo::Powered { .. } |  AssemblerInfo::PoweredNoRecipe { .. }, .. });
 
@@ -2233,7 +2174,7 @@ mod test {
 
             prop_assume!(assembler_working, "{:?}", ent);
 
-            let inserter_attached = matches!(state.world.get_entities_colliding_with(Position { x: 1602, y: 1602 }, (1, 1), &DATA_STORE).into_iter().next().unwrap(), Entity::Inserter { info: InserterInfo::Attached { .. }, .. });
+            let inserter_attached = matches!(state.world.get_entity_at(Position { x: 1602, y: 1602 }, &DATA_STORE).unwrap(), Entity::Inserter { info: InserterInfo::Attached { .. }, .. });
 
             prop_assume!(inserter_attached);
 
@@ -2241,11 +2182,11 @@ mod test {
                 state.update(&DATA_STORE);
             }
 
-            let Some(Entity::Belt { id: id_going_right, .. }) = state.world.get_entities_colliding_with(Position { x: 1602, y: 1601 }, (1, 1), &DATA_STORE).into_iter().next() else {
+            let Some(Entity::Belt { id: id_going_right, .. }) = state.world.get_entity_at(Position { x: 1602, y: 1601 }, &DATA_STORE) else {
                 unreachable!()
             };
 
-            let Some(Entity::Belt { id: id_going_down, .. }) = state.world.get_entities_colliding_with(Position { x: 1604, y: 1602 }, (1, 1), &DATA_STORE).into_iter().next() else {
+            let Some(Entity::Belt { id: id_going_down, .. }) = state.world.get_entity_at(Position { x: 1604, y: 1602 }, &DATA_STORE) else {
                 unreachable!()
             };
 

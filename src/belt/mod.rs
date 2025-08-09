@@ -1785,6 +1785,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     filter,
                 } => once(filter).collect(),
             })
+            .dedup()
             .collect();
 
         done.insert(

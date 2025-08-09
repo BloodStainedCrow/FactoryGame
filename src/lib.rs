@@ -4,6 +4,7 @@
 #![feature(array_try_map)]
 #![feature(never_type)]
 #![feature(mixed_integer_ops_unsigned_sub)]
+#![feature(int_roundings)]
 
 extern crate test;
 
@@ -40,7 +41,6 @@ use rendering::{
     window::{LoadedGame, LoadedGameSized},
 };
 
-use log::info;
 
 #[cfg(not(feature = "client"))]
 use directories::ProjectDirs;
