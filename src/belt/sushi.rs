@@ -1025,8 +1025,8 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
         });
 
         let kept_range = match side {
-            Side::FRONT => (amount..(self.get_len() + amount)),
-            Side::BACK => (0..self.get_len()),
+            Side::FRONT => amount..(self.get_len() + amount),
+            Side::BACK => 0..self.get_len(),
         };
 
         let mut pos_after_last_inserter = 0;
@@ -1067,7 +1067,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
 
         if side == Side::FRONT {
             if let Some(offs) = self.inserters.offsets.first_mut() {
-                *offs -= (amount - pos_after_last_removed_inserter);
+                *offs -= amount - pos_after_last_removed_inserter;
             }
         }
 
