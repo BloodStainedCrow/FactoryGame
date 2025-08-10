@@ -1946,6 +1946,7 @@ dependencies = [
  "image",
  "itertools 0.14.0",
  "log",
+ "memoffset 0.9.1",
  "noise",
  "parking_lot",
  "petgraph",

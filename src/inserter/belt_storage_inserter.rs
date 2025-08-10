@@ -51,7 +51,7 @@ impl BeltStorageInserter<{ Dir::BeltToStorage }> {
         movetime: u8,
         max_hand_size: ITEMCOUNTTYPE,
         grid_size: usize,
-    ) {
+    ) -> bool {
         // TODO: I just added InserterStates and it is a lot slower (unsurprisingly),
         // Try and find a faster implementation of similar logic
 
@@ -64,6 +64,9 @@ impl BeltStorageInserter<{ Dir::BeltToStorage }> {
                     } else {
                         self.state = InserterState::WaitingForSourceItems(count + 1);
                     }
+                    true
+                } else {
+                    false
                 }
             },
             InserterState::WaitingForSpaceInDestination(count) => {
@@ -77,6 +80,9 @@ impl BeltStorageInserter<{ Dir::BeltToStorage }> {
                     } else {
                         self.state = InserterState::WaitingForSpaceInDestination(count - to_insert);
                     }
+                    true
+                } else {
+                    false
                 }
             },
             InserterState::FullAndMovingOut(time) => {
@@ -86,6 +92,7 @@ impl BeltStorageInserter<{ Dir::BeltToStorage }> {
                     // TODO: Do I want to try inserting immediately?
                     self.state = InserterState::WaitingForSpaceInDestination(max_hand_size);
                 }
+                false
             },
             InserterState::EmptyAndMovingBack(time) => {
                 if time > 0 {
@@ -94,6 +101,7 @@ impl BeltStorageInserter<{ Dir::BeltToStorage }> {
                     // TODO: Do I want to try getting a new item immediately?
                     self.state = InserterState::WaitingForSourceItems(0);
                 }
+                false
             },
         }
     }
@@ -107,7 +115,7 @@ impl BeltStorageInserter<{ Dir::StorageToBelt }> {
         movetime: u8,
         max_hand_size: ITEMCOUNTTYPE,
         grid_size: usize,
-    ) {
+    ) -> bool {
         // TODO: I just added InserterStates and it is a lot slower (unsurprisingly),
         // Try and find a faster implementation of similar logic,
         // Ideally reduce branch mispredictions as much as possible, while also reducing random loads from storages
@@ -127,6 +135,9 @@ impl BeltStorageInserter<{ Dir::StorageToBelt }> {
                     } else {
                         self.state = InserterState::WaitingForSourceItems(count + to_extract);
                     }
+                    true
+                } else {
+                    false
                 }
             },
             InserterState::WaitingForSpaceInDestination(count) => {
@@ -138,6 +149,9 @@ impl BeltStorageInserter<{ Dir::StorageToBelt }> {
                     } else {
                         self.state = InserterState::WaitingForSpaceInDestination(count - 1);
                     }
+                    true
+                } else {
+                    false
                 }
             },
             InserterState::FullAndMovingOut(time) => {
@@ -147,6 +161,7 @@ impl BeltStorageInserter<{ Dir::StorageToBelt }> {
                     // TODO: Do I want to try inserting immediately?
                     self.state = InserterState::WaitingForSpaceInDestination(max_hand_size);
                 }
+                false
             },
             InserterState::EmptyAndMovingBack(time) => {
                 if time > 0 {
@@ -155,6 +170,7 @@ impl BeltStorageInserter<{ Dir::StorageToBelt }> {
                     // TODO: Do I want to try getting a new item immediately?
                     self.state = InserterState::WaitingForSourceItems(0);
                 }
+                false
             },
         }
     }

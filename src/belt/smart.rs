@@ -542,6 +542,10 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         None
     }
 
+    pub fn get_num_inserters(&self) -> usize {
+        self.inserters.inserters.len()
+    }
+
     #[inline(never)]
     pub fn update_inserters<'a, 'b>(
         &mut self,
@@ -573,18 +577,16 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
             match loc {
                 Some(loc) => {
-                    let old = *loc;
-                    match ins {
+                    let changed = match ins {
                         Inserter::Out(inserter) => {
                             inserter.update(loc, storages, MOVETIME, HAND_SIZE, grid_size)
                         },
                         Inserter::In(inserter) => {
                             inserter.update(loc, storages, MOVETIME, HAND_SIZE, grid_size)
                         },
-                    }
+                    };
 
-                    // TODO: Make sure this is actually correct
-                    if old != *loc {
+                    if changed {
                         // the inserter changed something.
                         if !*loc && i < usize::from(first_possible_free_pos) {
                             // This is the new first free pos.

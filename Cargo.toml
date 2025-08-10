@@ -52,6 +52,7 @@ egui-show-info = { path = "../egui-show-info", features = ["petgraph", "parking_
 egui-show-info-derive = { path = "../egui-show-info/egui-show-info-derive", optional = true }
 bytemuck = "1.23.1"
 ph = "0.9.6"
+memoffset = "0.9.1"
 
 [dev-dependencies]
 winit = "0.30.12"

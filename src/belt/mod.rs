@@ -74,7 +74,7 @@ struct SplitterID {
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-enum Inserter {
+pub enum Inserter {
     Out(BeltStorageInserter<{ Dir::BeltToStorage }>),
     In(BeltStorageInserter<{ Dir::StorageToBelt }>),
 }

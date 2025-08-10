@@ -64,6 +64,9 @@ pub mod mining_drill;
 pub mod power;
 pub mod research;
 
+// This is an experiment. Before I can use it, I need to run it through a miri gauntlet
+mod small_box_slice;
+
 pub mod data;
 pub mod mod_manager;
 
