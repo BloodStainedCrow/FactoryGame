@@ -735,19 +735,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
 
         self.belts.pre_pure_update(data_store);
 
+        // let total_belt_len: usize = self.belts.inner.smart_belts.iter().flat_map(|store| store.belts.iter()).map(|belt| usize::from(belt.get_len())).sum();
         // let total_num_inserters: usize = self.belts.inner.smart_belts.iter().flat_map(|store| store.belts.iter()).map(|belt| belt.get_num_inserters()).sum();
         // let num_belts: usize = self.belts.inner.smart_belts.iter().flat_map(|store| store.belts.iter()).count();
         // let avg_num_inserters_per_belt = total_num_inserters as f64 / num_belts as f64;
-        // let count_which_would_be_on_stack = self.belts.inner.smart_belts.iter().flat_map(|store| store.belts.iter()).map(|belt| belt.get_num_inserters() * (mem::size_of::<u16>() + mem::size_of::<crate::belt::Inserter>())).filter(|&size| size <= 15).count();
-        // let avg_size_inserters = avg_num_inserters_per_belt * mem::size_of::<crate::belt::Inserter>() as f64;
-        // let avg_size_offsets = avg_num_inserters_per_belt * mem::size_of::<u16>() as f64;
+        // let count_which_would_be_on_stack = self.belts.inner.smart_belts.iter().flat_map(|store| store.belts.iter()).map(|belt| belt.get_num_inserters() * (mem::size_of::<crate::inserter::belt_storage_inserter_non_const_gen::BeltStorageInserterDyn>())).filter(|&size| size > 0).filter(|&size| size <= 15).count();
+        // let avg_size_inserters = avg_num_inserters_per_belt * mem::size_of::<crate::inserter::belt_storage_inserter_non_const_gen::BeltStorageInserterDyn>() as f64;
 
         // let perc_inline = count_which_would_be_on_stack as f64 / num_belts as f64;
 
+        // let avg_len = total_belt_len as f64 / num_belts as f64;
+
+        // dbg!(total_num_inserters);
         // dbg!(avg_num_inserters_per_belt);
         // dbg!(avg_size_inserters);
-        // dbg!(avg_size_offsets);
         // dbg!(perc_inline);
+        // dbg!(avg_len);
 
 
         let update_timers = &self.belts.inner.belt_update_timers;

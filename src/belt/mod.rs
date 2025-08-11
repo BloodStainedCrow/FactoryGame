@@ -1245,7 +1245,10 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             .inserters
             .inserters
             .iter()
-            .filter_map(|(ins, item)| (matches!(ins, Inserter::In(_)).then_some(*item)))
+            .filter_map(|(ins, item)| {
+                let (dir, _state) = ins.state.into();
+                (dir == Dir::StorageToBelt).then_some(*item)
+            })
             .all_equal_value();
 
         fn check_incoming_edges<ItemIdxType: IdxTrait>(
@@ -1740,7 +1743,8 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                             .inserters
                             .iter()
                             .filter_map(|(ins, item)| {
-                                matches!(ins, Inserter::In(_)).then_some(*item)
+                                let (dir, _state) = ins.state.into();
+                                (dir == Dir::StorageToBelt).then_some(*item)
                             })
                             .dedup()
                             .collect(),

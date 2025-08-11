@@ -87,6 +87,9 @@ redundant_closure_for_method_calls = { level = "allow", priority = 1 }
 suboptimal_flops = { level = "allow", priority = 1 }
 module_name_repetitions = { level = "allow", priority = 1 }
 
+[profile.release]
+lto = true
+
 [profile.release-with-debug]
 inherits = "release"
 debug = true

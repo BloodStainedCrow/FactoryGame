@@ -12,7 +12,19 @@ use egui_show_info_derive::ShowInfo;
 use get_size::GetSize;
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
-#[derive(Debug, ConstParamTy, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
+#[derive(
+    Debug,
+    ConstParamTy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Clone,
+    Copy,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub enum Dir {
     BeltToStorage = 0,
     StorageToBelt = 1,
