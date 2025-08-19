@@ -390,7 +390,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
                     }
                     loc.is_some()
                 })
-                .collect(),
+                .collect::<bitvec::prelude::BitBox>().into(),
             inserters: InserterStoreDyn {
                 // FIXME: Some of these inserters might have a different item than what we are converting to. This will result in crashes and item transmutation
                 inserters: inserters.into_iter().map(|(ins, inserter_item)| {
