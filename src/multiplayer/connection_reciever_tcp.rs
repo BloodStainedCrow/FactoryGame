@@ -21,6 +21,8 @@ pub fn accept_continously(
                     if cancel.load(std::sync::atomic::Ordering::Relaxed) {
                         return;
                     } else {
+                        conn.set_nonblocking(true)
+                            .expect("Setting connectiong to nonblocking failed");
                         connections.lock().push(conn);
                     }
                 },

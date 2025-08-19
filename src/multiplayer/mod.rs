@@ -33,7 +33,7 @@ mod plumbing;
 mod protocol;
 mod server;
 
-pub mod connection_reciever;
+pub mod connection_reciever_tcp;
 
 pub(super) enum Game<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
     #[cfg(feature = "client")]
