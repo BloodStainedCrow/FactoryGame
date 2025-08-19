@@ -1,3 +1,4 @@
+use crate::belt::smart::SmartBelt;
 use crate::chest::ChestSize;
 use crate::frontend::action::belt_placement::{BeltState, expected_belt_state};
 use crate::get_size::RAMExtractor;
@@ -45,6 +46,7 @@ use petgraph::dot::Dot;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::cmp::max;
 use std::fs::File;
+use std::num::NonZero;
 use std::sync::LazyLock;
 use std::{
     cmp::{Ordering, min},
@@ -172,16 +174,16 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     state_machine.current_mouse_pos,
                 );
 
-            bp.draw(
-                (
-                    x as f32 + num_tiles_across_screen_horizontal / 2.0,
-                    y as f32 + num_tiles_across_screen_vertical / 2.0,
-                ),
-                camera_pos,
-                &mut entity_overlay_layer,
-                texture_atlas,
-                data_store,
-            );
+            // bp.draw(
+            //     (
+            //         x as f32 + num_tiles_across_screen_horizontal / 2.0,
+            //         y as f32 + num_tiles_across_screen_vertical / 2.0,
+            //     ),
+            //     camera_pos,
+            //     &mut entity_overlay_layer,
+            //     texture_atlas,
+            //     data_store,
+            // );
         }
 
         mem::drop(state_machine);
@@ -1795,6 +1797,7 @@ pub fn render_ui<
 
     Window::new("DEBUG USE WITH CARE")
         .default_open(false)
+        .resizable(false)
         .show(ctx, |ui| {
             if ui.button("⚠️DEFRAGMENT GAMESTATE").clicked() {
                 let mut new_state = game_state_ref.clone();
@@ -1815,6 +1818,172 @@ pub fn render_ui<
 
                 ui.text_edit_multiline(&mut graph);
             }
+
+            CollapsingHeader::new("Bucket cache line sizes")
+                .default_open(false)
+                .show(ui, |ui| {
+                    let num_bytes = game_state_ref
+                        .simulation_state
+                        .factory
+                        .storage_storage_inserters
+                        .inserters
+                        .iter()
+                        .flat_map(|tree| tree.values())
+                        .map(|(_front, store)| store.get_load_info())
+                        .map(|(_, _, num_storage_cachelines, num_struct_cachelines)| {
+                            num_storage_cachelines + num_struct_cachelines
+                        })
+                        .sum::<usize>()
+                        * 64;
+                    ui.label(&format!(
+                        "Total RAM usage next tick: {}",
+                        RamUsage(num_bytes)
+                    ));
+                    ui.label(&format!(
+                        "Total RAM usage per second: {}",
+                        RamUsage(num_bytes * TICKS_PER_SECOND_LOGIC as usize)
+                    ));
+                    TableBuilder::new(ui)
+                        .columns(Column::auto(), 5)
+                        .header(1.0, |mut header| {
+                            header.col(|ui| {
+                                ui.label("Item");
+                            });
+                            header.col(|ui| {
+                                ui.label("num_loads");
+                            });
+                            header.col(|ui| {
+                                ui.label("num_cacheline_reuses");
+                            });
+                            header.col(|ui| {
+                                ui.label("num_cachelines");
+                            });
+                            header.col(|ui| {
+                                ui.label("num_cachelines_for_inserter_struct");
+                            });
+                        })
+                        .body(|body| {
+                            body.rows(
+                                1.0,
+                                game_state_ref
+                                    .simulation_state
+                                    .factory
+                                    .storage_storage_inserters
+                                    .inserters
+                                    .len(),
+                                |mut row| {
+                                    let item = row.index();
+
+                                    row.col(|ui| {
+                                        ui.label(&data_store.item_names[item]);
+                                    });
+
+                                    let (
+                                        num_loads,
+                                        num_cacheline_reuses,
+                                        num_cachelines,
+                                        num_cachelines_for_inserter_struct,
+                                    ) = game_state_ref
+                                        .simulation_state
+                                        .factory
+                                        .storage_storage_inserters
+                                        .inserters[item]
+                                        .iter()
+                                        .max_by_key(|v| v.1.1.get_num_inserters())
+                                        .map(|store| store.1.1.get_load_info())
+                                        .unwrap_or_default();
+
+                                    row.col(|ui| {
+                                        ui.label(&format!("{}", num_loads));
+                                    });
+                                    row.col(|ui| {
+                                        ui.label(&format!("{}", num_cacheline_reuses));
+                                    });
+                                    row.col(|ui| {
+                                        ui.label(&format!("{}", num_cachelines));
+                                    });
+                                    row.col(|ui| {
+                                        ui.label(&format!(
+                                            "{}",
+                                            num_cachelines_for_inserter_struct
+                                        ));
+                                    });
+                                },
+                            )
+                        })
+                });
+
+            CollapsingHeader::new("Pure Belt cache line sizes")
+                .default_open(false)
+                .show(ui, |ui| {
+                    let [
+                        num_bytes_belt_update,
+                        num_bytes_inserter_struct,
+                        num_bytes_inserter_update,
+                    ] = game_state_ref
+                        .simulation_state
+                        .factory
+                        .belts
+                        .inner
+                        .smart_belts
+                        .iter()
+                        .flat_map(|store| store.belts.iter())
+                        .map(|belt| belt.get_update_size())
+                        .map(
+                            |(
+                                cache_lines_from_free_index_search,
+                                cache_lines_from_inserter_structs,
+                                cache_lines_from_inserter_belt_lookup,
+                                cache_lines_from_storage_lookup,
+                                splitter_cache_lines,
+                            )| {
+                                [
+                                    cache_lines_from_free_index_search + splitter_cache_lines,
+                                    cache_lines_from_inserter_structs,
+                                    cache_lines_from_inserter_structs
+                                        + cache_lines_from_inserter_belt_lookup
+                                        + cache_lines_from_storage_lookup,
+                                ]
+                            },
+                        )
+                        .reduce(|acc, v| [acc[0] + v[0], acc[1] + v[1], acc[2] + v[2]])
+                        .unwrap_or([0, 0, 0])
+                        .map(|v| v * 64);
+
+                    let num_bytes_inner = num_bytes_belt_update + num_bytes_inserter_update;
+                    let num_bytes_outer = game_state_ref
+                        .simulation_state
+                        .factory
+                        .belts
+                        .inner
+                        .smart_belts
+                        .iter()
+                        .flat_map(|store| store.belts.iter())
+                        .count()
+                        * std::mem::size_of::<SmartBelt<ItemIdxType>>().div_ceil(64);
+
+                    let num_bytes = num_bytes_inner + num_bytes_outer;
+                    ui.label(&format!(
+                        "Total RAM usage (belt update) next tick: {}",
+                        RamUsage(num_bytes_belt_update)
+                    ));
+                    ui.label(&format!(
+                        "Total RAM usage (inserter struct) next tick: {}",
+                        RamUsage(num_bytes_inserter_struct)
+                    ));
+                    ui.label(&format!(
+                        "Total RAM usage (full inserter update) next tick: {}",
+                        RamUsage(num_bytes_inserter_update)
+                    ));
+                    ui.label(&format!(
+                        "Total RAM usage next tick: {}",
+                        RamUsage(num_bytes)
+                    ));
+                    ui.label(&format!(
+                        "Total RAM usage per second: {}",
+                        RamUsage(num_bytes * TICKS_PER_SECOND_LOGIC as usize)
+                    ));
+                });
 
             CollapsingHeader::new("BeltStore")
                 .default_open(false)
@@ -1970,7 +2139,7 @@ pub fn render_ui<
                                 // Render module slots
                                 TableBuilder::new(ui).id_salt("Module Slots").columns(Column::auto(), modules.len()).body(|mut body| {
                                     body.row(1.0, |mut row| {
-                                        for module in modules {
+                                        for module in modules.iter() {
                                             row.col(|ui| {
                                                 if let Some(module_id) = module {
                                                     ui.label(&data_store_ref.module_info[*module_id].display_name);
@@ -2215,7 +2384,7 @@ pub fn render_ui<
                         if movetime_overridden {
                             let mut movetime = user_movetime.map(|v| v.into()).unwrap_or(*type_movetime);
 
-                            ui.add(egui::Slider::new(&mut movetime, (*type_movetime)..=u16::MAX).text("Ticks per half swing"));
+                            ui.add(egui::Slider::new(&mut movetime, (*type_movetime)..=NonZero::<u16>::MAX).text("Ticks per half swing"));
 
                             if *user_movetime != Some(movetime.try_into().unwrap()) {
                                 actions.push(ActionType::OverrideInserterMovetime { pos: *pos, new_movetime: Some(movetime.try_into().unwrap()) });
