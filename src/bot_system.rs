@@ -29,7 +29,7 @@ use log::info;
 use crate::{
     app_state::SimulationState,
     frontend::world::{Position, tile::World},
-    item::{ITEMCOUNTTYPE, IdxTrait, Item, WeakIdxTrait, usize_from},
+    item::{ITEMCOUNTTYPE, IdxTrait, Indexable, Item, WeakIdxTrait, usize_from},
     network_graph::{Network, WeakIndex},
     power::{Joule, Watt},
 };
@@ -607,7 +607,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
     }
 
     fn get_roboport_position(&self, roboport_id: u32) -> (f32, f32) {
-        todo!()
+        let Position { x, y } = self.roboports[roboport_id as usize].pos;
+
+        (x as f32, y as f32)
     }
 
     fn try_deposit_item(
@@ -730,11 +732,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
         let mut render_infos = vec![];
 
         // Handle logibots, which are now done with their job
-        let done = self
-            .bot_jobs
-            .remove(&self.current_tick)
-            .into_iter()
-            .flatten();
+        let done = self.bot_jobs.remove(&self.current_tick).unwrap_or(vec![]);
 
         debug_assert!(self.bot_jobs.get(&(self.current_tick - 1)).is_none());
 

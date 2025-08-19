@@ -324,12 +324,64 @@ impl<
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct RamUsage(usize);
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[repr(transparent)]
+pub struct BitBox {
+    bitbox: bitvec::prelude::BitBox,
+}
 
 #[cfg(feature = "client")]
-impl EguiDisplayable for RamUsage {
-    fn show(&self, ui: &mut egui::Ui) {
+impl GetSize for BitBox {
+    fn get_heap_size(&self) -> usize {
+        self.bitbox.len().div_ceil(std::mem::size_of::<usize>())
+    }
+}
+
+#[cfg(feature = "client")]
+impl<Info: EguiDisplayable, Extractor: InfoExtractor<Self, Info>> ShowInfo<Extractor, Info>
+    for BitBox
+{
+    fn show_fields<C: Cache<String, Info>>(
+        &self,
+        _extractor: &mut Extractor,
+        _ui: &mut egui::Ui,
+        _path: String,
+        _cache: &mut C,
+    ) {
+    }
+}
+
+impl Deref for BitBox {
+    type Target = bitvec::prelude::BitBox;
+
+    fn deref(&self) -> &Self::Target {
+        &self.bitbox
+    }
+}
+
+impl DerefMut for BitBox {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.bitbox
+    }
+}
+
+impl From<bitvec::prelude::BitBox> for BitBox {
+    fn from(value: bitvec::prelude::BitBox) -> Self {
+        Self { bitbox: value }
+    }
+}
+
+impl From<BitBox> for bitvec::prelude::BitBox {
+    fn from(value: BitBox) -> Self {
+        value.bitbox
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RamUsage(pub usize);
+
+impl std::fmt::Display for RamUsage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self.0 {
             v @ 0..1024 => format!("{:.02} B", v as f64),
             v @ 1024..1048576 => format!("{:.02} KB", v as f64 / 1024.0),
@@ -337,7 +389,7 @@ impl EguiDisplayable for RamUsage {
             v @ 1073741824.. => format!("{:.02} GB", v as f64 / 1073741824.0),
         };
 
-        ui.label(s);
+        write!(f, "{}", s)
     }
 }
 

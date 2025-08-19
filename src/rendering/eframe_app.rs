@@ -13,8 +13,8 @@ use std::{
 use directories::ProjectDirs;
 use parking_lot::Mutex;
 
-use crate::StartGameInfo;
 use crate::{GameCreationInfo, run_client};
+use crate::{StartGameInfo, frontend::world::Position};
 use crate::{rendering::render_world::EscapeMenuOptions, run_integrated_server};
 use eframe::{
     egui::{CentralPanel, Event, PaintCallbackInfo, Shape},
@@ -340,6 +340,26 @@ impl eframe::App for App {
                             send.send(run_integrated_server(
                                 progress_send,
                                 StartGameInfo::Create(GameCreationInfo::Gigabase),
+                            ));
+                        });
+
+                        self.state = AppState::Loading {
+                            start_time: Instant::now(),
+                            progress,
+                            game_state_receiver: recv,
+                        };
+                    } else if ui.button("Solar Field").clicked() {
+                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
+                        let (send, recv) = channel();
+
+                        let progress_send = progress.clone();
+                        thread::spawn(move || {
+                            send.send(run_integrated_server(
+                                progress_send,
+                                StartGameInfo::Create(GameCreationInfo::SolarField(
+                                    crate::power::Watt(0),
+                                    Position { x: 1600, y: 1600 },
+                                )),
                             ));
                         });
 

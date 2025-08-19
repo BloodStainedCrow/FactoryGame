@@ -16,6 +16,8 @@ use std::cmp::min;
 use crate::item::usize_from;
 
 #[cfg(feature = "client")]
+use egui_show_info::{EguiDisplayable, InfoExtractor, ShowInfo};
+#[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
 use get_size::GetSize;
@@ -81,13 +83,29 @@ pub const MAX_GRID_COUNT: usize = u16::MAX as usize - 1;
 pub const MAX_TIMES_AN_ITEM_CAN_APPEAR_IN_RECIPES: usize = u16::MAX as usize;
 pub const MAX_RECIPE_COUNT: usize = u16::MAX as usize;
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
+#[repr(packed(1))]
 pub struct FakeUnionStorage {
     pub index: u32,
     pub grid_or_static_flag: u16,
     pub recipe_idx_with_this_item: u16,
 }
+
+#[cfg(feature = "client")]
+impl<E: InfoExtractor<Self, Info>, Info: EguiDisplayable> ShowInfo<E, Info> for FakeUnionStorage {
+    fn show_fields<C: egui_show_info::Cache<String, Info>>(
+        &self,
+        _: &mut E,
+        _: &mut egui::Ui,
+        _: std::string::String,
+        _: &mut C,
+    ) {
+        // TODO:
+    }
+}
+
+#[cfg(feature = "client")]
+impl GetSize for FakeUnionStorage {}
 
 impl FakeUnionStorage {
     #[inline(always)]

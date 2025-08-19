@@ -139,6 +139,14 @@ impl Default for PlayerInfo {
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+struct Assembler<RecipeIdxType: WeakIdxTrait> {
+    /// List of all the module slots of this assembler
+    modules: ModuleSlots,
+    info: AssemblerInfo<RecipeIdxType>,
+}
+
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     noise: SerializableSimplex,
 
@@ -853,7 +861,7 @@ fn new_power_pole<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 let (new_id, weak_index) =
                                     sim_state.factory.power_grids.power_grids[usize::from(grid_id)]
                                         .add_assembler(
-                                            *ty, grid_id, *recipe, &modules, pole_pos, *pos,
+                                            *ty, grid_id, *recipe, &**modules, pole_pos, *pos,
                                             data_store,
                                         );
 
@@ -897,7 +905,7 @@ fn new_power_pole<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             } => {
                                 let (weak_index, index) = sim_state.factory.power_grids.power_grids
                                     [usize::from(grid_id)]
-                                .add_lab(*pos, *ty, &modules, pole_pos, data_store);
+                                .add_lab(*pos, *ty, &**modules, pole_pos, data_store);
 
                                 *pole_position = Some((pole_pos, weak_index, index));
 
@@ -1180,7 +1188,7 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                                             let () = sim_state
                                                 .factory
                                                 .storage_storage_inserters
-                                                .remove_ins(*item, movetime, *inserter);
+                                                .remove_ins(*item, movetime.into(), *inserter);
 
                                             *info = InserterInfo::NotAttached {
                                                 start_pos: *start_pos,
@@ -1471,7 +1479,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         *ty,
                         grid_id,
                         new_recipe,
-                        modules,
+                        &**modules,
                         *pole_position,
                         *pos,
                         data_store,
@@ -2547,7 +2555,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
                 let index = simulation_state.factory.storage_storage_inserters.add_ins(
                     determined_filter,
-                    movetime,
+                    movetime.into(),
                     start_storage,
                     dest_storage,
                     HAND_SIZE,
@@ -3227,6 +3235,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             .unwrap_or(self.get_floor_color(pos, data_store))
     }
 
+    #[cfg(feature = "client")]
     fn get_tile_arr_debug_color(&self, pos: Position) -> Color32 {
         self.get_chunk_for_tile(pos)
             .map(|chunk| {
@@ -3929,7 +3938,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                                         *ty,
                                                         grid_id,
                                                         id.recipe,
-                                                        &*modules,
+                                                        &**modules,
                                                         new_pole_pos,
                                                         *pos,
                                                         data_store,
@@ -4086,7 +4095,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     AttachedInserter::StorageStorage { item, inserter } => {
                         sim_state.factory.storage_storage_inserters.remove_ins(
                             *item,
-                            user_movetime.map(|v| v.into()).unwrap_or(*type_movetime),
+                            user_movetime.unwrap_or(*type_movetime).into(),
                             *inserter,
                         );
                     },
@@ -4285,7 +4294,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
-pub enum AssemblerInfo<RecipeIdxType: WeakIdxTrait> {
+pub enum AssemblerInfo<RecipeIdxType: WeakIdxTrait = u8> {
     UnpoweredNoRecipe,
     Unpowered(Recipe<RecipeIdxType>),
     PoweredNoRecipe(Position),
@@ -4368,14 +4377,18 @@ struct PipeConnection {
     connection_weak_index: WeakIndex,
 }
 
+// TODO: Support more than 8 modules slots
+type ModuleSlots = Box<[Option<usize>; 8]>;
+
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
-pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+pub enum Entity<ItemIdxType: WeakIdxTrait = u8, RecipeIdxType: WeakIdxTrait = u8> {
     Assembler {
         ty: u8,
         pos: Position,
+
         /// List of all the module slots of this assembler
-        modules: Box<[Option<usize>]>,
+        modules: ModuleSlots,
         info: AssemblerInfo<RecipeIdxType>,
 
         #[serde(default = "Dir::default")]
@@ -4410,7 +4423,7 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Inserter {
         ty: u8,
         user_movetime: Option<NonZero<u16>>,
-        type_movetime: u16,
+        type_movetime: NonZero<u16>,
 
         pos: Position,
         direction: Dir,
@@ -4441,15 +4454,15 @@ pub enum Entity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Lab {
         pos: Position,
         ty: u8,
-        /// List of all the module slots of this assembler
-        modules: Box<[Option<usize>]>,
+        /// List of all the module slots of this lab
+        modules: ModuleSlots,
         pole_position: Option<(Position, WeakIndex, u32)>,
     },
     Beacon {
         ty: u8,
         pos: Position,
         /// List of all the module slots of this beacon
-        modules: Box<[Option<usize>]>,
+        modules: ModuleSlots,
         pole_position: Option<(Position, WeakIndex)>,
     },
     // Pipes are coded as fluid tanks with connections on all sides
@@ -4751,7 +4764,7 @@ impl Dir {
 #[derive(
     Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]
-pub struct AssemblerID<RecipeIdxType: WeakIdxTrait> {
+pub struct AssemblerID<RecipeIdxType: WeakIdxTrait = u8> {
     pub recipe: Recipe<RecipeIdxType>,
     pub grid: PowerGridIdentifier,
     pub assembler_index: u32,

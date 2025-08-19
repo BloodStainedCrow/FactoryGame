@@ -27,7 +27,7 @@ hex = "0.4.3"
 postcard = { version = "1.1.1", features = ["use-std"] }
 charts-rs = { version = "0.3.20", features = ["resvg"] }
 strum = { version = "0.27.1", features = ["derive"] }
-bitvec = "1.0.1"
+bitvec = { version = "1.0.1", features = ["alloc", "serde", "std"], default-features = false }
 bimap = { version = "0.6.3", features = ["serde", "std"], default-features = false }
 eframe = { version = "0.31.1", features = ["wgpu"], optional = true }
 egui_extras = { version = "0.31.1", optional = true }
@@ -53,6 +53,7 @@ egui-show-info-derive = { path = "../egui-show-info/egui-show-info-derive", opti
 bytemuck = "1.23.1"
 ph = "0.9.6"
 memoffset = "0.9.1"
+smallvec = { version = "1.15.1", features = ["serde"] }
 
 [dev-dependencies]
 winit = "0.30.12"
@@ -94,6 +95,7 @@ lto = true
 inherits = "release"
 debug = true
 strip = false
+lto = false
 
 [profile.release-with-debug-asserts]
 inherits = "release"

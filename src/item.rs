@@ -12,13 +12,14 @@ pub trait Indexable {
 }
 
 pub trait IdxTrait:
-    Debug + Indexable + serde::Serialize + for<'de> serde::Deserialize<'de> + WeakIdxTrait
+    Debug + serde::Serialize + for<'de> serde::Deserialize<'de> + WeakIdxTrait
 {
 }
 
 #[cfg(feature = "client")]
 pub trait WeakIdxTrait:
-    Into<usize>
+    Indexable
+    + Into<usize>
     + Copy
     + Send
     + Sync
@@ -34,7 +35,8 @@ pub trait WeakIdxTrait:
 
 #[cfg(not(feature = "client"))]
 pub trait WeakIdxTrait:
-    Into<usize>
+    Indexable
+    + Into<usize>
     + Copy
     + Send
     + Sync
@@ -91,13 +93,13 @@ pub struct Recipe<RecipeIdxType: WeakIdxTrait> {
     pub id: RecipeIdxType,
 }
 
-impl<RecipeIdxType: IdxTrait> Indexable for Recipe<RecipeIdxType> {
+impl<RecipeIdxType: WeakIdxTrait> Indexable for Recipe<RecipeIdxType> {
     fn into_usize(self) -> usize {
         self.id.into_usize()
     }
 }
 
-impl<RecipeIdxType: IdxTrait> From<RecipeIdxType> for Recipe<RecipeIdxType> {
+impl<RecipeIdxType: WeakIdxTrait> From<RecipeIdxType> for Recipe<RecipeIdxType> {
     fn from(value: RecipeIdxType) -> Self {
         Self { id: value }
     }

@@ -700,10 +700,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         id,
                     }) => todo!(),
                     Some(Entity::SolarPanel {
-                        pos,
+                        pos: _,
                         ty,
-                        pole_position,
-                    }) => todo!(),
+                        pole_position: _,
+                    }) => {
+                        self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                            PlaceEntityType::SolarPanel {
+                                pos: Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.map_view_info.unwrap_or(self.local_player_pos),
+                                    self.current_mouse_pos,
+                                ),
+                                ty: *ty,
+                            },
+                        ));
+                    },
                     Some(Entity::Splitter { pos, direction, id }) => todo!(),
                     Some(Entity::Underground {
                         underground_dir,

@@ -1078,7 +1078,7 @@ impl Blueprint {
                                 x: pos.x - base_pos.x,
                                 y: pos.y - base_pos.y,
                             },
-                            modules: modules.into_iter().copied().flatten().collect(),
+                            modules: modules.iter().copied().flatten().collect(),
                         },
                     ]
                 },

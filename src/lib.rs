@@ -22,19 +22,22 @@ use std::{
     thread,
 };
 
+use log::info;
 use parking_lot::Mutex;
 
 use app_state::GameState;
 use data::{DataStore, factorio_1_1::get_raw_data_test};
 #[cfg(feature = "client")]
 use eframe::NativeOptions;
-use frontend::world::tile::CHUNK_SIZE_FLOAT;
+use frontend::world::{Position, tile::CHUNK_SIZE_FLOAT};
 #[cfg(feature = "client")]
 use frontend::{action::action_state_machine::ActionStateMachine, input::Input};
 use item::{IdxTrait, WeakIdxTrait};
 use multiplayer::{
-    ClientConnectionInfo, Game, GameInitData, ServerInfo, connection_reciever::accept_continously,
+    ClientConnectionInfo, Game, GameInitData, ServerInfo,
+    connection_reciever_tcp::accept_continously,
 };
+use power::Watt;
 #[cfg(feature = "client")]
 use rendering::{
     eframe_app,
@@ -192,6 +195,8 @@ enum GameCreationInfo {
 
     Gigabase,
 
+    SolarField(Watt, Position),
+
     FromBP(PathBuf),
 }
 
@@ -256,6 +261,9 @@ fn run_integrated_server(
                     },
                     GameCreationInfo::Gigabase => {
                         GameState::new_with_gigabase(progress, &data_store)
+                    },
+                    GameCreationInfo::SolarField(wattage, base_pos) => {
+                        GameState::new_with_tons_of_solar(progress, &data_store)
                     },
 
                     GameCreationInfo::FromBP(path) => GameState::new_with_bp(&data_store, path),

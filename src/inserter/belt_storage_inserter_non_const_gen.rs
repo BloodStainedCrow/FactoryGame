@@ -1,4 +1,8 @@
-use std::{cmp::min, marker::ConstParamTy};
+use std::{
+    cmp::min,
+    marker::ConstParamTy,
+    ops::{Deref, DerefMut},
+};
 
 use crate::{
     item::ITEMCOUNTTYPE,
@@ -84,7 +88,7 @@ impl BeltStorageInserterDyn {
 impl BeltStorageInserterDyn {
     pub fn update(
         &mut self,
-        loc: &mut bool,
+        mut loc: impl DerefMut + Deref<Target = bool>,
         storages: SingleItemStorages,
         movetime: u8,
         max_hand_size: ITEMCOUNTTYPE,

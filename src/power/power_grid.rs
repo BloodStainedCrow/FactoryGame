@@ -3,10 +3,15 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
-use crate::join_many::join;
+use crate::{
+    assembler::{MultiAssemblerStore, simd::MultiAssemblerStore as MultiAssemblerStoreStruct},
+    join_many::join,
+};
 
 use crate::{
-    assembler::{AssemblerOnclickInfo, AssemblerRemovalInfo, FullAssemblerStore},
+    assembler::{
+        AssemblerOnclickInfo, AssemblerRemovalInfo, FullAssemblerStore as BaseFullAssemblerStore,
+    },
     data::{DataStore, LazyPowerMachineInfo},
     frontend::world::{Position, tile::AssemblerID},
     item::{ITEMCOUNTTYPE, IdxTrait, Indexable, Item, Recipe, WeakIdxTrait, usize_from},
@@ -85,6 +90,19 @@ impl<RecipeIdxType: WeakIdxTrait> BeaconAffectedEntity<RecipeIdxType> {
         }
     }
 }
+
+pub type FullAssemblerStore<RecipeIdxType> = BaseFullAssemblerStore<
+    RecipeIdxType,
+    MultiAssemblerStoreStruct<RecipeIdxType, 0, 1>,
+    MultiAssemblerStoreStruct<RecipeIdxType, 1, 1>,
+    MultiAssemblerStoreStruct<RecipeIdxType, 2, 1>,
+    MultiAssemblerStoreStruct<RecipeIdxType, 2, 2>,
+    MultiAssemblerStoreStruct<RecipeIdxType, 2, 3>,
+    MultiAssemblerStoreStruct<RecipeIdxType, 3, 1>,
+    MultiAssemblerStoreStruct<RecipeIdxType, 4, 1>,
+    MultiAssemblerStoreStruct<RecipeIdxType, 5, 1>,
+    MultiAssemblerStoreStruct<RecipeIdxType, 6, 1>,
+>;
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -1451,32 +1469,32 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         ) {
             (0, 1) => self.stores.assemblers_0_1
                 [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
-            .remove_assembler_data(old_assembler_id.assembler_index),
+            .remove_assembler_data_non_generic(old_assembler_id.assembler_index, data_store),
             (1, 1) => self.stores.assemblers_1_1
                 [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
-            .remove_assembler_data(old_assembler_id.assembler_index),
+            .remove_assembler_data_non_generic(old_assembler_id.assembler_index, data_store),
             (2, 1) => self.stores.assemblers_2_1
                 [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
-            .remove_assembler_data(old_assembler_id.assembler_index),
+            .remove_assembler_data_non_generic(old_assembler_id.assembler_index, data_store),
 
             (2, 2) => self.stores.assemblers_2_2
                 [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
-            .remove_assembler_data(old_assembler_id.assembler_index),
+            .remove_assembler_data_non_generic(old_assembler_id.assembler_index, data_store),
             (2, 3) => self.stores.assemblers_2_3
                 [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
-            .remove_assembler_data(old_assembler_id.assembler_index),
+            .remove_assembler_data_non_generic(old_assembler_id.assembler_index, data_store),
             (3, 1) => self.stores.assemblers_3_1
                 [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
-            .remove_assembler_data(old_assembler_id.assembler_index),
+            .remove_assembler_data_non_generic(old_assembler_id.assembler_index, data_store),
             (4, 1) => self.stores.assemblers_4_1
                 [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
-            .remove_assembler_data(old_assembler_id.assembler_index),
+            .remove_assembler_data_non_generic(old_assembler_id.assembler_index, data_store),
             (5, 1) => self.stores.assemblers_5_1
                 [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
-            .remove_assembler_data(old_assembler_id.assembler_index),
+            .remove_assembler_data_non_generic(old_assembler_id.assembler_index, data_store),
             (6, 1) => self.stores.assemblers_6_1
                 [data_store.recipe_to_ing_out_combo_idx[old_assembler_id.recipe.id.into()]]
-            .remove_assembler_data(old_assembler_id.assembler_index),
+            .remove_assembler_data_non_generic(old_assembler_id.assembler_index, data_store),
 
             _ => unreachable!(),
         };
@@ -1698,31 +1716,31 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         ) {
             (0, 1) => self.stores.assemblers_0_1
                 [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
-            .remove_assembler(assembler_id.assembler_index),
+            .remove_assembler(assembler_id.assembler_index, data_store),
             (1, 1) => self.stores.assemblers_1_1
                 [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
-            .remove_assembler(assembler_id.assembler_index),
+            .remove_assembler(assembler_id.assembler_index, data_store),
             (2, 1) => self.stores.assemblers_2_1
                 [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
-            .remove_assembler(assembler_id.assembler_index),
+            .remove_assembler(assembler_id.assembler_index, data_store),
             (2, 2) => self.stores.assemblers_2_2
                 [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
-            .remove_assembler(assembler_id.assembler_index),
+            .remove_assembler(assembler_id.assembler_index, data_store),
             (2, 3) => self.stores.assemblers_2_3
                 [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
-            .remove_assembler(assembler_id.assembler_index),
+            .remove_assembler(assembler_id.assembler_index, data_store),
             (3, 1) => self.stores.assemblers_3_1
                 [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
-            .remove_assembler(assembler_id.assembler_index),
+            .remove_assembler(assembler_id.assembler_index, data_store),
             (4, 1) => self.stores.assemblers_4_1
                 [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
-            .remove_assembler(assembler_id.assembler_index),
+            .remove_assembler(assembler_id.assembler_index, data_store),
             (5, 1) => self.stores.assemblers_5_1
                 [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
-            .remove_assembler(assembler_id.assembler_index),
+            .remove_assembler(assembler_id.assembler_index, data_store),
             (6, 1) => self.stores.assemblers_6_1
                 [data_store.recipe_to_ing_out_combo_idx[assembler_id.recipe.id.into()]]
-            .remove_assembler(assembler_id.assembler_index),
+            .remove_assembler(assembler_id.assembler_index, data_store),
 
             _ => unreachable!(),
         };
@@ -2116,7 +2134,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     //                 .par_iter_mut().map(|s| {
     //                     profiling::scope!("Assembler Update", format!("Recipe: {}", data_store.recipe_display_names[usize_from(s.recipe.id)]).as_str());
     //                     if active_recipes[s.recipe.into_usize()] {
-    //                         s.update_branchless::<RecipeIdxType>(
+    //                         s.update(
     //                             last_power_mult,
     //                             &data_store.recipe_index_lookups,
     //                             &data_store.recipe_ings.ing0,
@@ -2220,18 +2238,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         "Assembler Update",
                         format!(
                             "Recipe: {}",
-                            data_store.recipe_display_names[usize_from(s.recipe.id)]
+                            data_store.recipe_display_names[usize_from(s.get_recipe().id)]
                         )
                         .as_str()
                     );
-                    if active_recipes[s.recipe.into_usize()] {
-                        s.update_branchless::<RecipeIdxType>(
+                    if active_recipes[s.get_recipe().into_usize()] {
+                        let (info, ings, prod) = s.do_single_tick_update(
                             self.last_power_mult,
                             &data_store.recipe_index_lookups,
                             &data_store.recipe_ings.ing0,
                             &data_store.recipe_outputs.out1,
                             &data_store.recipe_timers,
-                        )
+                            data_store,
+                        );
+
+                        (info.into(), ings, prod)
                     } else {
                         (Watt(0), 0, 0)
                     }
@@ -2244,18 +2265,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         "Assembler Update",
                         format!(
                             "Recipe: {}",
-                            data_store.recipe_display_names[usize_from(s.recipe.id)]
+                            data_store.recipe_display_names[usize_from(s.get_recipe().id)]
                         )
                         .as_str()
                     );
-                    if active_recipes[s.recipe.into_usize()] {
-                        s.update_branchless::<RecipeIdxType>(
+                    if active_recipes[s.get_recipe().into_usize()] {
+                        let (info, ings, prod) = s.do_single_tick_update(
                             self.last_power_mult,
                             &data_store.recipe_index_lookups,
                             &data_store.recipe_ings.ing1,
                             &data_store.recipe_outputs.out1,
                             &data_store.recipe_timers,
-                        )
+                            data_store,
+                        );
+
+                        (info.into(), ings, prod)
                     } else {
                         (Watt(0), 0, 0)
                     }
@@ -2268,18 +2292,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         "Assembler Update",
                         format!(
                             "Recipe: {}",
-                            data_store.recipe_display_names[usize_from(s.recipe.id)]
+                            data_store.recipe_display_names[usize_from(s.get_recipe().id)]
                         )
                         .as_str()
                     );
-                    if active_recipes[s.recipe.into_usize()] {
-                        s.update_branchless::<RecipeIdxType>(
+                    if active_recipes[s.get_recipe().into_usize()] {
+                        let (info, ings, prod) = s.do_single_tick_update(
                             self.last_power_mult,
                             &data_store.recipe_index_lookups,
                             &data_store.recipe_ings.ing2,
                             &data_store.recipe_outputs.out1,
                             &data_store.recipe_timers,
-                        )
+                            data_store,
+                        );
+
+                        (info.into(), ings, prod)
                     } else {
                         (Watt(0), 0, 0)
                     }
@@ -2292,18 +2319,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         "Assembler Update",
                         format!(
                             "Recipe: {}",
-                            data_store.recipe_display_names[usize_from(s.recipe.id)]
+                            data_store.recipe_display_names[usize_from(s.get_recipe().id)]
                         )
                         .as_str()
                     );
-                    if active_recipes[s.recipe.into_usize()] {
-                        s.update_branchless::<RecipeIdxType>(
+                    if active_recipes[s.get_recipe().into_usize()] {
+                        let (info, ings, prod) = s.do_single_tick_update(
                             self.last_power_mult,
                             &data_store.recipe_index_lookups,
                             &data_store.recipe_ings.ing2,
                             &data_store.recipe_outputs.out2,
                             &data_store.recipe_timers,
-                        )
+                            data_store,
+                        );
+
+                        (info.into(), ings, prod)
                     } else {
                         (Watt(0), 0, 0)
                     }
@@ -2316,18 +2346,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         "Assembler Update",
                         format!(
                             "Recipe: {}",
-                            data_store.recipe_display_names[usize_from(s.recipe.id)]
+                            data_store.recipe_display_names[usize_from(s.get_recipe().id)]
                         )
                         .as_str()
                     );
-                    if active_recipes[s.recipe.into_usize()] {
-                        s.update_branchless::<RecipeIdxType>(
+                    if active_recipes[s.get_recipe().into_usize()] {
+                        let (info, ings, prod) = s.do_single_tick_update(
                             self.last_power_mult,
                             &data_store.recipe_index_lookups,
                             &data_store.recipe_ings.ing2,
                             &data_store.recipe_outputs.out3,
                             &data_store.recipe_timers,
-                        )
+                            data_store,
+                        );
+
+                        (info.into(), ings, prod)
                     } else {
                         (Watt(0), 0, 0)
                     }
@@ -2340,18 +2373,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         "Assembler Update",
                         format!(
                             "Recipe: {}",
-                            data_store.recipe_display_names[usize_from(s.recipe.id)]
+                            data_store.recipe_display_names[usize_from(s.get_recipe().id)]
                         )
                         .as_str()
                     );
-                    if active_recipes[s.recipe.into_usize()] {
-                        s.update_branchless::<RecipeIdxType>(
+                    if active_recipes[s.get_recipe().into_usize()] {
+                        let (info, ings, prod) = s.do_single_tick_update(
                             self.last_power_mult,
                             &data_store.recipe_index_lookups,
                             &data_store.recipe_ings.ing3,
                             &data_store.recipe_outputs.out1,
                             &data_store.recipe_timers,
-                        )
+                            data_store,
+                        );
+
+                        (info.into(), ings, prod)
                     } else {
                         (Watt(0), 0, 0)
                     }
@@ -2364,18 +2400,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         "Assembler Update",
                         format!(
                             "Recipe: {}",
-                            data_store.recipe_display_names[usize_from(s.recipe.id)]
+                            data_store.recipe_display_names[usize_from(s.get_recipe().id)]
                         )
                         .as_str()
                     );
-                    if active_recipes[s.recipe.into_usize()] {
-                        s.update_branchless::<RecipeIdxType>(
+                    if active_recipes[s.get_recipe().into_usize()] {
+                        let (info, ings, prod) = s.do_single_tick_update(
                             self.last_power_mult,
                             &data_store.recipe_index_lookups,
                             &data_store.recipe_ings.ing4,
                             &data_store.recipe_outputs.out1,
                             &data_store.recipe_timers,
-                        )
+                            data_store,
+                        );
+
+                        (info.into(), ings, prod)
                     } else {
                         (Watt(0), 0, 0)
                     }
@@ -2388,18 +2427,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         "Assembler Update",
                         format!(
                             "Recipe: {}",
-                            data_store.recipe_display_names[usize_from(s.recipe.id)]
+                            data_store.recipe_display_names[usize_from(s.get_recipe().id)]
                         )
                         .as_str()
                     );
-                    if active_recipes[s.recipe.into_usize()] {
-                        s.update_branchless::<RecipeIdxType>(
+                    if active_recipes[s.get_recipe().into_usize()] {
+                        let (info, ings, prod) = s.do_single_tick_update(
                             self.last_power_mult,
                             &data_store.recipe_index_lookups,
                             &data_store.recipe_ings.ing5,
                             &data_store.recipe_outputs.out1,
                             &data_store.recipe_timers,
-                        )
+                            data_store,
+                        );
+
+                        (info.into(), ings, prod)
                     } else {
                         (Watt(0), 0, 0)
                     }
@@ -2412,18 +2454,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         "Assembler Update",
                         format!(
                             "Recipe: {}",
-                            data_store.recipe_display_names[usize_from(s.recipe.id)]
+                            data_store.recipe_display_names[usize_from(s.get_recipe().id)]
                         )
                         .as_str()
                     );
-                    if active_recipes[s.recipe.into_usize()] {
-                        s.update_branchless::<RecipeIdxType>(
+                    if active_recipes[s.get_recipe().into_usize()] {
+                        let (info, ings, prod) = s.do_single_tick_update(
                             self.last_power_mult,
                             &data_store.recipe_index_lookups,
                             &data_store.recipe_ings.ing6,
                             &data_store.recipe_outputs.out1,
                             &data_store.recipe_timers,
-                        )
+                            data_store,
+                        );
+
+                        (info.into(), ings, prod)
                     } else {
                         (Watt(0), 0, 0)
                     }

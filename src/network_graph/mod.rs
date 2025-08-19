@@ -38,7 +38,7 @@ struct NetworkNode<S, W> {
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub struct WeakIndex {
-    index: usize,
+    index: u32,
 }
 
 impl<NodeKey: Eq + Ord + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
@@ -96,8 +96,17 @@ impl<NodeKey: Eq + Ord + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
                 .zip(n.connected_weak_components.iter_mut().enumerate())
             })
             .map(|(node_key, (weak_index, w))| {
-                w.as_mut()
-                    .map(|w| ((node_key, WeakIndex { index: weak_index }), w))
+                w.as_mut().map(|w| {
+                    (
+                        (
+                            node_key,
+                            WeakIndex {
+                                index: weak_index.try_into().unwrap(),
+                            },
+                        ),
+                        w,
+                    )
+                })
             })
             .flatten()
     }
@@ -157,7 +166,16 @@ impl<NodeKey: Eq + Ord + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
             petgraph::algo::kosaraju_scc(&*self.graph)
         };
 
-        let map = |(i, v): (usize, Option<W>)| v.map(|v| (WeakIndex { index: i }, v));
+        let map = |(i, v): (usize, Option<W>)| {
+            v.map(|v| {
+                (
+                    WeakIndex {
+                        index: i.try_into().unwrap(),
+                    },
+                    v,
+                )
+            })
+        };
 
         // Pop the first component, (which will stay in this network)
         // TODO: It is probably good to have the largest component stay, but testing is required
@@ -378,14 +396,16 @@ impl<NodeKey: Eq + Ord + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
             weak_components.len() - 1
         };
 
-        WeakIndex { index }
+        WeakIndex {
+            index: index.try_into().unwrap(),
+        }
     }
 
     pub fn remove_weak_element(&mut self, key: NodeKey, weak_index: WeakIndex) -> W {
         self.graph
             .node_weight_mut(**self.key_map.get_by_left(&key).unwrap())
             .unwrap()
-            .connected_weak_components[weak_index.index]
+            .connected_weak_components[weak_index.index as usize]
             .take()
             .unwrap()
     }
@@ -439,7 +459,7 @@ impl<NodeKey: Eq + Ord + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
         self.graph
             .node_weight_mut(**self.key_map.get_by_left(&key).unwrap())
             .unwrap()
-            .connected_weak_components[index.index]
+            .connected_weak_components[index.index as usize]
             .as_mut()
             .unwrap()
     }

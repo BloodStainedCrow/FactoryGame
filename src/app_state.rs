@@ -9,6 +9,7 @@ use crate::inserter::storage_storage_with_buckets::LargeInserterState;
 use crate::inserter::storage_storage_with_buckets::{
     BucketedStorageStorageInserterStore, BucketedStorageStorageInserterStoreFrontend, InserterId,
 };
+use crate::power::Watt;
 use std::mem;
 use crate::item::ITEMCOUNTTYPE;
 use crate::liquid::FluidConnectionDir;
@@ -195,9 +196,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     ) -> Self {
         let mut ret = GameState::new_with_world_area(
             Position { x: 0, y: 0 },
-            Position { x: 25000, y: 70000 },
+            Position { x: 32000, y: 105000 },
             data_store,
         );
+
+        ret.add_solar_field(Position { x: 1590, y: 70000 }, Watt(3_000_000_000_000), progress.clone(), data_store);
 
         let file = File::open("test_blueprints/murphy/megabase_running.bp").unwrap();
         let bp: Blueprint = ron::de::from_reader(file).unwrap();
@@ -363,19 +366,39 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     ) -> Self {
         let mut ret = GameState::new(data_store);
 
-        let file = File::open("test_blueprints/solar_farm.bp").unwrap();
+        ret.add_solar_field(Position { x: 1600, y: 1600 }, Watt(3_500_000_000_000), progress, data_store);
+
+        ret
+    }
+
+    pub fn add_solar_field(
+        &mut self,
+        pos: Position,
+        amount: Watt,
+        progress: Arc<AtomicU64>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        
+        let file = File::open("test_blueprints/solar_tile.bp").unwrap();
         let bp: Blueprint = ron::de::from_reader(file).unwrap();
         let bp = bp.get_reusable(false, data_store);
 
+        let x_positions = (pos.x..(pos.x + 30_000)).step_by(36);
+        let y_positions = (pos.x..(pos.y + 30_000)).step_by(36);
+
+        let total = y_positions.size_hint().0;
+
+        let mut current = 0;
+
         puffin::set_scopes_on(false);
-        for y_pos in (1600..30_000).step_by(18) {
-            for x_pos in (1600..30_000).step_by(18) {
-                bp.apply(Position { x: x_pos, y: y_pos }, &mut ret, data_store);
+        for y_pos in y_positions {
+            progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
+            current += 1;
+            for x_pos in x_positions.clone() {
+                bp.apply(Position { x: x_pos, y: y_pos }, self, data_store);
             }
         }
         puffin::set_scopes_on(true);
-
-        ret
     }
 
     #[must_use]
@@ -736,9 +759,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
         self.belts.pre_pure_update(data_store);
 
         // let total_belt_len: usize = self.belts.inner.smart_belts.iter().flat_map(|store| store.belts.iter()).map(|belt| usize::from(belt.get_len())).sum();
-        // let total_num_inserters: usize = self.belts.inner.smart_belts.iter().flat_map(|store| store.belts.iter()).map(|belt| belt.get_num_inserters()).sum();
+        // let total_num_belt_inserters: usize = self.belts.inner.smart_belts.iter().flat_map(|store| store.belts.iter()).map(|belt| belt.get_num_inserters()).sum();
         // let num_belts: usize = self.belts.inner.smart_belts.iter().flat_map(|store| store.belts.iter()).count();
-        // let avg_num_inserters_per_belt = total_num_inserters as f64 / num_belts as f64;
+        // let avg_num_inserters_per_belt = total_num_belt_inserters as f64 / num_belts as f64;
         // let count_which_would_be_on_stack = self.belts.inner.smart_belts.iter().flat_map(|store| store.belts.iter()).map(|belt| belt.get_num_inserters() * (mem::size_of::<crate::inserter::belt_storage_inserter_non_const_gen::BeltStorageInserterDyn>())).filter(|&size| size > 0).filter(|&size| size <= 15).count();
         // let avg_size_inserters = avg_num_inserters_per_belt * mem::size_of::<crate::inserter::belt_storage_inserter_non_const_gen::BeltStorageInserterDyn>() as f64;
 
@@ -746,11 +769,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
 
         // let avg_len = total_belt_len as f64 / num_belts as f64;
 
-        // dbg!(total_num_inserters);
+        // let total_num_storage_inserters: usize = self.storage_storage_inserters.inserters.iter().flat_map(|ins| ins.values()).map(|(a, b)| b.get_num_inserters()).sum();
+
+        // dbg!(total_num_belt_inserters);
         // dbg!(avg_num_inserters_per_belt);
         // dbg!(avg_size_inserters);
         // dbg!(perc_inline);
         // dbg!(avg_len);
+        // dbg!(total_num_storage_inserters);
 
 
         let update_timers = &self.belts.inner.belt_update_timers;
@@ -832,7 +858,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                         ((source, source_pos), (dest, dest_pos), cooldown, filter),
                                     ) in pure_to_pure_inserters.iter_mut().flatten()
                                     {
-                                        let [source_loc, dest_loc] = if *source == *dest {
+                                        let [mut source_loc, mut dest_loc] = if *source == *dest {
                                             assert_ne!(
                                                 source_pos, dest_pos,
                                                 "An inserter cannot take and drop off on the same tile"
@@ -840,22 +866,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                             // We are taking and placing onto the same belt
                                             let belt = &mut belt_store.belts[*source];
     
-                                            belt.get_two([(*source_pos).into(), (*dest_pos).into()])
+                                            belt.get_two([(*source_pos).into(), (*dest_pos).into()]).map(|v| *v)
                                         } else {
                                             let [inp, out] = belt_store
                                                 .belts
                                                 .get_disjoint_mut([*source, *dest])
                                                 .unwrap();
     
-                                            [inp.get_mut(*source_pos), out.get_mut(*dest_pos)]
+                                            [*inp.get(*source_pos), *out.get(*dest_pos)]
                                         };
     
                                         if *cooldown == 0 {
-                                            ins.update_instant(source_loc, dest_loc);
+                                            ins.update_instant(&mut source_loc,&mut  dest_loc);
                                         } else {
                                             ins.update(
-                                                source_loc,
-                                                dest_loc,
+                                                &mut source_loc,
+                                                &mut dest_loc,
                                                 *cooldown,
                                                 HAND_SIZE,
                                                 (),
@@ -867,19 +893,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                             );
                                         }
     
-                                        let source_loc = *source_loc;
-                                        let dest_loc = *dest_loc;
-    
                                         {
                                             profiling::scope!("Update update_first_free_pos");
                                             if !source_loc {
-                                                belt_store.belts[*source]
-                                                    .update_first_free_pos(*source_pos);
+                                                let _: Option<_> = belt_store.belts[*source]
+                                                    .remove_item(*source_pos);
                                             }
     
                                             if dest_loc {
-                                                belt_store.belts[*dest]
-                                                    .remove_first_free_pos_maybe(*dest_pos);
+                                                let _ = belt_store.belts[*dest]
+                                                    .try_insert_item(*dest_pos, item);
                                             }
                                         }
                                     }
@@ -1139,7 +1162,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                     .storage_storage_inserters
                                                     .change_movetime(
                                                         *item,
-                                                        old_movetime,
+                                                        old_movetime.into(),
                                                         new_movetime.into(),
                                                         *inserter,
                                                     );
@@ -1200,13 +1223,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     data_store,
                                 );
 
-                                let modules = vec![
-                                    None;
-                                    data_store.assembler_info[usize::from(ty)]
-                                        .num_module_slots
-                                        .into()
-                                ]
-                                .into_boxed_slice();
+                                let modules = Box::new([None; 8]);
 
                                 if let Some(pole_position) = powered_by {
                                     self.world.add_entity(
@@ -1411,7 +1428,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                                                                     let movetime = user_movetime.map(|v| v.into()).unwrap_or(*type_movetime);
 
-                                                                    let new_id = self.simulation_state.factory.storage_storage_inserters.update_inserter_src(*item, movetime, *inserter, new_storage, data_store);
+                                                                    let new_id = self.simulation_state.factory.storage_storage_inserters.update_inserter_src(*item, movetime.into(), *inserter, new_storage, data_store);
 
                                                                     *inserter = new_id;
                                                                 },
@@ -1448,7 +1465,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                     }.translate(*item, data_store);
                                                                     let movetime = user_movetime.map(|v| v.into()).unwrap_or(*type_movetime);
 
-                                                                    let new_id = self.simulation_state.factory.storage_storage_inserters.update_inserter_dest(*item, movetime, *inserter, new_storage, data_store);
+                                                                    let new_id = self.simulation_state.factory.storage_storage_inserters.update_inserter_dest(*item, movetime.into(), *inserter, new_storage, data_store);
 
                                                                     *inserter = new_id;
                                                                 },
@@ -1657,13 +1674,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     continue;
                                 }
 
-                                let modules = vec![
-                                    None;
-                                    data_store.lab_info[usize::from(ty)]
-                                        .num_module_slots
-                                        .into()
-                                ]
-                                .into_boxed_slice();
+                                let modules = Box::new([None; 8]);
 
                                 let powered_by = self.world.is_powered_by(
                                     &self.simulation_state,
@@ -1684,7 +1695,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             [usize::from(grid)];
 
                                     let weak_idx =
-                                        grid.add_lab(pos, ty, &modules, pole_pos, data_store);
+                                        grid.add_lab(pos, ty, &*modules, pole_pos, data_store);
 
                                     Some((pole_pos, weak_idx.0, weak_idx.1))
                                 } else {
@@ -1711,14 +1722,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     continue;
                                 }
 
-                                let modules = vec![
+                                let modules = Box::new([
                                 // TODO: Do not add modules immediately
                                 Some(0);
-                                data_store.beacon_info[usize::from(ty)]
-                                    .num_module_slots
-                                    .into()
-                            ]
-                                .into_boxed_slice();
+                                8
+                            ]);
 
                                 let powered_by = self.world.is_powered_by(
                                     &self.simulation_state,
@@ -2597,7 +2605,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             Entity::Inserter {
                 ty,
                 user_movetime: None,
-                type_movetime: MOVETIME as u16,
+                type_movetime: (MOVETIME as u16).try_into().unwrap(),
 
                 pos,
                 direction: dir,
