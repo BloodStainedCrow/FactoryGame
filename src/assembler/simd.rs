@@ -1,4 +1,4 @@
-use std::{array, i32, u8};
+use std::{array, cmp::min, i32, u8};
 
 use crate::{
     assembler::MultiAssemblerStore as MultiAssemblerStoreTrait,
@@ -29,11 +29,7 @@ use get_size::GetSize;
 // FIXME: Using Boxed slices here is probably the main contributor to the time usage for building large power grids, since this means reallocation whenever we add assemblers!
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct MultiAssemblerStore<
-    RecipeIdxType: WeakIdxTrait,
-    const NUM_INGS: usize,
-    const NUM_OUTPUTS: usize,
-> {
+pub struct MultiAssemblerStore<RecipeIdxType: WeakIdxTrait> {
     pub recipe: Recipe<RecipeIdxType>,
 
     /// Base Crafting Speed in 5% increments
@@ -59,12 +55,9 @@ pub struct MultiAssemblerStore<
 
     // TODO: This can likely be smaller than full u64
     base_power_consumption: Box<[Watt]>,
-    #[serde(with = "arrays")]
-    ings: [Box<[ITEMCOUNTTYPE]>; NUM_INGS],
-    #[serde(with = "arrays")]
-    ings_max_insert: [Box<[ITEMCOUNTTYPE]>; NUM_INGS],
-    #[serde(with = "arrays")]
-    outputs: [Box<[ITEMCOUNTTYPE]>; NUM_OUTPUTS],
+    ings: Box<[Box<[ITEMCOUNTTYPE]>]>,
+    ings_max_insert: Box<[Box<[ITEMCOUNTTYPE]>]>,
+    outputs: Box<[Box<[ITEMCOUNTTYPE]>]>,
     timers: Box<[TIMERTYPE]>,
     prod_timers: Box<[TIMERTYPE]>,
 
@@ -75,9 +68,7 @@ pub struct MultiAssemblerStore<
 }
 
 // TODO: Maybe also add a defragmentation routine to mend the ineffeciencies left by deconstruction large amounts of assemblers
-impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
-    MultiAssemblerStore<RecipeIdxType, NUM_INGS, NUM_OUTPUTS>
-{
+impl<RecipeIdxType: IdxTrait> MultiAssemblerStore<RecipeIdxType> {
     /// # Panics
     /// If `power_mult` > 64
     // pub fn update(&mut self, power_mult: u8) {
@@ -187,14 +178,14 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         &mut self,
         power_mult: u8,
         recipe_lookup: &[(usize, usize)],
-        recipe_ings: &[[ITEMCOUNTTYPE; NUM_INGS]],
-        recipe_outputs: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
+        recipe_ings: &[&[ITEMCOUNTTYPE]],
+        recipe_outputs: &[&[ITEMCOUNTTYPE]],
         times: &[TIMERTYPE],
     ) -> (Watt, u32, u32) {
         let (ing_idx, out_idx) = recipe_lookup[self.recipe.id.into()];
 
-        let our_ings: &[ITEMCOUNTTYPE; NUM_INGS] = &recipe_ings[ing_idx];
-        let our_outputs: &[ITEMCOUNTTYPE; NUM_OUTPUTS] = &recipe_outputs[out_idx];
+        let our_ings: &[ITEMCOUNTTYPE] = &recipe_ings[ing_idx];
+        let our_outputs: &[ITEMCOUNTTYPE] = &recipe_outputs[out_idx];
 
         let mut times_ings_used = 0;
         let mut num_finished_crafts = 0;
@@ -233,12 +224,12 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             let increase = (u32::from(increase) * u32::from(speed_mod) / 20) as u16;
 
             let mut ing_mul: u8 = 1;
-            for i in 0..NUM_INGS {
+            for i in 0..min(our_ings.len(), self.ings.len()) {
                 ing_mul *= u8::from(self.ings[i][index] >= our_ings[i]);
             }
 
             let mut ing_mul_for_two_crafts: u16 = 1;
-            for i in 0..NUM_INGS {
+            for i in 0..min(our_ings.len(), self.ings.len()) {
                 ing_mul_for_two_crafts *= u16::from(self.ings[i][index] >= our_ings[i] * 2);
             }
 
@@ -246,7 +237,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             let new_timer_output_full = timer.saturating_add(increase * u16::from(ing_mul));
 
             let mut space_mul: u8 = 1;
-            for i in 0..NUM_OUTPUTS {
+            for i in 0..min(our_outputs.len(), self.outputs.len()) {
                 space_mul *=
                     u8::from((self.outputs[i][index].saturating_add(our_outputs[i])) <= 100);
             }
@@ -272,10 +263,10 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
             *timer = new_timer;
             *prod_timer = new_prod_timer;
-            for i in 0..NUM_OUTPUTS {
+            for i in 0..min(our_outputs.len(), self.outputs.len()) {
                 self.outputs[i][index] += (timer_mul + prod_timer_mul) * our_outputs[i];
             }
-            for i in 0..NUM_INGS {
+            for i in 0..min(our_ings.len(), self.ings.len()) {
                 self.ings[i][index] -= timer_mul * our_ings[i];
             }
             times_ings_used += u32::from(timer_mul);
@@ -285,12 +276,12 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         (power, times_ings_used, num_finished_crafts)
     }
 
-    pub fn get_all_outputs_mut(&mut self) -> [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS] {
-        self.outputs.each_mut().map(|b| &mut **b)
+    pub fn get_all_outputs_mut(&mut self) -> Box<[&mut [ITEMCOUNTTYPE]]> {
+        self.outputs.iter_mut().map(|b| &mut **b).collect()
     }
 
-    pub fn get_all_ings_mut(&mut self) -> [&mut [ITEMCOUNTTYPE]; NUM_INGS] {
-        self.ings.each_mut().map(|b| &mut **b)
+    pub fn get_all_ings_mut(&mut self) -> Box<[&mut [ITEMCOUNTTYPE]]> {
+        self.ings.iter_mut().map(|b| &mut **b).collect()
     }
 
     pub fn get_outputs_mut(&mut self, idx: u32) -> &mut [ITEMCOUNTTYPE] {
@@ -326,9 +317,8 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
     }
 }
 
-impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
-    super::MultiAssemblerStore<RecipeIdxType, NUM_INGS, NUM_OUTPUTS>
-    for MultiAssemblerStore<RecipeIdxType, NUM_INGS, NUM_OUTPUTS>
+impl<RecipeIdxType: WeakIdxTrait> super::MultiAssemblerStore<RecipeIdxType>
+    for MultiAssemblerStore<RecipeIdxType>
 {
     fn new<ItemIdxType: IdxTrait>(
         recipe: Recipe<RecipeIdxType>,

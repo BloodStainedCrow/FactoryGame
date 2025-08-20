@@ -1,4 +1,4 @@
-use std::{array, i32, marker::PhantomData, simd::Simd, u8};
+use std::{array, collections::BTreeMap, i32, marker::PhantomData, simd::Simd, u8};
 
 use crate::{
     data::{DataStore, ItemRecipeDir},
@@ -12,6 +12,7 @@ use crate::{
 };
 use itertools::Itertools;
 use std::cmp::max;
+use std::fmt::Debug;
 
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
@@ -25,31 +26,14 @@ pub type Simdtype = Simd<u8, 32>;
 
 pub type TIMERTYPE = u16;
 
+type CurrentlyUsedMultiAssemblerStore<RecipeIdxType> = simd::MultiAssemblerStore<RecipeIdxType>;
+
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct FullAssemblerStore<
-    RecipeIdxType: WeakIdxTrait,
-    Store0_1: MultiAssemblerStore<RecipeIdxType, 0, 1>,
-    Store1_1: MultiAssemblerStore<RecipeIdxType, 1, 1>,
-    Store2_1: MultiAssemblerStore<RecipeIdxType, 2, 1>,
-    Store2_2: MultiAssemblerStore<RecipeIdxType, 2, 2>,
-    Store2_3: MultiAssemblerStore<RecipeIdxType, 2, 3>,
-    Store3_1: MultiAssemblerStore<RecipeIdxType, 3, 1>,
-    Store4_1: MultiAssemblerStore<RecipeIdxType, 4, 1>,
-    Store5_1: MultiAssemblerStore<RecipeIdxType, 5, 1>,
-    Store6_1: MultiAssemblerStore<RecipeIdxType, 6, 1>,
-> {
-    pub assemblers_0_1: Box<[Store0_1]>,
-    pub assemblers_1_1: Box<[Store1_1]>,
-    pub assemblers_2_1: Box<[Store2_1]>,
-    pub assemblers_2_2: Box<[Store2_2]>,
-    pub assemblers_2_3: Box<[Store2_3]>,
-    pub assemblers_3_1: Box<[Store3_1]>,
-    pub assemblers_4_1: Box<[Store4_1]>,
-    pub assemblers_5_1: Box<[Store5_1]>,
-    pub assemblers_6_1: Box<[Store6_1]>,
+pub struct FullAssemblerStore<RecipeIdxType: WeakIdxTrait> {
+    pub assemblers: BTreeMap<(usize, usize), Vec<CurrentlyUsedMultiAssemblerStore<RecipeIdxType>>>,
 
-    recipe: PhantomData<RecipeIdxType>,
+    phantom_data: PhantomData<RecipeIdxType>,
 }
 
 #[derive(Debug, Clone)]
@@ -65,109 +49,29 @@ pub struct AssemblerOnclickInfo<ItemIdxType: WeakIdxTrait> {
     pub base_power_consumption: Watt,
 }
 
-impl<
-    RecipeIdxType: IdxTrait,
-    Store0_1: MultiAssemblerStore<RecipeIdxType, 0, 1>,
-    Store1_1: MultiAssemblerStore<RecipeIdxType, 1, 1>,
-    Store2_1: MultiAssemblerStore<RecipeIdxType, 2, 1>,
-    Store2_2: MultiAssemblerStore<RecipeIdxType, 2, 2>,
-    Store2_3: MultiAssemblerStore<RecipeIdxType, 2, 3>,
-    Store3_1: MultiAssemblerStore<RecipeIdxType, 3, 1>,
-    Store4_1: MultiAssemblerStore<RecipeIdxType, 4, 1>,
-    Store5_1: MultiAssemblerStore<RecipeIdxType, 5, 1>,
-    Store6_1: MultiAssemblerStore<RecipeIdxType, 6, 1>,
->
-    FullAssemblerStore<
-        RecipeIdxType,
-        Store0_1,
-        Store1_1,
-        Store2_1,
-        Store2_2,
-        Store2_3,
-        Store3_1,
-        Store4_1,
-        Store5_1,
-        Store6_1,
-    >
-{
+impl<RecipeIdxType: IdxTrait> FullAssemblerStore<RecipeIdxType> {
     #[must_use]
     pub fn new<ItemIdxType: IdxTrait>(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
-        let assemblers_0_1 = data_store
-            .ing_out_num_to_recipe
-            .get(&(0, 1))
-            .unwrap()
-            .iter()
-            .map(|r| MultiAssemblerStore::new(*r, data_store))
-            .collect();
-        let assemblers_1_1 = data_store
-            .ing_out_num_to_recipe
-            .get(&(1, 1))
-            .unwrap()
-            .iter()
-            .map(|r| MultiAssemblerStore::new(*r, data_store))
-            .collect();
-        let assemblers_2_1 = data_store
-            .ing_out_num_to_recipe
-            .get(&(2, 1))
-            .unwrap()
-            .iter()
-            .map(|r| MultiAssemblerStore::new(*r, data_store))
-            .collect();
-        let assemblers_2_2 = data_store
-            .ing_out_num_to_recipe
-            .get(&(2, 2))
-            .unwrap()
-            .iter()
-            .map(|r| MultiAssemblerStore::new(*r, data_store))
-            .collect();
-        let assemblers_2_3 = data_store
-            .ing_out_num_to_recipe
-            .get(&(2, 3))
-            .unwrap()
-            .iter()
-            .map(|r| MultiAssemblerStore::new(*r, data_store))
-            .collect();
-        let assemblers_3_1 = data_store
-            .ing_out_num_to_recipe
-            .get(&(3, 1))
-            .unwrap()
-            .iter()
-            .map(|r| MultiAssemblerStore::new(*r, data_store))
-            .collect();
-        let assemblers_4_1 = data_store
-            .ing_out_num_to_recipe
-            .get(&(4, 1))
-            .unwrap()
-            .iter()
-            .map(|r| MultiAssemblerStore::new(*r, data_store))
-            .collect();
-        let assemblers_5_1 = data_store
-            .ing_out_num_to_recipe
-            .get(&(5, 1))
-            .unwrap()
-            .iter()
-            .map(|r| MultiAssemblerStore::new(*r, data_store))
-            .collect();
-        let assemblers_6_1 = data_store
-            .ing_out_num_to_recipe
-            .get(&(6, 1))
-            .unwrap()
-            .iter()
-            .map(|r| MultiAssemblerStore::new(*r, data_store))
-            .collect();
+        let mut assemblers = BTreeMap::new();
+
+        for (nums, recipes) in data_store.ing_out_num_to_recipe.iter() {
+            assert!(
+                assemblers
+                    .insert(
+                        *nums,
+                        recipes
+                            .iter()
+                            .copied()
+                            .map(|r| simd::MultiAssemblerStore::new(r, data_store))
+                            .collect(),
+                    )
+                    .is_none()
+            );
+        }
 
         Self {
-            assemblers_0_1,
-            assemblers_1_1,
-            assemblers_2_1,
-            assemblers_2_2,
-            assemblers_2_3,
-            assemblers_3_1,
-            assemblers_4_1,
-            assemblers_5_1,
-            assemblers_6_1,
-
-            recipe: PhantomData,
+            assemblers,
+            phantom_data: PhantomData,
         }
     }
 
@@ -181,105 +85,28 @@ impl<
         Self,
         impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>,
     ) {
-        // TODO: This just works with box::into_iter in edition 2024
-        let (assemblers_0_1, assemblers_0_1_updates): (Vec<_>, Vec<_>) = self
-            .assemblers_0_1
-            .into_vec()
+        let (assemblers, updates): (BTreeMap<_, _>, Vec<_>) = self
+            .assemblers
             .into_iter()
-            .zip(other.assemblers_0_1.into_vec())
-            .map(|(a, b)| a.join(b, new_grid_id, data_store))
-            .unzip();
+            .zip(other.assemblers.into_iter())
+            .map(|((self_num, self_list), (other_num, other_list))| {
+                assert_eq!(self_num, other_num);
 
-        let (assemblers_1_1, assemblers_1_1_updates): (Vec<_>, Vec<_>) = self
-            .assemblers_1_1
-            .into_vec()
-            .into_iter()
-            .zip(other.assemblers_1_1.into_vec())
-            .map(|(a, b)| a.join(b, new_grid_id, data_store))
-            .unzip();
-
-        let (assemblers_2_1, assemblers_2_1_updates): (Vec<_>, Vec<_>) = self
-            .assemblers_2_1
-            .into_vec()
-            .into_iter()
-            .zip(other.assemblers_2_1.into_vec())
-            .map(|(a, b)| a.join(b, new_grid_id, data_store))
-            .unzip();
-        let (assemblers_2_2, assemblers_2_2_updates): (Vec<_>, Vec<_>) = self
-            .assemblers_2_2
-            .into_vec()
-            .into_iter()
-            .zip(other.assemblers_2_2.into_vec())
-            .map(|(a, b)| a.join(b, new_grid_id, data_store))
-            .unzip();
-        let (assemblers_2_3, assemblers_2_3_updates): (Vec<_>, Vec<_>) = self
-            .assemblers_2_3
-            .into_vec()
-            .into_iter()
-            .zip(other.assemblers_2_3.into_vec())
-            .map(|(a, b)| a.join(b, new_grid_id, data_store))
-            .unzip();
-
-        let (assemblers_3_1, assemblers_3_1_updates): (Vec<_>, Vec<_>) = self
-            .assemblers_3_1
-            .into_vec()
-            .into_iter()
-            .zip(other.assemblers_3_1.into_vec())
-            .map(|(a, b)| a.join(b, new_grid_id, data_store))
-            .unzip();
-
-        let (assemblers_4_1, assemblers_4_1_updates): (Vec<_>, Vec<_>) = self
-            .assemblers_4_1
-            .into_vec()
-            .into_iter()
-            .zip(other.assemblers_4_1.into_vec())
-            .map(|(a, b)| a.join(b, new_grid_id, data_store))
-            .unzip();
-
-        let (assemblers_5_1, assemblers_5_1_updates): (Vec<_>, Vec<_>) = self
-            .assemblers_5_1
-            .into_vec()
-            .into_iter()
-            .zip(other.assemblers_5_1.into_vec())
-            .map(|(a, b)| a.join(b, new_grid_id, data_store))
-            .unzip();
-
-        let (assemblers_6_1, assemblers_6_1_updates): (Vec<_>, Vec<_>) = self
-            .assemblers_6_1
-            .into_vec()
-            .into_iter()
-            .zip(other.assemblers_6_1.into_vec())
-            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+                let (list, updates) = self_list
+                    .into_iter()
+                    .zip(other_list.into_iter())
+                    .map(|(a, b)| a.join(b, new_grid_id, data_store))
+                    .unzip();
+                ((self_num, list), updates)
+            })
             .unzip();
 
         let ret = Self {
-            assemblers_0_1: assemblers_0_1.into_boxed_slice(),
-            assemblers_1_1: assemblers_1_1.into_boxed_slice(),
-            assemblers_2_1: assemblers_2_1.into_boxed_slice(),
-            assemblers_2_2: assemblers_2_2.into_boxed_slice(),
-            assemblers_2_3: assemblers_2_3.into_boxed_slice(),
-            assemblers_3_1: assemblers_3_1.into_boxed_slice(),
-            assemblers_4_1: assemblers_4_1.into_boxed_slice(),
-            assemblers_5_1: assemblers_5_1.into_boxed_slice(),
-            assemblers_6_1: assemblers_6_1.into_boxed_slice(),
-
-            recipe: PhantomData,
+            assemblers,
+            phantom_data: PhantomData,
         };
 
-        (
-            ret,
-            assemblers_0_1_updates
-                .into_iter()
-                .flatten()
-                .chain(assemblers_1_1_updates.into_iter().flatten())
-                .chain(assemblers_2_1_updates.into_iter().flatten())
-                .chain(assemblers_2_2_updates.into_iter().flatten())
-                .chain(assemblers_2_3_updates.into_iter().flatten())
-                .chain(assemblers_3_1_updates.into_iter().flatten())
-                .chain(assemblers_4_1_updates.into_iter().flatten())
-                .chain(assemblers_5_1_updates.into_iter().flatten())
-                .chain(assemblers_6_1_updates.into_iter().flatten()),
-        )
+        (ret, updates.into_iter().flatten())
     }
 
     pub fn get_info<ItemIdxType: IdxTrait>(
@@ -288,110 +115,12 @@ impl<
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> AssemblerOnclickInfo<ItemIdxType> {
         let recipe_id = assembler_id.recipe.id.into();
-
-        match (
+        let nums = (
             data_store.recipe_num_ing_lookup[recipe_id],
             data_store.recipe_num_out_lookup[recipe_id],
-        ) {
-            (0, 1) => {
-                assert_eq!(
-                    assembler_id.recipe,
-                    self.assemblers_0_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                        .get_recipe()
-                );
-
-                self.assemblers_0_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                    .get_info(assembler_id.assembler_index, data_store)
-            },
-            (1, 1) => {
-                assert_eq!(
-                    assembler_id.recipe,
-                    self.assemblers_1_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                        .get_recipe()
-                );
-
-                self.assemblers_1_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                    .get_info(assembler_id.assembler_index, data_store)
-            },
-            (2, 1) => {
-                assert_eq!(
-                    assembler_id.recipe,
-                    self.assemblers_2_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                        .get_recipe()
-                );
-
-                self.assemblers_2_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                    .get_info(assembler_id.assembler_index, data_store)
-            },
-
-            (2, 2) => {
-                assert_eq!(
-                    assembler_id.recipe,
-                    self.assemblers_2_2[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                        .get_recipe()
-                );
-
-                self.assemblers_2_2[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                    .get_info(assembler_id.assembler_index, data_store)
-            },
-
-            (2, 3) => {
-                assert_eq!(
-                    assembler_id.recipe,
-                    self.assemblers_2_3[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                        .get_recipe()
-                );
-
-                self.assemblers_2_3[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                    .get_info(assembler_id.assembler_index, data_store)
-            },
-
-            (3, 1) => {
-                assert_eq!(
-                    assembler_id.recipe,
-                    self.assemblers_3_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                        .get_recipe()
-                );
-
-                self.assemblers_3_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                    .get_info(assembler_id.assembler_index, data_store)
-            },
-
-            (4, 1) => {
-                assert_eq!(
-                    assembler_id.recipe,
-                    self.assemblers_4_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                        .get_recipe()
-                );
-
-                self.assemblers_4_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                    .get_info(assembler_id.assembler_index, data_store)
-            },
-
-            (5, 1) => {
-                assert_eq!(
-                    assembler_id.recipe,
-                    self.assemblers_5_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                        .get_recipe()
-                );
-
-                self.assemblers_5_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                    .get_info(assembler_id.assembler_index, data_store)
-            },
-
-            (6, 1) => {
-                assert_eq!(
-                    assembler_id.recipe,
-                    self.assemblers_6_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                        .get_recipe()
-                );
-
-                self.assemblers_6_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                    .get_info(assembler_id.assembler_index, data_store)
-            },
-
-            _ => unreachable!(),
-        }
+        );
+        self.assemblers.get(&nums).unwrap()[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+            .get_info(assembler_id.assembler_index, data_store)
     }
 }
 
@@ -463,11 +192,8 @@ impl From<PowerUsageInfo> for Watt {
     }
 }
 
-pub trait MultiAssemblerStore<
-    RecipeIdxType: WeakIdxTrait,
-    const NUM_INGS: usize,
-    const NUM_OUTPUTS: usize,
->: Sized + 'static
+pub trait MultiAssemblerStore<RecipeIdxType: WeakIdxTrait>:
+    Debug + Clone + for<'de> serde::Deserialize<'de> + serde::Serialize + 'static
 {
     fn new<ItemIdxType: IdxTrait>(
         recipe: Recipe<RecipeIdxType>,
@@ -493,8 +219,8 @@ pub trait MultiAssemblerStore<
         &mut self,
         power_mult: u8,
         recipe_lookup: &[(usize, usize)],
-        recipe_ings: &[[ITEMCOUNTTYPE; NUM_INGS]],
-        recipe_outputs: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
+        recipe_ings: &[&[ITEMCOUNTTYPE]],
+        recipe_outputs: &[&[ITEMCOUNTTYPE]],
         times: &[TIMERTYPE],
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (PowerUsageInfo, u32, u32)
@@ -504,11 +230,8 @@ pub trait MultiAssemblerStore<
     fn get_all_mut(
         &mut self,
     ) -> (
-        (
-            [&[ITEMCOUNTTYPE]; NUM_INGS],
-            [&mut [ITEMCOUNTTYPE]; NUM_INGS],
-        ),
-        [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS],
+        (Box<[&[ITEMCOUNTTYPE]]>, Box<[&mut [ITEMCOUNTTYPE]]>),
+        Box<[&mut [ITEMCOUNTTYPE]]>,
     );
 
     fn modify_modifiers<ItemIdxType: IdxTrait>(
@@ -522,9 +245,9 @@ pub trait MultiAssemblerStore<
 
     fn add_assembler_with_data<ItemIdxType: IdxTrait>(
         &mut self,
-        ings_max_insert: [ITEMCOUNTTYPE; NUM_INGS],
-        ings: [ITEMCOUNTTYPE; NUM_INGS],
-        out: [ITEMCOUNTTYPE; NUM_OUTPUTS],
+        ings_max_insert: &[ITEMCOUNTTYPE],
+        ings: &[ITEMCOUNTTYPE],
+        out: &[ITEMCOUNTTYPE],
         timer: TIMERTYPE,
         prod_timer: TIMERTYPE,
         power: Watt,
@@ -542,9 +265,9 @@ pub trait MultiAssemblerStore<
         index: u32,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
-        [ITEMCOUNTTYPE; NUM_INGS],
-        [ITEMCOUNTTYPE; NUM_INGS],
-        [ITEMCOUNTTYPE; NUM_OUTPUTS],
+        Box<[ITEMCOUNTTYPE]>,
+        Box<[ITEMCOUNTTYPE]>,
+        Box<[ITEMCOUNTTYPE]>,
         TIMERTYPE,
         TIMERTYPE,
         Watt,
@@ -601,7 +324,7 @@ pub trait MultiAssemblerStore<
         let data = self.remove_assembler_data(index, data_store);
 
         dest.add_assembler_with_data(
-            data.0, data.1, data.2, data.3, data.4, data.5, data.6, data.7, data.8, data.9,
+            &data.0, &data.1, &data.2, data.3, data.4, data.5, data.6, data.7, data.8, data.9,
             data.10, data.11, data_store,
         )
     }
@@ -609,10 +332,10 @@ pub trait MultiAssemblerStore<
     fn add_assembler<ItemIdxType: IdxTrait>(
         &mut self,
         ty: u8,
-        modules: &[Option<usize>],
+        modules: &[Option<u8>],
         position: Position,
         recipe_lookup: &[(usize, usize)],
-        recipe_ings: &[[ITEMCOUNTTYPE; NUM_INGS]],
+        recipe_ings: &[&[ITEMCOUNTTYPE]],
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> u32 {
         assert_eq!(
@@ -629,7 +352,7 @@ pub trait MultiAssemblerStore<
             .iter()
             .copied()
             .flatten()
-            .map(|module| i16::from(data_store.module_info[module].speed_mod))
+            .map(|module| i16::from(data_store.module_info[module as usize].speed_mod))
             .sum();
 
         let prod = i16::from(bonus_productivity_of_machine)
@@ -637,30 +360,30 @@ pub trait MultiAssemblerStore<
                 .iter()
                 .copied()
                 .flatten()
-                .map(|module| i16::from(data_store.module_info[module].prod_mod))
+                .map(|module| i16::from(data_store.module_info[module as usize].prod_mod))
                 .sum::<i16>();
 
         let power_mod = modules
             .iter()
             .copied()
             .flatten()
-            .map(|module| i16::from(data_store.module_info[module].power_mod))
+            .map(|module| i16::from(data_store.module_info[module as usize].power_mod))
             .sum();
 
         let (ing_idx, out_idx) = recipe_lookup[self.get_recipe().into_usize()];
 
-        let our_ings: &[ITEMCOUNTTYPE; NUM_INGS] = &recipe_ings[ing_idx];
+        let our_ings: &[ITEMCOUNTTYPE] = &recipe_ings[ing_idx];
 
         self.add_assembler_with_data(
             // TODO: Make the automatic insertion limit dependent on the speed of the machine and recipe
-            array::from_fn(|ing| {
+            &array::from_fn(|ing| {
                 max(
                     HAND_SIZE,
                     our_ings[ing].saturating_mul(3).saturating_add(12),
                 )
             }),
-            array::from_fn(|_| 0),
-            array::from_fn(|_| 0),
+            &array::from_fn(|_| 0),
+            &array::from_fn(|_| 0),
             0,
             0,
             base_power_consumption,

@@ -4,7 +4,7 @@ use crate::{data::DataStore, item::IdxTrait};
 
 #[derive(Debug, Clone)]
 pub struct RecipeTickInfo {
-    pub(super) num_crafts_finished: Vec<SingleRecipeTickInfo>,
+    pub num_crafts_finished: Vec<SingleRecipeTickInfo>,
 }
 
 #[derive(Debug, Clone, Default)]
