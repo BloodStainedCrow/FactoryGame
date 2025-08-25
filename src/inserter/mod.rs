@@ -27,6 +27,9 @@ pub mod belt_storage_inserter;
 pub mod belt_storage_inserter_non_const_gen;
 pub mod storage_storage_inserter;
 pub mod storage_storage_with_buckets;
+pub mod storage_storage_with_buckets_compressed;
+
+mod bucket_bit_compressed;
 
 /// Time for a normal inserter to move in ticks
 pub(super) const MOVETIME: u8 = 12;

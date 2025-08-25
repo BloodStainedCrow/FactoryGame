@@ -55,6 +55,8 @@ ph = "0.9.6"
 memoffset = "0.9.1"
 smallvec = { version = "1.15.1", features = ["serde"] }
 
+state_space = {path = "state_space"}
+
 [dev-dependencies]
 winit = "0.30.12"
 

@@ -1968,6 +1968,7 @@ dependencies = [
  "simple_logger",
  "smallvec",
  "spin_sleep_util",
+ "state_space",
  "static_assertions",
  "strum 0.27.2",
  "take_mut",
@@ -5115,6 +5116,10 @@ name = "stable_try_trait_v2"
 version = "1.75.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c4e48411f4db8ccca0470bfb67e3bb821af4227d455aa147917d8d109be0d13"
+
+[[package]]
+name = "state_space"
+version = "0.1.0"
 
 [[package]]
 name = "static_assertions"

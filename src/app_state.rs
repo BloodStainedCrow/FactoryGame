@@ -4,10 +4,9 @@ use crate::chest::ChestSize;
 use crate::data::AllowedFluidDirection;
 use crate::frontend::world::tile::UndergroundDir;
 use crate::inserter::HAND_SIZE;
-use crate::inserter::storage_storage_with_buckets::InserterIdentifier;
-use crate::inserter::storage_storage_with_buckets::LargeInserterState;
-use crate::inserter::storage_storage_with_buckets::{
-    BucketedStorageStorageInserterStore, BucketedStorageStorageInserterStoreFrontend, InserterId,
+use crate::inserter::storage_storage_with_buckets::{InserterIdentifier, InserterId, LargeInserterState};
+use crate::inserter::storage_storage_with_buckets_compressed::{
+    BucketedStorageStorageInserterStore, BucketedStorageStorageInserterStoreFrontend
 };
 use crate::power::Watt;
 use std::mem;
@@ -200,7 +199,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             data_store,
         );
 
-        ret.add_solar_field(Position { x: 1590, y: 70000 }, Watt(3_000_000_000_000), progress.clone(), data_store);
+        // ret.add_solar_field(Position { x: 1590, y: 70000 }, Watt(3_000_000_000_000), progress.clone(), data_store);
 
         let file = File::open("test_blueprints/murphy/megabase_running.bp").unwrap();
         let bp: Blueprint = ron::de::from_reader(file).unwrap();
@@ -847,7 +846,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                 // {
                                 //     profiling::scope!("Update BeltStorageInserters");
                                 //     for belt in &mut belt_store.belts {
-    
+                                //         belt.update_inserters(item_storages, grid_size);
                                 //     }
                                 // }
     
@@ -1223,7 +1222,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     data_store,
                                 );
 
-                                let modules = Box::new([None; 8]);
+                                let modules  = vec![None; data_store.assembler_info[usize::from(ty)].num_module_slots as usize].into_boxed_slice();
 
                                 if let Some(pole_position) = powered_by {
                                     self.world.add_entity(
@@ -1674,7 +1673,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     continue;
                                 }
 
-                                let modules = Box::new([None; 8]);
+                                let modules = vec![None; data_store.lab_info[usize::from(ty)].num_module_slots as usize].into_boxed_slice();
 
                                 let powered_by = self.world.is_powered_by(
                                     &self.simulation_state,

@@ -4378,7 +4378,7 @@ struct PipeConnection {
 }
 
 // TODO: Support more than 8 modules slots
-type ModuleSlots = Box<[Option<usize>; 8]>;
+type ModuleSlots = Box<[Option<usize>]>;
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
