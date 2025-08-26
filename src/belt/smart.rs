@@ -124,6 +124,10 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             % self.locs.len()
     }
 
+    pub fn try_insert_correct_item(&mut self, belt_pos: BeltLenType) -> Result<(), NoSpaceError> {
+        self.try_insert_item(belt_pos, self.item)
+    }
+
     pub(super) fn into_sushi_belt(self) -> SushiBelt<ItemIdxType> {
         let Self {
             ty,

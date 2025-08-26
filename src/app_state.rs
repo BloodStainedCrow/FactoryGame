@@ -5,7 +5,7 @@ use crate::data::AllowedFluidDirection;
 use crate::frontend::world::tile::UndergroundDir;
 use crate::inserter::HAND_SIZE;
 use crate::inserter::storage_storage_with_buckets::{InserterIdentifier, InserterId, LargeInserterState};
-use crate::inserter::storage_storage_with_buckets_compressed::{
+use crate::inserter::storage_storage_with_buckets::{
     BucketedStorageStorageInserterStore, BucketedStorageStorageInserterStoreFrontend
 };
 use crate::power::Watt;
@@ -492,6 +492,13 @@ pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub power_grids: PowerGridStorage<ItemIdxType, RecipeIdxType>,
     pub belts: BeltStore<ItemIdxType>,
     pub storage_storage_inserters: StorageStorageInserterStore,
+    pub belt_storage_inserters: Box<[BTreeMap<
+        u16,
+        (
+            crate::inserter::belt_storage_pure_buckets::BucketedStorageStorageInserterStoreFrontend,
+            crate::inserter::belt_storage_pure_buckets::BucketedStorageStorageInserterStore,
+        ),
+    >]>,
     pub chests: FullChestStore<ItemIdxType>,
 
     pub fluid_store: FluidSystemStore<ItemIdxType>,
@@ -700,6 +707,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
             power_grids: PowerGridStorage::new(),
             belts: BeltStore::new(data_store),
             storage_storage_inserters: StorageStorageInserterStore::new(data_store),
+            belt_storage_inserters: vec![BTreeMap::new(); data_store.item_names.len()].into_boxed_slice(),
             chests: FullChestStore {
                 stores: (0..data_store.item_display_names.len())
                     .map(|id| Item {

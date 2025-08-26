@@ -25,6 +25,7 @@ use get_size::GetSize;
 pub mod belt_belt_inserter;
 pub mod belt_storage_inserter;
 pub mod belt_storage_inserter_non_const_gen;
+pub mod belt_storage_pure_buckets;
 pub mod storage_storage_inserter;
 pub mod storage_storage_with_buckets;
 pub mod storage_storage_with_buckets_compressed;
