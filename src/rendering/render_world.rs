@@ -1806,6 +1806,111 @@ pub fn render_ui<
 
                 mem::drop(new_state);
             }
+            if ui.button("⚠️Auto Clock Inserters").clicked() {
+                let inserters_without_values_set = game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter_map(|e| match e {
+                    Entity::Inserter { ty, user_movetime, type_movetime, pos, direction, filter, info } => {
+                        if user_movetime.is_none() {
+                            match info {
+                                crate::frontend::world::tile::InserterInfo::NotAttached { start_pos, end_pos } => None,
+                                crate::frontend::world::tile::InserterInfo::Attached { start_pos, end_pos, info } => match info {
+                                    crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => {
+                                        None
+                                        // TODO: Currently BeltStorage Inserters do not support movetime changes
+                                        // Some((ty, pos, start_pos, end_pos))
+                                    },
+                                    crate::frontend::world::tile::AttachedInserter::BeltBelt { .. } => None,
+                                    crate::frontend::world::tile::AttachedInserter::StorageStorage { item, inserter } => {
+                                        Some((ty, pos, start_pos, end_pos, item))
+                                    },
+                                },
+                            }
+                        } else {
+                            None
+                        }
+                    },
+                    _ => None,
+                });
+
+                let inserter_pos_and_time = inserters_without_values_set.map(|(ty, pos, start_pos, end_pos, item)| {
+                    let mut goal_movetime = 12;
+
+                    if let Some(e) = game_state_ref.world.get_entity_at(*end_pos, data_store_ref) {
+                        match e {
+                            Entity::Assembler { ty, pos, modules, info, rotation } => {
+                                match info {
+                                    AssemblerInfo::UnpoweredNoRecipe => {},
+                                    AssemblerInfo::Unpowered(_) => {},
+                                    AssemblerInfo::PoweredNoRecipe(_) => {},
+                                    AssemblerInfo::Powered { id, pole_position, weak_index } => {
+                                        let (_, _, count_in_recipe) = data_store_ref.recipe_to_items_and_amounts[&id.recipe].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Ing && *item == *recipe_item).unwrap();
+                                        let time_per_recipe = data_store_ref.recipe_timers[usize_from(id.recipe.id)] as f32;
+
+                                        let AssemblerOnclickInfo { base_speed, speed_mod, .. } = game_state_ref.simulation_state.factory.power_grids.get_assembler_info(*id, data_store_ref);
+                                        let crafting_speed = base_speed * (1.0 + speed_mod);
+                                        let time_per_craft = time_per_recipe / crafting_speed;
+
+                                        let items_needed_per_tick = *count_in_recipe as f32 / time_per_craft;
+
+                                        // FIXME: Hardcoded hand size
+                                        let hand_size = 12 as f32;
+
+                                        let full_rotations_needed_per_tick = items_needed_per_tick / hand_size;
+
+                                        let full_rotation_time_in_ticks = 1.0 / full_rotations_needed_per_tick;
+
+                                        let swing_time_in_ticks = full_rotation_time_in_ticks / 2.0 - 1.0;
+
+                                        goal_movetime = max(goal_movetime, swing_time_in_ticks as u16 / 10 * 10);
+                                    },
+                                }
+                            },
+
+                            _ => {}
+                        }
+                    }
+
+                    if let Some(e) = game_state_ref.world.get_entity_at(*start_pos, data_store_ref) {
+                        match e {
+                            Entity::Assembler { info, .. } => {
+                                match info {
+                                    AssemblerInfo::UnpoweredNoRecipe => {},
+                                    AssemblerInfo::Unpowered(_) => {},
+                                    AssemblerInfo::PoweredNoRecipe(_) => {},
+                                    AssemblerInfo::Powered { id, pole_position, weak_index } => {
+                                        let (_, _, count_in_recipe) = data_store_ref.recipe_to_items_and_amounts[&id.recipe].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Out && *item == *recipe_item).unwrap();
+                                        let time_per_recipe = data_store_ref.recipe_timers[usize_from(id.recipe.id)] as f32;
+
+                                        let AssemblerOnclickInfo { base_speed, speed_mod, prod_mod, .. } = game_state_ref.simulation_state.factory.power_grids.get_assembler_info(*id, data_store_ref);
+                                        let crafting_speed = base_speed * (1.0 + speed_mod);
+                                        let time_per_craft = time_per_recipe / crafting_speed;
+
+                                        let items_produced_per_tick = (*count_in_recipe as f32 * (1.0 + prod_mod)) / time_per_craft;
+
+                                        // FIXME: Hardcoded hand size
+                                        let hand_size = 12 as f32;
+
+                                        let full_rotations_needed_per_tick = items_produced_per_tick / hand_size;
+
+                                        let full_rotation_time_in_ticks = 1.0 / full_rotations_needed_per_tick;
+
+                                        let swing_time_in_ticks = full_rotation_time_in_ticks / 2.0 - 1.0;
+
+                                        goal_movetime = max(goal_movetime, swing_time_in_ticks as u16);
+                                    },
+                                }
+                            },
+
+                            _ => {}
+                        }
+                    }
+
+                    (*pos, goal_movetime)
+                });
+
+                actions.extend(inserter_pos_and_time.map(|(pos, time)| {
+                    ActionType::OverrideInserterMovetime { pos, new_movetime: Some(time.try_into().unwrap()) }
+                }))
+            }
             ui.checkbox(
                 &mut state_machine_ref.show_graph_dot_output,
                 "Generate Belt Graph",
@@ -1818,6 +1923,7 @@ pub fn render_ui<
 
                 ui.text_edit_multiline(&mut graph);
             }
+
 
             CollapsingHeader::new("Bucket cache line sizes")
                 .default_open(false)
