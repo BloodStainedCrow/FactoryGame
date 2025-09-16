@@ -140,7 +140,7 @@ impl<T: Default> NewWithDataStore for T {
 pub fn main() -> Result<(), ()> {
     puffin::set_scopes_on(true);
 
-    #[cfg(logging)]
+    #[cfg(feature = "logging")]
     simple_logger::SimpleLogger::new()
         .with_level(log::LevelFilter::Warn)
         .env()
@@ -233,7 +233,7 @@ fn run_integrated_server(
                     .map(|sg| {
                         if sg.checksum != data_store.checksum {
                             // Try reconciliation
-                            // todo!("Checksum mismatch, try to merge old and new mod state")
+                            todo!("Checksum mismatch, try to merge old and new mod state")
                         } else {
                         }
                         sg.game_state
