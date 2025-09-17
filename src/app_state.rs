@@ -838,7 +838,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                 let grid_size = grid_size(item, data_store);
     
                                 {
-                                    profiling::scope!("Update Belt");
+                                    profiling::scope!("Update Belts", format!("Count: {}", belt_store.belts.len()));
                                     for (belt, ty) in
                                         belt_store.belts.iter_mut().zip(&belt_store.belt_ty)
                                     {
