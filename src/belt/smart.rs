@@ -1509,6 +1509,14 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
     }
 
     fn query_item(&self, pos: BeltLenType) -> Option<Item<ItemIdxType>> {
+        let idx = match self.first_free_index {
+            FreeIndex::FreeIndex(idx) => idx,
+            FreeIndex::OldFreeIndex(idx) => idx,
+        };
+        if pos < idx {
+            return Some(self.item);
+        }
+
         if self.locs[self.into_loc_index(pos)] {
             Some(self.item)
         } else {
