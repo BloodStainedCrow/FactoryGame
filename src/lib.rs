@@ -213,7 +213,7 @@ fn run_integrated_server(
 
     let connections: Arc<Mutex<Vec<std::net::TcpStream>>> = Arc::default();
 
-    let local_addr = "127.0.0.1:8080";
+    let local_addr = "127.0.0.1:57267";
     let cancel: Arc<AtomicBool> = Default::default();
 
     accept_continously(local_addr, connections.clone(), cancel.clone()).unwrap();
@@ -281,7 +281,7 @@ fn run_integrated_server(
                     inputs: recv,
                     ui_actions: ui_recv,
                     cancel_socket: Box::new(move || {
-                        cancel.store(true, Ordering::Relaxed);
+                        cancel.store(true, Ordering::SeqCst);
                         // This is a little hack. Our connection accept thread is stuck waiting for connections and will only exit if anything connects.
                         // So we just connect to ourselves :)
                         // See https://stackoverflow.com/questions/56692961/how-do-i-gracefully-exit-tcplistener-incoming
