@@ -18,7 +18,7 @@ pub fn accept_continously(
         for conn in listener.incoming() {
             match conn {
                 Ok(conn) => {
-                    if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                    if cancel.load(std::sync::atomic::Ordering::SeqCst) {
                         return;
                     } else {
                         conn.set_nonblocking(true)
