@@ -790,7 +790,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
         let sushi_splitters =&self.belts.inner.sushi_splitters;
         rayon::scope(|scope| {
             {
-                profiling::scope!("Pure Item Updates");
                 // Update all the "Pure Belts"
                 self.belts
                     .inner
@@ -848,7 +847,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                         {
                                             belt.update(sushi_splitters);
                                         }
-                                        belt.update_inserters(item_storages, grid_size);
+                                        // belt.update_inserters(item_storages, grid_size);
                                     }
                                 }
                                 // {
