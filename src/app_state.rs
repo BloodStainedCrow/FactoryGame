@@ -847,7 +847,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                         {
                                             belt.update(sushi_splitters);
                                         }
-                                        // belt.update_inserters(item_storages, grid_size);
+                                        belt.update_inserters(item_storages, grid_size);
                                     }
                                 }
                                 // {
