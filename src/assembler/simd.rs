@@ -1,10 +1,20 @@
-use std::{array, i32, u8};
+use std::{
+    array, i32,
+    ops::{Add, Sub},
+    simd::{
+        Simd,
+        cmp::SimdPartialOrd,
+        num::{SimdInt, SimdUint},
+    },
+    u8,
+};
 
 use crate::{
-    assembler::MultiAssemblerStore as MultiAssemblerStoreTrait,
+    MASKTYPE,
+    SIMDTYPE,
+    // assembler::MultiAssemblerStore as MultiAssemblerStoreTrait,
     data::{DataStore, ItemRecipeDir},
     frontend::world::Position,
-    inserter::HAND_SIZE,
     item::{ITEMCOUNTTYPE, IdxTrait, Recipe, WeakIdxTrait},
     power::{
         Watt,
@@ -12,11 +22,8 @@ use crate::{
     },
 };
 use itertools::Itertools;
-use std::cmp::max;
 
-use super::{
-    AssemblerOnclickInfo, AssemblerRemovalInfo, PowerUsageInfo, Simdtype, TIMERTYPE, arrays,
-};
+use super::{AssemblerOnclickInfo, PowerUsageInfo, Simdtype, TIMERTYPE, arrays};
 
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
@@ -78,108 +85,6 @@ pub struct MultiAssemblerStore<
 impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
     MultiAssemblerStore<RecipeIdxType, NUM_INGS, NUM_OUTPUTS>
 {
-    /// # Panics
-    /// If `power_mult` > 64
-    // pub fn update(&mut self, power_mult: u8) {
-    //     const TICKS_PER_CREATE: u16 = 64;
-    //     if power_mult == 0 {
-    //         return;
-    //     }
-
-    //     assert!(power_mult <= 64);
-
-    //     assert_eq!(self.outputs.len(), self.timers.len());
-    //     assert_eq!(self.input1.len(), self.timers.len());
-    //     assert!(self.outputs.len() % Simdtype::LEN == 0);
-
-    //     // TODO: Make these dependent on the recipe
-    //     let ing1_amount: Simdtype = Simdtype::splat(2);
-    //     let res_amount: Simdtype = Simdtype::splat(1);
-    //     let timer_increase: Simdtype =
-    //         Simdtype::splat((u16::from(power_mult) * 512) / TICKS_PER_CREATE * 2);
-    //     let max_stack_size: Simdtype = Simdtype::splat(Res::MAX_STACK_SIZE);
-
-    //     for i in (0..self
-    //         .outputs
-    //         .len()
-    //         .min(self.len - (self.len % Simdtype::LEN)))
-    //         .step_by(Simdtype::LEN)
-    //     {
-    //         let input = Simdtype::from_slice(ItemStorage::<Res::ING1>::peel_slice(
-    //             self.input1.split_at(i).1,
-    //         ));
-
-    //         let output =
-    //             Simdtype::from_slice(ItemStorage::<Res>::peel_slice(self.outputs.split_at(i).1));
-
-    //         let timer = Simdtype::from_slice(self.timers.split_at(i).1);
-
-    //         let enough_items_mask = input.simd_ge(ing1_amount);
-
-    //         let new_timer = enough_items_mask.select(timer + timer_increase, timer);
-
-    //         // We had a wrap, so we produce
-    //         // Since the timer only changes whenever we have enough items this masks is both for enough time and input items
-    //         let produce_mask = new_timer.simd_lt(timer);
-
-    //         let space_mask = output.simd_lt(max_stack_size);
-
-    //         let space_time_mask = produce_mask & space_mask;
-
-    //         // This can never wrap, since we check we have enough items before
-    //         let new_ing1_amount = space_time_mask.select(input - ing1_amount, input);
-    //         let new_output = space_time_mask.select(output + res_amount, output);
-
-    //         Simdtype::copy_to_slice(
-    //             new_output,
-    //             ItemStorage::<Res>::peel_slice_mut(self.outputs.split_at_mut(i).1),
-    //         );
-
-    //         Simdtype::copy_to_slice(
-    //             new_ing1_amount,
-    //             ItemStorage::<Res::ING1>::peel_slice_mut(self.input1.split_at_mut(i).1),
-    //         );
-
-    //         Simdtype::copy_to_slice(new_timer, self.timers.split_at_mut(i).1);
-    //     }
-    // }
-
-    // // TODO: Currently this is the only routine with any kind of power calculations.
-    // /// # Panics
-    // /// If `power_mult` > 64
-    // pub fn update_simple(&mut self, power_mult: u8) {
-    //     if power_mult == 0 {
-    //         return;
-    //     }
-
-    //     assert!(power_mult <= 64);
-
-    //     assert_eq!(self.outputs.len(), self.timers.len());
-    //     assert_eq!(self.input1.len(), self.timers.len());
-    //     assert!(self.outputs.len() % Simdtype::LEN == 0);
-
-    //     let increase = (u16::from(power_mult) * 512) / Res::TIME_TO_CRAFT * 2;
-
-    //     for (output, (input1, timer)) in self
-    //         .outputs
-    //         .iter_mut()
-    //         .zip(self.input1.iter_mut().zip(self.timers.iter_mut()))
-    //     {
-    //         if *ItemStorage::<Res::ING1>::peel_mut(input1) >= Res::AMOUNT1 {
-    //             let new_timer = timer.wrapping_add(increase);
-    //             if *timer < new_timer {
-    //                 // We should produce
-    //                 if *ItemStorage::<Res>::peel_mut(output) + Res::OUTPUT_AMOUNT
-    //                     <= Res::MAX_STACK_SIZE
-    //                 {
-    //                     *ItemStorage::<Res>::peel_mut(output) += Res::OUTPUT_AMOUNT;
-    //                     *ItemStorage::<Res::ING1>::peel_mut(input1) -= Res::AMOUNT1;
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
-
     // TODO: Currently power demand and supply are offset by a single tick. Is this acceptable?
     /// # Panics
     /// If `power_mult` > `MAX_POWER_MULT` = 64
@@ -283,6 +188,184 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         }
 
         (power, times_ings_used, num_finished_crafts)
+    }
+
+    pub fn update_explicit(
+        &mut self,
+        power_mult: u8,
+        recipe_lookup: &[(usize, usize)],
+        recipe_ings: &[[ITEMCOUNTTYPE; NUM_INGS]],
+        recipe_outputs: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
+        times: &[TIMERTYPE],
+    ) -> (Watt, u32, u32) {
+        let (ing_idx, out_idx) = recipe_lookup[self.recipe.id.into()];
+
+        let our_ings: &[ITEMCOUNTTYPE; NUM_INGS] = &recipe_ings[ing_idx];
+        let our_outputs: &[ITEMCOUNTTYPE; NUM_OUTPUTS] = &recipe_outputs[out_idx];
+
+        let mut times_ings_used: u32 = 0;
+        let mut num_finished_crafts: u32 = 0;
+
+        assert!(power_mult <= MAX_POWER_MULT);
+
+        // TODO: Is this amount of accuracy enough?
+        let power_level_recipe_increase: TIMERTYPE = (u32::from(power_mult)
+            * u32::from(TIMERTYPE::MAX)
+            / u32::from(MAX_POWER_MULT)
+            / u32::from(times[self.recipe.id.into()]))
+        .try_into()
+        .unwrap_or(TIMERTYPE::MAX);
+
+        let mut power = Simd::<u64, 16>::splat(0);
+
+        let mut power_const_type: u32 = 0;
+
+        let power_level_recipe_increase = SIMDTYPE::splat(power_level_recipe_increase);
+
+        for (
+            index,
+            (timer_arr, (prod_timer_arr, (speed_mod, (bonus_prod, (base_power, power_mod))))),
+        ) in self
+            .timers
+            .array_chunks_mut()
+            .zip(
+                self.prod_timers.array_chunks_mut().zip(
+                    self.combined_speed_mod.array_chunks().zip(
+                        self.bonus_productivity.array_chunks().zip(
+                            self.base_power_consumption
+                                .array_chunks::<{ SIMDTYPE::LEN }>()
+                                .zip(self.power_consumption_modifier.array_chunks()),
+                        ),
+                    ),
+                ),
+            )
+            .enumerate()
+        {
+            let index = index * 16;
+            // ~~Remove the items from the ings at the start of the crafting process~~
+            // We will do this as part of the frontend ui!
+
+            let speed_mod = Simd::<u8, 16>::from_array(*speed_mod);
+            let speed_mod: SIMDTYPE = speed_mod.cast();
+
+            let increase: SIMDTYPE = (power_level_recipe_increase.cast::<u32>()
+                * speed_mod.cast::<u32>()
+                / Simd::<u32, 16>::splat(20))
+            .cast();
+
+            let mut ing_mask: MASKTYPE = MASKTYPE::splat(true);
+            for i in 0..NUM_INGS {
+                let ings: Simd<u8, 16> = Simd::<u8, 16>::from_slice(&self.ings[i][index..]);
+                let ings = ings.cast();
+                let our_ings = SIMDTYPE::splat(our_ings[i].into());
+                ing_mask = ing_mask & ings.simd_ge(our_ings);
+            }
+
+            if !ing_mask.any() {
+                continue;
+            }
+
+            let mut ing_mask_for_two_crafts: MASKTYPE = MASKTYPE::splat(true);
+            for i in 0..NUM_INGS {
+                let ings: Simd<u8, 16> = Simd::<u8, 16>::from_slice(&self.ings[i][index..]);
+                let ings = ings.cast();
+                let our_ings_two_crafts = SIMDTYPE::splat((our_ings[i] * 2u8).into());
+                ing_mask_for_two_crafts =
+                    ing_mask_for_two_crafts & ings.simd_ge(our_ings_two_crafts);
+            }
+
+            let timer = SIMDTYPE::from_array(*timer_arr);
+
+            let new_timer_output_space = ing_mask.select(timer + increase, timer);
+            let new_timer_output_full = ing_mask.select(timer.saturating_add(increase), timer);
+
+            let mut space_mask: MASKTYPE = MASKTYPE::splat(true);
+            for i in 0..NUM_OUTPUTS {
+                let outputs: Simd<u8, 16> = Simd::<u8, 16>::from_slice(&self.outputs[i][index..]);
+                let outputs = outputs.cast();
+                let our_outputs = SIMDTYPE::splat(our_outputs[i].into());
+                space_mask = space_mask
+                    & (SimdUint::saturating_add(outputs, our_outputs))
+                        .simd_lt(SIMDTYPE::splat(100));
+            }
+
+            let new_timer = space_mask.select(new_timer_output_space, new_timer_output_full);
+
+            // Power calculation
+            // We use power if any work was done
+            let base_power = Simd::<u64, 16>::from_array(base_power.map(|Watt(v)| v));
+            let uses_power =
+                ing_mask & (space_mask | timer.simd_lt(SIMDTYPE::splat(TIMERTYPE::MAX)));
+            power = uses_power.cast().select(
+                power
+                    + base_power * Simd::<u8, 16>::from(*power_mod).cast()
+                        / Simd::<u64, 16>::splat(20),
+                power,
+            );
+            // power_const_type += u32::from(
+            //     uses_power
+            //         .cast()
+            //         .select(Simd::<u8, 16>::from(*power_mod).cast(), SIMDTYPE::splat(0))
+            //         .reduce_sum(),
+            // );
+
+            if timer == new_timer {
+                continue;
+            }
+
+            let timer_mask: MASKTYPE = new_timer.simd_lt(timer);
+
+            // if we have enough items for another craft keep the wrapped value (This improves the accuracy), else clamp it to 0
+            let new_timer =
+                (!timer_mask | ing_mask_for_two_crafts).select(new_timer, SIMDTYPE::splat(0));
+
+            let prod_timer = SIMDTYPE::from_array(*prod_timer_arr);
+            let bonus_prod = Simd::<u8, 16>::from_array(*bonus_prod);
+            // This needs be calculated in u32 to prevent overflows in intermediate values
+            let progress = (new_timer.sub(timer)).cast::<u32>();
+            let new_prod_timer: SIMDTYPE = prod_timer.add(SimdUint::cast::<u16>(
+                progress * SimdUint::cast::<u32>(bonus_prod) / Simd::<u32, 16>::splat(100),
+            ));
+
+            let prod_timer_mask: MASKTYPE = new_prod_timer.simd_lt(prod_timer);
+
+            *timer_arr = new_timer.to_array();
+            *prod_timer_arr = new_prod_timer.to_array();
+            if timer_mask.any() || prod_timer_mask.any() {
+                for i in 0..NUM_OUTPUTS {
+                    let our_outputs = SIMDTYPE::splat(our_outputs[i].into());
+                    let outputs: Simd<u8, 16> =
+                        Simd::<u8, 16>::from_slice(&self.outputs[i][index..]);
+                    let outputs = outputs.cast();
+                    let int_output = timer_mask.select(outputs + our_outputs, outputs);
+                    self.outputs[i][index..(index + 16)].copy_from_slice(
+                        (prod_timer_mask.select(int_output + our_outputs, int_output))
+                            .cast()
+                            .as_array(),
+                    );
+                }
+            }
+            if timer_mask.any() {
+                for i in 0..NUM_INGS {
+                    let ings: Simd<u8, 16> = Simd::<u8, 16>::from_slice(&self.ings[i][index..]);
+                    let ings = ings.cast();
+                    let our_ings = SIMDTYPE::splat(our_ings[i].into());
+                    self.ings[i][index..(index + 16)].copy_from_slice(
+                        timer_mask.select(ings - our_ings, ings).cast().as_array(),
+                    );
+                }
+            }
+            times_ings_used += (timer_mask.to_int().reduce_sum() * -1) as u32;
+            num_finished_crafts += ((timer_mask.to_int().reduce_sum()
+                + prod_timer_mask.to_int().reduce_sum())
+                * -1) as u32;
+        }
+
+        (
+            Watt(100_000 * power_const_type as u64 + power.reduce_sum()),
+            times_ings_used,
+            num_finished_crafts,
+        )
     }
 
     pub fn get_all_outputs_mut(&mut self) -> [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS] {
@@ -803,7 +886,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
     where
         RecipeIdxType: IdxTrait,
     {
-        let (power, ings_used, produced) = self.update_branchless(
+        let (power, ings_used, produced) = self.update_explicit(
             power_mult,
             recipe_lookup,
             recipe_ings,
@@ -1153,9 +1236,9 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
 mod test {
     use ::test::{Bencher, black_box};
     use rand::Rng;
-    use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+    use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 
-    use crate::DATA_STORE;
+    use crate::{DATA_STORE, assembler::MultiAssemblerStore as MultiAssemblerStoreTrait};
 
     use super::*;
 
@@ -1163,39 +1246,48 @@ mod test {
     fn bench_multithreaded_assembler_update(bencher: &mut Bencher) {
         const NUM_RECIPES: usize = 12;
         const NUM_ASSEMBLERS: usize = 30_000_000;
-        const NUM_BYTES: usize =
-            NUM_RECIPES * NUM_ASSEMBLERS * (1 + 1 + 1 + 2 + 2 + 8 + 2 + 2 + 2 + 1 + 8);
 
         let mut assemblers: Vec<MultiAssemblerStore<u8, 1, 1>> = (0..NUM_RECIPES as u8)
-            .map(|recipe| MultiAssemblerStore::new(Recipe { id: recipe }, &DATA_STORE))
+            .map(|_| MultiAssemblerStore::new(Recipe { id: 11 }, &DATA_STORE))
             .collect_vec();
 
-        assemblers.par_iter_mut().for_each(|assembler_store| {
-            for _ in 0..NUM_ASSEMBLERS {
-                let _index = assembler_store.add_assembler_with_data(
-                    [255],
-                    [rand::thread_rng().gen_range(100..=255)],
-                    [0],
-                    0,
-                    0,
-                    Watt(100_000),
-                    20,
-                    20,
-                    20,
-                    20,
-                    0,
-                    Position { x: 0, y: 0 },
-                    &DATA_STORE,
-                );
-            }
-        });
+        let items: Vec<Vec<_>> = vec![
+            rayon::iter::repeat(rand::thread_rng().gen_range(250..=255))
+                .flat_map_iter(|v| std::iter::repeat_n(v, 10))
+                .take_any(NUM_ASSEMBLERS)
+                .collect();
+            NUM_RECIPES
+        ];
+        assemblers
+            .par_iter_mut()
+            .zip(items)
+            .for_each(|(assembler_store, item)| {
+                for i in 0..NUM_ASSEMBLERS {
+                    let _index = assembler_store.add_assembler_with_data(
+                        [255],
+                        [item[i]],
+                        [0],
+                        rand::random(),
+                        rand::random(),
+                        Watt(100_000),
+                        00,
+                        20,
+                        20,
+                        20,
+                        0,
+                        Position { x: 0, y: 0 },
+                        &DATA_STORE,
+                    );
+                }
+            });
 
-        let mut i = 0;
+        let mut i: u32 = 0;
+        let mut num_produced = 0;
         bencher.iter(|| {
             let outputs: Vec<_> = assemblers
                 .par_iter_mut()
                 .map(|assembler_store| {
-                    assembler_store.update_branchless(
+                    assembler_store.update_explicit(
                         64,
                         &DATA_STORE.recipe_index_lookups,
                         &DATA_STORE.recipe_ings.ing1,
@@ -1205,21 +1297,30 @@ mod test {
                 })
                 .collect();
 
+            num_produced += outputs.iter().map(|(_, _, v)| v).copied().sum::<u32>();
             black_box(outputs);
 
             i += 1;
 
-            if i % 250 == 0 {
+            if i % 2_500 == 0 {
                 assemblers.par_iter_mut().for_each(|assembler_store| {
                     let [ing] = assembler_store.get_all_ings_mut();
 
                     for ing in ing {
-                        *ing = rand::thread_rng().gen_range(100..=255);
+                        *ing = 255;
+                    }
+
+                    let [out] = assembler_store.get_all_outputs_mut();
+
+                    for out in out {
+                        *out = 0;
                     }
                 });
             }
         });
 
         dbg!(i);
+        dbg!(num_produced);
+        dbg!(assemblers[11].get_info(0, &DATA_STORE));
     }
 }

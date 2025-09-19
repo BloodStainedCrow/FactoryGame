@@ -2102,7 +2102,7 @@ pub fn render_ui<
         });
 
     Window::new("UPS").default_open(false).show(ctx, |ui| {
-        let points = &game_state_ref.update_times.get_data_points(0)[0..30];
+        let points = &game_state_ref.update_times.get_data_points(0)[0..600];
         ui.label(format!(
             "{:.1} UPS",
             1.0 / (points.iter().map(|v| v.dur).sum::<Duration>() / points.len() as u32)

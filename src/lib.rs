@@ -5,6 +5,7 @@
 #![feature(never_type)]
 #![feature(mixed_integer_ops_unsigned_sub)]
 #![feature(int_roundings)]
+#![feature(array_chunks)]
 
 extern crate test;
 
@@ -13,7 +14,7 @@ use std::{
     borrow::Borrow,
     net::{SocketAddr, TcpStream},
     process::exit,
-    simd::cmp::SimdPartialEq,
+    simd::{Mask, cmp::SimdPartialEq},
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -446,8 +447,8 @@ fn run_client(remote_addr: SocketAddr) -> (LoadedGame, Arc<AtomicU64>, Sender<In
 use std::simd::Simd;
 
 // TODO: Increase if possible
-type BOOLSIMDTYPE = Simd<u8, 4>;
-type SIMDTYPE = Simd<u8, 4>;
+type MASKTYPE = Mask<i16, 16>;
+type SIMDTYPE = Simd<u16, 16>;
 
 pub struct InserterInfo {
     num_items: u8,
@@ -474,56 +475,6 @@ pub fn simple(
             i.num_items = u8::from(item) + i.num_items % HANDSIZE;
             outputs[*idx as usize] += u16::from(did_increase && (i.num_items == 0));
         });
-}
-
-pub fn simd(
-    locs: &mut [u8],
-    inserter_info: &mut [u8],
-    inserter_ouput_idx: &[usize],
-    outputs: &mut [u16; 5],
-) {
-    const HANDSIZE: u16 = 8;
-
-    let HAS_ITEM_TEST: SIMDTYPE = SIMDTYPE::splat(1);
-
-    let mut local_accs = [0; 5 * SIMDTYPE::LEN];
-    let LOCAL_IDX: Simd<usize, 4> =
-        Simd::<usize, 4>::from_array(array::from_fn(|i| (i * local_accs.len() / SIMDTYPE::LEN)));
-
-    assert!(locs.len() == inserter_info.len());
-    assert!(locs.len() % 64 == 0);
-    assert!(inserter_info.len() % 64 == 0);
-
-    for i in (0..locs.len().min(locs.len() - (locs.len() % SIMDTYPE::LEN))).step_by(SIMDTYPE::LEN) {
-        let input = BOOLSIMDTYPE::from_slice(locs.split_at(i).1);
-
-        let input_has_items = input.simd_eq(HAS_ITEM_TEST);
-
-        let num_items_in_hand = SIMDTYPE::from_slice(inserter_info.split_at(i).1);
-
-        let post_items_in_hand =
-            input_has_items.select(num_items_in_hand + SIMDTYPE::splat(1), num_items_in_hand);
-
-        let full_hand_mask = post_items_in_hand.simd_eq(SIMDTYPE::splat(8));
-
-        let final_items_in_hand = full_hand_mask.select(SIMDTYPE::splat(0), post_items_in_hand);
-
-        final_items_in_hand.copy_to_slice(inserter_info.split_at_mut(i).1);
-
-        let output_idx = Simd::<usize, 4>::from_slice(inserter_ouput_idx.split_at(i).1);
-
-        let old_vals = SIMDTYPE::gather_or(&local_accs, LOCAL_IDX + output_idx, SIMDTYPE::splat(0));
-
-        let new_vals = full_hand_mask.select(old_vals + SIMDTYPE::splat(8), old_vals);
-
-        new_vals.scatter(&mut local_accs, LOCAL_IDX + output_idx);
-    }
-
-    for (i, local) in local_accs.iter().enumerate() {
-        let real_index = i % 5;
-
-        outputs[real_index] += u16::from(*local);
-    }
 }
 
 #[cfg(test)]
