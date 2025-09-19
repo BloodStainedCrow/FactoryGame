@@ -1148,3 +1148,78 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         )
     }
 }
+
+#[cfg(test)]
+mod test {
+    use ::test::{Bencher, black_box};
+    use rand::Rng;
+    use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+
+    use crate::DATA_STORE;
+
+    use super::*;
+
+    #[bench]
+    fn bench_multithreaded_assembler_update(bencher: &mut Bencher) {
+        const NUM_RECIPES: usize = 12;
+        const NUM_ASSEMBLERS: usize = 30_000_000;
+        const NUM_BYTES: usize =
+            NUM_RECIPES * NUM_ASSEMBLERS * (1 + 1 + 1 + 2 + 2 + 8 + 2 + 2 + 2 + 1 + 8);
+
+        let mut assemblers: Vec<MultiAssemblerStore<u8, 1, 1>> = (0..NUM_RECIPES as u8)
+            .map(|recipe| MultiAssemblerStore::new(Recipe { id: recipe }, &DATA_STORE))
+            .collect_vec();
+
+        assemblers.par_iter_mut().for_each(|assembler_store| {
+            for _ in 0..NUM_ASSEMBLERS {
+                let _index = assembler_store.add_assembler_with_data(
+                    [255],
+                    [rand::thread_rng().gen_range(100..=255)],
+                    [0],
+                    0,
+                    0,
+                    Watt(100_000),
+                    20,
+                    20,
+                    20,
+                    20,
+                    0,
+                    Position { x: 0, y: 0 },
+                    &DATA_STORE,
+                );
+            }
+        });
+
+        let mut i = 0;
+        bencher.iter(|| {
+            let outputs: Vec<_> = assemblers
+                .par_iter_mut()
+                .map(|assembler_store| {
+                    assembler_store.update_branchless(
+                        64,
+                        &DATA_STORE.recipe_index_lookups,
+                        &DATA_STORE.recipe_ings.ing1,
+                        &DATA_STORE.recipe_outputs.out1,
+                        &DATA_STORE.recipe_timers,
+                    )
+                })
+                .collect();
+
+            black_box(outputs);
+
+            i += 1;
+
+            if i % 250 == 0 {
+                assemblers.par_iter_mut().for_each(|assembler_store| {
+                    let [ing] = assembler_store.get_all_ings_mut();
+
+                    for ing in ing {
+                        *ing = rand::thread_rng().gen_range(100..=255);
+                    }
+                });
+            }
+        });
+
+        dbg!(i);
+    }
+}
