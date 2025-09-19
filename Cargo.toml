@@ -91,7 +91,6 @@ suboptimal_flops = { level = "allow", priority = 1 }
 module_name_repetitions = { level = "allow", priority = 1 }
 
 [profile.release]
-lto = true
 
 [profile.release-with-debug]
 inherits = "release"
