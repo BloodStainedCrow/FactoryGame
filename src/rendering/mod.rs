@@ -149,7 +149,7 @@ pub struct TextureAtlas {
 
     chest: EntitySprite,
 
-    assembler: EntitySprite,
+    assembler: Box<[EntitySprite]>,
     no_power: EntitySprite,
     not_connected: EntitySprite,
     belt: enum_map::EnumMap<Dir, EntitySprite>,
@@ -315,7 +315,29 @@ fn texture_atlas() -> TextureAtlas {
 
         no_power: entity_sprite_from_path_scaled!("temp_assets/no_power.png", 1, 3.0),
 
-        assembler: entity_sprite_from_path_tiling!("temp_assets/krastorio/furnace.png", 7 * 4),
+        assembler: vec![
+            // TODO: Add animation for assembling machine
+            entity_sprite_from_path_tiling!(
+                "temp_assets/krastorio/advanced-assembling-machine.png",
+                1
+            ),
+            entity_sprite_from_path_tiling!(
+                "temp_assets/krastorio/advanced-assembling-machine.png",
+                1
+            ),
+            entity_sprite_from_path_tiling!(
+                "temp_assets/krastorio/advanced-assembling-machine.png",
+                1
+            ),
+            entity_sprite_from_path_tiling!(
+                "temp_assets/krastorio/intergalactic-transceiver.png",
+                1
+            ),
+            entity_sprite_from_path_tiling!("temp_assets/krastorio/furnace.png", 7 * 4),
+            entity_sprite_from_path_tiling!("temp_assets/krastorio/advanced-chemical-plant.png", 1),
+            entity_sprite_from_path_tiling!("temp_assets/krastorio/advanced-chemical-plant.png", 1),
+        ]
+        .into_boxed_slice(),
         chest: entity_sprite_from_path_tiling!("temp_assets/krastorio/chest.png", 1),
 
         items: vec![
@@ -450,7 +472,11 @@ fn texture_atlas() -> TextureAtlas {
             sprite_from_path!("temp_assets/inserter_west.png", 1),
         ]),
 
-        beacon: entity_sprite_from_path_tiling!("temp_assets/beacon.png", 1),
+        beacon: entity_sprite_from_path_scaled_centered!(
+            "temp_assets/krastorio/singularity-beacon.png",
+            1,
+            1.2
+        ),
         power_pole: entity_sprite_from_path_tall!(
             "temp_assets/krastorio/PowerPole.png",
             1,

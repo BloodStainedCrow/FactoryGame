@@ -358,7 +358,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             match info {
                                                 AssemblerInfo::UnpoweredNoRecipe => {
                                                     texture_atlas.not_connected.draw_centered_on(
-                                                        &texture_atlas.assembler,
+                                                        &texture_atlas.assembler[*ty as usize],
                                                         [
                                                             chunk_draw_offs.0 + (pos.x % 16) as f32,
                                                             chunk_draw_offs.1 + (pos.y % 16) as f32,
@@ -368,7 +368,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                         warning_layer,
                                                     );
 
-                                                    texture_atlas.assembler.draw(
+                                                    texture_atlas.assembler[*ty as usize].draw(
                                                         [
                                                             chunk_draw_offs.0 + (pos.x % 16) as f32,
                                                             chunk_draw_offs.1 + (pos.y % 16) as f32,
@@ -380,7 +380,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 },
                                                 AssemblerInfo::Unpowered(recipe) => {
                                                     texture_atlas.not_connected.draw_centered_on(
-                                                        &texture_atlas.assembler,
+                                                        &texture_atlas.assembler[*ty as usize],
                                                         [
                                                             chunk_draw_offs.0 + (pos.x % 16) as f32,
                                                             chunk_draw_offs.1 + (pos.y % 16) as f32,
@@ -390,7 +390,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                         warning_layer,
                                                     );
 
-                                                    texture_atlas.assembler.draw(
+                                                    texture_atlas.assembler[*ty as usize].draw(
                                                         [
                                                             chunk_draw_offs.0 + (pos.x % 16) as f32,
                                                             chunk_draw_offs.1 + (pos.y % 16) as f32,
@@ -448,7 +448,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                                                     if last_power == 0 {
                                                         texture_atlas.no_power.draw_centered_on(
-                                                            &texture_atlas.assembler,
+                                                            &texture_atlas.assembler[*ty as usize],
                                                             [
                                                                 chunk_draw_offs.0
                                                                     + (pos.x % 16) as f32,
@@ -461,7 +461,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                         );
                                                     }
 
-                                                    texture_atlas.assembler.draw(
+                                                    texture_atlas.assembler[*ty as usize].draw(
                                                         [
                                                             chunk_draw_offs.0 + (pos.x % 16) as f32,
                                                             chunk_draw_offs.1 + (pos.y % 16) as f32,
@@ -491,7 +491,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                                                     if last_power == 0 {
                                                         texture_atlas.no_power.draw_centered_on(
-                                                            &texture_atlas.assembler,
+                                                            &texture_atlas.assembler[*ty as usize],
                                                             [
                                                                 chunk_draw_offs.0
                                                                     + (pos.x % 16) as f32,
@@ -520,23 +520,21 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                         .power_grids
                                                         .get_assembler_info(*id, data_store);
 
-                                                    texture_atlas.assembler.draw(
+                                                    texture_atlas.assembler[*ty as usize].draw(
                                                         [
                                                             chunk_draw_offs.0 + (pos.x % 16) as f32,
                                                             chunk_draw_offs.1 + (pos.y % 16) as f32,
                                                         ],
                                                         size,
                                                         (timer_percentage
-                                                            * (texture_atlas
-                                                                .assembler
+                                                            * (texture_atlas.assembler[*ty as usize]
                                                                 .sprite
                                                                 .texture
                                                                 .number_anim_frames
                                                                 as f32))
                                                             .floor()
                                                             as u32
-                                                            % texture_atlas
-                                                                .assembler
+                                                            % texture_atlas.assembler[*ty as usize]
                                                                 .sprite
                                                                 .texture
                                                                 .number_anim_frames,
@@ -1403,7 +1401,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         let size: [u16; 2] = data_store.assembler_info[usize::from(*ty)]
                             .size(*rotation)
                             .into();
-                        texture_atlas.assembler.draw(
+                        texture_atlas.assembler[*ty as usize].draw(
                             [
                                 pos.x as f32 - camera_pos.0
                                     + num_tiles_across_screen_horizontal / 2.0,
