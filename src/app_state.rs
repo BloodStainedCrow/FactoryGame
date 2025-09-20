@@ -189,6 +189,33 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     }
 
     #[must_use]
+    pub fn new_with_megabase(
+        progress: Arc<AtomicU64>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
+        let mut ret = GameState::new_with_world_area(
+            Position { x: 0, y: 0 },
+            Position { x: 32000, y: 105000 },
+            data_store,
+        );
+
+        // ret.add_solar_field(Position { x: 1590, y: 70000 }, Watt(3_000_000_000_000), progress.clone(), data_store);
+
+        let file = File::open("test_blueprints/murphy/megabase_running.bp").unwrap();
+        let bp: Blueprint = ron::de::from_reader(file).unwrap();
+        let bp = bp.get_reusable(false, data_store);
+
+        // TODO: Measure if this is actually faster
+        let bp = bp.optimize();
+
+        puffin::set_scopes_on(false);
+        bp.apply(Position { x: 1600, y: 1600 }, &mut ret, data_store);
+        puffin::set_scopes_on(true);
+
+        ret
+    }
+
+    #[must_use]
     pub fn new_with_gigabase(
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -209,7 +236,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let bp = bp.optimize();
 
         puffin::set_scopes_on(false);
-        let y_range = (1590..60000).step_by(10000);
+        let y_range = (1590..80000).step_by(10000);
         let x_range = (1590..20000).step_by(4000);
 
         let total = y_range.size_hint().0 * x_range.size_hint().0;

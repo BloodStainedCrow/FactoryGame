@@ -331,6 +331,23 @@ impl eframe::App for App {
                             progress,
                             game_state_receiver: recv,
                         };
+                    } else if ui.button("Megabase").clicked() {
+                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
+                        let (send, recv) = channel();
+
+                        let progress_send = progress.clone();
+                        thread::spawn(move || {
+                            send.send(run_integrated_server(
+                                progress_send,
+                                StartGameInfo::Create(GameCreationInfo::Megabase),
+                            ));
+                        });
+
+                        self.state = AppState::Loading {
+                            start_time: Instant::now(),
+                            progress,
+                            game_state_receiver: recv,
+                        };
                     } else if ui.button("Gigabase").clicked() {
                         let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
                         let (send, recv) = channel();

@@ -194,6 +194,8 @@ enum GameCreationInfo {
 
     RedWithLabs,
 
+    Megabase,
+
     Gigabase,
 
     SolarField(Watt, Position),
@@ -259,6 +261,9 @@ fn run_integrated_server(
                     },
                     GameCreationInfo::RedWithLabs => {
                         GameState::new_with_production(progress, &data_store)
+                    },
+                    GameCreationInfo::Megabase => {
+                        GameState::new_with_megabase(progress, &data_store)
                     },
                     GameCreationInfo::Gigabase => {
                         GameState::new_with_gigabase(progress, &data_store)
