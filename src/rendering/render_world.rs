@@ -2101,7 +2101,7 @@ pub fn render_ui<
                 });
         });
 
-    Window::new("UPS").default_open(false).show(ctx, |ui| {
+    Window::new("UPS").default_open(true).show(ctx, |ui| {
         let points = &game_state_ref.update_times.get_data_points(0)[0..600];
         ui.label(format!(
             "{:.1} UPS",
@@ -2154,7 +2154,7 @@ pub fn render_ui<
             position,
         ) => {
             let mut viewing = true;
-            Window::new("Viewing").open(&mut viewing).show(ctx, |ui| {
+            Window::new("Viewing").collapsible(false).open(&mut viewing).show(ctx, |ui| {
                 let chunk = game_state_ref
                 .world
                 .get_chunk_for_tile(*position)
@@ -2587,10 +2587,12 @@ pub fn render_ui<
             _,
             timer,
         ) => {
-            Window::new("Deconstructing").show(ui.ctx(), |ui| {
-                let pb = ProgressBar::new((*timer as f32) / 100.0);
-                ui.add(pb);
-            });
+            Window::new("Deconstructing")
+                .collapsible(false)
+                .show(ui.ctx(), |ui| {
+                    let pb = ProgressBar::new((*timer as f32) / 100.0);
+                    ui.add(pb);
+                });
         },
     }
 
@@ -2621,6 +2623,7 @@ pub fn render_ui<
         });
 
     Window::new("Technology")
+        .collapsible(false)
         .open(&mut state_machine_ref.technology_panel_open)
         .show(ctx, |ui| {
             let research_actions = game_state_ref
@@ -2641,6 +2644,7 @@ pub fn render_ui<
         });
 
     Window::new("Statistics")
+        .collapsible(false)
         .open(&mut state_machine_ref.statistics_panel_open)
         .show(ctx, |ui| {
             let time_scale = match &mut state_machine_ref.statistics_panel {
@@ -2872,7 +2876,7 @@ pub fn render_ui<
                                                     |ui| {
                                                         ui.add(
                                                             Label::new(format!(
-                                                                "{:.0}/m",
+                                                                "{:.0}/min",
                                                                 sum_list_prod[idx].2 / ticks_total
                                                                     * TICKS_PER_SECOND_LOGIC as f32
                                                                     * 60.0
@@ -3070,7 +3074,7 @@ pub fn render_ui<
                                                     |ui| {
                                                         ui.add(
                                                             Label::new(format!(
-                                                                "{:.0}/m",
+                                                                "{:.0}/min",
                                                                 sum_list_cons[idx].2 / ticks_total
                                                                     * TICKS_PER_SECOND_LOGIC as f32
                                                                     * 60.0
