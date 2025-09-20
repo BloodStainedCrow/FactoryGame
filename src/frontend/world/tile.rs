@@ -3696,6 +3696,32 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         pole_position,
                         weak_index,
                     } => {
+                        for &(_, item) in &data_store.recipe_to_items[&assembler_id.recipe] {
+                            for (_, (_frontend, store)) in
+                                sim_state.factory.storage_storage_inserters.inserters
+                                    [item.into_usize()]
+                                .iter_mut()
+                            {
+                                // FIXME: What if any of these are actual inserters in the world?
+                                let _removed = store.remove_inserters_with_connection(
+                                    FakeUnionStorage::from_storage_with_statics_at_zero(
+                                        item,
+                                        Storage::Assembler {
+                                            grid: assembler_id.grid,
+                                            recipe_idx_with_this_item: assembler_id.recipe.id,
+                                            index: assembler_id.assembler_index,
+                                        }
+                                        .translate(item, data_store),
+                                        data_store,
+                                    ),
+                                );
+                                dbg!(
+                                    &data_store.item_names[item.into_usize()],
+                                    _removed.collect_vec()
+                                );
+                            }
+                        }
+
                         // TODO:
                         let assembler_removal_info = sim_state.factory.power_grids.power_grids
                             [assembler_id.grid as usize]

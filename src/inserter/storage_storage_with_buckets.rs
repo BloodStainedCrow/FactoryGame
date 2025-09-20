@@ -604,6 +604,56 @@ impl BucketedStorageStorageInserterStore {
         unreachable!("Tried to remove an inserter that does not exist!");
     }
 
+    pub fn remove_inserters_with_connection(
+        &mut self,
+        conn: FakeUnionStorage,
+    ) -> impl Iterator<Item = UpdatingInserter> {
+        let mut removed_list = vec![];
+
+        // We iterate backwards here, since when setting an inserters movetime, it is likely just been placed, so it is at the end of its vec
+        for removed in self.waiting_for_item.extract_if(.., |ins| {
+            ins.storage_id_in == conn || ins.storage_id_out == conn
+        }) {
+            removed_list.push(removed);
+        }
+
+        for removed in self.waiting_for_space_in_destination.extract_if(.., |ins| {
+            ins.storage_id_in == conn || ins.storage_id_out == conn
+        }) {
+            removed_list.push(removed);
+        }
+
+        for moving_out in &mut self.full_and_moving_out {
+            for removed in moving_out.extract_if(.., |ins| {
+                ins.storage_id_in == conn || ins.storage_id_out == conn
+            }) {
+                removed_list.push(UpdatingInserter {
+                    storage_id_in: removed.storage_id_in,
+                    storage_id_out: removed.storage_id_out,
+                    max_hand_size: removed.max_hand_size,
+                    current_hand: removed.max_hand_size,
+                    id: removed.id,
+                });
+            }
+        }
+
+        for moving_in in &mut self.empty_and_moving_back {
+            for removed in moving_in.extract_if(.., |ins| {
+                ins.storage_id_in == conn || ins.storage_id_out == conn
+            }) {
+                removed_list.push(UpdatingInserter {
+                    storage_id_in: removed.storage_id_in,
+                    storage_id_out: removed.storage_id_out,
+                    max_hand_size: removed.max_hand_size,
+                    current_hand: 0,
+                    id: removed.id,
+                });
+            }
+        }
+
+        removed_list.into_iter()
+    }
+
     pub fn get_num_inserters(&self) -> usize {
         self.waiting_for_item.len()
             + self.waiting_for_space_in_destination.len()
