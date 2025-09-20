@@ -10,10 +10,8 @@ use std::{
 };
 
 use crate::{
-    MASKTYPE,
-    SIMDTYPE,
-    // assembler::MultiAssemblerStore as MultiAssemblerStoreTrait,
-    data::{DataStore, ItemRecipeDir},
+    MASKTYPE, SIMDTYPE,
+    data::{AssemblerInfo, DataStore, ItemRecipeDir},
     frontend::world::Position,
     item::{ITEMCOUNTTYPE, IdxTrait, Recipe, WeakIdxTrait},
     power::{
@@ -42,6 +40,8 @@ pub struct MultiAssemblerStore<
     const NUM_OUTPUTS: usize,
 > {
     pub recipe: Recipe<RecipeIdxType>,
+
+    single_type: Option<u8>,
 
     /// Base Crafting Speed in 5% increments
     /// i.e. 28 => 140% Crafting speed
@@ -190,6 +190,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         (power, times_ings_used, num_finished_crafts)
     }
 
+    #[inline(never)]
     pub fn update_explicit(
         &mut self,
         power_mult: u8,
@@ -197,6 +198,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         recipe_ings: &[[ITEMCOUNTTYPE; NUM_INGS]],
         recipe_outputs: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
         times: &[TIMERTYPE],
+        power_list: &[AssemblerInfo],
     ) -> (Watt, u32, u32) {
         let (ing_idx, out_idx) = recipe_lookup[self.recipe.id.into()];
 
@@ -286,28 +288,31 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 let our_outputs = SIMDTYPE::splat(our_outputs[i].into());
                 space_mask = space_mask
                     & (SimdUint::saturating_add(outputs, our_outputs))
-                        .simd_lt(SIMDTYPE::splat(100));
+                        .simd_le(SIMDTYPE::splat(100));
             }
 
             let new_timer = space_mask.select(new_timer_output_space, new_timer_output_full);
 
             // Power calculation
             // We use power if any work was done
-            let base_power = Simd::<u64, 16>::from_array(base_power.map(|Watt(v)| v));
             let uses_power =
                 ing_mask & (space_mask | timer.simd_lt(SIMDTYPE::splat(TIMERTYPE::MAX)));
-            power = uses_power.cast().select(
-                power
-                    + base_power * Simd::<u8, 16>::from(*power_mod).cast()
-                        / Simd::<u64, 16>::splat(20),
-                power,
-            );
-            // power_const_type += u32::from(
-            //     uses_power
-            //         .cast()
-            //         .select(Simd::<u8, 16>::from(*power_mod).cast(), SIMDTYPE::splat(0))
-            //         .reduce_sum(),
-            // );
+            if self.single_type.is_some() {
+                power_const_type += u32::from(
+                    uses_power
+                        .cast()
+                        .select(Simd::<u8, 16>::from(*power_mod).cast(), SIMDTYPE::splat(0))
+                        .reduce_sum(),
+                );
+            } else {
+                let base_power = Simd::<u64, 16>::from_array(base_power.map(|Watt(v)| v));
+                power = uses_power.cast().select(
+                    power
+                        + base_power * Simd::<u8, 16>::from(*power_mod).cast()
+                            / Simd::<u64, 16>::splat(20),
+                    power,
+                );
+            }
 
             if timer == new_timer {
                 continue;
@@ -361,11 +366,12 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 * -1) as u32;
         }
 
-        (
-            Watt(100_000 * power_const_type as u64 + power.reduce_sum()),
-            times_ings_used,
-            num_finished_crafts,
-        )
+        let total_power = if let Some(single_ty) = self.single_type {
+            power_list[single_ty as usize].base_power_consumption * (power_const_type as u64) / 20
+        } else {
+            Watt(power.reduce_sum())
+        };
+        (total_power, times_ings_used, num_finished_crafts)
     }
 
     pub fn get_all_outputs_mut(&mut self) -> [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS] {
@@ -419,6 +425,9 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
     ) -> Self {
         Self {
             recipe,
+
+            // TODO:
+            single_type: None,
 
             ings_max_insert: array::from_fn(|_| vec![].into_boxed_slice()),
             ings: array::from_fn(|_| vec![].into_boxed_slice()),
@@ -839,6 +848,12 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         // };
 
         let ret = Self {
+            single_type: if self.single_type == other.single_type {
+                self.single_type
+            } else {
+                None
+            },
+
             recipe: self.recipe,
             ings_max_insert: new_ings_max,
             ings: new_ings,
@@ -881,7 +896,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         recipe_ings: &[[ITEMCOUNTTYPE; NUM_INGS]],
         recipe_outputs: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
         times: &[TIMERTYPE],
-        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (PowerUsageInfo, u32, u32)
     where
         RecipeIdxType: IdxTrait,
@@ -892,6 +907,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             recipe_ings,
             recipe_outputs,
             times,
+            &data_store.assembler_info,
         );
 
         (PowerUsageInfo::Combined(power), ings_used, produced)
@@ -931,6 +947,19 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> u32 {
+        if let Some(single_type) = self.single_type {
+            if single_type != ty {
+                self.single_type = None;
+            } else {
+                // The new inserter matches the single_type of this
+            }
+        } else if self.len - self.holes.len() == 0 {
+            // This is the only assembler
+            self.single_type = Some(ty);
+        } else {
+            // We have multiple types already
+        }
+
         let len = self.timers.len();
         // debug_assert!(len % Simdtype::LEN == 0);
 
@@ -1293,6 +1322,7 @@ mod test {
                         &DATA_STORE.recipe_ings.ing1,
                         &DATA_STORE.recipe_outputs.out1,
                         &DATA_STORE.recipe_timers,
+                        &DATA_STORE.assembler_info,
                     )
                 })
                 .collect();
