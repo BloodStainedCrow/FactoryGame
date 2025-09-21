@@ -1099,6 +1099,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26b3f65b8fb8e88ba339f7d23a390fe1b0896217da05e2a66c584c9b29a91df8"
 
 [[package]]
+name = "color-hex"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ecdffb913a326b6c642290a0d0ec8e8d6597291acdc07cc4c9cb4b3635d44cf9"
+
+[[package]]
 name = "color_quant"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1483,6 +1489,7 @@ version = "0.31.1"
 source = "git+https://github.com/BloodStainedCrow/egui?branch=removeProfiling#4e11a02615078f509d9acc474ae13a66b411eaf7"
 dependencies = [
  "bytemuck",
+ "color-hex",
  "emath 0.31.1 (git+https://github.com/BloodStainedCrow/egui?branch=removeProfiling)",
  "serde",
 ]
@@ -1932,6 +1939,7 @@ dependencies = [
  "charts-rs",
  "dhat",
  "directories",
+ "ecolor",
  "eframe",
  "egui",
  "egui-show-info",

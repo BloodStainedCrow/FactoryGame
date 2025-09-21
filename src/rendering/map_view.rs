@@ -1,5 +1,8 @@
 use std::{
+    borrow::Borrow,
     cmp::min,
+    collections::HashMap,
+    sync::LazyLock,
     time::{Duration, Instant},
 };
 
@@ -130,35 +133,91 @@ pub fn create_map_textures_if_needed<ItemIdxType: IdxTrait, RecipeIdxType: IdxTr
     }
 }
 
+enum ColorResult {
+    Const(&'static [u8]),
+    Generated(Vec<u8>),
+}
+
+impl Borrow<[u8]> for ColorResult {
+    fn borrow(&self) -> &[u8] {
+        &match self {
+            ColorResult::Const(data) => data,
+            ColorResult::Generated(data) => data.as_slice(),
+        }
+    }
+}
+
+static DEDUP_MAP: LazyLock<HashMap<usize, Vec<u8>>> = LazyLock::new(|| {
+    let mut map = HashMap::new();
+    for map_tile_size in TILE_SIZE_PIXELS {
+        map.entry(map_tile_size * map_tile_size)
+            .or_insert(bytemuck::cast_vec(vec![
+                Color32::BLACK;
+                map_tile_size * map_tile_size
+            ]));
+    }
+    map
+});
+
 #[profiling::function]
-#[inline(never)]
 fn collect_colors<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     world: &World<ItemIdxType, RecipeIdxType>,
     [tile_x, tile_y]: [usize; 2],
     map_tile_size: usize,
     pixel_to_tile: usize,
     data_store: &crate::data::DataStore<ItemIdxType, RecipeIdxType>,
-) -> Vec<u8> {
-    let data = ((tile_y * map_tile_size)..((tile_y + 1) * map_tile_size))
-        .into_par_iter()
-        .flat_map_iter(|y_pos| {
-            std::iter::repeat(y_pos).zip((tile_x * map_tile_size)..((tile_x + 1) * map_tile_size))
-        })
-        .map(|(y_pos, x_pos)| {
-            let x_pos_world = (i32::try_from(x_pos * pixel_to_tile).unwrap() - 1_000_000) as i32;
-            let y_pos_world = (i32::try_from(y_pos * pixel_to_tile).unwrap() - 1_000_000) as i32;
+) -> ColorResult {
+    let data = if world
+        .any_generated_chunks_in_area(
+            Position {
+                x: (i32::try_from(tile_x * map_tile_size * pixel_to_tile).unwrap() - 1_000_000)
+                    as i32,
+                y: (i32::try_from(tile_y * map_tile_size * pixel_to_tile).unwrap() - 1_000_000)
+                    as i32,
+            },
+            Position {
+                x: (i32::try_from((tile_x + 1) * map_tile_size * pixel_to_tile).unwrap()
+                    - 1_000_000) as i32,
+                y: (i32::try_from((tile_y + 1) * map_tile_size * pixel_to_tile).unwrap()
+                    - 1_000_000) as i32,
+            },
+        )
+        .unwrap_or(true)
+    {
+        ColorResult::Generated(bytemuck::cast_vec(
+            ((tile_y * map_tile_size)..((tile_y + 1) * map_tile_size))
+                .into_par_iter()
+                .flat_map_iter(|y_pos| {
+                    std::iter::repeat(y_pos)
+                        .zip((tile_x * map_tile_size)..((tile_x + 1) * map_tile_size))
+                })
+                .map(|(y_pos, x_pos)| {
+                    let x_pos_world =
+                        (i32::try_from(x_pos * pixel_to_tile).unwrap() - 1_000_000) as i32;
+                    let y_pos_world =
+                        (i32::try_from(y_pos * pixel_to_tile).unwrap() - 1_000_000) as i32;
 
-            let color = world.get_entity_color(
-                Position {
-                    x: x_pos_world,
-                    y: y_pos_world,
-                },
-                data_store,
-            );
+                    let color = world.get_entity_color(
+                        Position {
+                            x: x_pos_world,
+                            y: y_pos_world,
+                        },
+                        data_store,
+                    );
 
-            color
-        })
-        .collect();
+                    color
+                })
+                .collect(),
+        ))
+    } else {
+        match DEDUP_MAP.get(&(map_tile_size * map_tile_size)) {
+            Some(cached_alloc) => ColorResult::Const(&cached_alloc),
+            None => ColorResult::Generated(bytemuck::cast_vec(vec![
+                Color32::BLACK;
+                map_tile_size * map_tile_size
+            ])),
+        }
+    };
 
     // let size = map_tile_size * map_tile_size;
     // let mut data = {
@@ -183,10 +242,7 @@ fn collect_colors<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     //     data_store,
     // );
 
-    {
-        profiling::scope!("Color32 to u8");
-        bytemuck::cast_vec(data)
-    }
+    data
 }
 
 #[profiling::function]

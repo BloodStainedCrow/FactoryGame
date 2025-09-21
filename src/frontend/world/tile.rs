@@ -18,6 +18,7 @@ use std::{
 use crate::frontend::world::sparse_grid::GetGridIndex;
 
 use crate::{frontend::action::belt_placement, get_size::EnumMap};
+use ecolor::hex_color;
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
 use enum_map::Enum;
@@ -1320,6 +1321,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     }
 
     pub fn get_original_ore_at_pos(&self, pos: Position) -> Option<(Item<ItemIdxType>, u32)> {
+        // TODO:
+        return None;
         let v = self.noise.get([
             pos.x as f64 * ORE_DISTANCE_MULT,
             pos.y as f64 * ORE_DISTANCE_MULT,
@@ -3223,6 +3226,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             });
     }
 
+    pub fn any_generated_chunks_in_area(
+        &self,
+        top_left: Position,
+        bottom_right: Position,
+    ) -> Option<bool> {
+        let extent = self.chunks.get_extent();
+
+        extent.map(|[x_range, y_range]| {
+            let collision_x = bottom_right.x >= *x_range.start() * i32::from(CHUNK_SIZE)
+                && *x_range.end() * i32::from(CHUNK_SIZE) >= top_left.x;
+            let collision_y = bottom_right.y >= *y_range.start() * i32::from(CHUNK_SIZE)
+                && *y_range.end() * i32::from(CHUNK_SIZE) >= top_left.y;
+
+            collision_x && collision_y
+        })
+    }
+
     #[cfg(feature = "client")]
     pub fn get_entity_color(
         &self,
@@ -3273,11 +3293,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         Color32::LIGHT_BLUE
                     } else {
                         // TODO: Get floor color
-                        Color32::from_hex("#3f3f3f").unwrap()
+                        hex_color!("#3f3f3f")
                     }
                 } else {
                     // TODO: Get floor color
-                    Color32::from_hex("#3f3f3f").unwrap()
+                    hex_color!("#3f3f3f")
                 }
             })
             .unwrap_or(Color32::BLACK)
@@ -4159,6 +4179,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
             // Actually remove the entity
             chunk.entities.swap_remove(old_idx as usize);
+
+            for x in e_pos.x..(e_pos.x + e_size.0 as i32) {
+                for y in e_pos.y..(e_pos.y + e_size.1 as i32) {
+                    let chunk = self.get_chunk_for_tile_mut(Position { x, y }).unwrap();
+
+                    chunk.set_tile_empty(Position { x, y });
+                    self.map_updates
+                        .get_or_insert_default()
+                        .push(Position { x, y });
+                }
+            }
         } else {
             // Nothing to do
         }
@@ -4309,6 +4340,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
             return true;
         } else {
             return true;
+        }
+    }
+
+    fn set_tile_empty(&mut self, pos: Position) {
+        if let Some(arr) = &mut self.chunk_tile_to_entity_into {
+            let x_in_chunk = pos.x.rem_euclid(i32::from(CHUNK_SIZE)) as usize;
+            let y_in_chunk = pos.y.rem_euclid(i32::from(CHUNK_SIZE)) as usize;
+            arr[x_in_chunk][y_in_chunk] = EMPTY;
+        } else {
+            // Nothing to do
         }
     }
 
@@ -4573,18 +4614,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
     #[cfg(feature = "client")]
     pub fn get_map_color(&self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Color32 {
         match self {
-            Self::Assembler { .. } => Color32::from_hex("#0086c9").unwrap(),
-            Self::PowerPole { .. } => Color32::from_hex("#eeee29").unwrap(),
-            Self::Belt { .. } => Color32::from_hex("#faba00").unwrap(),
-            Self::Inserter { .. } => Color32::from_hex("#006192").unwrap(),
-            Self::Underground { .. } => Color32::from_hex("#faba00").unwrap(),
-            Self::Splitter { .. } => Color32::from_hex("#faba00").unwrap(),
-            Self::Chest { .. } => Color32::from_hex("#ccd8cc").unwrap(),
-            Self::Roboport { .. } => Color32::from_hex("#4888e8").unwrap(),
-            Self::SolarPanel { .. } => Color32::from_hex("#1f2124").unwrap(),
-            Self::Lab { .. } => Color32::from_hex("#ff90bd").unwrap(),
-            Self::Beacon { .. } => Color32::from_hex("#008192").unwrap(),
-            Self::FluidTank { .. } => Color32::from_hex("#b429ff").unwrap(),
+            Self::Assembler { .. } => hex_color!("#0086c9"),
+            Self::PowerPole { .. } => hex_color!("#eeee29"),
+            Self::Belt { .. } => hex_color!("#faba00"),
+            Self::Inserter { .. } => hex_color!("#006192"),
+            Self::Underground { .. } => hex_color!("#faba00"),
+            Self::Splitter { .. } => hex_color!("#faba00"),
+            Self::Chest { .. } => hex_color!("#ccd8cc"),
+            Self::Roboport { .. } => hex_color!("#4888e8"),
+            Self::SolarPanel { .. } => hex_color!("#1f2124"),
+            Self::Lab { .. } => hex_color!("#ff90bd"),
+            Self::Beacon { .. } => hex_color!("#008192"),
+            Self::FluidTank { .. } => hex_color!("#b429ff"),
         }
     }
 

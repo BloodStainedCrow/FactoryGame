@@ -244,11 +244,11 @@ impl<I: PartialEq + Eq + Hash + Copy + Ord + Send + Sync, T: GetGridIndex<I>> Pe
     }
 
     pub fn get(&self, x: I, y: I) -> Option<&T> {
-        // if let Some(extent) = &self.extent {
-        //     if x < extent[0][0] || x > extent[0][1] || y < extent[1][0] || y > extent[1][1] {
-        //         return None;
-        //     }
-        // }
+        if let Some(extent) = &self.extent {
+            if x < extent[0][0] || x > extent[0][1] || y < extent[1][0] || y > extent[1][1] {
+                return None;
+            }
+        }
 
         let index = self.function.get(&(x, y));
 
