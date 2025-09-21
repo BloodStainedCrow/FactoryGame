@@ -1,6 +1,5 @@
 use std::{
     cmp::min,
-    marker::ConstParamTy,
     ops::{Deref, DerefMut},
 };
 

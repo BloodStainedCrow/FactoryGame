@@ -13,7 +13,7 @@ use crate::{
     storage_list::{SingleItemStorages, index_fake_union},
 };
 use log::{info, warn};
-use std::{cmp::min, iter};
+use std::cmp::min;
 
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;

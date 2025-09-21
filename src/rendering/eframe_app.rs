@@ -413,18 +413,10 @@ impl eframe::App for App {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         if let Some(state) = &self.currently_loaded_game {
             match &state.state {
-                LoadedGame::ItemU8RecipeU8(state) => {
-                    save(&state.state.lock(), &state.data_store.lock())
-                },
-                LoadedGame::ItemU8RecipeU16(state) => {
-                    save(&state.state.lock(), &state.data_store.lock())
-                },
-                LoadedGame::ItemU16RecipeU8(state) => {
-                    save(&state.state.lock(), &state.data_store.lock())
-                },
-                LoadedGame::ItemU16RecipeU16(state) => {
-                    save(&state.state.lock(), &state.data_store.lock())
-                },
+                LoadedGame::ItemU8RecipeU8(state) => save(&state.state, &state.data_store.lock()),
+                LoadedGame::ItemU8RecipeU16(state) => save(&state.state, &state.data_store.lock()),
+                LoadedGame::ItemU16RecipeU8(state) => save(&state.state, &state.data_store.lock()),
+                LoadedGame::ItemU16RecipeU16(state) => save(&state.state, &state.data_store.lock()),
             }
         }
     }
@@ -514,7 +506,9 @@ impl App {
                             size, cb,
                         )));
 
-                        let game_state = loaded_game_sized.state.lock();
+                        let simulation_state = loaded_game_sized.state.simulation_state.lock();
+                        let world = loaded_game_sized.state.world.lock();
+                        let aux_data = loaded_game_sized.state.aux_data.lock();
                         let state_machine = loaded_game_sized.state_machine.lock();
                         let data_store = loaded_game_sized.data_store.lock();
 
@@ -529,7 +523,15 @@ impl App {
 
                         self.last_rendered_update = tick;
 
-                        match render_ui(ctx, ui, state_machine, game_state, data_store) {
+                        match render_ui(
+                            ctx,
+                            ui,
+                            state_machine,
+                            simulation_state,
+                            world,
+                            aux_data,
+                            data_store,
+                        ) {
                             Ok(render_actions) => {
                                 for action in render_actions {
                                     loaded_game_sized
@@ -565,7 +567,7 @@ struct Callback<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     raw_renderer: RawRenderer,
     texture_atlas: Arc<TextureAtlas>,
     state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
-    game_state: Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
+    game_state: Arc<GameState<ItemIdxType, RecipeIdxType>>,
     data_store: Arc<Mutex<DataStore<ItemIdxType, RecipeIdxType>>>,
 }
 
@@ -586,13 +588,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> CallbackTrait
             ],
         );
 
-        let gamestate = self.game_state.lock();
-
+        let sim_state = self.game_state.simulation_state.lock();
+        let world = self.game_state.world.lock();
         let state_machine = self.state_machine.lock();
 
         render_world(
             &mut rend,
-            gamestate,
+            sim_state,
+            world,
             &self.texture_atlas,
             state_machine,
             &self.data_store.lock(),

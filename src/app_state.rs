@@ -2,17 +2,18 @@ use crate::belt::BeltTileId;
 use crate::belt::belt::Belt;
 use crate::chest::ChestSize;
 use crate::data::AllowedFluidDirection;
-use crate::frontend::world::tile::UndergroundDir;
+use crate::frontend::action::belt_placement::FakeGameState;
 use crate::inserter::HAND_SIZE;
-use crate::inserter::storage_storage_with_buckets::{InserterIdentifier, InserterId, LargeInserterState};
 use crate::inserter::storage_storage_with_buckets::{
-    BucketedStorageStorageInserterStore, BucketedStorageStorageInserterStoreFrontend
+    BucketedStorageStorageInserterStore, BucketedStorageStorageInserterStoreFrontend,
 };
-use crate::power::Watt;
-use std::mem;
+use crate::inserter::storage_storage_with_buckets::{
+    InserterId, InserterIdentifier, LargeInserterState,
+};
 use crate::item::ITEMCOUNTTYPE;
 use crate::liquid::FluidConnectionDir;
 use crate::liquid::connection_logic::can_fluid_tanks_connect_to_single_connection;
+use crate::power::Watt;
 #[cfg(feature = "client")]
 use crate::{Input, LoadedGame};
 use crate::{
@@ -62,6 +63,7 @@ use petgraph::graph::NodeIndex;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::collections::{BTreeMap, HashMap};
 use std::iter;
+use std::mem;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
@@ -79,13 +81,12 @@ use crate::frontend::action::place_tile::PositionInfo;
 
 use std::ops::AddAssign;
 
+use crate::get_size::Mutex;
+
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct GameState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+pub struct AuxillaryData {
     pub current_tick: u64,
-
-    pub world: World<ItemIdxType, RecipeIdxType>,
-    pub simulation_state: SimulationState<ItemIdxType, RecipeIdxType>,
 
     pub statistics: GenStatistics,
 
@@ -94,6 +95,15 @@ pub struct GameState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     last_update_time: Option<Instant>,
 
     pub settings: GameSettings,
+}
+
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct GameState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+    pub world: Mutex<World<ItemIdxType, RecipeIdxType>>,
+    pub simulation_state: Mutex<SimulationState<ItemIdxType, RecipeIdxType>>,
+
+    pub aux_data: Mutex<AuxillaryData>,
 }
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
@@ -118,15 +128,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     #[must_use]
     pub fn new(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         Self {
-            current_tick: 0,
-            world: World::default(),
-            simulation_state: SimulationState::new(data_store),
-            statistics: GenStatistics::new(data_store),
-            update_times: Timeline::new(false, data_store),
-            last_update_time: None,
-            settings: GameSettings {
-                show_unresearched_recipes: true,
-            },
+            world: Mutex::new(World::default()),
+            simulation_state: Mutex::new(SimulationState::new(data_store)),
+            aux_data: Mutex::new(AuxillaryData {
+                current_tick: 0,
+                statistics: GenStatistics::new(data_store),
+                update_times: Timeline::new(false, data_store),
+                last_update_time: None,
+                settings: GameSettings {
+                    show_unresearched_recipes: true,
+                },
+            }),
         }
     }
 
@@ -136,15 +148,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         Self {
-            current_tick: 0,
-            world: World::new_with_area(top_left, bottom_right),
-            simulation_state: SimulationState::new(data_store),
-            statistics: GenStatistics::new(data_store),
-            update_times: Timeline::new(false, data_store),
-            last_update_time: None,
-            settings: GameSettings {
-                show_unresearched_recipes: true,
-            },
+            world: Mutex::new(World::new_with_area(top_left, bottom_right)),
+            simulation_state: Mutex::new(SimulationState::new(data_store)),
+            aux_data: Mutex::new(AuxillaryData {
+                current_tick: 0,
+                statistics: GenStatistics::new(data_store),
+                update_times: Timeline::new(false, data_store),
+                last_update_time: None,
+                settings: GameSettings {
+                    show_unresearched_recipes: true,
+                },
+            }),
         }
     }
 
@@ -176,10 +190,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
                 current += 1;
 
-                if rand::random::<u16>() < u16::MAX / 100 {
-                    ret.update(data_store);
-                }
-
                 bp.apply(Position { x: x_pos, y: y_pos }, &mut ret, data_store);
             }
         }
@@ -195,7 +205,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     ) -> Self {
         let mut ret = GameState::new_with_world_area(
             Position { x: 0, y: 0 },
-            Position { x: 32000, y: 105000 },
+            Position {
+                x: 32000,
+                y: 105000,
+            },
             data_store,
         );
 
@@ -222,7 +235,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     ) -> Self {
         let mut ret = GameState::new_with_world_area(
             Position { x: 0, y: 0 },
-            Position { x: 32000, y: 105000 },
+            Position {
+                x: 32000,
+                y: 105000,
+            },
             data_store,
         );
 
@@ -247,10 +263,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             for x_pos in x_range.clone() {
                 progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
                 current += 1;
-
-                if rand::random::<u16>() < u16::MAX / 100 {
-                    ret.update(data_store);
-                }
 
                 bp.apply(Position { x: x_pos, y: y_pos }, &mut ret, data_store);
             }
@@ -297,9 +309,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 current += 1;
                 for y_pos in (1590..4000).step_by(40) {
                     for x_pos in (1590..4000).step_by(50) {
-                        while rand::random::<u16>() < u16::MAX / 200 {
-                            ret.update(data_store);
-                        }
                         bp.apply(
                             Position {
                                 x: x_start + x_pos,
@@ -344,10 +353,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             current += 1;
             for y_pos in (1590..6000).step_by(10) {
                 for x_pos in (1590..4000).step_by(60) {
-                    // if rand::random::<u16>() < 1 {
-                    //     ret.update(data_store);
-                    // }
-
                     bp.apply(
                         Position {
                             x: x_pos,
@@ -377,7 +382,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         puffin::set_scopes_on(false);
         for y_pos in (1600..60_000).step_by(3) {
-            ret.update(data_store);
             bp.apply(Position { x: 1600, y: y_pos }, &mut ret, data_store);
         }
         puffin::set_scopes_on(true);
@@ -392,7 +396,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     ) -> Self {
         let mut ret = GameState::new(data_store);
 
-        ret.add_solar_field(Position { x: 1600, y: 1600 }, Watt(3_500_000_000_000), progress, data_store);
+        ret.add_solar_field(
+            Position { x: 1600, y: 1600 },
+            Watt(3_500_000_000_000),
+            progress,
+            data_store,
+        );
 
         ret
     }
@@ -404,7 +413,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        
         let file = File::open("test_blueprints/solar_tile.bp").unwrap();
         let bp: Blueprint = ron::de::from_reader(file).unwrap();
         let bp = bp.get_reusable(false, data_store);
@@ -734,7 +742,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
             power_grids: PowerGridStorage::new(),
             belts: BeltStore::new(data_store),
             storage_storage_inserters: StorageStorageInserterStore::new(data_store),
-            belt_storage_inserters: vec![BTreeMap::new(); data_store.item_names.len()].into_boxed_slice(),
+            belt_storage_inserters: vec![BTreeMap::new(); data_store.item_names.len()]
+                .into_boxed_slice(),
             chests: FullChestStore {
                 stores: (0..data_store.item_display_names.len())
                     .map(|id| Item {
@@ -812,9 +821,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
         // dbg!(avg_len);
         // dbg!(total_num_storage_inserters);
 
-
         let update_timers = &self.belts.inner.belt_update_timers;
-        let sushi_splitters =&self.belts.inner.sushi_splitters;
+        let sushi_splitters = &self.belts.inner.sushi_splitters;
         rayon::scope(|scope| {
             {
                 // Update all the "Pure Belts"
@@ -861,9 +869,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                     format!("Item: {}", data_store.item_display_names[item_id])
                                         .as_str()
                                 );
-    
+
                                 let grid_size = grid_size(item, data_store);
-    
+
                                 {
                                     profiling::scope!("Update Belts", format!("Count: {}", belt_store.belts.len()));
                                     for (belt, ty) in
@@ -883,7 +891,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                 //         belt.update_inserters(item_storages, grid_size);
                                 //     }
                                 // }
-    
+
                                 {
                                     profiling::scope!("Update PurePure Inserters");
                                     for (
@@ -898,17 +906,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                             );
                                             // We are taking and placing onto the same belt
                                             let belt = &mut belt_store.belts[*source];
-    
+
                                             belt.get_two([(*source_pos).into(), (*dest_pos).into()]).map(|v| *v)
                                         } else {
                                             let [inp, out] = belt_store
                                                 .belts
                                                 .get_disjoint_mut([*source, *dest])
                                                 .unwrap();
-    
+
                                             [*inp.get(*source_pos), *out.get(*dest_pos)]
                                         };
-    
+
                                         if *cooldown == 0 {
                                             ins.update_instant(&mut source_loc,&mut  dest_loc);
                                         } else {
@@ -925,14 +933,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                                 },
                                             );
                                         }
-    
+
                                         {
                                             profiling::scope!("Update update_first_free_pos");
                                             if !source_loc {
                                                 let _: Option<_> = belt_store.belts[*source]
                                                     .remove_item(*source_pos);
                                             }
-    
+
                                             if dest_loc {
                                                 let _ = belt_store.belts[*dest]
                                                     .try_insert_item(*dest_pos, item);
@@ -941,21 +949,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                     }
                                 }
                             }
-    
+
                             {
                                 profiling::scope!(
                                     "StorageStorage Inserter Update",
                                     format!("Item: {}", data_store.item_display_names[item_id])
                                         .as_str()
                                 );
-    
+
                                 let item = Item {
                                     id: item_id.try_into().unwrap(),
                                 };
-    
+
                                 let grid_size = grid_size(item, data_store);
                                 let num_recipes = num_recipes(item, data_store);
-    
+
                                 for (frontend, ins_store) in
                                     storage_storage_inserter_stores.values_mut()
                                 {
@@ -966,17 +974,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                     ins_store.update(frontend, item_storages, grid_size, current_tick);
                                 }
                             }
-    
+
                             let pure_update_time = pure_update_start.elapsed();
-    
+
                             *avg_time =
                                 *avg_time + (pure_update_time.as_millis() as f32 - *avg_time) / 20.0;
                         })
                     );
             }
         });
-
-        
 
         {
             profiling::scope!("Sushi Belt Update");
@@ -1024,11 +1030,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     #[allow(clippy::too_many_lines)]
     #[profiling::function]
     pub fn apply_actions(
-        &mut self,
+        sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
+        world: &mut World<ItemIdxType, RecipeIdxType>,
         actions: impl IntoIterator<Item = impl Borrow<ActionType<ItemIdxType, RecipeIdxType>>>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        // let num_assemblers = self
+        let mut fake_game_state = FakeGameState {
+            simulation_state: sim_state,
+            world: world,
+        };
+        let game_state = &mut fake_game_state;
+
+        // let num_assemblers = game_state
         //     .world
         //     .get_chunks()
         //     .into_iter()
@@ -1045,18 +1058,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             // FIXME: I just clone for now
             match action.borrow().clone() {
                 ActionType::SetActiveResearch { tech } => {
-                    self.simulation_state.tech_state.current_technology = tech;
+                    game_state.simulation_state.tech_state.current_technology = tech;
                 },
 
                 ActionType::CheatUnlockTechnology { tech } => {
-                    if self.simulation_state.tech_state.current_technology == Some(tech) {
-                        self.simulation_state.tech_state.current_technology = None;
+                    if game_state.simulation_state.tech_state.current_technology == Some(tech) {
+                        game_state.simulation_state.tech_state.current_technology = None;
                     }
-                    self.simulation_state
+                    game_state
+                        .simulation_state
                         .tech_state
                         .in_progress_technologies
                         .remove(&tech);
-                    self.simulation_state
+                    game_state
+                        .simulation_state
                         .tech_state
                         .finished_technologies
                         .insert(tech);
@@ -1067,20 +1082,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         .effect
                         .unlocked_recipes
                     {
-                        self.simulation_state.tech_state.recipe_active[recipe.into_usize()] = true;
+                        game_state.simulation_state.tech_state.recipe_active[recipe.into_usize()] =
+                            true;
                     }
                 },
 
                 ActionType::CheatRelockTechnology { tech } => {
-                    self.simulation_state
+                    game_state
+                        .simulation_state
                         .tech_state
                         .finished_technologies
                         .remove(&tech);
 
-                    for recipe in &mut self.simulation_state.tech_state.recipe_active {
+                    for recipe in &mut game_state.simulation_state.tech_state.recipe_active {
                         *recipe = false;
                     }
-                    for recipe in self
+                    for recipe in game_state
                         .simulation_state
                         .tech_state
                         .finished_technologies
@@ -1095,7 +1112,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 .iter()
                         })
                     {
-                        self.simulation_state.tech_state.recipe_active[recipe.into_usize()] = true;
+                        game_state.simulation_state.tech_state.recipe_active[recipe.into_usize()] =
+                            true;
                     }
                 },
 
@@ -1112,7 +1130,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         PositionInfo::Rect { pos, width, height } => {
                             for x in pos.x..(pos.x + i32::try_from(width).unwrap()) {
                                 for y in pos.y..(pos.y + i32::try_from(height).unwrap()) {
-                                    self.world.set_floor_tile(
+                                    game_state.world.set_floor_tile(
                                         Position { x, y },
                                         place_floor_tile_by_hand_info.ghost_info.tile,
                                     );
@@ -1120,12 +1138,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             }
                         },
                         PositionInfo::Single { pos } => {
-                            self.world
+                            game_state
+                                .world
                                 .set_floor_tile(pos, place_floor_tile_by_hand_info.ghost_info.tile);
                         },
                         PositionInfo::List { positions } => {
                             for pos in positions {
-                                self.world.set_floor_tile(
+                                game_state.world.set_floor_tile(
                                     pos,
                                     place_floor_tile_by_hand_info.ghost_info.tile,
                                 );
@@ -1134,7 +1153,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     }
                 },
                 ActionType::SetChestSlotLimit { pos, num_slots } => {
-                    self.world
+                    game_state
+                        .world
                         .get_entity_at_mut(pos, data_store)
                         .map(|e| match e {
                             Entity::Chest {
@@ -1144,14 +1164,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 slot_limit,
                             } => {
                                 if let Some((item, index)) = item {
-                                    let removed_items = self.simulation_state.factory.chests.stores
-                                        [usize_from(item.id)]
-                                    .change_chest_size(
-                                        *index,
-                                        data_store.item_stack_sizes[usize_from(item.id)]
-                                            as ChestSize
-                                            * ChestSize::from(num_slots),
-                                    );
+                                    let removed_items =
+                                        game_state.simulation_state.factory.chests.stores
+                                            [usize_from(item.id)]
+                                        .change_chest_size(
+                                            *index,
+                                            data_store.item_stack_sizes[usize_from(item.id)]
+                                                as ChestSize
+                                                * ChestSize::from(num_slots),
+                                        );
                                 }
                                 *slot_limit = num_slots;
                             },
@@ -1161,7 +1182,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         });
                 },
                 ActionType::OverrideInserterMovetime { pos, new_movetime } => {
-                    self.world
+                    game_state
+                        .world
                         .get_entity_at_mut(pos, data_store)
                         .map(|e| match e {
                             Entity::Inserter {
@@ -1189,7 +1211,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                 .unwrap_or(*type_movetime);
 
                                             if old_movetime != new_movetime {
-                                                let new_id = self
+                                                let new_id = game_state
                                                     .simulation_state
                                                     .factory
                                                     .storage_storage_inserters
@@ -1225,9 +1247,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     y: pos.y + y as i32,
                                 };
 
-                                self.world.remove_entity_at(
+                                game_state.world.remove_entity_at(
                                     position,
-                                    &mut self.simulation_state,
+                                    &mut game_state.simulation_state,
                                     data_store,
                                 );
                             }
@@ -1244,22 +1266,27 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             } => {
                                 info!("Trying to place assembler at {pos:?}");
                                 let size = data_store.assembler_info[ty as usize].size(rotation);
-                                if !self.world.can_fit(pos, size, data_store) {
+                                if !game_state.world.can_fit(pos, size, data_store) {
                                     warn!("Tried to place assembler where it does not fit");
                                     continue;
                                 }
 
-                                let powered_by = self.world.is_powered_by(
-                                    &self.simulation_state,
+                                let powered_by = game_state.world.is_powered_by(
+                                    &game_state.simulation_state,
                                     pos,
                                     size,
                                     data_store,
                                 );
 
-                                let modules  = vec![None; data_store.assembler_info[usize::from(ty)].num_module_slots as usize].into_boxed_slice();
+                                let modules = vec![
+                                    None;
+                                    data_store.assembler_info[usize::from(ty)].num_module_slots
+                                        as usize
+                                ]
+                                .into_boxed_slice();
 
                                 if let Some(pole_position) = powered_by {
-                                    self.world.add_entity(
+                                    game_state.world.add_entity(
                                         crate::frontend::world::tile::Entity::Assembler {
                                             ty,
                                             pos,
@@ -1267,11 +1294,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             modules,
                                             rotation,
                                         },
-                                        &mut self.simulation_state,
+                                        &mut game_state.simulation_state,
                                         data_store,
                                     );
                                 } else {
-                                    self.world.add_entity(
+                                    game_state.world.add_entity(
                                         crate::frontend::world::tile::Entity::Assembler {
                                             ty,
                                             pos,
@@ -1279,7 +1306,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             modules,
                                             rotation,
                                         },
-                                        &mut self.simulation_state,
+                                        &mut game_state.simulation_state,
                                         data_store,
                                     );
                                 }
@@ -1290,7 +1317,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 filter,
                             } => {
                                 // TODO: Add ty
-                                let ret = self.add_inserter(0, pos, dir, filter, data_store);
+                                let ret = Self::add_inserter(
+                                    &mut game_state.world,
+                                    &mut game_state.simulation_state,
+                                    0,
+                                    pos,
+                                    dir,
+                                    filter,
+                                    data_store,
+                                );
                                 trace!("{:?}", ret);
                             },
                             crate::frontend::world::tile::PlaceEntityType::Belt {
@@ -1298,14 +1333,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 direction,
                                 ty,
                             } => {
-                                if !self.world.can_fit(pos, (1, 1), data_store) {
+                                if !game_state.world.can_fit(pos, (1, 1), data_store) {
                                     warn!("Tried to place belt where it does not fit");
                                     continue;
                                 }
 
-                                handle_belt_placement(self, pos, direction, ty, data_store);
+                                handle_belt_placement(game_state, pos, direction, ty, data_store);
 
-                                self.update_inserters(
+                                Self::update_inserters(
+                                    game_state.world,
+                                    game_state.simulation_state,
                                     InserterUpdateInfo::NewBelt { pos },
                                     data_store,
                                 );
@@ -1316,13 +1353,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 ty,
                                 underground_dir,
                             } => {
-                                if !self.world.can_fit(pos, (1, 1), data_store) {
+                                if !game_state.world.can_fit(pos, (1, 1), data_store) {
                                     warn!("Tried to place underground_belt where it does not fit");
                                     continue;
                                 }
 
                                 handle_underground_belt_placement(
-                                    self,
+                                    game_state,
                                     pos,
                                     direction,
                                     ty,
@@ -1330,7 +1367,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     data_store,
                                 );
 
-                                self.update_inserters(
+                                GameState::update_inserters(
+                                    game_state.world,
+                                    game_state.simulation_state,
                                     InserterUpdateInfo::NewBelt { pos },
                                     data_store,
                                 );
@@ -1340,7 +1379,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 ty,
                             } => {
                                 // Check if the powerpole fits
-                                if !self.world.can_fit(
+                                if !game_state.world.can_fit(
                                     pole_pos,
                                     data_store.power_pole_data[usize::from(ty)].size,
                                     data_store,
@@ -1350,7 +1389,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 }
 
                                 // Check which poles are in range to connect to
-                                let connection_candidates: Vec<_> = self
+                                let connection_candidates: Vec<_> = game_state
                                     .world
                                     .get_power_poles_which_could_connect_to_pole_at(
                                         pole_pos,
@@ -1363,7 +1402,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     .map(|e| e.get_pos())
                                     .collect();
 
-                                match self.simulation_state.factory.power_grids.add_pole(
+                                match game_state.simulation_state.factory.power_grids.add_pole(
                                     pole_pos,
                                     connection_candidates.iter().copied(),
                                     data_store,
@@ -1372,7 +1411,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         // Handle storage updates
                                         for storage_update in storage_updates {
                                             let mut entity_size = None;
-                                            self.world.get_entity_at_mut(storage_update.position, data_store).map(|e| {
+                                            game_state.world.get_entity_at_mut(storage_update.position, data_store).map(|e| {
                                         match (e, storage_update.new_pg_entity.clone()) {
                                             (Entity::Assembler { ty, pos: _, info: AssemblerInfo::Powered { id, pole_position: _, weak_index }, modules: _, rotation }, crate::power::power_grid::PowerGridEntity::Assembler { ty: _, recipe, index }) => {
                                                 entity_size = Some(data_store.assembler_info[usize::from(*ty)].size(*rotation));
@@ -1400,7 +1439,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             let inserter_range =
                                                 data_store.max_inserter_search_range;
 
-                                            self.world.mutate_entities_colliding_with(
+                                            game_state.world.mutate_entities_colliding_with(
                                         Position {
                                             x: storage_update.position.x
                                                 - i32::from(inserter_range),
@@ -1443,8 +1482,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
-                                                                    }.translate(self.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), data_store);
-                                                                    self.simulation_state.factory.belts.update_belt_storage_inserter_src(*id, *belt_pos, self.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), new_storage, data_store);
+                                                                    }.translate(game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), data_store);
+                                                                    game_state.simulation_state.factory.belts.update_belt_storage_inserter_src(*id, *belt_pos, game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), new_storage, data_store);
                                                                 },
                                                                 AttachedInserter::BeltBelt { .. } => {
                                                                     unreachable!("A BeltBelt inserter should not be pointing at a machine")
@@ -1461,7 +1500,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                                                                     let movetime = user_movetime.map(|v| v.into()).unwrap_or(*type_movetime);
 
-                                                                    let new_id = self.simulation_state.factory.storage_storage_inserters.update_inserter_src(*item, movetime.into(), *inserter, new_storage, data_store);
+                                                                    let new_id = game_state.simulation_state.factory.storage_storage_inserters.update_inserter_src(*item, movetime.into(), *inserter, new_storage, data_store);
 
                                                                     *inserter = new_id;
                                                                 },
@@ -1481,8 +1520,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
-                                                                    }.translate(self.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), data_store);
-                                                                    self.simulation_state.factory.belts.update_belt_storage_inserter_dest(*id, *belt_pos, self.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), new_storage, data_store);
+                                                                    }.translate(game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), data_store);
+                                                                    game_state.simulation_state.factory.belts.update_belt_storage_inserter_dest(*id, *belt_pos, game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), new_storage, data_store);
                                                                 },
                                                                 AttachedInserter::BeltBelt { item, inserter } => {
                                                                     unreachable!("A BeltBelt inserter should not be pointing at a machine")
@@ -1498,7 +1537,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                     }.translate(*item, data_store);
                                                                     let movetime = user_movetime.map(|v| v.into()).unwrap_or(*type_movetime);
 
-                                                                    let new_id = self.simulation_state.factory.storage_storage_inserters.update_inserter_dest(*item, movetime.into(), *inserter, new_storage, data_store);
+                                                                    let new_id = game_state.simulation_state.factory.storage_storage_inserters.update_inserter_dest(*item, movetime.into(), *inserter, new_storage, data_store);
 
                                                                     *inserter = new_id;
                                                                 },
@@ -1507,7 +1546,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                     },
                                                 },
                                                 Entity::FluidTank { ty, pos, rotation } => {
-                                                    let id = self.simulation_state.factory.fluid_store.fluid_box_pos_to_network_id[pos];
+                                                    let id = game_state.simulation_state.factory.fluid_store.fluid_box_pos_to_network_id[pos];
                                                     if let Some(fluid) = id.fluid {
 
                                                         let new_storage = match storage_update.new_pg_entity {
@@ -1518,7 +1557,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                             crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                             crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
                                                         }.translate(fluid, data_store);
-                                                        self.simulation_state.factory.fluid_store.update_fluid_conn_if_needed(*pos, storage_update.position, e_size.into(), new_storage, &mut self.simulation_state.factory.storage_storage_inserters, data_store);
+                                                        game_state.simulation_state.factory.fluid_store.update_fluid_conn_if_needed(*pos, storage_update.position, e_size.into(), new_storage, &mut game_state.simulation_state.factory.storage_storage_inserters, data_store);
                                                     }
                                                 },
 
@@ -1536,7 +1575,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                                 #[cfg(debug_assertions)]
                                 {
-                                    let affected_grids_and_potential_match = self
+                                    let affected_grids_and_potential_match = game_state
                                         .simulation_state
                                         .factory
                                         .power_grids
@@ -1559,19 +1598,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 }
 
                                 // Add the powerpole entity to the correct chunk
-                                self.world.add_entity(
+                                game_state.world.add_entity(
                                     Entity::PowerPole {
                                         ty,
                                         pos: pole_pos,
                                         connected_power_poles: connection_candidates,
                                     },
-                                    &mut self.simulation_state,
+                                    &mut game_state.simulation_state,
                                     data_store,
                                 );
 
                                 #[cfg(debug_assertions)]
                                 {
-                                    let affected_grids_and_potential_match = self
+                                    let affected_grids_and_potential_match = game_state
                                         .simulation_state
                                         .factory
                                         .power_grids
@@ -1607,16 +1646,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     Dir::South => (splitter_pos + Dir::East, splitter_pos),
                                     Dir::West => (splitter_pos + Dir::South, splitter_pos),
                                 };
-                                let self_positions = [left_pos, right_pos];
-                                if self_positions
+                                let game_state_positions = [left_pos, right_pos];
+                                if game_state_positions
                                     .into_iter()
-                                    .any(|pos| !self.world.can_fit(pos, (1, 1), data_store))
+                                    .any(|pos| !game_state.world.can_fit(pos, (1, 1), data_store))
                                 {
                                     warn!("Tried to place splitter where it does not fit");
                                     continue;
                                 }
                                 let splitter = handle_splitter_placement(
-                                    self,
+                                    game_state.world,
+                                    game_state.simulation_state,
                                     splitter_pos,
                                     splitter_direction,
                                     ty,
@@ -1627,7 +1667,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             },
                             crate::frontend::world::tile::PlaceEntityType::Chest { pos, ty } => {
                                 info!("Trying to place chest at {pos:?}");
-                                if !self.world.can_fit(
+                                if !game_state.world.can_fit(
                                     pos,
                                     data_store.chest_tile_sizes[usize::from(ty)],
                                     data_store,
@@ -1636,14 +1676,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     continue;
                                 }
 
-                                self.world.add_entity(
+                                game_state.world.add_entity(
                                     Entity::Chest {
                                         ty,
                                         pos,
                                         item: None,
                                         slot_limit: data_store.chest_num_slots[usize::from(ty)],
                                     },
-                                    &mut self.simulation_state,
+                                    &mut game_state.simulation_state,
                                     data_store,
                                 );
                             },
@@ -1655,28 +1695,30 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 let size = data_store.solar_panel_info[usize::from(ty)].size;
                                 let size = size.into();
 
-                                if !self.world.can_fit(pos, size, data_store) {
+                                if !game_state.world.can_fit(pos, size, data_store) {
                                     warn!("Tried to place solar_panel where it does not fit");
                                     continue;
                                 }
 
-                                let powered_by = self.world.is_powered_by(
-                                    &self.simulation_state,
+                                let powered_by = game_state.world.is_powered_by(
+                                    &game_state.simulation_state,
                                     pos,
                                     size,
                                     data_store,
                                 );
 
                                 let powered_by = if let Some(pole_pos) = powered_by {
-                                    let grid = self
+                                    let grid = game_state
                                         .simulation_state
                                         .factory
                                         .power_grids
                                         .pole_pos_to_grid_id[&pole_pos];
 
-                                    let grid =
-                                        &mut self.simulation_state.factory.power_grids.power_grids
-                                            [usize::from(grid)];
+                                    let grid = &mut game_state
+                                        .simulation_state
+                                        .factory
+                                        .power_grids
+                                        .power_grids[usize::from(grid)];
 
                                     let weak_idx =
                                         grid.add_solar_panel(pos, ty, pole_pos, data_store);
@@ -1686,19 +1728,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     None
                                 };
 
-                                self.world.add_entity(
+                                game_state.world.add_entity(
                                     Entity::SolarPanel {
                                         pos,
                                         ty,
                                         pole_position: powered_by,
                                     },
-                                    &mut self.simulation_state,
+                                    &mut game_state.simulation_state,
                                     data_store,
                                 );
                             },
                             crate::frontend::world::tile::PlaceEntityType::Lab { pos, ty } => {
                                 info!("Trying to place lab at {pos:?}");
-                                if !self.world.can_fit(
+                                if !game_state.world.can_fit(
                                     pos,
                                     data_store.lab_info[usize::from(ty)].size,
                                     data_store,
@@ -1707,25 +1749,32 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     continue;
                                 }
 
-                                let modules = vec![None; data_store.lab_info[usize::from(ty)].num_module_slots as usize].into_boxed_slice();
+                                let modules = vec![
+                                    None;
+                                    data_store.lab_info[usize::from(ty)].num_module_slots
+                                        as usize
+                                ]
+                                .into_boxed_slice();
 
-                                let powered_by = self.world.is_powered_by(
-                                    &self.simulation_state,
+                                let powered_by = game_state.world.is_powered_by(
+                                    &game_state.simulation_state,
                                     pos,
                                     data_store.lab_info[usize::from(ty)].size,
                                     data_store,
                                 );
 
                                 let powered_by = if let Some(pole_pos) = powered_by {
-                                    let grid = self
+                                    let grid = game_state
                                         .simulation_state
                                         .factory
                                         .power_grids
                                         .pole_pos_to_grid_id[&pole_pos];
 
-                                    let grid =
-                                        &mut self.simulation_state.factory.power_grids.power_grids
-                                            [usize::from(grid)];
+                                    let grid = &mut game_state
+                                        .simulation_state
+                                        .factory
+                                        .power_grids
+                                        .power_grids[usize::from(grid)];
 
                                     let weak_idx =
                                         grid.add_lab(pos, ty, &*modules, pole_pos, data_store);
@@ -1735,14 +1784,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     None
                                 };
 
-                                self.world.add_entity(
+                                game_state.world.add_entity(
                                     Entity::Lab {
                                         pos,
                                         ty,
                                         modules,
                                         pole_position: powered_by,
                                     },
-                                    &mut self.simulation_state,
+                                    &mut game_state.simulation_state,
                                     data_store,
                                 );
                             },
@@ -1750,19 +1799,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 info!("Trying to place beacon at {pos:?}");
                                 let size = data_store.beacon_info[usize::from(ty)].size;
 
-                                if !self.world.can_fit(pos, size, data_store) {
+                                if !game_state.world.can_fit(pos, size, data_store) {
                                     warn!("Tried to place beacon where it does not fit");
                                     continue;
                                 }
 
-                                let modules = Box::new([
+                                let modules = Box::new(
+                                    [
                                 // TODO: Do not add modules immediately
                                 Some(0);
                                 8
-                            ]);
+                            ],
+                                );
 
-                                let powered_by = self.world.is_powered_by(
-                                    &self.simulation_state,
+                                let powered_by = game_state.world.is_powered_by(
+                                    &game_state.simulation_state,
                                     pos,
                                     data_store.beacon_info[usize::from(ty)].size,
                                     data_store,
@@ -1770,7 +1821,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                                 let powered_by = if let Some(pole_pos) = powered_by {
                                     let weak_idx =
-                                        self.simulation_state.factory.power_grids.add_beacon(
+                                        game_state.simulation_state.factory.power_grids.add_beacon(
                                             ty,
                                             pos,
                                             pole_pos,
@@ -1784,14 +1835,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     None
                                 };
 
-                                self.world.add_entity(
+                                game_state.world.add_entity(
                                     Entity::Beacon {
                                         pos,
                                         ty,
                                         modules,
                                         pole_position: powered_by,
                                     },
-                                    &mut self.simulation_state,
+                                    &mut game_state.simulation_state,
                                     data_store,
                                 );
                             },
@@ -1802,7 +1853,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             } => {
                                 let size = data_store.fluid_tank_infos[usize::from(ty)].size;
                                 // FIXME: Stop ignoring rotation
-                                if !self.world.can_fit(pos, size.into(), data_store) {
+                                if !game_state.world.can_fit(pos, size.into(), data_store) {
                                     warn!("Tried to place storage tank where it does not fit");
                                     continue;
                                 }
@@ -1811,7 +1862,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     data_store.fluid_tank_infos[usize::from(ty)].max_search_range;
 
                                 // Get connecting entities:
-                                let connecting_fluid_box_positions: Vec<_> = self
+                                let connecting_fluid_box_positions: Vec<_> = game_state
                                     .world
                                     .get_entities_colliding_with(
                                         Position {
@@ -1860,154 +1911,155 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     })
                                     .collect();
 
-                                let in_out_connections =
-                                    self.world
-                                        .get_entities_colliding_with(
-                                            Position {
-                                                x: pos.x - 1,
-                                                y: pos.y - 1,
-                                            },
-                                            (size[0] + 2, size[1] + 2),
-                                            data_store,
-                                        )
-                                        .into_iter()
-                                        .filter_map(|e| match e {
-                                            Entity::Assembler {
-                                                ty: assembler_ty,
-                                                pos: assembler_pos,
-                                                info:
-                                                    AssemblerInfo::Powered {
-                                                        id,
-                                                        pole_position,
-                                                        weak_index,
-                                                    },
-                                                rotation: assembler_rotation,
-                                                ..
-                                            } => {
-                                                let assembler_size = data_store.assembler_info
-                                                    [usize::from(*assembler_ty)]
-                                                .size(*assembler_rotation);
-                                                let assembler_size =
-                                                    [assembler_size.0, assembler_size.1];
+                                let in_out_connections = game_state
+                                    .world
+                                    .get_entities_colliding_with(
+                                        Position {
+                                            x: pos.x - 1,
+                                            y: pos.y - 1,
+                                        },
+                                        (size[0] + 2, size[1] + 2),
+                                        data_store,
+                                    )
+                                    .into_iter()
+                                    .filter_map(|e| match e {
+                                        Entity::Assembler {
+                                            ty: assembler_ty,
+                                            pos: assembler_pos,
+                                            info:
+                                                AssemblerInfo::Powered {
+                                                    id,
+                                                    pole_position,
+                                                    weak_index,
+                                                },
+                                            rotation: assembler_rotation,
+                                            ..
+                                        } => {
+                                            let assembler_size = data_store.assembler_info
+                                                [usize::from(*assembler_ty)]
+                                            .size(*assembler_rotation);
+                                            let assembler_size =
+                                                [assembler_size.0, assembler_size.1];
 
-                                                let recipe_fluid_inputs: Vec<_> = data_store
-                                                    .recipe_to_items[&id.recipe]
-                                                    .iter()
-                                                    .filter_map(|(dir, item)| {
-                                                        (*dir == ItemRecipeDir::Ing
-                                                            && data_store.item_is_fluid
-                                                                [item.into_usize()])
-                                                        .then_some(*item)
-                                                    })
-                                                    .collect();
-                                                let recipe_fluid_outputs: Vec<_> = data_store
-                                                    .recipe_to_items[&id.recipe]
-                                                    .iter()
-                                                    .filter_map(|(dir, item)| {
-                                                        (*dir == ItemRecipeDir::Out
-                                                            && data_store.item_is_fluid
-                                                                [item.into_usize()])
-                                                        .then_some(*item)
-                                                    })
-                                                    .collect();
-
-                                                let fluid_pure_outputs: Vec<_> = data_store
-                                                    .assembler_info[usize::from(*assembler_ty)]
-                                                .fluid_connections
+                                            let recipe_fluid_inputs: Vec<_> = data_store
+                                                .recipe_to_items[&id.recipe]
                                                 .iter()
-                                                .filter(|(_conn, allowed)| {
-                                                    *allowed
-                                                        == AllowedFluidDirection::Single(
-                                                            ItemRecipeDir::Out,
-                                                        )
-                                                        || matches!(
-                                                            *allowed,
-                                                            AllowedFluidDirection::Both { .. }
-                                                        )
+                                                .filter_map(|(dir, item)| {
+                                                    (*dir == ItemRecipeDir::Ing
+                                                        && data_store.item_is_fluid
+                                                            [item.into_usize()])
+                                                    .then_some(*item)
+                                                })
+                                                .collect();
+                                            let recipe_fluid_outputs: Vec<_> = data_store
+                                                .recipe_to_items[&id.recipe]
+                                                .iter()
+                                                .filter_map(|(dir, item)| {
+                                                    (*dir == ItemRecipeDir::Out
+                                                        && data_store.item_is_fluid
+                                                            [item.into_usize()])
+                                                    .then_some(*item)
                                                 })
                                                 .collect();
 
-                                                let fluid_pure_inputs: Vec<_> = data_store
-                                                    .assembler_info[usize::from(*assembler_ty)]
-                                                .fluid_connections
-                                                .iter()
-                                                .filter(|(_conn, allowed)| {
-                                                    *allowed
-                                                        == AllowedFluidDirection::Single(
-                                                            ItemRecipeDir::Ing,
-                                                        )
-                                                        || matches!(
-                                                            *allowed,
-                                                            AllowedFluidDirection::Both { .. }
-                                                        )
-                                                })
-                                                .collect();
+                                            let fluid_pure_outputs: Vec<_> = data_store
+                                                .assembler_info[usize::from(*assembler_ty)]
+                                            .fluid_connections
+                                            .iter()
+                                            .filter(|(_conn, allowed)| {
+                                                *allowed
+                                                    == AllowedFluidDirection::Single(
+                                                        ItemRecipeDir::Out,
+                                                    )
+                                                    || matches!(
+                                                        *allowed,
+                                                        AllowedFluidDirection::Both { .. }
+                                                    )
+                                            })
+                                            .collect();
 
-                                                // FIXME: FINISH IMPLEMENTING THIS
+                                            let fluid_pure_inputs: Vec<_> = data_store
+                                                .assembler_info[usize::from(*assembler_ty)]
+                                            .fluid_connections
+                                            .iter()
+                                            .filter(|(_conn, allowed)| {
+                                                *allowed
+                                                    == AllowedFluidDirection::Single(
+                                                        ItemRecipeDir::Ing,
+                                                    )
+                                                    || matches!(
+                                                        *allowed,
+                                                        AllowedFluidDirection::Both { .. }
+                                                    )
+                                            })
+                                            .collect();
 
-                                                let all_connections_with_items =
-                                                    recipe_fluid_inputs
+                                            // FIXME: FINISH IMPLEMENTING THIS
+
+                                            let all_connections_with_items = recipe_fluid_inputs
+                                                .into_iter()
+                                                .cycle()
+                                                .zip(fluid_pure_inputs)
+                                                .zip(iter::repeat(FluidConnectionDir::Output))
+                                                .chain(
+                                                    recipe_fluid_outputs
                                                         .into_iter()
                                                         .cycle()
-                                                        .zip(fluid_pure_inputs)
+                                                        .zip(fluid_pure_outputs)
                                                         .zip(iter::repeat(
-                                                            FluidConnectionDir::Output,
-                                                        ))
-                                                        .chain(
-                                                            recipe_fluid_outputs
-                                                                .into_iter()
-                                                                .cycle()
-                                                                .zip(fluid_pure_outputs)
-                                                                .zip(iter::repeat(
-                                                                    FluidConnectionDir::Input,
-                                                                )),
-                                                        );
+                                                            FluidConnectionDir::Input,
+                                                        )),
+                                                );
 
-                                                Some(all_connections_with_items.filter_map(
-                                            move |((item, (fluid_conn, _allowed)), fluid_dir)| {
-                                                can_fluid_tanks_connect_to_single_connection(
-                                                    pos,
-                                                    ty,
-                                                    rotation,
-                                                    *assembler_pos,
-                                                    *fluid_conn,
-                                                    *assembler_rotation,
-                                                    assembler_size,
-                                                    data_store,
-                                                )
-                                                .map(|(dest_conn, dest_conn_dir)| {
-                                                    (
-                                                        fluid_dir,
-                                                        item,
-                                                        Storage::Assembler {
-                                                            grid: id.grid,
-                                                            index: id.assembler_index,
-                                                            recipe_idx_with_this_item: data_store
-                                                                .recipe_to_translated_index
-                                                                [&(id.recipe, item)],
-                                                        },
-                                                        dest_conn,
-                                                        Box::new(|_weak_index: WeakIndex| {})
-                                                            as Box<dyn FnOnce(WeakIndex) -> ()>,
+                                            Some(all_connections_with_items.filter_map(
+                                                move |(
+                                                    (item, (fluid_conn, _allowed)),
+                                                    fluid_dir,
+                                                )| {
+                                                    can_fluid_tanks_connect_to_single_connection(
+                                                        pos,
+                                                        ty,
+                                                        rotation,
+                                                        *assembler_pos,
+                                                        *fluid_conn,
+                                                        *assembler_rotation,
+                                                        assembler_size,
+                                                        data_store,
                                                     )
-                                                })
-                                            },
-                                        ))
-                                            },
-                                            Entity::Lab {
-                                                pos,
-                                                ty,
-                                                modules,
-                                                pole_position,
-                                            } => {
-                                                // TODO: Do I want to support fluid science? Would be really easy
-                                                None
-                                            },
+                                                    .map(|(dest_conn, dest_conn_dir)| {
+                                                        (
+                                                            fluid_dir,
+                                                            item,
+                                                            Storage::Assembler {
+                                                                grid: id.grid,
+                                                                index: id.assembler_index,
+                                                                recipe_idx_with_this_item:
+                                                                    data_store
+                                                                        .recipe_to_translated_index
+                                                                        [&(id.recipe, item)],
+                                                            },
+                                                            dest_conn,
+                                                            Box::new(|_weak_index: WeakIndex| {})
+                                                                as Box<dyn FnOnce(WeakIndex) -> ()>,
+                                                        )
+                                                    })
+                                                },
+                                            ))
+                                        },
+                                        Entity::Lab {
+                                            pos,
+                                            ty,
+                                            modules,
+                                            pole_position,
+                                        } => {
+                                            // TODO: Do I want to support fluid science? Would be really easy
+                                            None
+                                        },
 
-                                            // TODO: There are some future entities which might need connections like mining drills
-                                            _ => None,
-                                        })
-                                        .flatten();
+                                        // TODO: There are some future entities which might need connections like mining drills
+                                        _ => None,
+                                    })
+                                    .flatten();
 
                                 // TODO: Only keep the closest connection for each connection
                                 // connecting_fluid_box_positions.retain(
@@ -2019,7 +2071,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 //                 return true;
                                 //             }
 
-                                //             if let Some(e) = self
+                                //             if let Some(e) = game_state
                                 //                 .world
                                 //                 .get_entities_colliding_with(
                                 //                     current_pos,
@@ -2069,14 +2121,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                                 // TODO: Check if us connecting might break any already existing connections
 
-                                let ret =
-                                    self.simulation_state.factory.fluid_store.try_add_fluid_box(
+                                let ret = game_state
+                                    .simulation_state
+                                    .factory
+                                    .fluid_store
+                                    .try_add_fluid_box(
                                         pos,
                                         data_store.fluid_tank_infos[usize::from(ty)].capacity,
                                         connecting_fluid_box_positions.iter().map(|v| v.0),
                                         in_out_connections,
-                                        &mut self.simulation_state.factory.chests,
-                                        &mut self
+                                        &mut game_state.simulation_state.factory.chests,
+                                        &mut game_state
                                             .simulation_state
                                             .factory
                                             .storage_storage_inserters,
@@ -2084,9 +2139,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     );
                                 match ret {
                                     Ok(id) => {
-                                        self.world.add_entity(
+                                        game_state.world.add_entity(
                                             Entity::FluidTank { pos, ty, rotation },
-                                            &mut self.simulation_state,
+                                            &mut game_state.simulation_state,
                                             data_store,
                                         );
                                     },
@@ -2113,8 +2168,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     }
                 },
                 ActionType::Position(id, pos) => {
-                    self.world.players[usize::from(id)].visible = true;
-                    self.world.players[usize::from(id)].pos = pos;
+                    game_state.world.players[usize::from(id)].visible = true;
+                    game_state.world.players[usize::from(id)].pos = pos;
                 },
                 ActionType::Ping(Position { x, y }) => {
                     // Do nothing for now
@@ -2126,190 +2181,211 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     recipe,
                 }) => {
                     let Some(Entity::Assembler { .. }) =
-                        self.world.get_entity_at(assembler_pos, data_store)
+                        game_state.world.get_entity_at(assembler_pos, data_store)
                     else {
                         warn!("Tried to set recipe on non assembler");
                         continue;
                     };
 
-                    self.world.change_assembler_recipe(
-                        &mut self.simulation_state,
+                    game_state.world.change_assembler_recipe(
+                        &mut game_state.simulation_state,
                         assembler_pos,
                         recipe,
                         data_store,
                     );
                 },
                 ActionType::Remove(pos) => {
-                    self.world
-                        .remove_entity_at(pos, &mut self.simulation_state, data_store);
+                    game_state.world.remove_entity_at(
+                        pos,
+                        &mut game_state.simulation_state,
+                        data_store,
+                    );
                 },
                 ActionType::AddModules {
                     pos,
                     modules: new_modules,
                 } => {
-                    self.world.get_entity_at_mut(pos, data_store).map(|e| {
-                        match e {
-                            Entity::Assembler { modules, info, .. } => {
-                                let num_free_module_slots =
-                                    modules.iter().filter(|slot| slot.is_none()).count();
+                    game_state
+                        .world
+                        .get_entity_at_mut(pos, data_store)
+                        .map(|e| {
+                            match e {
+                                Entity::Assembler { modules, info, .. } => {
+                                    let num_free_module_slots =
+                                        modules.iter().filter(|slot| slot.is_none()).count();
 
-                                if new_modules.len() > num_free_module_slots {
-                                    // Not enough space in the module slots
-                                    info!("Tried to insert more modules than space is available");
-                                } else {
-                                    // We are okay!
+                                    if new_modules.len() > num_free_module_slots {
+                                        // Not enough space in the module slots
+                                        info!(
+                                            "Tried to insert more modules than space is available"
+                                        );
+                                    } else {
+                                        // We are okay!
 
-                                    modules
-                                        .iter_mut()
-                                        .filter(|slot| slot.is_none())
-                                        .zip(new_modules.iter().copied())
-                                        .for_each(|(slot, new_module)| {
-                                            assert!(slot.is_none());
-                                            *slot = Some(new_module);
-                                        });
+                                        modules
+                                            .iter_mut()
+                                            .filter(|slot| slot.is_none())
+                                            .zip(new_modules.iter().copied())
+                                            .for_each(|(slot, new_module)| {
+                                                assert!(slot.is_none());
+                                                *slot = Some(new_module);
+                                            });
 
-                                    match info {
-                                        AssemblerInfo::UnpoweredNoRecipe
-                                        | AssemblerInfo::Unpowered(_)
-                                        | AssemblerInfo::PoweredNoRecipe(_) => {},
-                                        AssemblerInfo::Powered {
-                                            id,
-                                            pole_position,
-                                            weak_index,
-                                        } => {
-                                            for module in &new_modules {
-                                                self.simulation_state
-                                                    .factory
-                                                    .power_grids
-                                                    .power_grids[usize::from(id.grid)]
-                                                .add_module_to_assembler(*id, *module, data_store);
-                                            }
-                                        },
-                                    }
-                                }
-                            },
-                            Entity::Lab {
-                                pos,
-                                ty,
-                                modules,
-                                pole_position,
-                            } => {
-                                let num_free_module_slots =
-                                    modules.iter().filter(|slot| slot.is_none()).count();
-
-                                if new_modules.len() > num_free_module_slots {
-                                    // Not enough space in the module slots
-                                    info!("Tried to insert more modules than space is available");
-                                } else {
-                                    // We are okay!
-
-                                    modules
-                                        .iter_mut()
-                                        .filter(|slot| slot.is_none())
-                                        .zip(new_modules.iter().copied())
-                                        .for_each(|(slot, new_module)| {
-                                            assert!(slot.is_none());
-                                            *slot = Some(new_module);
-                                        });
-
-                                    match pole_position {
-                                        None => {},
-                                        Some((pole_pos, weak_index, index)) => {
-                                            for module in &new_modules {
-                                                self.simulation_state
-                                                    .factory
-                                                    .power_grids
-                                                    .power_grids[usize::from(
-                                                    self.simulation_state
+                                        match info {
+                                            AssemblerInfo::UnpoweredNoRecipe
+                                            | AssemblerInfo::Unpowered(_)
+                                            | AssemblerInfo::PoweredNoRecipe(_) => {},
+                                            AssemblerInfo::Powered {
+                                                id,
+                                                pole_position,
+                                                weak_index,
+                                            } => {
+                                                for module in &new_modules {
+                                                    game_state
+                                                        .simulation_state
                                                         .factory
                                                         .power_grids
-                                                        .pole_pos_to_grid_id[pole_pos],
-                                                )]
-                                                .add_module_to_lab(*index, *module, data_store);
-                                            }
-                                        },
+                                                        .power_grids[usize::from(id.grid)]
+                                                    .add_module_to_assembler(
+                                                        *id, *module, data_store,
+                                                    );
+                                                }
+                                            },
+                                        }
                                     }
-                                }
-                            },
-                            Entity::Beacon {
-                                ty,
-                                pos,
-                                modules,
-                                pole_position,
-                            } => {
-                                // TODO:
-                                // todo!();
-                            },
-                            _ => {
-                                warn!("Tried to insert modules into entity without module slots");
-                            },
-                        }
-                    });
+                                },
+                                Entity::Lab {
+                                    pos,
+                                    ty,
+                                    modules,
+                                    pole_position,
+                                } => {
+                                    let num_free_module_slots =
+                                        modules.iter().filter(|slot| slot.is_none()).count();
+
+                                    if new_modules.len() > num_free_module_slots {
+                                        // Not enough space in the module slots
+                                        info!(
+                                            "Tried to insert more modules than space is available"
+                                        );
+                                    } else {
+                                        // We are okay!
+
+                                        modules
+                                            .iter_mut()
+                                            .filter(|slot| slot.is_none())
+                                            .zip(new_modules.iter().copied())
+                                            .for_each(|(slot, new_module)| {
+                                                assert!(slot.is_none());
+                                                *slot = Some(new_module);
+                                            });
+
+                                        match pole_position {
+                                            None => {},
+                                            Some((pole_pos, weak_index, index)) => {
+                                                for module in &new_modules {
+                                                    game_state
+                                                        .simulation_state
+                                                        .factory
+                                                        .power_grids
+                                                        .power_grids[usize::from(
+                                                        game_state
+                                                            .simulation_state
+                                                            .factory
+                                                            .power_grids
+                                                            .pole_pos_to_grid_id[pole_pos],
+                                                    )]
+                                                    .add_module_to_lab(*index, *module, data_store);
+                                                }
+                                            },
+                                        }
+                                    }
+                                },
+                                Entity::Beacon {
+                                    ty,
+                                    pos,
+                                    modules,
+                                    pole_position,
+                                } => {
+                                    // TODO:
+                                    // todo!();
+                                },
+                                _ => {
+                                    warn!(
+                                        "Tried to insert modules into entity without module slots"
+                                    );
+                                },
+                            }
+                        });
                 },
                 ActionType::RemoveModules { pos, indices } => {
-                    self.world.get_entity_at_mut(pos, data_store).map(|e| {
-                        match e {
-                            Entity::Assembler { modules, info, .. } => {
-                                let num_used_module_slots =
-                                    modules.iter().filter(|slot| slot.is_some()).count();
+                    game_state
+                        .world
+                        .get_entity_at_mut(pos, data_store)
+                        .map(|e| {
+                            match e {
+                                Entity::Assembler { modules, info, .. } => {
+                                    let num_used_module_slots =
+                                        modules.iter().filter(|slot| slot.is_some()).count();
 
-                                if indices.len() > num_used_module_slots {
-                                    // Not enough space in the module slots
-                                    warn!("Tried to remove more modules than exist in machine");
-                                } else {
-                                    // We are okay!
+                                    if indices.len() > num_used_module_slots {
+                                        // Not enough space in the module slots
+                                        warn!("Tried to remove more modules than exist in machine");
+                                    } else {
+                                        // We are okay!
 
-                                    assert!(indices.iter().all_unique());
+                                        assert!(indices.iter().all_unique());
 
-                                    assert!(indices.iter().all(|v| *v < modules.len()));
+                                        assert!(indices.iter().all(|v| *v < modules.len()));
 
-                                    let modules_to_remove = modules
-                                        .iter_mut()
-                                        .enumerate()
-                                        .filter(|(i, _)| indices.contains(i))
-                                        .map(|(_, slot)| {
-                                            let Some(module) = slot else {
-                                                todo!("How do I want to handle this");
-                                            };
+                                        let modules_to_remove = modules
+                                            .iter_mut()
+                                            .enumerate()
+                                            .filter(|(i, _)| indices.contains(i))
+                                            .map(|(_, slot)| {
+                                                let Some(module) = slot else {
+                                                    todo!("How do I want to handle this");
+                                                };
 
-                                            let module = *module;
+                                                let module = *module;
 
-                                            *slot = None;
+                                                *slot = None;
 
-                                            module
-                                        });
+                                                module
+                                            });
 
-                                    match info {
-                                        AssemblerInfo::UnpoweredNoRecipe
-                                        | AssemblerInfo::Unpowered(_)
-                                        | AssemblerInfo::PoweredNoRecipe(_) => {},
-                                        AssemblerInfo::Powered { id, .. } => {
-                                            for removed_module in modules_to_remove {
-                                                self.simulation_state
-                                                    .factory
-                                                    .power_grids
-                                                    .power_grids[usize::from(id.grid)]
-                                                .remove_module_from_assembler(
-                                                    *id,
-                                                    removed_module,
-                                                    data_store,
-                                                );
-                                            }
-                                        },
+                                        match info {
+                                            AssemblerInfo::UnpoweredNoRecipe
+                                            | AssemblerInfo::Unpowered(_)
+                                            | AssemblerInfo::PoweredNoRecipe(_) => {},
+                                            AssemblerInfo::Powered { id, .. } => {
+                                                for removed_module in modules_to_remove {
+                                                    game_state
+                                                        .simulation_state
+                                                        .factory
+                                                        .power_grids
+                                                        .power_grids[usize::from(id.grid)]
+                                                    .remove_module_from_assembler(
+                                                        *id,
+                                                        removed_module,
+                                                        data_store,
+                                                    );
+                                                }
+                                            },
+                                        }
                                     }
-                                }
-                            },
-                            _ => {
-                                warn!("Tried to insert modules into non assembler");
-                            },
-                        }
-                    });
+                                },
+                                _ => {
+                                    warn!("Tried to insert modules into non assembler");
+                                },
+                            }
+                        });
                 },
             }
 
             #[cfg(debug_assertions)]
             {
-                let affected_grids_and_potential_match = self
+                let affected_grids_and_potential_match = game_state
                     .simulation_state
                     .factory
                     .power_grids
@@ -2335,7 +2411,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         #[cfg(debug_assertions)]
         {
             assert!(
-                self.world
+                game_state
+                    .world
                     .get_chunks()
                     .into_iter()
                     .flat_map(|chunk| chunk.get_entities())
@@ -2346,7 +2423,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 AssemblerInfo::Unpowered(_) => true,
                                 AssemblerInfo::PoweredNoRecipe(_) => true,
                                 AssemblerInfo::Powered { id, .. } => {
-                                    !self.simulation_state.factory.power_grids.power_grids
+                                    !game_state.simulation_state.factory.power_grids.power_grids
                                         [usize::from(id.grid)]
                                     .is_placeholder
                                 },
@@ -2356,7 +2433,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             pole_position: Some((pole_pos, _)),
                             ..
                         } => {
-                            self.simulation_state
+                            game_state
+                                .simulation_state
                                 .factory
                                 .power_grids
                                 .pole_pos_to_grid_id
@@ -2370,106 +2448,56 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     }
 
     #[profiling::function]
-    pub fn update(&mut self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) {
-        #[cfg(debug_assertions)]
-        {
-            let all_belt_connections = self
-                .world
-                .get_chunks()
-                .flat_map(|chunk| chunk.get_entities())
-                .flat_map(|e| match e {
-                    Entity::Belt {
-                        pos,
-                        direction,
-                        ty,
-                        id,
-                        belt_pos,
-                    } => vec![(*pos, *direction, *id), (*pos, direction.reverse(), *id)],
-                    Entity::Underground {
-                        pos,
-                        underground_dir: UndergroundDir::Entrance,
-                        direction,
-                        ty,
-                        id,
-                        belt_pos,
-                    } => vec![(*pos, direction.reverse(), *id)],
-                    Entity::Underground {
-                        pos,
-                        underground_dir: UndergroundDir::Exit,
-                        direction,
-                        ty,
-                        id,
-                        belt_pos,
-                    } => vec![(*pos, *direction, *id)],
-                    Entity::Splitter { pos, direction, id } => {
-                        // TODO:
-                        vec![]
-                    },
-                    _ => vec![],
-                });
-
-            for (belt_pos, check_dir, id_that_should_exist) in all_belt_connections {
-                if let Some(Entity::Splitter { pos, direction, id }) =
-                    self.world.get_entity_at(belt_pos + check_dir, data_store)
-                {
-                    assert!(
-                        self.simulation_state
-                            .factory
-                            .belts
-                            .get_splitter_belt_ids(*id)
-                            .iter()
-                            .flatten()
-                            .contains(&id_that_should_exist)
-                    );
-                }
-            }
-        }
-        info!(
-            "self.world.to_instantiate.len(): {:?}",
-            self.world.to_instantiate.len()
-        );
-        info!("{:?}", self.world.to_instantiate.first());
-
-        self.simulation_state
+    pub fn update(
+        simulation_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
+        aux_data: &mut AuxillaryData,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        simulation_state
             .factory
             // We can downcast here, since this could only cause graphical weirdness for a couple frame every ~2 years of playtime
-            .belt_and_inserter_update(self.current_tick as u32, data_store);
+            .belt_and_inserter_update(aux_data.current_tick as u32, data_store);
 
         let ((), (tech_progress, recipe_tick_info, lab_info)) = rayon::join(
-            || self.simulation_state.factory.chests.update(data_store),
+            || simulation_state.factory.chests.update(data_store),
             || {
-                self.simulation_state.factory.power_grids.update(
-                    &self.simulation_state.tech_state,
+                simulation_state.factory.power_grids.update(
+                    &simulation_state.tech_state,
                     0,
                     data_store,
                 )
             },
         );
 
-        self.simulation_state
+        simulation_state
             .tech_state
             .apply_progress(tech_progress, data_store);
 
-        self.statistics.append_single_set_of_samples((
+        mem::drop(simulation_state);
+
+        aux_data.statistics.append_single_set_of_samples((
             ProductionInfo::from_recipe_info(&recipe_tick_info, data_store),
             ConsumptionInfo::from_infos(&recipe_tick_info, &lab_info, data_store),
             tech_progress,
         ));
 
-        self.current_tick += 1;
+        aux_data.current_tick += 1;
 
         let done_updating = Instant::now();
 
-        if let Some(last_update_time) = self.last_update_time {
-            self.update_times.append_single_set_of_samples(UpdateTime {
-                dur: done_updating - last_update_time,
-            });
+        if let Some(last_update_time) = aux_data.last_update_time {
+            aux_data
+                .update_times
+                .append_single_set_of_samples(UpdateTime {
+                    dur: done_updating - last_update_time,
+                });
         }
-        self.last_update_time = Some(done_updating);
+        aux_data.last_update_time = Some(done_updating);
     }
 
     fn update_inserters(
-        &mut self,
+        world: &mut World<ItemIdxType, RecipeIdxType>,
+        mut simulation_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
         info: InserterUpdateInfo,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
@@ -2482,7 +2510,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 pos: assembler_pos,
                 size,
             } => {
-                self.world.mutate_entities_colliding_with(
+                world.mutate_entities_colliding_with(
                     Position {
                         x: assembler_pos.x - i32::from(inserter_range),
                         y: assembler_pos.y - i32::from(inserter_range),
@@ -2515,7 +2543,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 );
             },
             InserterUpdateInfo::NewBelt { pos: belt_pos } => {
-                self.world.mutate_entities_colliding_with(
+                world.mutate_entities_colliding_with(
                     Position {
                         x: belt_pos.x - i32::from(inserter_range),
                         y: belt_pos.y - i32::from(inserter_range),
@@ -2547,7 +2575,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 pos: assembler_pos,
                 size,
             } => {
-                self.world.mutate_entities_colliding_with(
+                world.mutate_entities_colliding_with(
                     Position {
                         x: assembler_pos.x - i32::from(inserter_range),
                         y: assembler_pos.y - i32::from(inserter_range),
@@ -2593,8 +2621,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         }
 
         for pos in inserter_positions {
-            self.world
-                .try_instantiate_inserter(&mut self.simulation_state, pos, data_store);
+            world.try_instantiate_inserter(&mut simulation_state, pos, data_store);
         }
     }
 
@@ -2620,21 +2647,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     }
 
     fn add_inserter(
-        &mut self,
+        world: &mut World<ItemIdxType, RecipeIdxType>,
+        sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
         ty: u8,
         pos: Position,
         dir: Dir,
         filter: Option<Item<ItemIdxType>>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Result<(), ()> {
-        if !self.world.can_fit(pos, (1, 1), data_store) {
+        if !world.can_fit(pos, (1, 1), data_store) {
             warn!("Tried to place inserter where it does not fit");
             return Err(());
         }
 
         let (start_pos, end_pos) = calculate_inserter_positions(pos, dir);
 
-        self.world.add_entity(
+        world.add_entity(
             Entity::Inserter {
                 ty,
                 user_movetime: None,
@@ -2645,7 +2673,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 filter,
                 info: InserterInfo::NotAttached { start_pos, end_pos },
             },
-            &mut self.simulation_state,
+            sim_state,
             data_store,
         );
 

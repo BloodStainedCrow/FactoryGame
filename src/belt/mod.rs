@@ -20,10 +20,7 @@ use std::{
     mem, usize,
 };
 
-use crate::{
-    get_size::{Mutex, StableGraph},
-    inserter::HAND_SIZE,
-};
+use crate::get_size::{Mutex, StableGraph};
 use petgraph::stable_graph::DefaultIx;
 
 use serde::ser::{SerializeSeq, SerializeStruct};
@@ -36,7 +33,7 @@ use crate::{
         belt_storage_inserter::{BeltStorageInserter, Dir},
     },
     item::{Item, usize_from},
-    storage_list::{SingleItemStorages, grid_size},
+    storage_list::SingleItemStorages,
 };
 use crate::{
     inserter::{FakeUnionStorage, Storage},
@@ -1802,6 +1799,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         );
     }
 
+    #[profiling::function]
     pub fn pre_pure_update<RecipeIdxType: IdxTrait>(
         &mut self,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,

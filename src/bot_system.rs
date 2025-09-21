@@ -29,7 +29,7 @@ use log::info;
 use crate::{
     app_state::SimulationState,
     frontend::world::{Position, tile::World},
-    item::{ITEMCOUNTTYPE, IdxTrait, Indexable, Item, WeakIdxTrait, usize_from},
+    item::{ITEMCOUNTTYPE, IdxTrait, Item, WeakIdxTrait, usize_from},
     network_graph::{Network, WeakIndex},
     power::{Joule, Watt},
 };

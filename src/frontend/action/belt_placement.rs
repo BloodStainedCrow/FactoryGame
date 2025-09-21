@@ -5,7 +5,7 @@ use log::info;
 use strum::IntoEnumIterator;
 
 use crate::{
-    app_state::{GameState, SimulationState},
+    app_state::SimulationState,
     belt::{
         BeltTileId, SplitterInfo,
         belt::BeltLenType,
@@ -28,8 +28,14 @@ pub enum BeltState {
     DoubleSideloading,
 }
 
+pub struct FakeGameState<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+    pub world: &'a mut World<ItemIdxType, RecipeIdxType>,
+    pub simulation_state: &'a mut SimulationState<ItemIdxType, RecipeIdxType>,
+}
+
 pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
+    world: &mut World<ItemIdxType, RecipeIdxType>,
+    simulation_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
     splitter_pos: Position,
     splitter_direction: Dir,
     splitter_ty: u8,
@@ -37,6 +43,12 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     out_mode: Option<SplitterDistributionMode>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
+    let mut fake_game_state = FakeGameState {
+        world,
+        simulation_state,
+    };
+    let game_state = &mut fake_game_state;
+
     #[cfg(debug_assertions)]
     {
         let all_belt_connections = game_state
@@ -446,7 +458,7 @@ pub fn handle_underground_removal<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
 
 #[allow(unreachable_code)]
 pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
+    game_state: &mut FakeGameState<'_, ItemIdxType, RecipeIdxType>,
     new_belt_pos: Position,
     new_belt_direction: Dir,
     new_belt_ty: u8,
@@ -711,7 +723,7 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
 #[allow(unreachable_code)]
 pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
+    game_state: &mut FakeGameState<'_, ItemIdxType, RecipeIdxType>,
     new_belt_pos: Position,
     new_belt_direction: Dir,
     new_belt_ty: u8,
@@ -1329,7 +1341,7 @@ enum BeltChange {
 }
 
 fn handle_belt_breaking<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
+    game_state: &mut FakeGameState<'_, ItemIdxType, RecipeIdxType>,
     pos_which_might_break: Position,
     dir_which_the_new_belt_is_pointing: Dir,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -1490,7 +1502,7 @@ fn handle_belt_breaking<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 }
 
 fn break_belt_at<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
+    game_state: &mut FakeGameState<'_, ItemIdxType, RecipeIdxType>,
     old_belt_id: BeltTileId<ItemIdxType>,
     first_belt_pos_belonging_to_back: BeltLenType,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -1537,7 +1549,7 @@ fn break_belt_at<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 }
 
 fn attach_to_back_of_belt<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
+    game_state: &mut FakeGameState<'_, ItemIdxType, RecipeIdxType>,
     front_belt_id: BeltTileId<ItemIdxType>,
     back_belt_id: Option<BeltTileId<ItemIdxType>>,
     back_belt_len: u16,
@@ -1665,7 +1677,7 @@ struct LengthenResult {
 
 /// Returns which belt_pos the attached amount has
 fn lengthen<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
+    game_state: &mut FakeGameState<'_, ItemIdxType, RecipeIdxType>,
     belt: BeltTileId<ItemIdxType>,
     amount: u16,
     side: Side,
@@ -1762,7 +1774,7 @@ fn split_belt_at<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 }
 
 fn should_merge<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
+    game_state: &mut FakeGameState<'_, ItemIdxType, RecipeIdxType>,
     self_dir: Dir,
     front_pos: Position,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -1860,7 +1872,7 @@ fn should_merge<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 }
 
 fn should_sideload<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
+    game_state: &mut FakeGameState<'_, ItemIdxType, RecipeIdxType>,
     self_dir: Dir,
     front_pos: Position,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,

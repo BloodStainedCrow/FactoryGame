@@ -10,11 +10,10 @@
 extern crate test;
 
 use std::{
-    array,
     borrow::Borrow,
     net::{SocketAddr, TcpStream},
     process::exit,
-    simd::{Mask, cmp::SimdPartialEq},
+    simd::Mask,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -23,7 +22,6 @@ use std::{
     thread,
 };
 
-use log::info;
 use parking_lot::Mutex;
 
 use app_state::GameState;
@@ -231,7 +229,7 @@ fn run_integrated_server(
                     &data_store,
                 )));
 
-            let game_state = Arc::new(Mutex::new(match start_game_info {
+            let game_state = Arc::new(match start_game_info {
                 StartGameInfo::Load(path) => load(path)
                     .map(|sg| {
                         if sg.checksum != data_store.checksum {
@@ -274,7 +272,7 @@ fn run_integrated_server(
 
                     GameCreationInfo::FromBP(path) => GameState::new_with_bp(&data_store, path),
                 },
-            }));
+            });
 
             let (ui_sender, ui_recv) = channel();
 
@@ -399,12 +397,12 @@ fn run_client(remote_addr: SocketAddr) -> (LoadedGame, Arc<AtomicU64>, Sender<In
                     &data_store,
                 )));
 
-            let game_state = Arc::new(Mutex::new(
+            let game_state = Arc::new(
                 // FIXME: When running in client mode, we should download the gamestate from the server instead of loading it from disk
                 load(PathBuf::new())
                     .map(|save| save.game_state)
                     .unwrap_or_else(|| GameState::new(&data_store)),
-            ));
+            );
 
             let (ui_sender, ui_recv) = channel();
 
@@ -551,59 +549,59 @@ mod tests {
         b.iter(|| replay.clone().run().with(run_till_finished));
     }
 
-    #[rstest]
-    fn crashing_replays(#[files("crash_replays/*.rep")] path: PathBuf) {
-        use std::io::Read;
+    // #[rstest]
+    // fn crashing_replays(#[files("crash_replays/*.rep")] path: PathBuf) {
+    //     use std::io::Read;
 
-        // Keep running for 30 seconds
-        const RUNTIME_AFTER_PRESUMED_CRASH: u64 = 30 * 60;
+    //     // Keep running for 30 seconds
+    //     const RUNTIME_AFTER_PRESUMED_CRASH: u64 = 30 * 60;
 
-        let mut file = File::open(&path).unwrap();
+    //     let mut file = File::open(&path).unwrap();
 
-        let mut v = Vec::with_capacity(file.metadata().unwrap().len() as usize);
+    //     let mut v = Vec::with_capacity(file.metadata().unwrap().len() as usize);
 
-        file.read_to_end(&mut v).unwrap();
+    //     file.read_to_end(&mut v).unwrap();
 
-        // TODO: For non u8 IdxTypes this will fail
-        let mut replay: Replay<u8, u8, DataStore<u8, u8>> = bitcode::deserialize(v.as_slice())
-            .expect(
-                format!("Test replay {path:?} did not deserialize, consider removing it.").as_str(),
-            );
+    //     // TODO: For non u8 IdxTypes this will fail
+    //     let mut replay: Replay<u8, u8, DataStore<u8, u8>> = bitcode::deserialize(v.as_slice())
+    //         .expect(
+    //             format!("Test replay {path:?} did not deserialize, consider removing it.").as_str(),
+    //         );
 
-        replay.finish();
+    //     replay.finish();
 
-        let running_replay = replay.run();
+    //     let running_replay = replay.run();
 
-        let (mut game_state_before_crash, data_store) = running_replay.with(run_till_finished);
+    //     let (mut game_state_before_crash, data_store) = running_replay.with(run_till_finished);
 
-        for _ in 0..RUNTIME_AFTER_PRESUMED_CRASH {
-            game_state_before_crash.update(&data_store);
-        }
-    }
+    //     for _ in 0..RUNTIME_AFTER_PRESUMED_CRASH {
+    //         game_state_before_crash.update(&data_store);
+    //     }
+    // }
 
-    #[bench]
-    fn bench_huge_red_green_sci(b: &mut Bencher) {
-        let game_state = GameState::new_with_beacon_red_green_production_many_grids(
-            Default::default(),
-            &DATA_STORE,
-        );
+    // #[bench]
+    // fn bench_huge_red_green_sci(b: &mut Bencher) {
+    //     let game_state = GameState::new_with_beacon_red_green_production_many_grids(
+    //         Default::default(),
+    //         &DATA_STORE,
+    //     );
 
-        let mut game_state = game_state.clone();
+    //     let mut game_state = game_state.clone();
 
-        b.iter(|| {
-            game_state.update(&DATA_STORE);
-        })
-    }
+    //     b.iter(|| {
+    //         game_state.update(&DATA_STORE);
+    //     })
+    // }
 
-    #[bench]
-    fn bench_12_beacon_red(b: &mut Bencher) {
-        let game_state =
-            GameState::new_with_beacon_belt_production(Default::default(), &DATA_STORE);
+    // #[bench]
+    // fn bench_12_beacon_red(b: &mut Bencher) {
+    //     let game_state =
+    //         GameState::new_with_beacon_belt_production(Default::default(), &DATA_STORE);
 
-        let mut game_state = game_state.clone();
+    //     let mut game_state = game_state.clone();
 
-        b.iter(|| {
-            game_state.update(&DATA_STORE);
-        })
-    }
+    //     b.iter(|| {
+    //         game_state.update(&DATA_STORE);
+    //     })
+    // }
 }

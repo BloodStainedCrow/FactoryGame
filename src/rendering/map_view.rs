@@ -35,7 +35,7 @@ const NUM_TILES_PER_AXIS: [usize; NUM_MAP_TILE_SIZES] = {
     b
 };
 const TILE_PIXEL_TO_WORLD_TILE: [usize; NUM_MAP_TILE_SIZES] = [1, 4, 16, 64];
-const MIN_WIDTH: [usize; NUM_MAP_TILE_SIZES] = [0, 5_000, 10_000, 50_000];
+pub const MIN_WIDTH: [usize; NUM_MAP_TILE_SIZES] = [0, 5_000, 10_000, 50_000];
 
 #[profiling::function]
 pub fn create_map_textures_if_needed<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(

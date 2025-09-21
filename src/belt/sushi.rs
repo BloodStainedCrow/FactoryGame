@@ -11,12 +11,11 @@ use get_size::GetSize;
 use crate::inserter::belt_storage_inserter::Dir;
 use crate::{
     belt::belt::NoSpaceError,
-    inserter::belt_storage_inserter::BeltStorageInserter,
     item::{IdxTrait, Item, WeakIdxTrait},
 };
 
 use super::{
-    FreeIndex, Inserter, SplitterID,
+    FreeIndex, SplitterID,
     belt::{Belt, BeltLenType},
     smart::{BeltInserterInfo, InserterStoreDyn, Side, SmartBelt, SpaceOccupiedError},
     splitter::{SplitterSide, SushiSplitter},

@@ -1,5 +1,5 @@
 use std::{
-    io::{Read, Write},
+    io::Read,
     marker::PhantomData,
     mem,
     net::TcpStream,
@@ -9,7 +9,7 @@ use std::{
 
 use parking_lot::Mutex;
 
-use log::{error, warn};
+use log::error;
 
 #[cfg(feature = "client")]
 use crate::frontend::action::action_state_machine::ActionStateMachine;

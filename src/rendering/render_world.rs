@@ -1,6 +1,7 @@
 use crate::belt::smart::SmartBelt;
 use crate::chest::ChestSize;
 use crate::frontend::action::belt_placement::{BeltState, expected_belt_state};
+use crate::frontend::world::tile::World;
 use crate::get_size::RAMExtractor;
 use crate::get_size::RamUsage;
 use crate::item::Indexable;
@@ -56,7 +57,7 @@ use std::{
 use tilelib::types::{DrawInstance, Layer, RendererTrait};
 
 use super::TextureAtlas;
-use crate::app_state::GameState;
+use crate::app_state::{AuxillaryData, SimulationState};
 
 const BELT_ANIM_SPEED: f32 = 1.0 / (BELT_LEN_PER_TILE as f32);
 
@@ -117,16 +118,27 @@ fn layers_tile_grid(tilesize: f32, ar: f32) -> Layers {
     }
 }
 
+struct FakeGameState<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+    simulation_state: MutexGuard<'a, SimulationState<ItemIdxType, RecipeIdxType>>,
+    world: MutexGuard<'a, World<ItemIdxType, RecipeIdxType>>,
+}
+
 #[allow(clippy::too_many_lines)]
 #[profiling::function]
 pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     renderer: &mut impl RendererTrait,
-    mut game_state: MutexGuard<GameState<ItemIdxType, RecipeIdxType>>,
+    simulation_state: MutexGuard<SimulationState<ItemIdxType, RecipeIdxType>>,
+    world: MutexGuard<World<ItemIdxType, RecipeIdxType>>,
     texture_atlas: &TextureAtlas,
     state_machine: MutexGuard<ActionStateMachine<ItemIdxType, RecipeIdxType>>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
     let mut updates = Some(vec![]);
+
+    let mut game_state = FakeGameState {
+        simulation_state,
+        world,
+    };
 
     mem::swap(&mut updates, &mut game_state.world.map_updates);
 
@@ -188,10 +200,16 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
         mem::drop(state_machine);
 
+        let FakeGameState {
+            simulation_state,
+            world,
+        } = game_state;
+        mem::drop(simulation_state);
+
         {
             profiling::scope!("Create Map Textures");
             create_map_textures_if_needed(
-                &game_state.world,
+                &world,
                 renderer,
                 Position {
                     x: camera_pos.0 as i32,
@@ -199,10 +217,18 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 },
                 num_tiles_across_screen_horizontal as usize,
                 num_tiles_across_screen_vertical as usize,
-                Some(Duration::from_millis(20)),
+                // Only allow incremental map_view building for the last view level
+                map_view::MIN_WIDTH
+                    .iter()
+                    .all(|&v| v < num_tiles_across_screen_horizontal as usize)
+                    .then_some(Duration::from_millis(15)),
+                // Some(Duration::from_millis(15)),
+                // None,
                 data_store,
             );
         }
+
+        mem::drop(world);
 
         {
             profiling::scope!("Render Map View");
@@ -1718,14 +1744,20 @@ pub fn render_ui<
     ctx: &Context,
     ui: &mut Ui,
     mut state_machine: MutexGuard<ActionStateMachine<ItemIdxType, RecipeIdxType>>,
-    mut game_state: MutexGuard<GameState<ItemIdxType, RecipeIdxType>>,
+    simulation_state: MutexGuard<SimulationState<ItemIdxType, RecipeIdxType>>,
+    world: MutexGuard<World<ItemIdxType, RecipeIdxType>>,
+    aux_data: MutexGuard<AuxillaryData>,
     data_store: MutexGuard<DataStore<ItemIdxType, RecipeIdxType>>,
 ) -> Result<
     impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>,
     EscapeMenuOptions,
 > {
     let state_machine_ref = &mut *state_machine;
-    let game_state_ref = &mut *game_state;
+    let mut fake_game_state = FakeGameState {
+        simulation_state: simulation_state,
+        world: world,
+    };
+    let game_state_ref = &mut fake_game_state;
     let data_store_ref = &*data_store;
     let mut actions = vec![];
 
@@ -1763,19 +1795,20 @@ pub fn render_ui<
         )
     });
 
-    Window::new("Size").default_open(false).show(ctx, |ui| {
-        profiling::scope!("Show SimState Size");
-        if ui.button("Reset Cache").clicked() {
-            state_machine_ref.get_size_cache.clear();
-        }
-        ShowInfo::<RAMExtractor, RamUsage>::show_info(
-            game_state_ref,
-            &mut RAMExtractor,
-            ui,
-            "",
-            &mut state_machine_ref.get_size_cache,
-        );
-    });
+    // TODO:
+    // Window::new("Size").default_open(false).show(ctx, |ui| {
+    //     profiling::scope!("Show SimState Size");
+    //     if ui.button("Reset Cache").clicked() {
+    //         state_machine_ref.get_size_cache.clear();
+    //     }
+    //     ShowInfo::<RAMExtractor, RamUsage>::show_info(
+    //         game_state_ref,
+    //         &mut RAMExtractor,
+    //         ui,
+    //         "",
+    //         &mut state_machine_ref.get_size_cache,
+    //     );
+    // });
 
     Window::new("Import BP")
         .default_open(false)
@@ -1797,11 +1830,12 @@ pub fn render_ui<
         .resizable(false)
         .show(ctx, |ui| {
             if ui.button("⚠️DEFRAGMENT GAMESTATE").clicked() {
-                let mut new_state = game_state_ref.clone();
+                // TODO:
+                // let mut new_state = game_state_ref.clone();
 
-                mem::swap(&mut new_state, &mut *game_state_ref);
+                // mem::swap(&mut new_state, &mut *game_state_ref);
 
-                mem::drop(new_state);
+                // mem::drop(new_state);
             }
             if ui.button("⚠️Auto Clock Inserters").clicked() {
                 let inserters_without_values_set = game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter_map(|e| match e {
@@ -2099,7 +2133,7 @@ pub fn render_ui<
         });
 
     Window::new("UPS").default_open(true).show(ctx, |ui| {
-        let points = &game_state_ref.update_times.get_data_points(0)[0..600];
+        let points = &aux_data.update_times.get_data_points(0)[0..600];
         ui.label(format!(
             "{:.1} UPS",
             1.0 / (points.iter().map(|v| v.dur).sum::<Duration>() / points.len() as u32)
@@ -2171,7 +2205,7 @@ pub fn render_ui<
 
                         ComboBox::new("Recipe list", "Recipes").selected_text(goal_recipe.map(|recipe| data_store_ref.recipe_display_names[usize_from(recipe.id)].as_str()).unwrap_or("Choose a recipe!")).show_ui(ui, |ui| {
                             data_store_ref.recipe_display_names.iter().enumerate().filter(|(i, recipe_name)| {
-                                    (game_state_ref.settings.show_unresearched_recipes || game_state_ref.simulation_state.tech_state.get_active_recipes()[*i]) && data_store_ref.recipe_allowed_assembling_machines[*i].contains(ty)
+                                    (aux_data.settings.show_unresearched_recipes || game_state_ref.simulation_state.tech_state.get_active_recipes()[*i]) && data_store_ref.recipe_allowed_assembling_machines[*i].contains(ty)
                                 }).for_each(|(i, recipe_name)| {
 
                                 ui.selectable_value(&mut goal_recipe, Some(Recipe {id: i.try_into().unwrap()}), recipe_name);
@@ -2680,7 +2714,7 @@ pub fn render_ui<
                         ui_consumption.heading("Consumption");
                         ui_consumption.separator();
 
-                        let prod_points: Vec<(String, usize, f32, PlotPoints)> = game_state_ref
+                        let prod_points: Vec<(String, usize, f32, PlotPoints)> = aux_data
                             .statistics
                             .production
                             .get_series(
@@ -2812,7 +2846,7 @@ pub fn render_ui<
                             .product::<usize>();
                         let ticks_total = min(
                             ticks_per_sample * NUM_SAMPLES_AT_INTERVALS[time_scale],
-                            game_state_ref
+                            aux_data
                                 .statistics
                                 .production
                                 .num_samples_pushed
@@ -2893,7 +2927,7 @@ pub fn render_ui<
                             },
                         );
 
-                        let cons_points: Vec<(String, usize, f32, PlotPoints)> = game_state_ref
+                        let cons_points: Vec<(String, usize, f32, PlotPoints)> = aux_data
                             .statistics
                             .consumption
                             .get_series(
@@ -3095,7 +3129,8 @@ pub fn render_ui<
             }
         });
 
-    mem::drop(game_state);
+    mem::drop(fake_game_state);
+    mem::drop(aux_data);
     mem::drop(state_machine);
     mem::drop(data_store);
 

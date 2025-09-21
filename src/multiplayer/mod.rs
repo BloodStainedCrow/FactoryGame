@@ -37,9 +37,8 @@ pub mod connection_reciever_tcp;
 
 pub(super) enum Game<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
     #[cfg(feature = "client")]
-    #[cfg(feature = "client")]
     Client(
-        Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
+        Arc<GameState<ItemIdxType, RecipeIdxType>>,
         GameStateUpdateHandler<ItemIdxType, RecipeIdxType, Client<ItemIdxType, RecipeIdxType>>,
         Arc<AtomicU64>,
     ),
@@ -52,7 +51,7 @@ pub(super) enum Game<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
     /// Integrated Server is also how Singleplayer works
     #[cfg(feature = "client")]
     IntegratedServer(
-        Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
+        Arc<GameState<ItemIdxType, RecipeIdxType>>,
         Replay<ItemIdxType, RecipeIdxType, DataStore<ItemIdxType, RecipeIdxType>>,
         GameStateUpdateHandler<
             ItemIdxType,
@@ -95,7 +94,7 @@ pub struct ServerInfo {
 pub enum GameInitData<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     #[cfg(feature = "client")]
     Client {
-        game_state: Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
+        game_state: Arc<GameState<ItemIdxType, RecipeIdxType>>,
         action_state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
         inputs: Receiver<Input>,
         ui_actions: Receiver<ActionType<ItemIdxType, RecipeIdxType>>,
@@ -109,7 +108,7 @@ pub enum GameInitData<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     ),
     #[cfg(feature = "client")]
     IntegratedServer {
-        game_state: Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
+        game_state: Arc<GameState<ItemIdxType, RecipeIdxType>>,
         action_state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
         inputs: Receiver<Input>,
         ui_actions: Receiver<ActionType<ItemIdxType, RecipeIdxType>>,
@@ -175,7 +174,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 cancel_socket,
             } => {
                 #[cfg(debug_assertions)]
-                let replay = Replay::new(&*game_state.lock(), None, data_store.clone());
+                let replay = Replay::new(&game_state, None, data_store.clone());
                 #[cfg(not(debug_assertions))]
                 let replay = Replay::new_dummy(data_store.clone());
                 Ok(Self::IntegratedServer(
@@ -228,7 +227,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
             #[cfg(feature = "client")]
             Game::Client(game_state, game_state_update_handler, tick_counter) => {
                 game_state_update_handler.update::<&DataStore<ItemIdxType, RecipeIdxType>>(
-                    &mut game_state.lock(),
+                    &game_state,
                     None,
                     data_store,
                 );
@@ -251,16 +250,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 #[cfg(debug_assertions)]
                 {
                     profiling::scope!("Crash anticipation save to disk");
-                    save(&game_state.lock(), data_store);
+                    save(&game_state, data_store);
                 }
-                game_state_update_handler.update(
-                    &mut *{
-                        profiling::scope!("Wait for GameState Lock");
-                        game_state.lock()
-                    },
-                    Some(replay),
-                    data_store,
-                );
+                game_state_update_handler.update(game_state, Some(replay), data_store);
                 tick_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             },
         }

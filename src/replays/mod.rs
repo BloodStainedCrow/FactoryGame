@@ -139,9 +139,14 @@ impl<
                         .peeking_take_while(|a| a.timestamp == current_timestep)
                         .map(|ra| ra.action);
 
-                    game_state.apply_actions(this_ticks_actions, data_store.borrow());
+                    // FIXME:
+                    // game_state.apply_actions(this_ticks_actions, data_store.borrow());
 
-                    game_state.update(data_store.borrow());
+                    GameState::update(
+                        &mut *game_state.simulation_state.lock(),
+                        &mut *game_state.aux_data.lock(),
+                        data_store.borrow(),
+                    );
 
                     // let game_state_opt: Option<GameState<ItemIdxType, RecipeIdxType>> =
                     //     yield_!(game_state);
@@ -187,11 +192,21 @@ impl<
                 .map(|ra| ra.action)
                 .collect();
 
-            let mut game_state = game_state_out.lock();
+            let game_state = game_state_out.lock();
 
-            game_state.apply_actions(this_ticks_actions, data_store.borrow());
+            // FIXME:
+            // GameState::apply_actions(
+            //     game_state.simulation_state,
+            //     game_state.world,
+            //     this_ticks_actions,
+            //     data_store.borrow(),
+            // );
 
-            game_state.update(data_store.borrow());
+            GameState::update(
+                &mut *game_state.simulation_state.lock(),
+                &mut *game_state.aux_data.lock(),
+                data_store.borrow(),
+            );
 
             on_tick();
 

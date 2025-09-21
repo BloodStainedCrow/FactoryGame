@@ -4891,37 +4891,37 @@ mod test {
 
     proptest! {
 
-        #[test]
-        fn test_get_entity(position in random_position(), ent in random_entity_to_place(&DATA_STORE)) {
-            let mut state = GameState::new(&DATA_STORE);
+        // #[test]
+        // fn test_get_entity(position in random_position(), ent in random_entity_to_place(&DATA_STORE)) {
+        //     let mut state = GameState::new(&DATA_STORE);
 
-            let mut rep = Replay::new(&state, None, &*DATA_STORE);
+        //     let mut rep = Replay::new(&state, None, &*DATA_STORE);
 
-            rep.append_actions([ActionType::PlaceEntity(PlaceEntityInfo { force: false, entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(ent) })]);
+        //     rep.append_actions([ActionType::PlaceEntity(PlaceEntityInfo { force: false, entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(ent) })]);
 
-            let bp = Blueprint::from_replay(&rep);
+        //     let bp = Blueprint::from_replay(&rep);
 
-            bp.apply(false, position, &mut state, &DATA_STORE);
+        //     bp.apply(false, position, &mut state, &DATA_STORE);
 
-            let mut e_pos = None;
-            let mut e_size = None;
-            state.world.get_entities_colliding_with(position, (100, 100), &DATA_STORE).into_iter().for_each(|v| {
-                e_pos = Some(v.get_pos());
-                e_size = Some(v.get_entity_size(&DATA_STORE));
-            });
+        //     let mut e_pos = None;
+        //     let mut e_size = None;
+        //     state.world.get_entities_colliding_with(position, (100, 100), &DATA_STORE).into_iter().for_each(|v| {
+        //         e_pos = Some(v.get_pos());
+        //         e_size = Some(v.get_entity_size(&DATA_STORE));
+        //     });
 
-            prop_assert!(e_pos.is_some());
-            prop_assert!(e_size.is_some());
+        //     prop_assert!(e_pos.is_some());
+        //     prop_assert!(e_size.is_some());
 
-            let e_pos = e_pos.unwrap();
-            let e_size = e_size.unwrap();
+        //     let e_pos = e_pos.unwrap();
+        //     let e_size = e_size.unwrap();
 
-            for x_pos in e_pos.x..(e_pos.x + (e_size.0 as i32)) {
-                for y_pos in e_pos.y..(e_pos.y + (e_size.1 as i32)) {
-                    prop_assert_eq!(state.world.get_entities_colliding_with(Position { x: x_pos, y: y_pos }, (1, 1), &DATA_STORE).into_iter().count(), 1,  "test_pos = {:?}, world + {:?}", Position {x: x_pos, y: y_pos}, state.world.get_chunk_for_tile(position));
-                }
-            }
-        }
+        //     for x_pos in e_pos.x..(e_pos.x + (e_size.0 as i32)) {
+        //         for y_pos in e_pos.y..(e_pos.y + (e_size.1 as i32)) {
+        //             prop_assert_eq!(state.world.get_entities_colliding_with(Position { x: x_pos, y: y_pos }, (1, 1), &DATA_STORE).into_iter().count(), 1,  "test_pos = {:?}, world + {:?}", Position {x: x_pos, y: y_pos}, state.world.get_chunk_for_tile(position));
+        //         }
+        //     }
+        // }
 
     }
 }

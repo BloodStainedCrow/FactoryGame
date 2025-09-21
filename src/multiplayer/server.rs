@@ -1,10 +1,4 @@
-use std::{
-    borrow::{Borrow, BorrowMut},
-    fs::File,
-    io::Write,
-    marker::PhantomData,
-    time::Instant,
-};
+use std::{borrow::Borrow, fs::File, io::Write, marker::PhantomData};
 
 use crate::{
     app_state::GameState,
@@ -71,16 +65,27 @@ impl<
 
     pub fn update<DataStor: Borrow<DataStore<ItemIdxType, RecipeIdxType>> + serde::Serialize>(
         &mut self,
-        game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
+        game_state: &GameState<ItemIdxType, RecipeIdxType>,
         replay: Option<&mut Replay<ItemIdxType, RecipeIdxType, DataStor>>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        let start = Instant::now();
+        let mut simulation_state = game_state.simulation_state.lock();
+        {
+            profiling::scope!("GameState Update");
+            GameState::update(
+                &mut *simulation_state,
+                &mut *game_state.aux_data.lock(),
+                data_store,
+            );
+        }
+
+        let mut world = game_state.world.lock();
+        let current_tick = game_state.aux_data.lock().current_tick;
+
         let actions_iter = {
             profiling::scope!("Get Actions");
 
-            self.action_interface
-                .get(game_state.current_tick, &game_state.world, data_store)
+            self.action_interface.get(current_tick, &world, data_store)
         };
 
         let actions: Vec<_> = actions_iter.into_iter().collect();
@@ -105,20 +110,17 @@ impl<
 
         {
             profiling::scope!("Apply Actions");
-            game_state
-                .borrow_mut()
-                .apply_actions(actions.clone(), data_store);
+            GameState::apply_actions(
+                &mut simulation_state,
+                &mut world,
+                actions.clone(),
+                data_store,
+            );
         }
 
         {
             profiling::scope!("Send Action Confirmations");
-            self.action_interface
-                .consume(game_state.current_tick, actions);
-        }
-
-        {
-            profiling::scope!("GameState Update");
-            game_state.borrow_mut().update(data_store);
+            self.action_interface.consume(current_tick, actions);
         }
     }
 }

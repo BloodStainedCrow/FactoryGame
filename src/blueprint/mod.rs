@@ -535,10 +535,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
     pub fn apply(
         &self,
         base_pos: Position,
-        game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
+        game_state: &GameState<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        game_state.apply_actions(self.actions_with_base_pos(base_pos), data_store);
+        GameState::apply_actions(
+            &mut game_state.simulation_state.lock(),
+            &mut game_state.world.lock(),
+            self.actions_with_base_pos(base_pos),
+            data_store,
+        );
     }
 
     pub fn actions_with_base_pos(
@@ -800,11 +805,16 @@ impl Blueprint {
         &self,
         force: bool,
         base_pos: Position,
-        game_state: &mut GameState<ItemIdxType, RecipeIdxType>,
+        game_state: &GameState<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         let reusable = self.get_reusable(force, data_store);
-        game_state.apply_actions(reusable.actions_with_base_pos(base_pos), data_store);
+        GameState::apply_actions(
+            &mut game_state.simulation_state.lock(),
+            &mut game_state.world.lock(),
+            reusable.actions_with_base_pos(base_pos),
+            data_store,
+        );
     }
 
     pub fn from_replay<

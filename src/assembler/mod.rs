@@ -1,13 +1,13 @@
-use std::{array, i32, marker::PhantomData, simd::Simd, u8};
+use std::{array, marker::PhantomData, simd::Simd, u8};
 
 use crate::{
-    data::{DataStore, ItemRecipeDir},
+    data::DataStore,
     frontend::world::{Position, tile::AssemblerID},
     inserter::HAND_SIZE,
     item::{ITEMCOUNTTYPE, IdxTrait, Indexable, Item, Recipe, WeakIdxTrait},
     power::{
         Watt,
-        power_grid::{IndexUpdateInfo, MAX_POWER_MULT, PowerGridEntity, PowerGridIdentifier},
+        power_grid::{IndexUpdateInfo, PowerGridIdentifier},
     },
 };
 use itertools::Itertools;

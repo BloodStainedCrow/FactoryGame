@@ -26,7 +26,7 @@ pub enum LoadedGame {
 }
 
 pub struct LoadedGameSized<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    pub state: Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
+    pub state: Arc<GameState<ItemIdxType, RecipeIdxType>>,
     pub state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
     pub data_store: Arc<Mutex<DataStore<ItemIdxType, RecipeIdxType>>>,
     pub ui_action_sender: Sender<ActionType<ItemIdxType, RecipeIdxType>>,
