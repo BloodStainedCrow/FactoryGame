@@ -1942,6 +1942,30 @@ pub fn render_ui<
                     ActionType::OverrideInserterMovetime { pos, new_movetime: Some(time.try_into().unwrap()) }
                 }))
             }
+            if ui.button("Remove Clocking from all Inserters").clicked() {
+                let inserters_without_values_set = game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter_map(|e| match e {
+                    Entity::Inserter { ty, user_movetime, type_movetime, pos, direction, filter, info } => {
+                        match info {
+                            crate::frontend::world::tile::InserterInfo::NotAttached { start_pos, end_pos } => None,
+                            crate::frontend::world::tile::InserterInfo::Attached { start_pos, end_pos, info } => match info {
+                                crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => {
+                                    None
+                                    // TODO: Currently BeltStorage Inserters do not support movetime changes
+                                    // Some((ty, pos, start_pos, end_pos))
+                                },
+                                crate::frontend::world::tile::AttachedInserter::BeltBelt { .. } => None,
+                                crate::frontend::world::tile::AttachedInserter::StorageStorage { item, inserter } => {
+                                    Some(pos)
+                                },
+                            },
+                        }
+                    },
+                    _ => None,
+                });
+                actions.extend(inserters_without_values_set.copied().map(|pos| {
+                    ActionType::OverrideInserterMovetime { pos, new_movetime: None }
+                }))
+            }
             ui.checkbox(
                 &mut state_machine_ref.show_graph_dot_output,
                 "Generate Belt Graph",
