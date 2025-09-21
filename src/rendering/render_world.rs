@@ -142,20 +142,6 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     mem::swap(&mut updates, &mut game_state.world.map_updates);
 
-    {
-        profiling::scope!("map_view::apply_updates");
-        map_view::apply_updates(
-            updates
-                .into_iter()
-                .flat_map(|v| v.into_iter())
-                .map(|pos| MapViewUpdate {
-                    pos,
-                    color: game_state.world.get_entity_color(pos, data_store),
-                }),
-            renderer,
-        );
-    }
-
     let ar = renderer.get_aspect_ratio();
 
     let num_tiles_across_screen_horizontal =
@@ -225,6 +211,20 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 // Some(Duration::from_millis(15)),
                 // None,
                 data_store,
+            );
+        }
+
+        {
+            profiling::scope!("map_view::apply_updates");
+            map_view::apply_updates(
+                updates
+                    .into_iter()
+                    .flat_map(|v| v.into_iter())
+                    .map(|pos| MapViewUpdate {
+                        pos,
+                        color: world.get_entity_color(pos, data_store),
+                    }),
+                renderer,
             );
         }
 
