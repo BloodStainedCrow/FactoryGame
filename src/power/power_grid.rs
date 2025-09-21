@@ -1702,6 +1702,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
 
         self.num_assemblers_of_type[usize::from(ty)] -= 1;
 
+        self.beacon_affected_entities
+            .remove(&BeaconAffectedEntity::Assembler { id: assembler_id });
+
+        for (_, beacon_affected) in self.beacon_affected_entity_map.iter_mut() {
+            beacon_affected.retain(|e| *e != BeaconAffectedEntity::Assembler { id: assembler_id });
+        }
+
         removal_info
     }
 
