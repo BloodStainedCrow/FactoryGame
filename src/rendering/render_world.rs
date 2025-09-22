@@ -47,6 +47,7 @@ use petgraph::dot::Dot;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::cmp::max;
 use std::fs::File;
+use std::io::Write;
 use std::num::NonZero;
 use std::sync::LazyLock;
 use std::{
@@ -2181,6 +2182,16 @@ pub fn render_ui<
             let s: String =
                 ron::ser::to_string_pretty(bp.unwrap(), ron::ser::PrettyConfig::default()).unwrap();
             ctx.copy_text(s);
+        }
+
+        if ui
+            .add_enabled(bp.is_some(), Button::new("Write Blueprint String to file"))
+            .clicked()
+        {
+            let s: String =
+                ron::ser::to_string_pretty(bp.unwrap(), ron::ser::PrettyConfig::default()).unwrap();
+            let mut file = File::create("saved.bp").unwrap();
+            file.write(s.as_bytes()).unwrap();
         }
     });
 
