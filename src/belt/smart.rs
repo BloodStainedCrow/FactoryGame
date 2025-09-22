@@ -1,13 +1,11 @@
 use std::{
     iter::repeat,
     ops::{Deref, DerefMut},
-    thread,
 };
 
 use crate::{
     inserter::{
-        InserterState, MOVETIME,
-        belt_storage_inserter::{BeltStorageInserter, Dir},
+        InserterState, MOVETIME, belt_storage_inserter::Dir,
         belt_storage_inserter_non_const_gen::BeltStorageInserterDyn,
     },
     item::{IdxTrait, Item, WeakIdxTrait},
@@ -530,39 +528,85 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         }
         let mut i = 0;
 
-        let mut first_possible_free_pos = match self.first_free_index {
+        let first_possible_free_pos = match self.first_free_index {
             FreeIndex::OldFreeIndex(i) | FreeIndex::FreeIndex(i) => i,
         };
 
         // TODO: We do a last second check here. Maybe this could be better with two struct, though then we do not have compile time assurance that no two inserters overlap.
 
+        let old_first_free = match self.first_free_index {
+            FreeIndex::FreeIndex(idx) => idx,
+            FreeIndex::OldFreeIndex(idx) => idx,
+        };
+
+        // for ins in self.inserters.inserters.iter_mut() {
+        //     i += usize::from(ins.offset);
+        //     let idx = (i + usize::from(self.zero_index)) % self.locs.len();
+        //     let loc = self.locs.get_mut(idx);
+
+        //     match loc {
+        //         Some(mut loc) => {
+        //             let changed =
+        //                 ins.update(loc.as_mut(), storages, MOVETIME, HAND_SIZE, grid_size);
+
+        //             if changed {
+        //                 // the inserter changed something.
+        //                 if !*loc && i < usize::from(first_possible_free_pos) {
+        //                     // This is the new first free pos.
+        //                     first_possible_free_pos = BeltLenType::try_from(i).unwrap();
+        //                     self.first_free_index =
+        //                         FreeIndex::FreeIndex(BeltLenType::try_from(i).unwrap());
+        //                 } else if *loc && i == usize::from(first_possible_free_pos) {
+        //                     // This was the old first free pos
+        //                     self.first_free_index =
+        //                         FreeIndex::OldFreeIndex(BeltLenType::try_from(i).unwrap());
+        //                 }
+        //             }
+        //         },
+        //         None => unreachable!(
+        //             "Adding the offsets of the inserters is bigger than the length of the belt."
+        //         ),
+        //     }
+
+        //     i += 1;
+        // }
+
+        let mut first_free_changed = false;
         for ins in self.inserters.inserters.iter_mut() {
-            i += usize::from(ins.offset);
-            let idx = (i + usize::from(self.zero_index)) % self.locs.len();
-            let loc = self.locs.get_mut(idx);
+            i += ins.offset;
+            // Taken from VecDeque::wrap_index
+            let logical_index = usize::from(self.zero_index) + usize::from(i);
+            let loc_idx = if logical_index >= self.locs.len() {
+                logical_index - self.locs.len()
+            } else {
+                logical_index
+            };
 
-            match loc {
-                Some(mut loc) => {
-                    let changed =
-                        ins.update(loc.as_mut(), storages, MOVETIME, HAND_SIZE, grid_size);
+            if i < old_first_free {
+                // We KNOW this position is filled
+                let mut loc = true;
+                let changed = ins.update(&mut loc, storages, MOVETIME, HAND_SIZE, grid_size);
 
-                    if changed {
-                        // the inserter changed something.
-                        if !*loc && i < usize::from(first_possible_free_pos) {
-                            // This is the new first free pos.
-                            first_possible_free_pos = BeltLenType::try_from(i).unwrap();
-                            self.first_free_index =
-                                FreeIndex::FreeIndex(BeltLenType::try_from(i).unwrap());
-                        } else if *loc && i == usize::from(first_possible_free_pos) {
-                            // This was the old first free pos
-                            self.first_free_index =
-                                FreeIndex::OldFreeIndex(BeltLenType::try_from(i).unwrap());
-                        }
+                if changed {
+                    self.locs.set(loc_idx, false);
+                    if !first_free_changed {
+                        self.first_free_index = FreeIndex::FreeIndex(i);
+                        first_free_changed = true;
                     }
-                },
-                None => unreachable!(
-                    "Adding the offsets of the inserters is bigger than the length of the belt."
-                ),
+                }
+            } else {
+                let mut loc = self.locs.get_mut(loc_idx).unwrap();
+
+                let changed = ins.update(loc.as_mut(), storages, MOVETIME, HAND_SIZE, grid_size);
+
+                if changed {
+                    // the inserter changed something.
+                    if !first_free_changed && i == old_first_free && *loc {
+                        // This was the old first free pos
+                        self.first_free_index =
+                            FreeIndex::OldFreeIndex(BeltLenType::try_from(i).unwrap());
+                    }
+                }
             }
 
             i += 1;
@@ -618,8 +662,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             .counts()
             .len();
 
-        let cache_lines_from_inserter_structs = self.inserters.inserters.len()
-            * std::mem::size_of::<BeltStorageInserterDyn>().div_ceil(64);
+        let cache_lines_from_inserter_structs = (self.inserters.inserters.len()
+            * std::mem::size_of::<BeltStorageInserterDyn>())
+        .div_ceil(64);
 
         let cache_lines_from_inserter_belt_lookup = self
             .inserters
@@ -1392,35 +1437,6 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
                 debug_assert!(idx <= self.get_len());
             },
         }
-        if Belt::<ItemIdxType>::query_item(self, 0).is_none() {
-            // Correctness: Since we always % len whenever we access using self.zero_index, we do not need to % len here
-            // TODO: This could overflow after usize::MAX ticks which is 9749040289 Years. Should be fine!
-            self.zero_index %= self.get_len();
-            self.zero_index = self.zero_index.checked_add(1).unwrap();
-            self.last_moving_spot = 0;
-            match self.first_free_index {
-                FreeIndex::FreeIndex(0) | FreeIndex::OldFreeIndex(0) => {
-                    if Belt::<ItemIdxType>::query_item(self, 0).is_none() {
-                        self.first_free_index = FreeIndex::FreeIndex(0);
-                    } else {
-                        self.first_free_index = FreeIndex::OldFreeIndex(0);
-                    }
-                },
-                FreeIndex::FreeIndex(_) => {
-                    unreachable!(
-                        "FreeIndex should always point at the earliest empty spot and we know that index 0 WAS an empty spot: {:?}",
-                        self.first_free_index
-                    )
-                },
-                FreeIndex::OldFreeIndex(_) => {
-                    unreachable!(
-                        "OldFreeIndex should always point at the earliest potential empty spot and we know that index 0 WAS an empty spot: {:?}",
-                        self.first_free_index
-                    )
-                },
-            }
-            return;
-        }
 
         self.zero_index %= self.get_len();
 
@@ -1434,6 +1450,14 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
             // All slots are full
             return;
         };
+
+        if first_free_index_real == 0 {
+            self.zero_index %= self.get_len();
+            self.zero_index = self.zero_index.checked_add(1).unwrap();
+            self.last_moving_spot = 0;
+            self.first_free_index = FreeIndex::OldFreeIndex(0);
+            return;
+        }
 
         assert!(
             first_free_index_real < len,
