@@ -592,10 +592,11 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
             if i < old_first_free {
                 // We KNOW this position is filled
+                debug_assert!(self.locs[loc_idx]);
                 let mut loc = true;
-                let changed = ins.update(&mut loc, storages, MOVETIME, HAND_SIZE, grid_size);
+                let _changed = ins.update(&mut loc, storages, MOVETIME, HAND_SIZE, grid_size);
 
-                if changed {
+                if !loc {
                     self.locs.set(loc_idx, false);
                     if !first_free_changed {
                         self.first_free_index = FreeIndex::FreeIndex(i);
