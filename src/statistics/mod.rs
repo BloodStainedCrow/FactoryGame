@@ -22,18 +22,20 @@ pub mod production;
 pub mod recipe;
 pub mod research;
 
-const NUM_DIFFERENT_TIMESCALES: usize = 3;
-pub const NUM_SAMPLES_AT_INTERVALS: [usize; NUM_DIFFERENT_TIMESCALES] = [600, 60, 60];
-pub const NUM_X_AXIS_TICKS: [usize; NUM_DIFFERENT_TIMESCALES] = [10, 6, 6];
-pub const RELATIVE_INTERVAL_MULTS: [usize; NUM_DIFFERENT_TIMESCALES] = [1, 60, 60];
+pub const NUM_DIFFERENT_TIMESCALES: usize = 5;
+pub const NUM_SAMPLES_AT_INTERVALS: [usize; NUM_DIFFERENT_TIMESCALES] = [600, 60, 60, 60, 50];
+pub const NUM_X_AXIS_TICKS: [usize; NUM_DIFFERENT_TIMESCALES] = [10, 6, 6, 10, 10];
+pub const RELATIVE_INTERVAL_MULTS: [usize; NUM_DIFFERENT_TIMESCALES] = [1, 60, 60, 10, 5];
 
 pub const TIMESCALE_NAMES: [&'static str; NUM_DIFFERENT_TIMESCALES] =
-    ["10 seconds", "1 minute", "1 hour"];
+    ["10 seconds", "1 minute", "1 hour", "10 hours", "50 hours"];
 
 pub const TIMESCALE_LEGEND: [fn(f64) -> String; NUM_DIFFERENT_TIMESCALES] = [
     |t| format!("{:.0}s", t / 60.0),
     |t| format!("{:.0}s", t),
     |t| format!("{:.0}m", t),
+    |t| format!("{:.0}m", t * 10.0),
+    |t| format!("{:.0}h", t),
 ];
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]

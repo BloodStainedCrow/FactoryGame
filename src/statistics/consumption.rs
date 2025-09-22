@@ -25,7 +25,7 @@ use get_size::GetSize;
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ConsumptionInfo {
-    items_consumed: Vec<u64>,
+    pub items_consumed: Vec<u64>,
 }
 
 impl ConsumptionInfo {

@@ -52,7 +52,7 @@ impl RecipeTickInfo {
         let mut recipes_5_1 = parts.recipes_5_1.into_iter();
         let mut recipes_6_1 = parts.recipes_6_1.into_iter();
 
-        let num_crafts_finished = data_store
+        let num_crafts_finished: Vec<SingleRecipeTickInfo> = data_store
             .recipe_num_ing_lookup
             .iter()
             .zip(data_store.recipe_num_out_lookup.iter())

@@ -7,6 +7,7 @@ use crate::get_size::RamUsage;
 use crate::item::Indexable;
 use crate::liquid::FluidSystemState;
 use crate::rendering::Corner;
+use crate::statistics::{NUM_DIFFERENT_TIMESCALES, TIMESCALE_NAMES};
 use crate::{
     TICKS_PER_SECOND_LOGIC,
     assembler::AssemblerOnclickInfo,
@@ -41,6 +42,7 @@ use egui::{Button, CollapsingHeader, Modal, RichText, ScrollArea, Sense};
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
 use egui_show_info::ShowInfo;
+use itertools::Itertools;
 use log::{info, trace};
 use parking_lot::MutexGuard;
 use petgraph::dot::Dot;
@@ -2718,9 +2720,10 @@ pub fn render_ui<
                 StatisticsPanel::Fluids(timescale) => timescale,
             };
             ui.with_layout(Layout::left_to_right(egui::Align::Min), |ui| {
-                ui.radio_value(time_scale, 0, "10 Seconds");
-                ui.radio_value(time_scale, 1, "1 Minute");
-                ui.radio_value(time_scale, 2, "1 Hour");
+                for i in 0..NUM_DIFFERENT_TIMESCALES {
+                    ui.radio_value(time_scale, i, TIMESCALE_NAMES[i]);
+                }
+                ui.radio_value(time_scale, usize::MAX, "Total");
             });
             let time_scale = *time_scale;
             ui.with_layout(Layout::left_to_right(egui::Align::Min), |ui| {
@@ -2748,154 +2751,346 @@ pub fn render_ui<
                         ui_production.separator();
                         ui_consumption.heading("Consumption");
                         ui_consumption.separator();
+                        let row_height = ui_production.spacing().interact_size.y;
 
-                        let prod_points: Vec<(String, usize, f32, PlotPoints)> = aux_data
-                            .statistics
-                            .production
-                            .get_series(
-                                scale,
-                                data_store_ref,
-                                Some(|item: Item<ItemIdxType>| {
-                                    data_store_ref.item_is_fluid[usize_from(item.id)] == take_fluids
-                                }),
-                            )
-                            .into_iter()
-                            .map(|(item_id, series)| (series.name, item_id, series.data))
-                            .map(|(name, i, data)| {
-                                (
-                                    name,
-                                    i,
-                                    data.iter().copied().sum(),
-                                    data.into_iter()
-                                        .enumerate()
-                                        .map(|(i, v)| [i as f64, v.into()])
-                                        .collect(),
-                                )
-                            })
-                            .filter(|(_, _, sum, _): &(_, _, f32, _)| *sum > 0.0)
-                            .collect();
-
-                        let max_prod = prod_points
-                            .iter()
-                            .map(|v| v.2)
-                            .max_by(|a, b| {
-                                if a < b {
-                                    Ordering::Less
-                                } else {
-                                    Ordering::Greater
-                                }
-                            })
-                            .unwrap_or(0.0);
-
-                        let mut sum_list_prod: Vec<_> = prod_points
-                            .iter()
-                            .map(|v| (v.0.clone(), v.1, v.2))
-                            .collect();
-
-                        sum_list_prod.sort_by(|a, b| {
-                            if a.2 < b.2 {
-                                Ordering::Greater
-                            } else {
-                                Ordering::Less
-                            }
-                        });
-
-                        let lines = prod_points
-                            .into_iter()
-                            .filter(|(_, id, _, _)| state_machine_ref.production_filters[*id])
-                            .map(|(name, id, _sum, points)| {
-                                Line::new(name, points)
-                                    .stroke(Stroke::new(2.0, data_store_ref.item_to_colour[id]))
-                            });
-
-                        let ticks_per_value = RELATIVE_INTERVAL_MULTS[..=scale]
-                            .iter()
-                            .copied()
-                            .product::<usize>()
-                            as f64;
-
-                        Plot::new("production_graph")
-                            .set_margin_fraction([0.0, 0.05].into())
-                            .x_grid_spacer(|_grid_input| {
-                                (0..NUM_X_AXIS_TICKS[scale])
-                                    .map(|v| GridMark {
-                                        value: v as f64 / (NUM_X_AXIS_TICKS[scale] as f64)
-                                            * (NUM_SAMPLES_AT_INTERVALS[scale] as f64),
-                                        step_size: 1.0 / (NUM_X_AXIS_TICKS[scale] as f64)
-                                            * (NUM_SAMPLES_AT_INTERVALS[scale] as f64),
+                        let (ticks_total, sum_list_prod, sum_list_cons) = if scale == usize::MAX {
+                            (
+                                aux_data.statistics.consumption.num_samples_pushed,
+                                aux_data
+                                    .statistics
+                                    .production
+                                    .total
+                                    .as_ref()
+                                    .unwrap()
+                                    .items_produced
+                                    .iter()
+                                    .copied()
+                                    .map(|v| v as f32)
+                                    .enumerate()
+                                    .zip(data_store.item_display_names.iter())
+                                    .filter(|((_item_id, count), _name)| *count > 0.0)
+                                    .map(|((a, b), c)| (c.to_string(), a, b))
+                                    .filter(|(_, id, _)| {
+                                        take_fluids == data_store.item_is_fluid[*id]
                                     })
-                                    .collect()
-                            })
-                            .y_grid_spacer(|grid_input| {
-                                let max: f64 = grid_input.bounds.1;
-
-                                let mut lower_dec = 10.0_f64
-                                    .powf((max / ticks_per_value * 60.0 * 60.0).log10().floor());
-
-                                if lower_dec < 1.0 {
-                                    lower_dec = 1.0;
-                                }
-
-                                lower_dec = lower_dec * ticks_per_value / 60.0 / 60.0;
-
-                                (0..40)
-                                    .filter_map(|v| {
-                                        ((v as f64) / 4.0 * lower_dec < max).then_some(GridMark {
-                                            value: (v as f64) / 4.0 * lower_dec,
-                                            step_size: lower_dec / 4.0,
-                                        })
+                                    .filter(|(_, id, _)| state_machine_ref.production_filters[*id])
+                                    .sorted_unstable_by(|a, b| {
+                                        if a.2 < b.2 {
+                                            Ordering::Greater
+                                        } else {
+                                            Ordering::Less
+                                        }
                                     })
-                                    .chain((0..10).filter_map(|v| {
-                                        ((v as f64) * lower_dec < max).then_some(GridMark {
-                                            value: (v as f64) * lower_dec,
-                                            step_size: 1.0 * lower_dec,
-                                        })
-                                    }))
-                                    .collect()
-                            })
-                            .custom_y_axes(
-                                [AxisHints::new_y().formatter(move |v, _| {
-                                    format!("{:.1}/min", v.value / ticks_per_value * 60.0 * 60.0)
-                                })]
-                                .to_vec(),
+                                    .collect(),
+                                aux_data
+                                    .statistics
+                                    .consumption
+                                    .total
+                                    .as_ref()
+                                    .unwrap()
+                                    .items_consumed
+                                    .iter()
+                                    .copied()
+                                    .map(|v| v as f32)
+                                    .enumerate()
+                                    .zip(data_store.item_display_names.iter())
+                                    .filter(|((_item_id, count), _name)| *count > 0.0)
+                                    .map(|((a, b), c)| (c.to_string(), a, b))
+                                    .filter(|(_, id, _)| {
+                                        take_fluids == data_store.item_is_fluid[*id]
+                                    })
+                                    .filter(|(_, id, _)| state_machine_ref.consumption_filters[*id])
+                                    .sorted_unstable_by(|a, b| {
+                                        if a.2 < b.2 {
+                                            Ordering::Greater
+                                        } else {
+                                            Ordering::Less
+                                        }
+                                    })
+                                    .collect(),
                             )
-                            .custom_x_axes(
-                                [AxisHints::new_x()
-                                    .formatter(|v, _| TIMESCALE_LEGEND[scale](v.value))]
-                                .to_vec(),
-                            )
-                            .include_y(0)
-                            .allow_zoom([false, false])
-                            .allow_drag([false, false])
-                            .allow_scroll([false, false])
-                            .view_aspect(3.0)
-                            .show(ui_production, |ui| {
-                                for line in lines {
-                                    ui.line(line);
-                                }
-                            });
-
-                        let ticks_per_sample = RELATIVE_INTERVAL_MULTS[..=time_scale]
-                            .iter()
-                            .copied()
-                            .product::<usize>();
-                        let ticks_total = min(
-                            ticks_per_sample * NUM_SAMPLES_AT_INTERVALS[time_scale],
-                            aux_data
+                        } else {
+                            let prod_points: Vec<(String, usize, f32, PlotPoints)> = aux_data
                                 .statistics
                                 .production
-                                .num_samples_pushed
-                                .next_multiple_of(ticks_per_sample)
-                                - ticks_per_sample,
-                        ) as f32;
+                                .get_series(
+                                    scale,
+                                    data_store_ref,
+                                    Some(|item: Item<ItemIdxType>| {
+                                        data_store_ref.item_is_fluid[usize_from(item.id)]
+                                            == take_fluids
+                                    }),
+                                )
+                                .into_iter()
+                                .map(|(item_id, series)| (series.name, item_id, series.data))
+                                .map(|(name, i, data)| {
+                                    (
+                                        name,
+                                        i,
+                                        data.iter().copied().sum(),
+                                        data.into_iter()
+                                            .enumerate()
+                                            .map(|(i, v)| [i as f64, v.into()])
+                                            .collect(),
+                                    )
+                                })
+                                .filter(|(_, _, sum, _): &(_, _, f32, _)| *sum > 0.0)
+                                .collect();
 
-                        let row_height = ui_production.spacing().interact_size.y;
+                            let mut sum_list_prod: Vec<_> = prod_points
+                                .iter()
+                                .map(|v| (v.0.clone(), v.1, v.2))
+                                .collect();
+
+                            sum_list_prod.sort_by(|a, b| {
+                                if a.2 < b.2 {
+                                    Ordering::Greater
+                                } else {
+                                    Ordering::Less
+                                }
+                            });
+
+                            let lines = prod_points
+                                .into_iter()
+                                .filter(|(_, id, _, _)| state_machine_ref.production_filters[*id])
+                                .map(|(name, id, _sum, points)| {
+                                    Line::new(name, points)
+                                        .stroke(Stroke::new(2.0, data_store_ref.item_to_colour[id]))
+                                });
+
+                            let ticks_per_value = RELATIVE_INTERVAL_MULTS[..=scale]
+                                .iter()
+                                .copied()
+                                .product::<usize>()
+                                as f64;
+
+                            Plot::new("production_graph")
+                                .set_margin_fraction([0.0, 0.05].into())
+                                .x_grid_spacer(|_grid_input| {
+                                    (0..NUM_X_AXIS_TICKS[scale])
+                                        .map(|v| GridMark {
+                                            value: v as f64 / (NUM_X_AXIS_TICKS[scale] as f64)
+                                                * (NUM_SAMPLES_AT_INTERVALS[scale] as f64),
+                                            step_size: 1.0 / (NUM_X_AXIS_TICKS[scale] as f64)
+                                                * (NUM_SAMPLES_AT_INTERVALS[scale] as f64),
+                                        })
+                                        .collect()
+                                })
+                                .y_grid_spacer(|grid_input| {
+                                    let max: f64 = grid_input.bounds.1;
+
+                                    let mut lower_dec = 10.0_f64.powf(
+                                        (max / ticks_per_value * 60.0 * 60.0).log10().floor(),
+                                    );
+
+                                    if lower_dec < 1.0 {
+                                        lower_dec = 1.0;
+                                    }
+
+                                    lower_dec = lower_dec * ticks_per_value / 60.0 / 60.0;
+
+                                    (0..40)
+                                        .filter_map(|v| {
+                                            ((v as f64) / 4.0 * lower_dec < max).then_some(
+                                                GridMark {
+                                                    value: (v as f64) / 4.0 * lower_dec,
+                                                    step_size: lower_dec / 4.0,
+                                                },
+                                            )
+                                        })
+                                        .chain((0..10).filter_map(|v| {
+                                            ((v as f64) * lower_dec < max).then_some(GridMark {
+                                                value: (v as f64) * lower_dec,
+                                                step_size: 1.0 * lower_dec,
+                                            })
+                                        }))
+                                        .collect()
+                                })
+                                .custom_y_axes(
+                                    [AxisHints::new_y().formatter(move |v, _| {
+                                        format!(
+                                            "{:.1}/min",
+                                            v.value / ticks_per_value * 60.0 * 60.0
+                                        )
+                                    })]
+                                    .to_vec(),
+                                )
+                                .custom_x_axes(
+                                    [AxisHints::new_x()
+                                        .formatter(|v, _| TIMESCALE_LEGEND[scale](v.value))]
+                                    .to_vec(),
+                                )
+                                .include_y(0)
+                                .allow_zoom([false, false])
+                                .allow_drag([false, false])
+                                .allow_scroll([false, false])
+                                .view_aspect(3.0)
+                                .show(ui_production, |ui| {
+                                    for line in lines {
+                                        ui.line(line);
+                                    }
+                                });
+
+                            let ticks_per_sample = RELATIVE_INTERVAL_MULTS[..=time_scale]
+                                .iter()
+                                .copied()
+                                .product::<usize>();
+                            let ticks_total = min(
+                                ticks_per_sample * NUM_SAMPLES_AT_INTERVALS[time_scale],
+                                aux_data
+                                    .statistics
+                                    .production
+                                    .num_samples_pushed
+                                    .next_multiple_of(ticks_per_sample)
+                                    - ticks_per_sample,
+                            );
+
+                            let cons_points: Vec<(String, usize, f32, PlotPoints)> = aux_data
+                                .statistics
+                                .consumption
+                                .get_series(
+                                    scale,
+                                    data_store_ref,
+                                    Some(|item: Item<ItemIdxType>| {
+                                        data_store_ref.item_is_fluid[usize_from(item.id)]
+                                            == take_fluids
+                                    }),
+                                )
+                                .into_iter()
+                                .map(|(item_id, series)| (series.name, item_id, series.data))
+                                .map(|(name, i, data)| {
+                                    (
+                                        name,
+                                        i,
+                                        data.iter().copied().sum(),
+                                        data.into_iter()
+                                            .enumerate()
+                                            .map(|(i, v)| [i as f64, v.into()])
+                                            .collect(),
+                                    )
+                                })
+                                .filter(|(_, _, sum, _): &(_, _, f32, _)| *sum > 0.0)
+                                .collect();
+
+                            let max_cons = cons_points
+                                .iter()
+                                .map(|v| v.2)
+                                .max_by(|a, b| {
+                                    if a < b {
+                                        Ordering::Less
+                                    } else {
+                                        Ordering::Greater
+                                    }
+                                })
+                                .unwrap_or(0.0);
+
+                            let mut sum_list_cons: Vec<_> = cons_points
+                                .iter()
+                                .map(|v| (v.0.clone(), v.1, v.2))
+                                .collect();
+
+                            sum_list_cons.sort_by(|a, b| {
+                                if a.2 < b.2 {
+                                    Ordering::Greater
+                                } else {
+                                    Ordering::Less
+                                }
+                            });
+
+                            let lines = cons_points
+                                .into_iter()
+                                .filter(|(_, id, _, _)| state_machine_ref.consumption_filters[*id])
+                                .map(|(name, id, _sum, points)| {
+                                    Line::new(name, points)
+                                        .stroke(Stroke::new(2.0, data_store_ref.item_to_colour[id]))
+                                });
+
+                            let ticks_per_value = RELATIVE_INTERVAL_MULTS[..=scale]
+                                .iter()
+                                .copied()
+                                .product::<usize>()
+                                as f64;
+
+                            Plot::new("consumption_graph")
+                                .set_margin_fraction([0.0, 0.05].into())
+                                .x_grid_spacer(|_grid_input| {
+                                    (0..NUM_X_AXIS_TICKS[scale])
+                                        .map(|v| GridMark {
+                                            value: v as f64 / (NUM_X_AXIS_TICKS[scale] as f64)
+                                                * (NUM_SAMPLES_AT_INTERVALS[scale] as f64),
+                                            step_size: 1.0 / (NUM_X_AXIS_TICKS[scale] as f64)
+                                                * (NUM_SAMPLES_AT_INTERVALS[scale] as f64),
+                                        })
+                                        .collect()
+                                })
+                                .y_grid_spacer(|grid_input| {
+                                    let max: f64 = grid_input.bounds.1;
+
+                                    let mut lower_dec = 10.0_f64.powf(
+                                        (max / ticks_per_value * 60.0 * 60.0).log10().floor(),
+                                    );
+
+                                    if lower_dec < 1.0 {
+                                        lower_dec = 1.0;
+                                    }
+
+                                    lower_dec = lower_dec * ticks_per_value / 60.0 / 60.0;
+
+                                    (0..40)
+                                        .filter_map(|v| {
+                                            ((v as f64) / 4.0 * lower_dec < max).then_some(
+                                                GridMark {
+                                                    value: (v as f64) / 4.0 * lower_dec,
+                                                    step_size: lower_dec / 4.0,
+                                                },
+                                            )
+                                        })
+                                        .chain((0..10).filter_map(|v| {
+                                            ((v as f64) * lower_dec < max).then_some(GridMark {
+                                                value: (v as f64) * lower_dec,
+                                                step_size: 1.0 * lower_dec,
+                                            })
+                                        }))
+                                        .collect()
+                                })
+                                .custom_y_axes(
+                                    [AxisHints::new_y().formatter(move |v, _| {
+                                        format!(
+                                            "{:.1}/min",
+                                            v.value / ticks_per_value * 60.0 * 60.0
+                                        )
+                                    })]
+                                    .to_vec(),
+                                )
+                                .custom_x_axes(
+                                    [AxisHints::new_x()
+                                        .formatter(|v, _| TIMESCALE_LEGEND[scale](v.value))]
+                                    .to_vec(),
+                                )
+                                .include_y(0)
+                                .allow_zoom([false, false])
+                                .allow_drag([false, false])
+                                .allow_scroll([false, false])
+                                .view_aspect(3.0)
+                                .show(ui_consumption, |ui| {
+                                    for line in lines {
+                                        ui.line(line);
+                                    }
+                                });
+
+                            (ticks_total, sum_list_prod, sum_list_cons)
+                        };
+
+                        let max_prod = sum_list_prod.get(0).map(|v| v.2).unwrap_or(0.0);
+                        let max_cons = sum_list_cons.get(0).map(|v| v.2).unwrap_or(0.0);
+
                         ScrollArea::vertical().id_salt("Prod List Scroll").show(
                             ui_production,
                             |ui| {
                                 TableBuilder::new(ui)
                                     .id_salt("Production List")
                                     .sense(Sense::click())
+                                    .column(Column::auto())
                                     .column(Column::auto())
                                     .column(Column::remainder())
                                     .column(Column::auto())
@@ -2925,6 +3120,20 @@ pub fn render_ui<
                                                 }
                                             });
                                             row.col(|ui| {
+                                                ui.with_layout(
+                                                    Layout::right_to_left(egui::Align::Center),
+                                                    |ui| {
+                                                        ui.add(
+                                                            Label::new(format!(
+                                                                "{:.0}",
+                                                                sum_list_prod[idx].2
+                                                            ))
+                                                            .extend(),
+                                                        );
+                                                    },
+                                                );
+                                            });
+                                            row.col(|ui| {
                                                 ui.add(
                                                     ProgressBar::new(
                                                         sum_list_prod[idx].2 / max_prod,
@@ -2943,7 +3152,8 @@ pub fn render_ui<
                                                         ui.add(
                                                             Label::new(format!(
                                                                 "{:.0}/min",
-                                                                sum_list_prod[idx].2 / ticks_total
+                                                                sum_list_prod[idx].2
+                                                                    / ticks_total as f32
                                                                     * TICKS_PER_SECOND_LOGIC as f32
                                                                     * 60.0
                                                             ))
@@ -2962,138 +3172,13 @@ pub fn render_ui<
                             },
                         );
 
-                        let cons_points: Vec<(String, usize, f32, PlotPoints)> = aux_data
-                            .statistics
-                            .consumption
-                            .get_series(
-                                scale,
-                                data_store_ref,
-                                Some(|item: Item<ItemIdxType>| {
-                                    data_store_ref.item_is_fluid[usize_from(item.id)] == take_fluids
-                                }),
-                            )
-                            .into_iter()
-                            .map(|(item_id, series)| (series.name, item_id, series.data))
-                            .map(|(name, i, data)| {
-                                (
-                                    name,
-                                    i,
-                                    data.iter().copied().sum(),
-                                    data.into_iter()
-                                        .enumerate()
-                                        .map(|(i, v)| [i as f64, v.into()])
-                                        .collect(),
-                                )
-                            })
-                            .filter(|(_, _, sum, _): &(_, _, f32, _)| *sum > 0.0)
-                            .collect();
-
-                        let max_cons = cons_points
-                            .iter()
-                            .map(|v| v.2)
-                            .max_by(|a, b| {
-                                if a < b {
-                                    Ordering::Less
-                                } else {
-                                    Ordering::Greater
-                                }
-                            })
-                            .unwrap_or(0.0);
-
-                        let mut sum_list_cons: Vec<_> = cons_points
-                            .iter()
-                            .map(|v| (v.0.clone(), v.1, v.2))
-                            .collect();
-
-                        sum_list_cons.sort_by(|a, b| {
-                            if a.2 < b.2 {
-                                Ordering::Greater
-                            } else {
-                                Ordering::Less
-                            }
-                        });
-
-                        let lines = cons_points
-                            .into_iter()
-                            .filter(|(_, id, _, _)| state_machine_ref.consumption_filters[*id])
-                            .map(|(name, id, _sum, points)| {
-                                Line::new(name, points)
-                                    .stroke(Stroke::new(2.0, data_store_ref.item_to_colour[id]))
-                            });
-
-                        let ticks_per_value = RELATIVE_INTERVAL_MULTS[..=scale]
-                            .iter()
-                            .copied()
-                            .product::<usize>()
-                            as f64;
-
-                        Plot::new("consumption_graph")
-                            .set_margin_fraction([0.0, 0.05].into())
-                            .x_grid_spacer(|_grid_input| {
-                                (0..NUM_X_AXIS_TICKS[scale])
-                                    .map(|v| GridMark {
-                                        value: v as f64 / (NUM_X_AXIS_TICKS[scale] as f64)
-                                            * (NUM_SAMPLES_AT_INTERVALS[scale] as f64),
-                                        step_size: 1.0 / (NUM_X_AXIS_TICKS[scale] as f64)
-                                            * (NUM_SAMPLES_AT_INTERVALS[scale] as f64),
-                                    })
-                                    .collect()
-                            })
-                            .y_grid_spacer(|grid_input| {
-                                let max: f64 = grid_input.bounds.1;
-
-                                let mut lower_dec = 10.0_f64
-                                    .powf((max / ticks_per_value * 60.0 * 60.0).log10().floor());
-
-                                if lower_dec < 1.0 {
-                                    lower_dec = 1.0;
-                                }
-
-                                lower_dec = lower_dec * ticks_per_value / 60.0 / 60.0;
-
-                                (0..40)
-                                    .filter_map(|v| {
-                                        ((v as f64) / 4.0 * lower_dec < max).then_some(GridMark {
-                                            value: (v as f64) / 4.0 * lower_dec,
-                                            step_size: lower_dec / 4.0,
-                                        })
-                                    })
-                                    .chain((0..10).filter_map(|v| {
-                                        ((v as f64) * lower_dec < max).then_some(GridMark {
-                                            value: (v as f64) * lower_dec,
-                                            step_size: 1.0 * lower_dec,
-                                        })
-                                    }))
-                                    .collect()
-                            })
-                            .custom_y_axes(
-                                [AxisHints::new_y().formatter(move |v, _| {
-                                    format!("{:.1}/min", v.value / ticks_per_value * 60.0 * 60.0)
-                                })]
-                                .to_vec(),
-                            )
-                            .custom_x_axes(
-                                [AxisHints::new_x()
-                                    .formatter(|v, _| TIMESCALE_LEGEND[scale](v.value))]
-                                .to_vec(),
-                            )
-                            .include_y(0)
-                            .allow_zoom([false, false])
-                            .allow_drag([false, false])
-                            .allow_scroll([false, false])
-                            .view_aspect(3.0)
-                            .show(ui_consumption, |ui| {
-                                for line in lines {
-                                    ui.line(line);
-                                }
-                            });
-
                         ScrollArea::vertical().id_salt("Cons List Scroll").show(
                             ui_consumption,
                             |ui| {
                                 TableBuilder::new(ui)
                                     .id_salt("Consumption List")
                                     .sense(Sense::click())
+                                    .column(Column::auto())
                                     .column(Column::auto())
                                     .column(Column::remainder())
                                     .column(Column::auto())
@@ -3123,6 +3208,20 @@ pub fn render_ui<
                                                 }
                                             });
                                             row.col(|ui| {
+                                                ui.with_layout(
+                                                    Layout::right_to_left(egui::Align::Center),
+                                                    |ui| {
+                                                        ui.add(
+                                                            Label::new(format!(
+                                                                "{:.0}",
+                                                                sum_list_cons[idx].2
+                                                            ))
+                                                            .extend(),
+                                                        );
+                                                    },
+                                                );
+                                            });
+                                            row.col(|ui| {
                                                 ui.add(
                                                     ProgressBar::new(
                                                         sum_list_cons[idx].2 / max_cons,
@@ -3141,7 +3240,8 @@ pub fn render_ui<
                                                         ui.add(
                                                             Label::new(format!(
                                                                 "{:.0}/min",
-                                                                sum_list_cons[idx].2 / ticks_total
+                                                                sum_list_cons[idx].2
+                                                                    / ticks_total as f32
                                                                     * TICKS_PER_SECOND_LOGIC as f32
                                                                     * 60.0
                                                             ))
