@@ -1557,7 +1557,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
     }
 
     fn remove_item(&mut self, pos: BeltLenType) -> Option<Item<ItemIdxType>> {
-        if self.locs[self.into_loc_index(pos)] {
+        if self.query_item(pos).is_some() {
             *self.get_mut(pos) = false;
             self.update_first_free_pos(pos);
             Some(self.item)
