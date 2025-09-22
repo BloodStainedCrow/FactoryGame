@@ -115,11 +115,19 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         }
     }
 
-    fn into_loc_index(&self, pos: BeltLenType) -> usize {
-        (usize::from(self.zero_index)
+    fn calculate_loc_index(
+        pos: BeltLenType,
+        zero_index: BeltLenType,
+        belt_len: BeltLenType,
+    ) -> usize {
+        (usize::from(zero_index)
             .checked_add(usize::from(pos))
             .unwrap())
-            % self.locs.len()
+            % usize::from(belt_len)
+    }
+
+    fn into_loc_index(&self, pos: BeltLenType) -> usize {
+        Self::calculate_loc_index(pos, self.zero_index, self.locs.len().try_into().unwrap())
     }
 
     pub fn try_insert_correct_item(&mut self, belt_pos: BeltLenType) -> Result<(), NoSpaceError> {
