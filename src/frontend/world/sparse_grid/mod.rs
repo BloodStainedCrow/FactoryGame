@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::hash::Hash;
 use std::ops::RangeInclusive;
 
+pub mod bounding_box_grid;
 pub mod perfect_grid;
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
