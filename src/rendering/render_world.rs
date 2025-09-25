@@ -204,12 +204,12 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     x: camera_pos.0 as i32,
                     y: camera_pos.1 as i32,
                 },
-                num_tiles_across_screen_horizontal as usize,
-                num_tiles_across_screen_vertical as usize,
+                num_tiles_across_screen_horizontal as u32,
+                num_tiles_across_screen_vertical as u32,
                 // Only allow incremental map_view building for the last view level
                 map_view::MIN_WIDTH
                     .iter()
-                    .all(|&v| v < num_tiles_across_screen_horizontal as usize)
+                    .all(|&v| v < num_tiles_across_screen_horizontal as u32)
                     .then_some(Duration::from_millis(15)),
                 // Some(Duration::from_millis(15)),
                 // None,
@@ -243,8 +243,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 },
                 num_tiles_across_screen_horizontal,
                 num_tiles_across_screen_vertical,
-                num_tiles_across_screen_horizontal as usize,
-                num_tiles_across_screen_vertical as usize,
+                num_tiles_across_screen_horizontal as u32,
+                num_tiles_across_screen_vertical as u32,
                 tilesize,
                 ar,
                 camera_pos,

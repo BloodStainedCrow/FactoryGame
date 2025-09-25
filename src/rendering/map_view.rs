@@ -1,6 +1,6 @@
 use std::{
     borrow::Borrow,
-    cmp::min,
+    cmp::{max, min},
     collections::HashMap,
     sync::LazyLock,
     time::{Duration, Instant},
@@ -23,27 +23,27 @@ pub struct MapViewUpdate {
 
 const NUM_MAP_TILE_SIZES: usize = 4;
 // TODO: Figure out a good tilesize. 1024 seems to work fine, but is larger or smaller better?
-const TILE_SIZE_PIXELS: [usize; NUM_MAP_TILE_SIZES] = [1024, 1024, 1024, 1024];
+const TILE_SIZE_PIXELS: [u32; NUM_MAP_TILE_SIZES] = [1024, 1024, 1024, 1024];
 // TODO: Since array::map is not const, we hack it like this
-const NUM_TILES_PER_AXIS: [usize; NUM_MAP_TILE_SIZES] = {
+const NUM_TILES_PER_AXIS: [u32; NUM_MAP_TILE_SIZES] = {
     let mut b = [0; NUM_MAP_TILE_SIZES];
     let mut i = 0;
     while i < NUM_MAP_TILE_SIZES {
-        b[i] = 2_000_000usize.div_ceil(TILE_SIZE_PIXELS[i]); // map
+        b[i] = 2_000_000u32.div_ceil(TILE_SIZE_PIXELS[i]); // map
         i += 1;
     }
     b
 };
-const TILE_PIXEL_TO_WORLD_TILE: [usize; NUM_MAP_TILE_SIZES] = [1, 4, 16, 64];
-pub const MIN_WIDTH: [usize; NUM_MAP_TILE_SIZES] = [0, 5_000, 10_000, 50_000];
+const TILE_PIXEL_TO_WORLD_TILE: [u32; NUM_MAP_TILE_SIZES] = [1, 4, 16, 64];
+pub const MIN_WIDTH: [u32; NUM_MAP_TILE_SIZES] = [0, 5_000, 10_000, 50_000];
 
 #[profiling::function]
 pub fn create_map_textures_if_needed<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     world: &World<ItemIdxType, RecipeIdxType>,
     renderer: &mut impl RendererTrait,
     camera_pos: Position,
-    view_width_in_tiles: usize,
-    view_height_in_tiles: usize,
+    view_width_in_tiles: u32,
+    view_height_in_tiles: u32,
     allowed_time: Option<Duration>,
     data_store: &crate::data::DataStore<ItemIdxType, RecipeIdxType>,
 ) {
@@ -61,42 +61,40 @@ pub fn create_map_textures_if_needed<ItemIdxType: IdxTrait, RecipeIdxType: IdxTr
             NUM_TILES_PER_AXIS[0..idx]
                 .iter()
                 .map(|v| v * v)
-                .sum::<usize>(),
+                .sum::<u32>(),
         )
     };
 
-    let tile_x_center =
-        usize::try_from(camera_pos.x + 1_000_000).unwrap_or(0) / pixel_to_tile / map_tile_size;
-    let tile_y_center =
-        usize::try_from(camera_pos.y + 1_000_000).unwrap_or(0) / pixel_to_tile / map_tile_size;
+    let tile_x_center = (camera_pos.x + 1_000_000)
+        / i32::try_from(pixel_to_tile).unwrap()
+        / i32::try_from(map_tile_size).unwrap();
+    let tile_y_center = (camera_pos.y + 1_000_000)
+        / i32::try_from(pixel_to_tile).unwrap()
+        / i32::try_from(map_tile_size).unwrap();
 
-    let tile_x_left_edge = (usize::try_from(camera_pos.x + 1_000_000)
-        .unwrap_or(0)
-        .saturating_sub(view_width_in_tiles.div_ceil(2)))
-        / pixel_to_tile
-        / map_tile_size;
-    let tile_y_left_edge = (usize::try_from(camera_pos.y + 1_000_000)
-        .unwrap_or(0)
-        .saturating_sub(view_height_in_tiles.div_ceil(2)))
-        / pixel_to_tile
-        / map_tile_size;
+    let tile_x_left_edge = ((camera_pos.x + 1_000_000)
+        .saturating_sub_unsigned(view_width_in_tiles.div_ceil(2)))
+        / i32::try_from(pixel_to_tile).unwrap()
+        / i32::try_from(map_tile_size).unwrap();
+    let tile_y_left_edge = ((camera_pos.y + 1_000_000)
+        .saturating_sub_unsigned(view_height_in_tiles.div_ceil(2)))
+        / i32::try_from(pixel_to_tile).unwrap()
+        / i32::try_from(map_tile_size).unwrap();
     let tile_x_right_edge = min(
-        usize::try_from(camera_pos.x + 1_000_000)
-            .unwrap_or(0)
-            .saturating_add(view_width_in_tiles.div_ceil(2)),
+        (camera_pos.x + 1_000_000).saturating_add_unsigned(view_width_in_tiles.div_ceil(2)),
         2_000_000,
-    ) / pixel_to_tile
-        / map_tile_size;
+    ) / i32::try_from(pixel_to_tile).unwrap()
+        / i32::try_from(map_tile_size).unwrap();
     let tile_y_right_edge = min(
-        usize::try_from(camera_pos.y + 1_000_000)
-            .unwrap_or(0)
-            .saturating_add(view_height_in_tiles.div_ceil(2)),
+        (camera_pos.y + 1_000_000).saturating_add_unsigned(view_height_in_tiles.div_ceil(2)),
         2_000_000,
-    ) / pixel_to_tile
-        / map_tile_size;
+    ) / i32::try_from(pixel_to_tile).unwrap()
+        / i32::try_from(map_tile_size).unwrap();
 
-    let tile_x = tile_x_left_edge..=(min(tile_x_right_edge, num_per_axis));
-    let tile_y = tile_y_left_edge..=(min(tile_y_right_edge, num_per_axis));
+    let tile_x =
+        max(tile_x_left_edge, 0)..=(min(tile_x_right_edge, i32::try_from(num_per_axis).unwrap()));
+    let tile_y =
+        max(tile_y_left_edge, 0)..=(min(tile_y_right_edge, i32::try_from(num_per_axis).unwrap()));
 
     let full_tile_iter = tile_x.flat_map(|tile_x| std::iter::repeat(tile_x).zip(tile_y.clone()));
 
@@ -106,7 +104,13 @@ pub fn create_map_textures_if_needed<ItemIdxType: IdxTrait, RecipeIdxType: IdxTr
 
         x_dist * x_dist + y_dist * y_dist
     }) {
-        let tile_texture_id = tile_x * num_per_axis + tile_y + texture_id_offset;
+        assert!(tile_x >= 0);
+        assert!(tile_x < i32::try_from(num_per_axis).unwrap());
+
+        assert!(tile_y >= 0);
+        assert!(tile_y < i32::try_from(num_per_axis).unwrap());
+        let tile_texture_id =
+            tile_x as usize * num_per_axis as usize + tile_y as usize + texture_id_offset as usize;
 
         profiling::scope!(
             "Create Runtime texture",
@@ -115,15 +119,19 @@ pub fn create_map_textures_if_needed<ItemIdxType: IdxTrait, RecipeIdxType: IdxTr
                 [map_tile_size; 2], pixel_to_tile
             )
         );
-        renderer.create_runtime_texture_if_missing(tile_texture_id, [map_tile_size; 2], || {
-            collect_colors(
-                world,
-                [tile_x, tile_y],
-                map_tile_size,
-                pixel_to_tile,
-                data_store,
-            )
-        });
+        renderer.create_runtime_texture_if_missing(
+            tile_texture_id,
+            [map_tile_size as usize; 2],
+            || {
+                collect_colors(
+                    world,
+                    [tile_x as u32, tile_y as u32],
+                    map_tile_size,
+                    pixel_to_tile,
+                    data_store,
+                )
+            },
+        );
 
         if let Some(allowed_time) = allowed_time {
             if start_time.elapsed() > allowed_time {
@@ -147,13 +155,14 @@ impl Borrow<[u8]> for ColorResult {
     }
 }
 
-static DEDUP_MAP: LazyLock<HashMap<usize, Vec<u8>>> = LazyLock::new(|| {
+static DEDUP_MAP: LazyLock<HashMap<u32, Vec<u8>>> = LazyLock::new(|| {
     let mut map = HashMap::new();
     for map_tile_size in TILE_SIZE_PIXELS {
         map.entry(map_tile_size * map_tile_size)
             .or_insert(bytemuck::cast_vec(vec![
                 Color32::BLACK;
-                map_tile_size * map_tile_size
+                map_tile_size as usize
+                    * map_tile_size as usize
             ]));
     }
     map
@@ -162,9 +171,9 @@ static DEDUP_MAP: LazyLock<HashMap<usize, Vec<u8>>> = LazyLock::new(|| {
 #[profiling::function]
 fn collect_colors<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     world: &World<ItemIdxType, RecipeIdxType>,
-    [tile_x, tile_y]: [usize; 2],
-    map_tile_size: usize,
-    pixel_to_tile: usize,
+    [tile_x, tile_y]: [u32; 2],
+    map_tile_size: u32,
+    pixel_to_tile: u32,
     data_store: &crate::data::DataStore<ItemIdxType, RecipeIdxType>,
 ) -> ColorResult {
     let data = if world
@@ -214,7 +223,8 @@ fn collect_colors<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             Some(cached_alloc) => ColorResult::Const(&cached_alloc),
             None => ColorResult::Generated(bytemuck::cast_vec(vec![
                 Color32::BLACK;
-                map_tile_size * map_tile_size
+                map_tile_size as usize
+                    * map_tile_size as usize
             ])),
         }
     };
@@ -260,31 +270,37 @@ pub fn apply_updates(
                     NUM_TILES_PER_AXIS[0..tile_idx]
                         .iter()
                         .map(|v| v * v)
-                        .sum::<usize>(),
+                        .sum::<u32>(),
                 )
             };
 
             if update.pos.x % pixel_to_tile as i32 == 0 && update.pos.y % pixel_to_tile as i32 == 0
             {
-                let texture_id = (usize::try_from(update.pos.x + 1_000_000).unwrap()
-                    / pixel_to_tile
-                    / map_tile_size)
-                    * num_per_axis
-                    + (usize::try_from(update.pos.y + 1_000_000).unwrap()
-                        / pixel_to_tile
-                        / map_tile_size)
-                    + texture_id_offset;
+                assert!(update.pos.x > -1_000_000);
+                assert!(update.pos.x < 1_000_000);
 
-                let x = (usize::try_from(update.pos.x + 1_000_000).unwrap() / pixel_to_tile)
-                    % map_tile_size;
-                let y = (usize::try_from(update.pos.y + 1_000_000).unwrap() / pixel_to_tile)
-                    % map_tile_size;
+                assert!(update.pos.y > -1_000_000);
+                assert!(update.pos.y < 1_000_000);
+
+                let texture_id = ((update.pos.x + 1_000_000)
+                    / i32::try_from(pixel_to_tile).unwrap()
+                    / i32::try_from(map_tile_size).unwrap())
+                    * i32::try_from(num_per_axis).unwrap()
+                    + ((update.pos.y + 1_000_000)
+                        / i32::try_from(pixel_to_tile).unwrap()
+                        / i32::try_from(map_tile_size).unwrap())
+                    + i32::try_from(texture_id_offset).unwrap();
+
+                let x = ((update.pos.x + 1_000_000) / i32::try_from(pixel_to_tile).unwrap())
+                    % i32::try_from(map_tile_size).unwrap();
+                let y = ((update.pos.y + 1_000_000) / i32::try_from(pixel_to_tile).unwrap())
+                    % i32::try_from(map_tile_size).unwrap();
 
                 renderer.do_texture_updates(
-                    texture_id,
+                    texture_id.try_into().unwrap(),
                     [(
-                        x,
-                        y,
+                        x as usize,
+                        y as usize,
                         [update.color.r(), update.color.g(), update.color.b(), 255],
                     )],
                 );
@@ -299,8 +315,8 @@ pub fn render_map_view(
     camera_pos: Position,
     view_width: f32,
     view_height: f32,
-    view_width_in_tiles: usize,
-    view_height_in_tiles: usize,
+    view_width_in_tiles: u32,
+    view_height_in_tiles: u32,
     tile_size: f32,
     aspect_ratio: f32,
     player_pos: (f32, f32),
@@ -319,43 +335,49 @@ pub fn render_map_view(
             NUM_TILES_PER_AXIS[0..idx]
                 .iter()
                 .map(|v| v * v)
-                .sum::<usize>(),
+                .sum::<u32>(),
         )
     };
-    let tile_x_left_edge = (usize::try_from(camera_pos.x + 1_000_000)
-        .unwrap()
-        .saturating_sub(view_width_in_tiles.div_ceil(2)))
-        / pixel_to_tile
-        / map_tile_size;
-    let tile_y_left_edge = (usize::try_from(camera_pos.y + 1_000_000)
-        .unwrap()
-        .saturating_sub(view_height_in_tiles.div_ceil(2)))
-        / pixel_to_tile
-        / map_tile_size;
+    let tile_x_left_edge = ((camera_pos.x + 1_000_00)
+        .saturating_sub_unsigned(view_width_in_tiles.div_ceil(2)))
+        / i32::try_from(pixel_to_tile).unwrap()
+        / i32::try_from(map_tile_size).unwrap();
+    let tile_y_left_edge = ((camera_pos.y + 1_000_000)
+        .saturating_sub_unsigned(view_height_in_tiles.div_ceil(2)))
+        / i32::try_from(pixel_to_tile).unwrap()
+        / i32::try_from(map_tile_size).unwrap();
     let tile_x_right_edge = min(
-        usize::try_from(camera_pos.x + 1_000_000)
-            .unwrap()
-            .saturating_add(view_width_in_tiles.div_ceil(2)),
+        (camera_pos.x + 1_000_000).saturating_add_unsigned(view_width_in_tiles.div_ceil(2)),
         2_000_000,
-    ) / pixel_to_tile
-        / map_tile_size;
+    ) / i32::try_from(pixel_to_tile).unwrap()
+        / i32::try_from(map_tile_size).unwrap();
     let tile_y_right_edge = min(
-        usize::try_from(camera_pos.y + 1_000_000)
-            .unwrap()
-            .saturating_add(view_height_in_tiles.div_ceil(2)),
+        (camera_pos.y + 1_000_000).saturating_add_unsigned(view_height_in_tiles.div_ceil(2)),
         2_000_000,
-    ) / pixel_to_tile
-        / map_tile_size;
+    ) / i32::try_from(pixel_to_tile).unwrap()
+        / i32::try_from(map_tile_size).unwrap();
 
     let mut map_layer = Layer::square_tile_grid(tile_size, aspect_ratio);
-    for tile_x in tile_x_left_edge..=(min(tile_x_right_edge, num_per_axis)) {
-        for tile_y in tile_y_left_edge..=(min(tile_y_right_edge, num_per_axis)) {
-            let texture_id = tile_x * num_per_axis + tile_y + texture_id_offset;
+    for tile_x in
+        max(tile_x_left_edge, 0)..=(min(tile_x_right_edge, i32::try_from(num_per_axis).unwrap()))
+    {
+        for tile_y in max(tile_y_left_edge, 0)
+            ..=(min(tile_y_right_edge, i32::try_from(num_per_axis).unwrap()))
+        {
+            assert!(tile_x >= 0);
+            assert!(tile_x < i32::try_from(num_per_axis).unwrap());
+
+            assert!(tile_y >= 0);
+            assert!(tile_y < i32::try_from(num_per_axis).unwrap());
+
+            let texture_id = tile_x as usize * num_per_axis as usize
+                + tile_y as usize
+                + texture_id_offset as usize;
 
             let tile_draw_offs = (
-                (tile_x * map_tile_size * pixel_to_tile) as f32 - 1_000_000.0 - player_pos.0
+                (tile_x as u32 * map_tile_size * pixel_to_tile) as f32 - 1_000_000.0 - player_pos.0
                     + (0.5 * view_width),
-                (tile_y * map_tile_size * pixel_to_tile) as f32 - 1_000_000.0 - player_pos.1
+                (tile_y as u32 * map_tile_size * pixel_to_tile) as f32 - 1_000_000.0 - player_pos.1
                     + (0.5 * view_height),
             );
 
