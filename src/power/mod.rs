@@ -869,25 +869,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             }
         }
 
+        let solar_production = data_store
+            .solar_panel_info
+            .iter()
+            .map(|info| match &info.power_output {
+                crate::data::SolarPanelOutputFunction::Constant(output) => *output,
+                crate::data::SolarPanelOutputFunction::Lookup(output) => {
+                    output[usize::try_from(current_time).unwrap()]
+                },
+            })
+            .collect::<Box<[Watt]>>();
+
         let (research_progress, production_info, times_labs_used_science, beacon_updates) = self
             .power_grids
             .par_iter_mut()
-            .map(|grid| {
-                grid.update(
-                    &data_store
-                        .solar_panel_info
-                        .iter()
-                        .map(|info| match &info.power_output {
-                            crate::data::SolarPanelOutputFunction::Constant(output) => *output,
-                            crate::data::SolarPanelOutputFunction::Lookup(output) => {
-                                output[usize::try_from(current_time).unwrap()]
-                            },
-                        })
-                        .collect::<Box<[Watt]>>(),
-                    tech_state,
-                    data_store,
-                )
-            })
+            .map(|grid| grid.update(&solar_production, tech_state, data_store))
             .reduce(
                 || (0, RecipeTickInfo::new(data_store), 0, vec![]),
                 |(acc_progress, infos, times_labs_used_science, mut old_updates),
