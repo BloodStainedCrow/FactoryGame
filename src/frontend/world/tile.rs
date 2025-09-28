@@ -3716,31 +3716,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         pole_position,
                         weak_index,
                     } => {
-                        for &(_, item) in &data_store.recipe_to_items[&assembler_id.recipe] {
-                            for (_, (_frontend, store)) in
-                                sim_state.factory.storage_storage_inserters.inserters
-                                    [item.into_usize()]
-                                .iter_mut()
-                            {
-                                // FIXME: What if any of these are actual inserters in the world?
-                                let _removed = store.remove_inserters_with_connection(
-                                    FakeUnionStorage::from_storage_with_statics_at_zero(
-                                        item,
-                                        Storage::Assembler {
-                                            grid: assembler_id.grid,
-                                            recipe_idx_with_this_item: assembler_id.recipe.id,
-                                            index: assembler_id.assembler_index,
-                                        }
-                                        .translate(item, data_store),
-                                        data_store,
-                                    ),
-                                );
-                                dbg!(
-                                    &data_store.item_names[item.into_usize()],
-                                    _removed.collect_vec()
-                                );
-                            }
-                        }
+                        let assembler_size = entity.get_entity_size(data_store);
 
                         // TODO:
                         let assembler_removal_info = sim_state.factory.power_grids.power_grids
@@ -3751,6 +3727,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                 *weak_index,
                                 data_store,
                             );
+
+                        cascading_updates.push(removal_of_possible_inserter_connection(
+                            *pos,
+                            assembler_size,
+                            data_store,
+                        ));
                     },
                 },
                 Entity::PowerPole {
@@ -3994,7 +3976,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                                 *weak_index = new_weak_index;
                                             } else {
                                                 // FIXME: This will delete items!
-                                                *info = AssemblerInfo::Unpowered(id.recipe)
+                                                *info = AssemblerInfo::Unpowered(id.recipe);
+
+                                                let pos = *pos;
+                                                let assembler_size = e.get_entity_size(data_store);
+
+                                                cascading_updates.push(
+                                                    removal_of_possible_inserter_connection(
+                                                        pos,
+                                                        assembler_size,
+                                                        data_store,
+                                                    ),
+                                                );
                                             }
                                         },
                                     },
