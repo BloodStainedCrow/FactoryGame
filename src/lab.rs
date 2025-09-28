@@ -2,7 +2,7 @@ use crate::{
     assembler::TIMERTYPE,
     data::DataStore,
     frontend::world::Position,
-    item::{ITEMCOUNTTYPE, IdxTrait, Item},
+    item::{ITEMCOUNTTYPE, IdxTrait, Item, WeakIdxTrait},
     power::{
         Joule, Watt,
         power_grid::{IndexUpdateInfo, MAX_POWER_MULT, PowerGridEntity, PowerGridIdentifier},
@@ -13,6 +13,8 @@ use crate::{
 use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
 use get_size::GetSize;
+
+pub const TICKS_PER_SCIENCE: TIMERTYPE = 10;
 
 // TODO: Add variable power consumption and speed
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
@@ -49,6 +51,17 @@ pub struct MultiLabStore {
     // This is not used in normal updates, but only for when the indices change (i.e. when merging power networks)
     positions: Vec<Position>,
     types: Vec<u8>,
+}
+
+pub struct LabViewInfo<ItemIdxType: WeakIdxTrait> {
+    pub items: Vec<(Item<ItemIdxType>, ITEMCOUNTTYPE)>,
+    pub timer_percentage: f32,
+    pub prod_timer_percentage: f32,
+    pub base_speed: f32,
+    pub speed_mod: f32,
+    pub prod_mod: f32,
+    pub power_consumption_mod: f32,
+    pub base_power_consumption: Watt,
 }
 
 impl MultiLabStore {
@@ -263,7 +276,6 @@ impl MultiLabStore {
         current_research_costs: Option<&[u8]>,
     ) -> (Joule, u32, u16) {
         const POWER_CONSUMPTION: Watt = Watt(600);
-        const TICKS_PER_SCIENCE: TIMERTYPE = 10;
 
         let Some(current_research_costs) = current_research_costs else {
             // We are not currently researching anything. This means we do not use any items any power or gained any progress
@@ -526,5 +538,28 @@ impl MultiLabStore {
             .clamp(0, u8::MAX.into())
             .try_into()
             .expect("Values already clamped");
+    }
+
+    pub fn get_lab_info<ItemIdxType: WeakIdxTrait, RecipeIdxType: IdxTrait>(
+        &self,
+        index: u32,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> LabViewInfo<ItemIdxType> {
+        LabViewInfo {
+            items: data_store
+                .science_bottle_items
+                .iter()
+                .copied()
+                .zip(self.sciences.iter().map(|list| list[index as usize]))
+                .collect(),
+            timer_percentage: self.timer[index as usize] as f32 / TIMERTYPE::MAX as f32,
+            // prod_timer_percentage: self.prod_timer[index as usize] as f32 / TIMERTYPE::MAX as f32,
+            prod_timer_percentage: 0.0 / TIMERTYPE::MAX as f32,
+            base_speed: self.base_speed[index as usize] as f32 / 20.0,
+            speed_mod: self.raw_speed_mod[index as usize] as f32 / 20.0,
+            prod_mod: self.raw_bonus_productivity[index as usize] as f32 / 100.0,
+            power_consumption_mod: self.power_consumption_modifier[index as usize] as f32 / 20.0,
+            base_power_consumption: self.base_power_consumption[index as usize],
+        }
     }
 }

@@ -2616,8 +2616,68 @@ pub fn render_ui<
                             });
                         });
                     },
-                    Entity::Lab {   .. } => {
-                        // TODO
+                    Entity::Lab { pole_position, ty, modules, .. } => {
+                        ui.label(&data_store.lab_info[*ty as usize].display_name);
+                        match pole_position {
+                            Some((pole_pos, weak_index, lab_index)) => {
+                                let ticks_per_science: f32 = TICKS_PER_SCIENCE as f32;
+
+                                let LabViewInfo {
+                                    items,
+                                    timer_percentage,
+                                    prod_timer_percentage,
+                                    base_speed,
+                                    speed_mod,
+                                    prod_mod,
+                                    power_consumption_mod,
+                                    base_power_consumption,
+                                } = game_state_ref.simulation_state.factory.power_grids.power_grids[game_state_ref.simulation_state.factory.power_grids.pole_pos_to_grid_id[pole_pos] as usize].lab_stores.get_lab_info(*lab_index, &data_store);
+                                
+                                let main_pb = ProgressBar::new(timer_percentage).show_percentage().corner_radius(CornerRadius::ZERO);
+                                ui.add(main_pb);
+                                let prod_pb = ProgressBar::new(prod_timer_percentage).fill(Color32::ORANGE).show_percentage().corner_radius(CornerRadius::ZERO);
+                                ui.add(prod_pb);
+
+                                // Render module slots
+                                TableBuilder::new(ui).id_salt("Module Slots").columns(Column::auto(), modules.len()).body(|mut body| {
+                                    body.row(1.0, |mut row| {
+                                        for module in modules.iter() {
+                                            row.col(|ui| {
+                                                if let Some(module_id) = module {
+                                                    ui.label(&data_store_ref.module_info[*module_id].display_name);
+                                                } else {
+                                                    ui.label("Empty Module Slot");
+                                                }
+                                            });
+                                        }
+                                    });
+                                });
+
+                                let crafting_speed = base_speed * (1.0 + speed_mod);
+
+                                TableBuilder::new(ui).columns(Column::auto().resizable(false), items.len()).body(|mut body| {
+                                    body.row(5.0, |mut row| {
+                                        for (item, count) in items.iter() {
+                                            row.col(|ui| {
+                                                ui.add(egui::Label::new(&data_store_ref.item_display_names[usize_from(item.id)]).wrap_mode(egui::TextWrapMode::Extend));
+                                                ui.add(egui::Label::new(format!("{}", *count)).wrap_mode(egui::TextWrapMode::Extend));
+                                                ui.add(egui::Label::new(format!("{}/s", (ticks_per_science / 60.0))).wrap_mode(egui::TextWrapMode::Extend));
+                                            });
+                                        }
+
+                                    });
+                                });
+
+
+
+                                ui.label(format!("Crafting Speed: {:.2}({:+.0}%)", crafting_speed, speed_mod * 100.0));
+                                ui.label(format!("Productivity: {:.1}%", prod_mod * 100.0));
+                                ui.label(format!("Max Consumption: {}({:+.0}%)", Watt((base_power_consumption.0 as f64 * (1.0 + power_consumption_mod as f64)) as u64), power_consumption_mod * 100.0));
+                            },
+                            None => {
+                                // TODO:
+                            },
+                        } 
                     },
                     Entity::SolarPanel {  .. } => {
                         // TODO
