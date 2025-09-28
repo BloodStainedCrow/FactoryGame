@@ -394,11 +394,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        let mut ret = GameState::new(data_store);
+        let mut ret = GameState::new_with_world_area(
+            Position { x: 0, y: 0 },
+            Position { x: 60000, y: 60000 },
+            data_store,
+        );
 
         ret.add_solar_field(
             Position { x: 1600, y: 1600 },
-            Watt(3_500_000_000_000),
+            Watt(10_500_000_000_000),
             progress,
             data_store,
         );
@@ -417,10 +421,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let bp: Blueprint = ron::de::from_reader(file).unwrap();
         let bp = bp.get_reusable(false, data_store);
 
-        let x_positions = (pos.x..(pos.x + 30_000)).step_by(36);
-        let y_positions = (pos.x..(pos.y + 30_000)).step_by(36);
+        let bp_count = amount.0 / (Watt(42_000) * 104).0;
 
-        let total = y_positions.size_hint().0;
+        let width = bp_count.isqrt();
+
+        let x_positions = (0..=width).map(|v| pos.x + 36 * v as i32);
+        let y_positions = (0..=width).map(|v| pos.y + 36 * v as i32);
+
+        // let total = bp.action_count();
+        let total = y_positions.clone().count();
 
         let mut current = 0;
 
@@ -432,6 +441,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 bp.apply(Position { x: x_pos, y: y_pos }, self, data_store);
             }
         }
+        // bp.apply_at_positions(
+        //     x_positions
+        //         .cartesian_product(y_positions)
+        //         .map(|(x, y)| Position { x, y }),
+        //     false,
+        //     self,
+        //     || {
+        //         progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
+        //         current += 1;
+        //     },
+        //     data_store,
+        // );
         puffin::set_scopes_on(true);
     }
 
