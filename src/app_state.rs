@@ -1883,7 +1883,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     data_store.fluid_tank_infos[usize::from(ty)].max_search_range;
 
                                 // Get connecting entities:
-                                let connecting_fluid_box_positions: Vec<_> = game_state
+                                let connecting_fluid_box_positions = game_state
                                     .world
                                     .get_entities_colliding_with(
                                         Position {
@@ -1929,8 +1929,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                                         // TODO: There are some future entities which might need connections like mining drills
                                         _ => None,
-                                    })
-                                    .collect();
+                                    });
 
                                 let in_out_connections = game_state
                                     .world
@@ -1963,22 +1962,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                 [assembler_size.0, assembler_size.1];
 
                                             let recipe_fluid_inputs: Vec<_> = data_store
-                                                .recipe_to_items[&id.recipe]
+                                                .recipe_to_items[id.recipe.into_usize()]
                                                 .iter()
                                                 .filter_map(|(dir, item)| {
                                                     (*dir == ItemRecipeDir::Ing
-                                                        && data_store.item_is_fluid
-                                                            [item.into_usize()])
+                                                    && data_store.item_is_fluid[item.into_usize()])
                                                     .then_some(*item)
                                                 })
                                                 .collect();
                                             let recipe_fluid_outputs: Vec<_> = data_store
-                                                .recipe_to_items[&id.recipe]
+                                                .recipe_to_items[id.recipe.into_usize()]
                                                 .iter()
                                                 .filter_map(|(dir, item)| {
                                                     (*dir == ItemRecipeDir::Out
-                                                        && data_store.item_is_fluid
-                                                            [item.into_usize()])
+                                                    && data_store.item_is_fluid[item.into_usize()])
                                                     .then_some(*item)
                                                 })
                                                 .collect();
@@ -2149,7 +2146,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     .try_add_fluid_box(
                                         pos,
                                         data_store.fluid_tank_infos[usize::from(ty)].capacity,
-                                        connecting_fluid_box_positions.iter().map(|v| v.0),
+                                        connecting_fluid_box_positions.map(|v| v.0),
                                         in_out_connections,
                                         &mut game_state.simulation_state.factory.chests,
                                         &mut game_state
