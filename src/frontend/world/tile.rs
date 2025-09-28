@@ -3285,6 +3285,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     ) -> Color32 {
         let chunk = self.get_chunk_for_tile(pos);
 
+        let floor_color = if (pos.x + pos.y) % 2 == 0 {
+            hex_color!("#1F1F1F")
+        } else {
+            hex_color!("#333333")
+        };
+
         chunk
             .map(|chunk| {
                 if let Some(ore) = self.get_original_ore_at_pos(pos) {
@@ -3292,12 +3298,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         // TODO ORE COLOR
                         Color32::LIGHT_BLUE
                     } else {
-                        // TODO: Get floor color
-                        hex_color!("#3f3f3f")
+                        floor_color
                     }
                 } else {
-                    // TODO: Get floor color
-                    hex_color!("#3f3f3f")
+                    floor_color
                 }
             })
             .unwrap_or(Color32::BLACK)

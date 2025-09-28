@@ -145,7 +145,7 @@ impl<V> EnumArray<V> for Corner {
 #[derive(Debug)]
 pub struct TextureAtlas {
     outside_world: Sprite,
-    blue: Sprite,
+    tile_floor: [Sprite; 2],
 
     chest: EntitySprite,
 
@@ -260,7 +260,10 @@ fn texture_atlas() -> TextureAtlas {
 
     TextureAtlas {
         outside_world: sprite_from_path!("temp_assets/outside_world.png", 1),
-        blue: sprite_from_path!("temp_assets/light_gray.png", 1),
+        tile_floor: [
+            sprite_from_path!("temp_assets/light_gray.png", 1),
+            sprite_from_path!("temp_assets/dark_gray.png", 1),
+        ],
 
         not_connected: entity_sprite_from_path_scaled!("temp_assets/not_connected.png", 1, 3.0),
 
@@ -309,7 +312,10 @@ fn texture_atlas() -> TextureAtlas {
 fn texture_atlas() -> TextureAtlas {
     TextureAtlas {
         outside_world: sprite_from_path!("temp_assets/outside_world.png", 1),
-        blue: sprite_from_path!("temp_assets/light_gray.png", 1),
+        tile_floor: [
+            sprite_from_path!("temp_assets/light_gray.png", 1),
+            sprite_from_path!("temp_assets/dark_gray.png", 1),
+        ],
 
         not_connected: entity_sprite_from_path_scaled!("temp_assets/not_connected.png", 1, 3.0),
 

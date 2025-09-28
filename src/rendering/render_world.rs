@@ -317,7 +317,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     match tile {
                                         crate::frontend::world::tile::FloorTile::Empty => {
                                             tile_layer.draw_sprite(
-                                                &texture_atlas.blue,
+                                                &texture_atlas.tile_floor[(x + y) % 2],
                                                 DrawInstance {
                                                     position: [
                                                         chunk_draw_offs.0 + x as f32,
