@@ -2582,17 +2582,19 @@ pub fn render_ui<
                         item,
                         ..
                     } => {
-                        let Some((item, index)) = item else {
-                            todo!()
-                        };
+                        let num_slots = data_store_ref.chest_num_slots[*ty as usize];
+                        let (current_items, stack_size) = if let Some((item, index)) = item {
                         ui.label(&data_store_ref.item_display_names[usize_from(item.id)]);
                         ui.label(format!("{}", *index));
 
                         let stack_size: u16 = data_store_ref.item_stack_sizes[usize_from(item.id)] as u16;
 
-                        let num_slots = data_store_ref.chest_num_slots[*ty as usize];
                         let (current_items, _max_items) = game_state_ref.simulation_state.factory.chests.stores[usize_from(item.id)].get_chest(*index);
 
+                            (current_items, stack_size)
+                        } else {
+                            (0, 0)
+                        };
                         TableBuilder::new(ui).columns(Column::auto().resizable(false), 10).body(|body| {
                             body.rows(5.0, (num_slots / 10) as usize + (num_slots % 10 > 0) as usize, |mut row| {
                                 let idx = row.index();
@@ -2609,7 +2611,7 @@ pub fn render_ui<
                                         ctx.input(|input| {shift = input.modifiers.shift; });
 
                                         if shift && clicked {
-                                            todo!("Move the items into the players inventory if there is space");
+                                            warn!("TODO: Move the items into the players inventory if there is space");
                                         }
                                     });
                                 }
