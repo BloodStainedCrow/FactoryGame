@@ -1990,7 +1990,7 @@
             fluid_connection_flowthrough: [],
             num_module_slots: 2,
             base_bonus_prod: 0,
-            base_speed: 1,
+            base_speed: 20,
         ),
     ],
     beacons: [
