@@ -1403,8 +1403,11 @@ impl Blueprint {
 
 #[cfg(test)]
 pub(crate) mod test {
+    use proptest::collection;
+    use proptest::prelude::{Just, Strategy};
+    use proptest::prop_oneof;
 
-    use proptest::prelude::Strategy;
+    use crate::frontend::world::tile::FloorTile;
 
     use super::*;
 
@@ -1412,7 +1415,7 @@ pub(crate) mod test {
         len_range: Range<usize>,
         data_store: &'a DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Strategy<Value = Blueprint> + use<'a, ItemIdxType, RecipeIdxType> {
-        prop::collection::vec(random_blueprint_action(data_store), len_range).prop_map(|actions| {
+        collection::vec(random_blueprint_action(data_store), len_range).prop_map(|actions| {
             Blueprint {
                 actions: actions
                     .into_iter()
