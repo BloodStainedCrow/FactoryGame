@@ -13,7 +13,7 @@ use crate::{
     MASKTYPE, SIMDTYPE,
     data::{AssemblerInfo, DataStore, ItemRecipeDir},
     frontend::world::Position,
-    item::{ITEMCOUNTTYPE, IdxTrait, Recipe, WeakIdxTrait},
+    item::{ITEMCOUNTTYPE, IdxTrait, Indexable, Recipe, WeakIdxTrait},
     power::{
         Watt,
         power_grid::{IndexUpdateInfo, MAX_POWER_MULT, PowerGridEntity, PowerGridIdentifier},
@@ -502,7 +502,10 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         index: u32,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> AssemblerOnclickInfo<ItemIdxType> {
-        let items = data_store.recipe_to_items.get(&self.recipe).unwrap();
+        let items = data_store
+            .recipe_to_items
+            .get(self.recipe.into_usize())
+            .unwrap();
 
         AssemblerOnclickInfo {
             inputs: self

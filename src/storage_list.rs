@@ -7,6 +7,7 @@ use strum::IntoEnumIterator;
 
 use crate::assembler::MultiAssemblerStore;
 use crate::chest::MultiChestStore;
+use crate::item::Indexable;
 use crate::{
     chest::FullChestStore,
     data::{DataStore, ItemRecipeDir, all_item_iter},
@@ -409,7 +410,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
         .iter_mut()
         .enumerate()
         .map(move |(recipe_id_0_1, multi)| {
-            let item = data_store.recipe_to_items[&multi.get_recipe()]
+            let item = data_store.recipe_to_items[multi.get_recipe().into_usize()]
                 .iter()
                 .filter_map(|(dir, item)| {
                     if *dir == ItemRecipeDir::Out {
@@ -444,7 +445,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                 .iter_mut()
                 .enumerate()
                 .flat_map(move |(recipe_id_1_1, multi)| {
-                    let item_in = data_store.recipe_to_items[&multi.get_recipe()]
+                    let item_in = data_store.recipe_to_items[multi.get_recipe().into_usize()]
                         .iter()
                         .filter_map(|(dir, item)| {
                             if *dir == ItemRecipeDir::Ing {
@@ -457,7 +458,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                         .copied()
                         .unwrap();
 
-                    let item_out = data_store.recipe_to_items[&multi.get_recipe()]
+                    let item_out = data_store.recipe_to_items[multi.get_recipe().into_usize()]
                         .iter()
                         .filter_map(|(dir, item)| {
                             if *dir == ItemRecipeDir::Out {
@@ -508,7 +509,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                 .iter_mut()
                 .enumerate()
                 .flat_map(move |(recipe_id_2_1, multi)| {
-                    let mut items_in = data_store.recipe_to_items[&multi.get_recipe()]
+                    let mut items_in = data_store.recipe_to_items[multi.get_recipe().into_usize()]
                         .iter()
                         .filter_map(|(dir, item)| {
                             if *dir == ItemRecipeDir::Ing {
@@ -521,7 +522,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                     let item_in0 = *items_in.next().unwrap();
                     let item_in1 = *items_in.next().unwrap();
 
-                    let item_out = data_store.recipe_to_items[&multi.get_recipe()]
+                    let item_out = data_store.recipe_to_items[multi.get_recipe().into_usize()]
                         .iter()
                         .filter_map(|(dir, item)| {
                             if *dir == ItemRecipeDir::Out {
@@ -585,7 +586,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                 .iter_mut()
                 .enumerate()
                 .flat_map(move |(recipe_id_2_2, multi)| {
-                    let mut items_in = data_store.recipe_to_items[&multi.get_recipe()]
+                    let mut items_in = data_store.recipe_to_items[multi.get_recipe().into_usize()]
                         .iter()
                         .filter_map(|(dir, item)| {
                             if *dir == ItemRecipeDir::Ing {
@@ -598,7 +599,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                     let item_in0 = *items_in.next().unwrap();
                     let item_in1 = *items_in.next().unwrap();
 
-                    let mut items_out = data_store.recipe_to_items[&multi.get_recipe()]
+                    let mut items_out = data_store.recipe_to_items[multi.get_recipe().into_usize()]
                         .iter()
                         .filter_map(|(dir, item)| {
                             if *dir == ItemRecipeDir::Out {
@@ -676,7 +677,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                 .iter_mut()
                 .enumerate()
                 .flat_map(move |(recipe_id_2_3, multi)| {
-                    let mut items_in = data_store.recipe_to_items[&multi.get_recipe()]
+                    let mut items_in = data_store.recipe_to_items[multi.get_recipe().into_usize()]
                         .iter()
                         .filter_map(|(dir, item)| {
                             if *dir == ItemRecipeDir::Ing {
@@ -689,7 +690,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                     let item_in0 = *items_in.next().unwrap();
                     let item_in1 = *items_in.next().unwrap();
 
-                    let mut items_out = data_store.recipe_to_items[&multi.get_recipe()]
+                    let mut items_out = data_store.recipe_to_items[multi.get_recipe().into_usize()]
                         .iter()
                         .filter_map(|(dir, item)| {
                             if *dir == ItemRecipeDir::Out {
@@ -781,7 +782,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                 .iter_mut()
                 .enumerate()
                 .flat_map(move |(recipe_id_3_1, multi)| {
-                    let mut items_in = data_store.recipe_to_items[&multi.get_recipe()]
+                    let mut items_in = data_store.recipe_to_items[multi.get_recipe().into_usize()]
                         .iter()
                         .filter_map(|(dir, item)| {
                             if *dir == ItemRecipeDir::Ing {
@@ -795,7 +796,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                     let item_in1 = *items_in.next().unwrap();
                     let item_in2 = *items_in.next().unwrap();
 
-                    let item_out = data_store.recipe_to_items[&multi.get_recipe()]
+                    let item_out = data_store.recipe_to_items[multi.get_recipe().into_usize()]
                         .iter()
                         .filter_map(|(dir, item)| {
                             if *dir == ItemRecipeDir::Out {
@@ -873,7 +874,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                 .iter_mut()
                 .enumerate()
                 .flat_map(move |(recipe_id_4_1, multi)| {
-                    let mut items_in = data_store.recipe_to_items[&multi.get_recipe()]
+                    let mut items_in = data_store.recipe_to_items[multi.get_recipe().into_usize()]
                         .iter()
                         .filter_map(|(dir, item)| {
                             if *dir == ItemRecipeDir::Ing {
@@ -888,7 +889,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                     let item_in2 = *items_in.next().unwrap();
                     let item_in3 = *items_in.next().unwrap();
 
-                    let item_out = data_store.recipe_to_items[&multi.get_recipe()]
+                    let item_out = data_store.recipe_to_items[multi.get_recipe().into_usize()]
                         .iter()
                         .filter_map(|(dir, item)| {
                             if *dir == ItemRecipeDir::Out {
@@ -984,7 +985,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                 .iter_mut()
                 .enumerate()
                 .flat_map(move |(recipe_id_5_1, multi)| {
-                    let mut items_in = data_store.recipe_to_items[&multi.get_recipe()]
+                    let mut items_in = data_store.recipe_to_items[multi.get_recipe().into_usize()]
                         .iter()
                         .filter_map(|(dir, item)| {
                             if *dir == ItemRecipeDir::Ing {
@@ -1000,7 +1001,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                     let item_in3 = *items_in.next().unwrap();
                     let item_in4 = *items_in.next().unwrap();
 
-                    let item_out = data_store.recipe_to_items[&multi.get_recipe()]
+                    let item_out = data_store.recipe_to_items[multi.get_recipe().into_usize()]
                         .iter()
                         .filter_map(|(dir, item)| {
                             if *dir == ItemRecipeDir::Out {
@@ -1109,7 +1110,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                 .iter_mut()
                 .enumerate()
                 .flat_map(move |(recipe_id_6_1, multi)| {
-                    let mut items_in = data_store.recipe_to_items[&multi.get_recipe()]
+                    let mut items_in = data_store.recipe_to_items[multi.get_recipe().into_usize()]
                         .iter()
                         .filter_map(|(dir, item)| {
                             if *dir == ItemRecipeDir::Ing {
@@ -1126,7 +1127,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                     let item_in4 = *items_in.next().unwrap();
                     let item_in5 = *items_in.next().unwrap();
 
-                    let item_out = data_store.recipe_to_items[&multi.get_recipe()]
+                    let item_out = data_store.recipe_to_items[multi.get_recipe().into_usize()]
                         .iter()
                         .filter_map(|(dir, item)| {
                             if *dir == ItemRecipeDir::Out {

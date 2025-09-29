@@ -1,13 +1,19 @@
 use crate::saving::save_at;
 
 use super::GetGridIndex;
-use rayon::iter::{IndexedParallelIterator, ParallelIterator};
+use itertools::Itertools;
+use rayon::iter::{
+    IndexedParallelIterator, IntoParallelIterator, ParallelBridge, ParallelIterator,
+};
 use rayon::slice::ParallelSlice;
 use std::cmp::{max, min};
 use std::fmt::Debug;
 use std::fs::create_dir_all;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
+
+use crate::saving::load_at;
+use std::fs::File;
 
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
@@ -31,6 +37,45 @@ impl<T: GetGridIndex<I>> BoundingBoxGrid<I, T> {
         }
     }
 
+    pub fn new_with_filled_grid<F>(top_left: [I; 2], bottom_right: [I; 2], generation_fn: F) -> Self
+    where
+        F: Fn([I; 2]) -> T + Sync,
+        T: Send,
+    {
+        let extent = Some([
+            [top_left[0], bottom_right[0]],
+            [top_left[1], bottom_right[1]],
+        ]);
+
+        let width = usize::try_from(bottom_right[0] - top_left[0])
+            .expect("Check bounding box argument order")
+            + 1;
+
+        let height = usize::try_from(bottom_right[1] - top_left[1])
+            .expect("Check bounding box argument order")
+            + 1;
+
+        let mut values = Vec::with_capacity(width * height);
+
+        (0..(width * height))
+            .into_par_iter()
+            .map(|v| (v % width, v / width))
+            .map(|(x_offs, y_offs)| {
+                (
+                    top_left[0]
+                        .checked_add_unsigned(x_offs.try_into().unwrap())
+                        .unwrap(),
+                    top_left[1]
+                        .checked_add_unsigned(y_offs.try_into().unwrap())
+                        .unwrap(),
+                )
+            })
+            .map(|(x, y)| Some(generation_fn([x, y])))
+            .collect_into_vec(&mut values);
+
+        Self { extent, values }
+    }
+
     // TODO: Do I want to save None values?
     pub fn par_save(&self, base_path: PathBuf)
     where
@@ -48,6 +93,55 @@ impl<T: GetGridIndex<I>> BoundingBoxGrid<I, T> {
 
         // TODO: Serialize the rest
         // todo!("Serialize the rest")
+    }
+
+    pub fn par_load(base_path: PathBuf) -> Self
+    where
+        for<'a> T: Send + serde::Deserialize<'a>,
+    {
+        let values: Vec<_> = (0..)
+            .map(|chunk_id| base_path.join(format!("chunk-{chunk_id}")))
+            .take_while(|path| {
+                // FIXME: Use another function
+                File::open(path).is_ok()
+            })
+            .collect_vec()
+            .into_par_iter()
+            .map(|file_path| load_at::<Vec<Option<T>>>(file_path))
+            .flatten()
+            .collect();
+
+        let top_left = values
+            .iter()
+            .flatten()
+            .map(|value| value.get_grid_index())
+            .reduce(|a, b| (min(a.0, b.0), min(a.1, b.1)));
+
+        let bottom_right = values
+            .iter()
+            .flatten()
+            .map(|value| value.get_grid_index())
+            .reduce(|a, b| (max(a.0, b.0), max(a.1, b.1)));
+
+        let extent = match (top_left, bottom_right) {
+            (None, None) => None,
+            (Some((min_x, min_y)), Some((max_x, max_y))) => Some([[min_x, max_x], [min_y, max_y]]),
+
+            _ => unreachable!(),
+        };
+
+        for (index, chunk) in values
+            .iter()
+            .enumerate()
+            .filter_map(|(index, chunk)| chunk.as_ref().map(|chunk| (index, chunk)))
+        {
+            assert_eq!(
+                Self::calculate_index(&extent.unwrap(), chunk.get_grid_index().into()),
+                index
+            );
+        }
+
+        Self { extent, values }
     }
 
     fn include_in_extent(&mut self, x: I, y: I) {
@@ -70,10 +164,10 @@ impl<T: GetGridIndex<I>> BoundingBoxGrid<I, T> {
         debug_assert!(width > 0);
 
         let width_offs = point[0] - extent[0][0];
-        debug_assert!(width_offs > 0);
+        debug_assert!(width_offs >= 0);
 
         let height_offs = point[1] - extent[1][0];
-        debug_assert!(height_offs > 0);
+        debug_assert!(height_offs >= 0);
 
         height_offs as usize * width as usize + width_offs as usize
     }

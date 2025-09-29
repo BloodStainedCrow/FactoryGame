@@ -36,7 +36,7 @@ impl Position {
 mod test {
     use std::cmp::max;
 
-    use crate::blueprint::random_position;
+    use crate::blueprint::test::random_position;
     use itertools::Itertools;
     use proptest::{prop_assert, prop_assert_eq, prop_assume, proptest};
 

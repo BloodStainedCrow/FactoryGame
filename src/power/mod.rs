@@ -1056,7 +1056,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                         data_store,
                     );
                 },
-                BeaconAffectedEntity::Lab { grid, index } => todo!(),
+                BeaconAffectedEntity::Lab { grid, index } => {
+                    self.power_grids[usize::from(grid)].change_lab_module_modifiers(
+                        index,
+                        effect_change,
+                        data_store,
+                    );
+                },
             }
         }
     }

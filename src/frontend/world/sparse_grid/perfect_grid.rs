@@ -1,9 +1,18 @@
+use crate::saving::save_at;
+
 use super::GetGridIndex;
 use ph::fmph::Bits8;
+use rayon::iter::{
+    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+};
+use rayon::slice::ParallelSlice;
 use std::cmp::{max, min};
 use std::fmt::Debug;
+use std::fs::{File, create_dir_all};
 use std::hash::Hash;
+use std::io::Write;
 use std::ops::RangeInclusive;
+use std::path::PathBuf;
 
 #[cfg(feature = "client")]
 use egui_show_info::{EguiDisplayable, InfoExtractor, ShowInfo};
@@ -158,6 +167,23 @@ impl<I: PartialEq + Eq + Hash + Copy + Ord + Send + Sync, T: GetGridIndex<I>> Pe
             values: vec![],
             function,
         }
+    }
+
+    pub fn par_save(&self, base_path: PathBuf)
+    where
+        T: Sync + serde::Serialize,
+    {
+        create_dir_all(&base_path).expect("Failed to create world dir");
+
+        // TODO: Choose a chunk size
+        self.values
+            .par_chunks(100_000)
+            .enumerate()
+            .for_each(|(i, chunks)| {
+                save_at(chunks, base_path.join(format!("chunk-{i}")));
+            });
+
+        // todo!("Serialize the rest")
     }
 
     fn include_in_extent(&mut self, x: I, y: I) {

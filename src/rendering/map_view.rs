@@ -3,8 +3,10 @@ use std::{
     cmp::{max, min},
     collections::HashMap,
     sync::LazyLock,
-    time::{Duration, Instant},
+    time::Duration,
 };
+
+use wasm_timer::Instant;
 
 use egui::Color32;
 use itertools::Itertools;
@@ -23,13 +25,13 @@ pub struct MapViewUpdate {
 
 const NUM_MAP_TILE_SIZES: usize = 4;
 // TODO: Figure out a good tilesize. 1024 seems to work fine, but is larger or smaller better?
-const TILE_SIZE_PIXELS: [u32; NUM_MAP_TILE_SIZES] = [1024, 1024, 1024, 1024];
+const TILE_SIZE_PIXELS: [u32; NUM_MAP_TILE_SIZES] = [1024, 1024, 1024, 4096];
 // TODO: Since array::map is not const, we hack it like this
 const NUM_TILES_PER_AXIS: [u32; NUM_MAP_TILE_SIZES] = {
     let mut b = [0; NUM_MAP_TILE_SIZES];
     let mut i = 0;
     while i < NUM_MAP_TILE_SIZES {
-        b[i] = 2_000_000u32.div_ceil(TILE_SIZE_PIXELS[i]); // map
+        b[i] = 2_000_000u32.div_ceil(TILE_SIZE_PIXELS[i] * TILE_PIXEL_TO_WORLD_TILE[i]); // map
         i += 1;
     }
     b
@@ -327,6 +329,8 @@ pub fn render_map_view(
             .filter(|min| **min < view_width_in_tiles)
             .count()
             - 1;
+
+        dbg!(idx);
 
         (
             TILE_SIZE_PIXELS[idx],

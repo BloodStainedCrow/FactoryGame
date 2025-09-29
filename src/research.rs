@@ -2,7 +2,7 @@
 use egui::{Button, Color32, CornerRadius, ProgressBar, SidePanel, Ui};
 #[cfg(feature = "client")]
 use egui_graphs::{
-    DefaultEdgeShape, DefaultNodeShape, Graph, GraphView, LayoutRandom, LayoutStateRandom,
+    DefaultEdgeShape, DefaultNodeShape, Graph, GraphView, LayoutStateTree, LayoutTree,
     SettingsInteraction, SettingsNavigation, SettingsStyle,
 };
 #[cfg(feature = "client")]
@@ -379,8 +379,12 @@ impl TechState {
         );
 
         let mut view =
-            GraphView::<_, _, _, _, _, _, LayoutStateRandom, LayoutRandom>::new(render_graph)
-                .with_navigations(&SettingsNavigation::new().with_zoom_and_pan_enabled(true))
+            GraphView::<_, _, _, _, _, _, LayoutStateTree, LayoutTree>::new(render_graph)
+                .with_navigations(
+                    &SettingsNavigation::new()
+                        .with_fit_to_screen_enabled(false)
+                        .with_zoom_and_pan_enabled(true),
+                )
                 .with_interactions(&SettingsInteraction::new().with_node_selection_enabled(true))
                 .with_styles(&SettingsStyle::new().with_labels_always(true));
 

@@ -9,6 +9,9 @@
 
 extern crate test;
 
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+use eframe::web_sys;
+
 use std::{
     borrow::Borrow,
     net::{SocketAddr, TcpStream},
@@ -27,6 +30,7 @@ use parking_lot::Mutex;
 use app_state::GameState;
 use data::{DataStore, factorio_1_1::get_raw_data_test};
 #[cfg(feature = "client")]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use eframe::NativeOptions;
 use frontend::world::{Position, tile::CHUNK_SIZE_FLOAT};
 #[cfg(feature = "client")]
@@ -67,7 +71,7 @@ pub mod power;
 pub mod research;
 
 // This is an experiment. Before I can use it, I need to run it through a miri gauntlet
-mod small_box_slice;
+// mod small_box_slice;
 
 pub mod data;
 pub mod mod_manager;
@@ -136,6 +140,7 @@ impl<T: Default> NewWithDataStore for T {
     }
 }
 
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub fn main() -> Result<(), ()> {
     puffin::set_scopes_on(true);
 
@@ -179,6 +184,53 @@ pub fn main() -> Result<(), ()> {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn main() {
+    puffin::set_scopes_on(true);
+    use eframe::wasm_bindgen::JsCast as _;
+
+    // Redirect `log` message to `console.log` and friends:
+    eframe::WebLogger::init(log::LevelFilter::Error).ok();
+
+    let web_options = eframe::WebOptions::default();
+
+    wasm_bindgen_futures::spawn_local(async {
+        let document = web_sys::window()
+            .expect("No window")
+            .document()
+            .expect("No document");
+
+        let canvas = document
+            .get_element_by_id("the_canvas_id")
+            .expect("Failed to find the_canvas_id")
+            .dyn_into::<web_sys::HtmlCanvasElement>()
+            .expect("the_canvas_id was not a HtmlCanvasElement");
+
+        let start_result = eframe::WebRunner::new()
+            .start(
+                canvas,
+                web_options,
+                Box::new(|cc| Ok(Box::new(eframe_app::App::new(cc)))),
+            )
+            .await;
+
+        // Remove the loading text and spinner:
+        if let Some(loading_text) = document.get_element_by_id("loading_text") {
+            match start_result {
+                Ok(_) => {
+                    loading_text.remove();
+                },
+                Err(e) => {
+                    loading_text.set_inner_html(
+                        "<p> The app has crashed. See the developer console for details. </p>",
+                    );
+                    panic!("Failed to start eframe: {e:?}");
+                },
+            }
+        }
+    });
+}
+
 enum StartGameInfo {
     Load(PathBuf),
     LoadReadable(PathBuf),
@@ -217,7 +269,7 @@ fn run_integrated_server(
     let local_addr = "127.0.0.1:57267";
     let cancel: Arc<AtomicBool> = Default::default();
 
-    accept_continously(local_addr, connections.clone(), cancel.clone()).unwrap();
+    // accept_continously(local_addr, connections.clone(), cancel.clone()).unwrap();
 
     match data_store {
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
@@ -300,6 +352,8 @@ fn run_integrated_server(
 
             let m_data_store = data_store.clone();
             let m_stop: Arc<AtomicBool> = stop.clone();
+
+            #[cfg(not(target_arch = "wasm32"))]
             thread::spawn(move || {
                 profiling::register_thread!("Game Update Thread");
                 game.run(m_stop, &m_data_store);

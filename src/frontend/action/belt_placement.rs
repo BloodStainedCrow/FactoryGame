@@ -1,7 +1,8 @@
 use std::iter::successors;
 
+use enum_map::EnumMap;
 use itertools::Itertools;
-use log::info;
+use log::{error, info};
 use strum::IntoEnumIterator;
 
 use crate::{
@@ -317,7 +318,7 @@ pub fn handle_belt_removal<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 belt_pos: front_belt_pos,
             } => {
                 let inputs = world.get_belt_possible_inputs_no_cache(*pos);
-                let front_state = expected_belt_state(*direction, |dir| inputs[*dir]);
+                let front_state = expected_belt_state(*direction, inputs);
 
                 match (front_state, belt_dir.compare(*direction)) {
                     (_, DirRelative::Opposite) => {},
@@ -425,7 +426,7 @@ pub fn handle_underground_removal<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                     belt_pos: front_belt_pos,
                 } => {
                     let inputs = world.get_belt_possible_inputs_no_cache(*pos);
-                    let front_state = expected_belt_state(*direction, |dir| inputs[*dir]);
+                    let front_state = expected_belt_state(*direction, inputs);
 
                     match (front_state, underground_belt_dir.compare(*direction)) {
                         (_, DirRelative::Opposite) => {},
@@ -1352,20 +1353,13 @@ fn handle_belt_breaking<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         return;
     };
 
-    let old_state = expected_belt_state(dir_for_belt_which_might_break, |dir| {
-        game_state
-            .world
-            .get_belt_possible_inputs(pos_which_might_break)[*dir]
-    });
-    let new_state = expected_belt_state(dir_for_belt_which_might_break, |dir| {
-        if *dir == dir_which_the_new_belt_is_pointing.reverse() {
-            true
-        } else {
-            game_state
-                .world
-                .get_belt_possible_inputs(pos_which_might_break)[*dir]
-        }
-    });
+    let mut input_dirs = game_state
+        .world
+        .get_belt_possible_inputs(pos_which_might_break)
+        .clone();
+    let old_state = expected_belt_state(dir_for_belt_which_might_break, input_dirs);
+    input_dirs[dir_which_the_new_belt_is_pointing.reverse()] = true;
+    let new_state = expected_belt_state(dir_for_belt_which_might_break, input_dirs);
 
     match (old_state, new_state) {
         (BeltState::Straight, BeltState::Straight) => {},
@@ -1432,7 +1426,15 @@ fn handle_belt_breaking<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         },
                     }
                 },
-                None => todo!("The belt stopped being circular. What to do?"),
+                None => {
+                    error!("The belt stopped being circular. What to do?");
+
+                    // The belt_id is still correct.
+
+                    // TODO: What about belt_positions?
+
+                    // TODO: What about sideloading?
+                },
             }
         },
         (BeltState::Sideloading, BeltState::Straight) => unreachable!("Should be impossible"),
@@ -1782,14 +1784,10 @@ fn should_merge<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let front_belt_dir = get_belt_in_dir(&game_state.world, front_pos, data_store);
 
     let front_expected_state = front_belt_dir.map(|front_belt_dir| {
+        let mut inputs_dirs = game_state.world.get_belt_possible_inputs(front_pos).clone();
+        inputs_dirs[self_dir.reverse()] = true;
         (
-            expected_belt_state(front_belt_dir, |dir| {
-                if *dir == self_dir.reverse() {
-                    true
-                } else {
-                    game_state.world.get_belt_possible_inputs(front_pos)[*dir]
-                }
-            }),
+            expected_belt_state(front_belt_dir, inputs_dirs),
             front_belt_dir,
         )
     });
@@ -1880,14 +1878,10 @@ fn should_sideload<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let front_belt_dir = get_belt_dir_for_sideloading(&game_state.world, front_pos, data_store);
 
     let front_expected_state = front_belt_dir.map(|front_belt_dir| {
+        let mut inputs_dirs = game_state.world.get_belt_possible_inputs(front_pos).clone();
+        inputs_dirs[self_dir.reverse()] = true;
         (
-            expected_belt_state(front_belt_dir, |dir| {
-                if *dir == self_dir.reverse() {
-                    true
-                } else {
-                    game_state.world.get_belt_possible_inputs(front_pos)[*dir]
-                }
-            }),
+            expected_belt_state(front_belt_dir, inputs_dirs),
             front_belt_dir,
         )
     });
@@ -1922,16 +1916,20 @@ fn should_sideload<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     }
 }
 
-pub fn expected_belt_state(belt_dir: Dir, gets_input_from: impl FnMut(&Dir) -> bool) -> BeltState {
-    let input_dirs: Vec<Dir> = Dir::iter().filter(gets_input_from).collect();
+pub fn expected_belt_state(
+    belt_dir: Dir,
+    input_dirs: crate::get_size::EnumMap<Dir, bool>,
+) -> BeltState {
+    // let dirs = [Dir::North, Dir::East, Dir::South, Dir::West];
+    // let input_dirs: EnumMap<Dir, bool> = EnumMap::from_array(dirs.map(gets_input_from));
     // Output dirs are unused for determining this, interesting!
     // let output_dirs: Vec<Dir> = Dir::iter().filter(|dir| dir_info(*dir) == Some(BeltDir::Ouput)).collect();
 
-    match input_dirs.len() {
+    match input_dirs.iter().filter(|(_, v)| **v).count() {
         0 => BeltState::Straight,
 
         1 => {
-            if input_dirs[0] == belt_dir || input_dirs[0] == belt_dir.reverse() {
+            if input_dirs[belt_dir] || input_dirs[belt_dir.reverse()] {
                 BeltState::Straight
             } else {
                 BeltState::Curved
@@ -1939,9 +1937,9 @@ pub fn expected_belt_state(belt_dir: Dir, gets_input_from: impl FnMut(&Dir) -> b
         },
 
         2 => {
-            if input_dirs[0] == input_dirs[1].reverse() {
+            if input_dirs[belt_dir] == input_dirs[belt_dir.reverse()] {
                 // The inputs are opposite
-                if input_dirs[0] == belt_dir || input_dirs[0] == belt_dir.reverse() {
+                if input_dirs[belt_dir] {
                     // The inputs are front and back
                     BeltState::Straight
                 } else {
@@ -1950,8 +1948,7 @@ pub fn expected_belt_state(belt_dir: Dir, gets_input_from: impl FnMut(&Dir) -> b
                 }
             } else {
                 // The inputs are at 90 deg
-
-                if input_dirs[0] == belt_dir.reverse() || input_dirs[1] == belt_dir.reverse() {
+                if input_dirs[belt_dir.reverse()] {
                     // One of the belts points into our input dir
                     BeltState::Sideloading
                 } else {
@@ -1961,7 +1958,7 @@ pub fn expected_belt_state(belt_dir: Dir, gets_input_from: impl FnMut(&Dir) -> b
         },
 
         3 => {
-            if !input_dirs.contains(&belt_dir) || !input_dirs.contains(&belt_dir.reverse()) {
+            if !input_dirs[belt_dir] || !input_dirs[belt_dir.reverse()] {
                 BeltState::DoubleSideloading
             } else {
                 BeltState::Sideloading

@@ -86,6 +86,14 @@ pub enum BeltTileId<ItemIdxType: WeakIdxTrait> {
     // SmartBeltId(BeltId<ItemIdxType>),
 }
 
+impl<ItemIdxType: WeakIdxTrait> From<BeltTileId<ItemIdxType>> for usize {
+    fn from(v: BeltTileId<ItemIdxType>) -> Self {
+        match v {
+            BeltTileId::AnyBelt(index, _) => index,
+        }
+    }
+}
+
 use crate::{
     frontend::world::tile::BeltId,
     item::{IdxTrait, WeakIdxTrait},
@@ -979,9 +987,13 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
         self.get_sushi_mut(id).remove_length(amount, side)
     }
 
-    // TODO: What does this return?
     #[profiling::function]
-    fn merge_smart_belts(&mut self, front: BeltId<ItemIdxType>, back: BeltId<ItemIdxType>) -> () {
+    #[must_use]
+    fn merge_smart_belts(
+        &mut self,
+        front: BeltId<ItemIdxType>,
+        back: BeltId<ItemIdxType>,
+    ) -> BeltId<ItemIdxType> {
         if front.item != back.item {
             todo!("Item mismatch. Do I want to error or panic?");
             panic!("We defintively cannot continue.");
@@ -992,44 +1004,63 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
         if front == back {
             self.get_smart_mut(front).make_circular();
 
-            return;
+            return front;
         }
 
-        let mut front_len = None;
+        let front_len = self.get_smart(front).get_len();
+        let back_len = self.get_smart(back).get_len();
 
-        let back_belt = self.remove_smart_belt(back);
+        let (removed_id, kept_id) = if front_len >= back_len {
+            // Front is longer, keep it
+            let back_belt = self.remove_smart_belt(back);
 
-        take_mut::take(self.get_smart_mut(front), |front| {
-            front_len = Some(front.get_len());
-            SmartBelt::join(front, back_belt)
-        });
+            take_mut::take(self.get_smart_mut(front), |front| {
+                SmartBelt::join(front, back_belt)
+            });
 
-        let front_len = front_len.unwrap();
+            (back, front)
+        } else {
+            // Back is longer, keep it
+            let front_belt = self.remove_smart_belt(front);
+
+            take_mut::take(self.get_smart_mut(back), |back| {
+                SmartBelt::join(front_belt, back)
+            });
+
+            (front, back)
+        };
+
         // FIXME: We need to fix inserter ids and offsets!
 
         for ins in self.belt_belt_inserters.pure_to_pure_inserters[usize_from(item.id)].iter_mut() {
             if let Some((_, ((source, source_pos), (dest, dest_pos), _, _))) = ins {
                 if *source == back.index {
-                    *source = front.index;
                     *source_pos = (*source_pos)
                         .checked_add(front_len)
                         .expect("Belt too long!");
                 }
+                if *source == removed_id.index {
+                    *source = kept_id.index;
+                }
 
                 if *dest == back.index {
-                    *dest = front.index;
                     *dest_pos = (*dest_pos).checked_add(front_len).expect("Belt too long!");
+                }
+                if *dest == removed_id.index {
+                    *dest = kept_id.index;
                 }
             }
         }
 
         for ins in self.belt_belt_inserters.pure_to_sushi_inserters.iter_mut() {
-            if let Some((_, ((source, source_pos), (des_, _), _, _))) = ins {
+            if let Some((_, ((source, source_pos), (_, _), _, _))) = ins {
                 if *source == back {
-                    *source = front;
                     *source_pos = (*source_pos)
                         .checked_add(front_len)
                         .expect("Belt too long!");
+                }
+                if *source == removed_id {
+                    *source = kept_id;
                 }
             }
         }
@@ -1041,43 +1072,61 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
         {
             let (_, ((_, _), (dest, dest_pos), _, _)) = ins;
             if *dest == back {
-                *dest = front;
                 *dest_pos = (*dest_pos).checked_add(front_len).expect("Belt too long!");
             }
+            if *dest == removed_id {
+                *dest = kept_id;
+            }
         }
+
+        kept_id
     }
 
-    // TODO: What does this return?
     #[profiling::function]
-    fn merge_sushi_belts(&mut self, front: usize, back: usize) {
+    #[must_use]
+    fn merge_sushi_belts(&mut self, front: usize, back: usize) -> usize {
         if front == back {
             self.get_sushi_mut(front).make_circular();
-            return;
+            return front;
         }
 
-        let mut front_len = None;
+        let front_len = self.get_sushi(front).get_len();
+        let back_len = self.get_sushi(back).get_len();
 
-        let back_belt = self.remove_sushi_belt(back);
+        let (removed_id, kept_id) = if front_len <= back_len {
+            let back_belt = self.remove_sushi_belt(back);
 
-        take_mut::take(self.get_sushi_mut(front), |front| {
-            front_len = Some(front.get_len());
-            SushiBelt::join(front, back_belt)
-        });
+            take_mut::take(self.get_sushi_mut(front), |front| {
+                SushiBelt::join(front, back_belt)
+            });
 
-        let front_len = front_len.unwrap();
+            (back, front)
+        } else {
+            let front_belt = self.remove_sushi_belt(front);
+
+            take_mut::take(self.get_sushi_mut(back), |back| {
+                SushiBelt::join(front_belt, back)
+            });
+
+            (front, back)
+        };
 
         for ins in self.belt_belt_inserters.sushi_to_sushi_inserters.iter_mut() {
             if let Some((_, ((source, source_pos), (dest, dest_pos), _, _))) = ins {
                 if *source == back {
-                    *source = front;
                     *source_pos = (*source_pos)
                         .checked_add(front_len)
                         .expect("Belt too long!");
                 }
+                if *source == removed_id {
+                    *source = kept_id;
+                }
 
                 if *dest == back {
-                    *dest = front;
                     *dest_pos = (*dest_pos).checked_add(front_len).expect("Belt too long!");
+                }
+                if *dest == removed_id {
+                    *dest = kept_id;
                 }
             }
         }
@@ -1085,8 +1134,10 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
         for ins in self.belt_belt_inserters.pure_to_sushi_inserters.iter_mut() {
             if let Some((_, ((_, _), (dest, dest_pos), _, _))) = ins {
                 if *dest == back {
-                    *dest = front;
                     *dest_pos = (*dest_pos).checked_add(front_len).expect("Belt too long!");
+                }
+                if *dest == removed_id {
+                    *dest = kept_id;
                 }
             }
         }
@@ -1096,16 +1147,19 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
             .temp_sushi_to_smart_inserters
             .iter_mut()
         {
-            let (_, ((source, source_pos), (des_, _), _, _)) = ins;
+            let (_, ((source, source_pos), (_, _), _, _)) = ins;
             if *source == back {
-                *source = front;
                 *source_pos = (*source_pos)
                     .checked_add(front_len)
                     .expect("Belt too long!");
             }
+            if *source == removed_id {
+                *source = kept_id;
+            }
         }
 
         // FIXME: We need to fix splitter ids and offsets!
+        kept_id
     }
 
     // TODO: What does this return?
@@ -1451,13 +1505,15 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         &mut self,
         front_tile_id: BeltTileId<ItemIdxType>,
         back_tile_id: BeltTileId<ItemIdxType>,
+
+        kept_tile_id: BeltTileId<ItemIdxType>,
+        front_len: BeltLenType,
     ) {
         // if !self.belt_graph_lookup.contains_key(&back_tile_id) {
         //     // We assume we already merged them in the graph
         //     assert!(self.belt_graph_lookup.contains_key(&front_tile_id));
         //     return;
         // }
-        let front_len = self.get_len(front_tile_id);
 
         let inner_edges: Vec<_> = self
             .belt_graph
@@ -1584,11 +1640,21 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         );
 
         self.belt_graph
-            .remove_node(*self.belt_graph_lookup[&back_tile_id])
+            .remove_node(
+                *self.belt_graph_lookup[&if kept_tile_id == front_tile_id {
+                    back_tile_id
+                } else {
+                    front_tile_id
+                }],
+            )
             .expect("Node not found");
 
         self.belt_graph_lookup
-            .remove(&back_tile_id)
+            .remove(&if kept_tile_id == front_tile_id {
+                back_tile_id
+            } else {
+                front_tile_id
+            })
             .expect("Lookup not found");
 
         #[cfg(debug_assertions)]
@@ -1613,7 +1679,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         let mut done = HashMap::default();
 
         self.propagate_sushi_if_necessary(
-            front_tile_id,
+            kept_tile_id,
             &mut done_propagating,
             &mut dedup,
             &mut done,
@@ -1717,6 +1783,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         done: &mut HashMap<BeltTileId<ItemIdxType>, Vec<Item<ItemIdxType>>>,
     ) {
         if dedup.contains(&tile_id) {
+            todo!();
             return;
         }
 
@@ -2715,8 +2782,12 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             // Make them circular
             match front_tile_id {
                 BeltTileId::AnyBelt(idx, _) => match self.any_belts[idx] {
-                    AnyBelt::Smart(belt_id) => self.inner.merge_smart_belts(belt_id, belt_id),
-                    AnyBelt::Sushi(idx) => self.inner.merge_sushi_belts(idx, idx),
+                    AnyBelt::Smart(belt_id) => {
+                        let _kept_id = self.inner.merge_smart_belts(belt_id, belt_id);
+                    },
+                    AnyBelt::Sushi(idx) => {
+                        let _kept_id = self.inner.merge_sushi_belts(idx, idx);
+                    },
                 },
             }
             return (front_tile_id, self.get_len(front_tile_id));
@@ -2731,15 +2802,29 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         AnyBelt::Smart(back_smart_belt),
                     ] => {
                         if front_smart_belt.item == back_smart_belt.item {
-                            self.inner
+                            let front_len = self.inner.get_smart(*front_smart_belt).get_len();
+
+                            let kept_id = self
+                                .inner
                                 .merge_smart_belts(*front_smart_belt, *back_smart_belt);
+                            let kept_tile_id = if kept_id == *front_smart_belt {
+                                self.any_belts[back] = AnyBelt::Sushi(usize::MAX);
+                                self.any_belt_holes.push(back);
+                                front_tile_id
+                            } else {
+                                self.any_belts[front] = AnyBelt::Sushi(usize::MAX);
+                                self.any_belt_holes.push(front);
+                                back_tile_id
+                            };
 
-                            self.merge_and_fix(front_tile_id, back_tile_id);
+                            self.merge_and_fix(
+                                front_tile_id,
+                                back_tile_id,
+                                kept_tile_id,
+                                front_len,
+                            );
 
-                            self.any_belts[back] = AnyBelt::Sushi(usize::MAX);
-                            self.any_belt_holes.push(back);
-
-                            (front_tile_id, self.get_len(front_tile_id))
+                            (kept_tile_id, self.get_len(kept_tile_id))
                         } else {
                             let front_smart_belt = *front_smart_belt;
                             let back_smart_belt = *back_smart_belt;
@@ -2795,17 +2880,26 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     ] => {
                         let front_sushi_belt = *front_sushi_belt;
 
-                        self.inner
+                        let front_len = self.inner.get_sushi(front_sushi_belt).get_len();
+
+                        let kept_id = self
+                            .inner
                             .merge_sushi_belts(front_sushi_belt, *back_sushi_belt);
+                        let kept_tile_id = if kept_id == front_sushi_belt {
+                            self.any_belts[back] = AnyBelt::Sushi(usize::MAX);
+                            self.any_belt_holes.push(back);
+                            front_tile_id
+                        } else {
+                            self.any_belts[front] = AnyBelt::Sushi(usize::MAX);
+                            self.any_belt_holes.push(front);
+                            back_tile_id
+                        };
 
-                        self.merge_and_fix(front_tile_id, back_tile_id);
+                        self.merge_and_fix(front_tile_id, back_tile_id, kept_tile_id, front_len);
 
-                        self.any_belts[back] = AnyBelt::Sushi(usize::MAX);
-                        self.any_belt_holes.push(back);
+                        let _ = self.try_make_belt_pure(kept_id, kept_tile_id, None);
 
-                        let _ = self.try_make_belt_pure(front_sushi_belt, front_tile_id, None);
-
-                        (front_tile_id, self.get_len(front_tile_id))
+                        (kept_tile_id, self.get_len(kept_tile_id))
                     },
                 }
             },

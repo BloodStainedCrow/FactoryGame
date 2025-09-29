@@ -39,8 +39,6 @@ pub const MIN_BEACON_POWER_MULT: u8 = MAX_POWER_MULT / 2;
 
 pub const MAX_BURNER_RATE: Watt = Watt(1_800_000);
 
-type TEST = PowerGridEntity<u8, u8>;
-
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
@@ -2918,7 +2916,7 @@ impl MultiLazyPowerProducer {
     }
 }
 
-pub type PowerGridIdentifier = u8;
+pub type PowerGridIdentifier = u16;
 
 //        The current problem is that writing power usage to a slice will stop any vectorizations I might want to do
 //       - A possible solution is chucking each MultiStore in it's connected power grid. That would complicate the inserter logic even more, though

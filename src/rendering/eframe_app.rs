@@ -7,13 +7,14 @@ use std::{
         mpsc::{Sender, channel},
     },
     thread,
-    time::Instant,
 };
+
+use wasm_timer::Instant;
 
 use directories::ProjectDirs;
 use parking_lot::Mutex;
 
-use crate::{GameCreationInfo, run_client};
+use crate::{GameCreationInfo, frontend::action::ActionType, run_client};
 use crate::{StartGameInfo, frontend::world::Position};
 use crate::{rendering::render_world::EscapeMenuOptions, run_integrated_server};
 use eframe::{
@@ -41,7 +42,7 @@ use crate::app_state::{AppState, GameState};
 use crate::saving::save;
 
 pub struct App {
-    raw_renderer: RawRenderer,
+    raw_renderer: Option<RawRenderer>,
     pub state: AppState,
     pub currently_loaded_game: Option<LoadedGameInfo>,
 
@@ -55,15 +56,17 @@ pub struct App {
 impl App {
     #[must_use]
     pub fn new(cc: &eframe::CreationContext) -> Self {
-        let render_state = cc.wgpu_render_state.as_ref().unwrap();
+        let render_state = cc.wgpu_render_state.as_ref();
         let atlas = Arc::new(texture_atlas());
 
         Self {
-            raw_renderer: RawRenderer::new(
-                &render_state.device,
-                &render_state.queue,
-                render_state.target_format,
-            ),
+            raw_renderer: render_state.map(|render_state| {
+                RawRenderer::new(
+                    &render_state.device,
+                    &render_state.queue,
+                    render_state.target_format,
+                )
+            }),
             input_sender: None,
             state: AppState::MainMenu { in_ip_box: None },
             texture_atlas: atlas,
@@ -75,12 +78,28 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
+        if self.raw_renderer.is_none() {
+            if let Some(render_state) = frame.wgpu_render_state() {
+                self.raw_renderer = Some(RawRenderer::new(
+                    &render_state.device,
+                    &render_state.queue,
+                    render_state.target_format,
+                ));
+                warn!("Was finally able to set a renderer.");
+            } else {
+                error!("Unable to set up renderer!!!!!")
+            }
+        }
         ctx.request_repaint();
 
         match &mut self.state {
             AppState::Ingame => {},
             _ => {
-                self.raw_renderer.reset_runtime_textures();
+                if let Some(raw_renderer) = self.raw_renderer.as_mut() {
+                    raw_renderer.reset_runtime_textures();
+                } else {
+                    warn!("Tried to reset_runtime_textures, but we are missing a renderer!")
+                }
             },
         }
 
@@ -97,6 +116,20 @@ impl eframe::App for App {
                 let progress = f64::from_bits(progress.load(Ordering::Relaxed));
 
                 CentralPanel::default().show(ctx, |ui| {
+                    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+                    ui.vertical_centered(|ui|{
+                        ui.label(
+                            egui::RichText::new("Detected running in a browser(WASM). Performance might be significantly degraded, and/or features might not work correctly. Support is on a best effort basis.")
+                                .heading()
+                                .color(egui::Color32::RED),
+                        );
+                        ui.label(
+                            egui::RichText::new("For the best experience run on native.")
+                                .heading()
+                                .color(egui::Color32::RED),
+                        );
+                    });
+
                     Window::new("Loading")
                         .default_pos((0.5, 0.5))
                         .show(ctx, |ui| {
@@ -205,14 +238,29 @@ impl eframe::App for App {
                 }
 
                 CentralPanel::default().show(ctx, |ui| {
+                    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+                    ui.vertical_centered(|ui|{
+                        ui.label(
+                            egui::RichText::new("Detected running in a browser(WASM). Performance might be significantly degraded, and/or features might not work correctly. Support is on a best effort basis.")
+                                .heading()
+                                .color(egui::Color32::RED),
+                        );
+                        ui.label(
+                            egui::RichText::new("For the best experience run on native.")
+                                .heading()
+                                .color(egui::Color32::RED),
+                        );
+                    });
+
                     if ui.button("Load").clicked() {
+                        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                         if let Some(path) = rfd::FileDialog::new()
                             .set_directory(
                                 ProjectDirs::from("de", "aschhoff", "factory_game")
                                     .expect("No Home path found")
                                     .data_dir(),
                             )
-                            .pick_file()
+                            .pick_folder()
                         {
                             let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
                             let (send, recv) = channel();
@@ -226,12 +274,12 @@ impl eframe::App for App {
                             });
 
                             self.state = AppState::Loading {
-                                start_time: Instant::now(),
-                                progress,
+                                start_time: Instant::now(),progress,
                                 game_state_receiver: recv,
                             };
                         }
                     } else if ui.button("Load Debug Save").clicked() {
+                        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                         if let Some(path) = rfd::FileDialog::new()
                             .set_directory(
                                 ProjectDirs::from("de", "aschhoff", "factory_game")
@@ -252,12 +300,11 @@ impl eframe::App for App {
                             });
 
                             self.state = AppState::Loading {
-                                start_time: Instant::now(),
-                                progress,
+                                start_time: Instant::now(),progress,
                                 game_state_receiver: recv,
                             };
                         }
-                    } else if ui.button("Connect over network").clicked() {
+                    } else if ui.add_enabled(cfg!(not(target_arch = "wasm32")), egui::Button::new("Connect over network")).on_disabled_hover_text("Disabled on WASM").clicked() {
                         let AppState::MainMenu { in_ip_box } = &mut self.state else {
                             unreachable!()
                         };
@@ -268,6 +315,7 @@ impl eframe::App for App {
                         let (send, recv) = channel();
 
                         let progress_send = progress.clone();
+                        #[cfg(not(target_arch = "wasm32"))]
                         thread::spawn(move || {
                             send.send(run_integrated_server(
                                 progress_send,
@@ -275,9 +323,14 @@ impl eframe::App for App {
                             ));
                         });
 
+                        #[cfg(target_arch = "wasm32")]
+                        send.send(run_integrated_server(
+                            progress_send,
+                            StartGameInfo::Create(GameCreationInfo::Empty),
+                        ));
+
                         self.state = AppState::Loading {
-                            start_time: Instant::now(),
-                            progress,
+                            start_time: Instant::now(),progress,
                             game_state_receiver: recv,
                         };
                     } else if ui.button("Red Green Chest Insertion").clicked() {
@@ -285,6 +338,7 @@ impl eframe::App for App {
                         let (send, recv) = channel();
 
                         let progress_send = progress.clone();
+                        #[cfg(not(target_arch = "wasm32"))]
                         thread::spawn(move || {
                             send.send(run_integrated_server(
                                 progress_send,
@@ -292,9 +346,14 @@ impl eframe::App for App {
                             ));
                         });
 
+                        #[cfg(target_arch = "wasm32")]
+                        send.send(run_integrated_server(
+                            progress_send,
+                            StartGameInfo::Create(GameCreationInfo::RedGreen),
+                        ));
+
                         self.state = AppState::Loading {
-                            start_time: Instant::now(),
-                            progress,
+                            start_time: Instant::now(),progress,
                             game_state_receiver: recv,
                         };
                     } else if ui.button("Red Green 1 to 1 belts").clicked() {
@@ -310,8 +369,7 @@ impl eframe::App for App {
                         });
 
                         self.state = AppState::Loading {
-                            start_time: Instant::now(),
-                            progress,
+                            start_time: Instant::now(),progress,
                             game_state_receiver: recv,
                         };
                     } else if ui.button("Red with labs").clicked() {
@@ -319,6 +377,7 @@ impl eframe::App for App {
                         let (send, recv) = channel();
 
                         let progress_send = progress.clone();
+                        #[cfg(not(target_arch = "wasm32"))]
                         thread::spawn(move || {
                             send.send(run_integrated_server(
                                 progress_send,
@@ -326,9 +385,14 @@ impl eframe::App for App {
                             ));
                         });
 
+                        #[cfg(target_arch = "wasm32")]
+                        send.send(run_integrated_server(
+                            progress_send,
+                            StartGameInfo::Create(GameCreationInfo::RedWithLabs),
+                        ));
+
                         self.state = AppState::Loading {
-                            start_time: Instant::now(),
-                            progress,
+                            start_time: Instant::now(),progress,
                             game_state_receiver: recv,
                         };
                     } else if ui.button("Megabase").clicked() {
@@ -336,6 +400,7 @@ impl eframe::App for App {
                         let (send, recv) = channel();
 
                         let progress_send = progress.clone();
+                        #[cfg(not(target_arch = "wasm32"))]
                         thread::spawn(move || {
                             send.send(run_integrated_server(
                                 progress_send,
@@ -343,9 +408,14 @@ impl eframe::App for App {
                             ));
                         });
 
+                        #[cfg(target_arch = "wasm32")]
+                        send.send(run_integrated_server(
+                            progress_send,
+                            StartGameInfo::Create(GameCreationInfo::Megabase),
+                        ));
+
                         self.state = AppState::Loading {
-                            start_time: Instant::now(),
-                            progress,
+                            start_time: Instant::now(),progress,
                             game_state_receiver: recv,
                         };
                     } else if ui.button("Gigabase").clicked() {
@@ -361,8 +431,7 @@ impl eframe::App for App {
                         });
 
                         self.state = AppState::Loading {
-                            start_time: Instant::now(),
-                            progress,
+                            start_time: Instant::now(),progress,
                             game_state_receiver: recv,
                         };
                     } else if ui.button("Solar Field").clicked() {
@@ -381,11 +450,11 @@ impl eframe::App for App {
                         });
 
                         self.state = AppState::Loading {
-                            start_time: Instant::now(),
-                            progress,
+                            start_time: Instant::now(),progress,
                             game_state_receiver: recv,
                         };
                     } else if ui.button("With bp file").clicked() {
+                        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                         if let Some(path) = rfd::FileDialog::new().pick_file() {
                             let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
                             let (send, recv) = channel();
@@ -399,8 +468,7 @@ impl eframe::App for App {
                             });
 
                             self.state = AppState::Loading {
-                                start_time: Instant::now(),
-                                progress,
+                                start_time: Instant::now(),progress,
                                 game_state_receiver: recv,
                             };
                         }
@@ -410,7 +478,7 @@ impl eframe::App for App {
         }
     }
 
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+    fn on_exit(&mut self) {
         if let Some(state) = &self.currently_loaded_game {
             match &state.state {
                 LoadedGame::ItemU8RecipeU8(state) => save(&state.state, &state.data_store.lock()),
@@ -426,6 +494,9 @@ impl App {
     fn update_ingame(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         let size = ctx.available_rect();
 
+        // TODO:
+        let mut render_action_vec: Vec<ActionType<u8, u8>> = vec![];
+
         CentralPanel::default().show(ctx, |ui| {
             if ui.ui_contains_pointer() {
                 ctx.set_cursor_icon(CursorIcon::Default);
@@ -437,6 +508,7 @@ impl App {
                 let wants_pointer = ctx.wants_pointer_input();
                 let wants_keyboard = ctx.wants_keyboard_input();
 
+                #[cfg(not(target_arch = "wasm32"))]
                 ui.input(|input_state| {
                     for event in &input_state.events {
                         match event {
@@ -496,7 +568,10 @@ impl App {
                 match &game.state {
                     LoadedGame::ItemU8RecipeU8(loaded_game_sized) => {
                         let cb = Callback {
-                            raw_renderer: self.raw_renderer.clone(),
+                            raw_renderer: self
+                                .raw_renderer
+                                .clone()
+                                .expect("Tried to Load a game without a renderer ready"),
                             texture_atlas: self.texture_atlas.clone(),
                             state_machine: loaded_game_sized.state_machine.clone(),
                             game_state: loaded_game_sized.state.clone(),
@@ -514,13 +589,6 @@ impl App {
 
                         let tick = game.tick.load(std::sync::atomic::Ordering::Relaxed);
 
-                        static LAST_DRAW: LazyLock<Mutex<Instant>> =
-                            LazyLock::new(|| Mutex::new(Instant::now()));
-
-                        let mut now = Instant::now();
-
-                        mem::swap(&mut now, &mut *LAST_DRAW.lock());
-
                         self.last_rendered_update = tick;
 
                         match render_ui(
@@ -534,10 +602,14 @@ impl App {
                         ) {
                             Ok(render_actions) => {
                                 for action in render_actions {
+                                    #[cfg(not(target_arch = "wasm32"))]
                                     loaded_game_sized
                                         .ui_action_sender
                                         .send(action)
                                         .expect("Ui action channel died");
+
+                                    #[cfg(target_arch = "wasm32")]
+                                    render_action_vec.push(action);
                                 }
                             },
                             Err(escape) => match escape {
@@ -551,14 +623,128 @@ impl App {
                             },
                         }
                     },
-                    LoadedGame::ItemU8RecipeU16(loaded_game_sized) => todo!(),
-                    LoadedGame::ItemU16RecipeU8(loaded_game_sized) => todo!(),
-                    LoadedGame::ItemU16RecipeU16(loaded_game_sized) => todo!(),
+                    LoadedGame::ItemU8RecipeU16(loaded_game_sized) => {
+                        todo!("Handle bigger item/recipe counts")
+                    },
+                    LoadedGame::ItemU16RecipeU8(loaded_game_sized) => {
+                        todo!("Handle bigger item/recipe counts")
+                    },
+                    LoadedGame::ItemU16RecipeU16(loaded_game_sized) => {
+                        todo!("Handle bigger item/recipe counts")
+                    },
                 };
             } else {
                 warn!("No Game loaded!");
             }
         });
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            // TODO:
+            // let wants_pointer = ctx.wants_pointer_input();
+            // let wants_keyboard = ctx.wants_keyboard_input();
+
+            let wants_pointer = false;
+            let wants_keyboard = false;
+
+            let mut inputs = vec![];
+            ctx.input(|input_state| {
+                for event in &input_state.events {
+                    match event {
+                        Event::Copy
+                        | Event::Cut
+                        | Event::Paste(_)
+                        | Event::Text(_)
+                        | Event::Key { .. } => {
+                            if wants_keyboard {
+                                continue;
+                            }
+                        },
+                        Event::PointerMoved(_)
+                        | Event::MouseMoved(_)
+                        | Event::PointerButton { .. }
+                        | Event::PointerGone
+                        | Event::Zoom(_)
+                        | Event::Touch { .. }
+                        | Event::MouseWheel { .. } => {
+                            if wants_pointer {
+                                continue;
+                            }
+                        },
+                        _ => {},
+                    }
+                    let input = if let Event::PointerMoved(dest) = event {
+                        let pos_normalized = [dest.x / size.width(), dest.y / size.height()];
+
+                        let ar = size.width() / size.height();
+
+                        if pos_normalized[0] < 0.0
+                            || pos_normalized[0] > 1.0
+                            || pos_normalized[1] < 0.0
+                            || pos_normalized[1] > 1.0
+                        {
+                            continue;
+                        }
+
+                        Ok(Input::MouseMove(
+                            pos_normalized[0] - 0.5,
+                            (pos_normalized[1] - 0.5) / ar,
+                        ))
+                    } else {
+                        event.clone().try_into()
+                    };
+
+                    if let Ok(input) = input {
+                        inputs.push(input);
+                    }
+                }
+            });
+
+            match self.currently_loaded_game.as_ref() {
+                Some(game) => match &game.state {
+                    LoadedGame::ItemU8RecipeU8(state) => {
+                        let mut world_lock: parking_lot::lock_api::MutexGuard<
+                            '_,
+                            parking_lot::RawMutex,
+                            crate::frontend::world::tile::World<u8, u8>,
+                        > = state.state.world.lock();
+                        let world = &mut *world_lock;
+
+                        let data_store_lock = state.data_store.lock();
+                        let data_store = &*data_store_lock;
+
+                        let mut sim_state_lock = state.state.simulation_state.lock();
+                        let sim_state = &mut *sim_state_lock;
+
+                        let mut actions: Vec<ActionType<_, _>> = state
+                            .state_machine
+                            .lock()
+                            .handle_inputs(inputs, world, data_store)
+                            .collect();
+
+                        actions.extend(
+                            state
+                                .state_machine
+                                .lock()
+                                .once_per_update_actions(world, data_store),
+                        );
+
+                        actions.extend(render_action_vec);
+
+                        GameState::apply_actions(sim_state, world, actions, data_store);
+
+                        // TODO: Do not run at 1 million UPS
+                        GameState::update(sim_state, &mut *state.state.aux_data.lock(), data_store);
+                    },
+                    LoadedGame::ItemU8RecipeU16(_state) => todo!(),
+                    LoadedGame::ItemU16RecipeU8(_state) => todo!(),
+                    LoadedGame::ItemU16RecipeU16(_state) => todo!(),
+                },
+                None => {
+                    warn!("No Game loaded!");
+                },
+            }
+        }
     }
 }
 

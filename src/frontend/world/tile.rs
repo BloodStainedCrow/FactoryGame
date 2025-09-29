@@ -4,8 +4,12 @@ use egui::Color32;
 use egui_show_info::{EguiDisplayable, InfoExtractor, ShowInfo};
 use log::error;
 use rayon::iter::IndexedParallelIterator;
+use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use rayon::prelude::ParallelSliceMut;
+use std::cmp::max;
+use std::fs::create_dir_all;
+use std::path::PathBuf;
 use std::{
     cmp::min,
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -15,8 +19,12 @@ use std::{
     ops::{Add, ControlFlow, Range},
 };
 
+use crate::frontend::world;
 use crate::frontend::world::sparse_grid::GetGridIndex;
 
+use crate::join_many::join;
+use crate::saving::load_at;
+use crate::saving::save_at;
 use crate::{frontend::action::belt_placement, get_size::EnumMap};
 use ecolor::hex_color;
 #[cfg(feature = "client")]
@@ -64,7 +72,8 @@ use std::iter;
 use noise::Seedable;
 use petgraph::prelude::Bfs;
 
-use super::{Position, sparse_grid::perfect_grid::PerfectGrid};
+use super::Position;
+use super::sparse_grid::bounding_box_grid::BoundingBoxGrid;
 use crate::liquid::FluidSystemId;
 
 pub const BELT_LEN_PER_TILE: u16 = 4;
@@ -153,7 +162,7 @@ pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     // TODO: I don´t think I want FP
     pub players: Vec<PlayerInfo>,
-    chunks: PerfectGrid<i32, Chunk<ItemIdxType, RecipeIdxType>>,
+    chunks: BoundingBoxGrid<i32, Chunk<ItemIdxType, RecipeIdxType>>,
 
     belt_lookup: BeltIdLookup<ItemIdxType>,
     belt_recieving_input_directions: HashMap<Position, EnumMap<Dir, bool>>,
@@ -307,22 +316,24 @@ fn try_attaching_fluids<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     } => {
                         let assembler_size = e_size.into();
 
-                        let recipe_fluid_inputs: Vec<_> = data_store.recipe_to_items[&id.recipe]
-                            .iter()
-                            .filter_map(|(dir, item)| {
-                                (*dir == ItemRecipeDir::Ing
-                                    && data_store.item_is_fluid[item.into_usize()])
-                                .then_some(*item)
-                            })
-                            .collect();
-                        let recipe_fluid_outputs: Vec<_> = data_store.recipe_to_items[&id.recipe]
-                            .iter()
-                            .filter_map(|(dir, item)| {
-                                (*dir == ItemRecipeDir::Out
-                                    && data_store.item_is_fluid[item.into_usize()])
-                                .then_some(*item)
-                            })
-                            .collect();
+                        let recipe_fluid_inputs: Vec<_> = data_store.recipe_to_items
+                            [id.recipe.into_usize()]
+                        .iter()
+                        .filter_map(|(dir, item)| {
+                            (*dir == ItemRecipeDir::Ing
+                                && data_store.item_is_fluid[item.into_usize()])
+                            .then_some(*item)
+                        })
+                        .collect();
+                        let recipe_fluid_outputs: Vec<_> = data_store.recipe_to_items
+                            [id.recipe.into_usize()]
+                        .iter()
+                        .filter_map(|(dir, item)| {
+                            (*dir == ItemRecipeDir::Out
+                                && data_store.item_is_fluid[item.into_usize()])
+                            .then_some(*item)
+                        })
+                        .collect();
 
                         let fluid_pure_outputs: Vec<_> = data_store.assembler_info
                             [usize::from(*assembler_ty)]
@@ -463,7 +474,8 @@ fn try_instantiating_inserters_for_belt<ItemIdxType: IdxTrait, RecipeIdxType: Id
                 return;
             }
 
-            let by_belt = world.to_instantiate_by_belt.get_mut(&belt_id).unwrap();
+            let by_belt: &mut BTreeSet<Position> =
+                world.to_instantiate_by_belt.get_mut(&belt_id).unwrap();
 
             if by_belt.len() > 1_000 {
                 warn!(
@@ -519,15 +531,17 @@ fn try_instantiating_inserters_for_belt<ItemIdxType: IdxTrait, RecipeIdxType: Id
                             belts_which_could_help,
                         },
                     ) => {
-                        for belt in belts_which_could_help {
+                        for belt in belts_which_could_help.iter().copied() {
                             if belt_id != belt {
                                 let by_belt = world.to_instantiate_by_belt.entry(belt).or_default();
-                                if !by_belt.contains(pos) {
-                                    by_belt.insert(*pos);
-                                }
+                                by_belt.insert(*pos);
                             }
                         }
-                        true
+                        if belts_which_could_help.contains(&belt_id) {
+                            true
+                        } else {
+                            false
+                        }
                     },
                     Err(
                         InstantiateInserterError::SourceMissing
@@ -608,9 +622,7 @@ fn try_instantiating_all_inserters_cascade<ItemIdxType: IdxTrait, RecipeIdxType:
                     ) => {
                         for belt in belts_which_could_help {
                             let by_belt = world.to_instantiate_by_belt.entry(belt).or_default();
-                            if !by_belt.contains(pos) {
-                                by_belt.insert(*pos);
-                            }
+                            by_belt.insert(*pos);
                         }
                         true
                     },
@@ -674,9 +686,7 @@ fn instantiate_inserter_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     world.to_instantiate.insert(new_instantiate_pos);
                     for belt in belts_which_could_help {
                         let by_belt = world.to_instantiate_by_belt.entry(belt).or_default();
-                        if !by_belt.contains(&new_instantiate_pos) {
-                            by_belt.insert(new_instantiate_pos);
-                        }
+                        by_belt.insert(new_instantiate_pos);
                     }
                 },
                 Err(e) => {
@@ -1248,34 +1258,101 @@ impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> GetGridIndex<i32>
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeIdxType> {
+    pub fn par_save(&self, base_path: PathBuf) {
+        create_dir_all(&base_path).expect("Failed to create world dir");
+
+        let Self {
+            noise,
+            players,
+            chunks,
+            belt_lookup,
+            belt_recieving_input_directions,
+            power_grid_lookup,
+            remaining_updates,
+            to_instantiate,
+            to_instantiate_by_belt,
+            map_updates: _,
+        } = self;
+
+        let folder_path = base_path;
+        let base_path = &folder_path;
+
+        join!(
+            || save_at(noise, base_path.join("noise")),
+            || save_at(players, base_path.join("players")),
+            || chunks.par_save(base_path.join("chunks")),
+            || save_at(belt_lookup, base_path.join("belt_lookup")),
+            || save_at(
+                belt_recieving_input_directions,
+                base_path.join("belt_recieving_input_directions")
+            ),
+            || save_at(power_grid_lookup, base_path.join("power_grid_lookup")),
+            || save_at(remaining_updates, base_path.join("remaining_updates")),
+            || save_at(to_instantiate, base_path.join("to_instantiate")),
+            || save_at(
+                to_instantiate_by_belt,
+                base_path.join("to_instantiate_by_belt")
+            )
+        );
+    }
+
+    pub fn par_load(base_path: PathBuf) -> Self {
+        let (
+            noise,
+            players,
+            chunks,
+            belt_lookup,
+            belt_recieving_input_directions,
+            power_grid_lookup,
+            remaining_updates,
+            to_instantiate,
+            to_instantiate_by_belt,
+        ) = join!(
+            || load_at(base_path.join("noise")),
+            || load_at(base_path.join("players")),
+            || BoundingBoxGrid::par_load(base_path.join("chunks")),
+            || load_at(base_path.join("belt_lookup")),
+            || load_at(base_path.join("belt_recieving_input_directions")),
+            || load_at(base_path.join("power_grid_lookup")),
+            || load_at(base_path.join("remaining_updates")),
+            || load_at(base_path.join("to_instantiate")),
+            || load_at(base_path.join("to_instantiate_by_belt"))
+        );
+
+        Self {
+            noise,
+            players,
+            chunks,
+            belt_lookup,
+            belt_recieving_input_directions,
+            power_grid_lookup,
+            remaining_updates,
+            to_instantiate,
+            to_instantiate_by_belt,
+            map_updates: None,
+        }
+    }
+
     #[must_use]
-    pub fn new_with_starting_area(center: Position, width_chunks: u16, height_chunks: u16) -> Self {
-        let mut grid = PerfectGrid::new();
+    pub fn new_with_starting_area(top_left: Position, bottom_right: Position) -> Self {
+        let grid = BoundingBoxGrid::new_with_filled_grid(
+            [
+                top_left.x / i32::from(CHUNK_SIZE),
+                top_left.y / i32::from(CHUNK_SIZE),
+            ],
+            [
+                bottom_right.x / i32::from(CHUNK_SIZE),
+                bottom_right.y / i32::from(CHUNK_SIZE),
+            ],
+            |[x, y]| Chunk {
+                base_pos: (x * i32::from(CHUNK_SIZE), y * i32::from(CHUNK_SIZE)),
+                floor_tiles: None,
+                chunk_tile_to_entity_into: None,
+                entities: vec![],
+            },
+        );
 
         let noise = Simplex::new(1);
-
-        let positions = (0..i32::from(width_chunks))
-            .cartesian_product(0..i32::from(height_chunks))
-            .map(|(x, y)| {
-                (
-                    x - i32::from(width_chunks) / 2,
-                    y - i32::from(height_chunks) / 2,
-                )
-            })
-            .map(|(x, y)| {
-                (
-                    center.x / i32::from(CHUNK_SIZE) + x,
-                    center.y / i32::from(CHUNK_SIZE) + y,
-                )
-            })
-            .collect_vec();
-        let chunks = positions.iter().copied().map(|(x, y)| Chunk {
-            base_pos: (x * i32::from(CHUNK_SIZE), y * i32::from(CHUNK_SIZE)),
-            floor_tiles: None,
-            chunk_tile_to_entity_into: None,
-            entities: vec![],
-        });
-        grid.insert_many(positions.iter().copied(), chunks);
 
         Self {
             noise: SerializableSimplex { inner: noise },
@@ -1300,29 +1377,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     }
 
     pub fn new_with_area(top_left: Position, bottom_right: Position) -> Self {
-        Self::new_with_starting_area(
-            Position {
-                x: top_left.x + (bottom_right.x - top_left.x) / 2,
-                y: top_left.y + (bottom_right.y - top_left.y) / 2,
-            },
-            (top_left
-                .x
-                .abs_diff(bottom_right.x)
-                .div_ceil(u32::from(CHUNK_SIZE)))
-            .try_into()
-            .unwrap(),
-            (top_left
-                .y
-                .abs_diff(bottom_right.y)
-                .div_ceil(u32::from(CHUNK_SIZE)))
-            .try_into()
-            .unwrap(),
-        )
+        Self::new_with_starting_area(top_left, bottom_right)
     }
 
     pub fn get_original_ore_at_pos(&self, pos: Position) -> Option<(Item<ItemIdxType>, u32)> {
-        // TODO:
-        return None;
+        // // TODO:
+        // return None;
         let v = self.noise.get([
             pos.x as f64 * ORE_DISTANCE_MULT,
             pos.y as f64 * ORE_DISTANCE_MULT,
@@ -1947,7 +2007,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     })),
                     inserter_item_hint: None,
                     possible_item_list: PossibleItem::List(
-                        data_store.recipe_to_items[&id.recipe]
+                        data_store.recipe_to_items[id.recipe.into_usize()]
                             .iter()
                             .filter_map(|(dir, item)| (*dir == ItemRecipeDir::Out).then_some(*item))
                             .collect(),
@@ -2069,7 +2129,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     })),
                     inserter_item_hint: None,
                     possible_item_list: PossibleItem::List(
-                        data_store.recipe_to_items[&id.recipe]
+                        data_store.recipe_to_items[id.recipe.into_usize()]
                             .iter()
                             .filter_map(|(dir, item)| (*dir == ItemRecipeDir::Ing).then_some(*item))
                             .collect(),
@@ -2794,11 +2854,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             found_anything
         });
 
-        self.belt_lookup
-            .belt_id_to_chunks
-            .entry(new_id)
-            .or_default()
-            .extend(old_chunks_filtered);
+        match self.belt_lookup.belt_id_to_chunks.entry(new_id) {
+            std::collections::btree_map::Entry::Vacant(vacant_entry) => {
+                vacant_entry.insert(old_chunks_filtered.collect());
+            },
+            std::collections::btree_map::Entry::Occupied(mut occupied_entry) => {
+                occupied_entry.get_mut().extend(old_chunks_filtered);
+            },
+        }
 
         let mut cascading_updates = vec![try_instantiating_inserters_for_belt_cascade(new_id)];
         while let Some(update) = cascading_updates.pop() {
@@ -2825,6 +2888,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     }
 
     pub fn modify_belt_pos(&mut self, id_to_change: BeltTileId<ItemIdxType>, sub: bool, offs: u16) {
+        assert!(offs > 0);
         let chunks = self.belt_lookup.belt_id_to_chunks.get_mut(&id_to_change);
 
         let num_chunks = chunks.as_ref().map(|v| v.len()).unwrap_or(0);
@@ -2987,6 +3051,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 {
                     // This is a power pole that does not actually exist anymore
                     // TODO: This is a hack :/
+                    error!("TODO: This is a power pole that does not actually exist anymore!");
                     return None;
                 }
 
@@ -3305,6 +3370,61 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 }
             })
             .unwrap_or(Color32::BLACK)
+    }
+
+    fn any_entity_colliding_with<'a, 'b>(
+        &'a self,
+        pos: Position,
+        size: (u16, u16),
+        data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> bool {
+        let bb_top_left = (pos.x, pos.y);
+
+        let bb_bottom_right = (pos.x + i32::from(size.0), pos.y + i32::from(size.1));
+
+        let chunk_range_x =
+            (bb_top_left.0 / i32::from(CHUNK_SIZE))..=(bb_bottom_right.0 / i32::from(CHUNK_SIZE));
+        let chunk_range_y =
+            (bb_top_left.1 / i32::from(CHUNK_SIZE))..=(bb_bottom_right.1 / i32::from(CHUNK_SIZE));
+
+        assert!(chunk_range_x.clone().count() >= 1);
+        assert!(chunk_range_y.clone().count() >= 1);
+
+        chunk_range_x
+            .cartesian_product(chunk_range_y)
+            .filter_map(|(chunk_x, chunk_y)| self.chunks.get(chunk_x, chunk_y))
+            .flat_map(|chunk| {
+                let x_start = max(bb_top_left.0 - chunk.base_pos.0, 0);
+                let x_end = min(bb_bottom_right.0 - chunk.base_pos.0, CHUNK_SIZE as i32 - 1);
+
+                let y_start = max(bb_top_left.1 - chunk.base_pos.1, 0);
+                let y_end = min(bb_bottom_right.1 - chunk.base_pos.1, CHUNK_SIZE as i32 - 1);
+
+                (x_start..x_end)
+                    .cartesian_product((y_start..y_end))
+                    .map(|(x, y)| {
+                        assert!(x >= 0);
+                        assert!(x < CHUNK_SIZE as i32);
+
+                        assert!(y >= 0);
+                        assert!(y < CHUNK_SIZE as i32);
+
+                        arr_val_to_state(
+                            chunk.entities.len(),
+                            chunk
+                                .chunk_tile_to_entity_into
+                                .as_ref()
+                                .map(|v| v[x as usize][y as usize])
+                                .unwrap_or(EMPTY),
+                        )
+                    })
+            })
+            .any(|state| match state {
+                ChunkTileState::Index(_) => true,
+                ChunkTileState::Empty => false,
+                ChunkTileState::OtherChunk => true,
+                ChunkTileState::EmptyOrOtherChunk => todo!(),
+            })
     }
 
     pub fn get_entities_colliding_with<'a, 'b>(
@@ -4115,10 +4235,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         size: (u16, u16),
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> bool {
-        self.get_entities_colliding_with(pos, size, data_store)
-            .into_iter()
-            .next()
-            .is_none()
+        // debug_assert_eq!(
+        //     self.get_entities_colliding_with(pos, size, data_store)
+        //         .into_iter()
+        //         .next()
+        //         .is_none(),
+        //     !self.any_entity_colliding_with(pos, size, data_store)
+        // );
+
         // let chunk_range_x = (pos.x / i32::from(CHUNK_SIZE))
         //     ..=((pos.x + i32::from(size.0) - 1) / i32::from(CHUNK_SIZE));
         // let chunk_range_y = (pos.y / i32::from(CHUNK_SIZE))
@@ -4132,6 +4256,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         //             None => false,
         //         },
         //     )
+        // !self.any_entity_colliding_with(pos, size, data_store)
+        self.get_entities_colliding_with(pos, size, data_store)
+            .into_iter()
+            .next()
+            .is_none()
     }
 
     pub fn get_power_poles_which_could_connect_to_pole_at<'a, 'b>(
@@ -4179,11 +4308,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Default for World<ItemIdxTy
         #[cfg(debug_assertions)]
         const WORLDSIZE_CHUNKS: u16 = 200;
         #[cfg(not(debug_assertions))]
-        const WORLDSIZE_CHUNKS: u16 = 4000;
+        const WORLDSIZE_CHUNKS: u16 = 1000;
         Self::new_with_starting_area(
-            Position { x: 1600, y: 1600 },
-            WORLDSIZE_CHUNKS,
-            WORLDSIZE_CHUNKS,
+            Position {
+                x: 1600 - i32::from(WORLDSIZE_CHUNKS) * i32::from(CHUNK_SIZE) / 2,
+                y: 1600 - i32::from(WORLDSIZE_CHUNKS) * i32::from(CHUNK_SIZE) / 2,
+            },
+            Position {
+                x: 1600 + i32::from(WORLDSIZE_CHUNKS) * i32::from(CHUNK_SIZE) / 2,
+                y: 1600 + i32::from(WORLDSIZE_CHUNKS) * i32::from(CHUNK_SIZE) / 2,
+            },
         )
     }
 }
@@ -4787,16 +4921,19 @@ mod test {
 
     use proptest::{prop_assert, prop_assert_eq, proptest};
 
-    use crate::{
-        DATA_STORE,
-        app_state::GameState,
-        blueprint::{Blueprint, random_entity_to_place, random_position},
-        frontend::{
-            action::{ActionType, place_entity::PlaceEntityInfo},
-            world::Position,
-        },
-        replays::Replay,
-    };
+    // use crate::{
+    //     DATA_STORE,
+    //     app_state::GameState,
+    //     blueprint::{
+    //         Blueprint,
+    //         test::{random_entity_to_place, random_position},
+    //     },
+    //     frontend::{
+    //         action::{ActionType, place_entity::PlaceEntityInfo},
+    //         world::Position,
+    //     },
+    //     replays::Replay,
+    // };
 
     proptest! {
 

@@ -349,7 +349,10 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         index: u32,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> super::AssemblerOnclickInfo<ItemIdxType> {
-        let items = data_store.recipe_to_items.get(&self.recipe).unwrap();
+        let items = data_store
+            .recipe_to_items
+            .get(self.recipe.into_usize())
+            .unwrap();
 
         super::AssemblerOnclickInfo {
             inputs: self

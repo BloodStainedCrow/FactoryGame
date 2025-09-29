@@ -381,7 +381,7 @@ pub enum StaticID {
 #[cfg(test)]
 mod test {
     use crate::DATA_STORE;
-    use crate::blueprint::random_item;
+    use crate::blueprint::test::random_item;
     use crate::inserter::{FakeUnionStorage, Storage};
     use crate::item::{Item, usize_from};
     use crate::storage_list::{grid_size, static_size};

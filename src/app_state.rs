@@ -55,6 +55,7 @@ use crate::{
 };
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
+use flate2::read::ZlibDecoder;
 #[cfg(feature = "client")]
 use get_size::GetSize;
 use itertools::Itertools;
@@ -62,6 +63,7 @@ use log::{info, trace, warn};
 use petgraph::graph::NodeIndex;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::collections::{BTreeMap, HashMap};
+use std::io::Read;
 use std::iter;
 use std::mem;
 use std::path::Path;
@@ -70,12 +72,9 @@ use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
-use std::{
-    borrow::Borrow,
-    fs::File,
-    ops::ControlFlow,
-    time::{Duration, Instant},
-};
+use std::{borrow::Borrow, fs::File, ops::ControlFlow, time::Duration};
+
+use wasm_timer::Instant;
 
 use crate::frontend::action::place_tile::PositionInfo;
 
@@ -173,12 +172,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             data_store,
         );
 
-        let file = File::open("test_blueprints/red_sci.bp").unwrap();
-        let bp: Blueprint = ron::de::from_reader(file).unwrap();
+        const BP_STRING: &'static str = include_str!("../test_blueprints/red_sci.bp");
+        let bp: Blueprint = ron::de::from_str(BP_STRING).unwrap();
+        // let file = File::open("test_blueprints/red_sci.bp").unwrap();
+        // let bp: Blueprint = ron::de::from_reader(file).unwrap();
         let bp = bp.get_reusable(false, data_store);
 
         puffin::set_scopes_on(false);
-        let y_range = (1590..30000).step_by(7);
+        let y_range = (1590..3000).step_by(7);
         let x_range = (1590..3000).step_by(20);
 
         let total = y_range.size_hint().0 * x_range.size_hint().0;
@@ -214,15 +215,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         // ret.add_solar_field(Position { x: 1590, y: 70000 }, Watt(3_000_000_000_000), progress.clone(), data_store);
 
-        let file = File::open("test_blueprints/murphy/megabase_running.bp").unwrap();
-        let bp: Blueprint = ron::de::from_reader(file).unwrap();
-        let bp = bp.get_reusable(false, data_store);
+        // FIXME:
+        // let file = File::open("test_blueprints/murphy/megabase_fixes_no_clocking.bp").unwrap();
+        // let mut bp: Blueprint = ron::de::from_reader(file).unwrap();
+        // todo!();
+        const BP_DATA: &'static [u8] = include_bytes!("../test_blueprints/saved_binary.bp");
+        let mut data = vec![];
+        let mut decoder = ZlibDecoder::new(BP_DATA);
+        decoder.read_to_end(&mut data).unwrap();
+        let mut bp: Blueprint = bitcode::deserialize(&data).unwrap();
+        bp.optimize();
+        // let bp = bp.get_reusable(false, data_store);
 
         // TODO: Measure if this is actually faster
-        let bp = bp.optimize();
+        // let bp = bp.optimize();
 
         puffin::set_scopes_on(false);
-        bp.apply(Position { x: 1600, y: 1600 }, &mut ret, data_store);
+        bp.apply(false, Position { x: 1600, y: 1600 }, &mut ret, data_store);
         puffin::set_scopes_on(true);
 
         ret
@@ -244,29 +253,39 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         // ret.add_solar_field(Position { x: 1590, y: 70000 }, Watt(3_000_000_000_000), progress.clone(), data_store);
 
-        let file = File::open("test_blueprints/murphy/megabase_running.bp").unwrap();
-        let bp: Blueprint = ron::de::from_reader(file).unwrap();
-        let bp = bp.get_reusable(false, data_store);
+        let file = File::open("test_blueprints/murphy/megabase_with_belt_sorting.bp").unwrap();
+        let mut bp: Blueprint = ron::de::from_reader(file).unwrap();
+        bp.optimize();
+        // dbg!(&bp);
+        // let bp = bp.get_reusable(false, data_store);
 
         // TODO: Measure if this is actually faster
-        let bp = bp.optimize();
+        // let bp = bp.optimize();
 
         puffin::set_scopes_on(false);
         let y_range = (1590..80000).step_by(10000);
         let x_range = (1590..20000).step_by(4000);
 
-        let total = y_range.size_hint().0 * x_range.size_hint().0;
+        let num_calls = bp.action_count();
 
         let mut current = 0;
 
-        for y_pos in y_range {
-            for x_pos in x_range.clone() {
-                progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
+        bp.apply_at_positions(
+            y_range
+                .cartesian_product(x_range)
+                .map(|(y, x)| Position { x, y }),
+            false,
+            &mut ret,
+            || {
+                progress.store(
+                    (current as f64 / num_calls as f64).to_bits(),
+                    Ordering::Relaxed,
+                );
                 current += 1;
+            },
+            data_store,
+        );
 
-                bp.apply(Position { x: x_pos, y: y_pos }, &mut ret, data_store);
-            }
-        }
         puffin::set_scopes_on(true);
 
         ret
@@ -291,8 +310,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             data_store,
         );
 
-        let file = File::open("test_blueprints/red_and_green_with_clocking.bp").unwrap();
-        let bp: Blueprint = ron::de::from_reader(file).unwrap();
+        const BP_STRING: &'static str =
+            include_str!("../test_blueprints/red_and_green_with_clocking.bp");
+        let bp: Blueprint = ron::de::from_str(BP_STRING).unwrap();
+        // let file = File::open("test_blueprints/red_and_green_with_clocking.bp").unwrap();
+        // let bp: Blueprint = ron::de::from_reader(file).unwrap();
         let bp = bp.get_reusable(false, data_store);
 
         puffin::set_scopes_on(false);
@@ -559,7 +581,7 @@ pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     pub fluid_store: FluidSystemStore<ItemIdxType>,
 
-    item_times: Box<[f32]>,
+    pub item_times: Box<[f32]>,
 }
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
@@ -996,10 +1018,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                 }
                             }
 
-                            let pure_update_time = pure_update_start.elapsed();
+                                let pure_update_time = pure_update_start.elapsed();
 
-                            *avg_time =
-                                *avg_time + (pure_update_time.as_millis() as f32 - *avg_time) / 20.0;
+                                *avg_time =
+                                    *avg_time + (pure_update_time.as_millis() as f32 - *avg_time) / 20.0;
                         })
                     );
             }
@@ -1963,22 +1985,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                                             let recipe_fluid_inputs: Vec<_> = data_store
                                                 .recipe_to_items[id.recipe.into_usize()]
-                                                .iter()
-                                                .filter_map(|(dir, item)| {
-                                                    (*dir == ItemRecipeDir::Ing
+                                            .iter()
+                                            .filter_map(|(dir, item)| {
+                                                (*dir == ItemRecipeDir::Ing
                                                     && data_store.item_is_fluid[item.into_usize()])
-                                                    .then_some(*item)
-                                                })
-                                                .collect();
+                                                .then_some(*item)
+                                            })
+                                            .collect();
                                             let recipe_fluid_outputs: Vec<_> = data_store
                                                 .recipe_to_items[id.recipe.into_usize()]
-                                                .iter()
-                                                .filter_map(|(dir, item)| {
-                                                    (*dir == ItemRecipeDir::Out
+                                            .iter()
+                                            .filter_map(|(dir, item)| {
+                                                (*dir == ItemRecipeDir::Out
                                                     && data_store.item_is_fluid[item.into_usize()])
-                                                    .then_some(*item)
-                                                })
-                                                .collect();
+                                                .then_some(*item)
+                                            })
+                                            .collect();
 
                                             let fluid_pure_outputs: Vec<_> = data_store
                                                 .assembler_info[usize::from(*assembler_ty)]

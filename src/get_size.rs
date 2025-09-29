@@ -105,6 +105,57 @@ impl<N: GetSize, E: GetSize, Ty: EdgeType, Ix: IndexType + GetSize> GetSize
     }
 }
 
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct Graph<N, E, Ty: EdgeType = Directed, Ix: IndexType = petgraph::graph::DefaultIx> {
+    pub graph: petgraph::graph::Graph<N, E, Ty, Ix>,
+}
+
+impl<N: Clone, E: Clone, Ty: EdgeType, Ix: IndexType> Clone for Graph<N, E, Ty, Ix> {
+    fn clone(&self) -> Self {
+        Self {
+            graph: self.graph.clone(),
+        }
+    }
+}
+
+impl<N, E, Ty: EdgeType, Ix: IndexType> Default for Graph<N, E, Ty, Ix> {
+    fn default() -> Self {
+        Self {
+            graph: Default::default(),
+        }
+    }
+}
+
+impl<N, E, Ty: EdgeType, Ix: IndexType> Deref for Graph<N, E, Ty, Ix> {
+    type Target = petgraph::graph::Graph<N, E, Ty, Ix>;
+    fn deref(&self) -> &Self::Target {
+        &self.graph
+    }
+}
+
+impl<N, E, Ty: EdgeType, Ix: IndexType> DerefMut for Graph<N, E, Ty, Ix> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.graph
+    }
+}
+
+#[cfg(feature = "client")]
+impl<N: GetSize, E: GetSize, Ty: EdgeType, Ix: IndexType + GetSize> GetSize
+    for Graph<N, E, Ty, Ix>
+{
+    fn get_heap_size(&self) -> usize {
+        self.graph
+            .node_weights()
+            .map(|node| node.get_size() + 2 * Ix::get_stack_size())
+            .sum::<usize>()
+            + self
+                .graph
+                .edge_weights()
+                .map(|edge| edge.get_size() + 4 * Ix::get_stack_size())
+                .sum::<usize>()
+    }
+}
+
 #[cfg(feature = "client")]
 impl<
     N: ShowInfo<Extractor, Info>,

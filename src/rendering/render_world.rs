@@ -5,8 +5,10 @@ use crate::frontend::world::tile::World;
 use crate::get_size::RAMExtractor;
 use crate::get_size::RamUsage;
 use crate::item::Indexable;
+use crate::lab::{LabViewInfo, TICKS_PER_SCIENCE};
 use crate::liquid::FluidSystemState;
 use crate::rendering::Corner;
+use crate::saving::{save, save_components};
 use crate::statistics::{NUM_DIFFERENT_TIMESCALES, TIMESCALE_NAMES};
 use crate::{
     TICKS_PER_SECOND_LOGIC,
@@ -42,8 +44,10 @@ use egui::{Button, CollapsingHeader, Modal, RichText, ScrollArea, Sense};
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
 use egui_show_info::ShowInfo;
+use flate2::Compression;
+use flate2::write::ZlibEncoder;
 use itertools::Itertools;
-use log::{info, trace};
+use log::{info, trace, warn};
 use parking_lot::MutexGuard;
 use petgraph::dot::Dot;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -66,7 +70,11 @@ const BELT_ANIM_SPEED: f32 = 1.0 / (BELT_LEN_PER_TILE as f32);
 
 const ALT_MODE_ICON_SIZE: f32 = 0.5;
 
-pub const SWITCH_TO_MAPVIEW_TILES: f32 = if cfg!(debug_assertions) { 200.0 } else { 500.0 };
+pub const SWITCH_TO_MAPVIEW_TILES: f32 = if cfg!(debug_assertions) {
+    200.0
+} else {
+    1000.0
+};
 pub const SWITCH_TO_MAPVIEW_ZOOM_LEVEL: LazyLock<f32> =
     LazyLock::new(|| ((SWITCH_TO_MAPVIEW_TILES - 1.0) / WIDTH_PER_LEVEL as f32).log(1.5));
 
@@ -196,6 +204,20 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         mem::drop(simulation_state);
 
         {
+            profiling::scope!("map_view::apply_updates");
+            map_view::apply_updates(
+                updates
+                    .into_iter()
+                    .flat_map(|v| v.into_iter())
+                    .map(|pos| MapViewUpdate {
+                        pos,
+                        color: world.get_entity_color(pos, data_store),
+                    }),
+                renderer,
+            );
+        }
+
+        {
             profiling::scope!("Create Map Textures");
             create_map_textures_if_needed(
                 &world,
@@ -214,20 +236,6 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 // Some(Duration::from_millis(15)),
                 // None,
                 data_store,
-            );
-        }
-
-        {
-            profiling::scope!("map_view::apply_updates");
-            map_view::apply_updates(
-                updates
-                    .into_iter()
-                    .flat_map(|v| v.into_iter())
-                    .map(|pos| MapViewUpdate {
-                        pos,
-                        color: world.get_entity_color(pos, data_store),
-                    }),
-                renderer,
             );
         }
 
@@ -429,11 +437,11 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                     );
 
                                                     let item_idx = data_store.recipe_to_items
-                                                        [recipe]
-                                                        .iter()
-                                                        .find(|item| item.0 == ItemRecipeDir::Out)
-                                                        .map(|item| item.1.into_usize())
-                                                        .unwrap_or(0);
+                                                        [recipe.into_usize()]
+                                                    .iter()
+                                                    .find(|item| item.0 == ItemRecipeDir::Out)
+                                                    .map(|item| item.1.into_usize())
+                                                    .unwrap_or(0);
 
                                                     let icon_size: [f32; 2] = [
                                                         size[0] as f32 * ALT_MODE_ICON_SIZE,
@@ -570,11 +578,11 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                     );
 
                                                     let item_idx = data_store.recipe_to_items
-                                                        [&id.recipe]
-                                                        .iter()
-                                                        .find(|item| item.0 == ItemRecipeDir::Out)
-                                                        .map(|item| item.1.into_usize())
-                                                        .unwrap_or(0);
+                                                        [id.recipe.into_usize()]
+                                                    .iter()
+                                                    .find(|item| item.0 == ItemRecipeDir::Out)
+                                                    .map(|item| item.1.into_usize())
+                                                    .unwrap_or(0);
 
                                                     let icon_size: [f32; 2] = [
                                                         size[0] as f32 * ALT_MODE_ICON_SIZE,
@@ -615,9 +623,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 .world
                                                 .get_belt_possible_inputs_no_cache(*pos);
                                             let (sprite, corner) =
-                                                match expected_belt_state(*direction, |dir| {
-                                                    inputs[*dir]
-                                                }) {
+                                                match expected_belt_state(*direction, inputs) {
                                                     BeltState::Straight => {
                                                         (&texture_atlas.belt[*direction], None)
                                                     },
@@ -1102,7 +1108,6 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                     texture_atlas,
                                                 );
                                             }
-                                            // todo!()
                                         },
                                         Entity::Chest {
                                             ty,
@@ -1756,21 +1761,39 @@ pub fn render_ui<
     EscapeMenuOptions,
 > {
     let state_machine_ref = &mut *state_machine;
-    let mut fake_game_state = FakeGameState {
-        simulation_state: simulation_state,
-        world: world,
-    };
-    let game_state_ref = &mut fake_game_state;
     let data_store_ref = &*data_store;
     let mut actions = vec![];
+
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    ui.vertical_centered(|ui|{
+        ui.label(
+            egui::RichText::new("Detected running in a browser(WASM). Performance might be significantly degraded, and/or features might not work correctly. Support is on a best effort basis.")
+                .heading()
+                .color(egui::Color32::RED),
+        );
+        ui.label(
+            egui::RichText::new("For the best experience run on native.")
+                .heading()
+                .color(egui::Color32::RED),
+        );
+    });
 
     if state_machine_ref.escape_menu_open {
         if let Some(escape_action) = Modal::new("Pause Window".into())
             .show(ctx, |ui| {
                 ui.heading("Paused");
+                if ui.button("Save").clicked() {
+                    save_components(&*world, &*simulation_state, &*aux_data, data_store_ref);
+                }
                 if ui.button("Main Menu").clicked() {
                     return Some(EscapeMenuOptions::BackToMainMenu);
                 }
+
+                ui.add(
+                    egui::Slider::new(&mut state_machine_ref.mouse_wheel_sensitivity, 0.01..=100.0)
+                        .text("Mouse Wheel sensitivity")
+                        .logarithmic(true),
+                );
 
                 None
             })
@@ -1781,6 +1804,12 @@ pub fn render_ui<
             }
         }
     }
+
+    let mut fake_game_state = FakeGameState {
+        simulation_state: simulation_state,
+        world: world,
+    };
+    let game_state_ref = &mut fake_game_state;
 
     Window::new("Mouse Pos").default_open(true).show(ctx, |ui| {
         ui.label(
@@ -1813,6 +1842,7 @@ pub fn render_ui<
     //     );
     // });
 
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     Window::new("Import BP")
         .default_open(false)
         .show(ctx, |ui| {
@@ -1876,7 +1906,7 @@ pub fn render_ui<
                                     AssemblerInfo::Unpowered(_) => {},
                                     AssemblerInfo::PoweredNoRecipe(_) => {},
                                     AssemblerInfo::Powered { id, pole_position, weak_index } => {
-                                        let (_, _, count_in_recipe) = data_store_ref.recipe_to_items_and_amounts[&id.recipe].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Ing && *item == *recipe_item).unwrap();
+                                        let (_, _, count_in_recipe) = data_store_ref.recipe_to_items_and_amounts[id.recipe.into_usize()].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Ing && *item == *recipe_item).unwrap();
                                         let time_per_recipe = data_store_ref.recipe_timers[usize_from(id.recipe.id)] as f32;
 
                                         let AssemblerOnclickInfo { base_speed, speed_mod, .. } = game_state_ref.simulation_state.factory.power_grids.get_assembler_info(*id, data_store_ref);
@@ -1911,7 +1941,7 @@ pub fn render_ui<
                                     AssemblerInfo::Unpowered(_) => {},
                                     AssemblerInfo::PoweredNoRecipe(_) => {},
                                     AssemblerInfo::Powered { id, pole_position, weak_index } => {
-                                        let (_, _, count_in_recipe) = data_store_ref.recipe_to_items_and_amounts[&id.recipe].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Out && *item == *recipe_item).unwrap();
+                                        let (_, _, count_in_recipe) = data_store_ref.recipe_to_items_and_amounts[id.recipe.into_usize()].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Out && *item == *recipe_item).unwrap();
                                         let time_per_recipe = data_store_ref.recipe_timers[usize_from(id.recipe.id)] as f32;
 
                                         let AssemblerOnclickInfo { base_speed, speed_mod, prod_mod, .. } = game_state_ref.simulation_state.factory.power_grids.get_assembler_info(*id, data_store_ref);
@@ -2195,6 +2225,20 @@ pub fn render_ui<
             let mut file = File::create("saved.bp").unwrap();
             file.write(s.as_bytes()).unwrap();
         }
+
+        if ui
+            .add_enabled(
+                bp.is_some(),
+                Button::new("Write Blueprint binary data to file"),
+            )
+            .clicked()
+        {
+            let v: Vec<u8> = bitcode::serialize(bp.unwrap()).unwrap();
+            let file = File::create("saved_binary.bp").unwrap();
+            let mut encoder = ZlibEncoder::new(file, Compression::best());
+            encoder.write_all(&v).unwrap();
+            encoder.finish().unwrap();
+        }
     });
 
     Window::new("RawData").default_open(false).show(ctx, |ui| {
@@ -2331,7 +2375,7 @@ pub fn render_ui<
                                 TableBuilder::new(ui).columns(Column::auto().resizable(false), inputs.len() + outputs.len()).body(|mut body| {
                                     body.row(5.0, |mut row| {
                                         for (item, count) in inputs.iter() {
-                                            let (_, _, count_in_recipe) = data_store_ref.recipe_to_items_and_amounts[&id.recipe].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Ing && *item == *recipe_item).unwrap();
+                                            let (_, _, count_in_recipe) = data_store_ref.recipe_to_items_and_amounts[id.recipe.into_usize()].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Ing && *item == *recipe_item).unwrap();
                                             row.col(|ui| {
                                                 ui.add(egui::Label::new(&data_store_ref.item_display_names[usize_from(item.id)]).wrap_mode(egui::TextWrapMode::Extend));
                                                 ui.add(egui::Label::new(format!("{}", *count)).wrap_mode(egui::TextWrapMode::Extend));
@@ -2340,7 +2384,7 @@ pub fn render_ui<
                                         }
 
                                         for (item, count) in outputs.iter() {
-                                            let (_, _, count_in_recipe) = data_store_ref.recipe_to_items_and_amounts[&id.recipe].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Out && *item == *recipe_item).unwrap();
+                                            let (_, _, count_in_recipe) = data_store_ref.recipe_to_items_and_amounts[id.recipe.into_usize()].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Out && *item == *recipe_item).unwrap();
                                             row.col(|ui| {
                                                 ui.add(egui::Label::new(&data_store_ref.item_display_names[usize_from(item.id)]).wrap_mode(egui::TextWrapMode::Extend));
                                                 ui.add(egui::Label::new(format!("{}", *count)).wrap_mode(egui::TextWrapMode::Extend));
@@ -2584,12 +2628,12 @@ pub fn render_ui<
                     } => {
                         let num_slots = data_store_ref.chest_num_slots[*ty as usize];
                         let (current_items, stack_size) = if let Some((item, index)) = item {
-                        ui.label(&data_store_ref.item_display_names[usize_from(item.id)]);
-                        ui.label(format!("{}", *index));
+                            ui.label(&data_store_ref.item_display_names[usize_from(item.id)]);
+                            ui.label(format!("{}", *index));
 
-                        let stack_size: u16 = data_store_ref.item_stack_sizes[usize_from(item.id)] as u16;
+                            let stack_size: u16 = data_store_ref.item_stack_sizes[usize_from(item.id)] as u16;
 
-                        let (current_items, _max_items) = game_state_ref.simulation_state.factory.chests.stores[usize_from(item.id)].get_chest(*index);
+                            let (current_items, _max_items) = game_state_ref.simulation_state.factory.chests.stores[usize_from(item.id)].get_chest(*index);
 
                             (current_items, stack_size)
                         } else {
@@ -2634,7 +2678,7 @@ pub fn render_ui<
                                     power_consumption_mod,
                                     base_power_consumption,
                                 } = game_state_ref.simulation_state.factory.power_grids.power_grids[game_state_ref.simulation_state.factory.power_grids.pole_pos_to_grid_id[pole_pos] as usize].lab_stores.get_lab_info(*lab_index, &data_store);
-                                
+
                                 let main_pb = ProgressBar::new(timer_percentage).show_percentage().corner_radius(CornerRadius::ZERO);
                                 ui.add(main_pb);
                                 let prod_pb = ProgressBar::new(prod_timer_percentage).fill(Color32::ORANGE).show_percentage().corner_radius(CornerRadius::ZERO);
@@ -2679,7 +2723,7 @@ pub fn render_ui<
                             None => {
                                 // TODO:
                             },
-                        } 
+                        }
                     },
                     Entity::SolarPanel {  .. } => {
                         // TODO

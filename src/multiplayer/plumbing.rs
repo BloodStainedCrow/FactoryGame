@@ -219,7 +219,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         }
 
         let mut v: Vec<_> = state_machine
-            .handle_inputs(&self.local_input, world, data_store)
+            .handle_inputs(self.local_input.try_iter(), world, data_store)
             .into_iter()
             .collect();
         if start.elapsed() > Duration::from_millis(10) {

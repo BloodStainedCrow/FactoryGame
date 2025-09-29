@@ -30,7 +30,7 @@ use crate::{
 };
 
 mod plumbing;
-mod protocol;
+// mod protocol;
 mod server;
 
 pub mod connection_reciever_tcp;
@@ -247,11 +247,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 tick_counter,
                 _cancel_socket,
             ) => {
-                #[cfg(debug_assertions)]
-                {
-                    profiling::scope!("Crash anticipation save to disk");
-                    save(&game_state, data_store);
-                }
+                // #[cfg(debug_assertions)]
+                // {
+                //     profiling::scope!("Crash anticipation save to disk");
+                //     save(&game_state, data_store);
+                // }
                 game_state_update_handler.update(game_state, Some(replay), data_store);
                 tick_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             },

@@ -76,6 +76,8 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
 
     // #[serde(skip)]
     pub get_size_cache: std::collections::HashMap<String, RamUsage>,
+
+    pub mouse_wheel_sensitivity: f32,
 }
 
 #[derive(Debug)]
@@ -165,18 +167,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             recipe: PhantomData,
 
             get_size_cache: HashMap::new(),
+
+            mouse_wheel_sensitivity: 1.0,
         }
     }
 
     #[allow(clippy::too_many_lines)]
-    pub fn handle_inputs<'a, 'b, 'c, 'd>(
+    pub fn handle_inputs<'a, 'b, 'c, 'd, I: IntoIterator<Item = Input> + 'b>(
         &'a mut self,
-        input: &'b Receiver<Input>,
+        input: I,
         world: &'c World<ItemIdxType, RecipeIdxType>,
         data_store: &'d DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
-    + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType> {
-        input.try_iter().map(|input| {
+    + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType, I> {
+        input.into_iter().map(|input| {
             if self.escape_menu_open && input != Input::KeyPress(Key::Esc) {
                 match input {
                     Input::KeyPress(key) => {
@@ -547,7 +551,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     let Position {x: mouse_x, y: mouse_y} = Self::player_mouse_to_tile(self.zoom_level, self.map_view_info.unwrap_or(self.local_player_pos), self.current_mouse_pos);
                     match delta {
                         (_, y) => {
-                            self.zoom_level -=  y as f32 / 10.0;
+                            self.zoom_level -=  y as f32 / 10.0 * self.mouse_wheel_sensitivity;
                         },
                     }
                     if let Some(view_center) = &mut self.map_view_info {
@@ -1023,35 +1027,33 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ));
                 vec![]
             },
-            (
-                ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::FluidTank {
-                    pos,
-                    ty,
-                    rotation,
-                })),
-                Key::Key9,
-            ) => {
-                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::FluidTank {
-                        pos: *pos,
-                        ty: (*ty + 1) % data_store.fluid_tank_infos.len() as u8,
-                        rotation: *rotation,
-                    },
-                ));
-                vec![]
-            },
+            // (
+            //     ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::FluidTank {
+            //         pos,
+            //         ty,
+            //         rotation,
+            //     })),
+            //     Key::Key9,
+            // ) => {
+            //     self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+            //         PlaceEntityType::FluidTank {
+            //             pos: *pos,
+            //             ty: (*ty + 1) % data_store.fluid_tank_infos.len() as u8,
+            //             rotation: *rotation,
+            //         },
+            //     ));
+            //     vec![]
+            // },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key9) => {
-                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::FluidTank {
+                self.state =
+                    ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Lab {
                         ty: 0,
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
                             self.map_view_info.unwrap_or(self.local_player_pos),
                             self.current_mouse_pos,
                         ),
-                        rotation: Dir::North,
-                    },
-                ));
+                    }));
                 vec![]
             },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key0) => {

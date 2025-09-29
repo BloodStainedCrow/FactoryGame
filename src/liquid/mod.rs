@@ -1,5 +1,6 @@
 use std::cmp::min;
-use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+use std::collections::{BTreeMap, HashMap};
 
 use itertools::Itertools;
 use log::warn;
@@ -37,7 +38,11 @@ pub struct FluidSystemId<ItemIdxType: WeakIdxTrait> {
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct FluidSystemStore<ItemIdxType: WeakIdxTrait> {
     pub fluid_systems_with_fluid: Box<[Vec<Option<FluidSystem<ItemIdxType>>>]>,
+    fluid_systems_with_fluid_holes: Box<[Vec<usize>]>,
+
     pub empty_fluid_systems: Vec<Option<FluidSystem<ItemIdxType>>>,
+    empty_fluid_systems_holes: Vec<usize>,
+
     pub fluid_box_pos_to_network_id: HashMap<Position, FluidSystemId<ItemIdxType>>,
 }
 
@@ -62,8 +67,11 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
         Self {
             fluid_systems_with_fluid: vec![vec![]; data_store.item_display_names.len()]
                 .into_boxed_slice(),
+            fluid_systems_with_fluid_holes: vec![vec![]; data_store.item_display_names.len()]
+                .into_boxed_slice(),
             empty_fluid_systems: vec![],
-            fluid_box_pos_to_network_id: HashMap::new(),
+            empty_fluid_systems_holes: vec![],
+            fluid_box_pos_to_network_id: Default::default(),
         }
     }
 
@@ -104,18 +112,36 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
         };
 
         let id_the_box_ends_up_with = if let Some(first_connection) = connected_boxes.last() {
-            let network_to_join_into = self.fluid_box_pos_to_network_id[first_connection];
-
-            let need_to_merge = !connected_boxes
+            let network_ids: Vec<_> = connected_boxes
                 .iter()
                 .map(|pos| self.fluid_box_pos_to_network_id[pos])
-                .all_equal();
+                .collect();
+
+            let network_to_join_into = network_ids
+                .iter()
+                .copied()
+                .max_by_key(|id| match id.fluid {
+                    Some(fluid) => self.fluid_systems_with_fluid[fluid.into_usize()]
+                        [id.index as usize]
+                        .as_ref()
+                        .unwrap()
+                        .graph
+                        .node_count(),
+                    None => self.empty_fluid_systems[id.index as usize]
+                        .as_ref()
+                        .unwrap()
+                        .graph
+                        .node_count(),
+                })
+                .unwrap();
+
+            let need_to_merge = !network_ids.iter().all_equal();
 
             let final_id = if need_to_merge {
-                let merge_fluid = match connected_boxes
+                let merge_fluid = match network_ids
                     .iter()
                     // Remove all fluid networks without a set fluid type since we can just set them to whatever fluid we might decide on
-                    .flat_map(|pos| self.fluid_box_pos_to_network_id[pos].fluid)
+                    .flat_map(|id| id.fluid)
                     .all_equal_value()
                 {
                     Ok(fluid) => Some(fluid),
@@ -124,32 +150,6 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                     },
                     Err(None) => None,
                 };
-
-                let network_to_join_into = connected_boxes
-                    .iter()
-                    .map(|pos| self.fluid_box_pos_to_network_id[pos])
-                    .filter(|id| id.fluid == merge_fluid)
-                    // Always merge into the largest possible fluid network, to minimize update work
-                    .max_by_key(|id: &FluidSystemId<ItemIdxType>| {
-                        let Some(fluid) = id.fluid else {
-                            return 0;
-                        };
-
-                        let FluidSystemState::HasFluid { fluid, chest_id } = self
-                            .fluid_systems_with_fluid[fluid.into_usize()][id.index]
-                            .as_ref()
-                            .unwrap()
-                            .state
-                        else {
-                            unreachable!();
-                        };
-
-                        let (_units, max_units) =
-                            chest_store.stores[fluid.into_usize()].get_chest(chest_id);
-
-                        max_units
-                    })
-                    .unwrap();
 
                 assert_eq!(network_to_join_into.fluid, merge_fluid);
 
@@ -174,6 +174,10 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
 
                 assert!(removed_ids.iter().all_unique());
                 for removed_id in removed_ids {
+                    if removed_id == network_to_join_into {
+                        // Do not join into itself
+                        continue;
+                    }
                     self.merge_fluid_system(
                         network_to_join_into,
                         removed_id,
@@ -213,9 +217,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
 
                         network.set_fluid(fluid, chest_store);
 
-                        let index = self.fluid_systems_with_fluid[fluid.into_usize()]
-                            .iter()
-                            .position(Option::is_none);
+                        let index = self.fluid_systems_with_fluid_holes[fluid.into_usize()].pop();
 
                         let fluid_box_positions = network.graph.keys().copied().collect_vec();
 
@@ -342,9 +344,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
 
             let index = match connected_storages_fluid {
                 Some(fluid) => {
-                    let index = self.fluid_systems_with_fluid[fluid.into_usize()]
-                        .iter()
-                        .position(Option::is_none);
+                    let index = self.fluid_systems_with_fluid_holes[fluid.into_usize()].pop();
 
                     if let Some(hole_idx) = index {
                         assert!(
@@ -359,7 +359,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                     }
                 },
                 None => {
-                    let index = self.empty_fluid_systems.iter().position(Option::is_none);
+                    let index = self.empty_fluid_systems_holes.pop();
 
                     if let Some(hole_idx) = index {
                         assert!(self.empty_fluid_systems[hole_idx].is_none());
@@ -381,10 +381,10 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                 .fluid_box_pos_to_network_id
                 .entry(new_fluid_box_position)
             {
-                std::collections::hash_map::Entry::Occupied(_) => {
+                Entry::Occupied(_) => {
                     unreachable!("Two Fluid Boxes at the same position")
                 },
-                std::collections::hash_map::Entry::Vacant(vacant_entry) => {
+                Entry::Vacant(vacant_entry) => {
                     vacant_entry.insert(new_id);
                 },
             }
@@ -437,16 +437,20 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
         if delete {
             match old_id.fluid {
                 Some(fluid) => {
+                    self.fluid_systems_with_fluid_holes[fluid.into_usize()].push(old_id.index);
                     self.fluid_systems_with_fluid[fluid.into_usize()][old_id.index] = None
                 },
-                None => self.empty_fluid_systems[old_id.index] = None,
+                None => {
+                    self.empty_fluid_systems_holes.push(old_id.index);
+                    self.empty_fluid_systems[old_id.index] = None;
+                },
             }
         }
 
         for new_system in new_systems {
             match new_system.state {
                 FluidSystemState::NoFluid => {
-                    let index = self.empty_fluid_systems.iter().position(Option::is_none);
+                    let index = self.empty_fluid_systems_holes.pop();
 
                     let new_index = if let Some(hole_idx) = index {
                         assert!(self.empty_fluid_systems[hole_idx].is_none());
@@ -473,9 +477,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                     }
                 },
                 FluidSystemState::HasFluid { fluid, chest_id: _ } => {
-                    let index = self.fluid_systems_with_fluid[fluid.into_usize()]
-                        .iter()
-                        .position(Option::is_none);
+                    let index = self.fluid_systems_with_fluid_holes[fluid.into_usize()].pop();
 
                     let new_index = if let Some(hole_idx) = index {
                         assert!(
@@ -547,16 +549,20 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
         if delete {
             match old_id.fluid {
                 Some(fluid) => {
+                    self.fluid_systems_with_fluid_holes[fluid.into_usize()].push(old_id.index);
                     self.fluid_systems_with_fluid[fluid.into_usize()][old_id.index] = None
                 },
-                None => self.empty_fluid_systems[old_id.index] = None,
+                None => {
+                    self.empty_fluid_systems_holes.push(old_id.index);
+                    self.empty_fluid_systems[old_id.index] = None;
+                },
             }
         }
 
         for new_system in new_systems {
             match new_system.state {
                 FluidSystemState::NoFluid => {
-                    let index = self.empty_fluid_systems.iter().position(Option::is_none);
+                    let index = self.empty_fluid_systems_holes.pop();
 
                     let new_index = if let Some(hole_idx) = index {
                         assert!(self.empty_fluid_systems[hole_idx].is_none());
@@ -583,9 +589,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                     }
                 },
                 FluidSystemState::HasFluid { fluid, chest_id: _ } => {
-                    let index = self.fluid_systems_with_fluid[fluid.into_usize()]
-                        .iter()
-                        .position(Option::is_none);
+                    let index = self.fluid_systems_with_fluid_holes[fluid.into_usize()].pop();
 
                     let new_index = if let Some(hole_idx) = index {
                         assert!(
@@ -694,9 +698,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
 
                 let fluid_box_positions = removed.graph.keys().copied().collect_vec();
 
-                let new_idx = self.fluid_systems_with_fluid[conn_fluid.into_usize()]
-                    .iter()
-                    .position(Option::is_none);
+                let new_idx = self.fluid_systems_with_fluid_holes[conn_fluid.into_usize()].pop();
 
                 let new_idx = if let Some(hole_idx) = new_idx {
                     self.fluid_systems_with_fluid[conn_fluid.into_usize()][hole_idx] =
@@ -719,12 +721,12 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                             .unwrap(),
                         removed_id
                     );
-                    debug_assert!(
-                        self.fluid_box_pos_to_network_id
-                            .values()
-                            .all(|v| *v != removed_id)
-                    );
                 }
+                debug_assert!(
+                    self.fluid_box_pos_to_network_id
+                        .values()
+                        .all(|v| *v != removed_id)
+                );
 
                 Ok(weak_index)
             },
@@ -778,9 +780,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
 
                 let fluid_box_positions = removed.graph.keys().copied().collect_vec();
 
-                let new_idx = self.fluid_systems_with_fluid[conn_fluid.into_usize()]
-                    .iter()
-                    .position(Option::is_none);
+                let new_idx = self.fluid_systems_with_fluid_holes[conn_fluid.into_usize()].pop();
 
                 let new_idx = if let Some(hole_idx) = new_idx {
                     self.fluid_systems_with_fluid[conn_fluid.into_usize()][hole_idx] =
@@ -803,12 +803,12 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                             .unwrap(),
                         removed_id
                     );
-                    debug_assert!(
-                        self.fluid_box_pos_to_network_id
-                            .values()
-                            .all(|v| *v != removed_id)
-                    );
                 }
+                debug_assert!(
+                    self.fluid_box_pos_to_network_id
+                        .values()
+                        .all(|v| *v != removed_id)
+                );
 
                 Ok(weak_index)
             },
@@ -856,12 +856,12 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                 .insert(*box_pos_in_removed, kept_id)
                 .unwrap();
             assert_eq!(id_removed_from_map, removed_id);
-            debug_assert!(
-                self.fluid_box_pos_to_network_id
-                    .values()
-                    .all(|v| *v != removed_id)
-            );
         }
+        debug_assert!(
+            self.fluid_box_pos_to_network_id
+                .values()
+                .all(|v| *v != removed_id)
+        );
 
         match kept_id.fluid {
             Some(fluid) => self.fluid_systems_with_fluid[fluid.into_usize()][kept_id.index]

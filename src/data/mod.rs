@@ -442,8 +442,7 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     recipe_item_to_storage_list_idx:
         HashMap<(Recipe<RecipeIdxType>, Item<ItemIdxType>, ItemRecipeDir), u16>,
 
-    pub recipe_to_items_and_amounts:
-        HashMap<Recipe<RecipeIdxType>, Vec<(ItemRecipeDir, Item<ItemIdxType>, ITEMCOUNTTYPE)>>,
+    pub recipe_to_items_and_amounts: Vec<Vec<(ItemRecipeDir, Item<ItemIdxType>, ITEMCOUNTTYPE)>>,
 
     /// A lookup from recipe to its ing and out idxs
     pub recipe_index_lookups: Vec<(usize, usize)>,
@@ -454,7 +453,7 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     pub recipe_timers: Box<[TIMERTYPE]>,
 
-    pub recipe_to_items: HashMap<Recipe<RecipeIdxType>, Vec<(ItemRecipeDir, Item<ItemIdxType>)>>,
+    pub recipe_to_items: Vec<Vec<(ItemRecipeDir, Item<ItemIdxType>)>>,
 
     pub science_bottle_items: Vec<Item<ItemIdxType>>,
 
@@ -1019,8 +1018,7 @@ impl RawDataStore {
         let recipe_to_items = self
             .recipes
             .iter()
-            .enumerate()
-            .map(|(i, r)| {
+            .map(|r| {
                 let mut v = vec![];
 
                 for ing in &r.ings {
@@ -1037,20 +1035,14 @@ impl RawDataStore {
                     ));
                 }
 
-                (
-                    Recipe {
-                        id: RecipeIdxType::try_from(i).unwrap_or_else(|_| panic!()),
-                    },
-                    v,
-                )
+                v
             })
             .collect();
 
         let recipe_to_items_and_amounts = self
             .recipes
             .iter()
-            .enumerate()
-            .map(|(i, r)| {
+            .map(|r| {
                 let mut v = vec![];
 
                 for ing in &r.ings {
@@ -1069,12 +1061,7 @@ impl RawDataStore {
                     ));
                 }
 
-                (
-                    Recipe {
-                        id: RecipeIdxType::try_from(i).unwrap_or_else(|_| panic!()),
-                    },
-                    v,
-                )
+                v
             })
             .collect();
 
