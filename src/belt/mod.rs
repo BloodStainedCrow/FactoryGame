@@ -1509,6 +1509,25 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         kept_tile_id: BeltTileId<ItemIdxType>,
         front_len: BeltLenType,
     ) {
+        let removed_tile_id = if kept_tile_id == front_tile_id {
+            back_tile_id
+        } else {
+            front_tile_id
+        };
+
+        let num_edges = self.belt_graph.edge_count();
+        #[cfg(debug_assertions)]
+        {
+            let num_splitters = self.any_splitters.len() - self.any_splitter_holes.len();
+
+            assert!(
+                self.belt_graph.edge_count() >= num_splitters * 4,
+                "Not enough edges for splitters: {} < {}",
+                self.belt_graph.edge_count(),
+                num_splitters * 4
+            );
+        }
+
         // if !self.belt_graph_lookup.contains_key(&back_tile_id) {
         //     // We assume we already merged them in the graph
         //     assert!(self.belt_graph_lookup.contains_key(&front_tile_id));
@@ -1523,6 +1542,8 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             )
             .map(|edge| edge.id())
             .collect();
+
+        let num_inner_edges = inner_edges.len();
 
         for edge in inner_edges {
             match self.belt_graph.edge_weight(edge).unwrap() {
@@ -1544,14 +1565,14 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         let edges: Vec<_> = self
             .belt_graph
             .edges_directed(
-                *self.belt_graph_lookup[&back_tile_id],
+                *self.belt_graph_lookup[&removed_tile_id],
                 petgraph::Direction::Incoming,
             )
             .map(|edge| (edge.source(), edge.target(), edge.id()))
             .chain(
                 self.belt_graph
                     .edges_directed(
-                        *self.belt_graph_lookup[&back_tile_id],
+                        *self.belt_graph_lookup[&removed_tile_id],
                         petgraph::Direction::Outgoing,
                     )
                     .map(|edge| (edge.source(), edge.target(), edge.id())),
@@ -1564,14 +1585,12 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             // FIXME: Fix the simulation entities as well!!!!
             let new_conn = match conn {
                 BeltGraphConnection::Sideload { dest_belt_pos } => {
-                    if source == *self.belt_graph_lookup[&back_tile_id] {
-                        BeltGraphConnection::Sideload { dest_belt_pos }
-                    } else if target == *self.belt_graph_lookup[&back_tile_id] {
+                    if target == *self.belt_graph_lookup[&back_tile_id] {
                         BeltGraphConnection::Sideload {
                             dest_belt_pos: dest_belt_pos + front_len,
                         }
                     } else {
-                        unreachable!()
+                        BeltGraphConnection::Sideload { dest_belt_pos }
                     }
                 },
                 BeltGraphConnection::BeltBeltInserter {
@@ -1582,39 +1601,31 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     source_belt_pos: {
                         if source == *self.belt_graph_lookup[&back_tile_id] {
                             source_belt_pos + front_len
-                        } else if target == *self.belt_graph_lookup[&back_tile_id] {
-                            source_belt_pos
                         } else {
-                            unreachable!()
+                            source_belt_pos
                         }
                     },
                     dest_belt_pos: {
-                        if source == *self.belt_graph_lookup[&back_tile_id] {
-                            dest_belt_pos
-                        } else if target == *self.belt_graph_lookup[&back_tile_id] {
+                        if target == *self.belt_graph_lookup[&back_tile_id] {
                             dest_belt_pos + front_len
                         } else {
-                            unreachable!()
+                            source_belt_pos
                         }
                     },
                     filter,
                 },
                 // TODO: Is this correct?
                 BeltGraphConnection::Connected { filter } => {
-                    assert_eq!(
-                        target, *self.belt_graph_lookup[&back_tile_id],
-                        "Any end of belt connections must be at the end of the back belt, since the front is being merged"
-                    );
                     BeltGraphConnection::Connected { filter }
                 },
             };
 
-            if source == *self.belt_graph_lookup[&back_tile_id] {
+            if source == *self.belt_graph_lookup[&removed_tile_id] {
                 self.belt_graph
-                    .add_edge(*self.belt_graph_lookup[&front_tile_id], target, new_conn);
-            } else if target == *self.belt_graph_lookup[&back_tile_id] {
+                    .add_edge(*self.belt_graph_lookup[&kept_tile_id], target, new_conn);
+            } else if target == *self.belt_graph_lookup[&removed_tile_id] {
                 self.belt_graph
-                    .add_edge(source, *self.belt_graph_lookup[&front_tile_id], new_conn);
+                    .add_edge(source, *self.belt_graph_lookup[&kept_tile_id], new_conn);
             } else {
                 unreachable!()
             }
@@ -1623,14 +1634,14 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         assert!(
             self.belt_graph
                 .edges_directed(
-                    *self.belt_graph_lookup[&back_tile_id],
+                    *self.belt_graph_lookup[&removed_tile_id],
                     petgraph::Direction::Incoming,
                 )
                 .map(|edge| (edge.source(), edge.target(), edge.id()))
                 .chain(
                     self.belt_graph
                         .edges_directed(
-                            *self.belt_graph_lookup[&back_tile_id],
+                            *self.belt_graph_lookup[&removed_tile_id],
                             petgraph::Direction::Outgoing,
                         )
                         .map(|edge| (edge.source(), edge.target(), edge.id())),
@@ -1640,22 +1651,14 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         );
 
         self.belt_graph
-            .remove_node(
-                *self.belt_graph_lookup[&if kept_tile_id == front_tile_id {
-                    back_tile_id
-                } else {
-                    front_tile_id
-                }],
-            )
+            .remove_node(*self.belt_graph_lookup[&removed_tile_id])
             .expect("Node not found");
 
         self.belt_graph_lookup
-            .remove(&if kept_tile_id == front_tile_id {
-                back_tile_id
-            } else {
-                front_tile_id
-            })
+            .remove(&removed_tile_id)
             .expect("Lookup not found");
+
+        assert_eq!(self.belt_graph.edge_count(), num_edges - num_inner_edges);
 
         #[cfg(debug_assertions)]
         {
@@ -1678,12 +1681,36 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         let mut dedup = HashSet::default();
         let mut done = HashMap::default();
 
+        #[cfg(debug_assertions)]
+        {
+            let num_splitters = self.any_splitters.len() - self.any_splitter_holes.len();
+
+            assert!(
+                self.belt_graph.edge_count() >= num_splitters * 4,
+                "Not enough edges for splitters: {} < {}",
+                self.belt_graph.edge_count(),
+                num_splitters * 4
+            );
+        }
+
         self.propagate_sushi_if_necessary(
             kept_tile_id,
             &mut done_propagating,
             &mut dedup,
             &mut done,
         );
+
+        #[cfg(debug_assertions)]
+        {
+            let num_splitters = self.any_splitters.len() - self.any_splitter_holes.len();
+
+            assert!(
+                self.belt_graph.edge_count() >= num_splitters * 4,
+                "Not enough edges for splitters: {} < {}",
+                self.belt_graph.edge_count(),
+                num_splitters * 4
+            );
+        }
     }
 
     fn add_graph_connection_and_fix(
@@ -1896,31 +1923,42 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     })
             );
 
-            assert!(
-                (0..self.any_splitters.len())
-                    .filter(|idx| !self.any_splitter_holes.contains(idx))
-                    .map(|any_splitter_idx| self
-                        .get_splitter_belt_ids(SplitterTileId::Any(any_splitter_idx)))
-                    .all(|[inputs, outputs]| {
-                        inputs.into_iter().all(|id| {
-                            self.belt_graph
-                                .edges_directed(
-                                    *self.belt_graph_lookup[&id],
-                                    petgraph::Direction::Outgoing,
-                                )
-                                .count()
-                                >= 2
-                        }) && outputs.into_iter().all(|id| {
-                            self.belt_graph
-                                .edges_directed(
-                                    *self.belt_graph_lookup[&id],
-                                    petgraph::Direction::Incoming,
-                                )
-                                .count()
-                                >= 2
-                        })
-                    })
-            );
+            for [inputs, outputs] in (0..self.any_splitters.len())
+                .filter(|idx| !self.any_splitter_holes.contains(idx))
+                .map(|any_splitter_idx| {
+                    self.get_splitter_belt_ids(SplitterTileId::Any(any_splitter_idx))
+                })
+            {
+                assert!(
+                    inputs.into_iter().all(|id| {
+                        self.belt_graph
+                            .edges_directed(
+                                *self.belt_graph_lookup[&id],
+                                petgraph::Direction::Outgoing,
+                            )
+                            .count()
+                            // Two, since the input should be connected to both outputs
+                            >= 2
+                    }),
+                    "Not all splitter input belts have enough connections:\n{:?}",
+                    self.belt_graph
+                );
+
+                assert!(
+                    outputs.into_iter().all(|id| {
+                        self.belt_graph
+                            .edges_directed(
+                                *self.belt_graph_lookup[&id],
+                                petgraph::Direction::Incoming,
+                            )
+                            .count()
+                            // Two, since the input should be connected to both outputs
+                            >= 2
+                    }),
+                    "Not all splitter output belts have enough connections:\n{:?}",
+                    self.belt_graph
+                );
+            }
         }
 
         // Increase the belt timers
@@ -2778,6 +2816,18 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
     ) -> (BeltTileId<ItemIdxType>, BeltLenType) {
         // self.merge_and_fix(front_tile_id, back_tile_id);
 
+        #[cfg(debug_assertions)]
+        {
+            let num_splitters = self.any_splitters.len() - self.any_splitter_holes.len();
+
+            assert!(
+                self.belt_graph.edge_count() >= num_splitters * 4,
+                "Not enough edges for splitters: {} < {}",
+                self.belt_graph.edge_count(),
+                num_splitters * 4
+            );
+        }
+
         if front_tile_id == back_tile_id {
             // Make them circular
             match front_tile_id {
@@ -2929,31 +2979,51 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     })
             );
 
+            let num_splitters = self.any_splitters.len() - self.any_splitter_holes.len();
+
             assert!(
-                (0..self.any_splitters.len())
-                    .filter(|idx| !self.any_splitter_holes.contains(idx))
-                    .map(|any_splitter_idx| self
-                        .get_splitter_belt_ids(SplitterTileId::Any(any_splitter_idx)))
-                    .all(|[inputs, outputs]| {
-                        inputs.into_iter().all(|id| {
-                            self.belt_graph
-                                .edges_directed(
-                                    *self.belt_graph_lookup[&id],
-                                    petgraph::Direction::Outgoing,
-                                )
-                                .count()
-                                >= 2
-                        }) && outputs.into_iter().all(|id| {
-                            self.belt_graph
-                                .edges_directed(
-                                    *self.belt_graph_lookup[&id],
-                                    petgraph::Direction::Incoming,
-                                )
-                                .count()
-                                >= 2
-                        })
-                    })
+                self.belt_graph.edge_count() >= num_splitters * 4,
+                "Not enough edges for splitters: {} < {}",
+                self.belt_graph.edge_count(),
+                num_splitters * 4
             );
+
+            for [inputs, outputs] in (0..self.any_splitters.len())
+                .filter(|idx| !self.any_splitter_holes.contains(idx))
+                .map(|any_splitter_idx| {
+                    self.get_splitter_belt_ids(SplitterTileId::Any(any_splitter_idx))
+                })
+            {
+                assert!(
+                    inputs.into_iter().all(|id| {
+                        self.belt_graph
+                            .edges_directed(
+                                *self.belt_graph_lookup[&id],
+                                petgraph::Direction::Outgoing,
+                            )
+                            .count()
+                            // Two, since the input should be connected to both outputs
+                            >= 2
+                    }),
+                    "Not all splitter input belts have enough connections:\n{:?}",
+                    self.belt_graph
+                );
+
+                assert!(
+                    outputs.into_iter().all(|id| {
+                        self.belt_graph
+                            .edges_directed(
+                                *self.belt_graph_lookup[&id],
+                                petgraph::Direction::Incoming,
+                            )
+                            .count()
+                            // Two, since the input should be connected to both outputs
+                            >= 2
+                    }),
+                    "Not all splitter output belts have enough connections:\n{:?}",
+                    self.belt_graph
+                );
+            }
 
             assert!(
                 self.inner
