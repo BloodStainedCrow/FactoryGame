@@ -541,7 +541,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
     pub fn make_circular(&mut self) {
         assert!(self.input_splitter.is_none());
         assert!(self.output_splitter.is_none());
-        self.is_circular = false;
+        self.is_circular = true;
     }
 
     pub fn join(front: Self, back: Self) -> Self {
