@@ -11,7 +11,7 @@ use std::cmp::min;
 use std::mem;
 
 use crate::storage_list::PANIC_ON_INSERT;
-pub struct PureDrillStorageOnlySoloOwned<ItemIdxType: WeakIdxTrait> {
+pub(super) struct PureDrillStorageOnlySoloOwned<ItemIdxType: WeakIdxTrait> {
     item: Item<ItemIdxType>,
     holes: Vec<usize>,
 
@@ -65,9 +65,11 @@ impl<ItemIdxType: IdxTrait> PureDrillStorageOnlySoloOwned<ItemIdxType> {
         ret
     }
 
+    /// mining_prod in percent
     pub fn update<RecipeIdxType: IdxTrait>(
         &mut self,
         power_mult: u8,
+        mining_prod: u16,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Joule {
         for (inventory, solo_items) in self

@@ -5,6 +5,7 @@ use std::{borrow::Borrow, ops::Range};
 #[cfg(feature = "client")]
 use tilelib::types::{DrawInstance, Layer};
 
+use crate::app_state::SimulationState;
 use crate::{
     belt::{belt::BeltLenType, splitter::SplitterDistributionMode},
     frontend::world::tile::DirRelative,
@@ -70,6 +71,18 @@ enum BlueprintAction {
     },
 }
 
+fn default_inserter() -> String {
+    "factory_game::bulk_inserter".to_string()
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize, serde::Serialize,
+)]
+enum BeltId {
+    Sushi(usize),
+    Pure(usize),
+}
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 enum BlueprintPlaceEntity {
     Assembler {
@@ -83,13 +96,16 @@ enum BlueprintPlaceEntity {
         dir: Dir,
         /// The Item the inserter will move, must fit both the in and output side
         filter: Option<String>,
+
+        #[serde(default = "default_inserter")]
+        ty: String,
     },
     Belt {
         pos: Position,
         direction: Dir,
         ty: String,
         #[serde(default)]
-        copied_belt_info: Option<(usize, BeltLenType)>,
+        copied_belt_info: Option<(BeltId, BeltLenType)>,
     },
     Underground {
         pos: Position,
@@ -97,7 +113,7 @@ enum BlueprintPlaceEntity {
         ty: String,
         underground_dir: UndergroundDir,
         #[serde(default)]
-        copied_belt_info: Option<(usize, BeltLenType)>,
+        copied_belt_info: Option<(BeltId, BeltLenType)>,
     },
     PowerPole {
         pos: Position,
@@ -157,14 +173,17 @@ impl BlueprintAction {
                                     rotation,
                                 }
                             },
-                            PlaceEntityType::Inserter { pos, dir, filter } => {
-                                BlueprintPlaceEntity::Inserter {
-                                    pos,
-                                    dir,
-                                    filter: filter.map(|item| {
-                                        data_store.item_names[item.into_usize()].clone()
-                                    }),
-                                }
+                            PlaceEntityType::Inserter {
+                                pos,
+                                dir,
+                                filter,
+                                ty,
+                            } => BlueprintPlaceEntity::Inserter {
+                                pos,
+                                dir,
+                                filter: filter
+                                    .map(|item| data_store.item_names[item.into_usize()].clone()),
+                                ty: data_store.inserter_infos[ty as usize].name.clone(),
                             },
                             PlaceEntityType::Belt { pos, direction, ty } => {
                                 BlueprintPlaceEntity::Belt {
@@ -295,24 +314,33 @@ impl BlueprintAction {
                             rotation: *rotation,
                         }
                     },
-                    BlueprintPlaceEntity::Inserter { pos, dir, filter } => {
-                        PlaceEntityType::Inserter {
-                            pos: *pos,
-                            dir: *dir,
-                            filter: filter
-                                .as_ref()
-                                .map(|item| {
-                                    data_store
-                                        .item_names
-                                        .iter()
-                                        .position(|ds_item| ds_item == item)
-                                        .map(|index| Item {
-                                            id: index.try_into().unwrap(),
-                                        })
-                                        .ok_or(())
-                                })
-                                .transpose()?,
-                        }
+                    BlueprintPlaceEntity::Inserter {
+                        pos,
+                        dir,
+                        filter,
+                        ty,
+                    } => PlaceEntityType::Inserter {
+                        pos: *pos,
+                        dir: *dir,
+                        filter: filter
+                            .as_ref()
+                            .map(|item| {
+                                data_store
+                                    .item_names
+                                    .iter()
+                                    .position(|ds_item| ds_item == item)
+                                    .map(|index| Item {
+                                        id: index.try_into().unwrap(),
+                                    })
+                                    .ok_or(())
+                            })
+                            .transpose()?,
+
+                        ty: data_store
+                            .inserter_infos
+                            .iter()
+                            .position(|info| info.name == *ty)
+                            .expect("No inserter for name") as u8,
                     },
                     BlueprintPlaceEntity::Belt {
                         pos,
@@ -650,7 +678,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
             }),
             ActionType::PlaceEntity(PlaceEntityInfo {
                 force,
-                entities: EntityPlaceOptions::Single(PlaceEntityType::Inserter { pos, dir, filter }),
+                entities:
+                    EntityPlaceOptions::Single(PlaceEntityType::Inserter {
+                        pos,
+                        dir,
+                        filter,
+                        ty,
+                    }),
             }) => ActionType::PlaceEntity(PlaceEntityInfo {
                 force,
                 entities: EntityPlaceOptions::Single(PlaceEntityType::Inserter {
@@ -660,6 +694,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     },
                     dir,
                     filter,
+                    ty,
                 }),
             }),
             ActionType::PlaceEntity(PlaceEntityInfo {
@@ -810,33 +845,57 @@ impl Blueprint {
 
     pub fn optimize(&mut self) {
         info!("Optimizing Blueprint");
-        self.actions.par_sort_by_key(|v| match v {
+        self.actions.par_sort_unstable_by_key(|v| match v {
             BlueprintAction::PlaceEntity(e) => match e {
-                BlueprintPlaceEntity::Assembler { pos, .. } => (1, 3, (0, 0), *pos, 0),
-                BlueprintPlaceEntity::Inserter { pos, .. } => (1, 5, (0, 0), *pos, 0),
+                BlueprintPlaceEntity::Assembler { pos, .. } => {
+                    (1, 3, (BeltId::Pure(0), 0), *pos, 0)
+                },
+                BlueprintPlaceEntity::Inserter { pos, .. } => (1, 5, (BeltId::Pure(0), 0), *pos, 0),
                 BlueprintPlaceEntity::Belt {
                     pos,
                     copied_belt_info,
                     ..
-                } => (1, 4, copied_belt_info.unwrap_or((0, 0)), *pos, 0),
+                } => (
+                    1,
+                    4,
+                    copied_belt_info.unwrap_or((BeltId::Pure(0), 0)),
+                    *pos,
+                    0,
+                ),
                 BlueprintPlaceEntity::Underground {
                     pos,
                     copied_belt_info,
                     ..
-                } => (1, 4, copied_belt_info.unwrap_or((0, 0)), *pos, 0),
-                BlueprintPlaceEntity::PowerPole { pos, .. } => (1, 0, (0, 0), *pos, 0),
-                BlueprintPlaceEntity::Splitter { pos, .. } => (1, 4, (0, 0), *pos, 0),
-                BlueprintPlaceEntity::Chest { pos, .. } => (1, 3, (0, 0), *pos, 0),
-                BlueprintPlaceEntity::SolarPanel { pos, .. } => (1, 1, (0, 0), *pos, 0),
-                BlueprintPlaceEntity::Lab { pos, .. } => (1, 3, (0, 0), *pos, 0),
-                BlueprintPlaceEntity::Beacon { pos, .. } => (1, 3, (0, 0), *pos, 0),
-                BlueprintPlaceEntity::FluidTank { pos, .. } => (1, 2, (0, 0), *pos, 0),
-                BlueprintPlaceEntity::MiningDrill { pos, .. } => (1, 3, (0, 0), *pos, 0),
+                } => (
+                    1,
+                    4,
+                    copied_belt_info.unwrap_or((BeltId::Pure(0), 0)),
+                    *pos,
+                    0,
+                ),
+                BlueprintPlaceEntity::PowerPole { pos, .. } => {
+                    (1, 0, (BeltId::Pure(0), 0), *pos, 0)
+                },
+                BlueprintPlaceEntity::Splitter { pos, .. } => (1, 4, (BeltId::Pure(0), 0), *pos, 0),
+                BlueprintPlaceEntity::Chest { pos, .. } => (1, 3, (BeltId::Pure(0), 0), *pos, 0),
+                BlueprintPlaceEntity::SolarPanel { pos, .. } => {
+                    (1, 1, (BeltId::Pure(0), 0), *pos, 0)
+                },
+                BlueprintPlaceEntity::Lab { pos, .. } => (1, 3, (BeltId::Pure(0), 0), *pos, 0),
+                BlueprintPlaceEntity::Beacon { pos, .. } => (1, 3, (BeltId::Pure(0), 0), *pos, 0),
+                BlueprintPlaceEntity::FluidTank { pos, .. } => {
+                    (1, 2, (BeltId::Pure(0), 0), *pos, 0)
+                },
+                BlueprintPlaceEntity::MiningDrill { pos, .. } => {
+                    (1, 3, (BeltId::Pure(0), 0), *pos, 0)
+                },
             },
-            BlueprintAction::SetRecipe { pos, .. } => (1, 3, (0, 0), *pos, 1),
-            BlueprintAction::OverrideInserterMovetime { pos, .. } => (1, 5, (0, 0), *pos, 1),
-            BlueprintAction::AddModules { pos, .. } => (1, 3, (0, 0), *pos, 1),
-            BlueprintAction::SetChestSlotLimit { pos, .. } => (1, 3, (0, 0), *pos, 1),
+            BlueprintAction::SetRecipe { pos, .. } => (1, 3, (BeltId::Pure(0), 0), *pos, 1),
+            BlueprintAction::OverrideInserterMovetime { pos, .. } => {
+                (1, 5, (BeltId::Pure(0), 0), *pos, 1)
+            },
+            BlueprintAction::AddModules { pos, .. } => (1, 3, (BeltId::Pure(0), 0), *pos, 1),
+            BlueprintAction::SetChestSlotLimit { pos, .. } => (1, 3, (BeltId::Pure(0), 0), *pos, 1),
 
             _ => unimplemented!(),
         });
@@ -922,6 +981,7 @@ impl Blueprint {
 
     pub fn from_area<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         world: &World<ItemIdxType, RecipeIdxType>,
+        sim_state: &SimulationState<ItemIdxType, RecipeIdxType>,
         area: [Range<i32>; 2],
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
@@ -1035,7 +1095,13 @@ impl Blueprint {
                         },
                         direction: *direction,
                         ty: data_store.belt_infos[*ty as usize].name.clone(),
-                        copied_belt_info: Some(((*id).into(), *belt_pos)),
+                        copied_belt_info: Some((
+                            match sim_state.factory.belts.get_pure_item(*id) {
+                                Some(_) => BeltId::Pure((*id).into()),
+                                None => BeltId::Sushi((*id).into()),
+                            },
+                            *belt_pos,
+                        )),
                     })]
                 },
                 crate::frontend::world::tile::Entity::Underground {
@@ -1056,7 +1122,13 @@ impl Blueprint {
                             direction: *direction,
                             ty: data_store.belt_infos[*ty as usize].name.clone(),
                             underground_dir: *underground_dir,
-                            copied_belt_info: Some(((*id).into(), *belt_pos)),
+                            copied_belt_info: Some((
+                                match sim_state.factory.belts.get_pure_item(*id) {
+                                    Some(_) => BeltId::Pure((*id).into()),
+                                    None => BeltId::Sushi((*id).into()),
+                                },
+                                *belt_pos,
+                            )),
                         },
                     )]
                 },
@@ -1079,6 +1151,7 @@ impl Blueprint {
                     user_movetime,
                     pos,
                     direction,
+                    ty,
                     ..
                 } => {
                     let mut ret = vec![BlueprintAction::PlaceEntity(
@@ -1089,6 +1162,7 @@ impl Blueprint {
                             },
                             dir: *direction,
                             filter: None,
+                            ty: data_store.inserter_infos[*ty as usize].name.clone(),
                         },
                     )];
 
@@ -1515,13 +1589,15 @@ pub(crate) mod test {
             (
                 random_blueprint_offs(),
                 random_dir(),
-                random_item(data_store)
+                random_item(data_store),
+                (0..data_store.inserter_infos.len())
             )
-                .prop_map(|(pos, dir, filter)| {
+                .prop_map(|(pos, dir, filter, ty)| {
                     PlaceEntityType::Inserter {
                         pos,
                         dir,
                         filter: Some(filter),
+                        ty: ty as u8,
                     }
                 }),
             (

@@ -123,6 +123,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, Rec
                             pos: _,
                             dir: _,
                             filter: _,
+                            ty: _,
                         } => Some([1, 1]),
                         PlaceEntityType::Belt { .. } => Some([1, 1]),
                         PlaceEntityType::Underground { .. } => Some([1, 1]),

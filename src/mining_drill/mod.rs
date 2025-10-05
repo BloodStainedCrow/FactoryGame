@@ -3,8 +3,10 @@ use std::collections::HashMap;
 use crate::{
     data::DataStore,
     frontend::world::{Position, tile::World},
-    item::{IdxTrait, Item},
+    item::{IdxTrait, Item, WeakIdxTrait},
 };
+
+use crate::mining_drill::only_solo_owned::PureDrillStorageOnlySoloOwned;
 
 pub mod only_solo_owned;
 pub mod with_shared_ore;
@@ -31,7 +33,7 @@ impl FullOreStore {
     pub fn get_ore_at_position<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &self,
         world: &World<ItemIdxType, RecipeIdxType>,
-        mining_drill_stores: &[MiningDrillStore],
+        mining_drill_stores: &[MiningDrillStore<ItemIdxType>],
         pos: Position,
     ) -> Option<(Item<ItemIdxType>, u32)> {
         let tracked = self
@@ -82,10 +84,13 @@ enum OreLoc {
         owner: MiningDrillID,
         index_in_owner: u8,
     },
+    Unowned {
+        amount: u32,
+    },
 }
 
-pub struct MiningDrillStore {
-    todo: !,
+pub struct MiningDrillStore<ItemIdxType: WeakIdxTrait> {
+    pure_solo_owned: Box<[PureDrillStorageOnlySoloOwned<ItemIdxType>]>,
 }
 
 impl SingleOreStore {
@@ -100,7 +105,7 @@ impl SingleOreStore {
     pub fn get_ore_at_position<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &self,
         pos: Position,
-        mining_drill_store: &MiningDrillStore,
+        mining_drill_store: &MiningDrillStore<ItemIdxType>,
     ) -> Option<u32> {
         let ore = self.ore_lookup.get(&pos)?;
 
@@ -115,36 +120,63 @@ impl SingleOreStore {
             } => {
                 todo!()
             },
+            OreLoc::Unowned { amount } => Some(*amount),
         }
     }
 
     pub fn add_drill_mining_positions<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut self,
+        self_item: Item<ItemIdxType>,
+
         positions: impl IntoIterator<Item = Position>,
         world: &mut World<ItemIdxType, RecipeIdxType>,
-        mining_drill_store: &mut MiningDrillStore,
+        mining_drill_store: &mut MiningDrillStore<ItemIdxType>,
     ) {
         let mut positions: Vec<_> = positions.into_iter().collect();
 
         positions.sort();
 
-        for pos in &positions {
-            match self.ore_lookup.get(pos) {
-                Some(OreLoc::Shared { index }) => {
-                    // already shared
-                },
-                Some(OreLoc::SoloOwned {
-                    owner,
-                    index_in_owner,
-                }) => todo!("Make shared"),
-                None => {
-                    let ore_amount = world.get_original_ore_at_pos(*pos);
+        let mut solo_owned_amount = Some(0);
 
-                    todo!()
+        for pos in &positions {
+            match self.ore_lookup.entry(*pos) {
+                std::collections::hash_map::Entry::Occupied(mut occupied_entry) => {
+                    match occupied_entry.get_mut() {
+                        OreLoc::Shared { index } => {
+                            // Already shared
+                            solo_owned_amount = None;
+                        },
+                        OreLoc::SoloOwned {
+                            owner,
+                            index_in_owner,
+                        } => {
+                            todo!("Make ore shared");
+                            solo_owned_amount = None;
+                        },
+                        OreLoc::Unowned { amount } => {
+                            if let Some(solo_amount) = &mut solo_owned_amount {
+                                *solo_amount += *amount;
+                            }
+                        },
+                    }
+                },
+                std::collections::hash_map::Entry::Vacant(vacant_entry) => {
+                    let original_ore = world.get_original_ore_at_pos(*pos);
+
+                    if let Some((item, amount)) = original_ore {
+                        assert_eq!(self_item, item, "Mixed miner in SingleOreStore::add_drill");
+
+                        if let Some(solo_amount) = &mut solo_owned_amount {
+                            *solo_amount += amount;
+                        }
+                    }
                 },
             }
         }
 
-        todo!()
+        if let Some(solo_owned_amount) = solo_owned_amount {
+        } else {
+            todo!("Mining drills sharing ore is not supported yet");
+        }
     }
 }

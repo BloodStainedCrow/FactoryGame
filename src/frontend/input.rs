@@ -114,6 +114,7 @@ pub enum Key {
     R,
     ShiftR,
     Esc,
+    Del,
 }
 
 #[cfg(feature = "client")]
@@ -152,6 +153,7 @@ impl TryFrom<EguiInputState> for Key {
             (egui::Key::Num8, _, false) => Key::Key8,
             (egui::Key::Num9, _, false) => Key::Key9,
             (egui::Key::Escape, _, false) => Key::Esc,
+            (egui::Key::Delete, _, false) => Key::Del,
 
             _ => return Err(()),
         };

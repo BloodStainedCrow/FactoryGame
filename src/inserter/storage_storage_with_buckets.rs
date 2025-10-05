@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use std::collections::HashMap;
 
-use super::{FakeUnionStorage, HAND_SIZE};
+use super::FakeUnionStorage;
 use crate::{
     item::ITEMCOUNTTYPE,
     storage_list::{SingleItemStorages, index_fake_union},
@@ -164,7 +164,6 @@ impl BucketedStorageStorageInserterStoreFrontend {
                         let possible_states = get_possible_new_states_after_n_ticks(
                             (*old_state).into(),
                             store.movetime,
-                            HAND_SIZE,
                             current_time - *old_time,
                         );
 
@@ -182,16 +181,22 @@ impl BucketedStorageStorageInserterStoreFrontend {
                                             waiting_for_space.push(to_find)
                                         },
                                         LargeInserterState::FullAndMovingOut(time) => {
-                                            moving_out[usize::from(time) - 1].push(to_find)
+                                            moving_out[usize::from(time)].push(to_find)
                                         },
                                         LargeInserterState::EmptyAndMovingBack(time) => {
-                                            moving_in[usize::from(time) - 1].push(to_find)
+                                            moving_in[usize::from(time)].push(to_find)
                                         },
                                     }
                                 }
                             }
                         } else {
-                            // Search evern - MOVING_IN
+                            // Search everywhere
+                            waiting_for_item.push(to_find);
+                            waiting_for_space.push(to_find);
+
+                            for moving_out in &mut moving_out {
+                                moving_out.push(to_find);
+                            }
 
                             for moving_in in &mut moving_in {
                                 moving_in.push(to_find);
@@ -227,6 +232,7 @@ impl BucketedStorageStorageInserterStoreFrontend {
             // We know only one tick has passed!
 
             waiting_for_item.retain(|to_find| {
+                dbg!(&to_find);
                 if self.next_tick.waiting_for_item.contains(to_find) {
                     if let Some(ins) = self.next_tick.waiting_for_item_result.iter().find(|ins| {
                         ins.storage_id_in == to_find.source
@@ -250,6 +256,7 @@ impl BucketedStorageStorageInserterStoreFrontend {
             });
 
             waiting_for_space.retain(|to_find| {
+                dbg!(&to_find);
                 if self.next_tick.waiting_for_space.contains(to_find) {
                     if let Some(ins) = self.next_tick.waiting_for_space_result.iter().find(|ins| {
                         ins.storage_id_in == to_find.source
@@ -271,17 +278,22 @@ impl BucketedStorageStorageInserterStoreFrontend {
                     true
                 }
             });
+        } else {
+            warn!(
+                "Have to search fully since we expected tick {} and got tick {}!",
+                self.next_tick.time, current_time
+            );
         }
 
         for (i, _) in sizes.into_iter().enumerate().sorted_by_key(|v| v.0) {
             let MOVING_OUT_END: usize = store.list_len();
-            let WATING_FOR_SPACE: usize = MOVING_OUT_END;
-            let MOVING_IN: usize = MOVING_OUT_END + 1;
-            let MOVING_IN_END: usize = MOVING_OUT_END + 1 + store.list_len();
+            let WATING_FOR_SPACE: usize = MOVING_OUT_END + 1;
+            let MOVING_IN: usize = MOVING_OUT_END + 2;
+            let MOVING_IN_END: usize = MOVING_OUT_END + 2 + store.list_len();
 
             let search_list = match i {
                 0 => &mut waiting_for_item,
-                n if (1..MOVING_OUT_END).contains(&n) => &mut moving_out[n - 1],
+                n if (1..=MOVING_OUT_END).contains(&n) => &mut moving_out[n - 1],
                 x if x == WATING_FOR_SPACE => &mut waiting_for_space,
                 n if (MOVING_IN..MOVING_IN_END).contains(&n) => &mut moving_in[n - MOVING_IN],
 
@@ -299,7 +311,7 @@ impl BucketedStorageStorageInserterStoreFrontend {
                 for n in (i + 1)..MOVING_IN_END {
                     let search_list = match n {
                         0 => &mut waiting_for_item,
-                        n if (1..MOVING_OUT_END).contains(&n) => &mut moving_out[n - 1],
+                        n if (1..=MOVING_OUT_END).contains(&n) => &mut moving_out[n - 1],
                         x if x == WATING_FOR_SPACE => &mut waiting_for_space,
                         n if (MOVING_IN..MOVING_IN_END).contains(&n) => {
                             &mut moving_in[n - MOVING_IN]
@@ -317,7 +329,7 @@ impl BucketedStorageStorageInserterStoreFrontend {
                     // TODO: Respect store.current_tick
                     match i {
                         0 => LargeInserterState::WaitingForSourceItems(inserter.current_hand),
-                        n if (1..MOVING_OUT_END).contains(&n) => {
+                        n if (1..=MOVING_OUT_END).contains(&n) => {
                             LargeInserterState::FullAndMovingOut((n - 1).try_into().unwrap())
                         },
                         x if x == WATING_FOR_SPACE => {
@@ -335,18 +347,17 @@ impl BucketedStorageStorageInserterStoreFrontend {
             }));
         }
 
-        let mut waiting_for_item = vec![];
-        let mut waiting_for_space = vec![];
-
-        for (k, v) in ret.iter() {
-            if matches!(*v, LargeInserterState::WaitingForSourceItems(_)) {
-                waiting_for_item.push(*k);
-            } else if matches!(*v, LargeInserterState::WaitingForSpaceInDestination(_)) {
-                waiting_for_space.push(*k);
-            }
-        }
-
         if do_next_tick_storing {
+            let mut waiting_for_item = vec![];
+            let mut waiting_for_space = vec![];
+
+            for (k, v) in ret.iter() {
+                if matches!(*v, LargeInserterState::WaitingForSourceItems(_)) {
+                    waiting_for_item.push(*k);
+                } else if matches!(*v, LargeInserterState::WaitingForSpaceInDestination(_)) {
+                    waiting_for_space.push(*k);
+                }
+            }
             self.next_tick = NextTick {
                 time: current_time + 1,
                 waiting_for_item,
@@ -385,9 +396,11 @@ impl BucketedStorageStorageInserterStoreFrontend {
 pub(super) fn get_possible_new_states_after_n_ticks(
     starting_state: LargeInserterState,
     movetime: u16,
-    max_hand_size: ITEMCOUNTTYPE,
     n: u32,
 ) -> Result<Vec<LargeInserterState>, ()> {
+    if n > movetime.into() {
+        return Err(());
+    }
     const MAX_SEARCH_SIZE: usize = 100;
 
     let mut current = vec![starting_state];
@@ -398,7 +411,7 @@ pub(super) fn get_possible_new_states_after_n_ticks(
         current.extend(
             this_tick
                 .into_iter()
-                .flat_map(|state| get_possible_new_states(state, movetime, max_hand_size))
+                .flat_map(|state| get_possible_new_states(state, movetime))
                 .unique(),
         );
 
@@ -413,16 +426,15 @@ pub(super) fn get_possible_new_states_after_n_ticks(
 pub(super) fn get_possible_new_states(
     starting_state: LargeInserterState,
     movetime: u16,
-    max_hand_size: ITEMCOUNTTYPE,
 ) -> Vec<LargeInserterState> {
     match starting_state {
         LargeInserterState::WaitingForSourceItems(_) => {
-            iter::once(LargeInserterState::FullAndMovingOut(movetime))
+            iter::once(LargeInserterState::FullAndMovingOut(movetime - 1))
                 .chain(iter::once(LargeInserterState::WaitingForSourceItems(0)))
                 .collect()
         },
         LargeInserterState::WaitingForSpaceInDestination(_) => {
-            iter::once(LargeInserterState::EmptyAndMovingBack(movetime))
+            iter::once(LargeInserterState::EmptyAndMovingBack(movetime - 1))
                 .chain(iter::once(
                     LargeInserterState::WaitingForSpaceInDestination(0),
                 ))
@@ -689,15 +701,14 @@ impl BucketedStorageStorageInserterStore {
 
         let extract = inserter.current_hand == inserter.max_hand_size;
 
-        if !extract
-            && frontend.next_tick.time == current_tick
-            && frontend.next_tick.waiting_for_item.iter().any(|v| {
-                v.source == inserter.storage_id_in
-                    && v.dest == inserter.storage_id_out
-                    && v.id == inserter.id
-            })
-        {
-            frontend.next_tick.waiting_for_item_result.push(*inserter);
+        if frontend.next_tick.waiting_for_item.iter().any(|v| {
+            v.source == inserter.storage_id_in
+                && v.dest == inserter.storage_id_out
+                && v.id == inserter.id
+        }) {
+            if !extract {
+                frontend.next_tick.waiting_for_item_result.push(*inserter);
+            }
         }
 
         extract
@@ -723,15 +734,14 @@ impl BucketedStorageStorageInserterStore {
 
         let extract = inserter.current_hand == 0;
 
-        if !extract
-            && frontend.next_tick.time == current_tick
-            && frontend.next_tick.waiting_for_space.iter().any(|v| {
-                v.source == inserter.storage_id_in
-                    && v.dest == inserter.storage_id_out
-                    && v.id == inserter.id
-            })
-        {
-            frontend.next_tick.waiting_for_space_result.push(*inserter);
+        if frontend.next_tick.waiting_for_item.iter().any(|v| {
+            v.source == inserter.storage_id_in
+                && v.dest == inserter.storage_id_out
+                && v.id == inserter.id
+        }) {
+            if !extract {
+                frontend.next_tick.waiting_for_space_result.push(*inserter);
+            }
         }
 
         extract

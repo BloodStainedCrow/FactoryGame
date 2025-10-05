@@ -161,7 +161,11 @@ struct RawInserter {
     display_name: String,
     time_per_trip: TIMERTYPE,
     handsize: ITEMCOUNTTYPE,
+    tile_size: [u8; 2],
+
+    /// In north rotation
     pickup_offs: (i8, i8),
+    /// In north rotation
     dropoff_offs: (i8, i8),
 }
 
@@ -180,6 +184,7 @@ pub struct RawDataStore {
     solar_panels: Vec<RawSolarPanel>,
     accumulators: Vec<RawAccumulator>,
     fluid_tanks: Vec<RawFluidTank>,
+    inserters: Vec<RawInserter>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -409,6 +414,20 @@ pub enum PipeConnectionType {
     },
 }
 
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct InserterInfo {
+    pub name: String,
+    pub display_name: String,
+    pub size: [u8; 2],
+
+    pub swing_time_ticks: u16,
+
+    /// pre any increases by technology
+    pub base_hand_size: ITEMCOUNTTYPE,
+    pub input_offset: [i8; 2],
+    pub output_offset: [i8; 2],
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub checksum: String,
@@ -492,6 +511,8 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     #[cfg(feature = "client")]
     pub item_to_colour: Vec<Color32>,
+
+    pub inserter_infos: Vec<InserterInfo>,
 
     pub technology_tree: StableGraph<Technology<RecipeIdxType>, (), Directed, u16>,
     pub instantly_finished_technologies: Vec<NodeIndex<u16>>,
@@ -1578,6 +1599,30 @@ impl RawDataStore {
                 .collect(),
 
             technology_costs,
+
+            inserter_infos: self
+                .inserters
+                .into_iter()
+                .map(
+                    |RawInserter {
+                         name,
+                         display_name,
+                         time_per_trip,
+                         tile_size,
+                         handsize,
+                         pickup_offs,
+                         dropoff_offs,
+                     }| InserterInfo {
+                        name,
+                        display_name,
+                        size: tile_size,
+                        swing_time_ticks: time_per_trip,
+                        base_hand_size: handsize,
+                        input_offset: pickup_offs.into(),
+                        output_offset: dropoff_offs.into(),
+                    },
+                )
+                .collect(),
         }
     }
 

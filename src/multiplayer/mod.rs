@@ -21,7 +21,7 @@ use server::{ActionSource, GameStateUpdateHandler, HandledActionConsumer};
 use crate::frontend::action::action_state_machine::ActionStateMachine;
 use crate::{
     TICKS_PER_SECOND_RUNSPEED,
-    app_state::GameState,
+    app_state::{GameState, SimulationState},
     data::DataStore,
     frontend::{action::ActionType, input::Input, world::tile::World},
     item::{IdxTrait, WeakIdxTrait},
@@ -268,6 +268,7 @@ impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
         &'a self,
         current_tick: u64,
         _: &World<ItemIdxType, RecipeIdxType>,
+        _: &SimulationState<ItemIdxType, RecipeIdxType>,
         _: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<'a, ItemIdxType, RecipeIdxType>
     {

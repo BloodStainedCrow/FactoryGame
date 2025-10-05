@@ -25,7 +25,7 @@ use crate::inserter::belt_storage_inserter_non_const_gen::BeltStorageInserterDyn
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub(super) struct SushiBelt<ItemIdxType: WeakIdxTrait> {
+pub struct SushiBelt<ItemIdxType: WeakIdxTrait> {
     pub(super) ty: u8,
 
     pub(super) is_circular: bool,

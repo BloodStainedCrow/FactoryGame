@@ -776,12 +776,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> CallbackTrait
 
         let sim_state = self.game_state.simulation_state.lock();
         let world = self.game_state.world.lock();
+        let aux_data = self.game_state.aux_data.lock();
         let state_machine = self.state_machine.lock();
 
         render_world(
             &mut rend,
             sim_state,
             world,
+            aux_data,
             &self.texture_atlas,
             state_machine,
             &self.data_store.lock(),

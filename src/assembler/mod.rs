@@ -3,7 +3,6 @@ use std::{array, marker::PhantomData, simd::Simd, u8};
 use crate::{
     data::DataStore,
     frontend::world::{Position, tile::AssemblerID},
-    inserter::HAND_SIZE,
     item::{ITEMCOUNTTYPE, IdxTrait, Indexable, Item, Recipe, WeakIdxTrait},
     power::{
         Watt,
@@ -653,12 +652,7 @@ pub trait MultiAssemblerStore<
 
         self.add_assembler_with_data(
             // TODO: Make the automatic insertion limit dependent on the speed of the machine and recipe
-            array::from_fn(|ing| {
-                max(
-                    HAND_SIZE,
-                    our_ings[ing].saturating_mul(3).saturating_add(12),
-                )
-            }),
+            array::from_fn(|ing| max(12, our_ings[ing].saturating_mul(3).saturating_add(12))),
             array::from_fn(|_| 0),
             array::from_fn(|_| 0),
             0,

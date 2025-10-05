@@ -7,10 +7,12 @@ use std::{
 };
 
 use egui_graphs::{DefaultEdgeShape, DefaultNodeShape, Graph};
+use itertools::Itertools;
 use log::{error, warn};
 use petgraph::Directed;
 
 use crate::{
+    app_state::SimulationState,
     belt::splitter::SplitterDistributionMode,
     blueprint::Blueprint,
     data::{self, DataStore},
@@ -65,6 +67,8 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
 
     pub escape_menu_open: bool,
 
+    pub debug_view_options: DebugViewOptions,
+
     pub zoom_level: f32,
     pub map_view_info: Option<(f32, f32)>,
 
@@ -78,6 +82,14 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     pub get_size_cache: std::collections::HashMap<String, RamUsage>,
 
     pub mouse_wheel_sensitivity: f32,
+}
+
+#[derive(Debug)]
+pub struct DebugViewOptions {
+    pub highlight_sushi_belts: bool,
+    pub sushi_belt_len_threshhold: u32,
+
+    pub sushi_finder_view_lock: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -119,6 +131,9 @@ pub enum ActionStateMachineState<ItemIdxType: WeakIdxTrait> {
 
     CtrlCPressed,
     CopyDragInProgress { start_pos: Position },
+
+    DelPressed,
+    DeleteDragInProgress { start_pos: Position },
 }
 
 #[derive(Debug)]
@@ -159,6 +174,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             map_view_info: None,
 
             escape_menu_open: false,
+            debug_view_options: DebugViewOptions {
+                highlight_sushi_belts: false,
+                sushi_belt_len_threshhold: 1,
+
+                sushi_finder_view_lock: None,
+            },
 
             copy_info: None,
 
@@ -173,13 +194,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     }
 
     #[allow(clippy::too_many_lines)]
-    pub fn handle_inputs<'a, 'b, 'c, 'd, I: IntoIterator<Item = Input> + 'b>(
+    pub fn handle_inputs<'a, 'b, 'c, 'd, 'e, I: IntoIterator<Item = Input> + 'b>(
         &'a mut self,
         input: I,
         world: &'c World<ItemIdxType, RecipeIdxType>,
+        sim_state: &'e SimulationState<ItemIdxType, RecipeIdxType>,
         data_store: &'d DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
-    + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType, I> {
+    + use<'a, 'b, 'c, 'd, 'e, ItemIdxType, RecipeIdxType, I> {
         input.into_iter().map(|input| {
             if self.escape_menu_open && input != Input::KeyPress(Key::Esc) {
                 match input {
@@ -262,6 +284,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
                             ActionStateMachineState::CopyDragInProgress { start_pos: _ } => {
                                 warn!("Tried starting CopyDraw again!");
+                                vec![]
+                            },
+                            ActionStateMachineState::DelPressed => {
+                                self.state = ActionStateMachineState::DeleteDragInProgress {
+                                    start_pos: Self::player_mouse_to_tile(
+                                        self.zoom_level,
+                                        self.map_view_info.unwrap_or(self.local_player_pos),
+                                        self.current_mouse_pos,
+                                    )
+                                };
+
+                                vec![]
+                            },
+
+                            ActionStateMachineState::DeleteDragInProgress { start_pos: _ } => {
+                                warn!("Tried starting DeleteDraw again!");
                                 vec![]
                             },
 
@@ -392,7 +430,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             ActionStateMachineState::CtrlCPressed | ActionStateMachineState::CopyDragInProgress { start_pos: _ } => {
                                 self.state = ActionStateMachineState::Idle;
                                 vec![]
-                            }
+                            },
+                            ActionStateMachineState::DelPressed | ActionStateMachineState::DeleteDragInProgress { start_pos: _ } => {
+                                self.state = ActionStateMachineState::Idle;
+                                vec![]
+                            },
                         }
                     }
 
@@ -402,11 +444,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ,
                 Input::LeftClickReleased => {
                     match self.state {
-                        ActionStateMachineState::Idle => {},
-                        ActionStateMachineState::Deconstructing(_, _) => {},
-                        ActionStateMachineState::Holding(_) => {},
-                        ActionStateMachineState::Viewing(_) => {},
-                        ActionStateMachineState::CtrlCPressed => {},
+                        ActionStateMachineState::Idle => {vec![]},
+                        ActionStateMachineState::Deconstructing(_, _) => {vec![]},
+                        ActionStateMachineState::Holding(_) => {vec![]},
+                        ActionStateMachineState::Viewing(_) => {vec![]},
+                        ActionStateMachineState::CtrlCPressed => {vec![]},
+                        ActionStateMachineState::DelPressed => {vec![]},
                         ActionStateMachineState::CopyDragInProgress { start_pos } => {
                             let end_pos = Self::player_mouse_to_tile(
                                 self.zoom_level,
@@ -417,10 +460,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             let x_range = min(start_pos.x, end_pos.x)..(max(start_pos.x, end_pos.x) + 1);
                             let y_range = min(start_pos.y, end_pos.y)..(max(start_pos.y, end_pos.y) + 1);
 
-                            self.state = ActionStateMachineState::Holding(HeldObject::Blueprint(Blueprint::from_area(world, [x_range, y_range], data_store)))
+                            self.state = ActionStateMachineState::Holding(HeldObject::Blueprint(Blueprint::from_area(world, sim_state, [x_range, y_range], data_store)));
+                    vec![]
+                },
+                        ActionStateMachineState::DeleteDragInProgress { start_pos } => {
+                            let end_pos = Self::player_mouse_to_tile(
+                                self.zoom_level,
+                                self.map_view_info.unwrap_or(self.local_player_pos),
+                                self.current_mouse_pos,
+                            );
+
+                            let x_range = min(start_pos.x, end_pos.x)..(max(start_pos.x, end_pos.x) + 1);
+                            let y_range = min(start_pos.y, end_pos.y)..(max(start_pos.y, end_pos.y) + 1);
+
+                            self.state = ActionStateMachineState::Idle;
+
+                            x_range.cartesian_product(y_range).map(|(x, y)| Position {x, y}).map(|pos| ActionType::Remove(pos)).collect()
                         },
                     }
-                    vec![]
                 },
                 Input::RightClickReleased => match &self.state {
                     ActionStateMachineState::Deconstructing(_, _) => {
@@ -434,6 +491,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
                     match &mut self.state {
                         ActionStateMachineState::CtrlCPressed | ActionStateMachineState::CopyDragInProgress { start_pos:_ } => {},
+                        ActionStateMachineState::DelPressed | ActionStateMachineState::DeleteDragInProgress { start_pos:_ } => {},
 
                         ActionStateMachineState::Idle | ActionStateMachineState::Viewing(_) => {},
                         ActionStateMachineState::Holding(held_object) => match held_object {
@@ -452,7 +510,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                                                     self.current_mouse_pos,
                                                                 );
                                                             },
-                                PlaceEntityType::Inserter { pos, dir: _, filter: _ } => {
+                                PlaceEntityType::Inserter { pos, dir: _, filter: _, ty: _ } => {
                                                                 *pos = Self::player_mouse_to_tile(
                                                                     self.zoom_level,
                                                                     self.map_view_info.unwrap_or(self.local_player_pos),
@@ -664,7 +722,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         ));
                     },
                     Some(Entity::Inserter {
-                        direction, filter, ..
+                        direction,
+                        filter,
+                        ty,
+                        ..
                     }) => {
                         self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                             PlaceEntityType::Inserter {
@@ -675,6 +736,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 ),
                                 dir: *direction,
                                 filter: *filter,
+                                ty: *ty,
                             },
                         ));
                     },
@@ -882,6 +944,25 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 ));
                 vec![]
             },
+            (
+                ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Inserter {
+                    ty,
+                    pos,
+                    dir,
+                    filter,
+                })),
+                Key::Key4,
+            ) => {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::Inserter {
+                        ty: (*ty + 1) % (data_store.inserter_infos.len() as u8),
+                        pos: *pos,
+                        dir: *dir,
+                        filter: *filter,
+                    },
+                ));
+                vec![]
+            },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key4) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::Inserter {
@@ -893,6 +974,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         dir: Dir::North,
                         // TODO:
                         filter: None,
+
+                        ty: 0,
                     },
                 ));
                 vec![]
@@ -1073,6 +1156,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     pos,
                     dir,
                     filter,
+                    ty,
                 })),
                 Key::R,
             ) => {
@@ -1081,6 +1165,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         pos: *pos,
                         dir: dir.turn_right(),
                         filter: *filter,
+                        ty: *ty,
                     },
                 ));
                 vec![]
@@ -1100,6 +1185,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         rotation: rotation.turn_right(),
                     },
                 ));
+                vec![]
+            },
+
+            (_, Key::Del) => {
+                self.state = ActionStateMachineState::DelPressed;
+
                 vec![]
             },
 

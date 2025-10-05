@@ -28,16 +28,9 @@ pub mod belt_storage_inserter_non_const_gen;
 pub mod belt_storage_pure_buckets;
 pub mod storage_storage_inserter;
 pub mod storage_storage_with_buckets;
-pub mod storage_storage_with_buckets_compressed;
+// pub mod storage_storage_with_buckets_compressed;
 
 mod bucket_bit_compressed;
-
-/// Time for a normal inserter to move in ticks
-pub(super) const MOVETIME: u8 = 12;
-// const_assert!(MOVETIME < 64);
-
-pub(super) const HAND_SIZE: u8 = 12;
-const_assert!(HAND_SIZE < 64);
 
 // TODO: This could be minified using a union or similar,
 // But since Inserters are the same size, whether this is 2 or 1 byte (atleast in a Vec of Structs)

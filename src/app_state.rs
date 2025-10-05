@@ -3,7 +3,6 @@ use crate::belt::belt::Belt;
 use crate::chest::ChestSize;
 use crate::data::AllowedFluidDirection;
 use crate::frontend::action::belt_placement::FakeGameState;
-use crate::inserter::HAND_SIZE;
 use crate::inserter::storage_storage_with_buckets::{
     BucketedStorageStorageInserterStore, BucketedStorageStorageInserterStoreFrontend,
 };
@@ -36,7 +35,7 @@ use crate::{
             },
         },
     },
-    inserter::{FakeUnionStorage, MOVETIME, Storage, belt_belt_inserter::BeltBeltInserter},
+    inserter::{FakeUnionStorage, Storage, belt_belt_inserter::BeltBeltInserter},
     item::{IdxTrait, Item, Recipe, WeakIdxTrait, usize_from},
     liquid::connection_logic::can_fluid_tanks_connect,
     network_graph::WeakIndex,
@@ -89,6 +88,7 @@ pub struct AuxillaryData {
 
     pub statistics: GenStatistics,
 
+    pub update_round_trip_times: Timeline<UpdateTime>,
     pub update_times: Timeline<UpdateTime>,
     #[serde(skip)]
     last_update_time: Option<Instant>,
@@ -133,6 +133,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 current_tick: 0,
                 statistics: GenStatistics::new(data_store),
                 update_times: Timeline::new(false, data_store),
+                update_round_trip_times: Timeline::new(false, data_store),
                 last_update_time: None,
                 settings: GameSettings {
                     show_unresearched_recipes: true,
@@ -153,6 +154,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 current_tick: 0,
                 statistics: GenStatistics::new(data_store),
                 update_times: Timeline::new(false, data_store),
+                update_round_trip_times: Timeline::new(false, data_store),
                 last_update_time: None,
                 settings: GameSettings {
                     show_unresearched_recipes: true,
@@ -215,15 +217,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         // ret.add_solar_field(Position { x: 1590, y: 70000 }, Watt(3_000_000_000_000), progress.clone(), data_store);
 
-        // FIXME:
-        // let file = File::open("test_blueprints/murphy/megabase_fixes_no_clocking.bp").unwrap();
-        // let mut bp: Blueprint = ron::de::from_reader(file).unwrap();
-        // todo!();
-        const BP_DATA: &'static [u8] = include_bytes!("../test_blueprints/saved_binary.bp");
-        let mut data = vec![];
-        let mut decoder = ZlibDecoder::new(BP_DATA);
-        decoder.read_to_end(&mut data).unwrap();
-        let mut bp: Blueprint = bitcode::deserialize(&data).unwrap();
+        let mut bp: Blueprint = if cfg!(not(target_arch = "wasm32")) {
+            let file = File::open("test_blueprints/murphy/megabase_with_sushi_sorting.bp").unwrap();
+            ron::de::from_reader(file).unwrap()
+        } else {
+            const BP_DATA: &'static [u8] =
+                include_bytes!("../test_blueprints/murphy/megabase_with_sushi_sorting.bp");
+            let mut data = vec![];
+            let mut decoder = ZlibDecoder::new(BP_DATA);
+            decoder.read_to_end(&mut data).unwrap();
+            bitcode::deserialize(&data).unwrap()
+        };
         bp.optimize();
         // let bp = bp.get_reusable(false, data_store);
 
@@ -253,7 +257,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         // ret.add_solar_field(Position { x: 1590, y: 70000 }, Watt(3_000_000_000_000), progress.clone(), data_store);
 
-        let file = File::open("test_blueprints/murphy/megabase_with_belt_sorting.bp").unwrap();
+        let file = File::open("test_blueprints/murphy/megabase_with_sushi_sorting.bp").unwrap();
         let mut bp: Blueprint = ron::de::from_reader(file).unwrap();
         bp.optimize();
         // dbg!(&bp);
@@ -263,12 +267,25 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         // let bp = bp.optimize();
 
         puffin::set_scopes_on(false);
-        let y_range = (1590..80000).step_by(10000);
+        let y_range: iter::StepBy<std::ops::Range<i32>> = (1590..80000).step_by(10000);
         let x_range = (1590..20000).step_by(4000);
 
         let num_calls = bp.action_count();
+        // let num_calls = y_range.clone().count() * x_range.clone().count();
 
         let mut current = 0;
+
+        // for pos in y_range
+        //     .cartesian_product(x_range)
+        //     .map(|(y, x)| Position { x, y })
+        // {
+        //     bp.apply(false, pos, &mut ret, data_store);
+        //     progress.store(
+        //         (current as f64 / num_calls as f64).to_bits(),
+        //         Ordering::Relaxed,
+        //     );
+        //     current += 1;
+        // }
 
         bp.apply_at_positions(
             y_range
@@ -502,10 +519,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
         bp_path: impl AsRef<Path>,
     ) -> Self {
-        let mut ret = GameState::new(data_store);
+        let mut ret = GameState::new_with_world_area(
+            Position { x: 0, y: 0 },
+            Position {
+                x: 32000,
+                y: 105000,
+            },
+            data_store,
+        );
 
         let file = File::open(bp_path).unwrap();
-        let bp: Blueprint = ron::de::from_reader(file).unwrap();
+        let mut bp: Blueprint = ron::de::from_reader(file).unwrap();
+        bp.optimize();
 
         // for x in (0..60).map(|p| p * 15) {
         bp.apply(
@@ -967,7 +992,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                                 &mut source_loc,
                                                 &mut dest_loc,
                                                 *cooldown,
-                                                HAND_SIZE,
+                                                // FIXME:
+                                                1,
                                                 (),
                                                 |_| {
                                                     filter
@@ -1358,12 +1384,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 pos,
                                 dir,
                                 filter,
+                                ty,
                             } => {
-                                // TODO: Add ty
                                 let ret = Self::add_inserter(
                                     &mut game_state.world,
                                     &mut game_state.simulation_state,
-                                    0,
+                                    ty,
                                     pos,
                                     dir,
                                     filter,
@@ -2493,6 +2519,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         aux_data: &mut AuxillaryData,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
+        let start_updating = Instant::now();
+        aux_data.current_tick += 1;
         simulation_state
             .factory
             // We can downcast here, since this could only cause graphical weirdness for a couple frame every ~2 years of playtime
@@ -2513,25 +2541,26 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             .tech_state
             .apply_progress(tech_progress, data_store);
 
-        mem::drop(simulation_state);
-
         aux_data.statistics.append_single_set_of_samples((
             ProductionInfo::from_recipe_info(&recipe_tick_info, data_store),
             ConsumptionInfo::from_infos(&recipe_tick_info, &lab_info, data_store),
             tech_progress,
         ));
 
-        aux_data.current_tick += 1;
-
         let done_updating = Instant::now();
 
         if let Some(last_update_time) = aux_data.last_update_time {
             aux_data
-                .update_times
+                .update_round_trip_times
                 .append_single_set_of_samples(UpdateTime {
                     dur: done_updating - last_update_time,
                 });
         }
+        aux_data
+            .update_times
+            .append_single_set_of_samples(UpdateTime {
+                dur: done_updating - start_updating,
+            });
         aux_data.last_update_time = Some(done_updating);
     }
 
@@ -2700,13 +2729,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             return Err(());
         }
 
-        let (start_pos, end_pos) = calculate_inserter_positions(pos, dir);
+        let (start_pos, end_pos) = calculate_inserter_positions(ty, pos, dir, data_store);
+
+        let movetime = data_store.inserter_infos[ty as usize].swing_time_ticks;
 
         world.add_entity(
             Entity::Inserter {
                 ty,
                 user_movetime: None,
-                type_movetime: (MOVETIME as u16).try_into().unwrap(),
+                type_movetime: movetime.try_into().unwrap(),
 
                 pos,
                 direction: dir,
@@ -2722,20 +2753,36 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 }
 
 // TODO: Different types of inserters
-pub fn calculate_inserter_positions(pos: Position, dir: Dir) -> (Position, Position) {
+pub fn calculate_inserter_positions<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    ty: u8,
+    pos: Position,
+    dir: Dir,
+    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+) -> (Position, Position) {
+    let input_offs = data_store.inserter_infos[ty as usize].input_offset;
+    let output_offs = data_store.inserter_infos[ty as usize].output_offset;
+
+    let input_offs = match dir {
+        Dir::North => input_offs,
+        Dir::South => [-input_offs[0], -input_offs[1]],
+        Dir::East => [-input_offs[1], input_offs[0]],
+        Dir::West => [input_offs[1], -input_offs[0]],
+    };
+
+    let output_offs = match dir {
+        Dir::North => output_offs,
+        Dir::South => [-output_offs[0], -output_offs[1]],
+        Dir::East => [-output_offs[1], output_offs[0]],
+        Dir::West => [output_offs[1], -output_offs[0]],
+    };
+
     let start_pos = Position {
-        x: pos
-            .x
-            .checked_add(dir.reverse().into_offset().0.into())
-            .unwrap(),
-        y: pos
-            .y
-            .checked_add(dir.reverse().into_offset().1.into())
-            .unwrap(),
+        x: pos.x.checked_add(input_offs[0].into()).unwrap(),
+        y: pos.y.checked_add(input_offs[1].into()).unwrap(),
     };
     let end_pos = Position {
-        x: pos.x.checked_add(dir.into_offset().0.into()).unwrap(),
-        y: pos.y.checked_add(dir.into_offset().1.into()).unwrap(),
+        x: pos.x.checked_add(output_offs[0].into()).unwrap(),
+        y: pos.y.checked_add(output_offs[1].into()).unwrap(),
     };
 
     (start_pos, end_pos)

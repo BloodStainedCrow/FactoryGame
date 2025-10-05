@@ -41,7 +41,7 @@ use crate::{
 };
 use belt::{Belt, BeltLenType};
 use itertools::{Either, Itertools};
-use log::info;
+use log::{info, warn};
 use petgraph::{
     Directed,
     Direction::Outgoing,
@@ -53,7 +53,9 @@ use crate::get_size::NodeIndex;
 use rayon::iter::IntoParallelRefMutIterator;
 use rayon::iter::{IndexedParallelIterator, ParallelIterator};
 use smart::{BeltInserterInfo, InserterAdditionError, Side, SmartBelt, SpaceOccupiedError};
-use splitter::{PureSplitter, SplitterDistributionMode, SplitterSide, SushiSplitter};
+use splitter::{
+    PureSplitter, SPLITTER_BELT_LEN, SplitterDistributionMode, SplitterSide, SushiSplitter,
+};
 use sushi::{SushiBelt, SushiInfo};
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
@@ -158,8 +160,8 @@ pub enum BeltGraphConnection<ItemIdxType: WeakIdxTrait> {
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, serde::Deserialize)]
 pub struct InnerBeltStore<ItemIdxType: WeakIdxTrait> {
-    sushi_belts: Vec<SushiBelt<ItemIdxType>>,
-    sushi_belt_holes: Vec<usize>,
+    pub sushi_belts: Vec<SushiBelt<ItemIdxType>>,
+    pub sushi_belt_holes: Vec<usize>,
 
     pub smart_belts: Box<[MultiBeltStore<ItemIdxType>]>,
 
@@ -296,7 +298,7 @@ pub struct BeltBeltInserterStore<ItemIdxType: WeakIdxTrait> {
                 (
                     (usize, BeltLenType),
                     (usize, BeltLenType),
-                    u8,
+                    u16,
                     Option<Item<ItemIdxType>>,
                 ),
             )>,
@@ -308,7 +310,7 @@ pub struct BeltBeltInserterStore<ItemIdxType: WeakIdxTrait> {
             (
                 (BeltId<ItemIdxType>, BeltLenType),
                 (usize, BeltLenType),
-                u8,
+                u16,
                 Option<Item<ItemIdxType>>,
             ),
         )>,
@@ -319,7 +321,7 @@ pub struct BeltBeltInserterStore<ItemIdxType: WeakIdxTrait> {
             (
                 (usize, BeltLenType),
                 (usize, BeltLenType),
-                u8,
+                u16,
                 Option<Item<ItemIdxType>>,
             ),
         )>,
@@ -331,7 +333,7 @@ pub struct BeltBeltInserterStore<ItemIdxType: WeakIdxTrait> {
         (
             (usize, BeltLenType),
             (BeltId<ItemIdxType>, BeltLenType),
-            u8,
+            u16,
             Option<Item<ItemIdxType>>,
         ),
     )>,
@@ -342,7 +344,7 @@ pub struct BeltBeltInserterStore<ItemIdxType: WeakIdxTrait> {
 pub struct BeltBeltInserterInfo<ItemIdxType: WeakIdxTrait> {
     source: (BeltTileId<ItemIdxType>, u16),
     dest: (BeltTileId<ItemIdxType>, u16),
-    cooldown: u8,
+    cooldown: u16,
     item: PhantomData<ItemIdxType>,
 }
 
@@ -355,7 +357,7 @@ pub enum BeltBeltInserterType {
 
 pub struct BeltBeltInserterAdditionInfo<ItemIdxType: WeakIdxTrait> {
     pub filter: Item<ItemIdxType>,
-    pub cooldown: u8,
+    pub cooldown: u16,
 }
 
 pub struct BreakBeltResultInfo<ItemIdxType: WeakIdxTrait> {
@@ -392,8 +394,12 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
                     }
                 },
                 AnyBelt::Sushi(sushi_index) => {
-                    if let Some((out_id, out_side)) = self.get_sushi(*sushi_index).output_splitter {
-                        out_id != id || out_side != side
+                    if let Some(sushi) = self.try_get_sushi(*sushi_index) {
+                        if let Some((out_id, out_side)) = sushi.output_splitter {
+                            out_id != id || out_side != side
+                        } else {
+                            true
+                        }
                     } else {
                         true
                     }
@@ -417,8 +423,12 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
                     }
                 },
                 AnyBelt::Sushi(sushi_index) => {
-                    if let Some((in_id, in_side)) = self.get_sushi(*sushi_index).input_splitter {
-                        in_id != id || in_side != side
+                    if let Some(sushi) = self.try_get_sushi(*sushi_index) {
+                        if let Some((in_id, in_side)) = sushi.input_splitter {
+                            in_id != id || in_side != side
+                        } else {
+                            true
+                        }
                     } else {
                         true
                     }
@@ -517,7 +527,33 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
         let mut temp = SushiBelt::new(0, 1);
         temp.make_circular();
         mem::swap(&mut temp, &mut self.sushi_belts[id]);
-        self.sushi_belt_holes.push(id);
+        if id == self.sushi_belts.len() - 1 {
+            let removed_temp = self.sushi_belts.pop().expect("We just added a temp");
+            assert!(removed_temp.is_circular);
+            assert_eq!(removed_temp.get_len(), 1);
+        } else {
+            self.sushi_belt_holes.push(id);
+        }
+
+        // Try shortening the sushi belt list as much as possible to minimize holes
+        for idx in (0..self.sushi_belts.len()).rev() {
+            assert_eq!(idx, self.sushi_belts.len() - 1);
+
+            if let Some(pos) = self.sushi_belt_holes.iter().position(|v| v == &idx) {
+                let removed_temp = self
+                    .sushi_belts
+                    .pop()
+                    .expect("All holes should be low enough to have stuff in them");
+                assert!(removed_temp.is_circular);
+                assert_eq!(removed_temp.get_len(), 1);
+
+                self.sushi_belt_holes.swap_remove(pos);
+            } else {
+                // warn!("Cannot compress due to {:?}", self.get_sushi(idx));
+                break;
+            }
+        }
+
         temp
     }
 
@@ -545,6 +581,10 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
             .belts
             .get_disjoint_mut(indices)
             .unwrap()
+    }
+
+    fn try_get_sushi(&self, sushi_belt_id: usize) -> Option<&SushiBelt<ItemIdxType>> {
+        self.sushi_belts.get(sushi_belt_id)
     }
 
     fn get_sushi(&self, sushi_belt_id: usize) -> &SushiBelt<ItemIdxType> {
@@ -931,7 +971,12 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
     }
 
     fn add_sushi_belt(&mut self, belt: SushiBelt<ItemIdxType>) -> usize {
-        let sushi_idx = if let Some(hole) = self.sushi_belt_holes.pop() {
+        let sushi_idx = if let Some(hole) = {
+            // By always choosing the min pos here, we ensure that we can compress the sushi belt list whenever possible
+            let min_pos = self.sushi_belt_holes.iter().position_min();
+
+            min_pos.map(|v| self.sushi_belt_holes.swap_remove(v))
+        } {
             self.sushi_belts[hole] = belt;
             hole
         } else {
@@ -974,7 +1019,14 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
         amount: BeltLenType,
         side: Side,
     ) -> (Vec<(Item<ItemIdxType>, u32)>, BeltLenType) {
-        self.get_smart_mut(id).remove_length(amount, side)
+        let (removed_items, new_len) = self.get_smart_mut(id).remove_length(amount, side);
+
+        if new_len == 0 {
+            let removed = self.remove_smart_belt(id);
+            assert_eq!(removed.get_len(), 0);
+        }
+
+        (removed_items, new_len)
     }
 
     /// Returns the new length of the belt
@@ -984,7 +1036,14 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
         amount: BeltLenType,
         side: Side,
     ) -> (Vec<(Item<ItemIdxType>, u32)>, BeltLenType) {
-        self.get_sushi_mut(id).remove_length(amount, side)
+        let (removed_items, new_len) = self.get_sushi_mut(id).remove_length(amount, side);
+
+        if new_len == 0 {
+            let removed = self.remove_sushi_belt(id);
+            assert_eq!(removed.get_len(), 0);
+        }
+
+        (removed_items, new_len)
     }
 
     #[profiling::function]
@@ -2094,7 +2153,25 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         amount: BeltLenType,
         side: Side,
     ) -> (Vec<(Item<ItemIdxType>, u32)>, BeltLenType) {
-        match belt {
+        #[cfg(debug_assertions)]
+        {
+            for [inputs, outputs] in (0..self.any_splitters.len())
+                .filter(|idx| !self.any_splitter_holes.contains(idx))
+                .map(|any_splitter_idx| {
+                    self.get_splitter_belt_ids(SplitterTileId::Any(any_splitter_idx))
+                })
+            {
+                for input in inputs {
+                    assert!(self.get_len(input) >= SPLITTER_BELT_LEN);
+                }
+
+                for output in outputs {
+                    assert!(self.get_len(output) >= SPLITTER_BELT_LEN);
+                }
+            }
+        }
+
+        let ret = match belt {
             BeltTileId::AnyBelt(index, _) => {
                 let (removed_items, new_len) = match self.any_belts[index] {
                     AnyBelt::Smart(belt_id) => {
@@ -2109,7 +2186,27 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                 }
                 (removed_items, new_len)
             },
+        };
+
+        #[cfg(debug_assertions)]
+        {
+            for [inputs, outputs] in (0..self.any_splitters.len())
+                .filter(|idx| !self.any_splitter_holes.contains(idx))
+                .map(|any_splitter_idx| {
+                    self.get_splitter_belt_ids(SplitterTileId::Any(any_splitter_idx))
+                })
+            {
+                for input in inputs {
+                    assert!(self.get_len(input) >= SPLITTER_BELT_LEN);
+                }
+
+                for output in outputs {
+                    assert!(self.get_len(output) >= SPLITTER_BELT_LEN);
+                }
+            }
         }
+
+        ret
     }
 
     fn add_belt(&mut self, belt: SmartBelt<ItemIdxType>) -> BeltTileId<ItemIdxType> {
@@ -2815,6 +2912,24 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (BeltTileId<ItemIdxType>, BeltLenType) {
         // self.merge_and_fix(front_tile_id, back_tile_id);
+
+        #[cfg(debug_assertions)]
+        {
+            for [inputs, outputs] in (0..self.any_splitters.len())
+                .filter(|idx| !self.any_splitter_holes.contains(idx))
+                .map(|any_splitter_idx| {
+                    self.get_splitter_belt_ids(SplitterTileId::Any(any_splitter_idx))
+                })
+            {
+                for input in inputs {
+                    assert!(self.get_len(input) >= SPLITTER_BELT_LEN);
+                }
+
+                for output in outputs {
+                    assert!(self.get_len(output) >= SPLITTER_BELT_LEN);
+                }
+            }
+        }
 
         #[cfg(debug_assertions)]
         {

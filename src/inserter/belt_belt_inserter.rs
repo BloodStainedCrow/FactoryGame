@@ -114,11 +114,16 @@ impl BeltBeltInserter {
         &mut self,
         loc_in: &mut LocType,
         loc_out: &mut LocType,
-        movetime: u8,
+        movetime: u16,
         max_hand_size: ITEMCOUNTTYPE,
         filter: LocType::Item,
         filter_test: impl Fn(LocType::Item) -> bool,
     ) {
+        debug_assert!(
+            movetime < u8::MAX as u16,
+            "Currently these inserter only support movetimes up to u8::MAX"
+        );
+        let movetime = std::cmp::min(movetime, u8::MAX as u16) as u8;
         // TODO: I just added InserterStates and it is a lot slower (unsurprisingly),
         // Try and find a faster implementation of similar logic
 

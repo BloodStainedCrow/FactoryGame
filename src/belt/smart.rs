@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     inserter::{
-        InserterState, MOVETIME, belt_storage_inserter::Dir,
+        InserterState, belt_storage_inserter::Dir,
         belt_storage_inserter_non_const_gen::BeltStorageInserterDyn,
     },
     item::{IdxTrait, Item, WeakIdxTrait},
@@ -29,15 +29,15 @@ use super::{
     sushi::{SushiBelt, SushiInserterStoreDyn},
 };
 use crate::inserter::FakeUnionStorage;
-use crate::inserter::HAND_SIZE;
 
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
 use get_size::GetSize;
 
-type TEST = Inserter;
-type TEST2 = (u16, Inserter);
+// HUGE FIXME:
+const MOVETIME: u8 = 12;
+const HAND_SIZE: u8 = 12;
 
 #[allow(clippy::module_name_repetitions)]
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]

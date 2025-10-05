@@ -3362,4 +3362,51 @@
         )
         
     ],
+
+    inserters: [
+        (
+            name: "factory_game::inserter",
+            display_name: "Inserter",
+            tile_size: (1, 1),
+            time_per_trip: 35,
+            handsize: 1,
+            /// In north rotation
+            pickup_offs: (0, 1),
+            /// In north rotation
+            dropoff_offs: (0, -1),
+        ),
+        (
+            name: "factory_game::fast_inserter",
+            display_name: "Fast Inserter",
+            tile_size: (1, 1),
+            time_per_trip: 12,
+            handsize: 1,
+            /// In north rotation
+            pickup_offs: (0, 1),
+            /// In north rotation
+            dropoff_offs: (0, -1),
+        ),
+        (
+            name: "factory_game::long_handed_inserter",
+            display_name: "Long Handed Inserter",
+            tile_size: (1, 1),
+            time_per_trip: 25,
+            handsize: 1,
+            /// In north rotation
+            pickup_offs: (0, 2),
+            /// In north rotation
+            dropoff_offs: (0, -2),
+        ),
+        (
+            name: "factory_game::bulk_inserter",
+            display_name: "Bulk Inserter",
+            tile_size: (1, 1),
+            time_per_trip: 12,
+            handsize: 12,
+            /// In north rotation
+            pickup_offs: (0, 1),
+            /// In north rotation
+            dropoff_offs: (0, -1),
+        ),
+    ]
 )

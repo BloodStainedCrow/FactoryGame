@@ -2,7 +2,7 @@ use itertools::Itertools;
 use std::{cmp::max, collections::HashMap};
 
 use super::{
-    FakeUnionStorage, HAND_SIZE,
+    FakeUnionStorage,
     bucket_bit_compressed::{EncodedUpdatingInserter, FixedSizeCompressedVec},
     storage_storage_with_buckets::MovingInserter,
 };
@@ -126,7 +126,6 @@ impl BucketedStorageStorageInserterStoreFrontend {
                         let possible_states = get_possible_new_states_after_n_ticks(
                             (*old_state).into(),
                             store.movetime,
-                            HAND_SIZE,
                             current_time - *old_time,
                         );
 

@@ -7,9 +7,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use parking_lot::Mutex;
-
+use crate::app_state::SimulationState;
 use log::error;
+use parking_lot::Mutex;
 
 #[cfg(feature = "client")]
 use crate::frontend::action::action_state_machine::ActionStateMachine;
@@ -54,13 +54,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Server<ItemIdxType, RecipeI
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, RecipeIdxType>
     for Client<ItemIdxType, RecipeIdxType>
 {
-    fn get<'a>(
+    fn get<'a, 'b, 'c, 'd>(
         &'a self,
         current_tick: u64,
-        world: &World<ItemIdxType, RecipeIdxType>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<'a, ItemIdxType, RecipeIdxType>
-    {
+        world: &'b World<ItemIdxType, RecipeIdxType>,
+        sim_state: &'d SimulationState<ItemIdxType, RecipeIdxType>,
+        data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
+    + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType> {
         // This will block (?) if we did not yet recieve the actions from the server for this tick
         // TODO: This could introduce hitches which might be noticeable.
         //       This could be solved either by introducing some fixed delay on all actions (i.e. just running the client a couple ticks in the past compared to the server)
@@ -71,7 +72,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         let mut state_machine = self.local_actions.lock();
 
         let mut local_actions: Vec<_> = state_machine
-            .handle_inputs(&self.local_input, world, data_store)
+            .handle_inputs(&self.local_input, world, sim_state, data_store)
             .into_iter()
             .collect();
         local_actions.extend(state_machine.once_per_update_actions(world, data_store));
@@ -111,6 +112,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         &self,
         current_tick: u64,
         world: &World<ItemIdxType, RecipeIdxType>,
+        sim_state: &SimulationState<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
     {
@@ -205,13 +207,14 @@ pub(super) struct IntegratedServer<ItemIdxType: WeakIdxTrait, RecipeIdxType: Wea
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, RecipeIdxType>
     for IntegratedServer<ItemIdxType, RecipeIdxType>
 {
-    fn get<'a, 'b, 'c>(
+    fn get<'a, 'b, 'c, 'd>(
         &'a self,
         current_tick: u64,
         world: &'b World<ItemIdxType, RecipeIdxType>,
+        sim_state: &'d SimulationState<ItemIdxType, RecipeIdxType>,
         data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
-    + use<'a, 'b, 'c, ItemIdxType, RecipeIdxType> {
+    + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType> {
         let start = Instant::now();
         let mut state_machine = self.local_actions.lock();
         if start.elapsed() > Duration::from_millis(10) {
@@ -219,7 +222,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         }
 
         let mut v: Vec<_> = state_machine
-            .handle_inputs(self.local_input.try_iter(), world, data_store)
+            .handle_inputs(self.local_input.try_iter(), world, sim_state, data_store)
             .into_iter()
             .collect();
         if start.elapsed() > Duration::from_millis(10) {
@@ -235,7 +238,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
 
         let ret = self
             .server
-            .get(current_tick, world, data_store)
+            .get(current_tick, world, sim_state, data_store)
             .into_iter()
             .chain(v);
         if start.elapsed() > Duration::from_millis(10) {

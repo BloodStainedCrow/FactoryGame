@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use std::collections::HashMap;
 
-use super::{FakeUnionStorage, HAND_SIZE};
+use super::FakeUnionStorage;
 use crate::{
     belt::{belt::Belt, smart::SmartBelt},
     item::{ITEMCOUNTTYPE, IdxTrait},
@@ -172,7 +172,6 @@ impl BucketedStorageStorageInserterStoreFrontend {
                         let possible_states = get_possible_new_states_after_n_ticks(
                             (*old_state).into(),
                             store.movetime,
-                            HAND_SIZE,
                             current_time - *old_time,
                         );
 
@@ -395,7 +394,6 @@ impl BucketedStorageStorageInserterStoreFrontend {
 pub(super) fn get_possible_new_states_after_n_ticks(
     starting_state: LargeInserterState,
     movetime: u16,
-    max_hand_size: ITEMCOUNTTYPE,
     n: u32,
 ) -> Result<Vec<LargeInserterState>, ()> {
     const MAX_SEARCH_SIZE: usize = 100;
@@ -408,7 +406,7 @@ pub(super) fn get_possible_new_states_after_n_ticks(
         current.extend(
             this_tick
                 .into_iter()
-                .flat_map(|state| get_possible_new_states(state, movetime, max_hand_size))
+                .flat_map(|state| get_possible_new_states(state, movetime))
                 .unique(),
         );
 
@@ -423,7 +421,6 @@ pub(super) fn get_possible_new_states_after_n_ticks(
 pub(super) fn get_possible_new_states(
     starting_state: LargeInserterState,
     movetime: u16,
-    max_hand_size: ITEMCOUNTTYPE,
 ) -> Vec<LargeInserterState> {
     match starting_state {
         LargeInserterState::WaitingForSourceItems(_) => {

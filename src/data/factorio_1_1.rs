@@ -540,5 +540,7 @@ pub fn get_raw_data_fn() -> RawDataStore {
         ],
         accumulators: vec![],
         fluid_tanks: vec![],
+
+        inserters: vec![],
     }
 }

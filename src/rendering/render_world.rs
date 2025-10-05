@@ -1,9 +1,11 @@
+use crate::belt::belt::Belt;
 use crate::belt::smart::SmartBelt;
 use crate::chest::ChestSize;
 use crate::frontend::action::belt_placement::{BeltState, expected_belt_state};
 use crate::frontend::world::tile::World;
 use crate::get_size::RAMExtractor;
 use crate::get_size::RamUsage;
+use crate::inserter::storage_storage_with_buckets::InserterIdentifier;
 use crate::item::Indexable;
 use crate::lab::{LabViewInfo, TICKS_PER_SCIENCE};
 use crate::liquid::FluidSystemState;
@@ -40,7 +42,7 @@ use eframe::egui::{
     self, Align2, Color32, ComboBox, Context, CornerRadius, Label, Layout, ProgressBar, Stroke, Ui,
     Window,
 };
-use egui::{Button, CollapsingHeader, Modal, RichText, ScrollArea, Sense};
+use egui::{Button, CollapsingHeader, Modal, RichText, ScrollArea, Sense, Slider};
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
 use egui_show_info::ShowInfo;
@@ -52,6 +54,7 @@ use parking_lot::MutexGuard;
 use petgraph::dot::Dot;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::cmp::max;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::num::NonZero;
@@ -73,7 +76,7 @@ const ALT_MODE_ICON_SIZE: f32 = 0.5;
 pub const SWITCH_TO_MAPVIEW_TILES: f32 = if cfg!(debug_assertions) {
     200.0
 } else {
-    1000.0
+    500.0
 };
 pub const SWITCH_TO_MAPVIEW_ZOOM_LEVEL: LazyLock<f32> =
     LazyLock::new(|| ((SWITCH_TO_MAPVIEW_TILES - 1.0) / WIDTH_PER_LEVEL as f32).log(1.5));
@@ -140,6 +143,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     renderer: &mut impl RendererTrait,
     simulation_state: MutexGuard<SimulationState<ItemIdxType, RecipeIdxType>>,
     world: MutexGuard<World<ItemIdxType, RecipeIdxType>>,
+    aux_data: MutexGuard<AuxillaryData>,
     texture_atlas: &TextureAtlas,
     state_machine: MutexGuard<ActionStateMachine<ItemIdxType, RecipeIdxType>>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -164,6 +168,12 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let mut entity_overlay_layer = Layer::square_tile_grid(tilesize, ar);
     let mut player_layer = Layer::square_tile_grid(tilesize, ar);
 
+    let mut inserter_item_layer = Layer::square_tile_grid(tilesize, ar);
+    let mut storage_storage_inserter_render_list: HashMap<
+        (Item<ItemIdxType>, u16),
+        Vec<([f32; 2], u8, InserterIdentifier)>,
+    > = HashMap::new();
+
     let camera_pos = match &state_machine.map_view_info {
         Some(map_view_pos) => *map_view_pos,
         None => state_machine.local_player_pos,
@@ -175,6 +185,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     );
 
     if num_tiles_across_screen_horizontal > SWITCH_TO_MAPVIEW_TILES {
+        mem::drop(aux_data);
         if let ActionStateMachineState::Holding(HeldObject::Blueprint(bp)) = &state_machine.state {
             let Position { x, y } =
                 ActionStateMachine::<ItemIdxType, RecipeIdxType>::player_mouse_to_tile(
@@ -264,15 +275,13 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         return;
     }
 
-    // let mut storage_storage_inserter_batch = vec![];
-
     let x_range = (-((num_tiles_across_screen_horizontal / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
-        ..=((num_tiles_across_screen_horizontal / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32))
-        .into_par_iter();
+        ..=((num_tiles_across_screen_horizontal / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32));
+    // .into_par_iter();
     let y_range = -((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
         ..=((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32);
 
-    let pos_iter = x_range.flat_map_iter(|x| y_range.clone().map(move |y| (x, y)));
+    let pos_iter = x_range.flat_map(|x| y_range.clone().map(move |y| (x, y)));
 
     let folded_layers = {
         profiling::scope!("Render Chunks");
@@ -299,7 +308,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 ((chunk_x, chunk_y), chunk_draw_offs)
             })
             .fold(
-                || layers_tile_grid(tilesize, ar),
+                layers_tile_grid(tilesize, ar),
                 |mut layers: Layers, ((chunk_x, chunk_y), chunk_draw_offs)| {
                     let Layers {
                         tile_layer,
@@ -684,6 +693,20 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 entity_layer,
                                             );
 
+                                            if state_machine.debug_view_options.highlight_sushi_belts {
+                                                if game_state.simulation_state.factory.belts.get_pure_item(*id).is_none() {
+                                                    texture_atlas.no_power.draw(
+                                                        [
+                                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                        ],
+                                                        [1, 1],
+                                                        0,
+                                                        warning_layer,
+                                                    );
+                                                }
+                                            }
+
                                             // Draw Items
                                             // TODO: Draw items on corners not straight
                                             let items_iter = game_state
@@ -828,6 +851,20 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                     entity_overlay_layer,
                                                 );
 
+                                                if state_machine.debug_view_options.highlight_sushi_belts {
+                                                    if game_state.simulation_state.factory.belts.get_pure_item(*id).is_none() {
+                                                        texture_atlas.no_power.draw(
+                                                            [
+                                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                            ],
+                                                            [1, 1],
+                                                            0,
+                                                            warning_layer,
+                                                        );
+                                                    }
+                                                }
+
                                             // Draw Items
                                             let items_iter = game_state
                                                 .simulation_state
@@ -927,6 +964,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             pos,
                                             direction,
                                             info,
+                                            user_movetime, 
+                                            type_movetime,
+                                            ty,
                                             ..
                                         } => {
                                             entity_layer.draw_sprite(
@@ -942,23 +982,27 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             );
 
                                             match info {
-                                    crate::frontend::world::tile::InserterInfo::NotAttached {
-                                        start_pos,
-                                        end_pos,
-                                    } => {},
+                                    crate::frontend::world::tile::InserterInfo::NotAttached { .. } => {},
                                     crate::frontend::world::tile::InserterInfo::Attached {
                                         start_pos,
                                         end_pos,
                                         info,
                                     } => {
-                                        // match info {
-                                        //     crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => todo!(),
-                                        //     crate::frontend::world::tile::AttachedInserter::BeltBelt { item, inserter } => todo!(),
-                                        //     crate::frontend::world::tile::AttachedInserter::StorageStorage { item, inserter } => {
-                                        //         // let info = game_state.simulation_state.factory.storage_storage_inserters
-
-                                        //     },
-                                        // }
+                                        match info {
+                                            crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => {
+                                                // TODO:
+                                            },
+                                            crate::frontend::world::tile::AttachedInserter::BeltBelt { item, inserter } => {
+                                                // TODO:
+                                            },
+                                            crate::frontend::world::tile::AttachedInserter::StorageStorage { item, inserter } => {
+                                                let movetime = user_movetime.unwrap_or(*type_movetime).into();
+                                                storage_storage_inserter_render_list.entry((*item, movetime)).or_default().push(([
+                                                    chunk_draw_offs.0 + (pos.x % 16) as f32,
+                                                    chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                ],*ty, *inserter));
+                                            },
+                                        }
                                     },
                                 }
                                         },
@@ -1307,14 +1351,47 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     layers
                 },
             )
-            .reduce(
-                || layers_tile_grid(tilesize, ar),
-                |mut a, b| {
-                    a.extend(b);
-                    a
-                },
-            )
+        // .reduce(
+        //     || layers_tile_grid(tilesize, ar),
+        //     |mut a, b| {
+        //         a.extend(b);
+        //         a
+        //     },
+        // )
     };
+
+    // TODO: Why is all of this hashmap based????
+    // {
+    //     profiling::scope!("Render Inserter States");
+    //     for ((item, movetime), inserter_list) in storage_storage_inserter_render_list {
+    //         let item_sprite = &texture_atlas.items[item.into_usize()];
+    
+    //         let infos = game_state
+    //             .simulation_state
+    //             .factory
+    //             .storage_storage_inserters
+    //             .get_info_batched(item, movetime, inserter_list.iter().map(|(_, _, ident)| *ident), aux_data.current_tick as u32);
+    
+    //         for (draw_pos, ty, ident) in inserter_list {
+    //             let info = infos[&ident];
+    
+    
+    //             let num_items = match info {
+    //                 crate::inserter::storage_storage_with_buckets::LargeInserterState::WaitingForSourceItems(count) => count,
+    //                 crate::inserter::storage_storage_with_buckets::LargeInserterState::WaitingForSpaceInDestination(count) => count,
+    //                 crate::inserter::storage_storage_with_buckets::LargeInserterState::FullAndMovingOut(_) => 12,
+    //                 crate::inserter::storage_storage_with_buckets::LargeInserterState::EmptyAndMovingBack(_) => 0,
+    //             };
+    
+    //             if num_items > 0 {
+    //                 inserter_item_layer.draw_sprite(item_sprite, DrawInstance { position: draw_pos, size: [
+    //                     1.0 / f32::from(BELT_LEN_PER_TILE),
+    //                     1.0 / f32::from(BELT_LEN_PER_TILE),
+    //                 ], animation_frame: 0 });
+    //             }
+    //         }
+    //     }
+    // }
 
     for (player_id, player) in game_state
         .world
@@ -1363,8 +1440,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     mem::drop(game_state);
 
     match &state_machine.state {
-        ActionStateMachineState::CtrlCPressed => {},
-        ActionStateMachineState::CopyDragInProgress { start_pos } => {
+        ActionStateMachineState::CtrlCPressed | ActionStateMachineState::DelPressed => {},
+        ActionStateMachineState::CopyDragInProgress { start_pos } | ActionStateMachineState::DeleteDragInProgress { start_pos } => {
             let end_pos = ActionStateMachine::<ItemIdxType, RecipeIdxType>::player_mouse_to_tile(
                 state_machine.zoom_level,
                 camera_pos,
@@ -1450,7 +1527,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         pos,
                         dir,
                         filter,
+                        ty,
                     } => {
+                        // FIXME: Respect ty while rendering
                         let size: [u16; 2] = [1, 1];
                         state_machine_layer.draw_sprite(
                             &texture_atlas.inserter[*dir],
@@ -1737,11 +1816,12 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         }
         renderer.draw(&state_machine_layer);
         renderer.draw(&entity_overlay_layer);
+        renderer.draw(&inserter_item_layer);
         renderer.draw(&player_layer);
     }
 }
 
-pub(super) enum EscapeMenuOptions {
+pub enum EscapeMenuOptions {
     BackToMainMenu,
 }
 
@@ -2000,6 +2080,67 @@ pub fn render_ui<
                 }))
             }
             ui.checkbox(
+                &mut state_machine_ref.debug_view_options.highlight_sushi_belts,
+                "Highlight Sushi Belts",
+            );
+
+            ui.label(&format!("Num Sushi Belts: {}", game_state_ref.simulation_state.factory.belts.inner.sushi_belts.len()));
+            ui.label(&format!("Num Sushi Belts Holes: {}", game_state_ref.simulation_state.factory.belts.inner.sushi_belt_holes.len()));
+
+            let mut lock_view = state_machine_ref.debug_view_options.sushi_finder_view_lock.is_some();
+
+            ui.checkbox(
+                &mut lock_view,
+                "Lock view on sushi belt finder",
+            );
+
+            if lock_view {
+                let index = state_machine_ref.debug_view_options.sushi_finder_view_lock.get_or_insert_default();
+                let mut mov = |index| {
+                    let pos = game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter_map(|e| match e {
+                        Entity::Belt {
+                            pos,
+                            id, ..
+                        } => {
+                            Some((*pos, *id))
+                        },
+                        Entity::Underground {
+                            pos,
+                            id, ..
+                        } => {
+                            Some((*pos, *id))
+                        },
+
+                        _ => None,
+                    }).filter_map(|(pos, id)| game_state_ref.simulation_state.factory.belts.get_pure_item(id).is_none().then_some(pos)).nth(index);
+
+                    if let Some(pos) = pos {
+                        state_machine_ref.map_view_info = Some((pos.x as f32, pos.y as f32));
+                    }
+                };
+
+                if ui.button("Prev").clicked() {
+                    *index -= 1;
+
+                    mov(*index);
+                } else if ui.button("Next").clicked() {
+                    *index += 1;
+
+                    mov(*index);
+                } else if ui.button("Skip 10").clicked() {
+                    *index += 10;
+
+                    mov(*index);
+                }
+            } else {
+                state_machine_ref.debug_view_options.sushi_finder_view_lock = None;
+            }
+
+            ui.add(Slider::new(&mut state_machine_ref.debug_view_options.sushi_belt_len_threshhold, 0..=1_000).logarithmic(true));
+
+            ui.label(&format!("Num Sushi Belts with length <= {}: {}", state_machine_ref.debug_view_options.sushi_belt_len_threshhold, game_state_ref.simulation_state.factory.belts.inner.sushi_belts.iter().map(|belt| belt.get_len()).filter(|len| *len as u32 <= state_machine_ref.debug_view_options.sushi_belt_len_threshhold).count()));
+            
+            ui.checkbox(
                 &mut state_machine_ref.show_graph_dot_output,
                 "Generate Belt Graph",
             );
@@ -2190,11 +2331,17 @@ pub fn render_ui<
         });
 
     Window::new("UPS").default_open(true).show(ctx, |ui| {
-        let points = &aux_data.update_times.get_data_points(0)[0..600];
+        let points = &aux_data.update_round_trip_times.get_data_points(0)[0..600];
         ui.label(format!(
             "{:.1} UPS",
             1.0 / (points.iter().map(|v| v.dur).sum::<Duration>() / points.len() as u32)
                 .as_secs_f32()
+        ));
+        let points = &aux_data.update_times.get_data_points(0)[0..600];
+        ui.label(format!(
+            "{:.1} mspt",
+            (points.iter().map(|v| v.dur).sum::<Duration>() / points.len() as u32)
+                .as_secs_f32() * 1000.0
         ));
     });
 
@@ -2254,8 +2401,15 @@ pub fn render_ui<
         ActionStateMachineState::CtrlCPressed => {
             ctx.set_cursor_icon(egui::CursorIcon::Copy);
         },
-        ActionStateMachineState::CopyDragInProgress { start_pos } => {
+        ActionStateMachineState::CopyDragInProgress { start_pos: _ } => {
             ctx.set_cursor_icon(egui::CursorIcon::Copy);
+        },
+
+        ActionStateMachineState::DelPressed => {
+            ctx.set_cursor_icon(egui::CursorIcon::Copy);
+        },
+        ActionStateMachineState::DeleteDragInProgress { start_pos: _ } => {
+            ctx.set_cursor_icon(egui::CursorIcon::NotAllowed);
         },
 
         crate::frontend::action::action_state_machine::ActionStateMachineState::Idle => {},
@@ -3375,7 +3529,9 @@ pub fn render_ui<
     mem::drop(state_machine);
     mem::drop(data_store);
 
-    puffin_egui::profiler_window(ctx);
+    Window::new("Profiler").default_open(false).show(ctx, |ui| {
+        puffin_egui::profiler_ui(ui);
+    });
 
     Ok(actions.into_iter())
 }

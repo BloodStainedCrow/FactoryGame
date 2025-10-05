@@ -267,7 +267,7 @@ fn texture_atlas() -> TextureAtlas {
 
         not_connected: entity_sprite_from_path_scaled!("temp_assets/not_connected.png", 1, 3.0),
 
-        no_power: entity_sprite_from_path_scaled!("temp_assets/no_power.png", 1, 3.0),
+        no_power: entity_sprite_from_path_scaled!("temp_assets/no_power.png", 1, 1.0),
 
         assembler: entity_sprite_from_path_tiling!("temp_assets/assembler.png", 1),
         chest: entity_sprite_from_path_tiling!("temp_assets/outside_world.png", 1),
@@ -319,7 +319,7 @@ fn texture_atlas() -> TextureAtlas {
 
         not_connected: entity_sprite_from_path_scaled!("temp_assets/not_connected.png", 1, 3.0),
 
-        no_power: entity_sprite_from_path_scaled!("temp_assets/no_power.png", 1, 3.0),
+        no_power: entity_sprite_from_path_scaled!("temp_assets/no_power.png", 1, 1.0),
 
         assembler: vec![
             // TODO: Add animation for assembling machine

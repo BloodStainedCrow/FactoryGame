@@ -47,9 +47,7 @@ use crate::{
         splitter::{SPLITTER_BELT_LEN, SplitterDistributionMode, SplitterSide},
     },
     data::{AllowedFluidDirection, DataStore, ItemRecipeDir},
-    inserter::{
-        HAND_SIZE, MOVETIME, StaticID, Storage, storage_storage_with_buckets::InserterIdentifier,
-    },
+    inserter::{StaticID, Storage, storage_storage_with_buckets::InserterIdentifier},
     item::{IdxTrait, Item, Recipe, WeakIdxTrait, usize_from},
     liquid::{
         CannotMixFluidsError, FluidConnectionDir,
@@ -1975,6 +1973,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             return Err(InstantiateInserterError::NotUnattachedInserter);
         };
 
+        let move_time = data_store.inserter_infos[*ty as usize].swing_time_ticks;
+        // TODO: Calculate tech effect
+        let hand_size = data_store.inserter_infos[*ty as usize].base_hand_size;
+
         let movetime = user_movetime.map(|v| v.into()).unwrap_or(*type_movetime);
 
         let start_conn: Option<InserterConnectionPossibility<ItemIdxType, RecipeIdxType>> = self
@@ -2353,7 +2355,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     (start_belt_id, start_belt_pos),
                     (dest_belt_id, dest_belt_pos),
                     BeltBeltInserterAdditionInfo {
-                        cooldown: MOVETIME,
+                        cooldown: movetime.into(),
                         filter: determined_filter,
                     },
                 );
@@ -2621,7 +2623,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     movetime.into(),
                     start_storage,
                     dest_storage,
-                    HAND_SIZE,
+                    hand_size,
                     data_store,
                 );
 
@@ -3755,7 +3757,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        let entity = self.get_entity_at(pos, data_store);
+        let entity = self.get_entity_at(pos, data_store).cloned();
 
         let mut cascading_updates = vec![];
 
@@ -3764,7 +3766,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             let e_size = entity.get_entity_size(data_store);
             let max_inserter_range = data_store.max_inserter_search_range;
 
-            match entity {
+            for x in 0..e_size.0 {
+                for y in 0..e_size.1 {
+                    self.map_updates.get_or_insert_default().push(Position {
+                        x: e_pos.x + i32::from(x),
+                        y: e_pos.y + i32::from(y),
+                    });
+                }
+            }
+
+            match &entity {
                 Entity::FluidTank { ty, pos, rotation } => {
                     sim_state.factory.fluid_store.remove_fluid_box(
                         *pos,
@@ -4726,6 +4737,7 @@ pub enum PlaceEntityType<ItemIdxType: WeakIdxTrait> {
         rotation: Dir,
     },
     Inserter {
+        ty: u8,
         pos: Position,
         dir: Dir,
         /// The Item the inserter will move, must fit both the in and output side

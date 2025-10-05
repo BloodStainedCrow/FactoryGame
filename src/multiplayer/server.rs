@@ -1,7 +1,7 @@
 use std::{borrow::Borrow, fs::File, io::Write, marker::PhantomData};
 
 use crate::{
-    app_state::GameState,
+    app_state::{GameState, SimulationState},
     data::DataStore,
     frontend::{action::ActionType, world::tile::World},
     item::{IdxTrait, WeakIdxTrait},
@@ -21,13 +21,14 @@ where
 }
 
 pub(super) trait ActionSource<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    fn get<'a, 'b, 'c>(
+    fn get<'a, 'b, 'c, 'd>(
         &'a self,
         current_tick: u64,
         world: &'b World<ItemIdxType, RecipeIdxType>,
+        sim_state: &'d SimulationState<ItemIdxType, RecipeIdxType>,
         data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
-    + use<'a, 'b, 'c, Self, ItemIdxType, RecipeIdxType>;
+    + use<'a, 'b, 'c, 'd, Self, ItemIdxType, RecipeIdxType>;
 }
 
 pub(super) trait HandledActionConsumer<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
@@ -85,7 +86,8 @@ impl<
         let actions_iter = {
             profiling::scope!("Get Actions");
 
-            self.action_interface.get(current_tick, &world, data_store)
+            self.action_interface
+                .get(current_tick, &world, &simulation_state, data_store)
         };
 
         let actions: Vec<_> = actions_iter.into_iter().collect();
