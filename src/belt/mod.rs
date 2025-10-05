@@ -12,6 +12,9 @@ pub mod splitter;
 
 mod sushi;
 
+use crate::belt::smart::EmptyBelt;
+use crate::get_size::{Mutex, StableGraph};
+use petgraph::stable_graph::DefaultIx;
 use std::{
     cell::UnsafeCell,
     collections::{HashMap, HashSet},
@@ -19,9 +22,6 @@ use std::{
     marker::PhantomData,
     mem, usize,
 };
-
-use crate::get_size::{Mutex, StableGraph};
-use petgraph::stable_graph::DefaultIx;
 
 use serde::ser::{SerializeSeq, SerializeStruct};
 use strum::IntoEnumIterator;
@@ -163,6 +163,9 @@ pub struct InnerBeltStore<ItemIdxType: WeakIdxTrait> {
     pub sushi_belts: Vec<SushiBelt<ItemIdxType>>,
     pub sushi_belt_holes: Vec<usize>,
 
+    pub empty_belts: Vec<EmptyBelt>,
+    pub empty_belt_holes: Vec<usize>,
+
     pub smart_belts: Box<[MultiBeltStore<ItemIdxType>]>,
 
     pub belt_belt_inserters: BeltBeltInserterStore<ItemIdxType>,
@@ -182,6 +185,10 @@ impl<ItemIdxType: WeakIdxTrait> Clone for InnerBeltStore<ItemIdxType> {
         Self {
             sushi_belts: self.sushi_belts.clone(),
             sushi_belt_holes: self.sushi_belt_holes.clone(),
+
+            empty_belts: self.empty_belts.clone(),
+            empty_belt_holes: self.empty_belt_holes.clone(),
+
             smart_belts: self.smart_belts.clone(),
             belt_belt_inserters: self.belt_belt_inserters.clone(),
             pure_splitters: self.pure_splitters.clone(),
@@ -237,9 +244,12 @@ where
             }
         }
 
-        let mut state = serializer.serialize_struct("InnerBeltStore", 10)?;
+        let mut state = serializer.serialize_struct("InnerBeltStore", 12)?;
         state.serialize_field("sushi_belts", &self.sushi_belts)?;
         state.serialize_field("sushi_belt_holes", &self.sushi_belt_holes)?;
+        state.serialize_field("empty_belts", &self.empty_belts)?;
+        state.serialize_field("empty_belt_holes", &self.empty_belt_holes)?;
+
         state.serialize_field("smart_belts", &self.smart_belts)?;
         state.serialize_field("belt_belt_inserters", &self.belt_belt_inserters)?;
         state.serialize_field("pure_splitters", &self.pure_splitters)?;
@@ -404,6 +414,17 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
                         true
                     }
                 },
+                AnyBelt::Empty(empty_idx) => {
+                    if let Some(empty) = self.try_get_empty(*empty_idx) {
+                        if let Some((out_id, out_side)) = empty.output_splitter {
+                            out_id != id || out_side != side
+                        } else {
+                            true
+                        }
+                    } else {
+                        true
+                    }
+                },
             };
 
             if needs_update {
@@ -425,6 +446,17 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
                 AnyBelt::Sushi(sushi_index) => {
                     if let Some(sushi) = self.try_get_sushi(*sushi_index) {
                         if let Some((in_id, in_side)) = sushi.input_splitter {
+                            in_id != id || in_side != side
+                        } else {
+                            true
+                        }
+                    } else {
+                        true
+                    }
+                },
+                AnyBelt::Empty(empty_idx) => {
+                    if let Some(empty) = self.try_get_empty(*empty_idx) {
+                        if let Some((in_id, in_side)) = empty.input_splitter {
                             in_id != id || in_side != side
                         } else {
                             true
@@ -480,6 +512,18 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
             return AnyBelt::Sushi(index);
         }
 
+        let index = self.empty_belts.iter().position(|belt| {
+            if let Some((splitter_id, splitter_side)) = belt.output_splitter {
+                splitter_id == id && splitter_side == side
+            } else {
+                false
+            }
+        });
+
+        if let Some(index) = index {
+            return AnyBelt::Empty(index);
+        }
+
         unreachable!("Splitter is not connected to any belt (including its internal one)");
     }
 
@@ -518,6 +562,18 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
 
         if let Some(index) = index {
             return AnyBelt::Sushi(index);
+        }
+
+        let index = self.empty_belts.iter().position(|belt| {
+            if let Some((splitter_id, splitter_side)) = belt.input_splitter {
+                splitter_id == id && splitter_side == side
+            } else {
+                false
+            }
+        });
+
+        if let Some(index) = index {
+            return AnyBelt::Empty(index);
         }
 
         unreachable!("Splitter is not connected to any belt (including its internal one)");
@@ -593,6 +649,36 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
 
     fn get_sushi_mut(&mut self, sushi_belt_id: usize) -> &mut SushiBelt<ItemIdxType> {
         &mut self.sushi_belts[sushi_belt_id]
+    }
+
+    fn instantiate_empty_into_sushi(&mut self, empty_idx: usize) -> usize {
+        self.empty_belt_holes.push(empty_idx);
+        let mut tmp = EmptyBelt::new(0, 1);
+        tmp.make_circular();
+        mem::swap(&mut tmp, &mut self.empty_belts[empty_idx]);
+
+        let sushi = tmp.into_sushi_belt();
+
+        let new_id = self.add_sushi_belt(sushi);
+
+        new_id
+    }
+
+    fn instantiate_empty_into_pure(
+        &mut self,
+        item: Item<ItemIdxType>,
+        empty_idx: usize,
+    ) -> BeltId<ItemIdxType> {
+        self.empty_belt_holes.push(empty_idx);
+        let mut tmp = EmptyBelt::new(0, 1);
+        tmp.make_circular();
+        mem::swap(&mut tmp, &mut self.empty_belts[empty_idx]);
+
+        let smart = tmp.into_smart_belt(item);
+
+        let new_id = self.add_smart_belt(smart);
+
+        new_id
     }
 
     fn make_sushi(&mut self, id: BeltId<ItemIdxType>) -> usize {
@@ -793,7 +879,7 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
 
         let smart = belt.into_smart_belt(item);
 
-        let new_id = self.add_belt(smart);
+        let new_id = self.add_smart_belt(smart);
 
         // Update inserters
         for ins in self.belt_belt_inserters.sushi_to_sushi_inserters.iter_mut() {
@@ -987,7 +1073,7 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
         sushi_idx
     }
 
-    fn add_belt(&mut self, belt: SmartBelt<ItemIdxType>) -> BeltId<ItemIdxType> {
+    fn add_smart_belt(&mut self, belt: SmartBelt<ItemIdxType>) -> BeltId<ItemIdxType> {
         let item = belt.item;
         let smart_idx = self.smart_belts[usize_from(belt.item.id)].add_belt(belt);
 
@@ -1010,6 +1096,32 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
     /// Returns the new length of the belt
     fn add_length_sushi(&mut self, id: usize, amount: BeltLenType, side: Side) -> BeltLenType {
         self.get_sushi_mut(id).add_length(amount, side)
+    }
+
+    /// Returns the new length of the belt
+    fn add_length_empty(&mut self, id: usize, amount: BeltLenType, side: Side) -> BeltLenType {
+        self.get_empty_mut(id).add_length(amount, side)
+    }
+
+    fn try_get_empty(&self, idx: usize) -> Option<&EmptyBelt> {
+        self.empty_belts.get(idx)
+    }
+
+    fn get_empty(&self, idx: usize) -> &EmptyBelt {
+        &self.empty_belts[idx]
+    }
+
+    fn get_empty_mut(&mut self, idx: usize) -> &mut EmptyBelt {
+        &mut self.empty_belts[idx]
+    }
+
+    fn remove_empty_belt(&mut self, idx: usize) -> EmptyBelt {
+        let mut temp = EmptyBelt::new(0, 1);
+        temp.make_circular();
+        mem::swap(&mut temp, &mut self.empty_belts[idx]);
+        self.empty_belt_holes.push(idx);
+
+        temp
     }
 
     /// Returns the new length of the belt
@@ -1041,6 +1153,23 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
         if new_len == 0 {
             let removed = self.remove_sushi_belt(id);
             assert_eq!(removed.get_len(), 0);
+        }
+
+        (removed_items, new_len)
+    }
+
+    /// Returns the new length of the belt
+    fn remove_length_empty(
+        &mut self,
+        id: usize,
+        amount: BeltLenType,
+        side: Side,
+    ) -> (Vec<(Item<ItemIdxType>, u32)>, BeltLenType) {
+        let (removed_items, new_len) = self.get_empty_mut(id).remove_length(amount, side);
+
+        if new_len == 0 {
+            let removed = self.remove_empty_belt(id);
+            assert_eq!(<EmptyBelt as belt::Belt<ItemIdxType>>::get_len(&removed), 0);
         }
 
         (removed_items, new_len)
@@ -1143,6 +1272,38 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
 
     #[profiling::function]
     #[must_use]
+    fn merge_empty_belts(&mut self, front: usize, back: usize) -> usize {
+        if front == back {
+            self.get_empty_mut(front).make_circular();
+            return front;
+        }
+
+        let front_len = self.get_empty(front).len;
+        let back_len = self.get_empty(back).len;
+
+        let (removed_id, kept_id) = if front_len <= back_len {
+            let back_belt = self.remove_empty_belt(back);
+
+            take_mut::take(self.get_empty_mut(front), |front| {
+                EmptyBelt::join(front, back_belt)
+            });
+
+            (back, front)
+        } else {
+            let front_belt = self.remove_empty_belt(front);
+
+            take_mut::take(self.get_empty_mut(back), |back| {
+                EmptyBelt::join(front_belt, back)
+            });
+
+            (front, back)
+        };
+
+        kept_id
+    }
+
+    #[profiling::function]
+    #[must_use]
     fn merge_sushi_belts(&mut self, front: usize, back: usize) -> usize {
         if front == back {
             self.get_sushi_mut(front).make_circular();
@@ -1233,7 +1394,7 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
         let res = self.get_smart_mut(id).break_belt_at(pos);
 
         if let Some(residual_belt) = res {
-            let new_id = self.add_belt(residual_belt);
+            let new_id = self.add_smart_belt(residual_belt);
             Some(new_id)
         } else {
             None
@@ -1257,6 +1418,32 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
         }
 
         // FIXME: We need to fix inserter ids and offsets!
+    }
+
+    fn add_empty_belt(&mut self, empty_belt: EmptyBelt) -> usize {
+        let empty_idx = if let Some(hole) = self.empty_belt_holes.pop() {
+            self.empty_belts[hole] = empty_belt;
+            hole
+        } else {
+            self.empty_belts.push(empty_belt);
+            self.empty_belts.len() - 1
+        };
+
+        empty_idx
+    }
+
+    fn break_empty_belt_at(&mut self, id: usize, pos: BeltLenType) -> Option<usize> {
+        assert!(pos > 0);
+
+        // FIXME: Which side is kept? Front or back?
+        let res = self.get_empty_mut(id).break_belt_at(pos);
+
+        if let Some(residual_belt) = res {
+            let new_id = self.add_empty_belt(residual_belt);
+            Some(new_id)
+        } else {
+            None
+        }
     }
 }
 
@@ -1298,6 +1485,10 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             inner: InnerBeltStore {
                 sushi_belts: vec![],
                 sushi_belt_holes: vec![],
+
+                empty_belts: vec![],
+                empty_belt_holes: vec![],
+
                 smart_belts: vec![
                     MultiBeltStore {
                         belt_ty: vec![],
@@ -1431,6 +1622,9 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                                     }
                                 },
                             }
+                        },
+                        AnyBelt::Empty(idx) => {
+                            // Since the source belt is empty, nothing to do
                         },
                     },
                 }
@@ -1847,6 +2041,27 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         Err(_) => {},
                     }
                 },
+                AnyBelt::Empty(idx) => {
+                    self.get_items_which_could_end_up_on_that_belt(tile_id, dedup, done);
+
+                    let items = done.get(&tile_id).unwrap();
+
+                    match items.iter().all_equal_value() {
+                        Ok(item) => {
+                            // Make it into a smart belt
+                            let smart_id = self.inner.instantiate_empty_into_pure(*item, idx);
+                            self.any_belts[index] = AnyBelt::Smart(smart_id);
+                        },
+                        Err(None) => {
+                            // The belt is empty, nothing to do
+                        },
+                        Err(Some(_)) => {
+                            // This needs to be sushi
+                            let sushi_idx = self.inner.instantiate_empty_into_sushi(idx);
+                            self.any_belts[index] = AnyBelt::Sushi(sushi_idx);
+                        },
+                    }
+                },
             },
         }
         let outgoing_edges: Vec<_> = self
@@ -1901,6 +2116,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         belt.items().into_iter().flatten().dedup().collect(),
                     )
                 },
+                AnyBelt::Empty(_empty_idx) => (vec![], vec![]),
             },
         };
 
@@ -2143,6 +2359,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             BeltTileId::AnyBelt(index, _) => match self.any_belts[index] {
                 AnyBelt::Smart(belt_id) => self.inner.add_length_smart(belt_id, amount, side),
                 AnyBelt::Sushi(id) => self.inner.add_length_sushi(id, amount, side),
+                AnyBelt::Empty(id) => self.inner.add_length_empty(id, amount, side),
             },
         }
     }
@@ -2178,6 +2395,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         self.inner.remove_length_smart(belt_id, amount, side)
                     },
                     AnyBelt::Sushi(id) => self.inner.remove_length_sushi(id, amount, side),
+                    AnyBelt::Empty(id) => self.inner.remove_length_empty(id, amount, side),
                 };
                 if new_len == 0 {
                     self.any_belt_holes.push(index);
@@ -2210,7 +2428,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
     }
 
     fn add_belt(&mut self, belt: SmartBelt<ItemIdxType>) -> BeltTileId<ItemIdxType> {
-        let id = self.inner.add_belt(belt);
+        let id = self.inner.add_smart_belt(belt);
 
         let new_id = self.add_smart_to_any_list(id);
 
@@ -2222,9 +2440,9 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
     }
 
     pub fn add_empty_belt(&mut self, ty: u8, len: u16) -> BeltTileId<ItemIdxType> {
-        let sushi_idx = self.inner.add_sushi_belt(SushiBelt::new(ty, len));
+        let empty_idx = self.inner.add_empty_belt(EmptyBelt::new(ty, len));
 
-        let new_id = self.add_sushi_to_any_list(sushi_idx);
+        let new_id = self.add_empty_to_any_list(empty_idx);
 
         let index = self.belt_graph.add_node(new_id);
         self.belt_graph_lookup
@@ -2251,6 +2469,18 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             hole
         } else {
             self.any_belts.push(AnyBelt::Smart(belt_id));
+            self.any_belts.len() - 1
+        };
+
+        BeltTileId::AnyBelt(index, PhantomData)
+    }
+
+    fn add_empty_to_any_list(&mut self, empty_idx: usize) -> BeltTileId<ItemIdxType> {
+        let index = if let Some(hole) = self.any_belt_holes.pop() {
+            self.any_belts[hole] = AnyBelt::Empty(empty_idx);
+            hole
+        } else {
+            self.any_belts.push(AnyBelt::Empty(empty_idx));
             self.any_belts.len() - 1
         };
 
@@ -2301,6 +2531,24 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
 
                     if let Some(new_belt_id) = new_belt_id {
                         let new_id = self.add_sushi_to_any_list(new_belt_id);
+                        BreakBeltResultInfo {
+                            kept_id: id,
+                            new_belt: Some((new_id, Side::BACK)),
+                        }
+                    } else {
+                        BreakBeltResultInfo {
+                            kept_id: id,
+                            new_belt: None,
+                        }
+                    }
+                },
+                AnyBelt::Empty(empty_index) => {
+                    let new_belt_id = self
+                        .inner
+                        .break_empty_belt_at(*empty_index, belt_pos_to_break_at);
+
+                    if let Some(new_belt_id) = new_belt_id {
+                        let new_id = self.add_empty_to_any_list(new_belt_id);
                         BreakBeltResultInfo {
                             kept_id: id,
                             new_belt: Some((new_id, Side::BACK)),
@@ -2378,6 +2626,12 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                             Err(SpaceOccupiedError) => unreachable!(),
                         }
                     },
+                    AnyBelt::Empty(empty_index) => {
+                        let sushi_index = self.inner.instantiate_empty_into_sushi(*empty_index);
+                        self.any_belts[index] = AnyBelt::Sushi(sushi_index);
+
+                        self.add_storage_belt_inserter(filter, id, pos, storage_id)?;
+                    },
                 }
             },
         }
@@ -2435,6 +2689,12 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                             },
                             Err(SpaceOccupiedError) => return Err(SpaceOccupiedError),
                         }
+                    },
+                    AnyBelt::Empty(empty_index) => {
+                        let sushi_index = self.inner.instantiate_empty_into_sushi(*empty_index);
+                        self.any_belts[index] = AnyBelt::Sushi(sushi_index);
+
+                        self.add_belt_storage_inserter(filter, id, pos, storage_id)?;
                     },
                 }
             },
@@ -2523,6 +2783,18 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                             .sushi_to_sushi_inserters
                             .len()
                     },
+                    (AnyBelt::Empty(empty_index), _) => {
+                        let sushi_index = self.inner.instantiate_empty_into_sushi(*empty_index);
+                        self.any_belts[source_index] = AnyBelt::Sushi(sushi_index);
+
+                        self.add_sideloading_inserter(source, dest)
+                    },
+                    (_, AnyBelt::Empty(empty_index)) => {
+                        let sushi_index = self.inner.instantiate_empty_into_sushi(*empty_index);
+                        self.any_belts[dest_index] = AnyBelt::Sushi(sushi_index);
+
+                        self.add_sideloading_inserter(source, dest)
+                    },
                 }
             },
         };
@@ -2586,6 +2858,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                                 BeltTileId::AnyBelt(index, _) => match self.any_belts[*index] {
                                     AnyBelt::Smart(belt_id) => SushiInfo::Pure(Some(belt_id.item)),
                                     AnyBelt::Sushi(_) => SushiInfo::Sushi,
+                                    AnyBelt::Empty(_) => SushiInfo::Sushi,
                                 },
                             }
                         },
@@ -2646,6 +2919,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                 AnyBelt::Sushi(index) => {
                     self.inner.sushi_belts[index].get_inserter_info_at(belt_pos)
                 },
+                AnyBelt::Empty(_) => None,
             },
         }
     }
@@ -2670,6 +2944,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                             .map(|_| pos)
                     })
                     .collect(),
+                AnyBelt::Empty(_) => vec![],
             },
         }
     }
@@ -2683,6 +2958,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             BeltTileId::AnyBelt(idx, _) => match self.any_belts[idx] {
                 AnyBelt::Smart(belt_id) => belt_id.item,
                 AnyBelt::Sushi(index) => self.inner.sushi_belts[index].get_inserter_item(belt_pos),
+                AnyBelt::Empty(_) => unimplemented!("Empty belt cannot have inserters"),
             },
         }
     }
@@ -2717,6 +2993,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         ),
                     );
                 },
+                AnyBelt::Empty(_) => unimplemented!("Empty belt cannot have inserters"),
             },
         }
     }
@@ -2751,6 +3028,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         ),
                     );
                 },
+                AnyBelt::Empty(_) => unimplemented!("Empty belt cannot have inserters"),
             },
         }
     }
@@ -2817,6 +3095,18 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                             .len()
                             - 1
                     },
+                    (AnyBelt::Empty(empty_index), _) => {
+                        let sushi_index = self.inner.instantiate_empty_into_sushi(*empty_index);
+                        self.any_belts[source_idx] = AnyBelt::Sushi(sushi_index);
+
+                        self.add_belt_belt_inserter(from, to, info)
+                    },
+                    (_, AnyBelt::Empty(empty_index)) => {
+                        let sushi_index = self.inner.instantiate_empty_into_sushi(*empty_index);
+                        self.any_belts[dest_idx] = AnyBelt::Sushi(sushi_index);
+
+                        self.add_belt_belt_inserter(from, to, info)
+                    },
                 }
             },
         }
@@ -2846,6 +3136,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         },
                     }
                 },
+                AnyBelt::Empty(_) => unimplemented!("Empty belt cannot have inserters"),
             },
         };
     }
@@ -2855,6 +3146,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             BeltTileId::AnyBelt(index, _) => match &self.any_belts[index] {
                 AnyBelt::Smart(smart_belt) => Some(smart_belt.item),
                 AnyBelt::Sushi(_) => None,
+                AnyBelt::Empty(_) => None,
             },
         }
     }
@@ -2863,17 +3155,24 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         &self,
         id: BeltTileId<ItemIdxType>,
     ) -> Either<
-        impl Iterator<Item = Option<Item<ItemIdxType>>>,
+        Either<
+            impl Iterator<Item = Option<Item<ItemIdxType>>>,
+            impl Iterator<Item = Option<Item<ItemIdxType>>>,
+        >,
         impl Iterator<Item = Option<Item<ItemIdxType>>>,
     > {
         match id {
             BeltTileId::AnyBelt(index, _) => match &self.any_belts[index] {
                 AnyBelt::Smart(smart_belt) => {
-                    Either::Left(self.inner.get_smart(*smart_belt).items())
+                    Either::Left(Either::Left(self.inner.get_smart(*smart_belt).items()))
                 },
                 AnyBelt::Sushi(sushi_belt) => {
-                    Either::Right(self.inner.get_sushi(*sushi_belt).items())
+                    Either::Left(Either::Right(self.inner.get_sushi(*sushi_belt).items()))
                 },
+                AnyBelt::Empty(idx) => Either::Right(std::iter::repeat_n(
+                    None,
+                    <EmptyBelt as Belt<ItemIdxType>>::get_len(&self.inner.get_empty(*idx)) as usize,
+                )),
             },
         }
     }
@@ -2887,6 +3186,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             BeltTileId::AnyBelt(index, _) => match &self.any_belts[index] {
                 AnyBelt::Smart(smart_belt) => self.inner.get_smart(*smart_belt).last_moving_spot,
                 AnyBelt::Sushi(sushi_belt) => self.inner.get_sushi(*sushi_belt).last_moving_spot,
+                AnyBelt::Empty(_) => 0,
             },
         }
     }
@@ -2898,6 +3198,9 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             },
             AnyBelt::Sushi(index) => {
                 self.inner.remove_sushi_belt(index);
+            },
+            AnyBelt::Empty(idx) => {
+                self.inner.remove_empty_belt(idx);
             },
         }
 
@@ -2952,6 +3255,9 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     },
                     AnyBelt::Sushi(idx) => {
                         let _kept_id = self.inner.merge_sushi_belts(idx, idx);
+                    },
+                    AnyBelt::Empty(idx) => {
+                        let _kept_id = self.inner.merge_empty_belts(idx, idx);
                     },
                 },
             }
@@ -3066,6 +3372,30 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
 
                         (kept_tile_id, self.get_len(kept_tile_id))
                     },
+
+                    [AnyBelt::Empty(front_idx), AnyBelt::Empty(back_idx)] => {
+                        let front_idx = *front_idx;
+
+                        let kept_id = self.inner.merge_empty_belts(front_idx, *back_idx);
+
+                        let front_len = self.inner.get_empty(front_idx).len;
+
+                        let kept_tile_id = if kept_id == front_idx {
+                            self.any_belts[back] = AnyBelt::Sushi(usize::MAX);
+                            self.any_belt_holes.push(back);
+                            front_tile_id
+                        } else {
+                            self.any_belts[front] = AnyBelt::Sushi(usize::MAX);
+                            self.any_belt_holes.push(front);
+                            back_tile_id
+                        };
+
+                        self.merge_and_fix(front_tile_id, back_tile_id, kept_tile_id, front_len);
+
+                        (kept_tile_id, self.get_len(kept_tile_id))
+                    },
+
+                    [_, _] => todo!("This merge combination is not done yet"),
                 }
             },
         };
@@ -3242,16 +3572,10 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
 
         let new_splitter_connections = [
             info.input_belts.map(|any| match any {
-                BeltTileId::AnyBelt(idx, _) => match self.any_belts[idx] {
-                    AnyBelt::Smart(belt_id) => AnyBelt::Smart(belt_id),
-                    AnyBelt::Sushi(index) => AnyBelt::Sushi(index),
-                },
+                BeltTileId::AnyBelt(idx, _) => self.any_belts[idx],
             }),
             info.output_belts.map(|any| match any {
-                BeltTileId::AnyBelt(idx, _) => match self.any_belts[idx] {
-                    AnyBelt::Smart(belt_id) => AnyBelt::Smart(belt_id),
-                    AnyBelt::Sushi(index) => AnyBelt::Sushi(index),
-                },
+                BeltTileId::AnyBelt(idx, _) => self.any_belts[idx],
             }),
         ];
 
@@ -3302,6 +3626,14 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                             side,
                         )
                     },
+                    AnyBelt::Empty(empty_index) => {
+                        self.inner.get_empty_mut(empty_index).add_output_splitter(
+                            SplitterID {
+                                index: index.try_into().unwrap(),
+                            },
+                            side,
+                        )
+                    },
                 },
             }
         }
@@ -3328,6 +3660,14 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                             side,
                         )
                     },
+                    AnyBelt::Empty(empty_index) => {
+                        self.inner.get_empty_mut(empty_index).add_input_splitter(
+                            SplitterID {
+                                index: index.try_into().unwrap(),
+                            },
+                            side,
+                        )
+                    },
                 },
             }
         }
@@ -3346,6 +3686,9 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             BeltTileId::AnyBelt(index, _) => match self.any_belts[index] {
                 AnyBelt::Smart(belt_id) => self.inner.get_smart(belt_id).get_len(),
                 AnyBelt::Sushi(index) => self.inner.get_sushi(index).get_len(),
+                AnyBelt::Empty(index) => {
+                    <EmptyBelt as belt::Belt<ItemIdxType>>::get_len(self.inner.get_empty(index))
+                },
             },
         }
     }
@@ -3401,8 +3744,9 @@ impl<ItemIdxType: IdxTrait> MultiBeltStore<ItemIdxType> {
 }
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 enum AnyBelt<ItemIdxType: WeakIdxTrait> {
     Smart(BeltId<ItemIdxType>),
     Sushi(usize),
+    Empty(usize),
 }

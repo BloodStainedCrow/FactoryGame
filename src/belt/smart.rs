@@ -66,6 +66,10 @@ pub struct EmptyBelt {
     ty: u8,
 
     is_circular: bool,
+
+    pub(super) input_splitter: Option<(SplitterID, SplitterSide)>,
+    pub(super) output_splitter: Option<(SplitterID, SplitterSide)>,
+
     pub len: u16,
 }
 
@@ -1177,6 +1181,9 @@ impl EmptyBelt {
         Self {
             ty,
 
+            input_splitter: None,
+            output_splitter: None,
+
             is_circular: false,
             len,
         }
@@ -1190,8 +1197,14 @@ impl EmptyBelt {
 
         assert_eq!(front.ty, back.ty);
 
+        assert!(back.output_splitter.is_none());
+        assert!(front.input_splitter.is_none());
+
         Self {
             ty: front.ty,
+
+            output_splitter: front.output_splitter,
+            input_splitter: back.input_splitter,
 
             is_circular: false,
             len: front.len + back.len,
@@ -1202,7 +1215,38 @@ impl EmptyBelt {
         self,
         item: Item<ItemIdxType>,
     ) -> SmartBelt<ItemIdxType> {
-        SmartBelt::new(self.ty, self.len.into(), item)
+        assert!(self.len > 0);
+        SmartBelt {
+            ty: self.ty,
+            is_circular: self.is_circular,
+            first_free_index: FreeIndex::FreeIndex(0),
+            zero_index: 0,
+            locs: bitbox![0; self.len as usize].into(),
+            inserters: InserterStoreDyn {
+                inserters: vec![].into_boxed_slice(),
+            },
+            item,
+            last_moving_spot: 0,
+            input_splitter: self.input_splitter,
+            output_splitter: self.output_splitter,
+        }
+    }
+
+    pub fn into_sushi_belt<ItemIdxType: IdxTrait>(self) -> SushiBelt<ItemIdxType> {
+        assert!(self.len > 0);
+        SushiBelt {
+            ty: self.ty,
+            is_circular: self.is_circular,
+            first_free_index: FreeIndex::FreeIndex(0),
+            zero_index: 0,
+            locs: vec![None; self.len as usize].into_boxed_slice(),
+            inserters: SushiInserterStoreDyn {
+                inserters: vec![].into_boxed_slice(),
+            },
+            last_moving_spot: 0,
+            input_splitter: self.input_splitter,
+            output_splitter: self.output_splitter,
+        }
     }
 
     pub fn add_length(&mut self, amount: u16, _side: Side) -> u16 {
@@ -1210,23 +1254,116 @@ impl EmptyBelt {
         self.len
     }
 
-    pub fn break_belt_at(&mut self, pos_to_break_at: u16) -> Self {
+    pub fn break_belt_at(&mut self, pos_to_break_at: u16) -> Option<Self> {
         if self.is_circular {
-            todo!("Handle breaking circular belts")
+            self.is_circular = false;
+            return None;
         }
+
+        if pos_to_break_at == 0 || pos_to_break_at == self.len {
+            return None;
+        }
+
+        let input_splitter = self.input_splitter.take();
 
         let old_len = self.len;
         self.len = pos_to_break_at;
-        Self {
+
+        // This is the back belt
+        Some(Self {
             ty: self.ty,
 
             is_circular: false,
             len: old_len - pos_to_break_at,
-        }
+
+            input_splitter,
+            output_splitter: None,
+        })
     }
 
     pub fn make_circular(&mut self) {
+        self.is_circular = true;
+    }
+
+    pub fn add_input_splitter(&mut self, id: SplitterID, side: SplitterSide) {
+        assert!(
+            self.input_splitter.is_none(),
+            "Tried to add splitter where one already existed"
+        );
+        assert!(
+            !self.is_circular,
+            "A circular belt can never be attached to a splitter!"
+        );
+
+        self.input_splitter = Some((id, side));
+    }
+
+    pub fn add_output_splitter(&mut self, id: SplitterID, side: SplitterSide) {
+        assert!(
+            self.output_splitter.is_none(),
+            "Tried to add splitter where one already existed"
+        );
+        assert!(
+            !self.is_circular,
+            "A circular belt can never be attached to a splitter!"
+        );
+
+        self.output_splitter = Some((id, side));
+    }
+
+    pub fn remove_input_splitter(&mut self) -> Option<(SplitterID, SplitterSide)> {
+        self.input_splitter.take()
+    }
+
+    pub fn remove_output_splitter(&mut self) -> Option<(SplitterID, SplitterSide)> {
+        self.output_splitter.take()
+    }
+}
+
+impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for EmptyBelt {
+    fn query_item(&self, pos: BeltLenType) -> Option<Item<ItemIdxType>> {
+        None
+    }
+
+    fn remove_item(&mut self, pos: BeltLenType) -> Option<Item<ItemIdxType>> {
+        None
+    }
+
+    fn try_insert_item(
+        &mut self,
+        pos: BeltLenType,
+        item: Item<ItemIdxType>,
+    ) -> Result<(), NoSpaceError> {
+        unimplemented!()
+    }
+
+    fn items(&self) -> impl Iterator<Item = Option<Item<ItemIdxType>>> {
+        std::iter::repeat_n(None, self.len as usize)
+    }
+
+    fn get_len(&self) -> BeltLenType {
+        self.len
+    }
+
+    fn add_length(&mut self, amount: BeltLenType, side: Side) -> BeltLenType {
         todo!()
+    }
+
+    fn remove_length(
+        &mut self,
+        amount: BeltLenType,
+        side: Side,
+    ) -> (Vec<(Item<ItemIdxType>, u32)>, BeltLenType) {
+        todo!()
+    }
+
+    fn update(&mut self, splitter_list: &[SushiSplitter<ItemIdxType>]) {
+        // TODO: Do i want to stop this from being called or just do nothing
+        unimplemented!()
+    }
+
+    fn item_hint(&self) -> Option<Vec<Item<ItemIdxType>>> {
+        None
     }
 }
 
