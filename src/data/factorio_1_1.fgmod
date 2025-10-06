@@ -2393,7 +2393,7 @@
                     amount: 1,
                 ),
             ],
-            num_units: 500_000_000,
+            num_units: 50,
             precursors: [
                 "factory_game::automation_science_pack"
             ],
