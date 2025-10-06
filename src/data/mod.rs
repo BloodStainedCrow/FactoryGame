@@ -528,6 +528,25 @@ pub struct Technology<RecipeIdxType: WeakIdxTrait> {
     pub base_cost: (u64, Box<[ITEMCOUNTTYPE]>),
 
     pub effect: TechnologyEffect<RecipeIdxType>,
+
+    pub repeatable: Option<RepeatableTechnologyInfo>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
+pub struct RepeatableTechnologyInfo {
+    pub scaling: RepeatableCostScaling,
+    pub level_counter_offset: u32,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
+pub enum RepeatableCostScaling {
+    Linear {
+        unit_increase_per_level: u64,
+    },
+    Exponential {
+        unit_multiplier_per_level_nom: u64,
+        unit_multiplier_per_level_denom: u64,
+    },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
@@ -1190,6 +1209,23 @@ impl RawDataStore {
                         })
                         .collect(),
                 },
+                repeatable: raw_tech.infinite.as_ref().map(|infinite_info| {
+                    RepeatableTechnologyInfo {
+                        scaling: match infinite_info.scaling {
+                            InfiniteCostScaling::Linear { units_per_level } => {
+                                RepeatableCostScaling::Linear {
+                                    unit_increase_per_level: units_per_level,
+                                }
+                            },
+                            InfiniteCostScaling::Quadradic { units_per_level } => todo!(),
+                            InfiniteCostScaling::Exponential {
+                                units_per_level,
+                                exponential_base,
+                            } => todo!(),
+                        },
+                        level_counter_offset: infinite_info.display_level_offset,
+                    }
+                }),
             });
 
             if raw_tech.pre_unlocked {

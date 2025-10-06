@@ -3306,6 +3306,53 @@
                 RecipeUnlock("factory_game::white_science"),
             ],
         ),
+        (
+            name: "factory_game::repeatable_mining_prod",
+            display_name: "Mining Productivity",
+            cost_of_single_research_unit: [
+                (
+                    item: "factory_game::red_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::green_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::blue_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::purple_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::yellow_science",
+                    amount: 1,
+                ),
+                (
+                    item: "factory_game::white_science",
+                    amount: 1,
+                ),
+            ],
+            num_units: 2500,
+            precursors: [
+                "factory_game::white_science",
+                // "factory_game::mining_productivity_3",
+            ],
+
+            pre_unlocked: false,
+
+            infinite: Some(
+                (
+                    scaling: Linear(
+                        units_per_level: 2500
+                    ),
+                    display_level_offset: 4,
+                )
+            ),
+            effects: [],
+        ),
     ],
     solar_panels: [
         (

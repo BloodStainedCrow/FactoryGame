@@ -45,7 +45,8 @@ pub type ResearchProgress = u16;
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 pub struct TechState {
     pub current_technology: Option<Technology>,
-    pub finished_technologies: HashSet<Technology>,
+    // Map from technologies to how many times they were completed
+    pub finished_technologies: HashMap<Technology, u32>,
     pub in_progress_technologies: HashMap<Technology, u64>,
     // current_tech_mod_lookup: (),
     pub recipe_active: Vec<bool>,
@@ -57,19 +58,24 @@ impl TechState {
     pub fn new<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        let finished_technologies = HashSet::from_iter(
+        let finished_technologies = HashMap::from_iter(
             data_store
                 .instantly_finished_technologies
                 .iter()
-                .map(|index| Technology {
-                    id: index.index().try_into().unwrap(),
+                .map(|index| {
+                    (
+                        Technology {
+                            id: index.index().try_into().unwrap(),
+                        },
+                        1,
+                    )
                 }),
         );
 
         let recipe_active = (0..data_store.recipe_is_intermediate.len())
             .map(|recipe_id| recipe_id.try_into().unwrap())
             .map(|recipe_id| {
-                finished_technologies.iter().any(|tech| {
+                finished_technologies.iter().any(|(tech, _)| {
                     data_store
                         .technology_tree
                         .node_weight(NodeIndex::from(tech.id))
@@ -108,14 +114,45 @@ impl TechState {
         }
 
         if let Some(current) = &self.current_technology {
-            let tech_cost = &data_store.technology_costs[current.id as usize];
+            let (tech_cost_units, tech_cost_items) =
+                &data_store.technology_costs[current.id as usize];
+            let mut tech_cost_units = *tech_cost_units;
+
+            let is_repeating = if let Some(infinite) = &data_store
+                .technology_tree
+                .node_weight(NodeIndex::new(current.id as usize))
+                .unwrap()
+                .repeatable
+            {
+                let times_this_tech_was_finished = self
+                    .finished_technologies
+                    .get(current)
+                    .copied()
+                    .unwrap_or(0);
+
+                let tech_cost_increase = match infinite.scaling {
+                    data::RepeatableCostScaling::Linear {
+                        unit_increase_per_level,
+                    } => unit_increase_per_level * u64::from(times_this_tech_was_finished),
+                    data::RepeatableCostScaling::Exponential {
+                        unit_multiplier_per_level_nom,
+                        unit_multiplier_per_level_denom,
+                    } => todo!(),
+                };
+
+                tech_cost_units += tech_cost_increase;
+
+                true
+            } else {
+                false
+            };
 
             // Apply science from overflow if possible
             let mut tech_progress_from_overflow = u16::MAX;
             for (overflow_buffer, unit_cost) in self
                 .science_overflow_buffer
                 .iter_mut()
-                .zip(tech_cost.1.iter())
+                .zip(tech_cost_items.iter())
             {
                 if *unit_cost > 0 {
                     tech_progress_from_overflow = min(
@@ -135,7 +172,7 @@ impl TechState {
             for (overflow_buffer, unit_cost) in self
                 .science_overflow_buffer
                 .iter_mut()
-                .zip(tech_cost.1.iter())
+                .zip(tech_cost_items.iter())
             {
                 *overflow_buffer = overflow_buffer
                     .checked_sub(u32::from(*unit_cost) * u32::from(tech_progress_from_overflow))
@@ -149,10 +186,11 @@ impl TechState {
 
             *progress += u64::from(tech_progress);
 
-            if *progress >= tech_cost.0 {
+            if *progress >= tech_cost_units {
                 // We finished this technology!
                 let final_science_used = self.in_progress_technologies.remove(&current).unwrap();
-                self.finished_technologies.insert(*current);
+                // We have now finished this technology one more time
+                *self.finished_technologies.entry(*current).or_default() += 1;
                 for recipe in &data_store
                     .technology_tree
                     .node_weight(NodeIndex::from(current.id))
@@ -162,24 +200,26 @@ impl TechState {
                 {
                     self.recipe_active[recipe.into_usize()] = true;
                 }
-                self.current_technology = None;
+                if is_repeating {
+                    // Just keep researching the same tech (just one level higher)
+                } else {
+                    self.current_technology = None;
+                }
 
                 // Since we only check if a tech is finished at the end of each update, it is possible we produced more science progress in this tick, than was required.
                 // To not lose this science (which would mean players sometimes are unable to finish a technology even if they supplied enough science packs),
                 // We just store the overflow science and apply it if possible
-                let overshoot = final_science_used - tech_cost.0;
+                let overshoot = final_science_used - tech_cost_units;
 
                 for (overflow_buffer, unit_cost) in self
                     .science_overflow_buffer
                     .iter_mut()
-                    .zip(tech_cost.1.iter())
+                    .zip(tech_cost_items.iter())
                 {
                     *overflow_buffer = (*overflow_buffer).checked_add(u32::try_from(overshoot * u64::from(*unit_cost))
                         .expect("impossible since the most science unit produced this tick are u16::MAX (see funciton args)"))
                             .expect("Science Overflow buffer overflowed (Ironic).");
                 }
-
-                dbg!(&self.science_overflow_buffer);
             }
         } else {
             assert_eq!(
@@ -198,17 +238,32 @@ impl TechState {
         egui_graphs::to_graph_custom::<_, _, _, _, DefaultNodeShape, DefaultEdgeShape>(
             &data_store.technology_tree,
             |node| {
-                if self.finished_technologies.contains(&Technology {
-                    id: node.id().index().try_into().unwrap(),
-                }) {
+                let is_repeatable = node.payload().repeatable.clone();
+                let is_done = if is_repeatable.is_some() {
+                    false
+                } else {
+                    self.finished_technologies
+                        .get(&Technology {
+                            id: node.id().index().try_into().unwrap(),
+                        })
+                        .copied()
+                        .unwrap_or(0)
+                        > 0
+                };
+
+                if is_done {
                     node.set_color(Color32::GREEN);
                 } else if data_store
                     .technology_tree
                     .edges_directed(node.id(), petgraph::Direction::Incoming)
                     .all(|edge| {
-                        self.finished_technologies.contains(&Technology {
-                            id: edge.source().index().try_into().unwrap(),
-                        })
+                        self.finished_technologies
+                            .get(&Technology {
+                                id: edge.source().index().try_into().unwrap(),
+                            })
+                            .copied()
+                            .unwrap_or(0)
+                            > 0
                     })
                 {
                     node.set_color(Color32::YELLOW);
@@ -216,14 +271,34 @@ impl TechState {
                     node.set_color(Color32::RED);
                 }
 
-                node.set_label(
-                    data_store
-                        .technology_tree
-                        .node_weight(NodeIndex::from(u16::try_from(node.id().index()).unwrap()))
-                        .unwrap()
-                        .name
-                        .clone(),
-                );
+                if let Some(repeat) = is_repeatable {
+                    let times_completed = self
+                        .finished_technologies
+                        .get(&Technology {
+                            id: node.id().index().try_into().unwrap(),
+                        })
+                        .copied()
+                        .unwrap_or(0);
+
+                    node.set_label(format!(
+                        "{} {}",
+                        &data_store
+                            .technology_tree
+                            .node_weight(NodeIndex::from(u16::try_from(node.id().index()).unwrap()))
+                            .unwrap()
+                            .name,
+                        times_completed + repeat.level_counter_offset
+                    ));
+                } else {
+                    node.set_label(
+                        data_store
+                            .technology_tree
+                            .node_weight(NodeIndex::from(u16::try_from(node.id().index()).unwrap()))
+                            .unwrap()
+                            .name
+                            .clone(),
+                    );
+                }
             },
             |_edge| {},
         )
@@ -249,17 +324,53 @@ impl TechState {
             for tech in 0..data_store.technology_costs.len() {
                 let node = render_graph.node_mut(NodeIndex::new(tech)).unwrap();
 
-                if self.finished_technologies.contains(&Technology {
-                    id: node.id().index().try_into().unwrap(),
-                }) {
+                let is_repeating = node.payload().repeatable.clone();
+
+                let is_done = if is_repeating.is_some() {
+                    false
+                } else {
+                    self.finished_technologies
+                        .get(&Technology {
+                            id: node.id().index().try_into().unwrap(),
+                        })
+                        .copied()
+                        .unwrap_or(0)
+                        > 0
+                };
+
+                if let Some(repeat) = is_repeating {
+                    let times_completed = self
+                        .finished_technologies
+                        .get(&Technology {
+                            id: node.id().index().try_into().unwrap(),
+                        })
+                        .copied()
+                        .unwrap_or(0);
+
+                    node.set_label(format!(
+                        "{} {}",
+                        &data_store
+                            .technology_tree
+                            .node_weight(NodeIndex::from(u16::try_from(node.id().index()).unwrap()))
+                            .unwrap()
+                            .name,
+                        times_completed + repeat.level_counter_offset
+                    ));
+                }
+
+                if is_done {
                     node.set_color(Color32::GREEN);
                 } else if data_store
                     .technology_tree
                     .edges_directed(node.id(), petgraph::Direction::Incoming)
                     .all(|edge| {
-                        self.finished_technologies.contains(&Technology {
-                            id: edge.source().index().try_into().unwrap(),
-                        })
+                        self.finished_technologies
+                            .get(&Technology {
+                                id: edge.source().index().try_into().unwrap(),
+                            })
+                            .copied()
+                            .unwrap_or(0)
+                            > 0
                     })
                 {
                     node.set_color(Color32::YELLOW);
@@ -288,11 +399,35 @@ impl TechState {
                         .get(tech)
                         .copied()
                         .unwrap_or(0);
-                    let cost = data_store.technology_costs[tech.id as usize].0;
+                    let (tech_cost_units, tech_cost_items) =
+                        &data_store.technology_costs[tech.id as usize];
+                    let mut tech_cost_units = *tech_cost_units;
+
+                    if let Some(infinite) = &data_store
+                        .technology_tree
+                        .node_weight(NodeIndex::new(tech.id as usize))
+                        .unwrap()
+                        .repeatable
+                    {
+                        let times_this_tech_was_finished =
+                            self.finished_technologies.get(tech).copied().unwrap_or(0);
+
+                        let tech_cost_increase = match infinite.scaling {
+                            data::RepeatableCostScaling::Linear {
+                                unit_increase_per_level,
+                            } => unit_increase_per_level * u64::from(times_this_tech_was_finished),
+                            data::RepeatableCostScaling::Exponential {
+                                unit_multiplier_per_level_nom,
+                                unit_multiplier_per_level_denom,
+                            } => todo!(),
+                        };
+
+                        tech_cost_units += tech_cost_increase;
+                    }
                     ui.add(
-                        ProgressBar::new((done as f64 / cost as f64) as f32)
+                        ProgressBar::new((done as f64 / tech_cost_units as f64) as f32)
                             .corner_radius(CornerRadius::ZERO)
-                            .text(format!("{}/{}", done, cost)),
+                            .text(format!("{}/{}", done, tech_cost_units)),
                     );
 
                     if ui.button("Cancel").clicked() {
@@ -332,17 +467,35 @@ impl TechState {
                             .name,
                     );
 
-                    let already_researched = self.finished_technologies.contains(&Technology {
-                        id: selected_node.index().try_into().unwrap(),
-                    });
+                    let is_done = if data_store
+                        .technology_tree
+                        .node_weight(*selected_node)
+                        .unwrap()
+                        .repeatable
+                        .is_some()
+                    {
+                        false
+                    } else {
+                        self.finished_technologies
+                            .get(&Technology {
+                                id: selected_node.index().try_into().unwrap(),
+                            })
+                            .copied()
+                            .unwrap_or(0)
+                            > 0
+                    };
 
                     let possible_to_research = data_store
                         .technology_tree
                         .edges_directed(*selected_node, petgraph::Direction::Incoming)
                         .all(|edge| {
-                            self.finished_technologies.contains(&Technology {
-                                id: edge.source().index().try_into().unwrap(),
-                            })
+                            self.finished_technologies
+                                .get(&Technology {
+                                    id: edge.source().index().try_into().unwrap(),
+                                })
+                                .copied()
+                                .unwrap_or(0)
+                                > 0
                         });
 
                     let is_currently_researching = Some(Technology {
@@ -351,9 +504,7 @@ impl TechState {
 
                     if ui
                         .add_enabled(
-                            !already_researched
-                                && !is_currently_researching
-                                && possible_to_research,
+                            !is_done && !is_currently_researching && possible_to_research,
                             Button::new("Research"),
                         )
                         .clicked()
@@ -365,7 +516,7 @@ impl TechState {
                         });
                     }
 
-                    if already_researched {
+                    if is_done {
                         if ui.button("[CHEAT] Undo Technology").clicked() {
                             ret.push(ActionType::CheatRelockTechnology {
                                 tech: Technology {

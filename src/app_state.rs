@@ -1139,11 +1139,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         .tech_state
                         .in_progress_technologies
                         .remove(&tech);
-                    game_state
+                    *game_state
                         .simulation_state
                         .tech_state
                         .finished_technologies
-                        .insert(tech);
+                        .entry(tech)
+                        .or_default() += 1;
                     for recipe in &data_store
                         .technology_tree
                         .node_weight(NodeIndex::from(tech.id))
@@ -1171,7 +1172,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         .tech_state
                         .finished_technologies
                         .iter()
-                        .flat_map(|tech| {
+                        .flat_map(|(tech, _)| {
                             data_store
                                 .technology_tree
                                 .node_weight(NodeIndex::from(tech.id))
