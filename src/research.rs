@@ -155,9 +155,18 @@ impl TechState {
                 .zip(tech_cost_items.iter())
             {
                 if *unit_cost > 0 {
+                    let units_in_overflow_buffer_from_this_science = u16::try_from(
+                        *overflow_buffer / u32::from(*unit_cost),
+                    )
+                    .unwrap_or_else(|_| {
+                        assert!(*overflow_buffer > u16::MAX as u32 * u32::from(*unit_cost));
+
+                        u16::MAX
+                    });
+
                     tech_progress_from_overflow = min(
                         tech_progress_from_overflow,
-                        u16::try_from(*overflow_buffer / u32::from(*unit_cost)).unwrap(),
+                        units_in_overflow_buffer_from_this_science,
                     );
                 }
             }
@@ -386,13 +395,35 @@ impl TechState {
             ui,
             |ui| {
                 if let Some(tech) = &self.current_technology {
-                    ui.label(
-                        &data_store
-                            .technology_tree
-                            .node_weight(NodeIndex::from(tech.id))
-                            .unwrap()
-                            .name,
-                    );
+                    let is_repeating = data_store
+                        .technology_tree
+                        .node_weight(NodeIndex::new(tech.id.into()))
+                        .unwrap()
+                        .repeatable
+                        .clone();
+
+                    if let Some(repeat) = is_repeating {
+                        let times_completed =
+                            self.finished_technologies.get(tech).copied().unwrap_or(0);
+
+                        ui.label(&format!(
+                            "{} {}",
+                            &data_store
+                                .technology_tree
+                                .node_weight(NodeIndex::from(tech.id))
+                                .unwrap()
+                                .name,
+                            times_completed + repeat.level_counter_offset
+                        ));
+                    } else {
+                        ui.label(
+                            &data_store
+                                .technology_tree
+                                .node_weight(NodeIndex::from(tech.id))
+                                .unwrap()
+                                .name,
+                        );
+                    }
 
                     let done = self
                         .in_progress_technologies
