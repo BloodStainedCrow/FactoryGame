@@ -47,7 +47,7 @@ use crate::{
         splitter::{SPLITTER_BELT_LEN, SplitterDistributionMode, SplitterSide},
     },
     data::{AllowedFluidDirection, DataStore, ItemRecipeDir},
-    inserter::{StaticID, Storage, storage_storage_with_buckets::InserterIdentifier},
+    inserter::{StaticID, Storage, storage_storage_with_buckets_indirect::InserterIdentifier},
     item::{IdxTrait, Item, Recipe, WeakIdxTrait, usize_from},
     liquid::{
         CannotMixFluidsError, FluidConnectionDir,
@@ -129,6 +129,7 @@ fn is_default<T: Default + PartialEq>(val: &T) -> bool {
 pub struct PlayerInfo {
     pub pos: (f32, f32),
     pub visible: bool,
+    /// Number of tiles per tick
     pub movement_speed: f32,
 
     inventory: (),
@@ -139,7 +140,8 @@ impl Default for PlayerInfo {
         Self {
             pos: (100.0 * CHUNK_SIZE_FLOAT, 100.0 * CHUNK_SIZE_FLOAT),
             visible: false,
-            movement_speed: 10.0 / (TICKS_PER_SECOND_LOGIC as f32),
+            // Default to 25 tiles per second (which is 6 exoskeletons)
+            movement_speed: 25.0 / (TICKS_PER_SECOND_LOGIC as f32),
             inventory: Default::default(),
         }
     }

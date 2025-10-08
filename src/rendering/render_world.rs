@@ -1,12 +1,12 @@
 use crate::belt::belt::Belt;
-use crate::belt::smart::SmartBelt;
+use crate::belt::smart::{SmartBelt, HAND_SIZE};
 use crate::chest::ChestSize;
 use crate::frontend::action::belt_placement::{BeltState, expected_belt_state};
 use crate::frontend::world::tile::World;
 use crate::get_size::RAMExtractor;
 use crate::get_size::RamUsage;
 use crate::inserter::storage_storage_with_buckets::InserterIdentifier;
-use crate::item::Indexable;
+use crate::item::{Indexable, ITEMCOUNTTYPE};
 use crate::lab::{LabViewInfo, TICKS_PER_SCIENCE};
 use crate::liquid::FluidSystemState;
 use crate::rendering::Corner;
@@ -71,6 +71,8 @@ use crate::app_state::{AuxillaryData, SimulationState};
 
 const BELT_ANIM_SPEED: f32 = 1.0 / (BELT_LEN_PER_TILE as f32);
 
+const ITEM_RENDER_SIZE: f32 = 1.0 / (BELT_LEN_PER_TILE as f32);
+
 const ALT_MODE_ICON_SIZE: f32 = 0.5;
 
 pub const SWITCH_TO_MAPVIEW_TILES: f32 = if cfg!(debug_assertions) {
@@ -92,6 +94,7 @@ struct Layers {
     item_layer: Layer,
     warning_layer: Layer,
     range_layer: Layer,
+    inserter_item_layer: Layer,
 }
 
 impl Layers {
@@ -103,6 +106,7 @@ impl Layers {
             item_layer,
             warning_layer,
             range_layer,
+            inserter_item_layer
         } = self;
         let Self {
             tile_layer: other_tile_layer,
@@ -111,6 +115,7 @@ impl Layers {
             item_layer: other_item_layer,
             warning_layer: other_warning_layer,
             range_layer: other_range_layer,
+            inserter_item_layer: other_inserter_item_layer
         } = other;
         tile_layer.extend(other_tile_layer);
         entity_layer.extend(other_entity_layer);
@@ -118,6 +123,7 @@ impl Layers {
         item_layer.extend(other_item_layer);
         warning_layer.extend(other_warning_layer);
         range_layer.extend(other_range_layer);
+        inserter_item_layer.extend(other_inserter_item_layer);
     }
 }
 
@@ -129,6 +135,7 @@ fn layers_tile_grid(tilesize: f32, ar: f32) -> Layers {
         item_layer: Layer::square_tile_grid(tilesize, ar),
         warning_layer: Layer::square_tile_grid(tilesize, ar),
         range_layer: Layer::square_tile_grid(tilesize, ar),
+        inserter_item_layer: Layer::square_tile_grid(tilesize, ar),
     }
 }
 
@@ -168,7 +175,6 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let mut entity_overlay_layer = Layer::square_tile_grid(tilesize, ar);
     let mut player_layer = Layer::square_tile_grid(tilesize, ar);
 
-    let mut inserter_item_layer = Layer::square_tile_grid(tilesize, ar);
     let mut storage_storage_inserter_render_list: HashMap<
         (Item<ItemIdxType>, u16),
         Vec<([f32; 2], u8, InserterIdentifier)>,
@@ -281,7 +287,14 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let y_range = -((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
         ..=((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32);
 
-    let pos_iter = x_range.flat_map(|x| y_range.clone().map(move |y| (x, y)));
+    let pos_iter = x_range.into_par_iter().flat_map(|x| y_range.clone().into_par_iter().map(move |y| (x, y)));
+
+    let draw_offset = (
+        - camera_pos.0 + (0.5 * num_tiles_across_screen_horizontal),
+        - camera_pos.1 +  (0.5 * num_tiles_across_screen_vertical)
+    );
+
+    let current_tick = aux_data.current_tick as u32;
 
     let folded_layers = {
         profiling::scope!("Render Chunks");
@@ -308,7 +321,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 ((chunk_x, chunk_y), chunk_draw_offs)
             })
             .fold(
-                layers_tile_grid(tilesize, ar),
+                || layers_tile_grid(tilesize, ar),
                 |mut layers: Layers, ((chunk_x, chunk_y), chunk_draw_offs)| {
                     let Layers {
                         tile_layer,
@@ -317,6 +330,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         item_layer,
                         warning_layer,
                         range_layer,
+                        inserter_item_layer
                     } = &mut layers;
 
                     profiling::scope!("Rendering Chunk", format!("{:?}", (chunk_x, chunk_y)));
@@ -405,8 +419,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                     texture_atlas.not_connected.draw_centered_on(
                                                         &texture_atlas.assembler[*ty as usize],
                                                         [
-                                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                            draw_offset.0 + pos.x as f32,
+                                                            draw_offset.1 + pos.y as f32,
                                                         ],
                                                         size,
                                                         0,
@@ -415,8 +429,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                                                     texture_atlas.assembler[*ty as usize].draw(
                                                         [
-                                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                            draw_offset.0 + pos.x as f32,
+                                                            draw_offset.1 + pos.y as f32,
                                                         ],
                                                         size,
                                                         0,
@@ -427,8 +441,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                     texture_atlas.not_connected.draw_centered_on(
                                                         &texture_atlas.assembler[*ty as usize],
                                                         [
-                                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                            draw_offset.0 + pos.x as f32,
+                                                            draw_offset.1 + pos.y as f32,
                                                         ],
                                                         size,
                                                         0,
@@ -437,8 +451,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                                                     texture_atlas.assembler[*ty as usize].draw(
                                                         [
-                                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                            draw_offset.0 + pos.x as f32,
+                                                            draw_offset.1 + pos.y as f32,
                                                         ],
                                                         size,
                                                         0,
@@ -461,13 +475,13 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                         &texture_atlas.items[item_idx],
                                                         DrawInstance {
                                                             position: [
-                                                                chunk_draw_offs.0
-                                                                    + (pos.x % 16) as f32
+                                                               draw_offset.0
+                                                                    + pos.x as f32
                                                                     + (size[0] as f32
                                                                         - icon_size[0])
                                                                         / 2.0,
-                                                                chunk_draw_offs.1
-                                                                    + (pos.y % 16) as f32
+                                                               draw_offset.1
+                                                                    + pos.y as f32
                                                                     + (size[1] as f32
                                                                         - icon_size[1])
                                                                         / 2.0,
@@ -495,10 +509,10 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                         texture_atlas.no_power.draw_centered_on(
                                                             &texture_atlas.assembler[*ty as usize],
                                                             [
-                                                                chunk_draw_offs.0
-                                                                    + (pos.x % 16) as f32,
-                                                                chunk_draw_offs.1
-                                                                    + (pos.y % 16) as f32,
+                                                               draw_offset.0
+                                                                    + pos.x as f32,
+                                                               draw_offset.1
+                                                                    + pos.y as f32,
                                                             ],
                                                             size,
                                                             0,
@@ -508,8 +522,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                                                     texture_atlas.assembler[*ty as usize].draw(
                                                         [
-                                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                            draw_offset.0 + pos.x as f32,
+                                                            draw_offset.1 + pos.y as f32,
                                                         ],
                                                         size,
                                                         0,
@@ -538,10 +552,10 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                         texture_atlas.no_power.draw_centered_on(
                                                             &texture_atlas.assembler[*ty as usize],
                                                             [
-                                                                chunk_draw_offs.0
-                                                                    + (pos.x % 16) as f32,
-                                                                chunk_draw_offs.1
-                                                                    + (pos.y % 16) as f32,
+                                                               draw_offset.0
+                                                                    + pos.x as f32,
+                                                               draw_offset.1
+                                                                    + pos.y as f32,
                                                             ],
                                                             size,
                                                             0,
@@ -567,8 +581,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                                                     texture_atlas.assembler[*ty as usize].draw(
                                                         [
-                                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                            draw_offset.0 + pos.x as f32,
+                                                            draw_offset.1 + pos.y as f32,
                                                         ],
                                                         size,
                                                         (timer_percentage
@@ -602,13 +616,13 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                         &texture_atlas.items[item_idx],
                                                         DrawInstance {
                                                             position: [
-                                                                chunk_draw_offs.0
-                                                                    + (pos.x % 16) as f32
+                                                               draw_offset.0
+                                                                    + pos.x as f32
                                                                     + (size[0] as f32
                                                                         - icon_size[0])
                                                                         / 2.0,
-                                                                chunk_draw_offs.1
-                                                                    + (pos.y % 16) as f32
+                                                               draw_offset.1
+                                                                    + pos.y as f32
                                                                     + (size[1] as f32
                                                                         - icon_size[1])
                                                                         / 2.0,
@@ -666,8 +680,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 };
                                             sprite.draw(
                                                 [
-                                                    chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                    chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                    draw_offset.0 + pos.x as f32,
+                                                    draw_offset.1 + pos.y as f32,
                                                 ],
                                                 [1, 1],
                                                 (game_state
@@ -697,8 +711,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 if game_state.simulation_state.factory.belts.get_pure_item(*id).is_none() {
                                                     texture_atlas.no_power.draw(
                                                         [
-                                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                            draw_offset.0 + pos.x as f32,
+                                                            draw_offset.1 + pos.y as f32,
                                                         ],
                                                         [1, 1],
                                                         0,
@@ -731,9 +745,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             );
 
                                             let centered_on_tile = (
-                                                chunk_draw_offs.0 + (pos.x % 16) as f32 + 0.5
+                                               draw_offset.0 + pos.x as f32 + 0.5
                                                     - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
-                                                chunk_draw_offs.1 + (pos.y % 16) as f32 + 0.5
+                                                draw_offset.1 + pos.y as f32 + 0.5
                                                     - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
                                             );
 
@@ -813,8 +827,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         } => {
                                             texture_atlas.belt[*direction].draw(
                                                 [
-                                                    chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                    chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                    draw_offset.0 + pos.x as f32,
+                                                    draw_offset.1 + pos.y as f32,
                                                 ],
                                                 [1, 1],
                                                 (game_state
@@ -843,8 +857,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             texture_atlas.underground[*direction][*underground_dir]
                                                 .draw(
                                                     [
-                                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                        draw_offset.0 + pos.x as f32,
+                                                        draw_offset.1 + pos.y as f32,
                                                     ],
                                                     [1, 1],
                                                     0,
@@ -855,8 +869,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                     if game_state.simulation_state.factory.belts.get_pure_item(*id).is_none() {
                                                         texture_atlas.no_power.draw(
                                                             [
-                                                                chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                                chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                                draw_offset.0 + pos.x as f32,
+                                                                draw_offset.1 + pos.y as f32,
                                                             ],
                                                             [1, 1],
                                                             0,
@@ -888,9 +902,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             );
 
                                             let centered_on_tile = (
-                                                chunk_draw_offs.0 + (pos.x % 16) as f32 + 0.5
+                                                draw_offset.0 + pos.x as f32 + 0.5
                                                     - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
-                                                chunk_draw_offs.1 + (pos.y % 16) as f32 + 0.5
+                                                draw_offset.1 + pos.y as f32 + 0.5
                                                     - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
                                             );
 
@@ -973,8 +987,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 &texture_atlas.inserter[*direction],
                                                 DrawInstance {
                                                     position: [
-                                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                        draw_offset.0 + pos.x as f32,
+                                                        draw_offset.1 + pos.y as f32,
                                                     ],
                                                     size: [1.0, 1.0],
                                                     animation_frame: 0,
@@ -988,19 +1002,94 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         end_pos,
                                         info,
                                     } => {
+                                        let movetime: u16 = user_movetime.unwrap_or(*type_movetime).into();
                                         match info {
                                             crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => {
-                                                // TODO:
+                                                let hand_size = HAND_SIZE;
+                                                let state = game_state.simulation_state.factory.belts.get_inserter_info_at(*id, *belt_pos).unwrap();
+                                                let item =  game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos);
+
+                                                let (position, items): (f32, ITEMCOUNTTYPE) = match state.state {
+                                                    crate::inserter::InserterState::WaitingForSourceItems(count) => (0.0, count),
+                                                    crate::inserter::InserterState::WaitingForSpaceInDestination(count) => (1.0, count),
+                                                    crate::inserter::InserterState::FullAndMovingOut(timer) => (1.0 - (timer as f32 / movetime as f32), hand_size),
+                                                    crate::inserter::InserterState::EmptyAndMovingBack(timer) => (timer as f32 / movetime as f32, 0),
+                                                };
+
+                                                assert!(position >= 0.0);
+                                                assert!(position <= 1.0);
+
+                                                let start_pos = [
+                                                    draw_offset.0 + start_pos.x as f32 + 0.5 - (0.5 * ITEM_RENDER_SIZE),
+                                                    draw_offset.1 + start_pos.y as f32 + 0.5 - (0.5 * ITEM_RENDER_SIZE),
+                                                ];
+
+                                                let end_pos = [
+                                                    draw_offset.0 + end_pos.x as f32 + 0.5 - (0.5 * ITEM_RENDER_SIZE),
+                                                    draw_offset.1 + end_pos.y as f32 + 0.5 - (0.5 * ITEM_RENDER_SIZE),
+                                                ];
+
+                                                let mut item_pos = [
+                                                    start_pos[0] + (end_pos[0] - start_pos[0]) * position,
+                                                    start_pos[1] + (end_pos[1] - start_pos[1]) * position,
+                                                ];
+                                                
+                                                let stack_offset = 1.0 / f32::from(BELT_LEN_PER_TILE) / 16.0;
+
+                                                for _ in 0..items {
+                                                    inserter_item_layer.draw_sprite(&texture_atlas.items[item.id.into()], DrawInstance { position: item_pos, size: [
+                                                        ITEM_RENDER_SIZE,
+                                                        ITEM_RENDER_SIZE,
+                                                    ], animation_frame: 0 });
+
+                                                    item_pos[0] += stack_offset;
+                                                    item_pos[1] += stack_offset;
+                                                }
                                             },
                                             crate::frontend::world::tile::AttachedInserter::BeltBelt { item, inserter } => {
                                                 // TODO:
                                             },
                                             crate::frontend::world::tile::AttachedInserter::StorageStorage { item, inserter } => {
-                                                let movetime = user_movetime.unwrap_or(*type_movetime).into();
-                                                storage_storage_inserter_render_list.entry((*item, movetime)).or_default().push(([
-                                                    chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                    chunk_draw_offs.1 + (pos.y % 16) as f32,
-                                                ],*ty, *inserter));
+                                                let hand_size = HAND_SIZE;
+                                                let item =  *item;
+                                                let state = game_state.simulation_state.factory.storage_storage_inserters.get_inserter(item, movetime, *inserter, current_tick);
+
+                                                let (position, items): (f32, ITEMCOUNTTYPE) = match state.state {
+                                                    crate::inserter::storage_storage_with_buckets::LargeInserterState::WaitingForSourceItems(count) => (0.0, count),
+                                                    crate::inserter::storage_storage_with_buckets::LargeInserterState::WaitingForSpaceInDestination(count) => (1.0, count),
+                                                    crate::inserter::storage_storage_with_buckets::LargeInserterState::FullAndMovingOut(timer) => (1.0 - (timer as f32 / movetime as f32), hand_size),
+                                                    crate::inserter::storage_storage_with_buckets::LargeInserterState::EmptyAndMovingBack(timer) => (timer as f32 / movetime as f32, 0),
+                                                };
+
+                                                assert!(position >= 0.0);
+                                                assert!(position <= 1.0);
+
+                                                let start_pos = [
+                                                    draw_offset.0 + start_pos.x as f32 + 0.5 - (0.5 * ITEM_RENDER_SIZE),
+                                                    draw_offset.1 + start_pos.y as f32 + 0.5 - (0.5 * ITEM_RENDER_SIZE),
+                                                ];
+
+                                                let end_pos = [
+                                                    draw_offset.0 + end_pos.x as f32 + 0.5 - (0.5 * ITEM_RENDER_SIZE),
+                                                    draw_offset.1 + end_pos.y as f32 + 0.5 - (0.5 * ITEM_RENDER_SIZE),
+                                                ];
+
+                                                let mut item_pos = [
+                                                    start_pos[0] + (end_pos[0] - start_pos[0]) * position,
+                                                    start_pos[1] + (end_pos[1] - start_pos[1]) * position,
+                                                ];
+                                                
+                                                let stack_offset = 1.0 / f32::from(BELT_LEN_PER_TILE) / 16.0;
+
+                                                for _ in 0..items {
+                                                    inserter_item_layer.draw_sprite(&texture_atlas.items[item.id.into()], DrawInstance { position: item_pos, size: [
+                                                        ITEM_RENDER_SIZE,
+                                                        ITEM_RENDER_SIZE,
+                                                    ], animation_frame: 0 });
+
+                                                    item_pos[0] += stack_offset;
+                                                    item_pos[1] += stack_offset;
+                                                }
                                             },
                                         }
                                     },
@@ -1019,8 +1108,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             let size = [size.0, size.1];
                                             texture_atlas.power_pole.draw(
                                                 [
-                                                    chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                    chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                    draw_offset.0 + pos.x as f32,
+                                                    draw_offset.1 + pos.y as f32,
                                                 ],
                                                 size,
                                                 0,
@@ -1040,11 +1129,11 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                         &texture_atlas.dark_square,
                                                         DrawInstance {
                                                             position: [
-                                                                chunk_draw_offs.0
-                                                                    + (pos.x % 16) as f32
+                                                                draw_offset.0
+                                                                    + pos.x as f32
                                                                     - power_range as f32,
-                                                                chunk_draw_offs.1
-                                                                    + (pos.y % 16) as f32
+                                                                draw_offset.1
+                                                                    + pos.y as f32
                                                                     - power_range as f32,
                                                             ],
                                                             size: [
@@ -1082,8 +1171,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             {
                                                 texture_atlas.belt[*direction].draw(
                                                     [
-                                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                        draw_offset.0 + pos.x as f32,
+                                                        draw_offset.1 + pos.y as f32,
                                                     ],
                                                     [1, 1],
                                                     0,
@@ -1091,10 +1180,10 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 );
 
                                                 let centered_on_tile = (
-                                                    chunk_draw_offs.0 + (pos.x % 16) as f32 + 0.5
+                                                    draw_offset.0 + pos.x as f32 + 0.5
                                                         - 0.5
                                                             * (1.0 / f32::from(BELT_LEN_PER_TILE)),
-                                                    chunk_draw_offs.1 + (pos.y % 16) as f32 + 0.5
+                                                    draw_offset.1 + pos.y as f32 + 0.5
                                                         - 0.5
                                                             * (1.0 / f32::from(BELT_LEN_PER_TILE)),
                                                 );
@@ -1164,8 +1253,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             let size = [size.0, size.1];
                                             texture_atlas.chest.draw(
                                                 [
-                                                    chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                    chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                    draw_offset.0 + pos.x as f32,
+                                                    draw_offset.1 + pos.y as f32,
                                                 ],
                                                 size,
                                                 0,
@@ -1177,8 +1266,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 &texture_atlas.default,
                                                 DrawInstance {
                                                     position: [
-                                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                        draw_offset.0 + pos.x as f32,
+                                                        draw_offset.1 + pos.y as f32,
                                                     ],
                                                     size: data_store.solar_panel_info
                                                         [usize::from(*ty)]
@@ -1200,8 +1289,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                                             texture_atlas.lab.draw(
                                                 [
-                                                    chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                    chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                    draw_offset.0 + pos.x as f32,
+                                                    draw_offset.1 + pos.y as f32,
                                                 ],
                                                 size,
                                                 0,
@@ -1226,8 +1315,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                     texture_atlas.no_power.draw_centered_on(
                                                         &texture_atlas.lab,
                                                         [
-                                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                            draw_offset.0 + pos.x as f32,
+                                                            draw_offset.1 + pos.y as f32,
                                                         ],
                                                         size,
                                                         0,
@@ -1238,8 +1327,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 texture_atlas.not_connected.draw_centered_on(
                                                     &texture_atlas.lab,
                                                     [
-                                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                        draw_offset.0 + pos.x as f32,
+                                                        draw_offset.1 + pos.y as f32,
                                                     ],
                                                     size,
                                                     0,
@@ -1260,8 +1349,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                                             texture_atlas.beacon.draw(
                                                 [
-                                                    chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                    chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                    draw_offset.0 + pos.x as f32,
+                                                    draw_offset.1 + pos.y as f32,
                                                 ],
                                                 size,
                                                 0,
@@ -1286,8 +1375,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                     texture_atlas.no_power.draw_centered_on(
                                                         &texture_atlas.beacon,
                                                         [
-                                                            chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                            chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                            draw_offset.0 + pos.x as f32,
+                                                            draw_offset.1 + pos.y as f32,
                                                         ],
                                                         size,
                                                         0,
@@ -1298,8 +1387,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 texture_atlas.not_connected.draw_centered_on(
                                                     &texture_atlas.beacon,
                                                     [
-                                                        chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                        chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                        draw_offset.0 + pos.x as f32,
+                                                        draw_offset.1 + pos.y as f32,
                                                     ],
                                                     size,
                                                     0,
@@ -1315,8 +1404,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                                             texture_atlas.belt[*rotation].draw(
                                                 [
-                                                    chunk_draw_offs.0 + (pos.x % 16) as f32,
-                                                    chunk_draw_offs.1 + (pos.y % 16) as f32,
+                                                    draw_offset.0 + pos.x as f32,
+                                                    draw_offset.1 + pos.y as f32,
                                                 ],
                                                 size,
                                                 0,
@@ -1351,13 +1440,13 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     layers
                 },
             )
-        // .reduce(
-        //     || layers_tile_grid(tilesize, ar),
-        //     |mut a, b| {
-        //         a.extend(b);
-        //         a
-        //     },
-        // )
+        .reduce(
+            || layers_tile_grid(tilesize, ar),
+            |mut a, b| {
+                a.extend(b);
+                a
+            },
+        )
     };
 
     // TODO: Why is all of this hashmap based????
@@ -1438,6 +1527,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     }
 
     mem::drop(game_state);
+    mem::drop(aux_data);
 
     match &state_machine.state {
         ActionStateMachineState::CtrlCPressed | ActionStateMachineState::DelPressed => {},
@@ -1800,6 +1890,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 item_layer,
                 warning_layer,
                 range_layer,
+                inserter_item_layer,
             } = folded_layers;
             renderer.draw(&tile_layer);
 
@@ -1812,11 +1903,11 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             renderer.draw(&range_layer);
 
             renderer.draw(&warning_layer);
-            renderer.draw(&player_layer);
+            
+            renderer.draw(&inserter_item_layer);
         }
         renderer.draw(&state_machine_layer);
         renderer.draw(&entity_overlay_layer);
-        renderer.draw(&inserter_item_layer);
         renderer.draw(&player_layer);
     }
 }
@@ -1940,7 +2031,6 @@ pub fn render_ui<
 
     Window::new("DEBUG USE WITH CARE")
         .default_open(false)
-        .resizable(false)
         .show(ctx, |ui| {
             if ui.button("⚠️DEFRAGMENT GAMESTATE").clicked() {
                 // TODO:
@@ -2087,6 +2177,14 @@ pub fn render_ui<
             ui.label(&format!("Num Sushi Belts: {}", game_state_ref.simulation_state.factory.belts.inner.sushi_belts.len()));
             ui.label(&format!("Num Sushi Belts Holes: {}", game_state_ref.simulation_state.factory.belts.inner.sushi_belt_holes.len()));
 
+            ui.label(&format!("Num PowerGrids: {}", game_state_ref.simulation_state.factory.power_grids.power_grids.len()));
+            ui.label(&format!("Num PowerGrid Holes: {}", game_state_ref.simulation_state.factory.power_grids.power_grids.iter().filter(|pg| pg.is_placeholder).count()));
+            ui.label(&String::from_iter(game_state_ref.simulation_state.factory.power_grids.power_grids.iter().map(|pg| if pg.is_placeholder {
+                '_'
+            } else {
+                'P'
+            })));
+
             let mut lock_view = state_machine_ref.debug_view_options.sushi_finder_view_lock.is_some();
 
             ui.checkbox(
@@ -2164,7 +2262,7 @@ pub fn render_ui<
                         .inserters
                         .iter()
                         .flat_map(|tree| tree.values())
-                        .map(|(_front, store)| store.get_load_info())
+                        .map(|(store, )| store.get_load_info())
                         .map(|(_, _, num_storage_cachelines, num_struct_cachelines)| {
                             num_storage_cachelines + num_struct_cachelines
                         })
@@ -2224,8 +2322,8 @@ pub fn render_ui<
                                         .storage_storage_inserters
                                         .inserters[item]
                                         .iter()
-                                        .max_by_key(|v| v.1.1.get_num_inserters())
-                                        .map(|store| store.1.1.get_load_info())
+                                        .max_by_key(|v| v.1.0.get_num_inserters())
+                                        .map(|store| store.1.0.get_load_info())
                                         .unwrap_or_default();
 
                                     row.col(|ui| {
@@ -2438,7 +2536,8 @@ pub fn render_ui<
                             AssemblerInfo::Powered { id, .. } => Some(id.recipe),
                         };
 
-                        ComboBox::new("Recipe list", "Recipes").selected_text(goal_recipe.map(|recipe| data_store_ref.recipe_display_names[usize_from(recipe.id)].as_str()).unwrap_or("Choose a recipe!")).show_ui(ui, |ui| {
+                        // TODO: Once a dropdown with a low number of items is shown, all future dropdowns get cropped to that count :/
+                        ComboBox::new(format!("Recipe list {}", *ty), "Recipes").selected_text(goal_recipe.map(|recipe| data_store_ref.recipe_display_names[usize_from(recipe.id)].as_str()).unwrap_or("Choose a recipe!")).show_ui(ui, |ui| {
                             data_store_ref.recipe_display_names.iter().enumerate().filter(|(i, recipe_name)| {
                                     (aux_data.settings.show_unresearched_recipes || game_state_ref.simulation_state.tech_state.get_active_recipes()[*i]) && data_store_ref.recipe_allowed_assembling_machines[*i].contains(ty)
                                 }).for_each(|(i, recipe_name)| {

@@ -6,6 +6,7 @@
 #![feature(mixed_integer_ops_unsigned_sub)]
 #![feature(int_roundings)]
 #![feature(array_chunks)]
+#![feature(strict_overflow_ops)]
 
 extern crate test;
 
@@ -69,6 +70,8 @@ pub mod lab;
 pub mod mining_drill;
 pub mod power;
 pub mod research;
+
+mod shopping_list_arena;
 
 // This is an experiment. Before I can use it, I need to run it through a miri gauntlet
 // mod small_box_slice;

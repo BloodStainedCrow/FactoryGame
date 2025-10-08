@@ -6,7 +6,7 @@ use itertools::Itertools;
 use log::warn;
 
 use crate::chest::ChestSize;
-use crate::inserter::storage_storage_with_buckets::InserterIdentifier;
+use crate::inserter::storage_storage_with_buckets_indirect::InserterIdentifier;
 use crate::item::Indexable;
 use crate::{
     app_state::StorageStorageInserterStore,

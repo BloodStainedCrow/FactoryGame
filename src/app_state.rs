@@ -3,12 +3,9 @@ use crate::belt::belt::Belt;
 use crate::chest::ChestSize;
 use crate::data::AllowedFluidDirection;
 use crate::frontend::action::belt_placement::FakeGameState;
-use crate::inserter::storage_storage_with_buckets::{
-    BucketedStorageStorageInserterStore, BucketedStorageStorageInserterStoreFrontend,
-};
-use crate::inserter::storage_storage_with_buckets::{
-    InserterId, InserterIdentifier, LargeInserterState,
-};
+use crate::inserter::InserterStateInfo;
+use crate::inserter::storage_storage_with_buckets_indirect::BucketedStorageStorageInserterStore;
+use crate::inserter::storage_storage_with_buckets_indirect::InserterIdentifier;
 use crate::item::ITEMCOUNTTYPE;
 use crate::liquid::FluidConnectionDir;
 use crate::liquid::connection_logic::can_fluid_tanks_connect_to_single_connection;
@@ -612,15 +609,7 @@ pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct StorageStorageInserterStore {
-    pub inserters: Box<
-        [BTreeMap<
-            u16,
-            (
-                BucketedStorageStorageInserterStoreFrontend,
-                BucketedStorageStorageInserterStore,
-            ),
-        >],
-    >,
+    pub inserters: Box<[BTreeMap<u16, (BucketedStorageStorageInserterStore,)>]>,
 }
 
 impl StorageStorageInserterStore {
@@ -633,21 +622,21 @@ impl StorageStorageInserterStore {
         }
     }
 
-    #[profiling::function]
-    pub fn get_info_batched<ItemIdxType: IdxTrait>(
-        &mut self,
-        item: Item<ItemIdxType>,
-        movetime: u16,
-        ids: impl IntoIterator<Item = InserterIdentifier>,
-        current_tick: u32,
-    ) -> HashMap<InserterIdentifier, LargeInserterState> {
-        let (front, back) = self.inserters[item.into_usize()]
-            .get_mut(&movetime)
-            .unwrap();
+    // #[profiling::function]
+    // pub fn get_info_batched<ItemIdxType: IdxTrait>(
+    //     &mut self,
+    //     item: Item<ItemIdxType>,
+    //     movetime: u16,
+    //     ids: impl IntoIterator<Item = InserterIdentifier>,
+    //     current_tick: u32,
+    // ) -> HashMap<InserterIdentifier, LargeInserterState> {
+    //     let (front, back) = self.inserters[item.into_usize()]
+    //         .get_mut(&movetime)
+    //         .unwrap();
 
-        let info = front.get_info_batched(ids, &back, true, current_tick);
-        info
-    }
+    //     let info = front.get_info_batched(ids, &back, true, current_tick);
+    //     info
+    // }
 
     #[profiling::function]
     fn update<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
@@ -676,12 +665,12 @@ impl StorageStorageInserterStore {
                 let grid_size = grid_size(item, data_store);
                 let num_recipes = num_recipes(item, data_store);
 
-                for (frontend, ins_store) in map.values_mut() {
+                for (ins_store,) in map.values_mut() {
                     profiling::scope!(
                         "StorageStorage Inserter Update",
                         format!("Movetime: {}", ins_store.movetime).as_str()
                     );
-                    ins_store.update(frontend, storages, grid_size, current_tick);
+                    ins_store.update(storages, grid_size, current_tick);
                 }
             });
     }
@@ -698,18 +687,27 @@ impl StorageStorageInserterStore {
         let source = FakeUnionStorage::from_storage_with_statics_at_zero(item, start, data_store);
         let dest = FakeUnionStorage::from_storage_with_statics_at_zero(item, dest, data_store);
 
-        let id: InserterId = self.inserters[item.into_usize()]
+        let id: InserterIdentifier = self.inserters[item.into_usize()]
             .entry(movetime)
-            .or_insert_with(|| {
-                (
-                    BucketedStorageStorageInserterStoreFrontend::new(),
-                    BucketedStorageStorageInserterStore::new(movetime),
-                )
-            })
-            .1
+            .or_insert_with(|| (BucketedStorageStorageInserterStore::new(movetime),))
+            .0
             .add_inserter(source, dest, hand_size);
 
-        InserterIdentifier { source, dest, id }
+        id
+    }
+
+    pub fn get_inserter<ItemIdxType: IdxTrait>(
+        &self,
+        item: Item<ItemIdxType>,
+        movetime: u16,
+        id: InserterIdentifier,
+        current_tick: u32,
+    ) -> InserterStateInfo {
+        self.inserters[item.into_usize()]
+            .get(&movetime)
+            .unwrap()
+            .0
+            .get_inserter(id, current_tick)
     }
 
     pub fn remove_ins<ItemIdxType: IdxTrait>(
@@ -721,8 +719,8 @@ impl StorageStorageInserterStore {
         let inserter = self.inserters[item.into_usize()]
             .get_mut(&movetime)
             .unwrap()
-            .1
-            .remove_inserter(id.source, id.dest, id.id);
+            .0
+            .remove_inserter(id);
         // TODO: Handle what happens with the items
     }
 
@@ -738,25 +736,20 @@ impl StorageStorageInserterStore {
         let inserter = self.inserters[item.into_usize()]
             .get_mut(&old_movetime)
             .unwrap()
-            .1
-            .remove_inserter(id.source, id.dest, id.id);
+            .0
+            .remove_inserter(id);
 
-        let inner_id: InserterId = self.inserters[item.into_usize()]
+        let inner_id: InserterIdentifier = self.inserters[item.into_usize()]
             .entry(new_movetime)
-            .or_insert_with(|| {
-                (
-                    BucketedStorageStorageInserterStoreFrontend::new(),
-                    BucketedStorageStorageInserterStore::new(new_movetime),
-                )
-            })
-            .1
-            .add_inserter(id.source, id.dest, inserter.max_hand_size);
+            .or_insert_with(|| (BucketedStorageStorageInserterStore::new(new_movetime),))
+            .0
+            .add_inserter(
+                inserter.storage_id_in,
+                inserter.storage_id_out,
+                inserter.max_hand_size,
+            );
 
-        InserterIdentifier {
-            source: id.source,
-            dest: id.dest,
-            id: inner_id,
-        }
+        inner_id
     }
 
     #[profiling::function]
@@ -771,7 +764,7 @@ impl StorageStorageInserterStore {
         self.inserters[item.into_usize()]
             .get_mut(&movetime)
             .unwrap()
-            .1
+            .0
             .update_inserter_src(
                 id,
                 FakeUnionStorage::from_storage_with_statics_at_zero(item, new_src, data_store),
@@ -790,7 +783,7 @@ impl StorageStorageInserterStore {
         self.inserters[item.into_usize()]
             .get_mut(&movetime)
             .unwrap()
-            .1
+            .0
             .update_inserter_dest(
                 id,
                 FakeUnionStorage::from_storage_with_statics_at_zero(item, new_dest, data_store),
@@ -1033,14 +1026,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                 let grid_size = grid_size(item, data_store);
                                 let num_recipes = num_recipes(item, data_store);
 
-                                for (frontend, ins_store) in
+                                for (ins_store,) in
                                     storage_storage_inserter_stores.values_mut()
                                 {
                                     profiling::scope!(
                                         "StorageStorage Inserter Update",
                                         format!("Movetime: {}", ins_store.movetime).as_str()
                                     );
-                                    ins_store.update(frontend, item_storages, grid_size, current_tick);
+                                    ins_store.update(item_storages, grid_size, current_tick);
                                 }
                             }
 

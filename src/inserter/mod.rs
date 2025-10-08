@@ -9,6 +9,7 @@ use crate::{
 };
 
 use static_assertions::const_assert;
+use storage_storage_with_buckets::LargeInserterState;
 use strum::EnumIter;
 
 use std::cmp::min;
@@ -29,6 +30,7 @@ pub mod belt_storage_pure_buckets;
 pub mod storage_storage_inserter;
 pub mod storage_storage_with_buckets;
 // pub mod storage_storage_with_buckets_compressed;
+pub mod storage_storage_with_buckets_indirect;
 
 mod bucket_bit_compressed;
 
@@ -86,6 +88,10 @@ pub struct FakeUnionStorage {
     pub index: u32,
     pub grid_or_static_flag: u16,
     pub recipe_idx_with_this_item: u16,
+}
+
+pub struct InserterStateInfo {
+    pub state: LargeInserterState,
 }
 
 #[cfg(feature = "client")]

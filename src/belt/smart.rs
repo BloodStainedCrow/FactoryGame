@@ -37,7 +37,7 @@ use get_size::GetSize;
 
 // HUGE FIXME:
 const MOVETIME: u8 = 12;
-const HAND_SIZE: u8 = 12;
+pub const HAND_SIZE: u8 = 12;
 
 #[allow(clippy::module_name_repetitions)]
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
