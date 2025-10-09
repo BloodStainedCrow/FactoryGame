@@ -568,6 +568,9 @@ impl BucketedStorageStorageInserterStore {
         }
 
         InserterStateInfo {
+            source: ins.storage_id_in,
+            dest: ins.storage_id_out,
+
             state: match ins.state {
                 ImplicitState::WaitingForSourceItems(count) => {
                     LargeInserterState::WaitingForSourceItems(count)

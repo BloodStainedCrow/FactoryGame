@@ -7,6 +7,8 @@
 #![feature(int_roundings)]
 #![feature(array_chunks)]
 #![feature(strict_overflow_ops)]
+#![feature(thin_box)]
+#![feature(ptr_metadata)]
 
 extern crate test;
 
@@ -249,7 +251,7 @@ enum GameCreationInfo {
 
     Megabase,
 
-    Gigabase,
+    Gigabase(u16),
 
     SolarField(Watt, Position),
 
@@ -318,8 +320,8 @@ fn run_integrated_server(
                     GameCreationInfo::Megabase => {
                         GameState::new_with_megabase(progress, &data_store)
                     },
-                    GameCreationInfo::Gigabase => {
-                        GameState::new_with_gigabase(progress, &data_store)
+                    GameCreationInfo::Gigabase(count) => {
+                        GameState::new_with_gigabase(count, progress, &data_store)
                     },
                     GameCreationInfo::SolarField(wattage, base_pos) => {
                         GameState::new_with_tons_of_solar(progress, &data_store)

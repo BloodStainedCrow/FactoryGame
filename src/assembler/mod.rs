@@ -1,5 +1,6 @@
 use std::{array, marker::PhantomData, simd::Simd, u8};
 
+use crate::frontend::world::tile::ModuleTy;
 use crate::{
     data::DataStore,
     frontend::world::{Position, tile::AssemblerID},
@@ -608,7 +609,7 @@ pub trait MultiAssemblerStore<
     fn add_assembler<ItemIdxType: IdxTrait>(
         &mut self,
         ty: u8,
-        modules: &[Option<usize>],
+        modules: &[Option<ModuleTy>],
         position: Position,
         recipe_lookup: &[(usize, usize)],
         recipe_ings: &[[ITEMCOUNTTYPE; NUM_INGS]],
@@ -628,7 +629,7 @@ pub trait MultiAssemblerStore<
             .iter()
             .copied()
             .flatten()
-            .map(|module| i16::from(data_store.module_info[module].speed_mod))
+            .map(|module| i16::from(data_store.module_info[module as usize].speed_mod))
             .sum();
 
         let prod = i16::from(bonus_productivity_of_machine)
@@ -636,14 +637,14 @@ pub trait MultiAssemblerStore<
                 .iter()
                 .copied()
                 .flatten()
-                .map(|module| i16::from(data_store.module_info[module].prod_mod))
+                .map(|module| i16::from(data_store.module_info[module as usize].prod_mod))
                 .sum::<i16>();
 
         let power_mod = modules
             .iter()
             .copied()
             .flatten()
-            .map(|module| i16::from(data_store.module_info[module].power_mod))
+            .map(|module| i16::from(data_store.module_info[module as usize].power_mod))
             .sum();
 
         let (ing_idx, out_idx) = recipe_lookup[self.get_recipe().into_usize()];

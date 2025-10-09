@@ -384,14 +384,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 Entity::Assembler { ty, pos, modules, info, rotation } => match info {
                                     AssemblerInfo::UnpoweredNoRecipe => {},
                                     AssemblerInfo::Unpowered(recipe) => self.copy_info = Some(CopyInfo::Recipe { recipe: *recipe }),
-                                    AssemblerInfo::PoweredNoRecipe(position) => {},
-                                    AssemblerInfo::Powered { id, pole_position, weak_index } => self.copy_info = Some(CopyInfo::Recipe { recipe: id.recipe }),
+                                    AssemblerInfo::PoweredNoRecipe(_) => {},
+                                    AssemblerInfo::Powered { id, .. } => self.copy_info = Some(CopyInfo::Recipe { recipe: id.recipe }),
                                 },
-                                Entity::PowerPole { ty, pos, connected_power_poles } => {},
+                                Entity::PowerPole { ty, pos } => {},
                                 Entity::Belt { pos, direction, ty, id, belt_pos } => {},
                                 Entity::Underground { pos, underground_dir, ty, direction, id, belt_pos } => {},
                                 Entity::Splitter { pos, direction, id } => todo!(),
-                                Entity::Inserter { ty, user_movetime, type_movetime, pos, direction, filter, info } => {
+                                Entity::Inserter { ty, user_movetime, pos, direction, filter, info } => {
                                     self.copy_info = Some(CopyInfo::InserterSettings { max_stack_size: None, filter: *filter, user_movetime: *user_movetime });
                                 },
                                 Entity::Chest { ty, pos, item, slot_limit } => {

@@ -6,6 +6,7 @@ use itertools::Itertools;
 use log::warn;
 
 use crate::chest::ChestSize;
+use crate::inserter::FakeUnionStorage;
 use crate::inserter::storage_storage_with_buckets_indirect::InserterIdentifier;
 use crate::item::Indexable;
 use crate::{
@@ -625,8 +626,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
     pub fn update_fluid_conn_if_needed<RecipeIdxType: IdxTrait>(
         &mut self,
         fluid_box_position: Position,
-        update_pos: Position,
-        update_size: [u16; 2],
+        old_storage: FakeUnionStorage,
         new_storage: Storage<RecipeIdxType>,
         inserter_store: &mut StorageStorageInserterStore,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -640,8 +640,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                     .unwrap()
                     .update_fluid_conn_if_needed(
                         fluid,
-                        update_pos,
-                        update_size,
+                        old_storage,
                         new_storage,
                         inserter_store,
                         data_store,
@@ -895,20 +894,10 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum FluidSystemEntity {
-    OutgoingPump {
-        inserter_id: InserterIdentifier,
-    },
-    IncomingPump {
-        inserter_id: InserterIdentifier,
-    },
-    Input {
-        inserter_id: InserterIdentifier,
-        connected_entity_position: Position,
-    },
-    Output {
-        inserter_id: InserterIdentifier,
-        connected_entity_position: Position,
-    },
+    OutgoingPump { inserter_id: InserterIdentifier },
+    IncomingPump { inserter_id: InserterIdentifier },
+    Input { inserter_id: InserterIdentifier },
+    Output { inserter_id: InserterIdentifier },
 }
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
@@ -971,8 +960,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
     pub fn update_fluid_conn_if_needed<RecipeIdxType: IdxTrait>(
         &mut self,
         fluid: Item<ItemIdxType>,
-        update_pos: Position,
-        update_size: [u16; 2],
+        old_storage: FakeUnionStorage,
         new_storage: Storage<RecipeIdxType>,
         inserter_store: &mut StorageStorageInserterStore,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -981,11 +969,12 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
             match e {
                 FluidSystemEntity::OutgoingPump { .. } => {},
                 FluidSystemEntity::IncomingPump { .. } => {},
-                FluidSystemEntity::Input {
-                    inserter_id,
-                    connected_entity_position,
-                } => {
-                    if connected_entity_position.contained_in(update_pos, update_size.into()) {
+                FluidSystemEntity::Input { inserter_id } => {
+                    if old_storage
+                        == inserter_store
+                            .get_inserter(fluid, FLUID_INSERTER_MOVETIME, *inserter_id, todo!())
+                            .source
+                    {
                         *inserter_id = inserter_store.update_inserter_src(
                             fluid,
                             FLUID_INSERTER_MOVETIME,
@@ -995,11 +984,12 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                         );
                     }
                 },
-                FluidSystemEntity::Output {
-                    inserter_id,
-                    connected_entity_position,
-                } => {
-                    if connected_entity_position.contained_in(update_pos, update_size.into()) {
+                FluidSystemEntity::Output { inserter_id } => {
+                    if old_storage
+                        == inserter_store
+                            .get_inserter(fluid, FLUID_INSERTER_MOVETIME, *inserter_id, todo!())
+                            .dest
+                    {
                         *inserter_id = inserter_store.update_inserter_dest(
                             fluid,
                             FLUID_INSERTER_MOVETIME,
@@ -1125,10 +1115,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
 
         let weak_index = self.graph.add_weak_element(
             source_pipe_position,
-            FluidSystemEntity::Output {
-                inserter_id,
-                connected_entity_position: dest_pos,
-            },
+            FluidSystemEntity::Output { inserter_id },
         );
 
         weak_index
@@ -1155,13 +1142,9 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
             data_store,
         );
 
-        let weak_index = self.graph.add_weak_element(
-            dest_pipe_position,
-            FluidSystemEntity::Input {
-                inserter_id,
-                connected_entity_position: source_pos,
-            },
-        );
+        let weak_index = self
+            .graph
+            .add_weak_element(dest_pipe_position, FluidSystemEntity::Input { inserter_id });
 
         weak_index
     }
@@ -1211,10 +1194,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         weak_index: WeakIndex,
         inserter_store: &mut StorageStorageInserterStore,
     ) {
-        let FluidSystemEntity::Output {
-            inserter_id,
-            connected_entity_position,
-        } = self
+        let FluidSystemEntity::Output { inserter_id, .. } = self
             .graph
             .remove_weak_element(source_pipe_position, weak_index)
         else {
@@ -1235,10 +1215,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         weak_index: WeakIndex,
         inserter_store: &mut StorageStorageInserterStore,
     ) {
-        let FluidSystemEntity::Input {
-            inserter_id,
-            connected_entity_position,
-        } = self
+        let FluidSystemEntity::Input { inserter_id, .. } = self
             .graph
             .remove_weak_element(dest_pipe_position, weak_index)
         else {
@@ -1422,10 +1399,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                                 data_store,
                             );
                         },
-                        FluidSystemEntity::Input {
-                            inserter_id,
-                            connected_entity_position,
-                        } => {
+                        FluidSystemEntity::Input { inserter_id, .. } => {
                             *inserter_id = inserter_store.update_inserter_dest(
                                 fluid,
                                 FLUID_INSERTER_MOVETIME,
@@ -1437,10 +1411,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                                 data_store,
                             );
                         },
-                        FluidSystemEntity::Output {
-                            inserter_id,
-                            connected_entity_position,
-                        } => {
+                        FluidSystemEntity::Output { inserter_id, .. } => {
                             *inserter_id = inserter_store.update_inserter_src(
                                 fluid,
                                 FLUID_INSERTER_MOVETIME,
@@ -1504,14 +1475,12 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                 FluidSystemEntity::IncomingPump { inserter_id } => {
                     inserter_store.remove_ins(fluid, FLUID_INSERTER_MOVETIME, inserter_id)
                 },
-                FluidSystemEntity::Input {
-                    inserter_id,
-                    connected_entity_position,
-                } => inserter_store.remove_ins(fluid, FLUID_INSERTER_MOVETIME, inserter_id),
-                FluidSystemEntity::Output {
-                    inserter_id,
-                    connected_entity_position,
-                } => inserter_store.remove_ins(fluid, FLUID_INSERTER_MOVETIME, inserter_id),
+                FluidSystemEntity::Input { inserter_id, .. } => {
+                    inserter_store.remove_ins(fluid, FLUID_INSERTER_MOVETIME, inserter_id)
+                },
+                FluidSystemEntity::Output { inserter_id, .. } => {
+                    inserter_store.remove_ins(fluid, FLUID_INSERTER_MOVETIME, inserter_id)
+                },
             }
         }
 
@@ -1555,10 +1524,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                                         data_store,
                                     );
                                 },
-                                FluidSystemEntity::Input {
-                                    inserter_id,
-                                    connected_entity_position,
-                                } => {
+                                FluidSystemEntity::Input { inserter_id, .. } => {
                                     *inserter_id = inserter_store.update_inserter_dest(
                                         fluid,
                                         FLUID_INSERTER_MOVETIME,
@@ -1567,10 +1533,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                                         data_store,
                                     );
                                 },
-                                FluidSystemEntity::Output {
-                                    inserter_id,
-                                    connected_entity_position,
-                                } => {
+                                FluidSystemEntity::Output { inserter_id, .. } => {
                                     *inserter_id = inserter_store.update_inserter_src(
                                         fluid,
                                         FLUID_INSERTER_MOVETIME,
@@ -1691,10 +1654,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                                         data_store,
                                     );
                                 },
-                                FluidSystemEntity::Input {
-                                    inserter_id,
-                                    connected_entity_position,
-                                } => {
+                                FluidSystemEntity::Input { inserter_id, .. } => {
                                     *inserter_id = inserter_store.update_inserter_dest(
                                         fluid,
                                         FLUID_INSERTER_MOVETIME,
@@ -1703,10 +1663,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                                         data_store,
                                     );
                                 },
-                                FluidSystemEntity::Output {
-                                    inserter_id,
-                                    connected_entity_position,
-                                } => {
+                                FluidSystemEntity::Output { inserter_id, .. } => {
                                     *inserter_id = inserter_store.update_inserter_src(
                                         fluid,
                                         FLUID_INSERTER_MOVETIME,

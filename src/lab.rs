@@ -14,6 +14,8 @@ use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
 use get_size::GetSize;
 
+use crate::frontend::world::tile::ModuleTy;
+
 pub const TICKS_PER_SCIENCE: TIMERTYPE = 10;
 
 // TODO: Add variable power consumption and speed
@@ -341,7 +343,7 @@ impl MultiLabStore {
         &mut self,
         ty: u8,
         position: Position,
-        modules: &[Option<usize>],
+        modules: &[Option<ModuleTy>],
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> u32 {
         let base_speed = data_store.lab_info[usize::from(ty)].base_speed;
@@ -353,9 +355,9 @@ impl MultiLabStore {
             .flatten()
             .map(|module| {
                 (
-                    data_store.module_info[*module].speed_mod as i16,
-                    data_store.module_info[*module].prod_mod as i16,
-                    data_store.module_info[*module].power_mod as i16,
+                    data_store.module_info[*module as usize].speed_mod as i16,
+                    data_store.module_info[*module as usize].prod_mod as i16,
+                    data_store.module_info[*module as usize].power_mod as i16,
                 )
             })
             .reduce(|acc, v| (acc.0 + v.0, acc.1 + v.1, acc.2 + v.2))

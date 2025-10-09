@@ -105,6 +105,50 @@ impl<N: GetSize, E: GetSize, Ty: EdgeType, Ix: IndexType + GetSize> GetSize
     }
 }
 
+#[cfg(feature = "client")]
+impl<
+    N: ShowInfo<Extractor, Info>,
+    E: ShowInfo<Extractor, Info>,
+    Ty: EdgeType,
+    Ix: IndexType + ShowInfo<Extractor, Info>,
+    Info: EguiDisplayable,
+    Extractor: InfoExtractor<Self, Info>
+        + InfoExtractor<N, Info>
+        + InfoExtractor<E, Info>
+        + InfoExtractor<Ix, Info>,
+> ShowInfo<Extractor, Info> for StableGraph<N, E, Ty, Ix>
+{
+    fn show_fields<C: Cache<String, Info>>(
+        &self,
+        extractor: &mut Extractor,
+        ui: &mut egui::Ui,
+        mut path: String,
+        cache: &mut C,
+    ) {
+        egui::CollapsingHeader::new("Nodes")
+            .default_open(false)
+            .show(ui, |ui| {
+                for (i, node) in self.node_weights().enumerate() {
+                    let index = format!("{}", i);
+                    path.push_str(&index);
+                    node.show_info(extractor, ui, &path, cache);
+                    path.remove_suffix(&index);
+                }
+            });
+
+        egui::CollapsingHeader::new("Edges")
+            .default_open(false)
+            .show(ui, |ui| {
+                for (i, edge) in self.edge_weights().enumerate() {
+                    let index = format!("{}", i);
+                    path.push_str(&index);
+                    edge.show_info(extractor, ui, &path, cache);
+                    path.remove_suffix(&index);
+                }
+            });
+    }
+}
+
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct Graph<N, E, Ty: EdgeType = Directed, Ix: IndexType = petgraph::graph::DefaultIx> {
     pub graph: petgraph::graph::Graph<N, E, Ty, Ix>,
@@ -167,7 +211,7 @@ impl<
         + InfoExtractor<N, Info>
         + InfoExtractor<E, Info>
         + InfoExtractor<Ix, Info>,
-> ShowInfo<Extractor, Info> for StableGraph<N, E, Ty, Ix>
+> ShowInfo<Extractor, Info> for Graph<N, E, Ty, Ix>
 {
     fn show_fields<C: Cache<String, Info>>(
         &self,

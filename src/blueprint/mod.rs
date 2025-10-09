@@ -278,7 +278,7 @@ impl BlueprintAction {
                 pos: *pos,
                 modules: modules
                     .iter()
-                    .map(|module| data_store.module_info[*module].name.clone())
+                    .map(|module| data_store.module_info[*module as usize].name.clone())
                     .collect(),
             },
             ActionType::RemoveModules { .. } => unimplemented!(),
@@ -490,6 +490,7 @@ impl BlueprintAction {
                             .module_info
                             .iter()
                             .position(|module| module.name == *action_module)
+                            .map(|v| v.try_into().unwrap())
                     })
                     .collect::<Option<_>>()
                     .ok_or(())?,
@@ -1037,7 +1038,7 @@ impl Blueprint {
                             .iter()
                             .flatten()
                             .copied()
-                            .map(|module| data_store.module_info[module].name.clone())
+                            .map(|module| data_store.module_info[module as usize].name.clone())
                             .collect(),
                     },
                 ],
@@ -1234,7 +1235,7 @@ impl Blueprint {
                                 .iter()
                                 .flatten()
                                 .copied()
-                                .map(|module| data_store.module_info[module].name.clone())
+                                .map(|module| data_store.module_info[module as usize].name.clone())
                                 .collect(),
                         },
                     ]

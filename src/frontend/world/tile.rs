@@ -149,14 +149,6 @@ impl Default for PlayerInfo {
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-struct Assembler<RecipeIdxType: WeakIdxTrait> {
-    /// List of all the module slots of this assembler
-    modules: ModuleSlots,
-    info: AssemblerInfo<RecipeIdxType>,
-}
-
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     noise: SerializableSimplex,
 
@@ -930,14 +922,7 @@ fn new_power_pole<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             } => {
                                 let weak_index = sim_state.factory.power_grids.power_grids
                                     [usize::from(grid_id)]
-                                .add_beacon(
-                                    *ty,
-                                    *pos,
-                                    pole_pos,
-                                    modules.clone(),
-                                    vec![],
-                                    data_store,
-                                );
+                                .add_beacon(*ty, *pos, pole_pos, modules, vec![], data_store);
 
                                 *pole_position = Some((pole_pos, weak_index));
 
@@ -1162,7 +1147,6 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                         Entity::Inserter {
                             ty,
                             user_movetime,
-                            type_movetime,
 
                             pos: inserter_pos,
                             direction: _inserter_dir,
@@ -1191,9 +1175,11 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                                             todo!("Remove BeltBelt inserter");
                                         },
                                         AttachedInserter::StorageStorage { item, inserter } => {
-                                            let movetime = user_movetime
-                                                .map(|v| v.into())
-                                                .unwrap_or(*type_movetime);
+                                            let movetime =
+                                                user_movetime.map(|v| v.into()).unwrap_or(
+                                                    data_store.inserter_infos[*ty as usize]
+                                                        .swing_time_ticks,
+                                                );
 
                                             // This might return something at some point, and this will be a compiler error
                                             let () = sim_state
@@ -1964,7 +1950,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         let Some(Entity::Inserter {
             ty,
             user_movetime,
-            type_movetime,
 
             pos: _pos,
             direction,
@@ -1979,7 +1964,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         // TODO: Calculate tech effect
         let hand_size = data_store.inserter_infos[*ty as usize].base_hand_size;
 
-        let movetime = user_movetime.map(|v| v.into()).unwrap_or(*type_movetime);
+        let movetime = user_movetime
+            .map(|v| v.into())
+            .unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks);
 
         let start_conn: Option<InserterConnectionPossibility<ItemIdxType, RecipeIdxType>> = self
             .get_entity_at(*start_pos, data_store)
@@ -3872,11 +3859,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         ));
                     },
                 },
-                Entity::PowerPole {
-                    ty,
-                    pos,
-                    connected_power_poles,
-                } => {
+                Entity::PowerPole { ty, pos } => {
                     let pos = *pos;
                     let ty = *ty;
 
@@ -4164,7 +4147,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 Entity::Inserter {
                     ty,
                     user_movetime,
-                    type_movetime,
                     pos,
                     direction,
                     info:
@@ -4183,7 +4165,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     AttachedInserter::StorageStorage { item, inserter } => {
                         sim_state.factory.storage_storage_inserters.remove_ins(
                             *item,
-                            user_movetime.unwrap_or(*type_movetime).into(),
+                            user_movetime
+                                .map(|v| v.into())
+                                .unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks)
+                                .into(),
                             *inserter,
                         );
                     },
@@ -4428,6 +4413,7 @@ pub enum AssemblerInfo<RecipeIdxType: WeakIdxTrait = u8> {
     },
 }
 
+// TODO: The Inserter start/end position can be calculated from the inserters ty + position + dir triple. No need to store it here
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum InserterInfo<ItemIdxType: WeakIdxTrait> {
@@ -4456,7 +4442,7 @@ pub enum InternalInserterInfo<ItemIdxType: WeakIdxTrait> {
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
-pub enum AttachedInserter<ItemIdxType: WeakIdxTrait> {
+pub enum AttachedInserter<ItemIdxType: WeakIdxTrait = u8> {
     BeltStorage {
         id: BeltTileId<ItemIdxType>,
         belt_pos: u16,
@@ -4500,8 +4486,68 @@ struct PipeConnection {
     connection_weak_index: WeakIndex,
 }
 
-// TODO: Support more than 8 modules slots
-type ModuleSlots = Box<[Option<usize>]>;
+pub type ModuleTy = u8;
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModuleSlots(pub thin_dst::ThinBox<(), Option<ModuleTy>>);
+
+impl serde::Serialize for ModuleSlots {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.0.slice.serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ModuleSlots {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let slice: Vec<_> = Vec::deserialize(deserializer)?;
+
+        Ok(slice.into_boxed_slice().into())
+    }
+}
+
+#[cfg(feature = "client")]
+impl GetSize for ModuleSlots {
+    fn get_heap_size(&self) -> usize {
+        self.0.slice.len() * std::mem::size_of::<Option<ModuleTy>>()
+    }
+}
+
+#[cfg(feature = "client")]
+impl<E: InfoExtractor<Self, Info>, Info: EguiDisplayable> ShowInfo<E, Info> for ModuleSlots {
+    fn show_fields<C: egui_show_info::Cache<String, Info>>(
+        &self,
+        extractor: &mut E,
+        ui: &mut egui::Ui,
+        path: String,
+        cache: &mut C,
+    ) {
+    }
+}
+
+impl Deref for ModuleSlots {
+    type Target = [Option<ModuleTy>];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0.slice
+    }
+}
+
+impl DerefMut for ModuleSlots {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0.slice
+    }
+}
+
+impl From<Box<[Option<u8>]>> for ModuleSlots {
+    fn from(value: Box<[Option<u8>]>) -> Self {
+        Self(thin_dst::ThinBox::new((), value.into_iter()))
+    }
+}
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
@@ -4521,7 +4567,6 @@ pub enum Entity<ItemIdxType: WeakIdxTrait = u8, RecipeIdxType: WeakIdxTrait = u8
         // This means at most 256 different types of power poles can exist, should be fine :)
         ty: u8,
         pos: Position,
-        connected_power_poles: Vec<Position>,
     },
     Belt {
         pos: Position,
@@ -4546,7 +4591,6 @@ pub enum Entity<ItemIdxType: WeakIdxTrait = u8, RecipeIdxType: WeakIdxTrait = u8
     Inserter {
         ty: u8,
         user_movetime: Option<NonZero<u16>>,
-        type_movetime: NonZero<u16>,
 
         pos: Position,
         direction: Dir,

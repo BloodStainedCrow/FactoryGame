@@ -1,4 +1,5 @@
 use std::{
+    fmt::format,
     mem,
     net::ToSocketAddrs,
     sync::{
@@ -21,7 +22,9 @@ use eframe::{
     egui::{CentralPanel, Event, PaintCallbackInfo, Shape},
     egui_wgpu::{self, CallbackTrait},
 };
-use egui::{Color32, CursorIcon, Modal, ProgressBar, RichText, TextEdit, Window};
+use egui::{
+    Color32, CursorIcon, Layout, Modal, ProgressBar, RichText, Slider, TextEdit, UiBuilder, Window,
+};
 use log::{error, warn};
 use tilelib::types::RawRenderer;
 
@@ -68,7 +71,10 @@ impl App {
                 )
             }),
             input_sender: None,
-            state: AppState::MainMenu { in_ip_box: None },
+            state: AppState::MainMenu {
+                in_ip_box: None,
+                gigabase_size: 40,
+            },
             texture_atlas: atlas,
             currently_loaded_game: None,
             last_rendered_update: 0,
@@ -175,7 +181,10 @@ impl eframe::App for App {
                 }
             },
 
-            AppState::MainMenu { in_ip_box } => {
+            AppState::MainMenu {
+                in_ip_box,
+                gigabase_size,
+            } => {
                 if let Some((current_text, error_pupup)) = in_ip_box {
                     if ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
                         *in_ip_box = None;
@@ -236,6 +245,8 @@ impl eframe::App for App {
                         return;
                     }
                 }
+
+                let gigabase_size = *gigabase_size;
 
                 CentralPanel::default().show(ctx, |ui| {
                     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
@@ -305,7 +316,7 @@ impl eframe::App for App {
                             };
                         }
                     } else if ui.add_enabled(cfg!(not(target_arch = "wasm32")), egui::Button::new("Connect over network")).on_disabled_hover_text("Disabled on WASM").clicked() {
-                        let AppState::MainMenu { in_ip_box } = &mut self.state else {
+                        let AppState::MainMenu { in_ip_box, .. } = &mut self.state else {
                             unreachable!()
                         };
                         assert!(in_ip_box.is_none());
@@ -418,7 +429,28 @@ impl eframe::App for App {
                             start_time: Instant::now(),progress,
                             game_state_receiver: recv,
                         };
-                    } else if ui.button("Gigabase").clicked() {
+                    } else if {
+                        let v = ui.horizontal( |ui| {
+                            let ret = ui.button("Gigabase").clicked();
+
+                            let AppState::MainMenu { gigabase_size, .. } = &mut self.state else {
+                                unreachable!()
+                            };
+
+                            ui.add(Slider::new(gigabase_size, 1..=1_000).logarithmic(true).update_while_editing(true).text("Number of base copies to build"));
+
+                            let single_base_size  = 13.0 / 40.0;
+                            let single_base_usage  = 40.0 / 40.0;
+
+                            ui.label(&format!("Est. Memory Usage: ~{:.1}GB", single_base_size * f64::from(*gigabase_size)));
+                            ui.label(&format!("Est. Memory Bandwidth for 60 UPS: ~{:.1}GB/s", single_base_usage * f64::from(*gigabase_size)));
+
+                            ret
+                        });
+
+
+                        v.inner
+                    } {
                         let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
                         let (send, recv) = channel();
 
@@ -426,7 +458,7 @@ impl eframe::App for App {
                         thread::spawn(move || {
                             send.send(run_integrated_server(
                                 progress_send,
-                                StartGameInfo::Create(GameCreationInfo::Gigabase),
+                                StartGameInfo::Create(GameCreationInfo::Gigabase(40)),
                             ));
                         });
 
@@ -614,7 +646,10 @@ impl App {
                             },
                             Err(escape) => match escape {
                                 EscapeMenuOptions::BackToMainMenu => {
-                                    self.state = AppState::MainMenu { in_ip_box: None };
+                                    self.state = AppState::MainMenu {
+                                        in_ip_box: None,
+                                        gigabase_size: 40,
+                                    };
                                     self.last_rendered_update = 0;
                                     self.input_sender = None;
 

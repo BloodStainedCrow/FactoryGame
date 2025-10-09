@@ -19,7 +19,7 @@ use crate::{
         power_grid::{IndexUpdateInfo, MAX_POWER_MULT, PowerGridEntity, PowerGridIdentifier},
     },
 };
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 
 use super::{AssemblerOnclickInfo, PowerUsageInfo, Simdtype, TIMERTYPE, arrays};
 
@@ -115,6 +115,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
         let mut power = Watt(0);
 
+        // FIXME: This is broken since it does not account for the fact that in the case  of the single_type optimization we do not have a list of base_power_consumption, leading to assembler just never being updated!
         for (index, (timer, (prod_timer, (speed_mod, (bonus_prod, (base_power, power_mod)))))) in
             self.timers
                 .iter_mut()
@@ -190,7 +191,6 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         (power, times_ings_used, num_finished_crafts)
     }
 
-    #[inline(never)]
     pub fn update_explicit(
         &mut self,
         power_mult: u8,
@@ -224,20 +224,29 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
         let power_level_recipe_increase = SIMDTYPE::splat(power_level_recipe_increase);
 
+        // FIXME: THIS IS SILLY
+        let arr = match self.single_type {
+            Some(ty) => [power_list[ty as usize].base_power_consumption; { SIMDTYPE::LEN }],
+            None => [Watt(0); { SIMDTYPE::LEN }],
+        };
+
+        let power_iter = match self.single_type {
+            Some(ty) => Either::Left(std::iter::repeat(&arr)),
+            None => Either::Right(self.base_power_consumption.array_chunks()),
+        };
+
         for (
             index,
             (timer_arr, (prod_timer_arr, (speed_mod, (bonus_prod, (base_power, power_mod))))),
         ) in self
             .timers
-            .array_chunks_mut()
+            .array_chunks_mut::<{ SIMDTYPE::LEN }>()
             .zip(
                 self.prod_timers.array_chunks_mut().zip(
                     self.combined_speed_mod.array_chunks().zip(
-                        self.bonus_productivity.array_chunks().zip(
-                            self.base_power_consumption
-                                .array_chunks::<{ SIMDTYPE::LEN }>()
-                                .zip(self.power_consumption_modifier.array_chunks()),
-                        ),
+                        self.bonus_productivity
+                            .array_chunks()
+                            .zip(power_iter.zip(self.power_consumption_modifier.array_chunks())),
                     ),
                 ),
             )
@@ -426,7 +435,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         Self {
             recipe,
 
-            // TODO:
             single_type: None,
 
             ings_max_insert: array::from_fn(|_| vec![].into_boxed_slice()),
@@ -507,6 +515,12 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             .get(self.recipe.into_usize())
             .unwrap();
 
+        let power_consumption = if let Some(ty) = self.single_type {
+            data_store.assembler_info[ty as usize].base_power_consumption
+        } else {
+            self.base_power_consumption[index as usize]
+        };
+
         AssemblerOnclickInfo {
             inputs: self
                 .ings
@@ -551,13 +565,13 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             power_consumption_mod: f32::from(self.power_consumption_modifier[index as usize])
                 * 0.05
                 - 1.0,
-            base_power_consumption: self.base_power_consumption[index as usize],
+            base_power_consumption: power_consumption,
         }
     }
 
     fn join<ItemIdxType: IdxTrait>(
         mut self,
-        other: Self,
+        mut other: Self,
         new_grid_id: PowerGridIdentifier,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
@@ -579,6 +593,52 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                     (pos.x == i32::MAX)
                 );
             }
+        }
+
+        let new_single_type = match (self.single_type, other.single_type) {
+            (None, v) => {
+                if self.len == 0 {
+                    v
+                } else {
+                    None
+                }
+            },
+            (v, None) => {
+                if other.len == 0 {
+                    v
+                } else {
+                    None
+                }
+            },
+            (Some(a_ty), Some(b_ty)) => {
+                if a_ty == b_ty {
+                    Some(a_ty)
+                } else {
+                    None
+                }
+            },
+        };
+
+        if new_single_type != self.single_type
+            && let Some(ty) = self.single_type
+        {
+            self.base_power_consumption = vec![
+                data_store.assembler_info[ty as usize]
+                    .base_power_consumption;
+                self.positions.len()
+            ]
+            .into_boxed_slice();
+        }
+
+        if new_single_type != other.single_type
+            && let Some(ty) = other.single_type
+        {
+            other.base_power_consumption = vec![
+                data_store.assembler_info[ty as usize]
+                    .base_power_consumption;
+                self.positions.len()
+            ]
+            .into_boxed_slice();
         }
 
         let old_len_stored = self.positions.len();
@@ -851,11 +911,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         // };
 
         let ret = Self {
-            single_type: if self.single_type == other.single_type {
-                self.single_type
-            } else {
-                None
-            },
+            single_type: new_single_type,
 
             recipe: self.recipe,
             ings_max_insert: new_ings_max,
@@ -953,6 +1009,13 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         if let Some(single_type) = self.single_type {
             if single_type != ty {
                 self.single_type = None;
+
+                self.base_power_consumption = vec![
+                    data_store.assembler_info[single_type as usize]
+                        .base_power_consumption;
+                    self.positions.len()
+                ]
+                .into_boxed_slice();
             } else {
                 // The new inserter matches the single_type of this
             }
@@ -987,7 +1050,9 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             }
             self.timers[hole_index] = timer;
             self.prod_timers[hole_index] = prod_timer;
-            self.base_power_consumption[hole_index] = power;
+            if self.single_type.is_none() {
+                self.base_power_consumption[hole_index] = power;
+            }
 
             self.base_speed[hole_index] = base_speed;
             self.raw_power_consumption_modifier[hole_index] = power_consumption_modifier;
@@ -1065,11 +1130,13 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 prod_timers.into_boxed_slice()
             });
 
-            take_mut::take(&mut self.base_power_consumption, |base_power_consumption| {
-                let mut base_power_consumption = base_power_consumption.into_vec();
-                base_power_consumption.resize(new_len, Watt(0));
-                base_power_consumption.into_boxed_slice()
-            });
+            if self.single_type.is_none() {
+                take_mut::take(&mut self.base_power_consumption, |base_power_consumption| {
+                    let mut base_power_consumption = base_power_consumption.into_vec();
+                    base_power_consumption.resize(new_len, Watt(0));
+                    base_power_consumption.into_boxed_slice()
+                });
+            }
 
             take_mut::take(
                 &mut self.power_consumption_modifier,
@@ -1090,12 +1157,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 let mut speed = speed.into_vec();
                 speed.resize(new_len, 0);
                 speed.into_boxed_slice()
-            });
-
-            take_mut::take(&mut self.base_power_consumption, |base_power_consumption| {
-                let mut base_power_consumption = base_power_consumption.into_vec();
-                base_power_consumption.resize(new_len, Watt(0));
-                base_power_consumption.into_boxed_slice()
             });
 
             take_mut::take(
@@ -1161,7 +1222,9 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         }
         self.timers[self.len] = timer;
         self.prod_timers[self.len] = prod_timer;
-        self.base_power_consumption[self.len] = power;
+        if self.single_type.is_none() {
+            self.base_power_consumption[self.len] = power;
+        }
 
         self.base_speed[self.len] = base_speed;
         self.raw_power_consumption_modifier[self.len] = power_consumption_modifier;
@@ -1191,7 +1254,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
     fn remove_assembler_data<ItemIdxType: IdxTrait>(
         &mut self,
         index: u32,
-        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
         [ITEMCOUNTTYPE; NUM_INGS],
         [ITEMCOUNTTYPE; NUM_INGS],
@@ -1225,7 +1288,11 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .unwrap(),
             self.timers[index],
             self.prod_timers[index],
-            self.base_power_consumption[index],
+            if self.single_type.is_none() {
+                self.base_power_consumption[index]
+            } else {
+                data_store.assembler_info[self.single_type.unwrap() as usize].base_power_consumption
+            },
             self.raw_power_consumption_modifier[index],
             self.raw_bonus_productivity[index],
             self.base_speed[index],
@@ -1241,7 +1308,9 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         }
         self.timers[index] = 0;
         self.prod_timers[index] = 0;
-        self.base_power_consumption[index] = Watt(0);
+        if self.single_type.is_none() {
+            self.base_power_consumption[index] = Watt(0);
+        }
         self.positions[index] = Position {
             x: i32::MAX,
             y: i32::MAX,

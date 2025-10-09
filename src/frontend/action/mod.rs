@@ -4,13 +4,13 @@ use place_entity::PlaceEntityInfo;
 use place_tile::PlaceFloorTileByHandInfo;
 use set_recipe::SetRecipeInfo;
 
+use super::world::{Position, tile::PlaceEntityType};
+use crate::frontend::world::tile::ModuleTy;
 use crate::{
     data::DataStore,
     item::{IdxTrait, WeakIdxTrait},
     research::Technology,
 };
-
-use super::world::{Position, tile::PlaceEntityType};
 
 #[cfg(feature = "client")]
 pub mod action_state_machine;
@@ -38,7 +38,7 @@ pub enum ActionType<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     AddModules {
         pos: Position,
-        modules: Vec<usize>,
+        modules: Vec<ModuleTy>,
     },
     RemoveModules {
         pos: Position,

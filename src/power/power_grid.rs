@@ -1,11 +1,12 @@
-use std::{
-    cmp::min,
-    collections::{HashMap, HashSet},
-};
-
+use crate::frontend::world::tile::ModuleSlots;
+use crate::frontend::world::tile::ModuleTy;
 use crate::{
     assembler::{MultiAssemblerStore, simd::MultiAssemblerStore as MultiAssemblerStoreStruct},
     join_many::join,
+};
+use std::{
+    cmp::min,
+    collections::{HashMap, HashSet},
 };
 
 use crate::{
@@ -70,7 +71,7 @@ pub enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
-pub enum BeaconAffectedEntity<RecipeIdxType: WeakIdxTrait> {
+pub enum BeaconAffectedEntity<RecipeIdxType: WeakIdxTrait = u8> {
     Assembler {
         id: AssemblerID<RecipeIdxType>,
     },
@@ -495,7 +496,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         &mut self,
         lab_position: Position,
         ty: u8,
-        modules: &[Option<usize>],
+        modules: &[Option<ModuleTy>],
         pole_connection: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (WeakIndex, u32) {
@@ -901,12 +902,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     pub fn add_module_to_assembler(
         &mut self,
         id: AssemblerID<RecipeIdxType>,
-        module_kind: usize,
+        module_kind: ModuleTy,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        let speed_mod = data_store.module_info[module_kind].speed_mod;
-        let prod_mod = data_store.module_info[module_kind].prod_mod;
-        let power_mod = data_store.module_info[module_kind].power_mod;
+        let speed_mod = data_store.module_info[module_kind as usize].speed_mod;
+        let prod_mod = data_store.module_info[module_kind as usize].prod_mod;
+        let power_mod = data_store.module_info[module_kind as usize].power_mod;
 
         assert!(!self.is_placeholder);
 
@@ -1010,19 +1011,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     pub fn remove_module_from_assembler(
         &mut self,
         id: AssemblerID<RecipeIdxType>,
-        module_kind: usize,
+        module_kind: ModuleTy,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         // TODO: This will crash if someone uses i8::MIN but oh well
-        let speed_mod = data_store.module_info[module_kind]
+        let speed_mod = data_store.module_info[module_kind as usize]
             .speed_mod
             .checked_neg()
             .expect("Negation failed");
-        let prod_mod = data_store.module_info[module_kind]
+        let prod_mod = data_store.module_info[module_kind as usize]
             .prod_mod
             .checked_neg()
             .expect("Negation failed");
-        let power_mod = data_store.module_info[module_kind]
+        let power_mod = data_store.module_info[module_kind as usize]
             .power_mod
             .checked_neg()
             .expect("Negation failed");
@@ -1129,12 +1130,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     pub fn add_module_to_lab(
         &mut self,
         index: u32,
-        module_kind: usize,
+        module_kind: ModuleTy,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        let speed_mod = data_store.module_info[module_kind].speed_mod;
-        let prod_mod = data_store.module_info[module_kind].prod_mod;
-        let power_mod = data_store.module_info[module_kind].power_mod;
+        let speed_mod = data_store.module_info[module_kind as usize].speed_mod;
+        let prod_mod = data_store.module_info[module_kind as usize].prod_mod;
+        let power_mod = data_store.module_info[module_kind as usize].power_mod;
 
         assert!(!self.is_placeholder);
 
@@ -1150,19 +1151,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     pub fn remove_module_from_lab(
         &mut self,
         index: u32,
-        module_kind: usize,
+        module_kind: ModuleTy,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         // TODO: This will crash if someone uses i8::MIN but oh well
-        let speed_mod = data_store.module_info[module_kind]
+        let speed_mod = data_store.module_info[module_kind as usize]
             .speed_mod
             .checked_neg()
             .expect("Negation failed");
-        let prod_mod = data_store.module_info[module_kind]
+        let prod_mod = data_store.module_info[module_kind as usize]
             .prod_mod
             .checked_neg()
             .expect("Negation failed");
-        let power_mod = data_store.module_info[module_kind]
+        let power_mod = data_store.module_info[module_kind as usize]
             .power_mod
             .checked_neg()
             .expect("Negation failed");
@@ -1307,7 +1308,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         ty: u8,
         grid_id: PowerGridIdentifier,
         recipe: Recipe<RecipeIdxType>,
-        modules: &[Option<usize>],
+        modules: &[Option<ModuleTy>],
         connected_power_pole_position: Position,
         assembler_position: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -2580,7 +2581,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         ty: u8,
         beacon_pos: Position,
         pole_pos: Position,
-        modules: Box<[Option<usize>]>,
+        modules: &ModuleSlots,
         affected_entities: Vec<BeaconAffectedEntity<RecipeIdxType>>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> WeakIndex {
@@ -2602,9 +2603,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             .flatten()
             .map(|module_ty| {
                 (
-                    data_store.module_info[*module_ty].speed_mod.into(),
-                    data_store.module_info[*module_ty].prod_mod.into(),
-                    data_store.module_info[*module_ty].power_mod.into(),
+                    data_store.module_info[*module_ty as usize].speed_mod.into(),
+                    data_store.module_info[*module_ty as usize].prod_mod.into(),
+                    data_store.module_info[*module_ty as usize].power_mod.into(),
                 )
             })
             .reduce(|acc, v| (acc.0 + v.0, acc.1 + v.1, acc.2 + v.2))

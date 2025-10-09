@@ -1,16 +1,17 @@
+use crate::frontend::world::tile::ModuleSlots;
+use crate::frontend::world::tile::ModuleTy;
+use itertools::Itertools;
+use log::{error, warn};
+use power_grid::{
+    BeaconAffectedEntity, IndexUpdateInfo, MIN_BEACON_POWER_MULT, PowerGrid, PowerGridEntity,
+    PowerGridIdentifier,
+};
 use std::{
     collections::HashMap,
     iter::Sum,
     mem,
     ops::{Add, Div, Mul, Sub},
     u64,
-};
-
-use itertools::Itertools;
-use log::{error, warn};
-use power_grid::{
-    BeaconAffectedEntity, IndexUpdateInfo, MIN_BEACON_POWER_MULT, PowerGrid, PowerGridEntity,
-    PowerGridIdentifier,
 };
 
 use std::fmt::Display;
@@ -302,13 +303,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
 
         let ret = if !connected_poles.is_empty() {
             // Find the largest grid, and choose it as the base
+            // If the size is a tossup pick the one with the smaller grid_id to reduce holes in the power_grid list
             let grid = connected_poles
                 .iter()
                 .map(|pos| self.pole_pos_to_grid_id[pos])
                 .max_by_key(|grid_id| {
-                    self.power_grids[usize::from(*grid_id)]
-                        .grid_graph
-                        .node_count()
+                    (
+                        self.power_grids[usize::from(*grid_id)]
+                            .grid_graph
+                            .node_count(),
+                        -i32::from(*grid_id),
+                    )
                 })
                 .unwrap();
 
@@ -431,7 +436,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         if delete_network {
             debug_assert!(new_grids.into_iter().count() == 0);
 
-            self.remove_power_grid(old_id, data_store);
+            let _ = self.remove_power_grid(old_id, data_store);
 
             return (vec![], vec![], no_longer_connected_entity_positions);
         }
@@ -463,12 +468,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         )
     }
 
+    #[must_use]
     fn remove_power_grid(
         &mut self,
         id: PowerGridIdentifier,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) {
-        self.power_grids[usize::from(id)] = PowerGrid::new_placeholder(data_store);
+    ) -> PowerGrid<ItemIdxType, RecipeIdxType> {
+        let removed = if usize::from(id) == self.power_grids.len() - 1 {
+            self.power_grids.pop().unwrap()
+        } else {
+            let mut tmp = PowerGrid::new_placeholder(data_store);
+            std::mem::swap(&mut tmp, &mut self.power_grids[usize::from(id)]);
+            tmp
+        };
 
         #[cfg(debug_assertions)]
         {
@@ -478,6 +490,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                     .all(|idx| !self.power_grids[usize::from(*idx.1)].is_placeholder)
             )
         }
+
+        removed
     }
 
     #[must_use]
@@ -573,14 +587,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             }
         }
 
-        let mut placeholder = PowerGrid::new_placeholder(data_store);
-
-        mem::swap(
-            &mut placeholder,
-            &mut self.power_grids[usize::from(removed_id)],
-        );
-
-        let second = placeholder;
+        let second = self.remove_power_grid(removed_id, data_store);
 
         for pole_pos in second.grid_graph.keys() {
             *self.pole_pos_to_grid_id.get_mut(pole_pos).unwrap() = kept_id;
@@ -929,7 +936,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         ty: u8,
         beacon_pos: Position,
         pole_pos: Position,
-        modules: Box<[Option<usize>]>,
+        modules: &ModuleSlots,
         affected_entities: impl IntoIterator<Item = BeaconAffectedEntity<RecipeIdxType>>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> WeakIndex {
@@ -956,9 +963,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             .flatten()
             .map(|module_ty| {
                 (
-                    data_store.module_info[*module_ty].speed_mod.into(),
-                    data_store.module_info[*module_ty].prod_mod.into(),
-                    data_store.module_info[*module_ty].power_mod.into(),
+                    data_store.module_info[*module_ty as usize].speed_mod.into(),
+                    data_store.module_info[*module_ty as usize].prod_mod.into(),
+                    data_store.module_info[*module_ty as usize].power_mod.into(),
                 )
             })
             .reduce(|acc, v| (acc.0 + v.0, acc.1 + v.1, acc.2 + v.2))

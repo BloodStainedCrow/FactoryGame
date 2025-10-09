@@ -11,6 +11,8 @@ use directories::ProjectDirs;
 use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
 use log::error;
 
+use std::io::{BufReader, BufWriter};
+
 use crate::{
     app_state::{AuxillaryData, Factory, GameState, SimulationState},
     data::DataStore,
@@ -39,15 +41,11 @@ pub fn save_at<V: serde::Serialize + ?Sized>(value: &V, path: PathBuf) {
         profiling::scope!("Create file");
         File::create(path).expect("could not create file")
     };
-    let data = {
-        profiling::scope!("Serialize");
-        bitcode::serialize(value).unwrap()
-    };
 
     {
         profiling::scope!("Compressing and Writing to file");
-        let mut e = ZlibEncoder::new(file, Compression::fast());
-        e.write_all(&data).expect("write_all failed");
+        let mut e = ZlibEncoder::new(BufWriter::new(file), Compression::fast());
+        bincode::serde::encode_into_std_write(value, &mut e, bincode::config::standard()).unwrap();
         e.finish().expect("Compression failed");
     }
 }
@@ -61,10 +59,9 @@ pub fn load_at<V: for<'a> serde::Deserialize<'a>>(path: PathBuf) -> V {
 
     {
         profiling::scope!("Decompressing and deserializing");
-        let mut data = vec![];
-        let mut e = ZlibDecoder::new(file);
-        e.read_to_end(&mut data).expect("Read to end failed");
-        bitcode::deserialize(&data).expect("Deserialization failed")
+        let mut e = ZlibDecoder::new(BufReader::new(file));
+        bincode::serde::decode_from_std_read(&mut e, bincode::config::standard())
+            .expect("Deserialization failed")
     }
 }
 
@@ -183,10 +180,6 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             }
         );
     }
-
-    // bitcode::file
-    //     .write_all(&res)
-    //     .expect("Could not write to file");
 
     // Remove old save if it exists
     let _ = std::fs::remove_dir_all(&save_file_dir);

@@ -12,6 +12,10 @@ use crate::liquid::FluidSystemState;
 use crate::rendering::Corner;
 use crate::saving::{save, save_components};
 use crate::statistics::{NUM_DIFFERENT_TIMESCALES, TIMESCALE_NAMES};
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
+use get_size::GetSize;
 use crate::{
     TICKS_PER_SECOND_LOGIC,
     assembler::AssemblerOnclickInfo,
@@ -979,7 +983,6 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             direction,
                                             info,
                                             user_movetime, 
-                                            type_movetime,
                                             ty,
                                             ..
                                         } => {
@@ -1002,7 +1005,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         end_pos,
                                         info,
                                     } => {
-                                        let movetime: u16 = user_movetime.unwrap_or(*type_movetime).into();
+                                        let movetime: u16 = user_movetime.map(|v| v.into()).unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks).into();
                                         match info {
                                             crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => {
                                                 let hand_size = HAND_SIZE;
@@ -1099,7 +1102,6 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         Entity::PowerPole {
                                             ty,
                                             pos,
-                                            connected_power_poles,
                                         } => {
                                             // TODO:
                                             // println!("Pole at {pos:?}, with grid: {grid_id}");
@@ -1998,20 +2000,31 @@ pub fn render_ui<
         )
     });
 
-    // TODO:
-    // Window::new("Size").default_open(false).show(ctx, |ui| {
-    //     profiling::scope!("Show SimState Size");
-    //     if ui.button("Reset Cache").clicked() {
-    //         state_machine_ref.get_size_cache.clear();
-    //     }
-    //     ShowInfo::<RAMExtractor, RamUsage>::show_info(
-    //         game_state_ref,
-    //         &mut RAMExtractor,
-    //         ui,
-    //         "",
-    //         &mut state_machine_ref.get_size_cache,
-    //     );
-    // });
+    Window::new("Size").fixed_size(egui::vec2(1920f32, 1080f32)).default_open(false).show(ctx, |ui| {
+        // Workaround for fixed_size not working (https://users.rust-lang.org/t/egui-questions-regarding-window-size/88753/6)
+        ui.set_width(ui.available_width());
+        ui.set_height(ui.available_height());
+        profiling::scope!("Show SimState Size");
+        if ui.button("Reset Cache").clicked() {
+            state_machine_ref.get_size_cache.clear();
+        }
+        ScrollArea::new([false, true]).show(ui, |ui| {
+            ShowInfo::<RAMExtractor, RamUsage>::show_info(
+                &*game_state_ref.simulation_state,
+                &mut RAMExtractor,
+                ui,
+                "",
+                &mut state_machine_ref.get_size_cache,
+            );
+            ShowInfo::<RAMExtractor, RamUsage>::show_info(
+                &*game_state_ref.world,
+                &mut RAMExtractor,
+                ui,
+                "",
+                &mut state_machine_ref.get_size_cache,
+            );
+        });
+    });
 
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     Window::new("Import BP")
@@ -2042,7 +2055,7 @@ pub fn render_ui<
             }
             if ui.button("⚠️Auto Clock Inserters").clicked() {
                 let inserters_without_values_set = game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter_map(|e| match e {
-                    Entity::Inserter { ty, user_movetime, type_movetime, pos, direction, filter, info } => {
+                    Entity::Inserter { ty, user_movetime, pos, direction, filter, info } => {
                         if user_movetime.is_none() {
                             match info {
                                 crate::frontend::world::tile::InserterInfo::NotAttached { start_pos, end_pos } => None,
@@ -2147,7 +2160,7 @@ pub fn render_ui<
             }
             if ui.button("Remove Clocking from all Inserters").clicked() {
                 let inserters_without_values_set = game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter_map(|e| match e {
-                    Entity::Inserter { ty, user_movetime, type_movetime, pos, direction, filter, info } => {
+                    Entity::Inserter { ty, user_movetime, pos, direction, filter, info } => {
                         match info {
                             crate::frontend::world::tile::InserterInfo::NotAttached { start_pos, end_pos } => None,
                             crate::frontend::world::tile::InserterInfo::Attached { start_pos, end_pos, info } => match info {
@@ -2613,7 +2626,7 @@ pub fn render_ui<
                                         for module in modules.iter() {
                                             row.col(|ui| {
                                                 if let Some(module_id) = module {
-                                                    ui.label(&data_store_ref.module_info[*module_id].display_name);
+                                                    ui.label(&data_store_ref.module_info[*module_id as usize].display_name);
                                                 } else {
                                                     ui.label("Empty Module Slot");
                                                 }
@@ -2714,7 +2727,7 @@ pub fn render_ui<
                         });
 
                         TableBuilder::new(ui).columns(Column::auto(), 2).body(|body| {
-                            body.rows(1.0, pg.num_assemblers_of_type.len() + pg.num_solar_panels_of_type.len(), |mut row| {
+                            body.rows(1.0, pg.num_assemblers_of_type.len() + pg.num_solar_panels_of_type.len() + pg.num_beacons_of_type.len()+ pg.num_labs_of_type.len(), |mut row| {
                                 let i = row.index();
 
                                 if i < pg.num_assemblers_of_type.len() {
@@ -2723,13 +2736,28 @@ pub fn render_ui<
 
                                     });
                                     row.col(|ui| {ui.add(Label::new(format!("{}", pg.num_assemblers_of_type[i])).extend());});
-                                } else {
+                                } else if  i < pg.num_assemblers_of_type.len() +  pg.num_solar_panels_of_type.len()  {
                                     let i = i - pg.num_assemblers_of_type.len();
                                     row.col(|ui| {
                                         ui.add(Label::new(&data_store_ref.solar_panel_info[i].display_name).extend());
 
                                     });
                                     row.col(|ui| {ui.add(Label::new(format!("{}", pg.num_solar_panels_of_type[i])).extend());});
+                                } else if i < pg.num_assemblers_of_type.len() +  pg.num_solar_panels_of_type.len() + pg.num_beacons_of_type.len() {
+                                    let i = i - (pg.num_assemblers_of_type.len() +  pg.num_solar_panels_of_type.len());
+                                    row.col(|ui| {
+                                        ui.add(Label::new(&data_store_ref.beacon_info[i].display_name).extend());
+
+                                    });
+                                    row.col(|ui| {ui.add(Label::new(format!("{}", pg.num_beacons_of_type[i])).extend());});
+                                } else {
+                                    let i = i - (pg.num_assemblers_of_type.len() +  pg.num_solar_panels_of_type.len() + pg.num_beacons_of_type.len());
+                                    row.col(|ui| {
+                                        ui.add(Label::new(&data_store_ref.lab_info[i].display_name).extend());
+
+                                    });
+                                    row.col(|ui| {ui.add(Label::new(format!("{}", pg.num_labs_of_type[i])).extend());});
+
                                 }
                             });
                         });
@@ -2806,8 +2834,8 @@ pub fn render_ui<
 
                     },
                     crate::frontend::world::tile::Entity::Inserter {
+                        ty,
                         user_movetime,
-                        type_movetime,
 
                         pos,
                         info,
@@ -2853,9 +2881,9 @@ pub fn render_ui<
                         ui.checkbox(&mut movetime_overridden, "Override Swing Time");
 
                         if movetime_overridden {
-                            let mut movetime = user_movetime.map(|v| v.into()).unwrap_or(*type_movetime);
+                            let mut movetime = user_movetime.map(|v| v.into()).unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks);
 
-                            ui.add(egui::Slider::new(&mut movetime, (*type_movetime)..=NonZero::<u16>::MAX).text("Ticks per half swing"));
+                            ui.add(egui::Slider::new(&mut movetime, (data_store.inserter_infos[*ty as usize].swing_time_ticks)..=u16::MAX).text("Ticks per half swing"));
 
                             if *user_movetime != Some(movetime.try_into().unwrap()) {
                                 actions.push(ActionType::OverrideInserterMovetime { pos: *pos, new_movetime: Some(movetime.try_into().unwrap()) });
@@ -2943,7 +2971,7 @@ pub fn render_ui<
                                         for module in modules.iter() {
                                             row.col(|ui| {
                                                 if let Some(module_id) = module {
-                                                    ui.label(&data_store_ref.module_info[*module_id].display_name);
+                                                    ui.label(&data_store_ref.module_info[*module_id as usize].display_name);
                                                 } else {
                                                     ui.label("Empty Module Slot");
                                                 }
