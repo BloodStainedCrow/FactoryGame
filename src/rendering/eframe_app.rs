@@ -439,7 +439,7 @@ impl eframe::App for App {
 
                             ui.add(Slider::new(gigabase_size, 1..=1_000).logarithmic(true).update_while_editing(true).text("Number of base copies to build"));
 
-                            let single_base_size  = 13.0 / 40.0;
+                            let single_base_size  = 10.0 / 40.0;
                             let single_base_usage  = 40.0 / 40.0;
 
                             ui.label(&format!("Est. Memory Usage: ~{:.1}GB", single_base_size * f64::from(*gigabase_size)));
@@ -458,7 +458,7 @@ impl eframe::App for App {
                         thread::spawn(move || {
                             send.send(run_integrated_server(
                                 progress_send,
-                                StartGameInfo::Create(GameCreationInfo::Gigabase(40)),
+                                StartGameInfo::Create(GameCreationInfo::Gigabase(gigabase_size)),
                             ));
                         });
 

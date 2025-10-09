@@ -13,7 +13,17 @@ use std::cmp::Eq;
 use std::hash::Hash;
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize, serde::Serialize, Hash,
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Deserialize,
+    serde::Serialize,
+    Hash,
 )]
 pub struct NodeIndex<Ix: IndexType = petgraph::stable_graph::DefaultIx> {
     pub node_index: petgraph::stable_graph::NodeIndex<Ix>,

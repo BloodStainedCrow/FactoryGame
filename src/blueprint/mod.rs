@@ -1034,7 +1034,7 @@ impl Blueprint {
                             x: pos.x - base_pos.x,
                             y: pos.y - base_pos.y,
                         },
-                        modules: modules
+                        modules: world.module_slot_dedup_table[*modules as usize]
                             .iter()
                             .flatten()
                             .copied()
@@ -1231,7 +1231,7 @@ impl Blueprint {
                                 x: pos.x - base_pos.x,
                                 y: pos.y - base_pos.y,
                             },
-                            modules: modules
+                            modules: world.module_slot_dedup_table[*modules as usize]
                                 .iter()
                                 .flatten()
                                 .copied()

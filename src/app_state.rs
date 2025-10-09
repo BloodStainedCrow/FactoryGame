@@ -1384,13 +1384,30 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     data_store,
                                 );
 
-                                let modules = vec![
-                                    None;
-                                    data_store.assembler_info[usize::from(ty)].num_module_slots
-                                        as usize
-                                ]
-                                .into_boxed_slice()
-                                .into();
+                                let modules = if let Some(found_idx) =
+                                    game_state.world.module_slot_dedup_table.iter().position(
+                                        |slots| {
+                                            slots.len()
+                                                == data_store.assembler_info[usize::from(ty)]
+                                                    .num_module_slots
+                                                    as usize
+                                                && slots.iter().all(|v| v.is_none())
+                                        },
+                                    ) {
+                                    found_idx as u32
+                                } else {
+                                    game_state.world.module_slot_dedup_table.push(
+                                        vec![
+                                            None;
+                                            data_store.assembler_info[usize::from(ty)]
+                                                .num_module_slots
+                                                as usize
+                                        ]
+                                        .into_boxed_slice()
+                                        .into(),
+                                    );
+                                    (game_state.world.module_slot_dedup_table.len() - 1) as u32
+                                };
 
                                 if let Some(pole_position) = powered_by {
                                     game_state.world.add_entity(
@@ -1558,7 +1575,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                             u16::from(inserter_range) * 2 + e_size.1,
                                         ),
                                         data_store,
-                                        |e| {
+                                        |e, _| {
                                             match e {
                                                 Entity::Inserter {
                                                     ty,
@@ -1897,11 +1914,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     None
                                 };
 
+                                let module_idx = if let Some(idx) = game_state
+                                    .world
+                                    .module_slot_dedup_table
+                                    .iter()
+                                    .position(|slots| *slots == modules)
+                                {
+                                    idx as u32
+                                } else {
+                                    game_state.world.module_slot_dedup_table.push(modules);
+                                    (game_state.world.module_slot_dedup_table.len() - 1) as u32
+                                };
+
                                 game_state.world.add_entity(
                                     Entity::Lab {
                                         pos,
                                         ty,
-                                        modules,
+                                        modules: module_idx,
                                         pole_position: powered_by,
                                     },
                                     &mut game_state.simulation_state,
@@ -1942,11 +1971,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     None
                                 };
 
+                                let modules_idx = if let Some(idx) = game_state
+                                    .world
+                                    .module_slot_dedup_table
+                                    .iter()
+                                    .position(|slots| *slots == modules)
+                                {
+                                    idx as u32
+                                } else {
+                                    game_state.world.module_slot_dedup_table.push(modules);
+                                    (game_state.world.module_slot_dedup_table.len() - 1) as u32
+                                };
+
                                 game_state.world.add_entity(
                                     Entity::Beacon {
                                         pos,
                                         ty,
-                                        modules,
+                                        modules: modules_idx,
                                         pole_position: powered_by,
                                     },
                                     &mut game_state.simulation_state,
@@ -2309,14 +2350,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     pos,
                     modules: new_modules,
                 } => {
-                    game_state
-                        .world
-                        .get_entity_at_mut(pos, data_store)
-                        .map(|e| {
+                    game_state.world.mutate_entities_colliding_with(
+                        pos,
+                        (1, 1),
+                        data_store,
+                        |e, dedup| {
                             match e {
                                 Entity::Assembler { modules, info, .. } => {
-                                    let num_free_module_slots =
-                                        modules.iter().filter(|slot| slot.is_none()).count();
+                                    let num_free_module_slots = dedup[*modules as usize]
+                                        .iter()
+                                        .filter(|slot| slot.is_none())
+                                        .count();
 
                                     if new_modules.len() > num_free_module_slots {
                                         // Not enough space in the module slots
@@ -2326,7 +2370,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     } else {
                                         // We are okay!
 
-                                        modules
+                                        let mut modules_cloned = dedup[*modules as usize].clone();
+
+                                        modules_cloned
                                             .iter_mut()
                                             .filter(|slot| slot.is_none())
                                             .zip(new_modules.iter().copied())
@@ -2334,6 +2380,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                 assert!(slot.is_none());
                                                 *slot = Some(new_module);
                                             });
+
+                                        if let Some(idx) =
+                                            dedup.iter().position(|slots| *slots == modules_cloned)
+                                        {
+                                            *modules = idx as u32;
+                                        } else {
+                                            dedup.push(modules_cloned);
+                                            *modules = (dedup.len() - 1) as u32;
+                                        }
 
                                         match info {
                                             AssemblerInfo::UnpoweredNoRecipe
@@ -2364,8 +2419,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     modules,
                                     pole_position,
                                 } => {
-                                    let num_free_module_slots =
-                                        modules.iter().filter(|slot| slot.is_none()).count();
+                                    let num_free_module_slots = dedup[*modules as usize]
+                                        .iter()
+                                        .filter(|slot| slot.is_none())
+                                        .count();
 
                                     if new_modules.len() > num_free_module_slots {
                                         // Not enough space in the module slots
@@ -2375,7 +2432,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     } else {
                                         // We are okay!
 
-                                        modules
+                                        let mut modules_cloned = dedup[*modules as usize].clone();
+
+                                        modules_cloned
                                             .iter_mut()
                                             .filter(|slot| slot.is_none())
                                             .zip(new_modules.iter().copied())
@@ -2383,6 +2442,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                 assert!(slot.is_none());
                                                 *slot = Some(new_module);
                                             });
+
+                                        if let Some(idx) =
+                                            dedup.iter().position(|slots| *slots == modules_cloned)
+                                        {
+                                            *modules = idx as u32;
+                                        } else {
+                                            dedup.push(modules_cloned);
+                                            *modules = (dedup.len() - 1) as u32;
+                                        }
 
                                         match pole_position {
                                             None => {},
@@ -2420,17 +2488,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     );
                                 },
                             }
-                        });
+                            ControlFlow::Break(())
+                        },
+                    );
                 },
                 ActionType::RemoveModules { pos, indices } => {
-                    game_state
-                        .world
-                        .get_entity_at_mut(pos, data_store)
-                        .map(|e| {
+                    game_state.world.mutate_entities_colliding_with(
+                        pos,
+                        (1, 1),
+                        data_store,
+                        |e, dedup| {
                             match e {
                                 Entity::Assembler { modules, info, .. } => {
-                                    let num_used_module_slots =
-                                        modules.iter().filter(|slot| slot.is_some()).count();
+                                    let num_used_module_slots = dedup[*modules as usize]
+                                        .iter()
+                                        .filter(|slot| slot.is_some())
+                                        .count();
 
                                     if indices.len() > num_used_module_slots {
                                         // Not enough space in the module slots
@@ -2438,11 +2511,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     } else {
                                         // We are okay!
 
+                                        let mut modules_clone = dedup[*modules as usize].clone();
+
                                         assert!(indices.iter().all_unique());
 
-                                        assert!(indices.iter().all(|v| *v < modules.len()));
+                                        assert!(indices.iter().all(|v| *v < modules_clone.len()));
 
-                                        let modules_to_remove = modules
+                                        let modules_to_remove = modules_clone
                                             .iter_mut()
                                             .enumerate()
                                             .filter(|(i, _)| indices.contains(i))
@@ -2461,7 +2536,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         match info {
                                             AssemblerInfo::UnpoweredNoRecipe
                                             | AssemblerInfo::Unpowered(_)
-                                            | AssemblerInfo::PoweredNoRecipe(_) => {},
+                                            | AssemblerInfo::PoweredNoRecipe(_) => {
+                                                // Make sure to consume the iterator
+                                                let _ = modules_to_remove.count();
+                                            },
                                             AssemblerInfo::Powered { id, .. } => {
                                                 for removed_module in modules_to_remove {
                                                     game_state
@@ -2477,13 +2555,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                 }
                                             },
                                         }
+
+                                        if let Some(idx) =
+                                            dedup.iter().position(|slots| *slots == modules_clone)
+                                        {
+                                            *modules = idx as u32;
+                                        } else {
+                                            dedup.push(modules_clone);
+                                            *modules = (dedup.len() - 1) as u32;
+                                        }
                                     }
                                 },
                                 _ => {
                                     warn!("Tried to insert modules into non assembler");
                                 },
                             }
-                        });
+                            ControlFlow::Break(())
+                        },
+                    );
                 },
             }
 
@@ -2627,7 +2716,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         (2 * inserter_range + size.1).into(),
                     ),
                     data_store,
-                    |e| {
+                    |e, _| {
                         match e {
                             Entity::Inserter { pos, info, .. } => match info {
                                 InserterInfo::NotAttached { start_pos, end_pos } => {
@@ -2660,7 +2749,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         (2 * inserter_range + 1).into(),
                     ),
                     data_store,
-                    |e| {
+                    |e, _| {
                         match e {
                             Entity::Inserter { pos, info, .. } => match info {
                                 InserterInfo::NotAttached { start_pos, end_pos } => {
@@ -2692,7 +2781,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         (2 * inserter_range + size.1).into(),
                     ),
                     data_store,
-                    |e| {
+                    |e, _| {
                         match e {
                             Entity::Inserter { pos, info, .. } => match info {
                                 InserterInfo::NotAttached { start_pos, end_pos } => {

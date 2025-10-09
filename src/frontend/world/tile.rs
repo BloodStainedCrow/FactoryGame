@@ -150,6 +150,8 @@ impl Default for PlayerInfo {
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+    pub module_slot_dedup_table: Vec<ModuleSlots>,
+
     noise: SerializableSimplex,
 
     // TODO: I don´t think I want FP
@@ -714,7 +716,7 @@ fn new_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType: IdxTra
                 inserter_search_start_pos,
                 inserter_search_size,
                 data_store,
-                |e| {
+                |e, _| {
                     match e {
                         Entity::Inserter {
                             pos: inserter_pos,
@@ -848,7 +850,7 @@ fn new_power_pole<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         (pole_power_range as u16) * 2 + pole_size.1,
                     ),
                     data_store,
-                    |e| {
+                    |e, dedup| {
                         match e {
                             Entity::Assembler {
                                 ty,
@@ -864,7 +866,12 @@ fn new_power_pole<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 let (new_id, weak_index) =
                                     sim_state.factory.power_grids.power_grids[usize::from(grid_id)]
                                         .add_assembler(
-                                            *ty, grid_id, *recipe, &**modules, pole_pos, *pos,
+                                            *ty,
+                                            grid_id,
+                                            *recipe,
+                                            &*dedup[*modules as usize],
+                                            pole_pos,
+                                            *pos,
                                             data_store,
                                         );
 
@@ -906,9 +913,10 @@ fn new_power_pole<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 modules,
                                 pole_position: pole_position @ None,
                             } => {
+                                let modules = &dedup[*modules as usize];
                                 let (weak_index, index) = sim_state.factory.power_grids.power_grids
                                     [usize::from(grid_id)]
-                                .add_lab(*pos, *ty, &**modules, pole_pos, data_store);
+                                .add_lab(*pos, *ty, modules, pole_pos, data_store);
 
                                 *pole_position = Some((pole_pos, weak_index, index));
 
@@ -920,6 +928,7 @@ fn new_power_pole<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 modules,
                                 pole_position: pole_position @ None,
                             } => {
+                                let modules = &dedup[*modules as usize];
                                 let weak_index = sim_state.factory.power_grids.power_grids
                                     [usize::from(grid_id)]
                                 .add_beacon(*ty, *pos, pole_pos, modules, vec![], data_store);
@@ -1142,7 +1151,7 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                 inserter_search_start_pos,
                 inserter_search_size,
                 data_store,
-                |e| {
+                |e, _| {
                     match e {
                         Entity::Inserter {
                             ty,
@@ -1248,6 +1257,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         create_dir_all(&base_path).expect("Failed to create world dir");
 
         let Self {
+            module_slot_dedup_table,
             noise,
             players,
             chunks,
@@ -1264,6 +1274,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         let base_path = &folder_path;
 
         join!(
+            || save_at(
+                module_slot_dedup_table,
+                base_path.join("module_slot_dedup_table")
+            ),
             || save_at(noise, base_path.join("noise")),
             || save_at(players, base_path.join("players")),
             || chunks.par_save(base_path.join("chunks")),
@@ -1284,6 +1298,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
     pub fn par_load(base_path: PathBuf) -> Self {
         let (
+            module_slot_dedup_table,
             noise,
             players,
             chunks,
@@ -1294,6 +1309,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             to_instantiate,
             to_instantiate_by_belt,
         ) = join!(
+            || load_at(base_path.join("module_slot_dedup_table")),
             || load_at(base_path.join("noise")),
             || load_at(base_path.join("players")),
             || BoundingBoxGrid::par_load(base_path.join("chunks")),
@@ -1306,6 +1322,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         );
 
         Self {
+            module_slot_dedup_table,
             noise,
             players,
             chunks,
@@ -1341,6 +1358,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         let noise = Simplex::new(1);
 
         Self {
+            module_slot_dedup_table: vec![],
             noise: SerializableSimplex { inner: noise },
             chunks: grid,
             players: vec![PlayerInfo::default(), PlayerInfo::default()],
@@ -1458,7 +1476,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
         let mut cascading_updates = vec![];
 
-        self.get_entity_at_mut(pos, data_store).map(|e| {
+        self.mutate_entities_colliding_with(pos, (1, 1), data_store, |e, dedup| {
             match e {
                 Entity::Assembler {
                     ty,
@@ -1474,12 +1492,27 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 } => {
                     let assembler_size = data_store.assembler_info[*ty as usize].size(*rotation);
 
-                    for module_slot in modules.iter_mut() {
-                        *module_slot = cheated_modules;
-                    }
+                    // TODO: Stop adding cheated modules
+                    let old_modules = &dedup[*modules as usize];
+
+                    // TODO: Can we avoid allocating here?
+                    let new_modules = vec![cheated_modules; old_modules.len()]
+                        .into_boxed_slice()
+                        .into();
+
+                    let new_module_index = if let Some(new_module_idx) =
+                        dedup.iter().position(|slots| *slots == new_modules)
+                    {
+                        new_module_idx
+                    } else {
+                        dedup.push(new_modules);
+                        dedup.len() - 1
+                    };
+
+                    *modules = new_module_index as u32;
 
                     if id.recipe == new_recipe {
-                        return;
+                        return ControlFlow::Break(());
                     }
 
                     // Change assembler recipe
@@ -1514,9 +1547,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     info: info @ AssemblerInfo::PoweredNoRecipe(_),
                     rotation,
                 } => {
-                    for module_slot in modules.iter_mut() {
-                        *module_slot = cheated_modules;
-                    }
+                    // TODO: Stop adding cheated modules
+                    let old_modules = &dedup[*modules as usize];
+
+                    // TODO: Can we avoid allocating here?
+                    let new_modules = vec![cheated_modules; old_modules.len()]
+                        .into_boxed_slice()
+                        .into();
+
+                    let new_module_index = if let Some(new_module_idx) =
+                        dedup.iter().position(|slots| *slots == new_modules)
+                    {
+                        new_module_idx
+                    } else {
+                        dedup.push(new_modules);
+                        dedup.len() - 1
+                    };
+
+                    *modules = new_module_index as u32;
 
                     let AssemblerInfo::PoweredNoRecipe(pole_position) = info else {
                         unreachable!();
@@ -1528,7 +1576,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         *ty,
                         grid_id,
                         new_recipe,
-                        &**modules,
+                        &dedup[new_module_index as usize],
                         *pole_position,
                         *pos,
                         data_store,
@@ -1545,9 +1593,25 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     info: AssemblerInfo::Unpowered(recipe),
                     ..
                 } => {
-                    for module_slot in modules.iter_mut() {
-                        *module_slot = cheated_modules;
-                    }
+                    // TODO: Stop adding cheated modules
+                    let old_modules = &dedup[*modules as usize];
+
+                    // TODO: Can we avoid allocating here?
+                    let new_modules = vec![cheated_modules; old_modules.len()]
+                        .into_boxed_slice()
+                        .into();
+
+                    let new_module_index = if let Some(new_module_idx) =
+                        dedup.iter().position(|slots| *slots == new_modules)
+                    {
+                        new_module_idx
+                    } else {
+                        dedup.push(new_modules);
+                        dedup.len() - 1
+                    };
+
+                    *modules = new_module_index as u32;
+
                     *recipe = new_recipe;
                 },
                 Entity::Assembler {
@@ -1555,13 +1619,30 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     info: info @ AssemblerInfo::UnpoweredNoRecipe,
                     ..
                 } => {
-                    for module_slot in modules.iter_mut() {
-                        *module_slot = cheated_modules;
-                    }
+                    // TODO: Stop adding cheated modules
+                    let old_modules = &dedup[*modules as usize];
+
+                    // TODO: Can we avoid allocating here?
+                    let new_modules = vec![cheated_modules; old_modules.len()]
+                        .into_boxed_slice()
+                        .into();
+
+                    let new_module_index = if let Some(new_module_idx) =
+                        dedup.iter().position(|slots| *slots == new_modules)
+                    {
+                        new_module_idx
+                    } else {
+                        dedup.push(new_modules);
+                        dedup.len() - 1
+                    };
+
+                    *modules = new_module_index as u32;
                     *info = AssemblerInfo::Unpowered(new_recipe);
                 },
                 e => unreachable!("Called change recipe on non assembler: {e:?}"),
             }
+
+            ControlFlow::Break(())
         });
 
         // CORRECTNESS: We rely on the updates being processed in a LIFO order!
@@ -2680,7 +2761,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     grid: grid_in_id, ..
                                 },
                             pole_position,
-                            weak_index,
+                            ..
                         } => {
                             let grid =
                                 sim_state.factory.power_grids.pole_pos_to_grid_id[pole_position];
@@ -3695,7 +3776,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         pos: Position,
         size: (u16, u16),
         data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
-        mut f: impl FnMut(&mut Entity<ItemIdxType, RecipeIdxType>) -> ControlFlow<(), ()>,
+        mut f: impl FnMut(
+            &mut Entity<ItemIdxType, RecipeIdxType>,
+            &mut Vec<ModuleSlots>,
+        ) -> ControlFlow<(), ()>,
     ) {
         let max_size = data_store.max_entity_size;
 
@@ -3729,7 +3813,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         continue;
                     }
 
-                    match f(e) {
+                    match f(e, &mut self.module_slot_dedup_table) {
                         ControlFlow::Continue(_) => continue,
                         ControlFlow::Break(_) => break,
                     }
@@ -3922,8 +4006,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             data_store,
                         );
 
-                        self.get_entity_at_mut(unconnected_position, data_store)
-                            .map(|e| {
+                        self.mutate_entities_colliding_with(
+                            unconnected_position,
+                            (1, 1),
+                            data_store,
+                            |e, dedup| {
                                 match e {
                                     Entity::Assembler {
                                         ty,
@@ -3956,6 +4043,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                                     .power_grids
                                                     .pole_pos_to_grid_id[&new_pole_pos];
 
+                                                let modules = &dedup[(*modules) as usize];
+
                                                 let (new_id, new_weak_index) =
                                                     sim_state.factory.power_grids.power_grids
                                                         [usize::from(grid_id)]
@@ -3963,7 +4052,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                                         *ty,
                                                         grid_id,
                                                         id.recipe,
-                                                        &**modules,
+                                                        modules,
                                                         new_pole_pos,
                                                         *pos,
                                                         data_store,
@@ -4007,7 +4096,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
                                     e => unreachable!("Tried to unpower {e:?}"),
                                 }
-                            });
+                                ControlFlow::Break(())
+                            },
+                        );
                     }
 
                     let pole_size = data_store.power_pole_data[ty as usize].size;
@@ -4023,7 +4114,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             2 * power_pole_range as u16 + pole_size.1 as u16,
                         ),
                         data_store,
-                        |e| {
+                        |e, _| {
                             match e {
                                 Entity::Assembler { info, .. } => match info {
                                     AssemblerInfo::PoweredNoRecipe(position) => {
@@ -4416,7 +4507,7 @@ pub enum AssemblerInfo<RecipeIdxType: WeakIdxTrait = u8> {
 // TODO: The Inserter start/end position can be calculated from the inserters ty + position + dir triple. No need to store it here
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
-pub enum InserterInfo<ItemIdxType: WeakIdxTrait> {
+pub enum InserterInfo<ItemIdxType: WeakIdxTrait = u8> {
     NotAttached {
         start_pos: Position,
         end_pos: Position,
@@ -4449,7 +4540,7 @@ pub enum AttachedInserter<ItemIdxType: WeakIdxTrait = u8> {
     },
     BeltBelt {
         item: Item<ItemIdxType>,
-        inserter: usize,
+        inserter: u32,
     },
     StorageStorage {
         item: Item<ItemIdxType>,
@@ -4489,6 +4580,8 @@ struct PipeConnection {
 pub type ModuleTy = u8;
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleSlots(pub thin_dst::ThinBox<(), Option<ModuleTy>>);
+
+pub type ModuleSlotDedupIndex = u32;
 
 impl serde::Serialize for ModuleSlots {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -4557,7 +4650,7 @@ pub enum Entity<ItemIdxType: WeakIdxTrait = u8, RecipeIdxType: WeakIdxTrait = u8
         pos: Position,
 
         /// List of all the module slots of this assembler
-        modules: ModuleSlots,
+        modules: ModuleSlotDedupIndex,
         info: AssemblerInfo<RecipeIdxType>,
 
         #[serde(default = "Dir::default")]
@@ -4622,14 +4715,14 @@ pub enum Entity<ItemIdxType: WeakIdxTrait = u8, RecipeIdxType: WeakIdxTrait = u8
         pos: Position,
         ty: u8,
         /// List of all the module slots of this lab
-        modules: ModuleSlots,
+        modules: ModuleSlotDedupIndex,
         pole_position: Option<(Position, WeakIndex, u32)>,
     },
     Beacon {
         ty: u8,
         pos: Position,
         /// List of all the module slots of this beacon
-        modules: ModuleSlots,
+        modules: ModuleSlotDedupIndex,
         pole_position: Option<(Position, WeakIndex)>,
     },
     // Pipes are coded as fluid tanks with connections on all sides

@@ -535,15 +535,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                     );
                                                 },
                                                 AssemblerInfo::Powered {
-                                                    id,
-                                                    pole_position,
-                                                    ..
+                                                    id, ..
                                                 } => {
-                                                    let grid = game_state
-                                                        .simulation_state
-                                                        .factory
-                                                        .power_grids
-                                                        .pole_pos_to_grid_id[pole_position];
+                                                    let grid = id.grid;
 
                                                     let last_power = game_state
                                                         .simulation_state
@@ -2088,7 +2082,7 @@ pub fn render_ui<
                                     AssemblerInfo::UnpoweredNoRecipe => {},
                                     AssemblerInfo::Unpowered(_) => {},
                                     AssemblerInfo::PoweredNoRecipe(_) => {},
-                                    AssemblerInfo::Powered { id, pole_position, weak_index } => {
+                                    AssemblerInfo::Powered { id, .. } => {
                                         let (_, _, count_in_recipe) = data_store_ref.recipe_to_items_and_amounts[id.recipe.into_usize()].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Ing && *item == *recipe_item).unwrap();
                                         let time_per_recipe = data_store_ref.recipe_timers[usize_from(id.recipe.id)] as f32;
 
@@ -2123,7 +2117,7 @@ pub fn render_ui<
                                     AssemblerInfo::UnpoweredNoRecipe => {},
                                     AssemblerInfo::Unpowered(_) => {},
                                     AssemblerInfo::PoweredNoRecipe(_) => {},
-                                    AssemblerInfo::Powered { id, pole_position, weak_index } => {
+                                    AssemblerInfo::Powered { id, .. } => {
                                         let (_, _, count_in_recipe) = data_store_ref.recipe_to_items_and_amounts[id.recipe.into_usize()].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Out && *item == *recipe_item).unwrap();
                                         let time_per_recipe = data_store_ref.recipe_timers[usize_from(id.recipe.id)] as f32;
 
@@ -2621,6 +2615,7 @@ pub fn render_ui<
                                 ui.add(prod_pb);
 
                                 // Render module slots
+                                let modules = &game_state_ref.world.module_slot_dedup_table[*modules as usize];
                                 TableBuilder::new(ui).id_salt("Module Slots").columns(Column::auto(), modules.len()).body(|mut body| {
                                     body.row(1.0, |mut row| {
                                         for module in modules.iter() {
@@ -2966,6 +2961,7 @@ pub fn render_ui<
                                 ui.add(prod_pb);
 
                                 // Render module slots
+                                let modules = &game_state_ref.world.module_slot_dedup_table[*modules as usize];
                                 TableBuilder::new(ui).id_salt("Module Slots").columns(Column::auto(), modules.len()).body(|mut body| {
                                     body.row(1.0, |mut row| {
                                         for module in modules.iter() {
