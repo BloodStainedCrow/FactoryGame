@@ -16,8 +16,6 @@ use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
 use get_size::GetSize;
 
-pub(super) const MAX_MOVE_TIME: usize = 1_000;
-
 struct IdealInserter {
     pub storage_id_in: u32,
     pub storage_id_out: u32,
@@ -90,8 +88,6 @@ const PLACEHOLDER: Inserter = Inserter {
 
 impl BucketedStorageStorageInserterStore {
     pub fn new(movetime: u16) -> Self {
-        assert!((movetime as usize) < MAX_MOVE_TIME);
-
         Self {
             movetime,
             holes: vec![],
@@ -552,19 +548,23 @@ impl BucketedStorageStorageInserterStore {
         fn first_tick_value_with_this_lower_part(lower: u16, current_tick: u32) -> u32 {
             let current_lower = current_tick as u16;
             // Only take the upper 2 bytes
-            let current_upper: u32 = current_tick >> 16 << 16;
+            let current_upper: u32 = current_tick >> 16;
 
             // We know that the original tick which produced lower must be lower than current_tick:
-            if current_lower < lower {
+            let ret = if current_lower < lower {
                 // This means we wrapped
-                let old_upper = current_upper - 1 << 16;
+                let old_upper = (current_upper - 1) << 16;
 
                 old_upper | lower as u32
             } else {
-                let old_upper = current_upper;
+                let old_upper = current_upper << 16;
 
                 old_upper | lower as u32
-            }
+            };
+
+            assert!(ret <= current_tick);
+
+            ret
         }
 
         InserterStateInfo {
@@ -578,20 +578,23 @@ impl BucketedStorageStorageInserterStore {
                 ImplicitState::WaitingForSpaceInDestination(count) => {
                     LargeInserterState::WaitingForSpaceInDestination(count)
                 },
-                ImplicitState::FullAndMovingOut => LargeInserterState::FullAndMovingOut(
-                    u16::try_from(u32::from(self.movetime).strict_sub(current_tick.strict_sub(
+                ImplicitState::FullAndMovingOut => LargeInserterState::FullAndMovingOut({
+                    let time_passed = current_tick.strict_sub(
                         first_tick_value_with_this_lower_part(ins.last_update_time, current_tick),
-                    )))
-                    .expect(&format!(
-                        "Inserter has been moving for more than u16::MAX ticks: {}",
-                        u32::from(self.movetime).strict_sub(current_tick.strict_sub(
-                            first_tick_value_with_this_lower_part(
-                                ins.last_update_time,
-                                current_tick
-                            )
-                        ))
-                    )),
-                ),
+                    );
+
+                    u16::try_from(u32::from(self.movetime).strict_sub(time_passed)).expect(
+                        &format!(
+                            "Inserter has been moving for more than u16::MAX ticks: {}",
+                            u32::from(self.movetime).strict_sub(current_tick.strict_sub(
+                                first_tick_value_with_this_lower_part(
+                                    ins.last_update_time,
+                                    current_tick
+                                )
+                            ))
+                        ),
+                    )
+                }),
                 ImplicitState::EmptyAndMovingBack => LargeInserterState::EmptyAndMovingBack(
                     u16::try_from(u32::from(self.movetime).strict_sub(current_tick.strict_sub(
                         first_tick_value_with_this_lower_part(ins.last_update_time, current_tick),
