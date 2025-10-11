@@ -12,10 +12,6 @@ use get_size::GetSize;
 
 use super::{FakeUnionStorage, storage_storage_with_buckets::InserterId};
 
-// TODO: Maybe delta encoding with varints could be useful?
-#[derive(Debug, Clone, Copy)]
-struct EncodedFakeUnionStorage {}
-
 #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize, serde::Serialize)]
 pub(super) struct EncodedUpdatingInserter {
     pub(super) storage_id_in: FakeUnionStorage,

@@ -30,6 +30,7 @@ pub trait WeakIdxTrait:
     + Ord
     + 'static
     + GetSize
+    + Debug
 {
 }
 

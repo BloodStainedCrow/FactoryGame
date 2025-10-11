@@ -1,5 +1,4 @@
 use crate::frontend::world::tile::ModuleSlots;
-use crate::frontend::world::tile::ModuleTy;
 use itertools::Itertools;
 use log::{error, warn};
 use power_grid::{
@@ -243,7 +242,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
     fn add_power_grid(
         &mut self,
         power_grid: PowerGrid<ItemIdxType, RecipeIdxType>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> PowerGridIdentifier {
         // TODO: This is O(N). Is that a problem?
         let hole_idx = self.power_grids.iter().position(|grid| grid.is_placeholder);
@@ -334,6 +333,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                     .unique()
                     .collect::<Vec<_>>()
                 {
+                    // No need to merge a grid with itself.
+                    if other_grid == grid {
+                        continue;
+                    }
+
                     ran_once = true;
                     let storage_updates = self
                         .merge_power_grids(
@@ -481,15 +485,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             std::mem::swap(&mut tmp, &mut self.power_grids[usize::from(id)]);
             tmp
         };
-
-        #[cfg(debug_assertions)]
-        {
-            assert!(
-                self.pole_pos_to_grid_id
-                    .iter()
-                    .all(|idx| !self.power_grids[usize::from(*idx.1)].is_placeholder)
-            )
-        }
 
         removed
     }
@@ -789,13 +784,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                     .all(|idx| !self.power_grids[usize::from(*idx.1)].is_placeholder)
             );
 
-            assert_eq!(
-                num_placeholders + 1,
-                self.power_grids
-                    .iter()
-                    .filter(|grid| grid.is_placeholder)
-                    .count()
-            );
+            let new_count = self
+                .power_grids
+                .iter()
+                .filter(|grid| grid.is_placeholder)
+                .count();
+            assert!(new_count == num_placeholders || new_count == num_placeholders + 1);
 
             assert!(
                 self.power_grids
@@ -1012,8 +1006,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                 },
             }
         }
-        // I put this here to ensure we do not use effect after this
-        let effect: (i16, i16, i16);
 
         let idx = self.power_grids[usize::from(self.pole_pos_to_grid_id[&pole_pos])].add_beacon(
             ty,

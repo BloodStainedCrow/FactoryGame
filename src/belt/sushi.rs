@@ -289,7 +289,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         self.inserters.inserters[i].0.offset += removed.0.offset + 1;
     }
 
-    pub fn check_sushi(
+    pub(super) fn check_sushi(
         &self,
         belt_belt_filter_in: impl IntoIterator<Item = SushiInfo<ItemIdxType>> + Clone,
         belt_belt_filter_out: impl IntoIterator<Item = SushiInfo<ItemIdxType>> + Clone,
@@ -409,7 +409,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         }
     }
 
-    pub fn add_input_splitter(&mut self, id: SplitterID, side: SplitterSide) {
+    pub(super) fn add_input_splitter(&mut self, id: SplitterID, side: SplitterSide) {
         assert!(
             self.input_splitter.is_none(),
             "Tried to add splitter where one already existed"
@@ -422,7 +422,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         self.input_splitter = Some((id, side));
     }
 
-    pub fn add_output_splitter(&mut self, id: SplitterID, side: SplitterSide) {
+    pub(super) fn add_output_splitter(&mut self, id: SplitterID, side: SplitterSide) {
         assert!(
             self.output_splitter.is_none(),
             "Tried to add splitter where one already existed"
@@ -435,11 +435,11 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         self.output_splitter = Some((id, side));
     }
 
-    pub fn remove_input_splitter(&mut self) -> Option<(SplitterID, SplitterSide)> {
+    pub(super) fn remove_input_splitter(&mut self) -> Option<(SplitterID, SplitterSide)> {
         self.input_splitter.take()
     }
 
-    pub fn remove_output_splitter(&mut self) -> Option<(SplitterID, SplitterSide)> {
+    pub(super) fn remove_output_splitter(&mut self) -> Option<(SplitterID, SplitterSide)> {
         self.output_splitter.take()
     }
 
@@ -575,7 +575,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         let front_zero_index = usize::from(front_zero_index) % front_locs.len();
 
         let Self {
-            ty: ty_back,
+            ty: _ty_back,
 
             is_circular: _,
             first_free_index: _back_first_free_index,

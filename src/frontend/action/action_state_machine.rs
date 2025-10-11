@@ -3,7 +3,6 @@ use std::{
     collections::{HashMap, HashSet},
     marker::PhantomData,
     num::NonZero,
-    sync::mpsc::Receiver,
 };
 
 use egui_graphs::{DefaultEdgeShape, DefaultNodeShape, Graph};
@@ -350,7 +349,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                     },
                                 }
                             },
-                            ActionStateMachineState::Viewing(Position { x, y }) => {
+                            ActionStateMachineState::Viewing(Position { .. }) => {
                                 let pos = Self::player_mouse_to_tile(
                                     self.zoom_level,
                                     self.map_view_info.unwrap_or(self.local_player_pos),
@@ -381,27 +380,27 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         );
                         if let Some(e) = world.get_entity_at(pos, data_store) {
                             match e {
-                                Entity::Assembler { ty, pos, modules, info, rotation } => match info {
+                                Entity::Assembler { info, .. } => match info {
                                     AssemblerInfo::UnpoweredNoRecipe => {},
                                     AssemblerInfo::Unpowered(recipe) => self.copy_info = Some(CopyInfo::Recipe { recipe: *recipe }),
                                     AssemblerInfo::PoweredNoRecipe(_) => {},
                                     AssemblerInfo::Powered { id, .. } => self.copy_info = Some(CopyInfo::Recipe { recipe: id.recipe }),
                                 },
-                                Entity::PowerPole { ty, pos } => {},
-                                Entity::Belt { pos, direction, ty, id, belt_pos } => {},
-                                Entity::Underground { pos, underground_dir, ty, direction, id, belt_pos } => {},
-                                Entity::Splitter { pos, direction, id } => todo!(),
-                                Entity::Inserter { ty, user_movetime, pos, direction, filter, info } => {
+                                Entity::PowerPole { .. } => {},
+                                Entity::Belt { .. } => {},
+                                Entity::Underground { .. } => {},
+                                Entity::Splitter { .. } => todo!(),
+                                Entity::Inserter { user_movetime, filter, .. } => {
                                     self.copy_info = Some(CopyInfo::InserterSettings { max_stack_size: None, filter: *filter, user_movetime: *user_movetime });
                                 },
-                                Entity::Chest { ty, pos, item, slot_limit } => {
+                                Entity::Chest { slot_limit, .. } => {
                                     self.copy_info = Some(CopyInfo::ChestLimit { num_slots: *slot_limit });
                                 },
-                                Entity::Roboport { ty, pos, power_grid, network, id } => todo!(),
-                                Entity::SolarPanel { pos, ty, pole_position } => {},
-                                Entity::Lab { pos, ty, modules, pole_position } => {},
-                                Entity::Beacon { ty, pos, modules, pole_position } => {},
-                                Entity::FluidTank { ty, pos, rotation } => {},
+                                Entity::Roboport { .. } => todo!(),
+                                Entity::SolarPanel { .. } => {},
+                                Entity::Lab { .. } => {},
+                                Entity::Beacon { .. } => {},
+                                Entity::FluidTank { .. } => {},
                             }
                         }
                         vec![]
@@ -497,7 +496,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         ActionStateMachineState::Holding(held_object) => match held_object {
                             HeldObject::Blueprint(_) => {},
 
-                            HeldObject::Tile(floor_tile) => {},
+                            HeldObject::Tile(_floor_tile) => {},
                             HeldObject::Entity(place_entity_type) => match place_entity_type {
                                 PlaceEntityType::Assembler {
                                                                 pos: position,
@@ -708,7 +707,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             },
                         ));
                     },
-                    Some(Entity::FluidTank { ty, pos, rotation }) => {
+                    Some(Entity::FluidTank { ty, rotation, .. }) => {
                         self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                             PlaceEntityType::FluidTank {
                                 pos: Self::player_mouse_to_tile(
@@ -740,12 +739,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             },
                         ));
                     },
-                    Some(Entity::Lab {
-                        pos,
-                        ty,
-                        modules,
-                        pole_position,
-                    }) => todo!(),
+                    Some(Entity::Lab { ty, .. }) => {
+                        self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                            PlaceEntityType::Lab {
+                                pos: Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.map_view_info.unwrap_or(self.local_player_pos),
+                                    self.current_mouse_pos,
+                                ),
+                                ty: *ty,
+                            },
+                        ));
+                    },
                     Some(Entity::PowerPole { ty, .. }) => {
                         self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                             PlaceEntityType::PowerPole {
@@ -758,13 +763,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             },
                         ));
                     },
-                    Some(Entity::Roboport {
-                        ty,
-                        pos,
-                        power_grid,
-                        network,
-                        id,
-                    }) => todo!(),
+                    Some(Entity::Roboport { ty, .. }) => todo!(),
                     Some(Entity::SolarPanel {
                         pos: _,
                         ty,
@@ -781,7 +780,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             },
                         ));
                     },
-                    Some(Entity::Splitter { pos, direction, id }) => todo!(),
+                    Some(Entity::Splitter { direction, .. }) => {
+                        self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                            PlaceEntityType::Splitter {
+                                pos: Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.map_view_info.unwrap_or(self.local_player_pos),
+                                    self.current_mouse_pos,
+                                ),
+                                // FIXME:
+                                ty: 0,
+                                direction: *direction,
+                                // TODO:
+                                in_mode: None,
+                                out_mode: None,
+                            },
+                        ));
+                    },
                     Some(Entity::Underground {
                         underground_dir,
                         direction,

@@ -88,7 +88,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, Rec
                         super::world::tile::PlaceEntityType::MiningDrill { pos, .. } => Some(*pos),
                     }
                 },
-                place_entity::EntityPlaceOptions::Multiple(place_entity_types) => todo!(),
             },
             ActionType::SetRecipe(set_recipe_info) => Some(set_recipe_info.pos),
             ActionType::OverrideInserterMovetime { pos, .. } => Some(*pos),
@@ -157,7 +156,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, Rec
                         },
                     }
                 },
-                place_entity::EntityPlaceOptions::Multiple(place_entity_types) => todo!(),
             },
             ActionType::SetRecipe(_) => None,
             ActionType::OverrideInserterMovetime { .. } => None,
@@ -180,20 +178,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, Rec
         self.get_building_size(data_store).or(match self {
             ActionType::PlaceFloorTile(place_floor_tile_by_hand_info) => todo!(),
             ActionType::PlaceEntity(place_entity_info) => match &place_entity_info.entities {
-                place_entity::EntityPlaceOptions::Single(place_entity_type) => None,
-                place_entity::EntityPlaceOptions::Multiple(place_entity_types) => None,
+                place_entity::EntityPlaceOptions::Single(_) => None,
             },
-            ActionType::SetRecipe(set_recipe_info) => Some([1, 1]),
+            ActionType::SetRecipe(_) => Some([1, 1]),
             ActionType::OverrideInserterMovetime { .. } => Some([1, 1]),
             ActionType::Position(_, _) => None,
             ActionType::AddModules { .. } => Some([1, 1]),
             ActionType::RemoveModules { .. } => Some([1, 1]),
             ActionType::SetChestSlotLimit { .. } => Some([1, 1]),
-            ActionType::Remove(position) => Some([1, 1]),
+            ActionType::Remove(_) => Some([1, 1]),
             ActionType::SetActiveResearch { .. } => None,
             ActionType::CheatUnlockTechnology { .. } => None,
             ActionType::CheatRelockTechnology { .. } => None,
-            ActionType::Ping(position) => None,
+            ActionType::Ping(_) => None,
         })
     }
 }

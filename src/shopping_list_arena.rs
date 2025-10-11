@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use std::{marker::PhantomData, mem::MaybeUninit};
 
 // FIXME: Huge caviat! (i.e. this is very unsound and just a sketch)

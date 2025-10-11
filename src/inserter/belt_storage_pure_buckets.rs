@@ -97,42 +97,6 @@ impl BucketedStorageStorageInserterStoreFrontend {
         }
     }
 
-    fn get_info_naive(
-        &mut self,
-        id: InserterIdentifier,
-        movetime: u16,
-        current_time: u32,
-    ) -> LargeInserterState {
-        // FIXME:
-        todo!();
-        // match self.lookup.entry(id) {
-        //     std::collections::hash_map::Entry::Occupied(mut occupied_entry) => {
-        //         let (old_time, old_state) = occupied_entry.get();
-
-        //         let possible_states = get_possible_new_states_after_n_ticks(
-        //             (*old_state).into(),
-        //             movetime,
-        //             HAND_SIZE,
-        //             current_time - *old_time,
-        //         );
-
-        //         if let Ok(possible_states) = possible_states {
-        //             if possible_states.len() == 1 {
-        //                 occupied_entry.insert((current_time, possible_states[0]));
-        //                 possible_states[0]
-        //             } else {
-        //                 todo!("We need to search in the possible states");
-        //             }
-        //         } else {
-        //             todo!("We need to search everywhere");
-        //         }
-        //     },
-        //     std::collections::hash_map::Entry::Vacant(vacant_entry) => {
-        //         todo!("We need to search everywhere")
-        //     },
-        // }
-    }
-
     #[profiling::function]
     pub fn get_info_batched<'a>(
         &mut self,
@@ -655,7 +619,7 @@ impl BucketedStorageStorageInserterStore {
         belts: &mut [SmartBelt<ItemIdxType>],
         grid_size: usize,
         current_tick: u32,
-        movetime: u16,
+        _movetime: u16,
     ) -> bool {
         match DIR {
             Dir::BeltToStorage => {
@@ -705,7 +669,7 @@ impl BucketedStorageStorageInserterStore {
         belts: &mut [SmartBelt<ItemIdxType>],
         grid_size: usize,
         current_tick: u32,
-        movetime: u16,
+        _movetime: u16,
     ) -> bool {
         match DIR {
             Dir::BeltToStorage => {
@@ -1291,7 +1255,6 @@ mod test {
     const MOVETIME: u16 = 120;
     const NUM_INSERTERS: usize = 2_000_000;
     const NUM_ITEMS: usize = 5;
-    const NUM_VISIBLE: usize = 100;
 
     const NUM_BELTS: usize = 100_000;
     const LEN_BELTS: usize = 10_000;
@@ -1458,265 +1421,5 @@ mod test {
         });
 
         dbg!(&storages_in[0][0..10], &storages_out[0][0..10], num_iter);
-    }
-
-    // #[bench]
-    // fn bench_storage_storage_inserter_store_find_batched_with_next_tick_optimization(
-    //     b: &mut Bencher,
-    // ) {
-    //     let mut store = BucketedStorageStorageInserterStore::new(MOVETIME);
-
-    //     let mut frontend = BucketedStorageStorageInserterStoreFrontend::new();
-
-    //     let max_insert = vec![200u8; NUM_INSERTERS];
-    //     let mut storages_in = vec![200u8; NUM_INSERTERS];
-    //     let mut storages_out = vec![0u8; NUM_INSERTERS];
-
-    //     let mut values = (0..(NUM_INSERTERS as u32)).collect_vec();
-    //     values.shuffle(&mut rand::thread_rng());
-
-    //     let mut current_time: u32 = 0;
-
-    //     for i in values.iter().copied() {
-    //         if random::<u16>() < 10 {
-    //             store.update(
-    //                 &mut frontend,
-    //                 &mut [
-    //                     (max_insert.as_slice(), storages_in.as_mut_slice()),
-    //                     (max_insert.as_slice(), storages_out.as_mut_slice()),
-    //                 ],
-    //                 10,
-    //                 current_time,
-    //             );
-
-    //             if storages_in[0] < 20 {
-    //                 for v in &mut storages_in {
-    //                     *v = 200u8;
-    //                 }
-    //                 for v in &mut storages_out {
-    //                     *v = 0u8;
-    //                 }
-    //             }
-    //         }
-
-    //         let id = store.add_inserter(
-    //             FakeUnionStorage {
-    //                 index: i,
-    //                 grid_or_static_flag: 0,
-    //                 recipe_idx_with_this_item: 0,
-    //             },
-    //             FakeUnionStorage {
-    //                 index: i,
-    //                 grid_or_static_flag: 0,
-    //                 recipe_idx_with_this_item: 1,
-    //             },
-    //             1,
-    //         );
-
-    //         assert_eq!(id, InserterId(0));
-    //     }
-
-    //     storages_in = vec![200u8; NUM_INSERTERS];
-    //     storages_out = vec![0u8; NUM_INSERTERS];
-
-    //     let mut to_find: Vec<_> = (0..(NUM_VISIBLE as u32))
-    //         .map(|i| InserterIdentifier {
-    //             source: FakeUnionStorage {
-    //                 index: values[i as usize],
-    //                 grid_or_static_flag: 0,
-    //                 recipe_idx_with_this_item: 0,
-    //             },
-    //             dest: FakeUnionStorage {
-    //                 index: values[i as usize],
-    //                 grid_or_static_flag: 0,
-    //                 recipe_idx_with_this_item: 1,
-    //             },
-    //             id: InserterId(0),
-    //         })
-    //         .collect();
-
-    //     b.iter(|| {
-    //         let ret =
-    //             frontend.get_info_batched(to_find.iter().copied(), &store, true, current_time);
-
-    //         assert_eq!(ret.len(), to_find.len());
-
-    //         if storages_in[0] < 20 {
-    //             for v in &mut storages_in {
-    //                 *v = 200u8;
-    //             }
-    //             for v in &mut storages_out {
-    //                 *v = 0u8;
-    //             }
-    //             values.shuffle(&mut rand::thread_rng());
-    //             to_find = (0..(NUM_VISIBLE as u32))
-    //                 .into_iter()
-    //                 .map(|i| InserterIdentifier {
-    //                     source: FakeUnionStorage {
-    //                         index: values[i as usize],
-    //                         grid_or_static_flag: 0,
-    //                         recipe_idx_with_this_item: 0,
-    //                     },
-    //                     dest: FakeUnionStorage {
-    //                         index: values[i as usize],
-    //                         grid_or_static_flag: 0,
-    //                         recipe_idx_with_this_item: 1,
-    //                     },
-    //                     id: InserterId(0),
-    //                 })
-    //                 .collect();
-    //         }
-    //         store.update(
-    //             &mut frontend,
-    //             &mut [
-    //                 (max_insert.as_slice(), storages_in.as_mut_slice()),
-    //                 (max_insert.as_slice(), storages_out.as_mut_slice()),
-    //             ],
-    //             10,
-    //             current_time,
-    //         );
-
-    //         current_time += 1;
-
-    //         ret
-    //     });
-
-    //     dbg!(&storages_in[0..10], &storages_out[0..10], current_time);
-    // }
-
-    // #[bench]
-    // fn bench_storage_storage_inserter_store_find_batched_without_next_tick_optimization(
-    //     b: &mut Bencher,
-    // ) {
-    //     let mut store = BucketedStorageStorageInserterStore::new(MOVETIME);
-
-    //     let mut frontend = BucketedStorageStorageInserterStoreFrontend::new();
-
-    //     let max_insert = vec![200u8; NUM_INSERTERS];
-    //     let mut storages_in = vec![200u8; NUM_INSERTERS];
-    //     let mut storages_out = vec![0u8; NUM_INSERTERS];
-
-    //     let mut values = (0..(NUM_INSERTERS as u32)).collect_vec();
-    //     values.shuffle(&mut rand::thread_rng());
-
-    //     let mut current_time: u32 = 0;
-
-    //     for i in values.iter().copied() {
-    //         if random::<u16>() < 10 {
-    //             store.update(
-    //                 &mut frontend,
-    //                 &mut [
-    //                     (max_insert.as_slice(), storages_in.as_mut_slice()),
-    //                     (max_insert.as_slice(), storages_out.as_mut_slice()),
-    //                 ],
-    //                 10,
-    //                 current_time,
-    //             );
-
-    //             if storages_in[0] < 20 {
-    //                 for v in &mut storages_in {
-    //                     *v = 200u8;
-    //                 }
-    //                 for v in &mut storages_out {
-    //                     *v = 0u8;
-    //                 }
-    //             }
-    //         }
-
-    //         let id = store.add_inserter(
-    //             FakeUnionStorage {
-    //                 index: i,
-    //                 grid_or_static_flag: 0,
-    //                 recipe_idx_with_this_item: 0,
-    //             },
-    //             FakeUnionStorage {
-    //                 index: i,
-    //                 grid_or_static_flag: 0,
-    //                 recipe_idx_with_this_item: 1,
-    //             },
-    //             1,
-    //         );
-
-    //         assert_eq!(id, InserterId(0));
-    //     }
-
-    //     storages_in = vec![200u8; NUM_INSERTERS];
-    //     storages_out = vec![0u8; NUM_INSERTERS];
-
-    //     let to_find: Vec<u32> = (0..(NUM_VISIBLE as u32)).collect();
-
-    //     // let to_find = vec![0u16];
-
-    //     let to_find: Vec<_> = to_find
-    //         .into_iter()
-    //         .map(|i| InserterIdentifier {
-    //             source: FakeUnionStorage {
-    //                 index: values[i as usize],
-    //                 grid_or_static_flag: 0,
-    //                 recipe_idx_with_this_item: 0,
-    //             },
-    //             dest: FakeUnionStorage {
-    //                 index: values[i as usize],
-    //                 grid_or_static_flag: 0,
-    //                 recipe_idx_with_this_item: 1,
-    //             },
-    //             id: InserterId(0),
-    //         })
-    //         .collect();
-
-    //     b.iter(|| {
-    //         let ret =
-    //             frontend.get_info_batched(to_find.iter().copied(), &store, false, current_time);
-
-    //         assert_eq!(ret.len(), to_find.len());
-
-    //         if storages_in[0] < 20 {
-    //             for v in &mut storages_in {
-    //                 *v = 200u8;
-    //             }
-    //             for v in &mut storages_out {
-    //                 *v = 0u8;
-    //             }
-    //         }
-    //         store.update(
-    //             &mut frontend,
-    //             &mut [
-    //                 (max_insert.as_slice(), storages_in.as_mut_slice()),
-    //                 (max_insert.as_slice(), storages_out.as_mut_slice()),
-    //             ],
-    //             10,
-    //             current_time,
-    //         );
-
-    //         current_time += 1;
-
-    //         ret
-    //     });
-
-    //     dbg!(&storages_in[0..10], &storages_out[0..10], current_time);
-    // }
-
-    const LEN: usize = 10_000_000;
-
-    #[bench]
-    fn bench_extract_if_low_extraction_rate(b: &mut Bencher) {
-        let mut source = vec![0; LEN];
-        let mut dest = vec![];
-
-        let mut num_iterations = 0;
-        b.iter(|| {
-            let extracted = source.extract_if(.., |_| rand::random::<u8>() < 20);
-
-            dest.extend(extracted);
-
-            source.extend(dest.extract_if(.., |_| true));
-
-            num_iterations += 1;
-        });
-
-        dbg!(source.len());
-        dbg!(dest.len());
-
-        dbg!(num_iterations);
     }
 }

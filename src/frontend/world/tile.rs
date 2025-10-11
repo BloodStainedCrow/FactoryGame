@@ -4,9 +4,9 @@ use egui::Color32;
 use egui_show_info::{EguiDisplayable, InfoExtractor, ShowInfo};
 use log::error;
 use rayon::iter::IndexedParallelIterator;
-use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use rayon::prelude::ParallelSliceMut;
+use recycle_vec::VecExt;
 use std::cmp::max;
 use std::fs::create_dir_all;
 use std::path::PathBuf;
@@ -19,7 +19,6 @@ use std::{
     ops::{Add, ControlFlow, Range},
 };
 
-use crate::frontend::world;
 use crate::frontend::world::sparse_grid::GetGridIndex;
 
 use crate::join_many::join;
@@ -32,7 +31,7 @@ use egui_show_info_derive::ShowInfo;
 use enum_map::Enum;
 #[cfg(feature = "client")]
 use get_size::GetSize;
-use log::{info, warn};
+use log::{info, trace, warn};
 use strum::EnumIter;
 
 use itertools::Itertools;
@@ -150,6 +149,17 @@ impl Default for PlayerInfo {
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+    // TODO: Is this a good idea?
+    // This is stored here to reuse allocations between calls to add_entity
+    #[serde(skip)]
+    cascading_updates: Option<
+        Vec<
+            [usize; {
+                std::mem::size_of::<CascadingUpdate<u8, u8>>() / std::mem::size_of::<usize>()
+            }],
+        >,
+    >,
+
     pub module_slot_dedup_table: Vec<ModuleSlots>,
 
     noise: SerializableSimplex,
@@ -276,12 +286,7 @@ fn try_attaching_fluids<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 e @ Entity::Assembler {
                     ty: assembler_ty,
                     pos: assembler_pos,
-                    info:
-                        AssemblerInfo::Powered {
-                            id,
-                            pole_position,
-                            weak_index,
-                        },
+                    info: AssemblerInfo::Powered { id, .. },
                     rotation: assembler_rotation,
                     ..
                 },
@@ -377,7 +382,7 @@ fn try_attaching_fluids<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     data_store,
                                 )
                                 .map(
-                                    |(dest_conn, dest_conn_dir)| {
+                                    |(dest_conn, _dest_conn_dir)| {
                                         (
                                             fluid_dir,
                                             item,
@@ -441,7 +446,7 @@ fn try_instantiating_inserters_for_belt_cascade<ItemIdxType: IdxTrait, RecipeIdx
     belt_id: BeltTileId<ItemIdxType>,
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
-        update: Box::new(move |world, sim_state, updates, data_store| {
+        update: Box::new(move |_world, sim_state, updates, data_store| {
             profiling::scope!("try_instantiating_inserters_for_belt_cascade");
             let mut reachable = Bfs::new(
                 &*sim_state.factory.belts.belt_graph,
@@ -634,7 +639,7 @@ fn try_instantiating_all_inserters_cascade<ItemIdxType: IdxTrait, RecipeIdxType:
 
 fn instantiate_inserter_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     new_instantiate_pos: Position,
-    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
         update: Box::new(move |world, sim_state, updates, data_store| {
@@ -750,8 +755,8 @@ fn new_lab_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             let Some(Entity::Lab {
                 pos,
                 ty,
-                modules,
-                pole_position: Some((pole_pos, weak_index, index)),
+                modules: _,
+                pole_position: Some((pole_pos, _, index)),
             }) = world.get_entity_at(pos, data_store)
             else {
                 warn!("Lab missing in new lab cascade");
@@ -784,7 +789,7 @@ fn new_lab_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     Entity::Beacon {
                         ty: beacon_ty,
                         pos: beacon_pos,
-                        modules: beacon_modules,
+                        modules: _,
                         pole_position: Some((beacon_pole_pos, beacon_weak_idx)),
                     } => {
                         let (beacon_range_x, beacon_range_y) =
@@ -822,7 +827,7 @@ fn new_lab_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
 fn new_power_pole<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
-    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
         update: Box::new(move |world, sim_state, updates, data_store| {
@@ -938,7 +943,7 @@ fn new_power_pole<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 updates.push(new_powered_beacon_cascade(*pos, data_store));
                             },
                             e => {
-                                // warn!("Entity {e:?} cannot accept power in start_powering_entity")
+                                trace!("Entity {e:?} cannot accept power in start_powering_entity")
                             },
                         }
                         ControlFlow::Continue(())
@@ -955,7 +960,7 @@ fn new_chest_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
-        update: Box::new(move |world, sim_state, updates, data_store| {
+        update: Box::new(move |world, _sim_state, updates, data_store| {
             profiling::scope!("new_chest_cascade");
             let Some(Entity::Chest {
                 ty,
@@ -976,7 +981,7 @@ fn new_chest_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
 fn new_powered_beacon_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
-    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
         update: Box::new(move |world, sim_state, _updates, data_store| {
@@ -1047,14 +1052,14 @@ fn new_powered_beacon_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
 fn newly_working_assembler<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
-    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
         update: Box::new(move |world, sim_state, updates, data_store| {
             profiling::scope!("newly_working_assembler");
             let Some(
                 e @ Entity::Assembler {
-                    ty,
+                    ty: _,
                     pos,
                     modules: _,
                     info:
@@ -1063,7 +1068,7 @@ fn newly_working_assembler<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             pole_position: _,
                             weak_index: _,
                         },
-                    rotation,
+                    rotation: _,
                 },
             ) = world.get_entity_at(pos, data_store)
             else {
@@ -1132,10 +1137,10 @@ fn newly_working_assembler<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     pos: Position,
     size: (u16, u16),
-    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
-        update: Box::new(move |world, sim_state, updates, data_store| {
+        update: Box::new(move |world, sim_state, _updates, data_store| {
             profiling::scope!("removal_of_possible_inserter_connection");
             let inserter_search_start_pos = Position {
                 x: pos.x - data_store.max_inserter_search_range as i32,
@@ -1157,7 +1162,7 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                             ty,
                             user_movetime,
 
-                            pos: inserter_pos,
+                            pos: _inserter_pos,
                             direction: _inserter_dir,
                             filter: _inserter_filter,
                             info,
@@ -1257,6 +1262,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         create_dir_all(&base_path).expect("Failed to create world dir");
 
         let Self {
+            cascading_updates: _,
             module_slot_dedup_table,
             noise,
             players,
@@ -1322,6 +1328,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         );
 
         Self {
+            cascading_updates: None,
             module_slot_dedup_table,
             noise,
             players,
@@ -1358,6 +1365,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         let noise = Simplex::new(1);
 
         Self {
+            cascading_updates: None,
             module_slot_dedup_table: vec![],
             noise: SerializableSimplex { inner: noise },
             chunks: grid,
@@ -1474,7 +1482,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         // FIXME: Remove Cheated modules
         let cheated_modules = if can_accept_prod { Some(1) } else { Some(0) };
 
-        let mut cascading_updates = vec![];
+        let mut cascading_updates = self.cascading_updates.take().unwrap_or_default().recycle();
 
         self.mutate_entities_colliding_with(pos, (1, 1), data_store, |e, dedup| {
             match e {
@@ -1545,7 +1553,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     pos,
                     modules,
                     info: info @ AssemblerInfo::PoweredNoRecipe(_),
-                    rotation,
+                    rotation: _,
                 } => {
                     // TODO: Stop adding cheated modules
                     let old_modules = &dedup[*modules as usize];
@@ -1649,6 +1657,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         while let Some(update) = cascading_updates.pop() {
             (update.update)(self, sim_state, &mut cascading_updates, data_store);
         }
+
+        self.cascading_updates = Some(cascading_updates.recycle());
     }
 
     #[profiling::function]
@@ -1669,23 +1679,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         profiling::scope!("add_entity {}", entity.get_type_name());
 
         let pos = entity.get_pos();
-        let size = entity.get_entity_size(data_store);
 
         let chunk_pos = self.get_chunk_pos_for_tile(pos);
 
         if self.get_chunk_for_tile_mut(pos).is_none() {
-            todo!("Chunk missing");
+            error!("Tried to place entity outside generated chunks");
             return Err(());
         }
 
-        let mut cascading_updates = vec![];
+        let mut cascading_updates = self.cascading_updates.take().unwrap_or_default().recycle();
 
         match entity {
             Entity::Lab {
-                pos,
-                ty,
-                ref modules,
-                pole_position,
+                pos, pole_position, ..
             } => {
                 if let Some((pole_pos, _, _)) = pole_position {
                     let grid = sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos];
@@ -1698,11 +1704,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
                 cascading_updates.push(new_lab_cascade(pos, data_store));
             },
-            Entity::SolarPanel {
-                pos,
-                ty,
-                pole_position,
-            } => {
+            Entity::SolarPanel { pole_position, .. } => {
                 if let Some((pole_pos, _)) = pole_position {
                     let grid = sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos];
                     self.power_grid_lookup
@@ -1725,7 +1727,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 AssemblerInfo::Powered {
                     id: AssemblerID { grid, .. },
                     pole_position,
-                    weak_index,
+                    ..
                 } => {
                     let lookup_grid =
                         sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_position];
@@ -1739,9 +1741,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     cascading_updates.push(newly_working_assembler(pos, data_store));
                 },
             },
-            Entity::PowerPole {
-                ty, pos: pole_pos, ..
-            } => {
+            Entity::PowerPole { pos: pole_pos, .. } => {
                 let grid = sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos];
                 self.power_grid_lookup
                     .grid_to_chunks
@@ -1788,11 +1788,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 cascading_updates.push(new_possible_inserter_connection(pos, (1, 1)));
                 cascading_updates.push(try_instantiating_inserters_for_belt_cascade(id));
             },
-            Entity::Splitter {
-                pos,
-                direction,
-                id: splitter_id,
-            } => {
+            Entity::Splitter { pos, direction, .. } => {
                 self.belt_recieving_input_directions
                     .entry(pos + direction)
                     .or_default()[direction.reverse()] = true;
@@ -1825,41 +1821,32 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 },
             },
             Entity::Chest {
-                ty,
                 pos,
                 item: None,
                 slot_limit: _,
+                ..
             } => {
                 cascading_updates.push(new_chest_cascade(pos));
             },
             Entity::Chest {
-                ty,
                 pos,
                 item: Some(_),
                 slot_limit: _,
+                ..
             } => {
                 cascading_updates.push(new_chest_cascade(pos));
             },
-            Entity::Roboport {
-                ty,
-                pos,
-                power_grid,
-                network,
-                id,
-            } => {},
+            Entity::Roboport { .. } => {},
             Entity::Beacon {
-                ty,
                 pos,
-                ref modules,
-                pole_position: Some((pole_pos, weak_idx)),
+                pole_position: Some(_),
+                ..
             } => {
                 cascading_updates.push(new_powered_beacon_cascade(pos, data_store));
             },
             Entity::Beacon {
-                ty,
-                pos,
-                ref modules,
                 pole_position: None,
+                ..
             } => {},
             Entity::FluidTank { .. } => {},
         };
@@ -1985,6 +1972,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             }
         }
 
+        self.cascading_updates = Some(cascading_updates.recycle());
+
         Ok(())
     }
 
@@ -2033,15 +2022,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             user_movetime,
 
             pos: _pos,
-            direction,
             info: InserterInfo::NotAttached { start_pos, end_pos },
             filter,
+            ..
         }) = self.get_entity_at(pos, data_store)
         else {
             return Err(InstantiateInserterError::NotUnattachedInserter);
         };
 
-        let move_time = data_store.inserter_infos[*ty as usize].swing_time_ticks;
         // TODO: Calculate tech effect
         let hand_size = data_store.inserter_infos[*ty as usize].base_hand_size;
 
@@ -2151,16 +2139,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     possible_item_list: PossibleItem::List(vec![*item])
                 }),
                 Entity::Chest {
-                    ty,
-                    pos,
                     item: None,
-                    slot_limit: _
+                    slot_limit: _, ..
                 } => Some(InserterConnectionPossibility {
                     conn:  InserterConnection::Storage(Static::ToInstantiate),
                     inserter_item_hint: None,
                     possible_item_list: PossibleItem::All
                 }),
-                Entity::Lab { pos, ty, pole_position, modules } => {
+                Entity::Lab { .. } => {
                     // No removing items from Labs!
                     None
                 }
@@ -2249,10 +2235,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         .get_pure_item(id).map(|item| vec![item]), possible_item_list: PossibleItem::All })
                 },
                 Entity::Chest {
-                    ty,
-                    pos,
                     item: Some((item, index)),
-                    slot_limit: _
+                    slot_limit: _, ..
                 } => Some(InserterConnectionPossibility {
                     conn:  InserterConnection::Storage(Static::Done(Storage::Static {
                         static_id: StaticID::Chest as u16,
@@ -2271,8 +2255,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     inserter_item_hint: None,
                     possible_item_list: PossibleItem::All
                 }),
-                Entity::Lab { pos, ty, pole_position, modules } => {
-                    if let Some((pole_pos, idx, lab_store_index)) = pole_position {
+                Entity::Lab {  pole_position, .. } => {
+                    if let Some((pole_pos, _idx, lab_store_index)) = pole_position {
                         Some(InserterConnectionPossibility { conn: InserterConnection::Storage(Static::Done(Storage::Lab { grid: simulation_state.factory.power_grids.pole_pos_to_grid_id[pole_pos], index: *lab_store_index })), inserter_item_hint: None, possible_item_list: PossibleItem::List(data_store.science_bottle_items.iter().copied().collect()) })
                     } else {
                         None
@@ -2464,7 +2448,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             .map(|e| match e {
                                 Entity::Chest {
                                     ty,
-                                    pos: chest_pos,
+                                    pos: _chest_pos,
                                     item,
                                     slot_limit,
                                 } => {
@@ -2544,7 +2528,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             .map(|e| match e {
                                 Entity::Chest {
                                     ty,
-                                    pos: chest_pos,
+                                    pos: _chest_pos,
                                     item,
                                     slot_limit,
                                 } => {
@@ -2754,7 +2738,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     } => todo!(),
                     Entity::Assembler { info, .. } => match info {
                         AssemblerInfo::UnpoweredNoRecipe | AssemblerInfo::Unpowered(_) => {},
-                        AssemblerInfo::PoweredNoRecipe(pole_position) => {},
+                        AssemblerInfo::PoweredNoRecipe(_) => {},
                         AssemblerInfo::Powered {
                             id:
                                 AssemblerID {
@@ -2849,12 +2833,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             Entity::Inserter { info, .. } => match info {
                                 InserterInfo::NotAttached { .. } => true,
                                 InserterInfo::Attached { info, .. } => match info {
-                                    AttachedInserter::BeltStorage { id, belt_pos } => *id != old_id,
+                                    AttachedInserter::BeltStorage { id, .. } => *id != old_id,
                                     AttachedInserter::BeltBelt { item, inserter } => {
                                         // TODO:
                                         true
                                     },
-                                    AttachedInserter::StorageStorage { item, inserter } => true,
+                                    AttachedInserter::StorageStorage { .. } => true,
                                 },
                             },
                             _ => true,
@@ -3418,7 +3402,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     pub fn get_floor_color(
         &self,
         pos: Position,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Color32 {
         let chunk = self.get_chunk_for_tile(pos);
 
@@ -3429,7 +3413,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         };
 
         chunk
-            .map(|chunk| {
+            .map(|_chunk| {
                 if let Some(ore) = self.get_original_ore_at_pos(pos) {
                     if ore.1 > 0 {
                         // TODO ORE COLOR
@@ -3448,7 +3432,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         &'a self,
         pos: Position,
         size: (u16, u16),
-        data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
+        _data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
     ) -> bool {
         let bb_top_left = (pos.x, pos.y);
 
@@ -3473,7 +3457,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 let y_end = min(bb_bottom_right.1 - chunk.base_pos.1, CHUNK_SIZE as i32 - 1);
 
                 (x_start..x_end)
-                    .cartesian_product((y_start..y_end))
+                    .cartesian_product(y_start..y_end)
                     .map(|(x, y)| {
                         assert!(x >= 0);
                         assert!(x < CHUNK_SIZE as i32);
@@ -3621,8 +3605,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 return None;
             },
         };
-
-        unreachable!()
     }
 
     pub fn get_entity_at(
@@ -3837,7 +3819,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         if let Some(entity) = entity {
             let e_pos = entity.get_pos();
             let e_size = entity.get_entity_size(data_store);
-            let max_inserter_range = data_store.max_inserter_search_range;
 
             for x in 0..e_size.0 {
                 for y in 0..e_size.1 {
@@ -3849,7 +3830,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             }
 
             match &entity {
-                Entity::FluidTank { ty, pos, rotation } => {
+                Entity::FluidTank { pos, .. } => {
                     sim_state.factory.fluid_store.remove_fluid_box(
                         *pos,
                         &mut sim_state.factory.chests,
@@ -3857,12 +3838,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         data_store,
                     );
                 },
-                Entity::Beacon {
-                    pos,
-                    ty,
-                    pole_position,
-                    modules,
-                } => {
+                Entity::Beacon { pole_position, .. } => {
                     if let Some((pole_pos, idx)) = *pole_position {
                         sim_state
                             .factory
@@ -3875,10 +3851,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 Entity::Lab {
                     pos,
                     ty,
-                    modules,
                     pole_position,
+                    ..
                 } => {
-                    if let Some((pole_pos, idx, store_idx)) = *pole_position {
+                    if let Some((pole_pos, idx, _store_idx)) = *pole_position {
                         sim_state.factory.power_grids.power_grids[usize::from(
                             sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos],
                         )]
@@ -3893,11 +3869,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         // This was not connected, nothing to do
                     }
                 },
-                Entity::SolarPanel {
-                    pos,
-                    ty,
-                    pole_position,
-                } => {
+                Entity::SolarPanel { pole_position, .. } => {
                     if let Some((pole_pos, idx)) = *pole_position {
                         sim_state.factory.power_grids.power_grids[usize::from(
                             sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos],
@@ -3907,13 +3879,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         // This was not connected, nothing to do
                     }
                 },
-                Entity::Assembler {
-                    ty,
-                    pos,
-                    info,
-                    modules,
-                    rotation,
-                } => match info {
+                Entity::Assembler { pos, info, .. } => match info {
                     AssemblerInfo::UnpoweredNoRecipe
                     | AssemblerInfo::Unpowered(_)
                     | AssemblerInfo::PoweredNoRecipe(_) => {
@@ -3963,18 +3929,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     match (e, index_update.new_pg_entity.clone()) {
                                         (
                                             Entity::Assembler {
-                                                info:
-                                                    AssemblerInfo::Powered {
-                                                        id,
-                                                        pole_position,
-                                                        weak_index,
-                                                    },
+                                                info: AssemblerInfo::Powered { id, .. },
                                                 ..
                                             },
                                             crate::power::power_grid::PowerGridEntity::Assembler {
-                                                ty,
                                                 recipe,
                                                 index,
+                                                ..
                                             },
                                         ) => {
                                             assert_eq!(id.recipe, recipe);
@@ -4017,11 +3978,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                         pos,
                                         info,
                                         modules,
-                                        rotation,
+                                        ..
                                     } => match info {
                                         AssemblerInfo::UnpoweredNoRecipe => unreachable!(),
-                                        AssemblerInfo::Unpowered(recipe) => unreachable!(),
-                                        AssemblerInfo::PoweredNoRecipe(position) => unreachable!(),
+                                        AssemblerInfo::Unpowered(_) => unreachable!(),
+                                        AssemblerInfo::PoweredNoRecipe(_) => unreachable!(),
                                         AssemblerInfo::Powered {
                                             id,
                                             pole_position,
@@ -4078,19 +4039,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                         },
                                     },
                                     Entity::PowerPole { .. } => unreachable!(),
-                                    Entity::SolarPanel {
-                                        pos,
-                                        ty,
-                                        pole_position,
-                                    } => {
+                                    Entity::SolarPanel { pole_position, .. } => {
                                         *pole_position = None;
                                     },
-                                    Entity::Beacon {
-                                        ty,
-                                        pos,
-                                        modules,
-                                        pole_position,
-                                    } => {
+                                    Entity::Beacon { pole_position, .. } => {
                                         *pole_position = None;
                                     },
 
@@ -4140,9 +4092,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 Entity::Belt {
                     pos,
                     direction,
-                    ty,
                     id,
                     belt_pos,
+                    ..
                 } => {
                     let pos = *pos;
                     let direction = *direction;
@@ -4203,12 +4155,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 },
                 Entity::Splitter { pos, direction, id } => todo!(),
 
-                Entity::Chest {
-                    ty,
-                    pos,
-                    item,
-                    slot_limit,
-                } => {
+                Entity::Chest { ty, pos, item, .. } => {
                     if let Some((item, index)) = item {
                         let chest_removal_info = sim_state.factory.chests.stores
                             [usize_from(item.id)]
@@ -4230,16 +4177,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 } => todo!(),
 
                 Entity::Inserter {
-                    pos,
-                    direction,
                     info: InserterInfo::NotAttached { .. },
                     ..
                 } => {},
                 Entity::Inserter {
                     ty,
                     user_movetime,
-                    pos,
-                    direction,
                     info:
                         InserterInfo::Attached {
                             info: attached_inserter,
@@ -4250,7 +4193,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     AttachedInserter::BeltStorage { id, belt_pos } => {
                         sim_state.factory.belts.remove_inserter(*id, *belt_pos);
                     },
-                    AttachedInserter::BeltBelt { item, inserter } => {
+                    AttachedInserter::BeltBelt { inserter, .. } => {
                         sim_state.factory.belts.remove_belt_belt_inserter(*inserter);
                     },
                     AttachedInserter::StorageStorage { item, inserter } => {

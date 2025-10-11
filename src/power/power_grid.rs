@@ -285,7 +285,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         other: Self,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
         self_grid: PowerGridIdentifier,
-        other_grid: PowerGridIdentifier,
+        _other_grid: PowerGridIdentifier,
         new_pole_pos: Position,
         new_pole_connections: impl IntoIterator<Item = Position>,
     ) -> (
@@ -462,7 +462,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         panel_position: Position,
         ty: u8,
         pole_connection: Position,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> WeakIndex {
         assert!(!self.is_placeholder);
 
@@ -478,7 +478,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         &mut self,
         pole_connection: Position,
         weak_idx: WeakIndex,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         assert!(!self.is_placeholder);
 
@@ -702,7 +702,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         match connected_entity {
-            PowerGridEntity::Assembler { ty, recipe, index } => {
+            PowerGridEntity::Assembler { recipe, index, .. } => {
                 self.remove_assembler_raw(
                     AssemblerID {
                         recipe: *recipe,
@@ -1846,7 +1846,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         &mut self,
         other_stores: &mut MultiLabStore,
         index: u32,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> u32 {
         self.lab_stores.move_lab(index, other_stores)
     }
@@ -2223,8 +2223,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
 
         let active_recipes = tech_state.get_active_recipes();
 
-        let (a, b, c) = join!(|| {}, || {}, || {});
-
         let (
             (power_used_0_1, infos_0_1),
             (power_used_1_1, infos_1_1),
@@ -2495,6 +2493,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         let assembler_power_used = power_used_0_1
             + power_used_1_1
             + power_used_2_1
+            + power_used_2_2
+            + power_used_2_3
             + power_used_3_1
             + power_used_4_1
             + power_used_5_1

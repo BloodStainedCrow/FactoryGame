@@ -1,6 +1,5 @@
 use std::iter::successors;
 
-use enum_map::EnumMap;
 use itertools::Itertools;
 use log::{error, info};
 use strum::IntoEnumIterator;
@@ -58,27 +57,21 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             .flat_map(|chunk| chunk.get_entities())
             .flat_map(|e| match e {
                 Entity::Belt {
-                    pos,
-                    direction,
-                    ty,
-                    id,
-                    belt_pos,
+                    pos, direction, id, ..
                 } => vec![(*pos, *direction, *id), (*pos, direction.reverse(), *id)],
                 Entity::Underground {
                     pos,
                     underground_dir: UndergroundDir::Entrance,
                     direction,
-                    ty,
                     id,
-                    belt_pos,
+                    ..
                 } => vec![(*pos, direction.reverse(), *id)],
                 Entity::Underground {
                     pos,
                     underground_dir: UndergroundDir::Exit,
                     direction,
-                    ty,
                     id,
-                    belt_pos,
+                    ..
                 } => vec![(*pos, *direction, *id)],
                 Entity::Splitter { pos, direction, id } => {
                     // TODO:
@@ -88,7 +81,7 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             });
 
         for (belt_pos, check_dir, id_that_should_exist) in all_belt_connections {
-            if let Some(Entity::Splitter { pos, direction, id }) = game_state
+            if let Some(Entity::Splitter { id, .. }) = game_state
                 .world
                 .get_entity_at(belt_pos + check_dir, data_store)
             {
@@ -119,7 +112,7 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             handle_belt_breaking(game_state, front_pos, splitter_direction, data_store);
 
             // Handle front
-            let (self_front_id, self_front_len) = if let Some(id) =
+            let (self_front_id, _self_front_len) = if let Some(id) =
                 should_merge(game_state, splitter_direction, front_pos, data_store)
             {
                 debug_assert!(
@@ -155,7 +148,7 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
             let back_pos = self_pos + splitter_direction.reverse();
             let belt_dir = get_belt_out_dir(&game_state.world, back_pos, data_store);
-            let (self_back_id, self_back_len) = if let Some(belt_dir) = belt_dir {
+            let (self_back_id, _self_back_len) = if let Some(belt_dir) = belt_dir {
                 if belt_dir == splitter_direction {
                     // The belt at this position is pointing at the back of the splitter
                     let back_id = match game_state
@@ -233,27 +226,21 @@ pub fn handle_splitter_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             .flat_map(|chunk| chunk.get_entities())
             .flat_map(|e| match e {
                 Entity::Belt {
-                    pos,
-                    direction,
-                    ty,
-                    id,
-                    belt_pos,
+                    pos, direction, id, ..
                 } => vec![(*pos, *direction, *id), (*pos, direction.reverse(), *id)],
                 Entity::Underground {
                     pos,
                     underground_dir: UndergroundDir::Entrance,
                     direction,
-                    ty,
                     id,
-                    belt_pos,
+                    ..
                 } => vec![(*pos, direction.reverse(), *id)],
                 Entity::Underground {
                     pos,
                     underground_dir: UndergroundDir::Exit,
                     direction,
-                    ty,
                     id,
-                    belt_pos,
+                    ..
                 } => vec![(*pos, *direction, *id)],
                 Entity::Splitter { pos, direction, id } => {
                     // TODO:

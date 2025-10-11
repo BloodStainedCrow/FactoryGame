@@ -1,9 +1,7 @@
 use std::{
-    fmt::format,
-    mem,
     net::ToSocketAddrs,
     sync::{
-        Arc, LazyLock,
+        Arc,
         atomic::{AtomicU64, Ordering},
         mpsc::{Sender, channel},
     },
@@ -22,9 +20,7 @@ use eframe::{
     egui::{CentralPanel, Event, PaintCallbackInfo, Shape},
     egui_wgpu::{self, CallbackTrait},
 };
-use egui::{
-    Color32, CursorIcon, Layout, Modal, ProgressBar, RichText, Slider, TextEdit, UiBuilder, Window,
-};
+use egui::{Color32, CursorIcon, Modal, ProgressBar, RichText, Slider, TextEdit, Window};
 use log::{error, warn};
 use tilelib::types::RawRenderer;
 
@@ -234,7 +230,7 @@ impl eframe::App for App {
                         let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
                         let (send, recv) = channel();
 
-                        send.send(run_client(ip));
+                        send.send(run_client(ip)).expect("Channel send failed");
 
                         self.state = AppState::Loading {
                             start_time: Instant::now(),
@@ -281,7 +277,7 @@ impl eframe::App for App {
                                 send.send(run_integrated_server(
                                     progress_send,
                                     StartGameInfo::Load(path),
-                                ));
+                                )).expect("Channel send failed");
                             });
 
                             self.state = AppState::Loading {
@@ -307,7 +303,7 @@ impl eframe::App for App {
                                 send.send(run_integrated_server(
                                     progress_send,
                                     StartGameInfo::LoadReadable(path),
-                                ));
+                                )).expect("Channel send failed");
                             });
 
                             self.state = AppState::Loading {
@@ -331,7 +327,7 @@ impl eframe::App for App {
                             send.send(run_integrated_server(
                                 progress_send,
                                 StartGameInfo::Create(GameCreationInfo::Empty),
-                            ));
+                            )).expect("Channel send failed");
                         });
 
                         #[cfg(target_arch = "wasm32")]
@@ -354,7 +350,7 @@ impl eframe::App for App {
                             send.send(run_integrated_server(
                                 progress_send,
                                 StartGameInfo::Create(GameCreationInfo::RedGreen),
-                            ));
+                            )).expect("Channel send failed");
                         });
 
                         #[cfg(target_arch = "wasm32")]
@@ -376,7 +372,7 @@ impl eframe::App for App {
                             send.send(run_integrated_server(
                                 progress_send,
                                 StartGameInfo::Create(GameCreationInfo::RedGreenBelts),
-                            ));
+                            )).expect("Channel send failed");
                         });
 
                         self.state = AppState::Loading {
@@ -393,7 +389,7 @@ impl eframe::App for App {
                             send.send(run_integrated_server(
                                 progress_send,
                                 StartGameInfo::Create(GameCreationInfo::RedWithLabs),
-                            ));
+                            )).expect("Channel send failed");
                         });
 
                         #[cfg(target_arch = "wasm32")]
@@ -416,7 +412,7 @@ impl eframe::App for App {
                             send.send(run_integrated_server(
                                 progress_send,
                                 StartGameInfo::Create(GameCreationInfo::Megabase),
-                            ));
+                            )).expect("Channel send failed");
                         });
 
                         #[cfg(target_arch = "wasm32")]
@@ -439,7 +435,7 @@ impl eframe::App for App {
 
                             ui.add(Slider::new(gigabase_size, 1..=1_000).logarithmic(true).update_while_editing(true).text("Number of base copies to build"));
 
-                            let single_base_size  = 10.0 / 40.0;
+                            let single_base_size  = 11.4 / 40.0;
                             let single_base_usage  = 40.0 / 40.0;
 
                             ui.label(&format!("Est. Memory Usage: ~{:.1}GB", single_base_size * f64::from(*gigabase_size)));
@@ -459,7 +455,7 @@ impl eframe::App for App {
                             send.send(run_integrated_server(
                                 progress_send,
                                 StartGameInfo::Create(GameCreationInfo::Gigabase(gigabase_size)),
-                            ));
+                            )).expect("Channel send failed");
                         });
 
                         self.state = AppState::Loading {
@@ -478,7 +474,7 @@ impl eframe::App for App {
                                     crate::power::Watt(0),
                                     Position { x: 1600, y: 1600 },
                                 )),
-                            ));
+                            )).expect("Channel send failed");
                         });
 
                         self.state = AppState::Loading {
@@ -496,7 +492,7 @@ impl eframe::App for App {
                                 send.send(run_integrated_server(
                                     progress_send,
                                     StartGameInfo::Create(GameCreationInfo::FromBP(path)),
-                                ));
+                                )).expect("Channel send failed");
                             });
 
                             self.state = AppState::Loading {
@@ -525,9 +521,6 @@ impl eframe::App for App {
 impl App {
     fn update_ingame(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         let size = ctx.available_rect();
-
-        // TODO:
-        let mut render_action_vec: Vec<ActionType<u8, u8>> = vec![];
 
         CentralPanel::default().show(ctx, |ui| {
             if ui.ui_contains_pointer() {
@@ -591,7 +584,10 @@ impl App {
                             if self.input_sender.as_mut().unwrap().send(input).is_err() {
                                 #[cfg(not(test))]
                                 panic!("Could not send input");
-                                error!("Could not send input");
+                                #[allow(unreachable_code)]
+                                {
+                                    error!("Could not send input");
+                                }
                             }
                         }
                     }

@@ -41,7 +41,7 @@ use crate::{
 };
 use belt::{Belt, BeltLenType};
 use itertools::{Either, Itertools};
-use log::{info, warn};
+use log::info;
 use petgraph::{
     Directed,
     Direction::Outgoing,
@@ -100,28 +100,6 @@ use crate::{
     frontend::world::tile::BeltId,
     item::{IdxTrait, WeakIdxTrait},
 };
-
-#[cfg(test)]
-fn do_update_test<ItemIdxType: IdxTrait>(items: &mut [Option<Item<ItemIdxType>>]) {
-    match items {
-        [] => {},
-        [Some(_), rest @ ..] => do_update_test(rest),
-        [None, _rest @ ..] => {
-            items.rotate_left(1);
-        },
-    }
-}
-
-#[cfg(test)]
-fn do_update_test_bools(items: &mut [bool]) {
-    match items {
-        [] => {},
-        [true, rest @ ..] => do_update_test_bools(rest),
-        [false, _rest @ ..] => {
-            items.rotate_left(1);
-        },
-    }
-}
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -794,9 +772,9 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
         }
 
         for ins in self.belt_belt_inserters.pure_to_sushi_inserters.iter_mut() {
-            if let Some((_, ((source, _), (dest, _), _, _))) = ins {
+            if let Some((_, ((source, _), (_dest, _), _, _))) = ins {
                 if *source == id {
-                    let Some((ins, ((source, source_pos), (dest, dest_pos), movetime, filter))) =
+                    let Some((ins, ((_source, source_pos), (dest, dest_pos), movetime, filter))) =
                         ins.take()
                     else {
                         unreachable!();
@@ -971,7 +949,7 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
         for ins in self.belt_belt_inserters.pure_to_sushi_inserters.iter_mut() {
             if let Some((_, ((_, _), (dest, _), _, _))) = ins {
                 if *dest == index {
-                    let Some((ins, ((source, source_pos), (dest, dest_pos), movetime, filter))) =
+                    let Some((ins, ((source, source_pos), (_dest, dest_pos), movetime, filter))) =
                         ins.take()
                     else {
                         unreachable!();
@@ -1183,7 +1161,6 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
         back: BeltId<ItemIdxType>,
     ) -> BeltId<ItemIdxType> {
         if front.item != back.item {
-            todo!("Item mismatch. Do I want to error or panic?");
             panic!("We defintively cannot continue.");
         }
 
@@ -1281,7 +1258,7 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
         let front_len = self.get_empty(front).len;
         let back_len = self.get_empty(back).len;
 
-        let (removed_id, kept_id) = if front_len <= back_len {
+        let (_removed_id, kept_id) = if front_len <= back_len {
             let back_belt = self.remove_empty_belt(back);
 
             take_mut::take(self.get_empty_mut(front), |front| {
@@ -1623,7 +1600,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                                 },
                             }
                         },
-                        AnyBelt::Empty(idx) => {
+                        AnyBelt::Empty(_idx) => {
                             // Since the source belt is empty, nothing to do
                         },
                     },
@@ -2264,7 +2241,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
     pub fn sushi_belt_update<'a, 'b, 'c, RecipeIdxType: IdxTrait>(
         &mut self,
         storages_by_item: impl IndexedParallelIterator<Item = &'c mut SingleItemStorages<'a, 'b>>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) where
         'b: 'a,
         'a: 'c,
@@ -2427,7 +2404,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         ret
     }
 
-    fn add_belt(&mut self, belt: SmartBelt<ItemIdxType>) -> BeltTileId<ItemIdxType> {
+    pub fn add_belt(&mut self, belt: SmartBelt<ItemIdxType>) -> BeltTileId<ItemIdxType> {
         let id = self.inner.add_smart_belt(belt);
 
         let new_id = self.add_smart_to_any_list(id);
@@ -2451,7 +2428,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         new_id
     }
 
-    fn add_sushi_belt(&mut self, belt: SushiBelt<ItemIdxType>) -> BeltTileId<ItemIdxType> {
+    pub fn add_sushi_belt(&mut self, belt: SushiBelt<ItemIdxType>) -> BeltTileId<ItemIdxType> {
         let sushi_idx = self.inner.add_sushi_belt(belt);
 
         let new_id = self.add_sushi_to_any_list(sushi_idx);
@@ -2563,7 +2540,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             },
         };
 
-        if let Some((new_id, new_side)) = ret.new_belt {
+        if let Some((new_id, _new_side)) = ret.new_belt {
             let index = self.belt_graph.add_node(new_id);
             self.belt_graph_lookup
                 .insert(new_id, NodeIndex { node_index: index });
@@ -3130,7 +3107,9 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             BeltTileId::AnyBelt(index, _) => match &mut self.any_belts[index as usize] {
                 AnyBelt::Smart(smart_belt_id) => {
                     let smart_belt = self.inner.get_smart_mut(*smart_belt_id);
-                    smart_belt.remove_inserter(pos);
+                    smart_belt
+                        .remove_inserter(pos)
+                        .expect("Failed to remove inserter from smart belt");
                 },
                 AnyBelt::Sushi(sushi_belt_id) => {
                     let sushi_belt = &mut self.inner.sushi_belts[*sushi_belt_id];
@@ -3325,7 +3304,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     },
                     [
                         AnyBelt::Smart(front_smart_belt),
-                        AnyBelt::Sushi(back_sushi_belt),
+                        AnyBelt::Sushi(_back_sushi_belt),
                     ] => {
                         let front_smart_belt = *front_smart_belt;
 
@@ -3762,4 +3741,31 @@ enum AnyBelt<ItemIdxType: WeakIdxTrait> {
     Smart(BeltId<ItemIdxType>),
     Sushi(usize),
     Empty(usize),
+}
+
+#[cfg(test)]
+mod test {
+    #![allow(unused)]
+    use crate::item::IdxTrait;
+    use crate::item::Item;
+
+    fn do_update_test<ItemIdxType: IdxTrait>(items: &mut [Option<Item<ItemIdxType>>]) {
+        match items {
+            [] => {},
+            [Some(_), rest @ ..] => do_update_test(rest),
+            [None, _rest @ ..] => {
+                items.rotate_left(1);
+            },
+        }
+    }
+
+    fn do_update_test_bools(items: &mut [bool]) {
+        match items {
+            [] => {},
+            [true, rest @ ..] => do_update_test_bools(rest),
+            [false, _rest @ ..] => {
+                items.rotate_left(1);
+            },
+        }
+    }
 }

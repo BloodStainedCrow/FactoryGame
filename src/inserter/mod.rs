@@ -8,7 +8,6 @@ use crate::{
     storage_list::{grid_size, static_size},
 };
 
-use static_assertions::const_assert;
 use storage_storage_with_buckets::LargeInserterState;
 use strum::EnumIter;
 
@@ -32,7 +31,7 @@ pub mod storage_storage_with_buckets;
 // pub mod storage_storage_with_buckets_compressed;
 pub mod storage_storage_with_buckets_indirect;
 
-mod bucket_bit_compressed;
+// mod bucket_bit_compressed;
 
 // TODO: This could be minified using a union or similar,
 // But since Inserters are the same size, whether this is 2 or 1 byte (atleast in a Vec of Structs)

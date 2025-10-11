@@ -441,7 +441,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             holes: other_holes,
         } = other;
 
-        // assert_eq!(recipe, other_recipe);
+        assert_eq!(recipe, other_recipe);
 
         for (bucket, other_bucket) in buckets
             .waiting_for_update

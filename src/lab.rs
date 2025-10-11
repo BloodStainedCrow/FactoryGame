@@ -96,7 +96,7 @@ impl MultiLabStore {
         mut self,
         other: Self,
         new_grid_id: PowerGridIdentifier,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
         Self,
         impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>

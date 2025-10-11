@@ -89,42 +89,6 @@ impl BucketedStorageStorageInserterStoreFrontend {
         }
     }
 
-    fn get_info_naive(
-        &mut self,
-        id: InserterIdentifier,
-        movetime: u16,
-        current_time: u32,
-    ) -> LargeInserterState {
-        // FIXME:
-        todo!();
-        // match self.lookup.entry(id) {
-        //     std::collections::hash_map::Entry::Occupied(mut occupied_entry) => {
-        //         let (old_time, old_state) = occupied_entry.get();
-
-        //         let possible_states = get_possible_new_states_after_n_ticks(
-        //             (*old_state).into(),
-        //             movetime,
-        //             HAND_SIZE,
-        //             current_time - *old_time,
-        //         );
-
-        //         if let Ok(possible_states) = possible_states {
-        //             if possible_states.len() == 1 {
-        //                 occupied_entry.insert((current_time, possible_states[0]));
-        //                 possible_states[0]
-        //             } else {
-        //                 todo!("We need to search in the possible states");
-        //             }
-        //         } else {
-        //             todo!("We need to search everywhere");
-        //         }
-        //     },
-        //     std::collections::hash_map::Entry::Vacant(vacant_entry) => {
-        //         todo!("We need to search everywhere")
-        //     },
-        // }
-    }
-
     #[profiling::function]
     pub fn get_info_batched<'a>(
         &mut self,
@@ -686,8 +650,8 @@ impl BucketedStorageStorageInserterStore {
         frontend: &mut BucketedStorageStorageInserterStoreFrontend,
         storages: SingleItemStorages,
         grid_size: usize,
-        current_tick: u32,
-        movetime: u16,
+        _current_tick: u32,
+        _movetime: u16,
     ) -> bool {
         let (_max_insert, old) = index_fake_union(storages, inserter.storage_id_in, grid_size);
 
@@ -719,8 +683,8 @@ impl BucketedStorageStorageInserterStore {
         frontend: &mut BucketedStorageStorageInserterStoreFrontend,
         storages: SingleItemStorages,
         grid_size: usize,
-        current_tick: u32,
-        movetime: u16,
+        _current_tick: u32,
+        _movetime: u16,
     ) -> bool {
         let (max_insert, old) = index_fake_union(storages, inserter.storage_id_out, grid_size);
 

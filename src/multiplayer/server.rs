@@ -8,7 +8,7 @@ use crate::{
     replays::Replay,
 };
 
-trait ActionInterface<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>:
+pub(crate) trait ActionInterface<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>:
     ActionSource<ItemIdxType, RecipeIdxType> + HandledActionConsumer<ItemIdxType, RecipeIdxType>
 {
 }
@@ -39,7 +39,7 @@ pub(super) trait HandledActionConsumer<ItemIdxType: WeakIdxTrait, RecipeIdxType:
     );
 }
 
-pub(super) struct GameStateUpdateHandler<
+pub(crate) struct GameStateUpdateHandler<
     ItemIdxType: IdxTrait,
     RecipeIdxType: IdxTrait,
     ActionInterfaceType: ActionInterface<ItemIdxType, RecipeIdxType>,

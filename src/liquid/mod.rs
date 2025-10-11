@@ -1,6 +1,6 @@
 use std::cmp::min;
+use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use std::collections::{BTreeMap, HashMap};
 
 use itertools::Itertools;
 use log::warn;
@@ -112,7 +112,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
             Err(None) => None,
         };
 
-        let id_the_box_ends_up_with = if let Some(first_connection) = connected_boxes.last() {
+        let id_the_box_ends_up_with = if let Some(_first_connection) = connected_boxes.last() {
             let network_ids: Vec<_> = connected_boxes
                 .iter()
                 .map(|pos| self.fluid_box_pos_to_network_id[pos])
@@ -1097,7 +1097,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         fluid: Item<ItemIdxType>,
         source_pipe_position: Position,
         dest: Storage<RecipeIdxType>,
-        dest_pos: Position,
+        _dest_pos: Position,
         inserter_store: &mut StorageStorageInserterStore,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> WeakIndex {
@@ -1126,7 +1126,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         fluid: Item<ItemIdxType>,
         dest_pipe_position: Position,
         source: Storage<RecipeIdxType>,
-        source_pos: Position,
+        _source_pos: Position,
         inserter_store: &mut StorageStorageInserterStore,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> WeakIndex {
@@ -1487,7 +1487,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         let new_grids: Vec<_> = new_graphs
             .into_iter()
             .flatten()
-            .map(|(graph, positions)| {
+            .map(|(graph, _positions)| {
                 let mut new_system = Self::new_from_graph(
                     graph,
                     old_fluid,
@@ -1617,7 +1617,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         let new_grids: Vec<_> = new_graphs
             .into_iter()
             .flatten()
-            .map(|(graph, positions)| {
+            .map(|(graph, _positions)| {
                 let mut new_system = Self::new_from_graph(
                     graph,
                     old_fluid,

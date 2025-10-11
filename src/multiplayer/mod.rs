@@ -26,7 +26,6 @@ use crate::{
     frontend::{action::ActionType, input::Input, world::tile::World},
     item::{IdxTrait, WeakIdxTrait},
     replays::Replay,
-    saving::save,
 };
 
 mod plumbing;
@@ -35,7 +34,7 @@ mod server;
 
 pub mod connection_reciever_tcp;
 
-pub(super) enum Game<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+pub(crate) enum Game<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
     #[cfg(feature = "client")]
     Client(
         Arc<GameState<ItemIdxType, RecipeIdxType>>,
@@ -67,18 +66,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Drop for Game<ItemIdxType, 
     fn drop(&mut self) {
         match self {
             #[cfg(feature = "client")]
-            Game::Client(mutex, game_state_update_handler, atomic_u64) => {},
-            Game::DedicatedServer(game_state, replay, game_state_update_handler, cancel_socket) => {
-                cancel_socket()
-            },
+            Game::Client(..) => {},
+            Game::DedicatedServer(.., cancel_socket) => cancel_socket(),
             #[cfg(feature = "client")]
-            Game::IntegratedServer(
-                mutex,
-                replay,
-                game_state_update_handler,
-                atomic_u64,
-                cancel_socket,
-            ) => cancel_socket(),
+            Game::IntegratedServer(.., cancel_socket) => cancel_socket(),
         }
     }
 }
@@ -266,7 +257,7 @@ impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
 {
     fn get<'a>(
         &'a self,
-        current_tick: u64,
+        _current_tick: u64,
         _: &World<ItemIdxType, RecipeIdxType>,
         _: &SimulationState<ItemIdxType, RecipeIdxType>,
         _: &DataStore<ItemIdxType, RecipeIdxType>,

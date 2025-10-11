@@ -38,7 +38,7 @@ use crate::{
 // For now blueprint will just be a list of actions
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Blueprint {
-    actions: Vec<BlueprintAction>,
+    pub actions: Vec<BlueprintAction>,
 }
 
 #[derive(Debug, Clone)]
@@ -47,7 +47,7 @@ pub struct ReusableBlueprint<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTr
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-enum BlueprintAction {
+pub enum BlueprintAction {
     PlaceEntity(BlueprintPlaceEntity),
 
     SetRecipe {
@@ -156,7 +156,7 @@ enum BlueprintPlaceEntity {
 }
 
 impl BlueprintAction {
-    fn from<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    pub fn from_with_datastore<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         action: &ActionType<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
@@ -260,7 +260,6 @@ impl BlueprintAction {
                         };
                         Self::PlaceEntity(ty)
                     },
-                    EntityPlaceOptions::Multiple(_) => unimplemented!(),
                 }
             },
             ActionType::SetRecipe(set_recipe_info) => Self::SetRecipe {
@@ -294,7 +293,7 @@ impl BlueprintAction {
         }
     }
 
-    fn try_into_real_action<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    pub fn try_into_real_action<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &self,
         force: bool,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -591,11 +590,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
     }
 
     fn set_base_pos(
-        action: ActionType<ItemIdxType, RecipeIdxType>,
+        action: impl Borrow<ActionType<ItemIdxType, RecipeIdxType>>,
         base_pos: Position,
     ) -> ActionType<ItemIdxType, RecipeIdxType> {
-        match action {
-            ActionType::PlaceFloorTile(PlaceFloorTileByHandInfo {
+        match action.borrow() {
+            &ActionType::PlaceFloorTile(PlaceFloorTileByHandInfo {
                 ghost_info:
                     PlaceFloorTileGhostInfo {
                         tile,
@@ -614,7 +613,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                 },
                 player,
             }),
-            ActionType::PlaceEntity(PlaceEntityInfo {
+            &ActionType::PlaceEntity(PlaceEntityInfo {
                 force,
                 entities:
                     EntityPlaceOptions::Single(PlaceEntityType::Assembler { pos, ty, rotation }),
@@ -629,7 +628,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     rotation,
                 }),
             }),
-            ActionType::PlaceEntity(PlaceEntityInfo {
+            &ActionType::PlaceEntity(PlaceEntityInfo {
                 force,
                 entities: EntityPlaceOptions::Single(PlaceEntityType::Belt { pos, direction, ty }),
             }) => ActionType::PlaceEntity(PlaceEntityInfo {
@@ -643,7 +642,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     ty,
                 }),
             }),
-            ActionType::PlaceEntity(PlaceEntityInfo {
+            &ActionType::PlaceEntity(PlaceEntityInfo {
                 force,
                 entities:
                     EntityPlaceOptions::Single(PlaceEntityType::Underground {
@@ -664,7 +663,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     underground_dir,
                 }),
             }),
-            ActionType::PlaceEntity(PlaceEntityInfo {
+            &ActionType::PlaceEntity(PlaceEntityInfo {
                 force,
                 entities: EntityPlaceOptions::Single(PlaceEntityType::Chest { pos, ty }),
             }) => ActionType::PlaceEntity(PlaceEntityInfo {
@@ -677,7 +676,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     ty,
                 }),
             }),
-            ActionType::PlaceEntity(PlaceEntityInfo {
+            &ActionType::PlaceEntity(PlaceEntityInfo {
                 force,
                 entities:
                     EntityPlaceOptions::Single(PlaceEntityType::Inserter {
@@ -698,7 +697,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     ty,
                 }),
             }),
-            ActionType::PlaceEntity(PlaceEntityInfo {
+            &ActionType::PlaceEntity(PlaceEntityInfo {
                 force,
                 entities: EntityPlaceOptions::Single(PlaceEntityType::PowerPole { pos, ty }),
             }) => ActionType::PlaceEntity(PlaceEntityInfo {
@@ -711,7 +710,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     ty,
                 }),
             }),
-            ActionType::PlaceEntity(PlaceEntityInfo {
+            &ActionType::PlaceEntity(PlaceEntityInfo {
                 force,
                 entities:
                     EntityPlaceOptions::Single(PlaceEntityType::Splitter {
@@ -734,7 +733,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     ty,
                 }),
             }),
-            ActionType::PlaceEntity(PlaceEntityInfo {
+            &ActionType::PlaceEntity(PlaceEntityInfo {
                 force,
                 entities: EntityPlaceOptions::Single(PlaceEntityType::SolarPanel { pos, ty }),
             }) => ActionType::PlaceEntity(PlaceEntityInfo {
@@ -747,7 +746,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     ty,
                 }),
             }),
-            ActionType::PlaceEntity(PlaceEntityInfo {
+            &ActionType::PlaceEntity(PlaceEntityInfo {
                 force,
                 entities: EntityPlaceOptions::Single(PlaceEntityType::Lab { pos, ty }),
             }) => ActionType::PlaceEntity(PlaceEntityInfo {
@@ -760,7 +759,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     ty,
                 }),
             }),
-            ActionType::PlaceEntity(PlaceEntityInfo {
+            &ActionType::PlaceEntity(PlaceEntityInfo {
                 force,
                 entities: EntityPlaceOptions::Single(PlaceEntityType::Beacon { pos, ty }),
             }) => ActionType::PlaceEntity(PlaceEntityInfo {
@@ -773,7 +772,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     ty,
                 }),
             }),
-            ActionType::PlaceEntity(PlaceEntityInfo {
+            &ActionType::PlaceEntity(PlaceEntityInfo {
                 force,
                 entities:
                     EntityPlaceOptions::Single(PlaceEntityType::FluidTank { pos, ty, rotation }),
@@ -788,7 +787,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     rotation,
                 }),
             }),
-            ActionType::SetRecipe(SetRecipeInfo { pos, recipe }) => {
+            &ActionType::SetRecipe(SetRecipeInfo { pos, recipe }) => {
                 ActionType::SetRecipe(SetRecipeInfo {
                     pos: Position {
                         x: base_pos.x + pos.x,
@@ -797,7 +796,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     recipe,
                 })
             },
-            ActionType::Remove(position) => ActionType::Remove(Position {
+            &ActionType::Remove(position) => ActionType::Remove(Position {
                 x: base_pos.x + position.x,
                 y: base_pos.y + position.y,
             }),
@@ -808,14 +807,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                 },
                 modules: modules.clone(),
             },
-            ActionType::SetChestSlotLimit { pos, num_slots } => ActionType::SetChestSlotLimit {
+            &ActionType::SetChestSlotLimit { pos, num_slots } => ActionType::SetChestSlotLimit {
                 pos: Position {
                     x: base_pos.x + pos.x,
                     y: base_pos.y + pos.y,
                 },
                 num_slots,
             },
-            ActionType::OverrideInserterMovetime { pos, new_movetime } => {
+            &ActionType::OverrideInserterMovetime { pos, new_movetime } => {
                 ActionType::OverrideInserterMovetime {
                     pos: Position {
                         x: base_pos.x + pos.x,
@@ -897,8 +896,6 @@ impl Blueprint {
             },
             BlueprintAction::AddModules { pos, .. } => (1, 3, (BeltId::Pure(0), 0), *pos, 1),
             BlueprintAction::SetChestSlotLimit { pos, .. } => (1, 3, (BeltId::Pure(0), 0), *pos, 1),
-
-            _ => unimplemented!(),
         });
 
         info!("Done Optimizing Blueprint");
@@ -921,9 +918,10 @@ impl Blueprint {
                 .actions_with_base_pos(Position { x: 0, y: 0 })
                 .flat_map(|action| {
                     after_each_action();
-                    std::iter::repeat(action)
-                        .zip(positions.iter().copied())
-                        .map(|(action, base_pos)| ReusableBlueprint::set_base_pos(action, base_pos))
+                    positions
+                        .iter()
+                        .copied()
+                        .map(move |base_pos| ReusableBlueprint::set_base_pos(&action, base_pos))
                 }),
             data_store,
         );
@@ -938,12 +936,14 @@ impl Blueprint {
             actions: self
                 .actions
                 .iter()
-                .map(|bp_action| {
-                    bp_action.try_into_real_action(force, data_store).expect(
-                        format!("Action not possible with current mod set: {:?}", bp_action)
-                            .as_str(),
-                    )
-                })
+                .map(
+                    |bp_action| match bp_action.try_into_real_action(force, data_store) {
+                        Ok(v) => v,
+                        Err(_) => {
+                            panic!("Action not possible with current mod set: {:?}", bp_action);
+                        },
+                    },
+                )
                 .collect(),
         }
     }
@@ -975,7 +975,9 @@ impl Blueprint {
             actions: replay
                 .actions
                 .iter()
-                .map(|ra| BlueprintAction::from(&ra.action, replay.data_store.borrow()))
+                .map(|ra| {
+                    BlueprintAction::from_with_datastore(&ra.action, replay.data_store.borrow())
+                })
                 .collect(),
         }
     }
@@ -1015,7 +1017,6 @@ impl Blueprint {
         // FIXME: This could be unreproducable if the power connection order matters
         // FIXME: This will underflow if a entity extends past the edge of the selected area
         for e in entities {
-            let force = false;
             let actions: Vec<BlueprintAction> = match e {
                 crate::frontend::world::tile::Entity::Assembler {
                     ty,
@@ -1068,6 +1069,18 @@ impl Blueprint {
                             y: pos.y - base_pos.y,
                         },
                         recipe: data_store.recipe_names[recipe.into_usize()].clone(),
+                    },
+                    BlueprintAction::AddModules {
+                        pos: Position {
+                            x: pos.x - base_pos.x,
+                            y: pos.y - base_pos.y,
+                        },
+                        modules: world.module_slot_dedup_table[*modules as usize]
+                            .iter()
+                            .flatten()
+                            .copied()
+                            .map(|module| data_store.module_info[module as usize].name.clone())
+                            .collect(),
                     },
                 ],
                 crate::frontend::world::tile::Entity::PowerPole { ty, pos, .. } => {
@@ -1133,7 +1146,7 @@ impl Blueprint {
                         },
                     )]
                 },
-                crate::frontend::world::tile::Entity::Splitter { pos, direction, id } => {
+                crate::frontend::world::tile::Entity::Splitter { pos, direction, .. } => {
                     vec![BlueprintAction::PlaceEntity(
                         BlueprintPlaceEntity::Splitter {
                             pos: Position {
@@ -1478,6 +1491,7 @@ impl Blueprint {
 
 #[cfg(test)]
 pub(crate) mod test {
+    #![allow(unused)]
     use proptest::collection;
     use proptest::prelude::{Just, Strategy};
     use proptest::prop_oneof;
@@ -1494,7 +1508,7 @@ pub(crate) mod test {
             Blueprint {
                 actions: actions
                     .into_iter()
-                    .map(|v| BlueprintAction::from(&v, data_store))
+                    .map(|v| BlueprintAction::from_with_datastore(&v, data_store))
                     .collect(),
             }
         })

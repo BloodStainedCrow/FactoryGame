@@ -69,7 +69,7 @@ impl TryFrom<egui::Event> for Input {
             eframe::egui::Event::MouseWheel {
                 unit,
                 delta,
-                modifiers,
+                modifiers: _modifiers,
             } => match unit {
                 eframe::egui::MouseWheelUnit::Point => {
                     Ok(Input::MouseScoll((delta.x as f64, delta.y as f64)))

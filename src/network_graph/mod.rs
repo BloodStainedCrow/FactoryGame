@@ -4,7 +4,6 @@ use crate::get_size::BiMap;
 use log::info;
 use petgraph::{
     Undirected,
-    algo::tarjan_scc,
     csr::DefaultIx,
     graph::{Edge, Node},
     visit::{EdgeRef, IntoNodeReferences},

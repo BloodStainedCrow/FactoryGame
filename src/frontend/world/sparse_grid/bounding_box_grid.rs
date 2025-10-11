@@ -2,9 +2,7 @@ use crate::saving::save_at;
 
 use super::GetGridIndex;
 use itertools::Itertools;
-use rayon::iter::{
-    IndexedParallelIterator, IntoParallelIterator, ParallelBridge, ParallelIterator,
-};
+use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use rayon::slice::ParallelSlice;
 use std::cmp::{max, min};
 use std::fmt::Debug;

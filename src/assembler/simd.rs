@@ -231,7 +231,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         };
 
         let power_iter = match self.single_type {
-            Some(ty) => Either::Left(std::iter::repeat(&arr)),
+            Some(_ty) => Either::Left(std::iter::repeat(&arr)),
             None => Either::Right(self.base_power_consumption.array_chunks()),
         };
 

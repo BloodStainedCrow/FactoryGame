@@ -10,12 +10,8 @@ use crate::item::{Indexable, ITEMCOUNTTYPE};
 use crate::lab::{LabViewInfo, TICKS_PER_SCIENCE};
 use crate::liquid::FluidSystemState;
 use crate::rendering::Corner;
-use crate::saving::{save, save_components};
+use crate::saving::save_components;
 use crate::statistics::{NUM_DIFFERENT_TIMESCALES, TIMESCALE_NAMES};
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size::GetSize;
 use crate::{
     TICKS_PER_SECOND_LOGIC,
     assembler::AssemblerOnclickInfo,
@@ -61,7 +57,6 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
-use std::num::NonZero;
 use std::sync::LazyLock;
 use std::{
     cmp::{Ordering, min},
@@ -179,11 +174,6 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let mut entity_overlay_layer = Layer::square_tile_grid(tilesize, ar);
     let mut player_layer = Layer::square_tile_grid(tilesize, ar);
 
-    let mut storage_storage_inserter_render_list: HashMap<
-        (Item<ItemIdxType>, u16),
-        Vec<([f32; 2], u8, InserterIdentifier)>,
-    > = HashMap::new();
-
     let camera_pos = match &state_machine.map_view_info {
         Some(map_view_pos) => *map_view_pos,
         None => state_machine.local_player_pos,
@@ -285,8 +275,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         return;
     }
 
-    let x_range = (-((num_tiles_across_screen_horizontal / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
-        ..=((num_tiles_across_screen_horizontal / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32));
+    let x_range = -((num_tiles_across_screen_horizontal / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
+        ..=((num_tiles_across_screen_horizontal / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32);
     // .into_par_iter();
     let y_range = -((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
         ..=((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32);
@@ -1256,6 +1246,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 0,
                                                 entity_layer,
                                             );
+
+                                            // TODO: Implement alt mode
                                         },
                                         Entity::SolarPanel { ty, pos, .. } => {
                                             entity_layer.draw_sprite(
@@ -2049,18 +2041,18 @@ pub fn render_ui<
             }
             if ui.button("⚠️Auto Clock Inserters").clicked() {
                 let inserters_without_values_set = game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter_map(|e| match e {
-                    Entity::Inserter { ty, user_movetime, pos, direction, filter, info } => {
+                    Entity::Inserter { ty, user_movetime, pos, info, .. } => {
                         if user_movetime.is_none() {
                             match info {
-                                crate::frontend::world::tile::InserterInfo::NotAttached { start_pos, end_pos } => None,
+                                crate::frontend::world::tile::InserterInfo::NotAttached { .. } => None,
                                 crate::frontend::world::tile::InserterInfo::Attached { start_pos, end_pos, info } => match info {
-                                    crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => {
+                                    crate::frontend::world::tile::AttachedInserter::BeltStorage {belt_pos, .. } => {
                                         None
                                         // TODO: Currently BeltStorage Inserters do not support movetime changes
                                         // Some((ty, pos, start_pos, end_pos))
                                     },
                                     crate::frontend::world::tile::AttachedInserter::BeltBelt { .. } => None,
-                                    crate::frontend::world::tile::AttachedInserter::StorageStorage { item, inserter } => {
+                                    crate::frontend::world::tile::AttachedInserter::StorageStorage { item, .. } => {
                                         Some((ty, pos, start_pos, end_pos, item))
                                     },
                                 },
@@ -2072,12 +2064,12 @@ pub fn render_ui<
                     _ => None,
                 });
 
-                let inserter_pos_and_time = inserters_without_values_set.map(|(ty, pos, start_pos, end_pos, item)| {
+                let inserter_pos_and_time = inserters_without_values_set.map(|(_ty, pos, start_pos, end_pos, item)| {
                     let mut goal_movetime = 12;
 
                     if let Some(e) = game_state_ref.world.get_entity_at(*end_pos, data_store_ref) {
                         match e {
-                            Entity::Assembler { ty, pos, modules, info, rotation } => {
+                            Entity::Assembler {info, .. } => {
                                 match info {
                                     AssemblerInfo::UnpoweredNoRecipe => {},
                                     AssemblerInfo::Unpowered(_) => {},
@@ -2154,17 +2146,17 @@ pub fn render_ui<
             }
             if ui.button("Remove Clocking from all Inserters").clicked() {
                 let inserters_without_values_set = game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter_map(|e| match e {
-                    Entity::Inserter { ty, user_movetime, pos, direction, filter, info } => {
+                    Entity::Inserter { pos, info, .. } => {
                         match info {
-                            crate::frontend::world::tile::InserterInfo::NotAttached { start_pos, end_pos } => None,
-                            crate::frontend::world::tile::InserterInfo::Attached { start_pos, end_pos, info } => match info {
-                                crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => {
+                            crate::frontend::world::tile::InserterInfo::NotAttached { .. } => None,
+                            crate::frontend::world::tile::InserterInfo::Attached {  info, .. } => match info {
+                                crate::frontend::world::tile::AttachedInserter::BeltStorage { .. } => {
                                     None
                                     // TODO: Currently BeltStorage Inserters do not support movetime changes
                                     // Some((ty, pos, start_pos, end_pos))
                                 },
                                 crate::frontend::world::tile::AttachedInserter::BeltBelt { .. } => None,
-                                crate::frontend::world::tile::AttachedInserter::StorageStorage { item, inserter } => {
+                                crate::frontend::world::tile::AttachedInserter::StorageStorage { .. } => {
                                     Some(pos)
                                 },
                             },
@@ -2518,9 +2510,7 @@ pub fn render_ui<
         },
 
         crate::frontend::action::action_state_machine::ActionStateMachineState::Idle => {},
-        crate::frontend::action::action_state_machine::ActionStateMachineState::Holding(
-            held_object,
-        ) => {},
+        crate::frontend::action::action_state_machine::ActionStateMachineState::Holding(_) => {},
         crate::frontend::action::action_state_machine::ActionStateMachineState::Viewing(
             position,
         ) => {
@@ -2941,7 +2931,7 @@ pub fn render_ui<
                     Entity::Lab { pole_position, ty, modules, .. } => {
                         ui.label(&data_store.lab_info[*ty as usize].display_name);
                         match pole_position {
-                            Some((pole_pos, weak_index, lab_index)) => {
+                            Some((pole_pos, _weak_index, lab_index)) => {
                                 let ticks_per_science: f32 = TICKS_PER_SCIENCE as f32;
 
                                 let LabViewInfo {

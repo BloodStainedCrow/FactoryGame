@@ -648,11 +648,6 @@ impl DataStoreOptions {
     }
 }
 
-struct RecipeIndexLookup {
-    ing: usize,
-    out: usize,
-}
-
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct RecipeIngLookups {
     pub ing0: Vec<[ITEMCOUNTTYPE; 0]>,
@@ -722,7 +717,7 @@ impl RawDataStore {
                             .flat_map(|v| match &v.2 {
                                 RawPipeConnectionType::Direct => None,
                                 RawPipeConnectionType::Underground {
-                                    max_distance,
+                                    max_distance: _,
                                     underground_allowed_kinds,
                                 } => Some(underground_allowed_kinds.iter().cloned()),
                             })
@@ -735,7 +730,7 @@ impl RawDataStore {
                             .flat_map(|connection| match &connection.connection_type {
                                 RawPipeConnectionType::Direct => None,
                                 RawPipeConnectionType::Underground {
-                                    max_distance,
+                                    max_distance: _,
                                     underground_allowed_kinds,
                                 } => Some(underground_allowed_kinds.iter().cloned()),
                             })
@@ -749,7 +744,7 @@ impl RawDataStore {
                         flowthrough.connections.iter().flat_map(|v| match &v.2 {
                             RawPipeConnectionType::Direct => None,
                             RawPipeConnectionType::Underground {
-                                max_distance,
+                                max_distance: _,
                                 underground_allowed_kinds,
                             } => Some(underground_allowed_kinds.iter().cloned()),
                         })
@@ -758,7 +753,7 @@ impl RawDataStore {
                         match &connection.connection_type {
                             RawPipeConnectionType::Direct => None,
                             RawPipeConnectionType::Underground {
-                                max_distance,
+                                max_distance: _,
                                 underground_allowed_kinds,
                             } => Some(underground_allowed_kinds.iter().cloned()),
                         }
@@ -771,7 +766,7 @@ impl RawDataStore {
                     .flat_map(|v| match &v.2 {
                         RawPipeConnectionType::Direct => None,
                         RawPipeConnectionType::Underground {
-                            max_distance,
+                            max_distance: _,
                             underground_allowed_kinds,
                         } => Some(underground_allowed_kinds.iter().cloned()),
                     })
@@ -970,7 +965,7 @@ impl RawDataStore {
             out4: vec![],
         };
 
-        for (i, recipe) in self.recipes.iter().enumerate() {
+        for recipe in self.recipes.iter() {
             let ing_idx = match recipe.ings.len() {
                 0 => {
                     recipe_ings
@@ -1163,7 +1158,7 @@ impl RawDataStore {
         let mut tech_tree = StableGraph::<_, (), Directed, u16>::default();
         let mut name_to_node_index = HashMap::new();
 
-        for (i, raw_tech) in self.technologies.iter().enumerate() {
+        for raw_tech in self.technologies.iter() {
             let index = tech_tree.add_node(Technology {
                 name: raw_tech.display_name.clone(),
                 base_cost: (
@@ -1586,7 +1581,7 @@ impl RawDataStore {
                             RawPipeConnectionType::Direct => 1,
                             RawPipeConnectionType::Underground {
                                 max_distance,
-                                underground_allowed_kinds,
+                                underground_allowed_kinds: _,
                             } => *max_distance,
                         })
                         .max()

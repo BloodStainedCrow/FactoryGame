@@ -9,7 +9,6 @@ pub struct PlaceEntityInfo<ItemIdxType: WeakIdxTrait> {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum EntityPlaceOptions<ItemIdxType: WeakIdxTrait> {
     Single(PlaceEntityType<ItemIdxType>),
-    Multiple(Vec<PlaceEntityType<ItemIdxType>>),
 }
 
 // impl<ItemIdxType: IdxTrait> PlaceEntityInfo<ItemIdxType> {

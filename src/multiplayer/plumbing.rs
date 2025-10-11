@@ -26,14 +26,14 @@ use super::{
 };
 
 #[cfg(feature = "client")]
-pub(super) struct Client<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+pub(crate) struct Client<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub(super) local_input: Receiver<Input>,
     pub(super) local_actions: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
     pub(super) server_connection: TcpStream,
     pub(super) ui_actions: Receiver<ActionType<ItemIdxType, RecipeIdxType>>,
 }
 
-pub(super) struct Server<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+pub(crate) struct Server<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     client_connections: ConnectionList,
 
     item: PhantomData<ItemIdxType>,
@@ -56,7 +56,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
 {
     fn get<'a, 'b, 'c, 'd>(
         &'a self,
-        current_tick: u64,
+        _current_tick: u64,
         world: &'b World<ItemIdxType, RecipeIdxType>,
         sim_state: &'d SimulationState<ItemIdxType, RecipeIdxType>,
         data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
@@ -67,7 +67,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         //       This could be solved either by introducing some fixed delay on all actions (i.e. just running the client a couple ticks in the past compared to the server)
         //       Or using a rollback feature, by (i.e.) assuming no actions are run
         // Get the actions from what the server sent us
-        let pre_lock = Instant::now();
 
         let mut state_machine = self.local_actions.lock();
 
@@ -83,7 +82,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
             postcard::to_io(&action, &self.server_connection).expect("tcp send failed");
         }
         let mut buffer = vec![0; 1_000_000];
-        let (recieved_actions, v): (Vec<_>, _) =
+        let (recieved_actions, _v): (Vec<_>, _) =
             postcard::from_io((&self.server_connection, &mut buffer)).unwrap();
 
         recieved_actions
@@ -98,8 +97,8 @@ impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
 {
     fn consume(
         &mut self,
-        current_tick: u64,
-        actions: impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>,
+        _current_tick: u64,
+        _actions: impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>,
     ) {
         // Do Nothing
     }
@@ -110,10 +109,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
 {
     fn get(
         &self,
-        current_tick: u64,
-        world: &World<ItemIdxType, RecipeIdxType>,
-        sim_state: &SimulationState<ItemIdxType, RecipeIdxType>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        _current_tick: u64,
+        _world: &World<ItemIdxType, RecipeIdxType>,
+        _sim_state: &SimulationState<ItemIdxType, RecipeIdxType>,
+        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
     {
         const RECV_BUFFER_LEN: usize = 10_000;
@@ -182,7 +181,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 {
     fn consume(
         &mut self,
-        current_tick: u64,
+        _current_tick: u64,
         actions: impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>,
     ) {
         let actions: Vec<_> = actions.into_iter().collect();
@@ -196,7 +195,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 }
 
 #[cfg(feature = "client")]
-pub(super) struct IntegratedServer<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+pub(crate) struct IntegratedServer<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub(super) local_actions: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
     pub(super) local_input: Receiver<Input>,
     pub(super) server: Server<ItemIdxType, RecipeIdxType>,

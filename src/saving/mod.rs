@@ -1,7 +1,7 @@
 use std::{
     borrow::Borrow,
     fs::{File, create_dir_all},
-    io::{Read, Write},
+    io::Read,
     marker::PhantomData,
     path::PathBuf,
 };

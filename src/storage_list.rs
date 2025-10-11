@@ -22,7 +22,6 @@ use crate::{
 // FIXME: We just yeet 10MB of RAM into the wind here :/
 pub const ALWAYS_FULL: &'static [ITEMCOUNTTYPE] = &[0; 10_000_000];
 pub const PANIC_ON_INSERT: &'static [ITEMCOUNTTYPE] = &[0; 0];
-pub const PANIC_ON_INSERT_DATA: &'static [ITEMCOUNTTYPE] = &[0; 0];
 
 type SingleGridStorage<'a, 'b> = (&'a [ITEMCOUNTTYPE], &'b mut [ITEMCOUNTTYPE]);
 pub type SingleItemStorages<'a, 'b> = &'a mut [SingleGridStorage<'b, 'b>]; //[SingleGridStorage; NUM_RECIPES * NUM_GRIDS];
@@ -48,8 +47,8 @@ pub fn num_recipes<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 }
 
 pub fn static_size<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    item: Item<ItemIdxType>,
-    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    _item: Item<ItemIdxType>,
+    _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> usize {
     let mut size = 0;
 
@@ -1280,8 +1279,6 @@ fn all_lab_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         })
 }
 
-fn all_lazy_power_machine_storages() {}
-
 #[profiling::function]
 fn all_static_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     chest_store: &'a mut FullChestStore<ItemIdxType>,
@@ -1376,10 +1373,3 @@ fn all_chest_storages<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             )
         })
 }
-
-fn bot_network_storages<ItemIdxType: IdxTrait>()
--> impl Iterator<Item = (Item<ItemIdxType>, &'static mut [ITEMCOUNTTYPE])> {
-    vec![todo!()].into_iter()
-}
-
-fn all_train_station_storages() {}

@@ -10,7 +10,6 @@ use crate::{
         power_grid::{IndexUpdateInfo, PowerGridIdentifier},
     },
 };
-use itertools::Itertools;
 use std::cmp::max;
 
 #[cfg(feature = "client")]
@@ -647,7 +646,7 @@ pub trait MultiAssemblerStore<
             .map(|module| i16::from(data_store.module_info[module as usize].power_mod))
             .sum();
 
-        let (ing_idx, out_idx) = recipe_lookup[self.get_recipe().into_usize()];
+        let (ing_idx, _out_idx) = recipe_lookup[self.get_recipe().into_usize()];
 
         let our_ings: &[ITEMCOUNTTYPE; NUM_INGS] = &recipe_ings[ing_idx];
 

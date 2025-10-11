@@ -430,7 +430,7 @@ impl TechState {
                         .get(tech)
                         .copied()
                         .unwrap_or(0);
-                    let (tech_cost_units, tech_cost_items) =
+                    let (tech_cost_units, _tech_cost_items) =
                         &data_store.technology_costs[tech.id as usize];
                     let mut tech_cost_units = *tech_cost_units;
 

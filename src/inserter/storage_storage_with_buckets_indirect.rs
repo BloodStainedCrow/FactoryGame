@@ -16,6 +16,7 @@ use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
 use get_size::GetSize;
 
+#[allow(unused)]
 struct IdealInserter {
     pub storage_id_in: u32,
     pub storage_id_out: u32,
@@ -245,7 +246,7 @@ impl BucketedStorageStorageInserterStore {
         storages: SingleItemStorages,
         grid_size: usize,
         current_tick: u32,
-        movetime: u16,
+        _movetime: u16,
     ) -> bool {
         let (_max_insert, old) = index_fake_union(storages, inserter.storage_id_in, grid_size);
 
@@ -277,7 +278,7 @@ impl BucketedStorageStorageInserterStore {
         storages: SingleItemStorages,
         grid_size: usize,
         current_tick: u32,
-        movetime: u16,
+        _movetime: u16,
     ) -> bool {
         let (max_insert, old) = index_fake_union(storages, inserter.storage_id_out, grid_size);
 
@@ -643,7 +644,6 @@ mod test {
     const MOVETIME: u16 = 120;
     const NUM_INSERTERS: usize = 20_000_000;
     const NUM_ITEMS: usize = 5;
-    const NUM_VISIBLE: usize = 100;
 
     use std::array;
 

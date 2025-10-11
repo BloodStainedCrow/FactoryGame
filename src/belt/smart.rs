@@ -23,7 +23,7 @@ use log::trace;
 use std::mem;
 
 use super::{
-    FreeIndex, Inserter, SplitterID,
+    FreeIndex, SplitterID,
     belt::{Belt, BeltLenType, NoSpaceError},
     splitter::{SplitterSide, SushiSplitter},
     sushi::{SushiBelt, SushiInserterStoreDyn},
@@ -85,8 +85,6 @@ pub struct BeltInserterInfo {
     pub state: InserterState,
     pub connection: FakeUnionStorage,
 }
-
-const MIN_INSERTER_SPACING: usize = 8;
 
 #[derive(Debug)]
 pub struct SpaceOccupiedError;
@@ -192,7 +190,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         self.last_moving_spot = 0;
     }
 
-    pub fn add_input_splitter(&mut self, id: SplitterID, side: SplitterSide) {
+    pub(super) fn add_input_splitter(&mut self, id: SplitterID, side: SplitterSide) {
         assert!(
             self.input_splitter.is_none(),
             "Tried to add splitter where one already existed"
@@ -205,7 +203,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         self.input_splitter = Some((id, side));
     }
 
-    pub fn add_output_splitter(&mut self, id: SplitterID, side: SplitterSide) {
+    pub(super) fn add_output_splitter(&mut self, id: SplitterID, side: SplitterSide) {
         assert!(
             self.output_splitter.is_none(),
             "Tried to add splitter where one already existed"
@@ -218,11 +216,11 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         self.output_splitter = Some((id, side));
     }
 
-    pub fn remove_input_splitter(&mut self) -> Option<(SplitterID, SplitterSide)> {
+    pub(super) fn remove_input_splitter(&mut self) -> Option<(SplitterID, SplitterSide)> {
         self.input_splitter.take()
     }
 
-    pub fn remove_output_splitter(&mut self) -> Option<(SplitterID, SplitterSide)> {
+    pub(super) fn remove_output_splitter(&mut self) -> Option<(SplitterID, SplitterSide)> {
         self.output_splitter.take()
     }
 
@@ -529,7 +527,6 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         self.inserters.inserters.len()
     }
 
-    #[inline(never)]
     pub fn update_inserters<'a, 'b>(
         &mut self,
         storages: SingleItemStorages<'a, 'b>,
@@ -539,12 +536,6 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             return;
         }
         let mut i = 0;
-
-        let first_possible_free_pos = match self.first_free_index {
-            FreeIndex::OldFreeIndex(i) | FreeIndex::FreeIndex(i) => i,
-        };
-
-        // TODO: We do a last second check here. Maybe this could be better with two struct, though then we do not have compile time assurance that no two inserters overlap.
 
         let old_first_free = match self.first_free_index {
             FreeIndex::FreeIndex(idx) => idx,
@@ -885,7 +876,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             ty: ty_front,
 
             is_circular: _,
-            first_free_index: front_first_free_index,
+            first_free_index: _front_first_free_index,
             zero_index: front_zero_index,
             locs: front_locs,
             inserters: front_inserters,
@@ -921,11 +912,11 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             unreachable!()
         };
 
-        // HUGE FIXME FIXME FIXME
-        //assert_eq!(
-        //    ty_front, ty_back,
-        //    "Belts can only merge if they are the same type!"
-        //);
+        // HUGE TODO: Make this work somehow
+        assert_eq!(
+            ty_front, ty_back,
+            "Belts can only merge if they are the same type!"
+        );
 
         // Important, first_free_index must ALWAYS be used using mod len
         let back_zero_index = usize::from(back_zero_index) % back_locs.len();
@@ -954,7 +945,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             ins.into_boxed_slice()
         });
 
-        let mut front_locs_vec = BitBox::from(front_locs).into_vec();
+        let mut front_locs_vec = BitBox::from(front_locs).into_bitvec();
 
         front_locs_vec.rotate_left(front_zero_index);
 
@@ -971,7 +962,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             is_circular: false,
             first_free_index: FreeIndex::OldFreeIndex(0),
             zero_index: 0,
-            locs: front_locs_vec.into_boxed_slice().into(),
+            locs: front_locs_vec.into_boxed_bitslice().into(),
             inserters: new_inserters,
             item,
 
@@ -1015,7 +1006,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         // Important, first_free_index must ALWAYS be used using mod len
         let zero_index = zero_index % len;
 
-        let mut locs = BitBox::from(locs).into_vec();
+        let mut locs = BitBox::from(locs).into_bitvec();
 
         let old_len = locs.len();
 
@@ -1057,7 +1048,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             is_circular: false,
             first_free_index: new_empty,
             zero_index: new_zero,
-            locs: locs.into_boxed_slice().into(),
+            locs: locs.into_boxed_bitslice().into(),
             inserters,
             item,
 
@@ -1093,7 +1084,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
         let mut new_locs = None;
         take_mut::take(&mut self.locs, |locs| {
-            let mut locs_vec = BitBox::from(locs).into_vec();
+            let mut locs_vec = BitBox::from(locs).into_bitvec();
 
             let len = locs_vec.len();
 
@@ -1102,10 +1093,10 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             new_locs = Some(
                 locs_vec
                     .split_off(belt_pos_to_break_at.into())
-                    .into_boxed_slice(),
+                    .into_boxed_bitslice(),
             );
 
-            locs_vec.into_boxed_slice().into()
+            locs_vec.into_boxed_bitslice().into()
         });
 
         self.zero_index = 0;
@@ -1285,7 +1276,7 @@ impl EmptyBelt {
         self.is_circular = true;
     }
 
-    pub fn add_input_splitter(&mut self, id: SplitterID, side: SplitterSide) {
+    pub(super) fn add_input_splitter(&mut self, id: SplitterID, side: SplitterSide) {
         assert!(
             self.input_splitter.is_none(),
             "Tried to add splitter where one already existed"
@@ -1298,7 +1289,7 @@ impl EmptyBelt {
         self.input_splitter = Some((id, side));
     }
 
-    pub fn add_output_splitter(&mut self, id: SplitterID, side: SplitterSide) {
+    pub(super) fn add_output_splitter(&mut self, id: SplitterID, side: SplitterSide) {
         assert!(
             self.output_splitter.is_none(),
             "Tried to add splitter where one already existed"
@@ -1311,28 +1302,28 @@ impl EmptyBelt {
         self.output_splitter = Some((id, side));
     }
 
-    pub fn remove_input_splitter(&mut self) -> Option<(SplitterID, SplitterSide)> {
+    pub(super) fn remove_input_splitter(&mut self) -> Option<(SplitterID, SplitterSide)> {
         self.input_splitter.take()
     }
 
-    pub fn remove_output_splitter(&mut self) -> Option<(SplitterID, SplitterSide)> {
+    pub(super) fn remove_output_splitter(&mut self) -> Option<(SplitterID, SplitterSide)> {
         self.output_splitter.take()
     }
 }
 
 impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for EmptyBelt {
-    fn query_item(&self, pos: BeltLenType) -> Option<Item<ItemIdxType>> {
+    fn query_item(&self, _pos: BeltLenType) -> Option<Item<ItemIdxType>> {
         None
     }
 
-    fn remove_item(&mut self, pos: BeltLenType) -> Option<Item<ItemIdxType>> {
+    fn remove_item(&mut self, _pos: BeltLenType) -> Option<Item<ItemIdxType>> {
         None
     }
 
     fn try_insert_item(
         &mut self,
-        pos: BeltLenType,
-        item: Item<ItemIdxType>,
+        _pos: BeltLenType,
+        _item: Item<ItemIdxType>,
     ) -> Result<(), NoSpaceError> {
         unimplemented!()
     }
@@ -1357,7 +1348,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for EmptyBelt {
         todo!()
     }
 
-    fn update(&mut self, splitter_list: &[SushiSplitter<ItemIdxType>]) {
+    fn update(&mut self, _splitter_list: &[SushiSplitter<ItemIdxType>]) {
         // TODO: Do i want to stop this from being called or just do nothing
         unimplemented!()
     }
@@ -1412,7 +1403,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
         self.zero_index = 0;
         let mut item_count = 0;
         take_mut::take(&mut self.locs, |locs| {
-            let mut locs = BitBox::from(locs).into_vec();
+            let mut locs = BitBox::from(locs).into_bitvec();
 
             let removed_items = match side {
                 Side::FRONT => locs.drain(..(amount as usize)),
@@ -1421,7 +1412,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
 
             item_count = removed_items.filter(|loc| *loc).count() as u32;
 
-            locs.into_boxed_slice().into()
+            locs.into_boxed_bitslice().into()
         });
 
         let kept_range = match side {
@@ -1625,7 +1616,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
             >= u32::from(len)
         {
             // We have two stuck and one moving slice
-            let (middle_stuck_slice, moving_slice) = end_slice.split_at_mut(
+            let (_middle_stuck_slice, moving_slice) = end_slice.split_at_mut(
                 (usize::from(self.zero_index) + usize::from(first_free_index_real))
                     % usize::from(len),
             );
@@ -1645,7 +1636,6 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
                 self.zero_index = self.zero_index.checked_add(1).unwrap();
             }
         } else {
-            let start_len = start_slice.len();
             let (starting_stuck_slice, middle_moving_slice) =
                 start_slice.split_at_mut(usize::from(first_free_index_real));
             // .expect(&format!("{} > {}", first_free_index_real, start_len));

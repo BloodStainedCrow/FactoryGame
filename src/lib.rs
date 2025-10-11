@@ -324,7 +324,13 @@ fn run_integrated_server(
                         GameState::new_with_gigabase(count, progress, &data_store)
                     },
                     GameCreationInfo::SolarField(wattage, base_pos) => {
-                        GameState::new_with_tons_of_solar(progress, &data_store)
+                        GameState::new_with_tons_of_solar(
+                            wattage,
+                            base_pos,
+                            None,
+                            progress,
+                            &data_store,
+                        )
                     },
 
                     GameCreationInfo::FromBP(path) => GameState::new_with_bp(&data_store, path),
@@ -378,9 +384,7 @@ fn run_integrated_server(
                 send,
             );
         },
-        data::DataStoreOptions::ItemU8RecipeU16(data_store) => todo!(),
-        data::DataStoreOptions::ItemU16RecipeU8(data_store) => todo!(),
-        data::DataStoreOptions::ItemU16RecipeU16(data_store) => todo!(),
+        _ => todo!(),
     }
 }
 
@@ -432,9 +436,7 @@ fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
                 multiplayer::ExitReason::LoopStopped => exit(0),
             }
         },
-        data::DataStoreOptions::ItemU8RecipeU16(data_store) => todo!(),
-        data::DataStoreOptions::ItemU16RecipeU8(data_store) => todo!(),
-        data::DataStoreOptions::ItemU16RecipeU16(data_store) => todo!(),
+        _ => todo!(),
     }
 }
 
@@ -500,9 +502,7 @@ fn run_client(remote_addr: SocketAddr) -> (LoadedGame, Arc<AtomicU64>, Sender<In
                 send,
             );
         },
-        data::DataStoreOptions::ItemU8RecipeU16(data_store) => todo!(),
-        data::DataStoreOptions::ItemU16RecipeU8(data_store) => todo!(),
-        data::DataStoreOptions::ItemU16RecipeU16(data_store) => todo!(),
+        _ => todo!(),
     }
 }
 
@@ -541,15 +541,14 @@ pub fn simple(
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, iter, path::PathBuf, rc::Rc};
+    use std::{iter, rc::Rc};
 
-    use rstest::rstest;
     use test::{Bencher, black_box};
 
     use crate::{
-        DATA_STORE, TICKS_PER_SECOND_LOGIC,
+        TICKS_PER_SECOND_LOGIC,
         app_state::GameState,
-        data::{DataStore, factorio_1_1::get_raw_data_test},
+        data::factorio_1_1::get_raw_data_test,
         frontend::{action::ActionType, world::Position},
         replays::{Replay, run_till_finished},
     };
