@@ -64,6 +64,8 @@ wasm-bindgen-futures = "0.4.54"
 wasm-timer = "0.2.5"
 bincode = { version = "2.0.1", features = ["serde"] }
 thin-dst = "1.1.0"
+stable-vec = "0.4.1"
+recycle_vec = "1.1.2"
 
 [dev-dependencies]
 winit = "0.30.12"
