@@ -1730,7 +1730,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         ty,
                                         pos,
                                         item: None,
-                                        slot_limit: data_store.chest_num_slots[usize::from(ty)],
+                                        // slot_limit: data_store.chest_num_slots[usize::from(ty)],
+                                        // FIXME: This is a hack to limit the size of buffers in the gigabase
+                                        slot_limit: 1,
                                     },
                                     &mut game_state.simulation_state,
                                     data_store,
