@@ -1337,15 +1337,17 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for EmptyBelt {
     }
 
     fn add_length(&mut self, amount: BeltLenType, side: Side) -> BeltLenType {
-        todo!()
+        self.len += amount;
+        self.len
     }
 
     fn remove_length(
         &mut self,
         amount: BeltLenType,
-        side: Side,
+        _side: Side,
     ) -> (Vec<(Item<ItemIdxType>, u32)>, BeltLenType) {
-        todo!()
+        self.len -= amount;
+        (vec![], self.len)
     }
 
     fn update(&mut self, _splitter_list: &[SushiSplitter<ItemIdxType>]) {

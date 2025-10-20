@@ -633,8 +633,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             let inputs = game_state
                                                 .world
                                                 .get_belt_possible_inputs_no_cache(*pos);
+                                            let state = expected_belt_state(*direction, inputs);
                                             let (sprite, corner) =
-                                                match expected_belt_state(*direction, inputs) {
+                                                match state {
                                                     BeltState::Straight => {
                                                         (&texture_atlas.belt[*direction], None)
                                                     },
@@ -709,99 +710,82 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 }
                                             }
 
-                                            // Draw Items
-                                            // TODO: Draw items on corners not straight
-                                            let items_iter = game_state
+                                            let curved_source_dir = match state {
+                                                BeltState::Straight => None,
+                                                BeltState::Curved => {
+                                                    Some(inputs.iter().find(|&(dir, v)| *v && dir != direction.reverse()).unwrap().0)
+                                                },
+                                                BeltState::Sideloading => None,
+                                                BeltState::DoubleSideloading => None,
+                                            };
+                                            let belt_progress: u8 = game_state
                                                 .simulation_state
                                                 .factory
                                                 .belts
-                                                .get_item_iter(*id)
-                                                .into_iter()
-                                                .enumerate()
-                                                .skip(
-                                                    (belt_pos
-                                                        .checked_sub(BELT_LEN_PER_TILE)
-                                                        .expect("Belt idx wrapped?!?"))
-                                                    .into(),
-                                                )
-                                                .take(BELT_LEN_PER_TILE.into());
-
-                                            let offs = direction.into_offset();
-                                            let item_render_offs = (
-                                                -f32::from(offs.0) / f32::from(BELT_LEN_PER_TILE),
-                                                -f32::from(offs.1) / f32::from(BELT_LEN_PER_TILE),
-                                            );
-
-                                            let centered_on_tile = (
-                                               draw_offset.0 + pos.x as f32 + 0.5
-                                                    - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
-                                                draw_offset.1 + pos.y as f32 + 0.5
-                                                    - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
-                                            );
-
+                                                .get_belt_progress(*ty);
+                                            let offset_perc = belt_progress as f32 / 120.0;
                                             let last_moved: BeltLenType = game_state
                                                 .simulation_state
                                                 .factory
                                                 .belts
                                                 .get_last_moved_pos(*id);
 
-                                            let belt_progress: u8 = game_state
-                                                .simulation_state
-                                                .factory
-                                                .belts
-                                                .get_belt_progress(*ty);
-
-                                            let offset_perc = belt_progress as f32 / 120.0;
-
-                                            let slow_offset = (
-                                                item_render_offs.0 * (1.0 - offset_perc),
-                                                item_render_offs.1 * (1.0 - offset_perc),
-                                            );
-
-                                            // TODO: This needs to be positions correctly and take rotation into account
-                                            let mut item_render_base_pos: (f32, f32) = (
-                                                centered_on_tile.0 + f32::from(offs.0) * 0.5
-                                                    - 0.5
-                                                        * (f32::from(offs.0)
-                                                            / f32::from(BELT_LEN_PER_TILE)),
-                                                centered_on_tile.1 + f32::from(offs.1) * 0.5
-                                                    - 0.5
-                                                        * (f32::from(offs.1)
-                                                            / f32::from(BELT_LEN_PER_TILE)),
-                                            );
-
-                                            for (belt_pos, item) in items_iter {
-                                                if let Some(item) = item {
-                                                    let draw_pos = if belt_pos < last_moved.into() {
-                                                        [
-                                                            item_render_base_pos.0,
-                                                            item_render_base_pos.1,
-                                                        ]
-                                                    } else {
-                                                        [
-                                                            item_render_base_pos.0 + slow_offset.0,
-                                                            item_render_base_pos.1 + slow_offset.1,
-                                                        ]
-                                                    };
-
-                                                    item_layer.draw_sprite(
-                                                        &texture_atlas.items[item.id.into()],
-                                                        // &texture_atlas.items[0],
-                                                        DrawInstance {
-                                                            position: draw_pos,
-                                                            size: [
-                                                                1.0 / f32::from(BELT_LEN_PER_TILE),
-                                                                1.0 / f32::from(BELT_LEN_PER_TILE),
-                                                            ],
-                                                            animation_frame: 0,
-                                                        },
-                                                    );
-                                                }
-
-                                                item_render_base_pos = (
-                                                    item_render_base_pos.0 + item_render_offs.0,
-                                                    item_render_base_pos.1 + item_render_offs.1,
+                                            // Draw Items
+                                            if let Some(curved_source_dir) = curved_source_dir {
+                                                assert_ne!(curved_source_dir, *direction);
+                                                let first_offs = curved_source_dir.reverse().into_offset();
+                                                let second_offs = direction.into_offset();
+                                                let centered_on_tile = (
+                                                   draw_offset.0 + pos.x as f32 + 0.5
+                                                        - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
+                                                    draw_offset.1 + pos.y as f32 + 0.5
+                                                        - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
                                                 );
+                                                render_items_straight::<ItemIdxType, RecipeIdxType>(game_state
+                                                    .simulation_state
+                                                    .factory
+                                                    .belts
+                                                    .get_item_iter(*id), curved_source_dir.reverse(), *belt_pos, BELT_LEN_PER_TILE / 2, (
+                                                        centered_on_tile.0
+                                                            - f32::from(first_offs.0)
+                                                                * (0.5
+                                                                    / f32::from(BELT_LEN_PER_TILE)),
+                                                        centered_on_tile.1
+                                                            - f32::from(first_offs.1)
+                                                                * (0.5
+                                                                    / f32::from(BELT_LEN_PER_TILE)),
+                                                    ), offset_perc, last_moved, item_layer, texture_atlas);
+
+                                                render_items_straight::<ItemIdxType, RecipeIdxType>(game_state
+                                                        .simulation_state
+                                                        .factory
+                                                        .belts
+                                                        .get_item_iter(*id), *direction, *belt_pos - BELT_LEN_PER_TILE.div_ceil(2), BELT_LEN_PER_TILE.div_ceil(2), (
+                                                            centered_on_tile.0
+                                                                + f32::from(second_offs.0) * 0.5 - f32::from(second_offs.0) * (0.5 / f32::from(BELT_LEN_PER_TILE)),
+                                                            centered_on_tile.1
+                                                                + f32::from(second_offs.1) * 0.5 - f32::from(second_offs.1) * (0.5 / f32::from(BELT_LEN_PER_TILE)),
+                                                        ), offset_perc, last_moved, item_layer, texture_atlas);
+                                            } else {
+                                                let offs = direction.into_offset();
+                                                let centered_on_tile = (
+                                                   draw_offset.0 + pos.x as f32 + 0.5
+                                                        - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
+                                                    draw_offset.1 + pos.y as f32 + 0.5
+                                                        - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
+                                                );
+                                                render_items_straight::<ItemIdxType, RecipeIdxType>(game_state
+                                                    .simulation_state
+                                                    .factory
+                                                    .belts
+                                                    .get_item_iter(*id), *direction, *belt_pos, BELT_LEN_PER_TILE, (
+                                                        centered_on_tile.0
+                                                            + f32::from(offs.0)
+                                                                * (0.5 - 0.5 / (f32::from(BELT_LEN_PER_TILE))),
+                                                        centered_on_tile.1
+                                                        + f32::from(offs.1)
+                                                        * (0.5 - 0.5 / (f32::from(BELT_LEN_PER_TILE))),
+                                                    ), offset_perc, last_moved, item_layer, texture_atlas);
                                             }
                                         },
 
@@ -1149,12 +1133,25 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 Dir::West => (*pos + Dir::South, *pos),
                                             };
 
+                                            let belt_progress: u8 = game_state
+                                                .simulation_state
+                                                .factory
+                                                .belts
+                                                // FIXME: Splitter ty
+                                                .get_belt_progress(0);
+                                            let offset_perc = belt_progress as f32 / 120.0;
+                                            
                                             // FIXME: We currently do not take partial movement (from slow belt speeds) into account, which leads to ugly jumping of the items on the belt
                                             for ((pos, input), output) in [left_pos, right_pos]
-                                                .into_iter()
-                                                .zip(inputs)
-                                                .zip(outputs)
+                                            .into_iter()
+                                            .zip(inputs)
+                                            .zip(outputs)
                                             {
+                                                let last_moved: BeltLenType = game_state
+                                                    .simulation_state
+                                                    .factory
+                                                    .belts
+                                                    .get_last_moved_pos(input);
                                                 texture_atlas.belt[*direction].draw(
                                                     [
                                                         draw_offset.0 + pos.x as f32,
@@ -1193,6 +1190,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                                 * (0.5
                                                                     / f32::from(BELT_LEN_PER_TILE)),
                                                     ),
+                                                    offset_perc,
+                                                    last_moved,
+
                                                     item_layer,
                                                     texture_atlas,
                                                 );
@@ -1217,12 +1217,21 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                             * (f32::from(offs.1)
                                                                 / f32::from(BELT_LEN_PER_TILE)),
                                                 );
+
+                                                let last_moved: BeltLenType = game_state
+                                                    .simulation_state
+                                                    .factory
+                                                    .belts
+                                                    .get_last_moved_pos(output);
                                                 render_items_straight::<ItemIdxType, RecipeIdxType>(
                                                     out_belt_iter,
                                                     *direction,
                                                     out_belt_len,
                                                     SPLITTER_BELT_LEN,
                                                     item_render_base_pos,
+                                                    offset_perc,
+                                                    last_moved,
+
                                                     item_layer,
                                                     texture_atlas,
                                                 );
@@ -3652,12 +3661,16 @@ pub fn render_ui<
 fn render_items_straight<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     full_items_iter: impl IntoIterator<Item = Option<Item<ItemIdxType>>>,
     dir: Dir,
-    start_pos: u16,
+    start_pos: BeltLenType,
     amount: u16,
     draw_pos_start_pos: (f32, f32),
+    partial_offs: f32,
+    last_moved: BeltLenType,
     layer: &mut Layer,
     atlas: &TextureAtlas,
 ) {
+    assert!(partial_offs >= 0.0);
+    assert!(partial_offs <= 1.0);
     let items_iter = full_items_iter
         .into_iter()
         .skip((start_pos.checked_sub(amount).expect("Belt idx wrapped?!?")).into())
@@ -3671,12 +3684,25 @@ fn render_items_straight<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     let mut item_render_base_pos: (f32, f32) = draw_pos_start_pos;
 
-    for item in items_iter {
+    for (i, item) in items_iter.enumerate() {
+        let belt_pos = start_pos - (amount - i as BeltLenType);
+        let draw_pos = if belt_pos < last_moved {
+            [
+                item_render_base_pos.0,
+                item_render_base_pos.1,
+            ]
+        } else {
+            [
+                item_render_base_pos.0 + item_render_offs.0 * (1.0 - partial_offs),
+                item_render_base_pos.1 + item_render_offs.1 * (1.0 - partial_offs),
+            ]
+        };
+
         if let Some(item) = item {
             layer.draw_sprite(
                 &atlas.items[item.id.into()],
                 DrawInstance {
-                    position: [item_render_base_pos.0, item_render_base_pos.1],
+                    position: [draw_pos[0], draw_pos[1]],
                     size: [
                         1.0 / f32::from(BELT_LEN_PER_TILE),
                         1.0 / f32::from(BELT_LEN_PER_TILE),
