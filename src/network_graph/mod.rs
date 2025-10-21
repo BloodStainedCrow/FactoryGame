@@ -41,6 +41,15 @@ pub struct WeakIndex {
 }
 
 impl<NodeKey: Eq + Ord + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
+    pub fn trusted_new_empty() -> Self {
+        let mut graph = Graph::default();
+
+        Self {
+            graph,
+            key_map: BiMap::new(),
+        }
+    }
+
     pub fn new(first_node: S, key: NodeKey) -> Self {
         let mut graph = Graph::default();
 
@@ -65,6 +74,25 @@ impl<NodeKey: Eq + Ord + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
 
     pub fn nodes(&self) -> impl Iterator<Item = &S> {
         self.graph.node_weights().map(|n| &n.node_info)
+    }
+
+    pub fn neighbors(&self, node: NodeKey) -> impl Iterator<Item = &NodeKey> {
+        self.graph
+            .neighbors_undirected(**self.key_map.get_by_left(&node).unwrap())
+            .map(|neigh| {
+                self.key_map
+                    .get_by_right(&crate::get_size::NodeIndex { node_index: neigh })
+                    .unwrap()
+            })
+    }
+
+    pub fn weak_components_of_node(&self, node: NodeKey) -> impl Iterator<Item = &W> {
+        self.graph
+            .node_weight(**self.key_map.get_by_left(&node).unwrap())
+            .unwrap()
+            .connected_weak_components
+            .iter()
+            .flatten()
     }
 
     pub fn weak_components(&self) -> impl Iterator<Item = &W> {
@@ -135,6 +163,29 @@ impl<NodeKey: Eq + Ord + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
         );
 
         for connection in connection_points.1.into_iter() {
+            self.graph
+                .add_edge(index, **self.key_map.get_by_left(&connection).unwrap(), ());
+        }
+    }
+
+    /// This allows adding nodes which are not connected to the rest of the network.
+    /// After the trusted phase is done though, all nodes MUST be connected
+    pub fn add_node_trusted(
+        &mut self,
+        value: S,
+        key: NodeKey,
+        connection_points: impl IntoIterator<Item = NodeKey>,
+    ) {
+        let index = self.graph.add_node(NetworkNode {
+            node_info: value,
+            connected_weak_components: vec![],
+        });
+
+        self.key_map
+            .insert_no_overwrite(key, NodeIndex { node_index: index })
+            .expect("cannot use the same key for multiple nodes!");
+
+        for connection in connection_points.into_iter() {
             self.graph
                 .add_edge(index, **self.key_map.get_by_left(&connection).unwrap(), ());
         }

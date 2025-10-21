@@ -178,6 +178,7 @@ impl BlueprintAction {
                                 dir,
                                 filter,
                                 ty,
+                                user_movetime: _,
                             } => BlueprintPlaceEntity::Inserter {
                                 pos,
                                 dir,
@@ -340,6 +341,8 @@ impl BlueprintAction {
                             .iter()
                             .position(|info| info.name == *ty)
                             .expect("No inserter for name") as u8,
+
+                        user_movetime: None,
                     },
                     BlueprintPlaceEntity::Belt {
                         pos,
@@ -589,7 +592,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
         );
     }
 
-    fn set_base_pos(
+    pub fn set_base_pos(
         action: impl Borrow<ActionType<ItemIdxType, RecipeIdxType>>,
         base_pos: Position,
     ) -> ActionType<ItemIdxType, RecipeIdxType> {
@@ -684,6 +687,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                         dir,
                         filter,
                         ty,
+                        user_movetime,
                     }),
             }) => ActionType::PlaceEntity(PlaceEntityInfo {
                 force,
@@ -695,6 +699,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     dir,
                     filter,
                     ty,
+                    user_movetime,
                 }),
             }),
             &ActionType::PlaceEntity(PlaceEntityInfo {
@@ -1613,6 +1618,7 @@ pub(crate) mod test {
                         dir,
                         filter: Some(filter),
                         ty: ty as u8,
+                        user_movetime: None,
                     }
                 }),
             (

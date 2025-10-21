@@ -118,12 +118,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, Rec
                                 .into(),
                         ),
                         // FIXME: ty
-                        PlaceEntityType::Inserter {
-                            pos: _,
-                            dir: _,
-                            filter: _,
-                            ty: _,
-                        } => Some([1, 1]),
+                        PlaceEntityType::Inserter { .. } => Some([1, 1]),
                         PlaceEntityType::Belt { .. } => Some([1, 1]),
                         PlaceEntityType::Underground { .. } => Some([1, 1]),
                         PlaceEntityType::PowerPole { ty, .. } => {

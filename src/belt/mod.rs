@@ -14,6 +14,7 @@ mod sushi;
 
 use crate::belt::smart::EmptyBelt;
 use crate::get_size::{Mutex, StableGraph};
+use crate::par_generation::BeltKind;
 use petgraph::stable_graph::DefaultIx;
 use std::{
     cell::UnsafeCell,
@@ -3135,6 +3136,15 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                 AnyBelt::Smart(smart_belt) => Some(smart_belt.item),
                 AnyBelt::Sushi(_) => None,
                 AnyBelt::Empty(_) => None,
+            },
+        }
+    }
+    pub fn get_current_kind(&self, id: BeltTileId<ItemIdxType>) -> BeltKind<ItemIdxType> {
+        match id {
+            BeltTileId::AnyBelt(index, _) => match &self.any_belts[index as usize] {
+                AnyBelt::Smart(smart_belt) => BeltKind::Smart(smart_belt.item),
+                AnyBelt::Sushi(_) => BeltKind::Sushi,
+                AnyBelt::Empty(_) => BeltKind::Empty,
             },
         }
     }

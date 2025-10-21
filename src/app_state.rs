@@ -11,6 +11,9 @@ use crate::inserter::storage_storage_with_buckets_indirect::InserterIdentifier;
 use crate::item::ITEMCOUNTTYPE;
 use crate::liquid::FluidConnectionDir;
 use crate::liquid::connection_logic::can_fluid_tanks_connect_to_single_connection;
+use crate::par_generation::BoundingBox;
+use crate::par_generation::ParGenerateInfo;
+use crate::par_generation::par_generate;
 use crate::power::Watt;
 #[cfg(feature = "client")]
 use crate::{Input, LoadedGame};
@@ -53,13 +56,16 @@ use crate::{
 };
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
+use flate2::bufread::ZlibDecoder;
 #[cfg(feature = "client")]
 use get_size::GetSize;
 use itertools::Itertools;
+use log::error;
 use log::{info, trace, warn};
 use petgraph::graph::NodeIndex;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::collections::BTreeMap;
+use std::io::BufReader;
 use std::iter;
 use std::path::Path;
 use std::sync::Arc;
@@ -90,6 +96,22 @@ pub struct AuxillaryData {
     last_update_time: Option<Instant>,
 
     pub settings: GameSettings,
+}
+impl AuxillaryData {
+    pub fn new<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
+        AuxillaryData {
+            current_tick: 0,
+            statistics: GenStatistics::new(data_store),
+            update_times: Timeline::new(false, data_store),
+            update_round_trip_times: Timeline::new(false, data_store),
+            last_update_time: None,
+            settings: GameSettings {
+                show_unresearched_recipes: true,
+            },
+        }
+    }
 }
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
@@ -125,16 +147,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         Self {
             world: Mutex::new(World::default()),
             simulation_state: Mutex::new(SimulationState::new(data_store)),
-            aux_data: Mutex::new(AuxillaryData {
-                current_tick: 0,
-                statistics: GenStatistics::new(data_store),
-                update_times: Timeline::new(false, data_store),
-                update_round_trip_times: Timeline::new(false, data_store),
-                last_update_time: None,
-                settings: GameSettings {
-                    show_unresearched_recipes: true,
-                },
-            }),
+            aux_data: Mutex::new(AuxillaryData::new(data_store)),
         }
     }
 
@@ -146,16 +159,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         Self {
             world: Mutex::new(World::new_with_area(top_left, bottom_right)),
             simulation_state: Mutex::new(SimulationState::new(data_store)),
-            aux_data: Mutex::new(AuxillaryData {
-                current_tick: 0,
-                statistics: GenStatistics::new(data_store),
-                update_times: Timeline::new(false, data_store),
-                update_round_trip_times: Timeline::new(false, data_store),
-                last_update_time: None,
-                settings: GameSettings {
-                    show_unresearched_recipes: true,
-                },
-            }),
+            aux_data: Mutex::new(AuxillaryData::new(data_store)),
         }
     }
 
@@ -230,76 +234,76 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let height_in_tiles = i32::from(full_height) * 10_000;
 
         // TODO: Increase size to fit solar field
-        let mut ret = GameState::new_with_world_area(
-            Position { x: 0, y: 0 },
-            Position {
-                x: width_in_tiles + 2000,
-                y: height_in_tiles + 2000,
-            },
-            data_store,
-        );
+        // let mut ret = GameState::new_with_world_area(
+        //     Position { x: 0, y: 0 },
+        //     Position {
+        //         x: width_in_tiles + 2000,
+        //         y: height_in_tiles + 2000,
+        //     },
+        //     data_store,
+        // );
 
         // TODO: Calulated needed solar field size (and pos)
         // ret.add_solar_field(Position { x: 1590, y: 70000 }, Watt(3_000_000_000_000), progress.clone(), data_store);
 
-        let file = File::open("test_blueprints/murphy/megabase_with_sushi_sorting.bp").unwrap();
-        let mut bp: Blueprint = ron::de::from_reader(file).unwrap();
-        bp.optimize();
-        // dbg!(&bp);
-        // let bp = bp.get_reusable(false, data_store);
-
-        // TODO: Measure if this is actually faster
-        // let bp = bp.optimize();
+        // let file = File::open("test_blueprints/murphy/megabase_with_sushi_sorting.bp").unwrap();
+        // let mut bp: Blueprint = ron::de::from_reader(file).unwrap();
+        // bp.optimize();
 
         puffin::set_scopes_on(false);
         let x_range = (0..width).map(|x| i32::from(x) * MEGABASE_WIDTH + 1_600);
         let y_range = (0..full_height).map(|x| i32::from(x) * MEGABASE_HEIGHT + 1_600);
 
-        let num_calls = bp.action_count();
-        // let num_calls = y_range.clone().count() * x_range.clone().count();
+        // let num_calls = bp.action_count();
 
-        let mut current = 0;
+        // let mut current = 0;
 
-        // for pos in y_range
-        //     .cartesian_product(x_range)
-        //     .map(|(y, x)| Position { x, y })
-        // {
-        //     bp.apply(false, pos, &mut ret, data_store);
-        //     progress.store(
-        //         (current as f64 / num_calls as f64).to_bits(),
-        //         Ordering::Relaxed,
-        //     );
-        //     current += 1;
-        // }
+        // bp.apply_at_positions(
+        //     y_range
+        //         .cartesian_product(x_range)
+        //         .map(|(y, x)| Position { x, y })
+        //         .take(count as usize),
+        //     false,
+        //     &mut ret,
+        //     || {
+        //         progress.store(
+        //             (current as f64 / num_calls as f64).to_bits(),
+        //             Ordering::Relaxed,
+        //         );
+        //         current += 1;
+        //     },
+        //     data_store,
+        // );
 
-        bp.apply_at_positions(
+        error!("Loading Generation Info...");
+        let file = {
+            File::open("./test_blueprints/par_generation_info")
+                .expect(&format!("could not open file"))
+        };
+        let par_data: ParGenerateInfo<ItemIdxType, RecipeIdxType> = {
+            profiling::scope!("Decompressing and deserializing");
+            let mut e = ZlibDecoder::new(BufReader::new(file));
+            bincode::serde::decode_from_std_read(&mut e, bincode::config::standard())
+                .expect("Deserialization failed")
+        };
+        error!("Done!");
+
+        let ret = par_generate(
+            BoundingBox {
+                top_left: Position { x: 0, y: 0 },
+                bottom_right: Position {
+                    x: width_in_tiles + 4000,
+                    y: height_in_tiles + 4000,
+                },
+            },
+            par_data,
             y_range
                 .cartesian_product(x_range)
                 .map(|(y, x)| Position { x, y })
-                .take(count as usize),
-            false,
-            &mut ret,
-            || {
-                progress.store(
-                    (current as f64 / num_calls as f64).to_bits(),
-                    Ordering::Relaxed,
-                );
-                current += 1;
-            },
+                .take(count as usize)
+                .collect(),
             data_store,
         );
-
-        // HACK: By saving and then loading the gamestate here, we seem to fix all the problems that reallocation a bunch of times seem to create, and SEVERLY increase performance.
-        //       Alternatively we could also clone the GameState and then return the clone, but then we need to keep two copies of the gamestate in memory, which might not be possible
-        // save(&ret, data_store);
-
-        // mem::drop(ret);
-
-        // let dir = ProjectDirs::from("de", "aschhoff", "factory_game").expect("No Home path found");
-        // let save_file_dir = dir.data_dir().join("save.save");
-
-        // let ret =
-        //     crate::load(save_file_dir.into()).expect("Could not get gamestate back from disk????").game_state;
 
         puffin::set_scopes_on(true);
 
@@ -581,7 +585,7 @@ pub struct StorageStorageInserterStore {
 }
 
 impl StorageStorageInserterStore {
-    fn new<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    pub fn new<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         Self {
@@ -637,7 +641,7 @@ impl StorageStorageInserterStore {
                         "StorageStorage Inserter Update",
                         format!("Movetime: {}", ins_store.movetime).as_str()
                     );
-                    ins_store.update(storages, grid_size, current_tick);
+                    ins_store.update(item_id, storages, grid_size, current_tick);
                 }
             });
     }
@@ -765,7 +769,7 @@ pub struct BeltBeltInserterStore<ItemIdxType: WeakIdxTrait> {
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, RecipeIdxType> {
-    fn new(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+    pub fn new(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         Self {
             power_grids: PowerGridStorage::new(),
             belts: BeltStore::new(data_store),
@@ -882,133 +886,140 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                 ),
                                 avg_time,
                             ),
-                        )| scope.spawn(move|_| {
-                            let item = Item {
-                                id: item_id.try_into().unwrap(),
-                            };
-                            profiling::scope!(
-                                "Pure Update",
-                                format!("Item: {}", data_store.item_display_names[item_id]).as_str()
-                            );
-                            let pure_update_start = Instant::now();
-                            {
-                                profiling::scope!(
-                                    "Pure Belt Update",
-                                    format!("Item: {}", data_store.item_display_names[item_id])
-                                        .as_str()
-                                );
-
-                                let grid_size = grid_size(item, data_store);
-
-                                {
-                                    profiling::scope!("Update Belts", format!("Count: {}", belt_store.belts.len()));
-                                    for (belt, ty) in
-                                        belt_store.belts.iter_mut().zip(&belt_store.belt_ty)
-                                    {
-                                        // TODO: Avoid last minute decision making
-                                        if update_timers[usize::from(*ty)] >= 120
-                                        {
-                                            belt.update(sushi_splitters);
-                                        }
-                                        belt.update_inserters(item_storages, grid_size);
-                                    }
-                                }
-                                // {
-                                //     profiling::scope!("Update BeltStorageInserters");
-                                //     for belt in &mut belt_store.belts {
-                                //         belt.update_inserters(item_storages, grid_size);
-                                //     }
-                                // }
-
-                                {
-                                    profiling::scope!("Update PurePure Inserters");
-                                    for (
-                                        ins,
-                                        ((source, source_pos), (dest, dest_pos), cooldown, filter),
-                                    ) in pure_to_pure_inserters.iter_mut().flatten()
-                                    {
-                                        let [mut source_loc, mut dest_loc] = if *source == *dest {
-                                            assert_ne!(
-                                                source_pos, dest_pos,
-                                                "An inserter cannot take and drop off on the same tile"
-                                            );
-                                            // We are taking and placing onto the same belt
-                                            let belt = &mut belt_store.belts[*source];
-
-                                            belt.get_two([(*source_pos).into(), (*dest_pos).into()]).map(|v| *v)
-                                        } else {
-                                            let [inp, out] = belt_store
-                                                .belts
-                                                .get_disjoint_mut([*source, *dest])
-                                                .unwrap();
-
-                                            [*inp.get(*source_pos), *out.get(*dest_pos)]
-                                        };
-
-                                        if *cooldown == 0 {
-                                            ins.update_instant(&mut source_loc,&mut  dest_loc);
-                                        } else {
-                                            ins.update(
-                                                &mut source_loc,
-                                                &mut dest_loc,
-                                                *cooldown,
-                                                // FIXME:
-                                                1,
-                                                (),
-                                                |_| {
-                                                    filter
-                                                        .map(|filter_item| filter_item == item)
-                                                        .unwrap_or(true)
-                                                },
-                                            );
-                                        }
-
-                                        {
-                                            profiling::scope!("Update update_first_free_pos");
-                                            if !source_loc {
-                                                let _: Option<_> = belt_store.belts[*source]
-                                                    .remove_item(*source_pos);
-                                            }
-
-                                            if dest_loc {
-                                                let _ = belt_store.belts[*dest]
-                                                    .try_insert_item(*dest_pos, item);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            {
-                                profiling::scope!(
-                                    "StorageStorage Inserter Update",
-                                    format!("Item: {}", data_store.item_display_names[item_id])
-                                        .as_str()
-                                );
-
+                        )| {
+                            scope.spawn(move |_| {
                                 let item = Item {
                                     id: item_id.try_into().unwrap(),
                                 };
+                                profiling::scope!(
+                                    "Pure Update",
+                                    format!("Item: {}", data_store.item_display_names[item_id]).as_str()
+                                );
+                                let pure_update_start = Instant::now();
+                                {
+                                    profiling::scope!(
+                                        "Pure Belt Update",
+                                        format!("Item: {}", data_store.item_display_names[item_id]).as_str()
+                                    );
 
-                                let grid_size = grid_size(item, data_store);
-                                let num_recipes = num_recipes(item, data_store);
+                                    let grid_size = grid_size(item, data_store);
 
-                                for (ins_store,) in
-                                    storage_storage_inserter_stores.values_mut()
+                                    {
+                                        profiling::scope!(
+                                            "Update Belts",
+                                            format!("Count: {}", belt_store.belts.len())
+                                        );
+                                        for (belt, ty) in
+                                            belt_store.belts.iter_mut().zip(&belt_store.belt_ty)
+                                        {
+                                            // TODO: Avoid last minute decision making
+                                            if update_timers[usize::from(*ty)] >= 120 {
+                                                belt.update(sushi_splitters);
+                                            }
+                                            belt.update_inserters(item_storages, grid_size);
+                                        }
+                                    }
+                                    // {
+                                    //     profiling::scope!("Update BeltStorageInserters");
+                                    //     for belt in &mut belt_store.belts {
+                                    //         belt.update_inserters(item_storages, grid_size);
+                                    //     }
+                                    // }
+
+                                    {
+                                        profiling::scope!("Update PurePure Inserters");
+                                        for (
+                                            ins,
+                                            ((source, source_pos), (dest, dest_pos), cooldown, filter),
+                                        ) in pure_to_pure_inserters.iter_mut().flatten()
+                                        {
+                                            let [mut source_loc, mut dest_loc] = if *source == *dest {
+                                                assert_ne!(
+                                                    source_pos, dest_pos,
+                                                    "An inserter cannot take and drop off on the same tile"
+                                                );
+                                                // We are taking and placing onto the same belt
+                                                let belt = &mut belt_store.belts[*source];
+
+                                                belt.get_two([(*source_pos).into(), (*dest_pos).into()]).map(|v| *v)
+                                            } else {
+                                                let [inp, out] = belt_store
+                                                    .belts
+                                                    .get_disjoint_mut([*source, *dest])
+                                                    .unwrap();
+
+                                                [*inp.get(*source_pos), *out.get(*dest_pos)]
+                                            };
+
+                                            if *cooldown == 0 {
+                                                ins.update_instant(&mut source_loc,&mut  dest_loc);
+                                            } else {
+                                                ins.update(
+                                                    &mut source_loc,
+                                                    &mut dest_loc,
+                                                    *cooldown,
+                                                    // FIXME:
+                                                    1,
+                                                    (),
+                                                    |_| {
+                                                        filter
+                                                            .map(|filter_item| filter_item == item)
+                                                            .unwrap_or(true)
+                                                    },
+                                                );
+                                            }
+
+                                            {
+                                                profiling::scope!("Update update_first_free_pos");
+                                                if !source_loc {
+                                                    let _: Option<_> = belt_store.belts[*source]
+                                                        .remove_item(*source_pos);
+                                                }
+
+                                                if dest_loc {
+                                                    let _ = belt_store.belts[*dest]
+                                                        .try_insert_item(*dest_pos, item);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
                                 {
                                     profiling::scope!(
                                         "StorageStorage Inserter Update",
-                                        format!("Movetime: {}", ins_store.movetime).as_str()
+                                        format!("Item: {}", data_store.item_display_names[item_id])
+                                            .as_str()
                                     );
-                                    ins_store.update(item_storages, grid_size, current_tick);
+
+                                    let item = Item {
+                                        id: item_id.try_into().unwrap(),
+                                    };
+
+                                    let grid_size = grid_size(item, data_store);
+                                    let num_recipes = num_recipes(item, data_store);
+
+                                    for (ins_store,) in storage_storage_inserter_stores.values_mut()
+                                    {
+                                        profiling::scope!(
+                                            "StorageStorage Inserter Update",
+                                            format!("Movetime: {}", ins_store.movetime).as_str()
+                                        );
+                                        ins_store.update(
+                                            item_id,
+                                            item_storages,
+                                            grid_size,
+                                            current_tick,
+                                        );
+                                    }
                                 }
-                            }
 
                                 let pure_update_time = pure_update_start.elapsed();
 
-                                *avg_time =
-                                    *avg_time + (pure_update_time.as_millis() as f32 - *avg_time) / 20.0;
-                        })
+                                *avg_time = *avg_time
+                                    + (pure_update_time.as_millis() as f32 - *avg_time) / 20.0;
+                            })
+                        },
                     );
             }
         });
@@ -1215,12 +1226,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 ..
                             } => {
                                 match info {
-                                    InserterInfo::NotAttached { start_pos, end_pos } => {},
-                                    InserterInfo::Attached {
-                                        start_pos,
-                                        end_pos,
-                                        info,
-                                    } => match info {
+                                    InserterInfo::NotAttached {} => {},
+                                    InserterInfo::Attached { info } => match info {
                                         AttachedInserter::BeltStorage { id, belt_pos } => todo!(),
                                         AttachedInserter::BeltBelt { item, inserter } => todo!(),
                                         AttachedInserter::StorageStorage { item, inserter } => {
@@ -1296,12 +1303,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     continue;
                                 }
 
-                                let powered_by = game_state.world.is_powered_by(
-                                    &game_state.simulation_state,
-                                    pos,
-                                    size,
-                                    data_store,
-                                );
+                                let powered_by =
+                                    game_state.world.is_powered_by(pos, size, data_store);
 
                                 let modules = if let Some(found_idx) =
                                     game_state.world.module_slot_dedup_table.iter().position(
@@ -1363,6 +1366,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 dir,
                                 filter,
                                 ty,
+                                user_movetime,
                             } => {
                                 let ret = Self::add_inserter(
                                     &mut game_state.world,
@@ -1384,7 +1388,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     continue;
                                 }
 
-                                handle_belt_placement(game_state, pos, direction, ty, data_store);
+                                handle_belt_placement(
+                                    game_state.world,
+                                    game_state.simulation_state,
+                                    pos,
+                                    direction,
+                                    ty,
+                                    data_store,
+                                );
 
                                 Self::update_inserters(
                                     game_state.world,
@@ -1405,7 +1416,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 }
 
                                 handle_underground_belt_placement(
-                                    game_state,
+                                    game_state.world,
+                                    game_state.simulation_state,
                                     pos,
                                     direction,
                                     ty,
@@ -1502,15 +1514,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                 Entity::Inserter {
                                                     ty,
                                                     user_movetime,
+                                                    pos,
+                                                    direction,
 
                                                     info, ..
                                                 } => match info {
                                                     InserterInfo::NotAttached { .. } => {},
                                                     InserterInfo::Attached {
-                                                        start_pos,
-                                                        end_pos,
                                                         info,
                                                     } => {
+                                                        let start_pos = data_store.inserter_start_pos(*ty, *pos, *direction);
+                                                        let end_pos = data_store.inserter_end_pos(*ty, *pos, *direction);
+
                                                         if start_pos.contained_in(
                                                             storage_update.position,
                                                             e_size,
@@ -1752,12 +1767,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     continue;
                                 }
 
-                                let powered_by = game_state.world.is_powered_by(
-                                    &game_state.simulation_state,
-                                    pos,
-                                    size,
-                                    data_store,
-                                );
+                                let powered_by =
+                                    game_state.world.is_powered_by(pos, size, data_store);
 
                                 let powered_by = if let Some(pole_pos) = powered_by {
                                     let grid = game_state
@@ -1811,7 +1822,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 .into();
 
                                 let powered_by = game_state.world.is_powered_by(
-                                    &game_state.simulation_state,
                                     pos,
                                     data_store.lab_info[usize::from(ty)].size,
                                     data_store,
@@ -1878,7 +1888,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 let modules = modules.into();
 
                                 let powered_by = game_state.world.is_powered_by(
-                                    &game_state.simulation_state,
                                     pos,
                                     data_store.beacon_info[usize::from(ty)].size,
                                     data_store,
@@ -2622,8 +2631,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     data_store,
                     |e, _| {
                         match e {
-                            Entity::Inserter { pos, info, .. } => match info {
-                                InserterInfo::NotAttached { start_pos, end_pos } => {
+                            Entity::Inserter {
+                                pos,
+                                ty,
+                                direction,
+                                info,
+                                ..
+                            } => match info {
+                                InserterInfo::NotAttached {} => {
+                                    let start_pos =
+                                        data_store.inserter_start_pos(*ty, *pos, *direction);
+                                    let end_pos =
+                                        data_store.inserter_end_pos(*ty, *pos, *direction);
+
                                     if start_pos
                                         .contained_in(assembler_pos, (size.0.into(), size.1.into()))
                                         || end_pos.contained_in(
@@ -2655,8 +2675,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     data_store,
                     |e, _| {
                         match e {
-                            Entity::Inserter { pos, info, .. } => match info {
-                                InserterInfo::NotAttached { start_pos, end_pos } => {
+                            Entity::Inserter {
+                                pos,
+                                direction,
+                                ty,
+                                info,
+                                ..
+                            } => match info {
+                                InserterInfo::NotAttached {} => {
+                                    let start_pos =
+                                        data_store.inserter_start_pos(*ty, *pos, *direction);
+                                    let end_pos =
+                                        data_store.inserter_end_pos(*ty, *pos, *direction);
                                     if start_pos.contained_in(belt_pos, (1, 1))
                                         || end_pos.contained_in(belt_pos, (1, 1))
                                     {
@@ -2687,8 +2717,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     data_store,
                     |e, _| {
                         match e {
-                            Entity::Inserter { pos, info, .. } => match info {
-                                InserterInfo::NotAttached { start_pos, end_pos } => {
+                            Entity::Inserter {
+                                pos,
+                                direction,
+                                ty,
+                                info,
+                                ..
+                            } => match info {
+                                InserterInfo::NotAttached {} => {
+                                    let start_pos =
+                                        data_store.inserter_start_pos(*ty, *pos, *direction);
+                                    let end_pos =
+                                        data_store.inserter_end_pos(*ty, *pos, *direction);
+
                                     if start_pos
                                         .contained_in(assembler_pos, (size.0.into(), size.1.into()))
                                         || end_pos.contained_in(
@@ -2770,7 +2811,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 pos,
                 direction: dir,
                 filter,
-                info: InserterInfo::NotAttached { start_pos, end_pos },
+                info: InserterInfo::NotAttached {},
             },
             sim_state,
             data_store,
@@ -3110,6 +3151,7 @@ mod tests {
                     pos: Position { x: 1, y: 5 },
                     dir: crate::frontend::world::tile::Dir::North,
                     filter: None,
+                    user_movetime: None,
                 },
             ),
         })]);

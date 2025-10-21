@@ -112,6 +112,8 @@ mod network_graph;
 
 pub mod liquid;
 
+mod par_generation;
+
 impl WeakIdxTrait for u8 {}
 impl WeakIdxTrait for u16 {}
 impl IdxTrait for u8 {}

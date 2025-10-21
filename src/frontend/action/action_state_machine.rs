@@ -334,7 +334,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                     HeldObject::Entity(place_entity_type) => {
                                         let ret = vec![ActionType::PlaceEntity(PlaceEntityInfo {
                                             force,
-                                            entities: EntityPlaceOptions::Single(*place_entity_type),
+                                            entities: EntityPlaceOptions::Single(place_entity_type.clone()),
                                         })];
 
                                         if let PlaceEntityType::Underground { underground_dir, .. } = place_entity_type {
@@ -501,7 +501,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 PlaceEntityType::Assembler {
                                                                 pos: position,
                                                                 ty: _,
-                                                                rotation: _,
+                                                                rotation: _, ..
                                                             } => {
                                                                 *position = Self::player_mouse_to_tile(
                                                                     self.zoom_level,
@@ -509,7 +509,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                                                     self.current_mouse_pos,
                                                                 );
                                                             },
-                                PlaceEntityType::Inserter { pos, dir: _, filter: _, ty: _ } => {
+                                PlaceEntityType::Inserter { pos, dir: _, filter: _, ty: _, .. } => {
                                                                 *pos = Self::player_mouse_to_tile(
                                                                     self.zoom_level,
                                                                     self.map_view_info.unwrap_or(self.local_player_pos),
@@ -554,12 +554,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                                                 self.map_view_info.unwrap_or(self.local_player_pos),
                                                                 self.current_mouse_pos,
                                                             );},
-                                PlaceEntityType::Lab { pos, ty: _ } => {*pos = Self::player_mouse_to_tile(
+                                PlaceEntityType::Lab { pos, ty: _, .. } => {*pos = Self::player_mouse_to_tile(
                                                                 self.zoom_level,
                                                                 self.map_view_info.unwrap_or(self.local_player_pos),
                                                                 self.current_mouse_pos,
                                                             );},
-                                PlaceEntityType::Beacon { ty: _, pos } => {*pos = Self::player_mouse_to_tile(
+                                PlaceEntityType::Beacon { ty: _, pos, .. } => {*pos = Self::player_mouse_to_tile(
                                     self.zoom_level,
                                     self.map_view_info.unwrap_or(self.local_player_pos),
                                     self.current_mouse_pos,
@@ -736,6 +736,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 dir: *direction,
                                 filter: *filter,
                                 ty: *ty,
+                                user_movetime: None,
                             },
                         ));
                     },
@@ -965,6 +966,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     pos,
                     dir,
                     filter,
+                    user_movetime,
                 })),
                 Key::Key4,
             ) => {
@@ -974,6 +976,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         pos: *pos,
                         dir: *dir,
                         filter: *filter,
+                        user_movetime: *user_movetime,
                     },
                 ));
                 vec![]
@@ -991,6 +994,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         filter: None,
 
                         ty: 0,
+                        user_movetime: None,
                     },
                 ));
                 vec![]
@@ -1172,6 +1176,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     dir,
                     filter,
                     ty,
+                    user_movetime,
                 })),
                 Key::R,
             ) => {
@@ -1181,6 +1186,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         dir: dir.turn_right(),
                         filter: *filter,
                         ty: *ty,
+                        user_movetime: *user_movetime,
                     },
                 ));
                 vec![]

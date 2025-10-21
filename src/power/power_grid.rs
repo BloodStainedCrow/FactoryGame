@@ -179,6 +179,49 @@ pub struct PowerPoleUpdateInfo {
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, RecipeIdxType> {
     #[must_use]
+    pub fn new_trusted(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+        let network = Network::trusted_new_empty();
+
+        Self {
+            stores: FullAssemblerStore::new(data_store),
+            lab_stores: MultiLabStore::new(&data_store.science_bottle_items),
+            grid_graph: network,
+            steam_power_producers: SteamPowerProducerStore {
+                all_producers: data_store
+                    .lazy_power_machine_infos
+                    .iter()
+                    .map(|info| MultiLazyPowerProducer::new(info))
+                    .collect(),
+            },
+            num_solar_panels_of_type: vec![0; data_store.solar_panel_info.len()].into_boxed_slice(),
+            main_accumulator_count: vec![0; data_store.accumulator_info.len()].into_boxed_slice(),
+            main_accumulator_charge: vec![Joule(0); data_store.accumulator_info.len()]
+                .into_boxed_slice(),
+            use_burnable_fuel_to_charge_accumulators: None,
+
+            last_power_consumption: Watt(0),
+            last_produced_power: Watt(0),
+            max_lazy_power: Watt(0),
+
+            last_ticks_max_power_production: Watt(0),
+
+            last_power_mult: MAX_POWER_MULT,
+
+            power_mult_history: Timeline::new(false, data_store),
+
+            is_placeholder: false,
+
+            num_assemblers_of_type: vec![0; data_store.assembler_info.len()].into_boxed_slice(),
+            num_labs_of_type: vec![0; data_store.lab_info.len()].into_boxed_slice(),
+            num_beacons_of_type: vec![0; data_store.beacon_info.len()].into_boxed_slice(),
+
+            potential_beacon_affected_powergrids: HashSet::default(),
+            beacon_affected_entities: HashMap::default(),
+            beacon_affected_entity_map: HashMap::default(),
+        }
+    }
+
+    #[must_use]
     pub fn new(
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
         first_pole_pos: Position,
@@ -556,6 +599,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             new_pole_pos,
             (pole_connections.next().unwrap(), pole_connections),
         );
+    }
+
+    pub(super) fn add_pole_trusted(
+        &mut self,
+        new_pole_pos: Position,
+        pole_connections: impl IntoIterator<Item = Position>,
+    ) {
+        assert!(!self.is_placeholder);
+
+        self.grid_graph
+            .add_node_trusted((), new_pole_pos, pole_connections);
     }
 
     #[profiling::function]
@@ -1179,7 +1233,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         );
     }
 
-    pub(super) fn change_assembler_module_modifiers(
+    pub fn change_assembler_module_modifiers(
         &mut self,
         id: AssemblerID<RecipeIdxType>,
         modifiers: (i16, i16, i16),

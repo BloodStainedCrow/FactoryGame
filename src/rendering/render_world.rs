@@ -5,12 +5,12 @@ use crate::frontend::action::belt_placement::{BeltState, expected_belt_state};
 use crate::frontend::world::tile::World;
 use crate::get_size::RAMExtractor;
 use crate::get_size::RamUsage;
-use crate::inserter::storage_storage_with_buckets::InserterIdentifier;
 use crate::item::{Indexable, ITEMCOUNTTYPE};
 use crate::lab::{LabViewInfo, TICKS_PER_SCIENCE};
 use crate::liquid::FluidSystemState;
+use crate::par_generation::ParGenerateInfo;
 use crate::rendering::Corner;
-use crate::saving::save_components;
+use crate::saving::{save_components, save_with_fork};
 use crate::statistics::{NUM_DIFFERENT_TIMESCALES, TIMESCALE_NAMES};
 use crate::{
     TICKS_PER_SECOND_LOGIC,
@@ -54,7 +54,6 @@ use parking_lot::MutexGuard;
 use petgraph::dot::Dot;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::cmp::max;
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::sync::LazyLock;
@@ -969,10 +968,11 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             match info {
                                     crate::frontend::world::tile::InserterInfo::NotAttached { .. } => {},
                                     crate::frontend::world::tile::InserterInfo::Attached {
-                                        start_pos,
-                                        end_pos,
                                         info,
                                     } => {
+                                        let start_pos = data_store.inserter_start_pos(*ty, *pos, *direction);
+                                        let end_pos = data_store.inserter_end_pos(*ty, *pos, *direction);
+
                                         let movetime: u16 = user_movetime.map(|v| v.into()).unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks).into();
                                         match info {
                                             crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => {
@@ -1615,6 +1615,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         dir,
                         filter,
                         ty,
+                        user_movetime,
                     } => {
                         // FIXME: Respect ty while rendering
                         let size: [u16; 2] = [1, 1];
@@ -1953,6 +1954,11 @@ pub fn render_ui<
                 if ui.button("Save").clicked() {
                     save_components(&*world, &*simulation_state, &*aux_data, data_store_ref);
                 }
+
+                if ui.button("Save with fork").clicked() {
+                    let recv = save_with_fork(&*world, &*simulation_state, &*aux_data, data_store_ref);
+                    
+                }
                 if ui.button("Main Menu").clicked() {
                     return Some(EscapeMenuOptions::BackToMainMenu);
                 }
@@ -2050,11 +2056,11 @@ pub fn render_ui<
             }
             if ui.button("⚠️Auto Clock Inserters").clicked() {
                 let inserters_without_values_set = game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter_map(|e| match e {
-                    Entity::Inserter { ty, user_movetime, pos, info, .. } => {
+                    Entity::Inserter { ty, user_movetime, direction, pos, info, .. } => {
                         if user_movetime.is_none() {
                             match info {
                                 crate::frontend::world::tile::InserterInfo::NotAttached { .. } => None,
-                                crate::frontend::world::tile::InserterInfo::Attached { start_pos, end_pos, info } => match info {
+                                crate::frontend::world::tile::InserterInfo::Attached { info } => match info {
                                     crate::frontend::world::tile::AttachedInserter::BeltStorage {belt_pos, .. } => {
                                         None
                                         // TODO: Currently BeltStorage Inserters do not support movetime changes
@@ -2062,6 +2068,10 @@ pub fn render_ui<
                                     },
                                     crate::frontend::world::tile::AttachedInserter::BeltBelt { .. } => None,
                                     crate::frontend::world::tile::AttachedInserter::StorageStorage { item, .. } => {
+                                        let start_pos =
+                                        data_store.inserter_start_pos(*ty, *pos, *direction);
+                                    let end_pos =
+                                        data_store.inserter_end_pos(*ty, *pos, *direction);
                                         Some((ty, pos, start_pos, end_pos, item))
                                     },
                                 },
@@ -2076,7 +2086,7 @@ pub fn render_ui<
                 let inserter_pos_and_time = inserters_without_values_set.map(|(_ty, pos, start_pos, end_pos, item)| {
                     let mut goal_movetime = 12;
 
-                    if let Some(e) = game_state_ref.world.get_entity_at(*end_pos, data_store_ref) {
+                    if let Some(e) = game_state_ref.world.get_entity_at(end_pos, data_store_ref) {
                         match e {
                             Entity::Assembler {info, .. } => {
                                 match info {
@@ -2111,7 +2121,7 @@ pub fn render_ui<
                         }
                     }
 
-                    if let Some(e) = game_state_ref.world.get_entity_at(*start_pos, data_store_ref) {
+                    if let Some(e) = game_state_ref.world.get_entity_at(start_pos, data_store_ref) {
                         match e {
                             Entity::Assembler { info, .. } => {
                                 match info {
@@ -2259,6 +2269,14 @@ pub fn render_ui<
                 ui.text_edit_multiline(&mut graph);
             }
 
+            if ui.button("Write out par_generate info").clicked() {
+                let info = ParGenerateInfo::from_gamestate(&game_state_ref.world, &game_state_ref.simulation_state, &*aux_data, &data_store);
+                let file = File::create("par_generation_info").unwrap();
+                let mut encoder = ZlibEncoder::new(file, Compression::best());
+                bincode::serde::encode_into_std_write(&info, &mut encoder, bincode::config::standard()).unwrap();
+                encoder.finish().unwrap();
+            }
+
 
             CollapsingHeader::new("Bucket cache line sizes")
                 .default_open(false)
@@ -2269,7 +2287,7 @@ pub fn render_ui<
                         .storage_storage_inserters
                         .inserters
                         .iter()
-                        .flat_map(|tree| tree.values())
+                        .flat_map(|tree: &std::collections::BTreeMap<u16, (crate::inserter::storage_storage_with_buckets_indirect::BucketedStorageStorageInserterStore,)>| tree.values())
                         .map(|(store, )| store.get_load_info())
                         .map(|(_, _, num_storage_cachelines, num_struct_cachelines)| {
                             num_storage_cachelines + num_struct_cachelines

@@ -24,6 +24,7 @@ use crate::frontend::world::sparse_grid::GetGridIndex;
 use crate::join_many::join;
 use crate::saving::load_at;
 use crate::saving::save_at;
+use crate::saving::save_at_fork;
 use crate::{frontend::action::belt_placement, get_size::EnumMap};
 use ecolor::hex_color;
 #[cfg(feature = "client")]
@@ -724,12 +725,18 @@ fn new_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType: IdxTra
                 |e, _| {
                     match e {
                         Entity::Inserter {
+                            ty,
                             pos: inserter_pos,
-                            direction: _inserter_dir,
+                            direction: inserter_dir,
                             filter: _inserter_filter,
-                            info: InserterInfo::NotAttached { start_pos, end_pos },
+                            info: InserterInfo::NotAttached {},
                             ..
                         } => {
+                            let start_pos =
+                                data_store.inserter_start_pos(*ty, *inserter_pos, *inserter_dir);
+                            let end_pos =
+                                data_store.inserter_end_pos(*ty, *inserter_pos, *inserter_dir);
+
                             if start_pos.contained_in(pos, size) || end_pos.contained_in(pos, size)
                             {
                                 updates
@@ -1162,17 +1169,23 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                             ty,
                             user_movetime,
 
-                            pos: _inserter_pos,
-                            direction: _inserter_dir,
+                            pos: inserter_pos,
+                            direction: inserter_dir,
                             filter: _inserter_filter,
                             info,
                         } => {
                             if let InserterInfo::Attached {
-                                start_pos,
-                                end_pos,
                                 info: attached_inserter,
                             } = info
                             {
+                                let start_pos = data_store.inserter_start_pos(
+                                    *ty,
+                                    *inserter_pos,
+                                    *inserter_dir,
+                                );
+                                let end_pos =
+                                    data_store.inserter_end_pos(*ty, *inserter_pos, *inserter_dir);
+
                                 if start_pos.contained_in(pos, size)
                                     || end_pos.contained_in(pos, size)
                                 {
@@ -1180,10 +1193,7 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                                         AttachedInserter::BeltStorage { id, belt_pos } => {
                                             sim_state.factory.belts.remove_inserter(*id, *belt_pos);
 
-                                            *info = InserterInfo::NotAttached {
-                                                start_pos: *start_pos,
-                                                end_pos: *end_pos,
-                                            };
+                                            *info = InserterInfo::NotAttached {};
                                         },
                                         AttachedInserter::BeltBelt { item, inserter } => {
                                             todo!("Remove BeltBelt inserter");
@@ -1201,10 +1211,7 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                                                 .storage_storage_inserters
                                                 .remove_ins(*item, movetime.into(), *inserter);
 
-                                            *info = InserterInfo::NotAttached {
-                                                start_pos: *start_pos,
-                                                end_pos: *end_pos,
-                                            };
+                                            *info = InserterInfo::NotAttached {};
                                         },
                                     }
                                 }
@@ -1258,6 +1265,48 @@ impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> GetGridIndex<i32>
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeIdxType> {
+    pub fn save_fork(&self, base_path: PathBuf) {
+        create_dir_all(&base_path).expect("Failed to create world dir");
+
+        let Self {
+            cascading_updates: _,
+            module_slot_dedup_table,
+            noise,
+            players,
+            chunks,
+            belt_lookup,
+            belt_recieving_input_directions,
+            power_grid_lookup,
+            remaining_updates,
+            to_instantiate,
+            to_instantiate_by_belt,
+            map_updates: _,
+        } = self;
+
+        let folder_path = base_path;
+        let base_path = &folder_path;
+
+        save_at_fork(
+            module_slot_dedup_table,
+            base_path.join("module_slot_dedup_table"),
+        );
+        save_at_fork(noise, base_path.join("noise"));
+        save_at_fork(players, base_path.join("players"));
+        chunks.save_fork(base_path.join("chunks"));
+        save_at_fork(belt_lookup, base_path.join("belt_lookup"));
+        save_at_fork(
+            belt_recieving_input_directions,
+            base_path.join("belt_recieving_input_directions"),
+        );
+        save_at_fork(power_grid_lookup, base_path.join("power_grid_lookup"));
+        save_at_fork(remaining_updates, base_path.join("remaining_updates"));
+        save_at_fork(to_instantiate, base_path.join("to_instantiate"));
+        save_at_fork(
+            to_instantiate_by_belt,
+            base_path.join("to_instantiate_by_belt"),
+        );
+    }
+
     pub fn par_save(&self, base_path: PathBuf) {
         create_dir_all(&base_path).expect("Failed to create world dir");
 
@@ -1428,8 +1477,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             .collect()
     }
 
-    pub fn get_belt_possible_inputs(&mut self, pos: Position) -> &EnumMap<Dir, bool> {
-        self.belt_recieving_input_directions.entry(pos).or_default()
+    pub fn get_belt_possible_inputs(&mut self, pos: Position) -> EnumMap<Dir, bool> {
+        self.belt_recieving_input_directions
+            .get(&pos)
+            .copied()
+            .unwrap_or_default()
     }
 
     pub fn get_belt_possible_inputs_no_cache(&self, pos: Position) -> EnumMap<Dir, bool> {
@@ -1661,6 +1713,156 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         self.cascading_updates = Some(cascading_updates.recycle());
     }
 
+    pub fn set_module_combinations_trusted(
+        &mut self,
+        module_combinations: Vec<Box<[Option<ModuleTy>]>>,
+    ) {
+        self.module_slot_dedup_table = module_combinations.into_iter().map(|v| v.into()).collect();
+    }
+
+    /// Does not do any changes to the rest of the world, when adding this entity. make sure it cannot have side effects!
+    /// Also does not check if it fits
+    pub fn add_entity_trusted(
+        &mut self,
+        entity: Entity<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        let pos = entity.get_pos();
+
+        let chunk_x = pos.x / i32::from(CHUNK_SIZE);
+        let chunk_y = pos.y / i32::from(CHUNK_SIZE);
+        let Some(chunk) = self.get_chunk_mut((chunk_x, chunk_y)) else {
+            panic!("Chunk outside the world: {:?}!", entity);
+        };
+
+        let map = if let Some(map) = &mut chunk.chunk_tile_to_entity_into {
+            map
+        } else {
+            chunk.chunk_tile_to_entity_into = Some(Box::new(
+                [[EMPTY; CHUNK_SIZE as usize]; CHUNK_SIZE as usize],
+            ));
+            chunk.chunk_tile_to_entity_into.as_mut().unwrap()
+        };
+
+        let e_pos: Position = entity.get_pos();
+        let e_size = entity.get_entity_size(data_store);
+
+        chunk.entities.push(entity);
+
+        let index = u8::try_from(chunk.entities.len() - 1).expect("Into a chunk of size 16 x 16 we can fit at most 256 entitites. This assumes all entities are at least 1x1");
+
+        if index == min(EMPTY, OTHER_CHUNK) {
+            // This could cause confusion with tiles marked empty
+            // if map[x][y] == min(EMPTY, OTHER_CHUNK) {
+            //     map[x][y] = EMPTY_OR_OTHER_CHUNK;
+            // }
+            todo!()
+        }
+
+        let x_in_chunk = usize::try_from((e_pos.x).rem_euclid(CHUNK_SIZE as i32)).unwrap();
+        let y_in_chunk = usize::try_from((e_pos.y).rem_euclid(CHUNK_SIZE as i32)).unwrap();
+        for x_offs in 0..e_size.0 {
+            for y_offs in 0..e_size.1 {
+                let x = min(x_in_chunk + usize::from(x_offs), CHUNK_SIZE as usize - 1);
+                let y = min(y_in_chunk + usize::from(y_offs), CHUNK_SIZE as usize - 1);
+
+                // TODO: We write the same index multiple times here
+                assert!(
+                    map[x][y] == EMPTY || map[x][y] == EMPTY_OR_OTHER_CHUNK || map[x][y] == index,
+                    "Tile was not empty, but was {}",
+                    map[x][y]
+                );
+                map[x][y] = index;
+            }
+        }
+
+        for x_offs in 0..e_size.0 {
+            for y_offs in 0..e_size.1 {
+                let x_rel = x_in_chunk + usize::from(x_offs);
+                let y_rel = y_in_chunk + usize::from(y_offs);
+
+                match (
+                    x_rel >= usize::from(CHUNK_SIZE),
+                    y_rel >= usize::from(CHUNK_SIZE),
+                ) {
+                    (false, false) => {},
+                    (x, y) => {
+                        let chunk = self
+                            .get_chunk_mut((chunk_x + i32::from(x), chunk_y + i32::from(y)))
+                            .expect("Trying to place entitty outside the world");
+
+                        let arr = chunk.chunk_tile_to_entity_into.get_or_insert(Box::new(
+                            [[EMPTY; CHUNK_SIZE as usize]; CHUNK_SIZE as usize],
+                        ));
+
+                        arr[x_rel - (usize::from(x) * usize::from(CHUNK_SIZE))]
+                            [y_rel - (usize::from(y) * usize::from(CHUNK_SIZE))] = OTHER_CHUNK;
+                    },
+                }
+            }
+        }
+    }
+
+    /// Does not do any changes to the rest of the world, when adding this entity. make sure it cannot have side effects!
+    /// Also does not check if it fits
+    pub fn add_belt_entity_trusted(
+        &mut self,
+        entity: Entity<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        let pos = entity.get_pos();
+
+        let chunk_x = pos.x / i32::from(CHUNK_SIZE);
+        let chunk_y = pos.y / i32::from(CHUNK_SIZE);
+
+        match entity {
+            Entity::Belt {
+                pos, direction, id, ..
+            } => {
+                self.belt_lookup
+                    .belt_id_to_chunks
+                    .entry(id)
+                    .or_default()
+                    .insert((chunk_x, chunk_y));
+
+                self.belt_recieving_input_directions
+                    .entry(pos + direction)
+                    .or_default()[direction.reverse()] = true;
+            },
+            Entity::Underground {
+                pos,
+                underground_dir,
+                direction,
+                id,
+                ..
+            } => {
+                self.belt_lookup
+                    .belt_id_to_chunks
+                    .entry(id)
+                    .or_default()
+                    .insert((chunk_x, chunk_y));
+
+                if underground_dir == UndergroundDir::Exit {
+                    self.belt_recieving_input_directions
+                        .entry(pos + direction)
+                        .or_default()[direction.reverse()] = true;
+                }
+            },
+            Entity::Splitter { pos, direction, .. } => {
+                self.belt_recieving_input_directions
+                    .entry(pos + direction)
+                    .or_default()[direction.reverse()] = true;
+                self.belt_recieving_input_directions
+                    .entry(pos + direction.turn_right() + direction)
+                    .or_default()[direction.reverse()] = true;
+            },
+
+            _ => unreachable!("Called add_belt_entity with non belt entity"),
+        }
+
+        self.add_entity_trusted(entity, data_store);
+    }
+
     #[profiling::function]
     pub fn add_entity(
         &mut self,
@@ -1673,6 +1875,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             entity.get_entity_size(data_store),
             data_store,
         ) {
+            warn!("Tried to place entity where it does not fit");
             return Err(());
         }
 
@@ -2021,9 +2224,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             ty,
             user_movetime,
 
-            pos: _pos,
-            info: InserterInfo::NotAttached { start_pos, end_pos },
+            pos,
+            info: InserterInfo::NotAttached {},
             filter,
+            direction,
             ..
         }) = self.get_entity_at(pos, data_store)
         else {
@@ -2037,8 +2241,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             .map(|v| v.into())
             .unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks);
 
+        let start_pos = data_store.inserter_start_pos(*ty, *pos, *direction);
+        let end_pos = data_store.inserter_end_pos(*ty, *pos, *direction);
+
         let start_conn: Option<InserterConnectionPossibility<ItemIdxType, RecipeIdxType>> = self
-            .get_entity_at(*start_pos, data_store)
+            .get_entity_at(start_pos, data_store)
             .map(|e| match e {
                 Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }| Entity::FluidTank { .. }  => None,
 
@@ -2103,7 +2310,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     },
                 }),
                 Entity::Splitter { pos, id, direction: splitter_dir, .. } => {
-                    let mut side = if *pos == *end_pos {
+                    let mut side = if *pos == end_pos {
                         SplitterSide::Left
                     } else {
                         SplitterSide::Right
@@ -2158,7 +2365,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         };
 
         let dest_conn: Option<InserterConnectionPossibility<ItemIdxType, RecipeIdxType>> = self
-            .get_entity_at(*end_pos, data_store)
+            .get_entity_at(end_pos, data_store)
             .map(|e| match e {
                 Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }| Entity::FluidTank { .. }  => None,
 
@@ -2212,7 +2419,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     possible_item_list: PossibleItem::All,
                 }),
                 Entity::Splitter { pos, id, direction: splitter_dir, .. } => {
-                    let mut side = if *pos == *end_pos {
+                    let mut side = if *pos == end_pos {
                         SplitterSide::Left
                     } else {
                         SplitterSide::Right
@@ -2402,8 +2609,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 InserterConnection::Belt(start_belt_id, start_belt_pos),
                 InserterConnection::Belt(dest_belt_id, dest_belt_pos),
             ) => {
-                let start_pos = *start_pos;
-                let end_pos = *end_pos;
+                let pos = *pos;
+                let start_pos = data_store.inserter_start_pos(*ty, pos, *direction);
+                let end_pos = data_store.inserter_end_pos(*ty, pos, *direction);
                 // FIXME: The movetime should be dependent on the inserter type!
                 let index = simulation_state.factory.belts.add_belt_belt_inserter(
                     (start_belt_id, start_belt_pos),
@@ -2430,16 +2638,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         item: determined_filter,
                         inserter: index,
                     },
-                    start_pos,
-                    end_pos,
                 }
             },
             (
                 InserterConnection::Belt(start_belt_id, start_belt_pos),
                 InserterConnection::Storage(dest_storage_untranslated),
             ) => {
-                let start_pos = *start_pos;
-                let end_pos = *end_pos;
+                let start_pos = data_store.inserter_start_pos(*ty, *pos, *direction);
+                let end_pos = data_store.inserter_end_pos(*ty, *pos, *direction);
+                let pos = *pos;
                 let dest_storage_untranslated = match dest_storage_untranslated {
                     Static::Done(storage) => storage,
                     Static::ToInstantiate => {
@@ -2504,8 +2711,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         id: start_belt_id,
                         belt_pos: start_belt_pos - 1,
                     },
-                    start_pos,
-                    end_pos,
                 };
 
                 self.belt_lookup
@@ -2518,8 +2723,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 InserterConnection::Storage(start_storage_untranslated),
                 InserterConnection::Belt(dest_belt_id, dest_belt_pos),
             ) => {
-                let start_pos = *start_pos;
-                let end_pos = *end_pos;
+                let start_pos = data_store.inserter_start_pos(*ty, *pos, *direction);
+                let end_pos = data_store.inserter_end_pos(*ty, *pos, *direction);
+                let pos = *pos;
                 let start_storage_untranslated = match start_storage_untranslated {
                     Static::Done(storage) => storage,
                     Static::ToInstantiate => {
@@ -2584,8 +2790,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         id: dest_belt_id,
                         belt_pos: dest_belt_pos - 1,
                     },
-                    start_pos,
-                    end_pos,
                 };
 
                 self.belt_lookup
@@ -2598,8 +2802,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 InserterConnection::Storage(start_storage_untranslated),
                 InserterConnection::Storage(dest_storage_untranslated),
             ) => {
-                let start_pos = *start_pos;
-                let end_pos = *end_pos;
+                let start_pos = data_store.inserter_start_pos(*ty, *pos, *direction);
+                let end_pos = data_store.inserter_end_pos(*ty, *pos, *direction);
+                let pos = *pos;
 
                 let start_storage_untranslated = match start_storage_untranslated {
                     Static::Done(storage) => storage,
@@ -2695,8 +2900,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         item: determined_filter,
                         inserter: index,
                     },
-                    start_pos,
-                    end_pos,
                 };
             },
         }
@@ -3079,7 +3282,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
     pub fn is_powered_by(
         &self,
-        sim_state: &SimulationState<ItemIdxType, RecipeIdxType>,
         entity_pos: Position,
         entity_size: (u16, u16),
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -3098,19 +3300,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         .into_iter()
         .find_map(|e| match e {
             Entity::PowerPole { ty, pos, .. } => {
-                if sim_state
-                    .factory
-                    .power_grids
-                    .pole_pos_to_grid_id
-                    .get(pos)
-                    .is_none()
-                {
-                    // This is a power pole that does not actually exist anymore
-                    // TODO: This is a hack :/
-                    error!("TODO: This is a power pole that does not actually exist anymore!");
-                    return None;
-                }
-
                 let power_range = data_store.power_pole_data[usize::from(*ty)].power_range as u16;
                 let size = data_store.power_pole_data[usize::from(*ty)].size;
                 if entity_pos.overlap(
@@ -3960,12 +4149,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
                     for unconnected_position in no_longer_connected_entity_positions {
                         // FIXME: Hardcoded size
-                        let pole_pos = self.is_powered_by(
-                            &sim_state,
-                            unconnected_position,
-                            (3, 3),
-                            data_store,
-                        );
+                        let pole_pos = self.is_powered_by(unconnected_position, (3, 3), data_store);
 
                         self.mutate_entities_colliding_with(
                             unconnected_position,
@@ -4451,15 +4635,8 @@ pub enum AssemblerInfo<RecipeIdxType: WeakIdxTrait = u8> {
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum InserterInfo<ItemIdxType: WeakIdxTrait = u8> {
-    NotAttached {
-        start_pos: Position,
-        end_pos: Position,
-    },
-    Attached {
-        start_pos: Position,
-        end_pos: Position,
-        info: AttachedInserter<ItemIdxType>,
-    },
+    NotAttached {},
+    Attached { info: AttachedInserter<ItemIdxType> },
 }
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
@@ -4824,6 +5001,8 @@ pub enum PlaceEntityType<ItemIdxType: WeakIdxTrait> {
         dir: Dir,
         /// The Item the inserter will move, must fit both the in and output side
         filter: Option<Item<ItemIdxType>>,
+
+        user_movetime: Option<NonZero<u16>>,
     },
     Belt {
         pos: Position,

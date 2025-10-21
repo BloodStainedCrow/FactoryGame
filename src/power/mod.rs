@@ -201,6 +201,45 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         }
     }
 
+    pub fn trusted_create_power_grids(
+        &mut self,
+        count: usize,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl Iterator<Item = PowerGridIdentifier> {
+        (0..count).map(|_| {
+            let hole_idx = self.power_grids.iter().position(|grid| grid.is_placeholder);
+
+            let new_grid = PowerGrid::new_trusted(data_store);
+
+            let id = if let Some(hole_idx) = hole_idx {
+                self.power_grids[hole_idx] = new_grid;
+                hole_idx.try_into().expect(
+                    "If this is not in range, this means we had too many power grids before?",
+                )
+            } else {
+                let len = self.power_grids.len();
+                self.power_grids.push(new_grid);
+                len.try_into().expect(&format!(
+                    "Too many power grids, max, {} allowed",
+                    PowerGridIdentifier::MAX
+                ))
+            };
+
+            id
+        })
+    }
+
+    pub fn add_pole_trusted(
+        &mut self,
+        pole_pos: Position,
+        grid_id: PowerGridIdentifier,
+        connections: impl IntoIterator<Item = Position>,
+    ) {
+        self.pole_pos_to_grid_id.insert(pole_pos, grid_id);
+
+        self.power_grids[grid_id as usize].add_pole_trusted(pole_pos, connections);
+    }
+
     pub fn get_assembler_info(
         &self,
         assembler_id: AssemblerID<RecipeIdxType>,
@@ -925,33 +964,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         )
     }
 
-    pub fn add_beacon(
+    pub fn add_beacon_to_grid(
         &mut self,
         ty: u8,
         beacon_pos: Position,
         pole_pos: Position,
+        grid: PowerGridIdentifier,
         modules: &ModuleSlots,
         affected_entities: impl IntoIterator<Item = BeaconAffectedEntity<RecipeIdxType>>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> WeakIndex {
-        #[cfg(debug_assertions)]
-        {
-            let affected_grids_and_potential_match = self
-                .power_grids
-                .iter()
-                .filter(|grid| !grid.is_placeholder)
-                .all(|pg| {
-                    pg.beacon_affected_entities
-                        .keys()
-                        .map(|e| e.get_power_grid())
-                        .all(|affected_grid| {
-                            pg.potential_beacon_affected_powergrids
-                                .contains(&affected_grid)
-                        })
-                });
-            assert!(affected_grids_and_potential_match);
-        }
-
         let effect: (i16, i16, i16) = modules
             .iter()
             .flatten()
@@ -965,9 +987,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             .reduce(|acc, v| (acc.0 + v.0, acc.1 + v.1, acc.2 + v.2))
             .unwrap_or((0, 0, 0));
 
-        let effect = if self.power_grids[usize::from(self.pole_pos_to_grid_id[&pole_pos])]
-            .last_power_mult
-            >= MIN_BEACON_POWER_MULT
+        let effect = if self.power_grids[usize::from(grid)].last_power_mult >= MIN_BEACON_POWER_MULT
         {
             // Add the full beacon effect since we are powered
             (
@@ -1007,10 +1027,50 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             }
         }
 
-        let idx = self.power_grids[usize::from(self.pole_pos_to_grid_id[&pole_pos])].add_beacon(
+        let idx = self.power_grids[usize::from(grid)].add_beacon(
             ty,
             beacon_pos,
             pole_pos,
+            modules,
+            affected_entities,
+            data_store,
+        );
+
+        idx
+    }
+
+    pub fn add_beacon(
+        &mut self,
+        ty: u8,
+        beacon_pos: Position,
+        pole_pos: Position,
+        modules: &ModuleSlots,
+        affected_entities: impl IntoIterator<Item = BeaconAffectedEntity<RecipeIdxType>>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> WeakIndex {
+        #[cfg(debug_assertions)]
+        {
+            let affected_grids_and_potential_match = self
+                .power_grids
+                .iter()
+                .filter(|grid| !grid.is_placeholder)
+                .all(|pg| {
+                    pg.beacon_affected_entities
+                        .keys()
+                        .map(|e| e.get_power_grid())
+                        .all(|affected_grid| {
+                            pg.potential_beacon_affected_powergrids
+                                .contains(&affected_grid)
+                        })
+                });
+            assert!(affected_grids_and_potential_match);
+        }
+
+        let idx = self.add_beacon_to_grid(
+            ty,
+            beacon_pos,
+            pole_pos,
+            self.pole_pos_to_grid_id[&pole_pos],
             modules,
             affected_entities,
             data_store,

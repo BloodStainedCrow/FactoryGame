@@ -42,7 +42,8 @@ pub const HAND_SIZE: u8 = 12;
 #[allow(clippy::module_name_repetitions)]
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct SmartBelt<ItemIdxType: WeakIdxTrait> {
+#[repr(align(64))]
+pub struct SmartBelt<ItemIdxType: WeakIdxTrait = u8> {
     pub(super) ty: u8,
 
     pub(super) is_circular: bool,
@@ -1036,10 +1037,12 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         };
 
         if side == Side::FRONT {
-            inserters.inserters[0].offset = inserters.inserters[0]
-                .offset
-                .checked_add(front_extension_amount)
-                .expect("Max length of belt (u16::MAX) reached");
+            if !inserters.inserters.is_empty() {
+                inserters.inserters[0].offset = inserters.inserters[0]
+                    .offset
+                    .checked_add(front_extension_amount)
+                    .expect("Max length of belt (u16::MAX) reached");
+            }
         }
 
         let mut new = Self {
@@ -1523,13 +1526,18 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
     }
 
     #[allow(clippy::bool_assert_comparison)]
-    #[inline(never)]
+    #[inline(always)]
     fn update(&mut self, splitter_list: &[SushiSplitter<ItemIdxType>]) {
         if self.locs.len() == 0 {
             return;
         }
         if self.is_circular {
-            self.zero_index = (self.zero_index.checked_add(1).unwrap()) % self.get_len();
+            let new_val = self.zero_index.checked_add(1).unwrap();
+            self.zero_index = if new_val == self.get_len() {
+                0
+            } else {
+                new_val
+            };
             return;
         }
 
@@ -1547,6 +1555,15 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
                     *splitter_loc = Some(item);
                     let _ = self.remove_item(0);
                     assert_eq!(self.first_free_index, FreeIndex::FreeIndex(0));
+                    self.last_moving_spot = 0;
+                    let new_val = self.zero_index.checked_add(1).unwrap();
+                    self.zero_index = if new_val == self.get_len() {
+                        0
+                    } else {
+                        new_val
+                    };
+                    self.first_free_index = FreeIndex::OldFreeIndex(0);
+                    return;
                 }
             }
         }
@@ -1577,8 +1594,6 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
             },
         }
 
-        self.zero_index %= self.get_len();
-
         let first_free_index_real = self.find_and_update_real_first_free_index();
 
         let len = self.get_len();
@@ -1591,8 +1606,12 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
         };
 
         if first_free_index_real == 0 {
-            self.zero_index %= self.get_len();
-            self.zero_index = self.zero_index.checked_add(1).unwrap();
+            let new_val = self.zero_index.checked_add(1).unwrap();
+            self.zero_index = if new_val == self.get_len() {
+                0
+            } else {
+                new_val
+            };
             self.last_moving_spot = 0;
             self.first_free_index = FreeIndex::OldFreeIndex(0);
             return;
@@ -1635,12 +1654,16 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
                 debug_assert_eq!(moving_slice[0], false);
                 *moving_slice.get_mut(0).unwrap() = true;
 
-                self.zero_index = self.zero_index.checked_add(1).unwrap();
+                let new_val = self.zero_index.checked_add(1).unwrap();
+                self.zero_index = if new_val == self.get_len() {
+                    0
+                } else {
+                    new_val
+                };
             }
         } else {
             let (starting_stuck_slice, middle_moving_slice) =
                 start_slice.split_at_mut(usize::from(first_free_index_real));
-            // .expect(&format!("{} > {}", first_free_index_real, start_len));
 
             assert!(!middle_moving_slice.is_empty());
             assert!(!starting_stuck_slice.is_empty());
@@ -1657,7 +1680,12 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
                 debug_assert_eq!(middle_moving_slice[0], false);
                 *middle_moving_slice.get_mut(0).unwrap() = true;
 
-                self.zero_index = self.zero_index.checked_add(1).unwrap();
+                let new_val = self.zero_index.checked_add(1).unwrap();
+                self.zero_index = if new_val == self.get_len() {
+                    0
+                } else {
+                    new_val
+                };
             }
         }
 

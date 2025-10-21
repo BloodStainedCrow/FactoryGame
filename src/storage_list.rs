@@ -126,6 +126,7 @@ pub fn index<'a, 'b, RecipeIdxType: IdxTrait>(
     }
 }
 
+#[inline(always)]
 pub fn index_fake_union<'a, 'b>(
     slice: SingleItemStorages<'a, 'b>,
     storage_id: FakeUnionStorage,

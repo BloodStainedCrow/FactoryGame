@@ -76,6 +76,125 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
         }
     }
 
+    pub fn get_fluid_network(&self, id: FluidSystemId<ItemIdxType>) -> &FluidSystem<ItemIdxType> {
+        match id.fluid {
+            Some(fluid) => self.fluid_systems_with_fluid[fluid.into_usize()][id.index]
+                .as_ref()
+                .unwrap(),
+            None => self.empty_fluid_systems[id.index].as_ref().unwrap(),
+        }
+    }
+
+    fn get_fluid_network_mut(
+        &mut self,
+        id: FluidSystemId<ItemIdxType>,
+    ) -> &mut FluidSystem<ItemIdxType> {
+        match id.fluid {
+            Some(fluid) => self.fluid_systems_with_fluid[fluid.into_usize()][id.index]
+                .as_mut()
+                .unwrap(),
+            None => self.empty_fluid_systems[id.index].as_mut().unwrap(),
+        }
+    }
+
+    pub fn trusted_add_fluid_network_without_fluid_box(
+        &mut self,
+        fluid: Option<Item<ItemIdxType>>,
+        chest_store: &mut FullChestStore<ItemIdxType>,
+    ) -> FluidSystemId<ItemIdxType> {
+        let new_network = FluidSystem::trusted_new_without_fluid_box(fluid, chest_store);
+
+        let index = match fluid {
+            Some(fluid) => {
+                let index = self.fluid_systems_with_fluid_holes[fluid.into_usize()].pop();
+
+                if let Some(hole_idx) = index {
+                    assert!(self.fluid_systems_with_fluid[fluid.into_usize()][hole_idx].is_none());
+                    self.fluid_systems_with_fluid[fluid.into_usize()][hole_idx] = Some(new_network);
+                    hole_idx
+                } else {
+                    self.fluid_systems_with_fluid[fluid.into_usize()].push(Some(new_network));
+                    self.fluid_systems_with_fluid[fluid.into_usize()].len() - 1
+                }
+            },
+            None => {
+                let index = self.empty_fluid_systems_holes.pop();
+
+                if let Some(hole_idx) = index {
+                    assert!(self.empty_fluid_systems[hole_idx].is_none());
+                    self.empty_fluid_systems[hole_idx] = Some(new_network);
+                    hole_idx
+                } else {
+                    self.empty_fluid_systems.push(Some(new_network));
+                    self.empty_fluid_systems.len() - 1
+                }
+            },
+        };
+
+        let new_id: FluidSystemId<ItemIdxType> = FluidSystemId { fluid, index };
+
+        new_id
+    }
+
+    pub fn trusted_add_fluid_box<RecipeIdxType: IdxTrait>(
+        &mut self,
+
+        fluid_network_id: FluidSystemId<ItemIdxType>,
+
+        new_fluid_box_position: Position,
+        fluid_box_capacity: u32,
+
+        connected_fluid_box_positions: impl IntoIterator<Item = Position>,
+        connected_storages: impl IntoIterator<
+            Item = (
+                FluidConnectionDir,
+                Item<ItemIdxType>,
+                Storage<RecipeIdxType>,
+                Position,
+            ),
+        > + Clone,
+
+        chest_store: &mut FullChestStore<ItemIdxType>,
+        inserter_store: &mut StorageStorageInserterStore,
+
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        self.fluid_box_pos_to_network_id
+            .insert(new_fluid_box_position, fluid_network_id);
+
+        let network = self.get_fluid_network_mut(fluid_network_id);
+
+        network.add_fluid_box_trusted(
+            new_fluid_box_position,
+            fluid_box_capacity,
+            connected_fluid_box_positions,
+            chest_store,
+        );
+
+        for (dir, fluid, storage, pos) in connected_storages {
+            assert_eq!(fluid, fluid_network_id.fluid.unwrap());
+
+            let weak_index = match dir {
+                FluidConnectionDir::Input => network.add_input(
+                    fluid,
+                    new_fluid_box_position,
+                    storage,
+                    pos,
+                    inserter_store,
+                    data_store,
+                ),
+                FluidConnectionDir::Output => network.add_output(
+                    fluid,
+                    new_fluid_box_position,
+                    storage,
+                    pos,
+                    inserter_store,
+                    data_store,
+                ),
+            };
+        }
+    }
+
     /// # Errors:
     /// If adding this fluid box would connect fluid systems with different fluids
     pub fn try_add_fluid_box<RecipeIdxType: IdxTrait>(
@@ -128,11 +247,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                         .unwrap()
                         .graph
                         .node_count(),
-                    None => self.empty_fluid_systems[id.index as usize]
-                        .as_ref()
-                        .unwrap()
-                        .graph
-                        .node_count(),
+                    None => 0,
                 })
                 .unwrap();
 
@@ -919,12 +1034,32 @@ pub enum FluidSystemState<ItemIdxType: WeakIdxTrait> {
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct FluidSystem<ItemIdxType: WeakIdxTrait> {
-    graph: Network<Position, FluidBox, FluidSystemEntity>,
-    storage_capacity: u32,
+    pub graph: Network<Position, FluidBox, FluidSystemEntity>,
+    pub storage_capacity: u32,
     pub state: FluidSystemState<ItemIdxType>,
 }
 
 impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
+    pub fn trusted_new_without_fluid_box(
+        fluid: Option<Item<ItemIdxType>>,
+        chest_store: &mut FullChestStore<ItemIdxType>,
+    ) -> Self {
+        let mut ret = Self {
+            graph: Network::trusted_new_empty(),
+            storage_capacity: 0,
+            state: FluidSystemState::NoFluid,
+        };
+
+        if let Some(fluid) = fluid {
+            ret.state = FluidSystemState::HasFluid {
+                fluid,
+                chest_id: chest_store.stores[fluid.into_usize()].add_custom_chest(0),
+            }
+        }
+
+        ret
+    }
+
     #[must_use]
     pub fn new_from_single_fluid_box(
         fluid: Option<Item<ItemIdxType>>,
@@ -1227,6 +1362,39 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                 .expect("Fluid Networks without a set fluid cannot have inputs"),
             FLUID_INSERTER_MOVETIME,
             inserter_id,
+        );
+    }
+
+    fn add_fluid_box_trusted(
+        &mut self,
+        fluid_box_position: Position,
+        fluid_box_capacity: u32,
+        fluid_box_connections: impl IntoIterator<Item = Position>,
+        chest_store: &mut FullChestStore<ItemIdxType>,
+    ) {
+        self.storage_capacity = self
+            .storage_capacity
+            .checked_add(fluid_box_capacity)
+            .expect("TODO: Fluid network size exceeded u32::MAX");
+        if let FluidSystemState::HasFluid { fluid, chest_id } = self.state {
+            let 0 = chest_store.stores[fluid.into_usize()].change_chest_size(
+                chest_id,
+                self.storage_capacity
+                    .try_into()
+                    .expect("Fluid system too large"),
+            ) else {
+                unreachable!(
+                    "We increase the size of the fluid network. It should not be possible remove items with it"
+                );
+            };
+        }
+
+        self.graph.add_node_trusted(
+            FluidBox {
+                capacity: fluid_box_capacity,
+            },
+            fluid_box_position,
+            fluid_box_connections,
         );
     }
 

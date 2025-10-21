@@ -5,6 +5,7 @@ use std::{
     iter,
 };
 
+use crate::Position;
 #[cfg(feature = "client")]
 use eframe::egui::Color32;
 use itertools::Itertools;
@@ -611,9 +612,15 @@ pub struct FluidTankData {
 /// These offset and directions are based on the entity facing north
 #[derive(Debug, Clone, Copy, serde::Serialize, serde:: Deserialize)]
 pub struct FluidConnection {
-    pub offset: [u16; 2],
+    pub offset: [i16; 2],
     pub dir: Dir,
     pub kind: PipeConnectionType,
+}
+
+impl FluidConnection {
+    pub fn with_fluid_tank_rotation(self, rotation: Dir) -> Self {
+        todo!()
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
@@ -665,6 +672,40 @@ pub struct RecipeOutputLookups {
     pub out2: Vec<[ITEMCOUNTTYPE; 2]>,
     pub out3: Vec<[ITEMCOUNTTYPE; 3]>,
     pub out4: Vec<[ITEMCOUNTTYPE; 4]>,
+}
+
+impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> DataStore<ItemIdxType, RecipeIdxType> {
+    pub fn inserter_start_pos(&self, ty: u8, pos: Position, rotation: Dir) -> Position {
+        let offs = self.inserter_infos[ty as usize].input_offset;
+
+        let [x, y] = match rotation {
+            Dir::North => offs,
+            Dir::East => [-offs[1], offs[0]],
+            Dir::South => [-offs[0], -offs[1]],
+            Dir::West => [offs[1], -offs[0]],
+        };
+
+        Position {
+            x: pos.x + i32::from(x),
+            y: pos.y + i32::from(y),
+        }
+    }
+
+    pub fn inserter_end_pos(&self, ty: u8, pos: Position, rotation: Dir) -> Position {
+        let offs = self.inserter_infos[ty as usize].output_offset;
+
+        let [x, y] = match rotation {
+            Dir::North => offs,
+            Dir::East => [-offs[1], offs[0]],
+            Dir::South => [-offs[0], -offs[1]],
+            Dir::West => [offs[1], -offs[0]],
+        };
+
+        Position {
+            x: pos.x + i32::from(x),
+            y: pos.y + i32::from(y),
+        }
+    }
 }
 
 impl RawDataStore {

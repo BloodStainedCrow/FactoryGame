@@ -97,22 +97,22 @@ fn can_two_connections_connect(
         Dir::East => {
             first_conn.dir = first_conn.dir.turn_right();
             first_conn.offset = [
-                first_size[0] - 1 - first_conn.offset[1],
+                first_size[0] as i16 - 1 - first_conn.offset[1],
                 first_conn.offset[0],
             ];
         },
         Dir::South => {
             first_conn.dir = first_conn.dir.reverse();
             first_conn.offset = [
-                first_size[0] - 1 - first_conn.offset[0],
-                first_size[1] - 1 - first_conn.offset[1],
+                first_size[0] as i16 - 1 - first_conn.offset[0],
+                first_size[1] as i16 - 1 - first_conn.offset[1],
             ];
         },
         Dir::West => {
             first_conn.dir = first_conn.dir.turn_right().turn_right().turn_right();
             first_conn.offset = [
                 first_conn.offset[1],
-                first_size[0] - 1 - first_conn.offset[0],
+                first_size[0] as i16 - 1 - first_conn.offset[0],
             ];
         },
     }
@@ -122,22 +122,22 @@ fn can_two_connections_connect(
         Dir::East => {
             second_conn.dir = second_conn.dir.turn_right();
             second_conn.offset = [
-                second_size[0] - 1 - second_conn.offset[1],
+                second_size[0] as i16 - 1 - second_conn.offset[1],
                 second_conn.offset[0],
             ];
         },
         Dir::South => {
             second_conn.dir = second_conn.dir.reverse();
             second_conn.offset = [
-                second_size[0] - 1 - second_conn.offset[0],
-                second_size[1] - 1 - second_conn.offset[1],
+                second_size[0] as i16 - 1 - second_conn.offset[0],
+                second_size[1] as i16 - 1 - second_conn.offset[1],
             ];
         },
         Dir::West => {
             second_conn.dir = second_conn.dir.turn_right().turn_right().turn_right();
             second_conn.offset = [
                 second_conn.offset[1],
-                second_size[0] - 1 - second_conn.offset[0],
+                second_size[0] as i16 - 1 - second_conn.offset[0],
             ];
         },
     }

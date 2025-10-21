@@ -16,6 +16,8 @@ use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
 use get_size::GetSize;
 
+const PERFORMANCE_CHEAT_INSERTER_UPDATE_MODULE: usize = 1;
+
 #[allow(unused)]
 struct IdealInserter {
     pub storage_id_in: u32,
@@ -248,13 +250,19 @@ impl BucketedStorageStorageInserterStore {
         current_tick: u32,
         _movetime: u16,
     ) -> bool {
-        let (_max_insert, old) = index_fake_union(storages, inserter.storage_id_in, grid_size);
+        let storage_id = inserter.storage_id_in;
+
+        let (_max_insert, old) = index_fake_union(storages, storage_id, grid_size);
 
         let ImplicitState::WaitingForSourceItems(current_hand) = &mut inserter.state else {
             unreachable!()
         };
 
-        let to_extract = min(inserter.max_hand_size - *current_hand, *old);
+        let old_val = *old;
+        let max_hand_size = inserter.max_hand_size;
+        let current_hand_val = *current_hand;
+
+        let to_extract = min(max_hand_size - current_hand_val, old_val);
 
         if to_extract > 0 {
             *old -= to_extract;
@@ -280,13 +288,18 @@ impl BucketedStorageStorageInserterStore {
         current_tick: u32,
         _movetime: u16,
     ) -> bool {
-        let (max_insert, old) = index_fake_union(storages, inserter.storage_id_out, grid_size);
+        let storage_id = inserter.storage_id_out;
+
+        let (max_insert, old) = index_fake_union(storages, storage_id, grid_size);
 
         let ImplicitState::WaitingForSpaceInDestination(current_hand) = &mut inserter.state else {
             unreachable!()
         };
 
-        let to_insert = min(*current_hand, *max_insert - *old);
+        let old_val = *old;
+        let max_insert = *max_insert;
+
+        let to_insert = min(*current_hand, max_insert - old_val);
 
         if to_insert > 0 {
             *old += to_insert;
@@ -346,7 +359,13 @@ impl BucketedStorageStorageInserterStore {
     }
 
     #[profiling::function]
-    pub fn update(&mut self, storages: SingleItemStorages, grid_size: usize, current_tick: u32) {
+    pub fn update(
+        &mut self,
+        item_id: usize,
+        storages: SingleItemStorages,
+        grid_size: usize,
+        current_tick: u32,
+    ) {
         let old_len: usize = self.get_list_sizes().iter().sum();
 
         assert!(self.current_tick < self.list_len());
@@ -393,8 +412,23 @@ impl BucketedStorageStorageInserterStore {
         // }
 
         {
-            profiling::scope!("Try taking Items from inventories");
-            let now_moving = self.waiting_for_item.extract_if(.., |inserter| {
+            let cheat_idx = current_tick as usize % PERFORMANCE_CHEAT_INSERTER_UPDATE_MODULE;
+
+            let chunk_size = self
+                .waiting_for_item
+                .len()
+                .div_ceil(PERFORMANCE_CHEAT_INSERTER_UPDATE_MODULE);
+
+            let start = chunk_size * cheat_idx;
+            let start = min(start, self.waiting_for_item.len());
+            let end = chunk_size * (cheat_idx + 1);
+            let end = min(end, self.waiting_for_item.len());
+
+            profiling::scope!(
+                "Try taking Items from inventories",
+                format!("count: {}", self.waiting_for_item.len())
+            );
+            let now_moving = self.waiting_for_item.extract_if(start..end, |inserter| {
                 Self::handle_waiting_for_item_ins(
                     &mut self.inserters[inserter.index as usize],
                     storages,
@@ -448,10 +482,25 @@ impl BucketedStorageStorageInserterStore {
         // }
 
         {
-            profiling::scope!("Try putting Items into inventories");
+            let cheat_idx = current_tick as usize % PERFORMANCE_CHEAT_INSERTER_UPDATE_MODULE;
+
+            let chunk_size = self
+                .waiting_for_space_in_destination
+                .len()
+                .div_ceil(PERFORMANCE_CHEAT_INSERTER_UPDATE_MODULE);
+
+            let start = chunk_size * cheat_idx;
+            let start = min(start, self.waiting_for_space_in_destination.len());
+            let end = chunk_size * (cheat_idx + 1);
+            let end = min(end, self.waiting_for_space_in_destination.len());
+
+            profiling::scope!(
+                "Try putting Items into inventories",
+                format!("count: {}", self.waiting_for_space_in_destination.len())
+            );
             let now_moving_back =
                 self.waiting_for_space_in_destination
-                    .extract_if(.., |inserter| {
+                    .extract_if(start..end, |inserter| {
                         Self::handle_waiting_for_space_ins(
                             &mut self.inserters[inserter.index as usize],
                             storages,
@@ -671,6 +720,7 @@ mod test {
             for i in values {
                 if random::<u16>() < 1 {
                     store[item].update(
+                        0,
                         &mut [
                             (max_insert.as_slice(), storages_in[item].as_mut_slice()),
                             (max_insert.as_slice(), storages_out[item].as_mut_slice()),
@@ -725,6 +775,7 @@ mod test {
                         }
                     }
                     store.update(
+                        0,
                         &mut [
                             (max_insert.as_slice(), storage_in.as_mut_slice()),
                             (max_insert.as_slice(), storage_out.as_mut_slice()),

@@ -85,6 +85,7 @@ impl BeltStorageInserterDyn {
 }
 
 impl BeltStorageInserterDyn {
+    #[inline(always)]
     pub fn update(
         &mut self,
         mut loc: impl DerefMut + Deref<Target = bool>,

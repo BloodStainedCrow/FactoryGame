@@ -1,4 +1,4 @@
-use crate::saving::save_at;
+use crate::saving::{save_at, save_at_fork};
 
 use super::GetGridIndex;
 use itertools::Itertools;
@@ -72,6 +72,25 @@ impl<T: GetGridIndex<I>> BoundingBoxGrid<I, T> {
             .collect_into_vec(&mut values);
 
         Self { extent, values }
+    }
+
+    // TODO: Do I want to save None values?
+    pub fn save_fork(&self, base_path: PathBuf)
+    where
+        T: Sync + serde::Serialize,
+    {
+        create_dir_all(&base_path).expect("Failed to create world dir");
+
+        // TODO: Choose a chunk size
+        self.values
+            .chunks(100_000)
+            .enumerate()
+            .for_each(|(i, chunks)| {
+                save_at_fork(chunks, base_path.join(format!("chunk-{i}")));
+            });
+
+        // TODO: Serialize the rest
+        // todo!("Serialize the rest")
     }
 
     // TODO: Do I want to save None values?

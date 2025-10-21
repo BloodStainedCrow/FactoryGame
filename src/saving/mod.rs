@@ -1,7 +1,7 @@
 use std::{
     borrow::Borrow,
     fs::{File, create_dir_all},
-    io::Read,
+    io::{Read, Write},
     marker::PhantomData,
     path::PathBuf,
 };
@@ -42,12 +42,23 @@ pub fn save_at<V: serde::Serialize + ?Sized>(value: &V, path: PathBuf) {
         File::create(path).expect("could not create file")
     };
 
+    let mut buf_writer = BufWriter::new(file);
     {
         profiling::scope!("Compressing and Writing to file");
-        let mut e = ZlibEncoder::new(BufWriter::new(file), Compression::fast());
-        bincode::serde::encode_into_std_write(value, &mut e, bincode::config::standard()).unwrap();
-        e.finish().expect("Compression failed");
+        bincode::serde::encode_into_std_write(value, &mut buf_writer, bincode::config::standard()).unwrap();
     }
+    buf_writer.flush().unwrap();
+}
+
+pub fn save_at_fork<V: serde::Serialize + ?Sized>(value: &V, path: PathBuf) {
+    let mut file = { File::create(path).expect("could not create file") };
+
+    // FIXME: It is technically not okay to allocate here.
+    let mut buf_writer = BufWriter::new(file);
+
+    bincode::serde::encode_into_std_write(value, &mut buf_writer, bincode::config::standard())
+        .unwrap();
+    buf_writer.flush().unwrap();
 }
 
 pub fn load_at<V: for<'a> serde::Deserialize<'a>>(path: PathBuf) -> V {
@@ -57,10 +68,10 @@ pub fn load_at<V: for<'a> serde::Deserialize<'a>>(path: PathBuf) -> V {
         File::open(&path).expect(&format!("could not open file {:?}", &path))
     };
 
+    let mut buf_reader = BufReader::new(file);
     {
         profiling::scope!("Decompressing and deserializing");
-        let mut e = ZlibDecoder::new(BufReader::new(file));
-        bincode::serde::decode_from_std_read(&mut e, bincode::config::standard())
+        bincode::serde::decode_from_std_read(&mut buf_reader, bincode::config::standard())
             .expect("Deserialization failed")
     }
 }
@@ -184,6 +195,121 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     // Remove old save if it exists
     let _ = std::fs::remove_dir_all(&save_file_dir);
     std::fs::rename(temp_file_dir, save_file_dir).expect("Could not rename tmp save dir!");
+}
+
+/// # Panics
+/// If File system stuff fails
+pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    world: &World<ItemIdxType, RecipeIdxType>,
+    simulation_state: &SimulationState<ItemIdxType, RecipeIdxType>,
+    aux_data: &AuxillaryData,
+    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    mut send: interprocess::unnamed_pipe::Sender,
+) {
+    let checksum = &data_store.checksum;
+    let dir = ProjectDirs::from("de", "aschhoff", "factory_game").expect("No Home path found");
+
+    create_dir_all(dir.data_dir()).expect("Could not create data dir");
+
+    let temp_file_dir = dir.data_dir().join("tmp.save");
+    let save_file_dir = dir.data_dir().join("save.save");
+
+    create_dir_all(&temp_file_dir).expect("Could not create temp dir");
+
+    {
+        let SimulationState {
+            tech_state,
+            factory:
+                Factory {
+                    power_grids,
+                    belts,
+                    storage_storage_inserters,
+                    belt_storage_inserters,
+                    chests,
+                    fluid_store,
+                    item_times,
+                },
+        } = simulation_state;
+
+        send.write(&[0]);
+        save_at_fork(checksum, temp_file_dir.join("checksum"));
+        send.write(&[1]);
+        save_at_fork(
+            tech_state,
+            temp_file_dir.join("simulation_state.tech_state"),
+        );
+        send.write(&[2]);
+        save_at_fork(
+            power_grids,
+            temp_file_dir.join("simulation_state.factory.power_grids"),
+        );
+        send.write(&[3]);
+        save_at_fork(belts, temp_file_dir.join("simulation_state.factory.belts"));
+        send.write(&[4]);
+        save_at_fork(
+            storage_storage_inserters,
+            temp_file_dir.join("simulation_state.factory.storage_storage_inserters"),
+        );
+        send.write(&[5]);
+        save_at_fork(
+            belt_storage_inserters,
+            temp_file_dir.join("simulation_state.factory.belt_storage_inserters"),
+        );
+        send.write(&[6]);
+        save_at_fork(
+            chests,
+            temp_file_dir.join("simulation_state.factory.chests"),
+        );
+        send.write(&[7]);
+        save_at_fork(
+            fluid_store,
+            temp_file_dir.join("simulation_state.factory.fluid_store"),
+        );
+        send.write(&[8]);
+        save_at_fork(
+            item_times,
+            temp_file_dir.join("simulation_state.factory.item_times"),
+        );
+        send.write(&[9]);
+        world.save_fork(temp_file_dir.join("world"));
+        send.write(&[10]);
+        save_at_fork(aux_data, temp_file_dir.join("aux_data"));
+        send.write(&[11]);
+    }
+
+    // Remove old save if it exists
+    let _ = std::fs::remove_dir_all(&save_file_dir);
+    std::fs::rename(temp_file_dir, save_file_dir).expect("Could not rename tmp save dir!");
+}
+
+/// # Panics
+/// If File system stuff fails
+pub fn save_with_fork<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    world: &World<ItemIdxType, RecipeIdxType>,
+    simulation_state: &SimulationState<ItemIdxType, RecipeIdxType>,
+    aux_data: &AuxillaryData,
+    data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+) -> Option<interprocess::unnamed_pipe::Recver> {
+    #[cfg(target_os = "linux")]
+    {
+        let (send, recv) =
+            interprocess::unnamed_pipe::pipe().expect("Failed to create unnamed pipe");
+        match fork::fork() {
+            Ok(fork::Fork::Parent(child_pid)) => return Some(recv),
+            Ok(fork::Fork::Child) => {},
+            Err(e) => panic!("Failed to fork!"),
+        }
+
+        save_components_fork_safe(world, simulation_state, aux_data, data_store, send);
+
+        unsafe { libc::_exit(0) }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        save_components(world, simulation_state, aux_data, data_store);
+        None
+    }
 }
 
 /// # Panics
