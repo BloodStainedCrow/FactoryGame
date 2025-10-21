@@ -29,6 +29,13 @@ struct IdealInserter {
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+pub struct InserterState {
+    pub last_update_time: u16,
+    state: ImplicitState,
+}
+
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub struct Inserter {
     pub storage_id_in: FakeUnionStorage,
     pub storage_id_out: FakeUnionStorage,
@@ -59,33 +66,32 @@ struct InserterId {
 }
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
+struct InserterBucketData {
+    pub storage_id_in: FakeUnionStorage,
+    pub storage_id_out: FakeUnionStorage,
+    index: InserterId,
+    current_hand: ITEMCOUNTTYPE,
+    max_hand_size: ITEMCOUNTTYPE,
+}
+
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BucketedStorageStorageInserterStore {
     pub movetime: u16,
 
     holes: Vec<u32>,
-    inserters: Vec<Inserter>,
+    inserters: Vec<InserterState>,
 
     current_tick: usize,
-    waiting_for_item: Vec<InserterId>,
-    waiting_for_space_in_destination: Vec<InserterId>,
-    full_and_moving_out: Box<[Vec<InserterId>]>,
-    empty_and_moving_back: Box<[Vec<InserterId>]>,
+    waiting_for_item: Vec<InserterBucketData>,
+    waiting_for_space_in_destination: Vec<InserterBucketData>,
+    full_and_moving_out: Box<[Vec<InserterBucketData>]>,
+    empty_and_moving_back: Box<[Vec<InserterBucketData>]>,
 }
 
-const PLACEHOLDER: Inserter = Inserter {
-    storage_id_in: FakeUnionStorage {
-        index: u32::MAX,
-        grid_or_static_flag: u16::MAX,
-        recipe_idx_with_this_item: u16::MAX,
-    },
-    storage_id_out: FakeUnionStorage {
-        index: u32::MAX,
-        grid_or_static_flag: u16::MAX,
-        recipe_idx_with_this_item: u16::MAX,
-    },
+const PLACEHOLDER: InserterState = InserterState {
     last_update_time: 0,
-    max_hand_size: 0,
     state: ImplicitState::WaitingForSourceItems(0),
 };
 
@@ -111,20 +117,14 @@ impl BucketedStorageStorageInserterStore {
         max_hand_size: ITEMCOUNTTYPE,
     ) -> InserterIdentifier {
         let new_id = if let Some(hole) = self.holes.pop() {
-            self.inserters[hole as usize] = Inserter {
-                storage_id_in: source,
-                storage_id_out: dest,
-                max_hand_size,
+            self.inserters[hole as usize] = InserterState {
                 state: ImplicitState::WaitingForSourceItems(0),
                 last_update_time: 0,
             };
 
             InserterId { index: hole }
         } else {
-            self.inserters.push(Inserter {
-                storage_id_in: source,
-                storage_id_out: dest,
-                max_hand_size,
+            self.inserters.push(InserterState {
                 state: ImplicitState::WaitingForSourceItems(0),
                 last_update_time: 0,
             });
@@ -134,7 +134,13 @@ impl BucketedStorageStorageInserterStore {
             }
         };
 
-        self.waiting_for_item.push(new_id);
+        self.waiting_for_item.push(InserterBucketData {
+            storage_id_in: source,
+            storage_id_out: dest,
+            index: new_id,
+            max_hand_size,
+            current_hand: 0,
+        });
 
         InserterIdentifier { id: new_id }
     }
@@ -144,99 +150,121 @@ impl BucketedStorageStorageInserterStore {
     }
 
     pub fn remove_inserter(&mut self, id: InserterIdentifier) -> Inserter {
-        let ret = self.inserters[id.id.index as usize];
+        let state = self.inserters[id.id.index as usize];
+
+        let ret = |storage_id_in, storage_id_out, max_hand_size| Inserter {
+            storage_id_in,
+            storage_id_out,
+            last_update_time: state.last_update_time,
+            max_hand_size,
+            state: state.state,
+        };
+
         self.inserters[id.id.index as usize] = PLACEHOLDER;
 
-        if let Some(pos) = self.waiting_for_item.iter().position(|ins| id.id == *ins) {
-            self.waiting_for_item.remove(pos);
+        if let Some(pos) = self
+            .waiting_for_item
+            .iter()
+            .position(|ins| id.id == ins.index)
+        {
+            let removed = self.waiting_for_item.remove(pos);
 
-            return ret;
+            return ret(
+                removed.storage_id_in,
+                removed.storage_id_out,
+                removed.max_hand_size,
+            );
         }
 
         if let Some(pos) = self
             .waiting_for_space_in_destination
             .iter()
-            .position(|ins| id.id == *ins)
+            .position(|ins| id.id == ins.index)
         {
-            self.waiting_for_space_in_destination.remove(pos);
+            let removed = self.waiting_for_space_in_destination.remove(pos);
 
-            return ret;
+            return ret(
+                removed.storage_id_in,
+                removed.storage_id_out,
+                removed.max_hand_size,
+            );
         }
 
         for full in &mut self.full_and_moving_out {
-            if let Some(pos) = full.iter().position(|ins| id.id == *ins) {
-                full.remove(pos);
+            if let Some(pos) = full.iter().position(|ins| id.id == ins.index) {
+                let removed = full.remove(pos);
 
-                return ret;
+                return ret(
+                    removed.storage_id_in,
+                    removed.storage_id_out,
+                    removed.max_hand_size,
+                );
             }
         }
 
         for empty in &mut self.empty_and_moving_back {
-            if let Some(pos) = empty.iter().position(|ins| id.id == *ins) {
-                empty.remove(pos);
+            if let Some(pos) = empty.iter().position(|ins| id.id == ins.index) {
+                let removed = empty.remove(pos);
 
-                return ret;
+                return ret(
+                    removed.storage_id_in,
+                    removed.storage_id_out,
+                    removed.max_hand_size,
+                );
             }
         }
 
         unreachable!()
     }
 
-    pub fn remove_inserters_with_connection(
-        &mut self,
-        conn: FakeUnionStorage,
-    ) -> impl Iterator<Item = (InserterIdentifier, Inserter)> {
+    pub fn remove_inserters_with_connection(&mut self, conn: FakeUnionStorage) {
         join!(
             || {
-                self.waiting_for_item.retain(|v| {
-                    self.inserters[v.index as usize].storage_id_in != conn
-                        && self.inserters[v.index as usize].storage_id_out != conn
-                });
+                self.waiting_for_item
+                    .retain(|v| v.storage_id_in != conn && v.storage_id_out != conn);
             },
             || {
-                self.waiting_for_space_in_destination.retain(|v| {
-                    self.inserters[v.index as usize].storage_id_in != conn
-                        && self.inserters[v.index as usize].storage_id_out != conn
-                });
+                self.waiting_for_space_in_destination
+                    .retain(|v| v.storage_id_in != conn && v.storage_id_out != conn);
             },
             || {
                 self.full_and_moving_out.par_iter_mut().for_each(|full| {
-                    full.retain(|v| {
-                        self.inserters[v.index as usize].storage_id_in != conn
-                            && self.inserters[v.index as usize].storage_id_out != conn
-                    });
+                    full.retain(|v| v.storage_id_in != conn && v.storage_id_out != conn);
                 });
             },
             || {
                 self.empty_and_moving_back.par_iter_mut().for_each(|empty| {
-                    empty.retain(|v| {
-                        self.inserters[v.index as usize].storage_id_in != conn
-                            && self.inserters[v.index as usize].storage_id_out != conn
-                    });
+                    empty.retain(|v| v.storage_id_in != conn && v.storage_id_out != conn);
                 });
             }
         );
 
-        let removed_list = self
-            .inserters
-            .iter_mut()
-            .enumerate()
-            .filter_map(move |(idx, ins)| {
-                if ins.storage_id_in == conn || ins.storage_id_out == conn {
-                    let ret = *ins;
-                    *ins = PLACEHOLDER;
-                    Some((
-                        InserterIdentifier {
-                            id: InserterId { index: idx as u32 },
-                        },
-                        ret,
-                    ))
-                } else {
-                    None
-                }
-            });
+        // let removed_list = self
+        //     .inserters
+        //     .iter_mut()
+        //     .enumerate()
+        //     .filter_map(move |(idx, ins)| {
+        //         if ins.storage_id_in == conn || ins.storage_id_out == conn {
+        //             let ret = *ins;
+        //             *ins = PLACEHOLDER;
+        //             Some((
+        //                 InserterIdentifier {
+        //                     id: InserterId { index: idx as u32 },
+        //                 },
+        //                 Inserter {
+        //                     storage_id_in: todo!(),
+        //                     storage_id_out: todo!(),
+        //                     last_update_time: ret.last_update_time,
+        //                     max_hand_size: ret.max_hand_size,
+        //                     state: ret.state,
+        //                 },
+        //             ))
+        //         } else {
+        //             None
+        //         }
+        //     });
 
-        removed_list
+        // removed_list
     }
 
     pub fn get_num_inserters(&self) -> usize {
@@ -244,33 +272,32 @@ impl BucketedStorageStorageInserterStore {
     }
 
     fn handle_waiting_for_item_ins(
-        inserter: &mut Inserter,
+        inserter: &mut InserterState,
+        bucket_data: &mut InserterBucketData,
+
         storages: SingleItemStorages,
         grid_size: usize,
         current_tick: u32,
         _movetime: u16,
     ) -> bool {
-        let storage_id = inserter.storage_id_in;
+        let storage_id = bucket_data.storage_id_in;
 
         let (_max_insert, old) = index_fake_union(storages, storage_id, grid_size);
 
-        let ImplicitState::WaitingForSourceItems(current_hand) = &mut inserter.state else {
-            unreachable!()
-        };
-
         let old_val = *old;
-        let max_hand_size = inserter.max_hand_size;
-        let current_hand_val = *current_hand;
+        let max_hand_size = bucket_data.max_hand_size;
+        let current_hand_val = bucket_data.current_hand;
 
         let to_extract = min(max_hand_size - current_hand_val, old_val);
 
         if to_extract > 0 {
             *old -= to_extract;
 
-            *current_hand += to_extract;
+            bucket_data.current_hand += to_extract;
+            inserter.state = ImplicitState::WaitingForSourceItems(bucket_data.current_hand);
         }
 
-        let extract = *current_hand == inserter.max_hand_size;
+        let extract = bucket_data.current_hand == max_hand_size;
 
         if extract {
             inserter.state = ImplicitState::FullAndMovingOut;
@@ -282,32 +309,31 @@ impl BucketedStorageStorageInserterStore {
     }
 
     fn handle_waiting_for_space_ins(
-        inserter: &mut Inserter,
+        inserter: &mut InserterState,
+        bucket_data: &mut InserterBucketData,
+
         storages: SingleItemStorages,
         grid_size: usize,
         current_tick: u32,
         _movetime: u16,
     ) -> bool {
-        let storage_id = inserter.storage_id_out;
+        let storage_id = bucket_data.storage_id_out;
 
         let (max_insert, old) = index_fake_union(storages, storage_id, grid_size);
-
-        let ImplicitState::WaitingForSpaceInDestination(current_hand) = &mut inserter.state else {
-            unreachable!()
-        };
 
         let old_val = *old;
         let max_insert = *max_insert;
 
-        let to_insert = min(*current_hand, max_insert - old_val);
+        let to_insert = min(bucket_data.current_hand, max_insert - old_val);
 
         if to_insert > 0 {
             *old += to_insert;
 
-            *current_hand -= to_insert;
+            bucket_data.current_hand -= to_insert;
+            inserter.state = ImplicitState::WaitingForSpaceInDestination(bucket_data.current_hand);
         }
 
-        let extract = *current_hand == 0;
+        let extract = bucket_data.current_hand == 0;
 
         if extract {
             inserter.state = ImplicitState::EmptyAndMovingBack;
@@ -430,7 +456,8 @@ impl BucketedStorageStorageInserterStore {
             );
             let now_moving = self.waiting_for_item.extract_if(start..end, |inserter| {
                 Self::handle_waiting_for_item_ins(
-                    &mut self.inserters[inserter.index as usize],
+                    &mut self.inserters[inserter.index.index as usize],
+                    inserter,
                     storages,
                     grid_size,
                     current_tick,
@@ -502,7 +529,8 @@ impl BucketedStorageStorageInserterStore {
                 self.waiting_for_space_in_destination
                     .extract_if(start..end, |inserter| {
                         Self::handle_waiting_for_space_ins(
-                            &mut self.inserters[inserter.index as usize],
+                            &mut self.inserters[inserter.index.index as usize],
+                            inserter,
                             storages,
                             grid_size,
                             current_tick,
@@ -521,11 +549,12 @@ impl BucketedStorageStorageInserterStore {
                 self.empty_and_moving_back[self.current_tick]
                     .drain(..)
                     .map(|ins| {
-                        self.inserters[ins.index as usize].state =
+                        self.inserters[ins.index.index as usize].state =
                             ImplicitState::WaitingForSourceItems(0);
                         // TODO: This is technically not needed
                         // Only use the lower 2 bytes
-                        self.inserters[ins.index as usize].last_update_time = current_tick as u16;
+                        self.inserters[ins.index.index as usize].last_update_time =
+                            current_tick as u16;
                         ins
                     }),
             );
@@ -552,13 +581,12 @@ impl BucketedStorageStorageInserterStore {
                 self.full_and_moving_out[self.current_tick]
                     .drain(..)
                     .map(|ins| {
-                        self.inserters[ins.index as usize].state =
-                            ImplicitState::WaitingForSpaceInDestination(
-                                self.inserters[ins.index as usize].max_hand_size,
-                            );
+                        self.inserters[ins.index.index as usize].state =
+                            ImplicitState::WaitingForSpaceInDestination(ins.max_hand_size);
                         // TODO: This is technically not needed
                         // Only use the lower 2 bytes
-                        self.inserters[ins.index as usize].last_update_time = current_tick as u16;
+                        self.inserters[ins.index.index as usize].last_update_time =
+                            current_tick as u16;
                         ins
                     }),
             );
@@ -618,9 +646,6 @@ impl BucketedStorageStorageInserterStore {
         }
 
         InserterStateInfo {
-            source: ins.storage_id_in,
-            dest: ins.storage_id_out,
-
             state: match ins.state {
                 ImplicitState::WaitingForSourceItems(count) => {
                     LargeInserterState::WaitingForSourceItems(count)
@@ -670,9 +695,48 @@ impl BucketedStorageStorageInserterStore {
         id: InserterIdentifier,
         new_src: FakeUnionStorage,
     ) -> InserterIdentifier {
-        self.inserters[id.id.index as usize].storage_id_in = new_src;
+        match self.inserters[id.id.index as usize].state {
+            ImplicitState::WaitingForSourceItems(_) => {
+                for ins in &mut self.waiting_for_item {
+                    if ins.index == id.id {
+                        ins.storage_id_in = new_src;
+                        return InserterIdentifier { id: id.id };
+                    }
+                }
+            },
+            ImplicitState::WaitingForSpaceInDestination(_) => {
+                for ins in &mut self.waiting_for_space_in_destination {
+                    if ins.index == id.id {
+                        ins.storage_id_in = new_src;
+                        return InserterIdentifier { id: id.id };
+                    }
+                }
+            },
+            ImplicitState::FullAndMovingOut => {
+                // TODO: use current tick to get the bucket to search
+                for bucket in &mut self.full_and_moving_out {
+                    for ins in bucket {
+                        if ins.index == id.id {
+                            ins.storage_id_in = new_src;
+                            return InserterIdentifier { id: id.id };
+                        }
+                    }
+                }
+            },
+            ImplicitState::EmptyAndMovingBack => {
+                // TODO: use current tick to get the bucket to search
+                for bucket in &mut self.empty_and_moving_back {
+                    for ins in bucket {
+                        if ins.index == id.id {
+                            ins.storage_id_in = new_src;
+                            return InserterIdentifier { id: id.id };
+                        }
+                    }
+                }
+            },
+        }
 
-        id
+        unreachable!()
     }
 
     #[profiling::function]
@@ -682,9 +746,48 @@ impl BucketedStorageStorageInserterStore {
         id: InserterIdentifier,
         new_dest: FakeUnionStorage,
     ) -> InserterIdentifier {
-        self.inserters[id.id.index as usize].storage_id_out = new_dest;
+        match self.inserters[id.id.index as usize].state {
+            ImplicitState::WaitingForSourceItems(_) => {
+                for ins in &mut self.waiting_for_item {
+                    if ins.index == id.id {
+                        ins.storage_id_out = new_dest;
+                        return InserterIdentifier { id: id.id };
+                    }
+                }
+            },
+            ImplicitState::WaitingForSpaceInDestination(_) => {
+                for ins in &mut self.waiting_for_space_in_destination {
+                    if ins.index == id.id {
+                        ins.storage_id_out = new_dest;
+                        return InserterIdentifier { id: id.id };
+                    }
+                }
+            },
+            ImplicitState::FullAndMovingOut => {
+                // TODO: use current tick to get the bucket to search
+                for bucket in &mut self.full_and_moving_out {
+                    for ins in bucket {
+                        if ins.index == id.id {
+                            ins.storage_id_out = new_dest;
+                            return InserterIdentifier { id: id.id };
+                        }
+                    }
+                }
+            },
+            ImplicitState::EmptyAndMovingBack => {
+                // TODO: use current tick to get the bucket to search
+                for bucket in &mut self.empty_and_moving_back {
+                    for ins in bucket {
+                        if ins.index == id.id {
+                            ins.storage_id_out = new_dest;
+                            return InserterIdentifier { id: id.id };
+                        }
+                    }
+                }
+            },
+        }
 
-        id
+        unreachable!()
     }
 }
 

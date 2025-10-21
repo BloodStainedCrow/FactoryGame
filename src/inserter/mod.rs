@@ -90,8 +90,6 @@ pub struct FakeUnionStorage {
 }
 
 pub struct InserterStateInfo {
-    pub source: FakeUnionStorage,
-    pub dest: FakeUnionStorage,
     pub state: LargeInserterState,
 }
 
