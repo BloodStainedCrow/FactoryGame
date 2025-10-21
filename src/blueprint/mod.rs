@@ -855,7 +855,7 @@ impl Blueprint {
                 BlueprintPlaceEntity::Assembler { pos, .. } => {
                     (1, 3, (BeltId::Pure(0), 0), *pos, 0)
                 },
-                BlueprintPlaceEntity::Inserter { pos, .. } => (1, 5, (BeltId::Pure(0), 0), *pos, 0),
+                BlueprintPlaceEntity::Inserter { pos, .. } => (1, 6, (BeltId::Pure(0), 0), *pos, 0),
                 BlueprintPlaceEntity::Belt {
                     pos,
                     copied_belt_info,
@@ -881,7 +881,7 @@ impl Blueprint {
                 BlueprintPlaceEntity::PowerPole { pos, .. } => {
                     (1, 0, (BeltId::Pure(0), 0), *pos, 0)
                 },
-                BlueprintPlaceEntity::Splitter { pos, .. } => (1, 4, (BeltId::Pure(0), 0), *pos, 0),
+                BlueprintPlaceEntity::Splitter { pos, .. } => (1, 5, (BeltId::Pure(0), 0), *pos, 0),
                 BlueprintPlaceEntity::Chest { pos, .. } => (1, 3, (BeltId::Pure(0), 0), *pos, 0),
                 BlueprintPlaceEntity::SolarPanel { pos, .. } => {
                     (1, 1, (BeltId::Pure(0), 0), *pos, 0)

@@ -16,7 +16,7 @@ use get_size::GetSize;
 
 use crate::frontend::world::tile::ModuleTy;
 
-pub const TICKS_PER_SCIENCE: TIMERTYPE = 10;
+pub const TICKS_PER_SCIENCE: TIMERTYPE = 60;
 
 // TODO: Add variable power consumption and speed
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]

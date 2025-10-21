@@ -206,7 +206,37 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        Self::new_with_gigabase(1, progress, data_store)
+        // TODO: Increase size to fit solar field
+        let mut ret = GameState::new_with_world_area(
+            Position { x: 0, y: 0 },
+            Position { x: 6000, y: 12000 },
+            data_store,
+        );
+        let file = File::open("test_blueprints/murphy/megabase_with_sushi_sorting.bp").unwrap();
+        let mut bp: Blueprint = ron::de::from_reader(file).unwrap();
+        bp.optimize();
+
+        let num_calls = bp.action_count();
+
+        let mut current = 0;
+
+        puffin::set_scopes_on(false);
+        bp.apply_at_positions(
+            iter::once(Position { x: 1600, y: 1600 }),
+            false,
+            &mut ret,
+            || {
+                progress.store(
+                    (current as f64 / num_calls as f64).to_bits(),
+                    Ordering::Relaxed,
+                );
+                current += 1;
+            },
+            data_store,
+        );
+        puffin::set_scopes_on(true);
+
+        ret
     }
 
     #[must_use]
@@ -233,7 +263,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let width_in_tiles = i32::from(width) * 4_000;
         let height_in_tiles = i32::from(full_height) * 10_000;
 
-        // TODO: Increase size to fit solar field
         // let mut ret = GameState::new_with_world_area(
         //     Position { x: 0, y: 0 },
         //     Position {
@@ -246,34 +275,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         // TODO: Calulated needed solar field size (and pos)
         // ret.add_solar_field(Position { x: 1590, y: 70000 }, Watt(3_000_000_000_000), progress.clone(), data_store);
 
-        // let file = File::open("test_blueprints/murphy/megabase_with_sushi_sorting.bp").unwrap();
-        // let mut bp: Blueprint = ron::de::from_reader(file).unwrap();
-        // bp.optimize();
-
         puffin::set_scopes_on(false);
-        let x_range = (0..width).map(|x| i32::from(x) * MEGABASE_WIDTH + 1_600);
-        let y_range = (0..full_height).map(|x| i32::from(x) * MEGABASE_HEIGHT + 1_600);
-
-        // let num_calls = bp.action_count();
-
-        // let mut current = 0;
-
-        // bp.apply_at_positions(
-        //     y_range
-        //         .cartesian_product(x_range)
-        //         .map(|(y, x)| Position { x, y })
-        //         .take(count as usize),
-        //     false,
-        //     &mut ret,
-        //     || {
-        //         progress.store(
-        //             (current as f64 / num_calls as f64).to_bits(),
-        //             Ordering::Relaxed,
-        //         );
-        //         current += 1;
-        //     },
-        //     data_store,
-        // );
+        let x_range = (0..width).map(|x| i32::from(x) * MEGABASE_WIDTH);
+        let y_range = (0..full_height).map(|x| i32::from(x) * MEGABASE_HEIGHT);
 
         error!("Loading Generation Info...");
         let file = {

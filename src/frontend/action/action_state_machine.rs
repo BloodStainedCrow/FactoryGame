@@ -81,6 +81,14 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     pub get_size_cache: std::collections::HashMap<String, RamUsage>,
 
     pub mouse_wheel_sensitivity: f32,
+
+    pub current_fork_save_in_progress: Option<ForkSaveInfo>,
+}
+
+#[derive(Debug)]
+pub struct ForkSaveInfo {
+    pub recv: interprocess::unnamed_pipe::Recver,
+    pub current_state: u8,
 }
 
 #[derive(Debug)]
@@ -189,6 +197,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             get_size_cache: HashMap::new(),
 
             mouse_wheel_sensitivity: 1.0,
+
+            current_fork_save_in_progress: None,
         }
     }
 

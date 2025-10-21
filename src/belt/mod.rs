@@ -3397,7 +3397,34 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         (kept_tile_id, self.get_len(kept_tile_id))
                     },
 
-                    [_, _] => todo!("This merge combination is not done yet"),
+                    [AnyBelt::Empty(empty_idx), AnyBelt::Smart(smart_id)] => {
+                        let new_id = self
+                            .inner
+                            .instantiate_empty_into_pure(smart_id.item, *empty_idx);
+                        self.any_belts[front as usize] = AnyBelt::Smart(new_id);
+
+                        self.merge_belts(front_tile_id, back_tile_id, data_store)
+                    },
+                    [AnyBelt::Smart(smart_id), AnyBelt::Empty(empty_idx)] => {
+                        let new_id = self
+                            .inner
+                            .instantiate_empty_into_pure(smart_id.item, *empty_idx);
+                        self.any_belts[back as usize] = AnyBelt::Smart(new_id);
+
+                        self.merge_belts(front_tile_id, back_tile_id, data_store)
+                    },
+                    [AnyBelt::Empty(empty_idx), AnyBelt::Sushi(sushi_idx)] => {
+                        let new_id = self.inner.instantiate_empty_into_sushi(*empty_idx);
+                        self.any_belts[front as usize] = AnyBelt::Sushi(new_id);
+
+                        self.merge_belts(front_tile_id, back_tile_id, data_store)
+                    },
+                    [AnyBelt::Sushi(_), AnyBelt::Empty(empty_idx)] => {
+                        let new_id = self.inner.instantiate_empty_into_sushi(*empty_idx);
+                        self.any_belts[back as usize] = AnyBelt::Sushi(new_id);
+
+                        self.merge_belts(front_tile_id, back_tile_id, data_store)
+                    },
                 }
             },
         };

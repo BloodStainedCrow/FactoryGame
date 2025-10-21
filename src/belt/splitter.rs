@@ -115,9 +115,8 @@ impl PureSplitter {
                     let old = *input;
                     *input = false;
                     if old {
-                        let original_index = (i + usize::from(should_switch_in)) % 2;
                         if let SplitterDistributionMode::Fair { next } = &mut self.in_mode {
-                            if Into::<usize>::into(*next) == original_index {
+                            if (Into::<usize>::into(*next) == i) != should_switch_in {
                                 *next = next.switch();
                             }
                         }
@@ -129,9 +128,8 @@ impl PureSplitter {
                     let old = **output;
                     **output = true;
                     if !old {
-                        let original_index = (i + usize::from(should_switch_in)) % 2;
                         if let SplitterDistributionMode::Fair { next } = &mut self.out_mode {
-                            if Into::<usize>::into(*next) == original_index {
+                            if (Into::<usize>::into(*next) == i) != should_switch_out {
                                 *next = next.switch();
                             }
                         }
@@ -284,66 +282,47 @@ impl<ItemIdxType: IdxTrait> SushiSplitter<ItemIdxType> {
         match num_items {
             0 => {},
             1 => {
-                let should_switch_in = match self.in_mode {
+                let index_with_prio_input: bool = match self.in_mode {
                     SplitterDistributionMode::Fair { next } => next.into(),
                     SplitterDistributionMode::Priority(splitter_side) => splitter_side.into(),
                 };
 
-                if should_switch_in {
-                    self.inputs.rotate_left(1);
-                }
-
-                let should_switch_out = match self.out_mode {
+                let index_with_prio_output: bool = match self.out_mode {
                     SplitterDistributionMode::Fair { next } => next.into(),
                     SplitterDistributionMode::Priority(splitter_side) => splitter_side.into(),
                 };
 
-                #[cfg(debug_assertions)]
-                let mut removed = false;
-
-                let items: [Item<ItemIdxType>; 1] = self
-                    .inputs
-                    .iter_mut()
-                    .enumerate()
-                    .flat_map(|(i, input)| {
-                        if input.get_mut().is_some() {
-                            let original_index = (i + usize::from(should_switch_in)) % 2;
-                            if let SplitterDistributionMode::Fair { next } = &mut self.in_mode {
-                                if Into::<usize>::into(*next) == original_index {
-                                    *next = next.switch();
-                                }
-                            }
-                            #[cfg(debug_assertions)]
-                            {
-                                assert!(!removed);
-                                removed = true;
-                            }
-                        }
-
-                        input.get_mut().take()
-                    })
-                    .take(1)
-                    .collect_array()
-                    .expect("We already checked that has to be at least one item");
-
-                let mut outputs = self.outputs.each_mut();
-
-                if should_switch_out {
-                    outputs.rotate_left(1);
-                }
-
-                for (i, output) in outputs.iter_mut().enumerate() {
-                    if output.get_mut().is_none() {
-                        // There is space here
-                        *output.get_mut() = Some(items[0]);
-                        let original_index = (i + usize::from(should_switch_out)) % 2;
-                        if let SplitterDistributionMode::Fair { next } = &mut self.out_mode {
-                            if Into::<usize>::into(*next) == original_index {
-                                *next = next.switch();
-                            }
-                        }
-                        break;
+                let item = if let Some(item) = self.inputs[usize::from(index_with_prio_input)]
+                    .get_mut()
+                    .take()
+                {
+                    if let SplitterDistributionMode::Fair { next } = &mut self.in_mode {
+                        *next = next.switch();
                     }
+                    item
+                } else {
+                    self.inputs[usize::from(!index_with_prio_input)]
+                        .get_mut()
+                        .take()
+                        .expect("We know there to be at least one item on the inputs")
+                };
+
+                if self.outputs[usize::from(index_with_prio_output)]
+                    .get_mut()
+                    .is_none()
+                {
+                    if let SplitterDistributionMode::Fair { next } = &mut self.out_mode {
+                        *next = next.switch();
+                    }
+                    *self.outputs[usize::from(index_with_prio_output)].get_mut() = Some(item);
+                } else {
+                    debug_assert!(
+                        self.outputs[usize::from(!index_with_prio_output)]
+                            .get_mut()
+                            .is_none(),
+                        "We know there to be at least one free spot on the outputs"
+                    );
+                    *self.outputs[usize::from(!index_with_prio_output)].get_mut() = Some(item);
                 }
             },
             2 => {

@@ -45,7 +45,8 @@ pub fn save_at<V: serde::Serialize + ?Sized>(value: &V, path: PathBuf) {
     let mut buf_writer = BufWriter::new(file);
     {
         profiling::scope!("Compressing and Writing to file");
-        bincode::serde::encode_into_std_write(value, &mut buf_writer, bincode::config::standard()).unwrap();
+        bincode::serde::encode_into_std_write(value, &mut buf_writer, bincode::config::standard())
+            .unwrap();
     }
     buf_writer.flush().unwrap();
 }
@@ -231,50 +232,62 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 },
         } = simulation_state;
 
-        send.write(&[0]);
+        send.write(&[0]).expect("Write to pipe failed");
+        // send.flush().expect("Flushing pipe failed");
         save_at_fork(checksum, temp_file_dir.join("checksum"));
-        send.write(&[1]);
+        send.write(&[1]).expect("Write to pipe failed");
+        // send.flush().expect("Flushing pipe failed");
         save_at_fork(
             tech_state,
             temp_file_dir.join("simulation_state.tech_state"),
         );
-        send.write(&[2]);
+        send.write(&[2]).expect("Write to pipe failed");
+        // send.flush().expect("Flushing pipe failed");
         save_at_fork(
             power_grids,
             temp_file_dir.join("simulation_state.factory.power_grids"),
         );
-        send.write(&[3]);
+        send.write(&[3]).expect("Write to pipe failed");
+        // send.flush().expect("Flushing pipe failed");
         save_at_fork(belts, temp_file_dir.join("simulation_state.factory.belts"));
-        send.write(&[4]);
+        send.write(&[4]).expect("Write to pipe failed");
+        // send.flush().expect("Flushing pipe failed");
         save_at_fork(
             storage_storage_inserters,
             temp_file_dir.join("simulation_state.factory.storage_storage_inserters"),
         );
-        send.write(&[5]);
+        send.write(&[5]).expect("Write to pipe failed");
+        // send.flush().expect("Flushing pipe failed");
         save_at_fork(
             belt_storage_inserters,
             temp_file_dir.join("simulation_state.factory.belt_storage_inserters"),
         );
-        send.write(&[6]);
+        send.write(&[6]).expect("Write to pipe failed");
+        // send.flush().expect("Flushing pipe failed");
         save_at_fork(
             chests,
             temp_file_dir.join("simulation_state.factory.chests"),
         );
-        send.write(&[7]);
+        send.write(&[7]).expect("Write to pipe failed");
+        // send.flush().expect("Flushing pipe failed");
         save_at_fork(
             fluid_store,
             temp_file_dir.join("simulation_state.factory.fluid_store"),
         );
-        send.write(&[8]);
+        send.write(&[8]).expect("Write to pipe failed");
+        // send.flush().expect("Flushing pipe failed");
         save_at_fork(
             item_times,
             temp_file_dir.join("simulation_state.factory.item_times"),
         );
-        send.write(&[9]);
+        send.write(&[9]).expect("Write to pipe failed");
+        // send.flush().expect("Flushing pipe failed");
         world.save_fork(temp_file_dir.join("world"));
-        send.write(&[10]);
+        send.write(&[10]).expect("Write to pipe failed");
+        // send.flush().expect("Flushing pipe failed");
         save_at_fork(aux_data, temp_file_dir.join("aux_data"));
-        send.write(&[11]);
+        send.write(&[11]).expect("Write to pipe failed");
+        // send.flush().expect("Flushing pipe failed");
     }
 
     // Remove old save if it exists

@@ -9,9 +9,12 @@ use crate::item::{Indexable, ITEMCOUNTTYPE};
 use crate::lab::{LabViewInfo, TICKS_PER_SCIENCE};
 use crate::liquid::FluidSystemState;
 use crate::par_generation::ParGenerateInfo;
+use interprocess::os::unix::unnamed_pipe::UnnamedPipeExt;
 use crate::rendering::Corner;
 use crate::saving::{save_components, save_with_fork};
+use crate::frontend::action::action_state_machine::ForkSaveInfo;
 use crate::statistics::{NUM_DIFFERENT_TIMESCALES, TIMESCALE_NAMES};
+use log::error;
 use crate::{
     TICKS_PER_SECOND_LOGIC,
     assembler::AssemblerOnclickInfo,
@@ -55,7 +58,7 @@ use petgraph::dot::Dot;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::cmp::max;
 use std::fs::File;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::sync::LazyLock;
 use std::{
     cmp::{Ordering, min},
@@ -1947,6 +1950,32 @@ pub fn render_ui<
         );
     });
 
+    if let Some(recv) = &mut state_machine_ref.current_fork_save_in_progress {
+        const NUM_STATES: u8 = 11;
+        
+        
+        let mut v = [0];
+        if let Err(e) = recv.recv.read_exact(&mut v) {
+            if e.kind() != std::io::ErrorKind::WouldBlock {
+                error!("Failed to read from unnamed pipe");
+                state_machine_ref.current_fork_save_in_progress = None;
+            }
+        } else {
+            if let Some(current_state) = v.last() {
+                recv.current_state = *current_state;
+                if recv.current_state == NUM_STATES {
+                    state_machine_ref.current_fork_save_in_progress = None;
+                }
+            }
+        }
+        if let Some(recv) = &state_machine_ref.current_fork_save_in_progress {
+            Window::new("Saving...").default_open(true).show(ctx, |ui| {
+                ui.add(ProgressBar::new(recv.current_state as f32 / NUM_STATES as f32).corner_radius(0.0));
+            });
+        }
+
+    }
+
     if state_machine_ref.escape_menu_open {
         if let Some(escape_action) = Modal::new("Pause Window".into())
             .show(ctx, |ui| {
@@ -1955,9 +1984,15 @@ pub fn render_ui<
                     save_components(&*world, &*simulation_state, &*aux_data, data_store_ref);
                 }
 
-                if ui.button("Save with fork").clicked() {
+                if ui.add_enabled(state_machine_ref.current_fork_save_in_progress.is_none(), Button::new("Save with fork")).clicked() {
                     let recv = save_with_fork(&*world, &*simulation_state, &*aux_data, data_store_ref);
-                    
+                    if let Some(recv) = recv {
+                        recv.set_nonblocking(true).expect("Could not set pipe to nonblocking!");
+                        state_machine_ref.current_fork_save_in_progress = Some(ForkSaveInfo {
+                            recv,
+                            current_state: 0,
+                        });
+                    }
                 }
                 if ui.button("Main Menu").clicked() {
                     return Some(EscapeMenuOptions::BackToMainMenu);
