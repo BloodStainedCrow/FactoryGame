@@ -95,6 +95,7 @@ impl MultiLabStore {
     pub fn join<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         mut self,
         other: Self,
+        other_grid_id: PowerGridIdentifier,
         new_grid_id: PowerGridIdentifier,
         _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
@@ -245,6 +246,7 @@ impl MultiLabStore {
                     index: (old_len + new_index_offs).try_into().unwrap(),
                     ty: other.types[old_index],
                 },
+                old_grid: other_grid_id,
                 new_grid: new_grid_id,
             });
 
@@ -455,7 +457,6 @@ impl MultiLabStore {
     }
 
     pub fn move_lab(&mut self, index: u32, other: &mut Self) -> u32 {
-        todo!();
         let index = index as usize;
         self.holes.push(index);
 
@@ -475,6 +476,16 @@ impl MultiLabStore {
             other.timer[hole_idx] = self.timer[index];
             other.types[hole_idx] = self.types[index];
 
+            other.base_power_consumption[hole_idx] = self.base_power_consumption[index];
+            other.base_speed[hole_idx] = self.base_speed[index];
+            other.raw_bonus_productivity[hole_idx] = self.raw_bonus_productivity[index];
+            other.raw_power_consumption_modifier[hole_idx] =
+                self.raw_power_consumption_modifier[index];
+            other.raw_speed_mod[hole_idx] = self.raw_speed_mod[index];
+            other.bonus_productivity[hole_idx] = self.bonus_productivity[index];
+            other.combined_speed_mod[hole_idx] = self.combined_speed_mod[index];
+            other.power_consumption_modifier[hole_idx] = self.power_consumption_modifier[index];
+
             hole_idx
         } else {
             other.positions.push(self.positions[index]);
@@ -490,6 +501,27 @@ impl MultiLabStore {
                 .for_each(|(v, value)| v.push(value));
             other.timer.push(self.timer[index]);
             other.types.push(self.types[index]);
+
+            other
+                .base_power_consumption
+                .push(self.base_power_consumption[index]);
+            other.base_speed.push(self.base_speed[index]);
+            other
+                .raw_bonus_productivity
+                .push(self.raw_bonus_productivity[index]);
+            other
+                .raw_power_consumption_modifier
+                .push(self.raw_power_consumption_modifier[index]);
+            other.raw_speed_mod.push(self.raw_speed_mod[index]);
+            other
+                .bonus_productivity
+                .push(self.bonus_productivity[index]);
+            other
+                .combined_speed_mod
+                .push(self.combined_speed_mod[index]);
+            other
+                .power_consumption_modifier
+                .push(self.power_consumption_modifier[index]);
 
             other.positions.len() - 1
         };

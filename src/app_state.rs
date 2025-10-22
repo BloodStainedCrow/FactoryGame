@@ -10,6 +10,7 @@ use crate::inserter::storage_storage_with_buckets_indirect::BucketedStorageStora
 use crate::inserter::storage_storage_with_buckets_indirect::InserterIdentifier;
 use crate::item::ITEMCOUNTTYPE;
 use crate::liquid::FluidConnectionDir;
+use crate::liquid::FluidSystemId;
 use crate::liquid::connection_logic::can_fluid_tanks_connect_to_single_connection;
 use crate::par_generation::BoundingBox;
 use crate::par_generation::ParGenerateInfo;
@@ -766,6 +767,48 @@ impl StorageStorageInserterStore {
                 FakeUnionStorage::from_storage_with_statics_at_zero(item, new_dest, data_store),
             )
     }
+
+    #[profiling::function]
+    pub fn update_inserter_src_if_equal<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        &mut self,
+        item: Item<ItemIdxType>,
+        movetime: u16,
+        id: InserterIdentifier,
+        old_src: FakeUnionStorage,
+        new_src: Storage<RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> InserterIdentifier {
+        self.inserters[item.into_usize()]
+            .get_mut(&movetime)
+            .unwrap()
+            .0
+            .update_inserter_src_if_equal(
+                id,
+                old_src,
+                FakeUnionStorage::from_storage_with_statics_at_zero(item, new_src, data_store),
+            )
+    }
+
+    #[profiling::function]
+    pub fn update_inserter_dest_if_equal<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        &mut self,
+        item: Item<ItemIdxType>,
+        movetime: u16,
+        id: InserterIdentifier,
+        old_dest: FakeUnionStorage,
+        new_dest: Storage<RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> InserterIdentifier {
+        self.inserters[item.into_usize()]
+            .get_mut(&movetime)
+            .unwrap()
+            .0
+            .update_inserter_dest_if_equal(
+                id,
+                old_dest,
+                FakeUnionStorage::from_storage_with_statics_at_zero(item, new_dest, data_store),
+            )
+    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -834,7 +877,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
         let mut storages_by_item: Box<[_]> = {
             profiling::scope!("Sort storages by item");
             let storages_by_item = full_to_by_item(&mut all_storages, &sizes);
-            Iterator::collect(storages_by_item.into_iter())
+            storages_by_item.collect()
         };
 
         self.belts.pre_pure_update(data_store);
@@ -1546,7 +1589,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
-                                                                    }.translate(game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), data_store);
+                                                                    }.translate(game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), data_store).unwrap();
                                                                     game_state.simulation_state.factory.belts.update_belt_storage_inserter_src(*id, *belt_pos, game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), new_storage, data_store);
                                                                 },
                                                                 AttachedInserter::BeltBelt { .. } => {
@@ -1560,7 +1603,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
-                                                                    }.translate(*item, data_store);
+                                                                    }.translate(*item, data_store).unwrap();
 
                                                                     let movetime = user_movetime.map(|v| v.into()).unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks);
 
@@ -1584,10 +1627,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
-                                                                    }.translate(game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), data_store);
+                                                                    }.translate(game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), data_store).unwrap();
                                                                     game_state.simulation_state.factory.belts.update_belt_storage_inserter_dest(*id, *belt_pos, game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), new_storage, data_store);
                                                                 },
-                                                                AttachedInserter::BeltBelt { item, inserter } => {
+                                                                AttachedInserter::BeltBelt { .. } => {
                                                                     unreachable!("A BeltBelt inserter should not be pointing at a machine")
                                                                 },
                                                                 AttachedInserter::StorageStorage { item, inserter } => {
@@ -1598,7 +1641,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
-                                                                    }.translate(*item, data_store);
+                                                                    }.translate(*item, data_store).unwrap();
                                                                     let movetime = user_movetime.map(|v| v.into()).unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks);
 
                                                                     let new_id = game_state.simulation_state.factory.storage_storage_inserters.update_inserter_dest(*item, movetime.into(), *inserter, new_storage, data_store);
@@ -1610,29 +1653,34 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                     },
                                                 },
                                                 Entity::FluidTank { ty, pos, rotation } => {
-                                                    todo!("I need to figure out what the old and new storage ids are to update them")
-                                                    // let id = game_state.simulation_state.factory.fluid_store.fluid_box_pos_to_network_id[pos];
-                                                    // if let Some(fluid) = id.fluid {
-                                                    //     let old_storage = FakeUnionStorage::from_storage_with_statics_at_zero(match storage_update.new_pg_entity {
-                                                    //         crate::power::power_grid::PowerGridEntity::Assembler { ty, recipe, index } => Storage::Assembler { grid: storage_update.old_grid, recipe_idx_with_this_item: recipe.id, index },
-                                                    //         crate::power::power_grid::PowerGridEntity::Lab { ty, index } => Storage::Lab { grid: storage_update.old_grid, index },
-                                                    //         crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
-                                                    //         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
-                                                    //         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
-                                                    //         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
-                                                    //     }.translate(fluid, data_store));
+                                                    let id: FluidSystemId<_> = game_state.simulation_state.factory.fluid_store.fluid_box_pos_to_network_id[pos];
+                                                    if let Some(fluid) = id.fluid {
+                                                        let storage = match storage_update.new_pg_entity {
+                                                            crate::power::power_grid::PowerGridEntity::Assembler { ty, recipe, index } => Storage::Assembler { grid: storage_update.old_grid, recipe_idx_with_this_item: recipe.id, index },
+                                                            crate::power::power_grid::PowerGridEntity::Lab { ty, index } => Storage::Lab { grid: storage_update.old_grid, index },
+                                                            crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
+                                                            crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
+                                                            crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
+                                                            crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
+                                                        };
+                                                        dbg!(storage);
+                                                        let Some(translated_storage) = storage.translate(fluid, data_store) else {
+                                                            return ControlFlow::Continue(());
+                                                        };
+                                                        dbg!(translated_storage);
+                                                        let old_storage = FakeUnionStorage::from_storage_with_statics_at_zero(fluid, translated_storage, data_store);
+                                                        dbg!(old_storage);
 
-
-                                                    //     let new_storage = match storage_update.new_pg_entity {
-                                                    //         crate::power::power_grid::PowerGridEntity::Assembler { ty, recipe, index } => Storage::Assembler { grid: storage_update.new_grid, recipe_idx_with_this_item: recipe.id, index },
-                                                    //         crate::power::power_grid::PowerGridEntity::Lab { ty, index } => Storage::Lab { grid: storage_update.new_grid, index },
-                                                    //         crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
-                                                    //         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
-                                                    //         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
-                                                    //         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
-                                                    //     }.translate(fluid, data_store);
-                                                    //     game_state.simulation_state.factory.fluid_store.update_fluid_conn_if_needed(*pos, old_storage, new_storage, &mut game_state.simulation_state.factory.storage_storage_inserters, data_store);
-                                                    // }
+                                                        let new_storage = match storage_update.new_pg_entity {
+                                                            crate::power::power_grid::PowerGridEntity::Assembler { ty, recipe, index } => Storage::Assembler { grid: storage_update.new_grid, recipe_idx_with_this_item: recipe.id, index },
+                                                            crate::power::power_grid::PowerGridEntity::Lab { ty, index } => Storage::Lab { grid: storage_update.new_grid, index },
+                                                            crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
+                                                            crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
+                                                            crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
+                                                            crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
+                                                        }.translate(fluid, data_store).unwrap();
+                                                        game_state.simulation_state.factory.fluid_store.update_fluid_conn_if_needed(*pos, old_storage, new_storage, &mut game_state.simulation_state.factory.storage_storage_inserters, data_store);
+                                                    }
                                                 },
 
                                                 _ => {},

@@ -1100,42 +1100,31 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         inserter_store: &mut StorageStorageInserterStore,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        todo!();
         for e in self.graph.weak_components_mut() {
-            // match e {
-            //     FluidSystemEntity::OutgoingPump { .. } => {},
-            //     FluidSystemEntity::IncomingPump { .. } => {},
-            //     FluidSystemEntity::Input { inserter_id } => {
-            //         if old_storage
-            //             == inserter_store
-            //                 .get_inserter(fluid, FLUID_INSERTER_MOVETIME, *inserter_id, todo!())
-            //                 .source
-            //         {
-            //             *inserter_id = inserter_store.update_inserter_src(
-            //                 fluid,
-            //                 FLUID_INSERTER_MOVETIME,
-            //                 *inserter_id,
-            //                 new_storage,
-            //                 data_store,
-            //             );
-            //         }
-            //     },
-            //     FluidSystemEntity::Output { inserter_id } => {
-            //         if old_storage
-            //             == inserter_store
-            //                 .get_inserter(fluid, FLUID_INSERTER_MOVETIME, *inserter_id, todo!())
-            //                 .dest
-            //         {
-            //             *inserter_id = inserter_store.update_inserter_dest(
-            //                 fluid,
-            //                 FLUID_INSERTER_MOVETIME,
-            //                 *inserter_id,
-            //                 new_storage,
-            //                 data_store,
-            //             );
-            //         }
-            //     },
-            // }
+            match e {
+                FluidSystemEntity::OutgoingPump { .. } => {},
+                FluidSystemEntity::IncomingPump { .. } => {},
+                FluidSystemEntity::Input { inserter_id } => {
+                    *inserter_id = inserter_store.update_inserter_src_if_equal(
+                        fluid,
+                        FLUID_INSERTER_MOVETIME,
+                        *inserter_id,
+                        old_storage,
+                        new_storage,
+                        data_store,
+                    );
+                },
+                FluidSystemEntity::Output { inserter_id } => {
+                    *inserter_id = inserter_store.update_inserter_dest_if_equal(
+                        fluid,
+                        FLUID_INSERTER_MOVETIME,
+                        *inserter_id,
+                        old_storage,
+                        new_storage,
+                        data_store,
+                    );
+                },
+            }
         }
     }
 

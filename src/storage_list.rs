@@ -134,7 +134,12 @@ pub fn index_fake_union<'a, 'b>(
 ) -> (&'a ITEMCOUNTTYPE, &'a mut ITEMCOUNTTYPE) {
     let (outer, inner) = storage_id.into_inner_and_outer_indices_with_statics_at_zero(grid_size);
 
-    let subslice = &mut slice[outer];
+    let len = slice.len();
+    let Some(subslice) = slice.get_mut(outer) else {
+        panic!(
+            "Out slice was out of bounds for storage_id {storage_id:?}. len was {len}, index was {outer}, grid_size was {grid_size}.",
+        );
+    };
     (&subslice.0[inner], &mut subslice.1[inner])
 }
 
@@ -153,9 +158,7 @@ pub fn sizes<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 pub fn full_to_by_item<'a, 'b, 'c, 'd>(
     storages: &'d mut FullStorages<'a, 'b>,
     sizes: &'c [usize],
-) -> impl Iterator<Item = SingleItemStorages<'a, 'b>>
-+ use<'a, 'b, 'c, 'd>
-+ IndexedParallelIterator<Item = SingleItemStorages<'a, 'b>>
+) -> impl IndexedParallelIterator<Item = SingleItemStorages<'a, 'b>> + use<'a, 'b, 'c, 'd>
 where
     'b: 'a,
     'd: 'a,

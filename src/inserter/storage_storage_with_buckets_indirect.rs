@@ -690,6 +690,126 @@ impl BucketedStorageStorageInserterStore {
 
     #[profiling::function]
     #[must_use]
+    pub fn update_inserter_src_if_equal(
+        &mut self,
+        id: InserterIdentifier,
+        old_src: FakeUnionStorage,
+        new_src: FakeUnionStorage,
+    ) -> InserterIdentifier {
+        match self.inserters[id.id.index as usize].state {
+            ImplicitState::WaitingForSourceItems(_) => {
+                for ins in &mut self.waiting_for_item {
+                    if ins.index == id.id {
+                        if ins.storage_id_in == old_src {
+                            ins.storage_id_in = new_src;
+                        }
+                        return InserterIdentifier { id: id.id };
+                    }
+                }
+            },
+            ImplicitState::WaitingForSpaceInDestination(_) => {
+                for ins in &mut self.waiting_for_space_in_destination {
+                    if ins.index == id.id {
+                        if ins.storage_id_in == old_src {
+                            ins.storage_id_in = new_src;
+                        }
+                        return InserterIdentifier { id: id.id };
+                    }
+                }
+            },
+            ImplicitState::FullAndMovingOut => {
+                // TODO: use current tick to get the bucket to search
+                for bucket in &mut self.full_and_moving_out {
+                    for ins in bucket {
+                        if ins.index == id.id {
+                            if ins.storage_id_in == old_src {
+                                ins.storage_id_in = new_src;
+                            }
+                            return InserterIdentifier { id: id.id };
+                        }
+                    }
+                }
+            },
+            ImplicitState::EmptyAndMovingBack => {
+                // TODO: use current tick to get the bucket to search
+                for bucket in &mut self.empty_and_moving_back {
+                    for ins in bucket {
+                        if ins.index == id.id {
+                            if ins.storage_id_in == old_src {
+                                ins.storage_id_in = new_src;
+                            }
+                            return InserterIdentifier { id: id.id };
+                        }
+                    }
+                }
+            },
+        }
+
+        unreachable!()
+    }
+
+    #[profiling::function]
+    #[must_use]
+    pub fn update_inserter_dest_if_equal(
+        &mut self,
+        id: InserterIdentifier,
+        old_dest: FakeUnionStorage,
+        new_dest: FakeUnionStorage,
+    ) -> InserterIdentifier {
+        match self.inserters[id.id.index as usize].state {
+            ImplicitState::WaitingForSourceItems(_) => {
+                for ins in &mut self.waiting_for_item {
+                    if ins.index == id.id {
+                        if ins.storage_id_out == old_dest {
+                            ins.storage_id_out = new_dest;
+                        }
+                        return InserterIdentifier { id: id.id };
+                    }
+                }
+            },
+            ImplicitState::WaitingForSpaceInDestination(_) => {
+                for ins in &mut self.waiting_for_space_in_destination {
+                    if ins.index == id.id {
+                        if ins.storage_id_out == old_dest {
+                            ins.storage_id_out = new_dest;
+                        }
+                        return InserterIdentifier { id: id.id };
+                    }
+                }
+            },
+            ImplicitState::FullAndMovingOut => {
+                // TODO: use current tick to get the bucket to search
+                for bucket in &mut self.full_and_moving_out {
+                    for ins in bucket {
+                        if ins.index == id.id {
+                            if ins.storage_id_out == old_dest {
+                                ins.storage_id_out = new_dest;
+                            }
+                            return InserterIdentifier { id: id.id };
+                        }
+                    }
+                }
+            },
+            ImplicitState::EmptyAndMovingBack => {
+                // TODO: use current tick to get the bucket to search
+                for bucket in &mut self.empty_and_moving_back {
+                    for ins in bucket {
+                        if ins.index == id.id {
+                            if ins.storage_id_out == old_dest {
+                                ins.storage_id_out = new_dest;
+                            }
+                            return InserterIdentifier { id: id.id };
+                        }
+                    }
+                }
+            },
+        }
+
+        unreachable!()
+    }
+
+    #[profiling::function]
+    #[must_use]
     pub fn update_inserter_src(
         &mut self,
         id: InserterIdentifier,

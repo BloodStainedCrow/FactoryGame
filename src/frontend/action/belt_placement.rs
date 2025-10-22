@@ -1854,13 +1854,13 @@ mod test {
     use proptest::{prop_assert, prop_assume, proptest};
 
     use crate::DATA_STORE;
+    use crate::app_state::GameState;
     use crate::blueprint::Blueprint;
     use crate::frontend::action::ActionType;
     use crate::frontend::action::set_recipe::SetRecipeInfo;
     use crate::frontend::world::Position;
     use crate::frontend::world::tile::{AssemblerInfo, Dir, Entity, InserterInfo, PlaceEntityType};
     use crate::item::Recipe;
-    use crate::rendering::app_state::GameState;
 
     fn chest_onto_belt() -> impl Strategy<Value = Vec<ActionType<u8, u8>>> {
         Just(vec![
@@ -1877,6 +1877,8 @@ mod test {
                 pos: Position { x: 2, y: 2 },
                 dir: crate::frontend::world::tile::Dir::North,
                 filter: None,
+                ty: 0,
+                user_movetime: None,
             }),
             place(PlaceEntityType::Belt {
                 pos: Position { x: 2, y: 1 },
@@ -1933,6 +1935,7 @@ mod test {
     fn place(ty: PlaceEntityType<u8>) -> ActionType<u8, u8> {
         ActionType::PlaceEntity(crate::frontend::action::place_entity::PlaceEntityInfo {
             entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(ty),
+            force: false,
         })
     }
 
@@ -1944,7 +1947,7 @@ mod test {
 
             let bp = Blueprint { actions };
 
-            bp.apply(Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
+            bp.apply(false, Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
 
             let ent = state.world.get_entity_at(Position { x: 1600, y: 1603 }, &DATA_STORE).unwrap();
 
@@ -1969,7 +1972,7 @@ mod test {
 
             let bp = Blueprint { actions };
 
-            bp.apply(Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
+            bp.apply(false, Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
 
             let ent = state.world.get_entity_at(Position { x: 1600, y: 1603 }, &DATA_STORE).unwrap();
 
@@ -1994,7 +1997,7 @@ mod test {
 
             let bp = Blueprint { actions };
 
-            bp.apply(Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
+            bp.apply(false, Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
         }
 
         #[test]
@@ -2003,7 +2006,7 @@ mod test {
 
             let bp = Blueprint { actions };
 
-            bp.apply(Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
+            bp.apply(false, Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
         }
 
         #[test]
@@ -2012,7 +2015,7 @@ mod test {
 
             let bp = Blueprint { actions };
 
-            bp.apply(Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
+            bp.apply(false, Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
 
             let assembler = state.world.get_entity_at(Position { x: 1600, y: 1603 }, &DATA_STORE).unwrap();
 
@@ -2047,7 +2050,7 @@ mod test {
 
             let bp = Blueprint { actions };
 
-            bp.apply(Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
+            bp.apply(false, Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
 
             let ent = state.world.get_entity_at(Position { x: 1600, y: 1603 }, &DATA_STORE).unwrap();
 

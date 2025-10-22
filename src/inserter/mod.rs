@@ -146,7 +146,8 @@ impl FakeUnionStorage {
         )
     }
 
-    pub fn from_storage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    // Only used for testing
+    fn from_storage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         item: Item<ItemIdxType>,
         storage: Storage<RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -251,23 +252,23 @@ impl<RecipeIdxType: IdxTrait> Storage<RecipeIdxType> {
         self,
         item: Item<ItemIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Self {
+    ) -> Option<Self> {
         match self {
             Storage::Assembler {
                 grid,
                 recipe_idx_with_this_item,
                 index,
-            } => Storage::Assembler {
+            } => Some(Storage::Assembler {
                 grid,
-                recipe_idx_with_this_item: data_store.recipe_to_translated_index[&(
+                recipe_idx_with_this_item: *data_store.recipe_to_translated_index.get(&(
                     Recipe {
                         id: recipe_idx_with_this_item,
                     },
                     item,
-                )],
+                ))?,
                 index,
-            },
-            storage => storage,
+            }),
+            storage => Some(storage),
         }
     }
 

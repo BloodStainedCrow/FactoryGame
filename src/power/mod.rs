@@ -494,14 +494,91 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                 pole_updates.push(*pole);
             }
 
+            let storages_to_move_into_that_grid: Vec<_> =
+                storages_to_move_into_that_grid.into_iter().collect();
+
+            for (_, old_storage, new_storage) in &storages_to_move_into_that_grid {
+                let old_beacon_entity = match old_storage {
+                    PowerGridEntity::Assembler { ty, recipe, index } => {
+                        BeaconAffectedEntity::Assembler {
+                            id: AssemblerID {
+                                recipe: *recipe,
+                                grid: old_id,
+                                assembler_index: *index,
+                            },
+                        }
+                    },
+                    PowerGridEntity::Lab { ty, index } => BeaconAffectedEntity::Lab {
+                        grid: old_id,
+                        index: *index,
+                    },
+                    PowerGridEntity::LazyPowerProducer { item, index } => continue,
+                    PowerGridEntity::SolarPanel { ty } => continue,
+                    PowerGridEntity::Accumulator { ty } => continue,
+                    PowerGridEntity::Beacon { ty, module_effects } => continue,
+                };
+
+                let new_beacon_entity = match new_storage {
+                    PowerGridEntity::Assembler { ty, recipe, index } => {
+                        BeaconAffectedEntity::Assembler {
+                            id: AssemblerID {
+                                recipe: *recipe,
+                                grid: new_id,
+                                assembler_index: *index,
+                            },
+                        }
+                    },
+                    PowerGridEntity::Lab { ty, index } => BeaconAffectedEntity::Lab {
+                        grid: new_id,
+                        index: *index,
+                    },
+                    PowerGridEntity::LazyPowerProducer { item, index } => continue,
+                    PowerGridEntity::SolarPanel { ty } => continue,
+                    PowerGridEntity::Accumulator { ty } => continue,
+                    PowerGridEntity::Beacon { ty, module_effects } => continue,
+                };
+
+                for pg in &mut self.power_grids.iter_mut().filter(|pg| !pg.is_placeholder) {
+                    let removed = pg.beacon_affected_entities.remove(&old_beacon_entity);
+
+                    if let Some(beacon_effect) = removed {
+                        let old_val = pg
+                            .beacon_affected_entities
+                            .insert(new_beacon_entity, beacon_effect);
+                        assert!(old_val.is_none());
+                    }
+                }
+            }
+
             index_updates.extend(storages_to_move_into_that_grid.into_iter().map(
                 |(position, old_storage, new_storage)| IndexUpdateInfo {
                     position,
+                    old_grid: old_id,
                     new_grid: new_id,
                     old_pg_entity: old_storage,
                     new_pg_entity: new_storage,
                 },
             ));
+        }
+
+        // #[cfg(debug_assertions)]
+        {
+            let found_hole = self
+                .power_grids
+                .iter()
+                .filter(|grid| !grid.is_placeholder)
+                .flat_map(|grid| grid.beacon_affected_entities.keys())
+                .find(|affected_entity| match affected_entity {
+                    BeaconAffectedEntity::Assembler { id } => {
+                        self.power_grids[id.grid as usize].is_assembler_id_a_hole(*id, data_store)
+                    },
+                    BeaconAffectedEntity::Lab { grid, index } => {
+                        // TODO: Check that this is not a lab hole
+                        false
+                    },
+                });
+
+            assert_eq!(found_hole, None);
         }
 
         (
@@ -554,6 +631,26 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                         })
                 });
             assert!(affected_grids_and_potential_match);
+        }
+
+        // #[cfg(debug_assertions)]
+        {
+            let found_hole = self
+                .power_grids
+                .iter()
+                .filter(|grid| !grid.is_placeholder)
+                .flat_map(|grid| grid.beacon_affected_entities.keys())
+                .find(|affected_entity| match affected_entity {
+                    BeaconAffectedEntity::Assembler { id } => {
+                        self.power_grids[id.grid as usize].is_assembler_id_a_hole(*id, data_store)
+                    },
+                    BeaconAffectedEntity::Lab { grid, index } => {
+                        // TODO: Check that this is not a lab hole
+                        false
+                    },
+                });
+
+            assert_eq!(found_hole, None);
         }
 
         if kept_id == removed_id {
@@ -772,7 +869,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
 
                                     let new_id = updates
                                         .get(&(Some(old_recipe), old_index))
-                                        .expect("Could not find update for assembler");
+                                        .expect(&format!(
+                                            "Could not find update for assembler {id:?}.",
+                                        ));
 
                                     let PowerGridEntity::Assembler {
                                         ty: _,

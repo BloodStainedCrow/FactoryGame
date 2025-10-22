@@ -41,8 +41,7 @@ impl<'a, T, C: Iterator<Item = usize>> Iterator for SplitArbitraryMut<'a, T, C> 
 pub fn split_arbitrary_mut_slice<'a, 'b, T: Send>(
     slice: &'a mut [T],
     sizes: &'b [usize],
-) -> impl Iterator<Item = &'a mut [T]> + use<'a, 'b, T> + IndexedParallelIterator<Item = &'a mut [T]>
-{
+) -> impl IndexedParallelIterator<Item = &'a mut [T]> + use<'a, 'b, T> {
     SplitArbitraryMutSlice { slice, sizes }
 }
 

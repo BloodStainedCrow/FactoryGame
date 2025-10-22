@@ -2674,8 +2674,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     },
                 };
 
-                let dest_storage =
-                    dest_storage_untranslated.translate(determined_filter, data_store);
+                let dest_storage = dest_storage_untranslated
+                    .translate(determined_filter, data_store)
+                    .unwrap();
 
                 match simulation_state.factory.belts.add_belt_storage_inserter(
                     determined_filter,
@@ -2757,8 +2758,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     vec![dest_belt_id],
                 );
 
-                let start_storage =
-                    start_storage_untranslated.translate(determined_filter, data_store);
+                let start_storage = start_storage_untranslated
+                    .translate(determined_filter, data_store)
+                    .unwrap();
 
                 match simulation_state.factory.belts.add_storage_belt_inserter(
                     determined_filter,
@@ -2872,10 +2874,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     },
                 };
 
-                let start_storage =
-                    start_storage_untranslated.translate(determined_filter, data_store);
-                let dest_storage =
-                    dest_storage_untranslated.translate(determined_filter, data_store);
+                let start_storage = start_storage_untranslated
+                    .translate(determined_filter, data_store)
+                    .unwrap();
+                let dest_storage = dest_storage_untranslated
+                    .translate(determined_filter, data_store)
+                    .unwrap();
 
                 let index = simulation_state.factory.storage_storage_inserters.add_ins(
                     determined_filter,
@@ -4136,6 +4140,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                         },
                                         (Entity::Beacon { .. }, PowerGridEntity::Beacon { .. }) => {
                                             // Do nothing. The beacon only stores the pole_position, which has not changed
+                                        },
+                                        (
+                                            Entity::SolarPanel { .. },
+                                            PowerGridEntity::SolarPanel { .. },
+                                        ) => {
+                                            // Do nothing. The solar_panel does not store anything
+                                        },
+                                        (
+                                            Entity::Lab {
+                                                pole_position: Some((_, _, index)),
+                                                ..
+                                            },
+                                            PowerGridEntity::Lab {
+                                                index: new_index, ..
+                                            },
+                                        ) => {
+                                            *index = new_index;
                                         },
                                         (entity, power_grid_entity) => {
                                             unreachable!(

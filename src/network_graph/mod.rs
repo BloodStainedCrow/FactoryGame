@@ -1,15 +1,16 @@
-use std::{cmp::max, fmt::Debug, iter::once, usize};
+use std::{cmp::max, collections::HashMap, fmt::Debug, iter::once, usize};
 
-use crate::get_size::BiMap;
+use crate::get_size::{BiMap, Graph};
 use log::info;
 use petgraph::{
     Undirected,
     csr::DefaultIx,
     graph::{Edge, Node},
+    stable_graph::{StableGraphEdge, StableGraphNode},
     visit::{EdgeRef, IntoNodeReferences},
 };
 
-use crate::get_size::Graph;
+use crate::get_size::StableGraph;
 
 use std::hash::Hash;
 
@@ -23,7 +24,7 @@ use get_size2::GetSize;
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Network<NodeKey: Eq + Hash + Ord, S, W> {
     // We use stableUnGraph here to allow remove_node to not invalidate any other indices
-    graph: Graph<NetworkNode<S, W>, (), Undirected, DefaultIx>,
+    graph: StableGraph<NetworkNode<S, W>, (), Undirected, DefaultIx>,
     key_map: BiMap<NodeKey, crate::get_size::NodeIndex>,
 }
 
@@ -42,7 +43,7 @@ pub struct WeakIndex {
 
 impl<NodeKey: Eq + Ord + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
     pub fn trusted_new_empty() -> Self {
-        let mut graph = Graph::default();
+        let graph: StableGraph<NetworkNode<S, W>, (), Undirected> = Default::default();
 
         Self {
             graph,
@@ -51,7 +52,7 @@ impl<NodeKey: Eq + Ord + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
     }
 
     pub fn new(first_node: S, key: NodeKey) -> Self {
-        let mut graph = Graph::default();
+        let mut graph: StableGraph<NetworkNode<S, W>, (), Undirected> = Default::default();
 
         let index = graph.add_node(NetworkNode {
             node_info: first_node,
@@ -204,24 +205,25 @@ impl<NodeKey: Eq + Ord + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
         >,
     ) {
         let removed_index = **self.key_map.get_by_left(&key).unwrap();
-        let last_index = self.graph.node_references().last().unwrap().0;
+        // This is needed when using Graph over StableGraph. (Since that uses swap_remove.)
+        // let last_index = self.graph.node_references().last().unwrap().0;
 
-        if last_index == removed_index {
-            // No invalidation!
-        } else {
-            let (invalidated, _) = self
-                .key_map
-                .remove_by_right(&NodeIndex {
-                    node_index: last_index,
-                })
-                .unwrap();
-            self.key_map.insert(
-                invalidated,
-                NodeIndex {
-                    node_index: removed_index,
-                },
-            );
-        }
+        // if last_index == removed_index {
+        //     // No invalidation!
+        // } else {
+        //     let (invalidated, _) = self
+        //         .key_map
+        //         .remove_by_right(&NodeIndex {
+        //             node_index: last_index,
+        //         })
+        //         .unwrap();
+        //     self.key_map.insert(
+        //         invalidated,
+        //         NodeIndex {
+        //             node_index: removed_index,
+        //         },
+        //     );
+        // }
 
         let NetworkNode {
             node_info,
@@ -276,12 +278,12 @@ impl<NodeKey: Eq + Ord + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
                     .map(|edge| (edge.source(), edge.target()))
                     .collect();
 
-                let mut new_graph = Graph::default();
+                let mut new_graph = StableGraph::default();
 
                 let new_indices: Vec<_> = component
                     .iter()
                     .map(|idx: &petgraph::prelude::NodeIndex| {
-                        todo!("Graph removal shifts indices!");
+                        // todo!("Graph removal shifts indices!");
                         new_graph.add_node(self.graph.remove_node(*idx).unwrap())
                     })
                     .collect();
@@ -388,12 +390,12 @@ impl<NodeKey: Eq + Ord + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
                     .map(|edge| (edge.source(), edge.target()))
                     .collect();
 
-                let mut new_graph = Graph::default();
+                let mut new_graph = StableGraph::default();
 
                 let new_indices: Vec<_> = component
                     .iter()
                     .map(|idx: &petgraph::prelude::NodeIndex| {
-                        todo!("Graph removal shifts indices!");
+                        // todo!("Graph removal shifts indices!");
                         new_graph.add_node(self.graph.remove_node(*idx).unwrap())
                     })
                     .collect();
@@ -539,15 +541,108 @@ impl<NodeKey: Eq + Ord + Hash + Clone + Debug, S, W> Network<NodeKey, S, W> {
 
 #[profiling::function]
 fn join_graphs<NodeKey: Eq + Ord + Hash + Clone + Debug, T: Debug, S>(
+    first: &mut StableGraph<T, S, Undirected>,
+    first_map: &mut BiMap<NodeKey, NodeIndex>,
+    second: StableGraph<T, S, Undirected>,
+    mut second_map: BiMap<NodeKey, NodeIndex>,
+) {
+    #[cfg(debug_assertions)]
+    let first_components = petgraph::algo::kosaraju_scc(&**first).len();
+    #[cfg(debug_assertions)]
+    let second_components = petgraph::algo::kosaraju_scc(&*second).len();
+
+    #[cfg(debug_assertions)]
+    let first_max_edge_count = first
+        .node_references()
+        .map(|n| first.edges(n.0).count())
+        .max();
+
+    #[cfg(debug_assertions)]
+    let second_max_edge_count = second
+        .node_references()
+        .map(|n| second.edges(n.0).count())
+        .max();
+
+    // Do the merging
+
+    let (nodes, edges) = second.graph.into_nodes_edges_iters();
+
+    // TODO: Can I both avoid a hashmap AND index shifts?
+    let old_to_new_map = HashMap::<_, _>::from_iter(nodes.map(
+        |StableGraphNode {
+             index: old_idx,
+             weight,
+         }| {
+            let new_idx = first.add_node(weight);
+
+            first_map
+                .insert_no_overwrite(
+                    second_map
+                        .remove_by_right(&NodeIndex {
+                            node_index: old_idx,
+                        })
+                        .expect("Missing value in map")
+                        .0,
+                    NodeIndex {
+                        node_index: new_idx,
+                    },
+                )
+                .unwrap();
+
+            (old_idx, new_idx)
+        },
+    ));
+
+    for StableGraphEdge {
+        index: _,
+        source: old_source,
+        target: old_dest,
+        weight,
+    } in edges
+    {
+        first.add_edge(
+            old_to_new_map[&old_source],
+            old_to_new_map[&old_dest],
+            weight,
+        );
+    }
+
+    #[cfg(debug_assertions)]
+    {
+        let final_components = petgraph::algo::kosaraju_scc(&**first).len();
+        assert_eq!(final_components, first_components + second_components);
+    }
+
+    // first_map.extend(
+    //     old_node_indices
+    //         .iter()
+    //         .zip(new_node_indices)
+    //         .map(|(old, new)| (second_map.remove_by_right(old).unwrap().0, new)),
+    // );
+
+    #[cfg(debug_assertions)]
+    {
+        assert_eq!(
+            first
+                .node_references()
+                .map(|n| first.edges(n.0).count())
+                .max(),
+            max(first_max_edge_count, second_max_edge_count)
+        );
+    }
+}
+
+#[profiling::function]
+fn join_graphs_with_packed_graph<NodeKey: Eq + Ord + Hash + Clone + Debug, T: Debug, S>(
     first: &mut Graph<T, S, Undirected>,
     first_map: &mut BiMap<NodeKey, NodeIndex>,
     second: Graph<T, S, Undirected>,
     mut second_map: BiMap<NodeKey, NodeIndex>,
 ) {
     // #[cfg(debug_assertions)]
-    // let first_components = petgraph::algo::tarjan_scc(&**first).len();
+    // let first_components = petgraph::algo::kosaraju_scc(&**first).len();
     // #[cfg(debug_assertions)]
-    // let second_components = petgraph::algo::tarjan_scc(&*second).len();
+    // let second_components = petgraph::algo::kosaraju_scc(&*second).len();
 
     #[cfg(debug_assertions)]
     let first_max_edge_count = first
@@ -604,7 +699,7 @@ fn join_graphs<NodeKey: Eq + Ord + Hash + Clone + Debug, T: Debug, S>(
 
     // #[cfg(debug_assertions)]
     // {
-    //     let final_components = petgraph::algo::tarjan_scc(&**first).len();
+    //     let final_components = petgraph::algo::kosaraju_scc(&**first).len();
     //     assert_eq!(final_components, first_components + second_components);
     // }
 

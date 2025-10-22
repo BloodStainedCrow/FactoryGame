@@ -507,6 +507,10 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         self.recipe
     }
 
+    fn is_hole(&self, index: u32) -> bool {
+        self.holes.contains(&(index as usize)) && (index as usize) < self.len
+    }
+
     fn get_info<ItemIdxType: IdxTrait>(
         &self,
         index: u32,
@@ -575,6 +579,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
     fn join<ItemIdxType: IdxTrait>(
         mut self,
         mut other: Self,
+        other_grid_id: PowerGridIdentifier,
         new_grid_id: PowerGridIdentifier,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
@@ -872,6 +877,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                         index: (old_len_stored + new_index_offs).try_into().unwrap(),
                     },
                     new_grid: new_grid_id,
+                    old_grid: other_grid_id,
                 }
             });
 

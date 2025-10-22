@@ -5,7 +5,7 @@ use std::{
     iter,
 };
 
-use crate::Position;
+use crate::{Position, item::Indexable};
 #[cfg(feature = "client")]
 use eframe::egui::Color32;
 use itertools::Itertools;
@@ -1139,7 +1139,7 @@ impl RawDataStore {
 
         let recipe_timers: Box<[u16]> = self.recipes.iter().map(|r| r.time_to_craft).collect();
 
-        let recipe_to_items = self
+        let recipe_to_items: Vec<Vec<(ItemRecipeDir, Item<ItemIdxType>)>> = self
             .recipes
             .iter()
             .map(|r| {
@@ -1356,6 +1356,53 @@ impl RawDataStore {
                 );
             }
         }
+
+        let recipe_to_translated_index = (0..self.recipes.len())
+            .cartesian_product(
+                self.items
+                    .iter()
+                    .enumerate()
+                    .map(|(item_id, item_name)| (item_id, &item_name.name)),
+            )
+            .filter_map(|(recipe_id, (item_id, item_name))| {
+                let recipe_uses_this_item = recipe_to_items[recipe_id]
+                    .iter()
+                    .any(|(_, item)| item.into_usize() == item_id);
+
+                if recipe_uses_this_item {
+                    Some((
+                        (
+                            Recipe {
+                                id: recipe_id.try_into().unwrap(),
+                            },
+                            Item {
+                                id: item_id.try_into().unwrap(),
+                            },
+                        ),
+                        self.recipes
+                            .iter()
+                            .take(recipe_id)
+                            .filter(|recipe| {
+                                recipe
+                                    .ings
+                                    .iter()
+                                    .map(|stack| &stack.item)
+                                    .any(|item| item == item_name)
+                                    | recipe
+                                        .output
+                                        .iter()
+                                        .map(|stack| &stack.item)
+                                        .any(|item| item == item_name)
+                            })
+                            .count()
+                            .try_into()
+                            .unwrap(),
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect();
 
         DataStore {
             checksum,
@@ -1614,44 +1661,7 @@ impl RawDataStore {
                 .collect(),
             chest_names: self.chests.iter().map(|chest| chest.name.clone()).collect(),
 
-            recipe_to_translated_index: (0..self.recipes.len())
-                .cartesian_product(
-                    self.items
-                        .iter()
-                        .enumerate()
-                        .map(|(item_id, item_name)| (item_id, &item_name.name)),
-                )
-                .map(|(recipe_id, (item_id, item_name))| {
-                    (
-                        (
-                            Recipe {
-                                id: recipe_id.try_into().unwrap(),
-                            },
-                            Item {
-                                id: item_id.try_into().unwrap(),
-                            },
-                        ),
-                        self.recipes
-                            .iter()
-                            .take(recipe_id)
-                            .filter(|recipe| {
-                                recipe
-                                    .ings
-                                    .iter()
-                                    .map(|stack| &stack.item)
-                                    .any(|item| item == item_name)
-                                    | recipe
-                                        .output
-                                        .iter()
-                                        .map(|stack| &stack.item)
-                                        .any(|item| item == item_name)
-                            })
-                            .count()
-                            .try_into()
-                            .unwrap(),
-                    )
-                })
-                .collect(),
+            recipe_to_translated_index,
 
             #[cfg(feature = "client")]
             item_to_colour: self

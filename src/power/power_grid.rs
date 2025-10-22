@@ -167,6 +167,7 @@ pub struct IndexUpdateInfo<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrai
     pub position: Position,
     pub old_pg_entity: PowerGridEntity<ItemIdxType, RecipeIdxType>,
     pub new_pg_entity: PowerGridEntity<ItemIdxType, RecipeIdxType>,
+    pub old_grid: PowerGridIdentifier,
     pub new_grid: PowerGridIdentifier,
     // IMPORTANTLY the WeakIdx always stays the same, since it is just a measure of how many machine are connected to a single pole,
     // and we only move poles over to new networks so that stays
@@ -328,7 +329,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         other: Self,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
         self_grid: PowerGridIdentifier,
-        _other_grid: PowerGridIdentifier,
+        other_grid: PowerGridIdentifier,
         new_pole_pos: Position,
         new_pole_connections: impl IntoIterator<Item = Position>,
     ) -> (
@@ -338,11 +339,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         assert!(!self.is_placeholder);
         assert!(!other.is_placeholder);
 
-        let (new_stores, assembler_updates) = self.stores.join(other.stores, self_grid, data_store);
+        let (new_stores, assembler_updates) =
+            self.stores
+                .join(other.stores, other_grid, self_grid, data_store);
 
-        let (new_labs, lab_updates) = self
-            .lab_stores
-            .join(other.lab_stores, self_grid, data_store);
+        let (new_labs, lab_updates) =
+            self.lab_stores
+                .join(other.lab_stores, other_grid, self_grid, data_store);
 
         let mut new_grid_graph = self.grid_graph;
         let mut new_pole_connections = new_pole_connections.into_iter();
@@ -498,6 +501,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> AssemblerOnclickInfo<ItemIdxType> {
         self.stores.get_info(assembler_id, data_store)
+    }
+
+    pub(super) fn is_assembler_id_a_hole(
+        &self,
+        assembler_id: AssemblerID<RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> bool {
+        self.stores.is_hole(assembler_id, data_store)
     }
 
     pub fn add_solar_panel(

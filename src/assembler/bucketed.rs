@@ -9,7 +9,7 @@ use crate::data::{DataStore, ItemRecipeDir};
 use crate::frontend::world::Position;
 use crate::item::{ITEMCOUNTTYPE, IdxTrait, Indexable, Recipe};
 use crate::power::Watt;
-use crate::power::power_grid::{IndexUpdateInfo, MAX_POWER_MULT};
+use crate::power::power_grid::{IndexUpdateInfo, MAX_POWER_MULT, PowerGridIdentifier};
 
 use crate::assembler::arrays;
 
@@ -342,6 +342,10 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         self.recipe
     }
 
+    fn is_hole(&self, index: u32) -> bool {
+        self.holes.contains(&(index as usize))
+    }
+
     /// This will not get the correct info (since it is only updated lazily)
     /// Instead use get_info_batched
     fn get_info<ItemIdxType: IdxTrait>(
@@ -411,6 +415,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
     fn join<ItemIdxType: IdxTrait>(
         self,
         other: Self,
+        other_grid_id: PowerGridIdentifier,
         new_grid_id: crate::power::power_grid::PowerGridIdentifier,
         _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
@@ -499,6 +504,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                     index: (self_len + i as u32),
                 },
                 new_grid: new_grid_id,
+                old_grid: other_grid_id,
             });
 
         (new, updates)

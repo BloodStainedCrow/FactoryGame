@@ -174,6 +174,7 @@ impl<
     pub fn join<ItemIdxType: IdxTrait>(
         self,
         other: Self,
+        other_grid_id: PowerGridIdentifier,
         new_grid_id: PowerGridIdentifier,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
@@ -186,7 +187,7 @@ impl<
             .into_vec()
             .into_iter()
             .zip(other.assemblers_0_1.into_vec())
-            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .map(|(a, b)| a.join(b, other_grid_id, new_grid_id, data_store))
             .unzip();
 
         let (assemblers_1_1, assemblers_1_1_updates): (Vec<_>, Vec<_>) = self
@@ -194,7 +195,7 @@ impl<
             .into_vec()
             .into_iter()
             .zip(other.assemblers_1_1.into_vec())
-            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .map(|(a, b)| a.join(b, other_grid_id, new_grid_id, data_store))
             .unzip();
 
         let (assemblers_2_1, assemblers_2_1_updates): (Vec<_>, Vec<_>) = self
@@ -202,21 +203,21 @@ impl<
             .into_vec()
             .into_iter()
             .zip(other.assemblers_2_1.into_vec())
-            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .map(|(a, b)| a.join(b, other_grid_id, new_grid_id, data_store))
             .unzip();
         let (assemblers_2_2, assemblers_2_2_updates): (Vec<_>, Vec<_>) = self
             .assemblers_2_2
             .into_vec()
             .into_iter()
             .zip(other.assemblers_2_2.into_vec())
-            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .map(|(a, b)| a.join(b, other_grid_id, new_grid_id, data_store))
             .unzip();
         let (assemblers_2_3, assemblers_2_3_updates): (Vec<_>, Vec<_>) = self
             .assemblers_2_3
             .into_vec()
             .into_iter()
             .zip(other.assemblers_2_3.into_vec())
-            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .map(|(a, b)| a.join(b, other_grid_id, new_grid_id, data_store))
             .unzip();
 
         let (assemblers_3_1, assemblers_3_1_updates): (Vec<_>, Vec<_>) = self
@@ -224,7 +225,7 @@ impl<
             .into_vec()
             .into_iter()
             .zip(other.assemblers_3_1.into_vec())
-            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .map(|(a, b)| a.join(b, other_grid_id, new_grid_id, data_store))
             .unzip();
 
         let (assemblers_4_1, assemblers_4_1_updates): (Vec<_>, Vec<_>) = self
@@ -232,7 +233,7 @@ impl<
             .into_vec()
             .into_iter()
             .zip(other.assemblers_4_1.into_vec())
-            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .map(|(a, b)| a.join(b, other_grid_id, new_grid_id, data_store))
             .unzip();
 
         let (assemblers_5_1, assemblers_5_1_updates): (Vec<_>, Vec<_>) = self
@@ -240,7 +241,7 @@ impl<
             .into_vec()
             .into_iter()
             .zip(other.assemblers_5_1.into_vec())
-            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .map(|(a, b)| a.join(b, other_grid_id, new_grid_id, data_store))
             .unzip();
 
         let (assemblers_6_1, assemblers_6_1_updates): (Vec<_>, Vec<_>) = self
@@ -248,7 +249,7 @@ impl<
             .into_vec()
             .into_iter()
             .zip(other.assemblers_6_1.into_vec())
-            .map(|(a, b)| a.join(b, new_grid_id, data_store))
+            .map(|(a, b)| a.join(b, other_grid_id, new_grid_id, data_store))
             .unzip();
 
         let ret = Self {
@@ -392,6 +393,118 @@ impl<
             _ => unreachable!(),
         }
     }
+
+    pub fn is_hole<ItemIdxType: IdxTrait>(
+        &self,
+        assembler_id: AssemblerID<RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> bool {
+        let recipe_id = assembler_id.recipe.id.into();
+
+        match (
+            data_store.recipe_num_ing_lookup[recipe_id],
+            data_store.recipe_num_out_lookup[recipe_id],
+        ) {
+            (0, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_0_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                        .get_recipe()
+                );
+
+                self.assemblers_0_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .is_hole(assembler_id.assembler_index)
+            },
+            (1, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_1_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                        .get_recipe()
+                );
+
+                self.assemblers_1_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .is_hole(assembler_id.assembler_index)
+            },
+            (2, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_2_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                        .get_recipe()
+                );
+
+                self.assemblers_2_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .is_hole(assembler_id.assembler_index)
+            },
+
+            (2, 2) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_2_2[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                        .get_recipe()
+                );
+
+                self.assemblers_2_2[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .is_hole(assembler_id.assembler_index)
+            },
+
+            (2, 3) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_2_3[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                        .get_recipe()
+                );
+
+                self.assemblers_2_3[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .is_hole(assembler_id.assembler_index)
+            },
+
+            (3, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_3_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                        .get_recipe()
+                );
+
+                self.assemblers_3_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .is_hole(assembler_id.assembler_index)
+            },
+
+            (4, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_4_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                        .get_recipe()
+                );
+
+                self.assemblers_4_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .is_hole(assembler_id.assembler_index)
+            },
+
+            (5, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_5_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                        .get_recipe()
+                );
+
+                self.assemblers_5_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .is_hole(assembler_id.assembler_index)
+            },
+
+            (6, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_6_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                        .get_recipe()
+                );
+
+                self.assemblers_6_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .is_hole(assembler_id.assembler_index)
+            },
+
+            _ => unreachable!(),
+        }
+    }
 }
 
 // FIXME:
@@ -478,9 +591,11 @@ pub trait MultiAssemblerStore<
         index: u32,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> AssemblerOnclickInfo<ItemIdxType>;
+    fn is_hole(&self, index: u32) -> bool;
     fn join<ItemIdxType: IdxTrait>(
         self,
         other: Self,
+        other_grid_id: PowerGridIdentifier,
         new_grid_id: PowerGridIdentifier,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
