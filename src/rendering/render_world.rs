@@ -1,20 +1,18 @@
 use crate::belt::belt::Belt;
-use crate::belt::smart::{SmartBelt, HAND_SIZE};
+use crate::belt::smart::{HAND_SIZE, SmartBelt};
 use crate::chest::ChestSize;
+use crate::frontend::action::action_state_machine::ForkSaveInfo;
 use crate::frontend::action::belt_placement::{BeltState, expected_belt_state};
 use crate::frontend::world::tile::World;
 use crate::get_size::RAMExtractor;
 use crate::get_size::RamUsage;
-use crate::item::{Indexable, ITEMCOUNTTYPE};
+use crate::item::{ITEMCOUNTTYPE, Indexable};
 use crate::lab::{LabViewInfo, TICKS_PER_SCIENCE};
 use crate::liquid::FluidSystemState;
 use crate::par_generation::ParGenerateInfo;
-use interprocess::os::unix::unnamed_pipe::UnnamedPipeExt;
 use crate::rendering::Corner;
 use crate::saving::{save_components, save_with_fork};
-use crate::frontend::action::action_state_machine::ForkSaveInfo;
 use crate::statistics::{NUM_DIFFERENT_TIMESCALES, TIMESCALE_NAMES};
-use log::error;
 use crate::{
     TICKS_PER_SECOND_LOGIC,
     assembler::AssemblerOnclickInfo,
@@ -51,7 +49,9 @@ use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
 use egui_show_info::ShowInfo;
 use flate2::Compression;
 use flate2::write::ZlibEncoder;
+use interprocess::os::unix::unnamed_pipe::UnnamedPipeExt;
 use itertools::Itertools;
+use log::error;
 use log::{info, trace, warn};
 use parking_lot::MutexGuard;
 use petgraph::dot::Dot;
@@ -76,11 +76,7 @@ const ITEM_RENDER_SIZE: f32 = 1.0 / (BELT_LEN_PER_TILE as f32);
 
 const ALT_MODE_ICON_SIZE: f32 = 0.5;
 
-pub const SWITCH_TO_MAPVIEW_TILES: f32 = if cfg!(debug_assertions) {
-    200.0
-} else {
-    500.0
-};
+pub const SWITCH_TO_MAPVIEW_TILES: f32 = if cfg!(debug_assertions) { 200.0 } else { 500.0 };
 pub const SWITCH_TO_MAPVIEW_ZOOM_LEVEL: LazyLock<f32> =
     LazyLock::new(|| ((SWITCH_TO_MAPVIEW_TILES - 1.0) / WIDTH_PER_LEVEL as f32).log(1.5));
 
@@ -107,7 +103,7 @@ impl Layers {
             item_layer,
             warning_layer,
             range_layer,
-            inserter_item_layer
+            inserter_item_layer,
         } = self;
         let Self {
             tile_layer: other_tile_layer,
@@ -116,7 +112,7 @@ impl Layers {
             item_layer: other_item_layer,
             warning_layer: other_warning_layer,
             range_layer: other_range_layer,
-            inserter_item_layer: other_inserter_item_layer
+            inserter_item_layer: other_inserter_item_layer,
         } = other;
         tile_layer.extend(other_tile_layer);
         entity_layer.extend(other_entity_layer);
@@ -183,9 +179,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     );
 
     if num_tiles_across_screen_horizontal > SWITCH_TO_MAPVIEW_TILES {
-    let mut updates = Some(vec![]);
-    mem::swap(&mut updates, &mut game_state.world.map_updates);
-    mem::drop(aux_data);
+        let mut updates = Some(vec![]);
+        mem::swap(&mut updates, &mut game_state.world.map_updates);
+        mem::drop(aux_data);
         if let ActionStateMachineState::Holding(HeldObject::Blueprint(bp)) = &state_machine.state {
             let Position { x, y } =
                 ActionStateMachine::<ItemIdxType, RecipeIdxType>::player_mouse_to_tile(
@@ -281,11 +277,13 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let y_range = -((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32)
         ..=((num_tiles_across_screen_vertical / CHUNK_SIZE_FLOAT / 2.0).ceil() as i32);
 
-    let pos_iter = x_range.into_par_iter().flat_map(|x| y_range.clone().into_par_iter().map(move |y| (x, y)));
+    let pos_iter = x_range
+        .into_par_iter()
+        .flat_map(|x| y_range.clone().into_par_iter().map(move |y| (x, y)));
 
     let draw_offset = (
-        - camera_pos.0 + (0.5 * num_tiles_across_screen_horizontal),
-        - camera_pos.1 +  (0.5 * num_tiles_across_screen_vertical)
+        -camera_pos.0 + (0.5 * num_tiles_across_screen_horizontal),
+        -camera_pos.1 + (0.5 * num_tiles_across_screen_vertical),
     );
 
     let current_tick = aux_data.current_tick as u32;
@@ -950,7 +948,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             pos,
                                             direction,
                                             info,
-                                            user_movetime, 
+                                            user_movetime,
                                             ty,
                                             ..
                                         } => {
@@ -1005,7 +1003,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                     start_pos[0] + (end_pos[0] - start_pos[0]) * position,
                                                     start_pos[1] + (end_pos[1] - start_pos[1]) * position,
                                                 ];
-                                                
+
                                                 let stack_offset = 1.0 / f32::from(BELT_LEN_PER_TILE) / 16.0;
 
                                                 for _ in 0..items {
@@ -1050,7 +1048,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                     start_pos[0] + (end_pos[0] - start_pos[0]) * position,
                                                     start_pos[1] + (end_pos[1] - start_pos[1]) * position,
                                                 ];
-                                                
+
                                                 let stack_offset = 1.0 / f32::from(BELT_LEN_PER_TILE) / 16.0;
 
                                                 for _ in 0..items {
@@ -1141,7 +1139,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 // FIXME: Splitter ty
                                                 .get_belt_progress(0);
                                             let offset_perc = belt_progress as f32 / 120.0;
-                                            
+
                                             // FIXME: We currently do not take partial movement (from slow belt speeds) into account, which leads to ugly jumping of the items on the belt
                                             for ((pos, input), output) in [left_pos, right_pos]
                                             .into_iter()
@@ -1452,24 +1450,23 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     //     profiling::scope!("Render Inserter States");
     //     for ((item, movetime), inserter_list) in storage_storage_inserter_render_list {
     //         let item_sprite = &texture_atlas.items[item.into_usize()];
-    
+
     //         let infos = game_state
     //             .simulation_state
     //             .factory
     //             .storage_storage_inserters
     //             .get_info_batched(item, movetime, inserter_list.iter().map(|(_, _, ident)| *ident), aux_data.current_tick as u32);
-    
+
     //         for (draw_pos, ty, ident) in inserter_list {
     //             let info = infos[&ident];
-    
-    
+
     //             let num_items = match info {
     //                 crate::inserter::storage_storage_with_buckets::LargeInserterState::WaitingForSourceItems(count) => count,
     //                 crate::inserter::storage_storage_with_buckets::LargeInserterState::WaitingForSpaceInDestination(count) => count,
     //                 crate::inserter::storage_storage_with_buckets::LargeInserterState::FullAndMovingOut(_) => 12,
     //                 crate::inserter::storage_storage_with_buckets::LargeInserterState::EmptyAndMovingBack(_) => 0,
     //             };
-    
+
     //             if num_items > 0 {
     //                 inserter_item_layer.draw_sprite(item_sprite, DrawInstance { position: draw_pos, size: [
     //                     1.0 / f32::from(BELT_LEN_PER_TILE),
@@ -1529,7 +1526,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     match &state_machine.state {
         ActionStateMachineState::CtrlCPressed | ActionStateMachineState::DelPressed => {},
-        ActionStateMachineState::CopyDragInProgress { start_pos } | ActionStateMachineState::DeleteDragInProgress { start_pos } => {
+        ActionStateMachineState::CopyDragInProgress { start_pos }
+        | ActionStateMachineState::DeleteDragInProgress { start_pos } => {
             let end_pos = ActionStateMachine::<ItemIdxType, RecipeIdxType>::player_mouse_to_tile(
                 state_machine.zoom_level,
                 camera_pos,
@@ -1902,7 +1900,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             renderer.draw(&range_layer);
 
             renderer.draw(&warning_layer);
-            
+
             renderer.draw(&inserter_item_layer);
         }
         renderer.draw(&state_machine_layer);
@@ -1950,8 +1948,7 @@ pub fn render_ui<
 
     if let Some(recv) = &mut state_machine_ref.current_fork_save_in_progress {
         const NUM_STATES: u8 = 11;
-        
-        
+
         let mut v = [0];
         if let Err(e) = recv.recv.read_exact(&mut v) {
             if e.kind() != std::io::ErrorKind::WouldBlock {
@@ -1968,10 +1965,12 @@ pub fn render_ui<
         }
         if let Some(recv) = &state_machine_ref.current_fork_save_in_progress {
             Window::new("Saving...").default_open(true).show(ctx, |ui| {
-                ui.add(ProgressBar::new(recv.current_state as f32 / NUM_STATES as f32).corner_radius(0.0));
+                ui.add(
+                    ProgressBar::new(recv.current_state as f32 / NUM_STATES as f32)
+                        .corner_radius(0.0),
+                );
             });
         }
-
     }
 
     if state_machine_ref.escape_menu_open {
@@ -1982,10 +1981,18 @@ pub fn render_ui<
                     save_components(&*world, &*simulation_state, &*aux_data, data_store_ref);
                 }
 
-                if ui.add_enabled(state_machine_ref.current_fork_save_in_progress.is_none(), Button::new("Save with fork")).clicked() {
-                    let recv = save_with_fork(&*world, &*simulation_state, &*aux_data, data_store_ref);
+                if ui
+                    .add_enabled(
+                        state_machine_ref.current_fork_save_in_progress.is_none(),
+                        Button::new("Save with fork"),
+                    )
+                    .clicked()
+                {
+                    let recv =
+                        save_with_fork(&*world, &*simulation_state, &*aux_data, data_store_ref);
                     if let Some(recv) = recv {
-                        recv.set_nonblocking(true).expect("Could not set pipe to nonblocking!");
+                        recv.set_nonblocking(true)
+                            .expect("Could not set pipe to nonblocking!");
                         state_machine_ref.current_fork_save_in_progress = Some(ForkSaveInfo {
                             recv,
                             current_state: 0,
@@ -2034,31 +2041,34 @@ pub fn render_ui<
         )
     });
 
-    Window::new("Size").fixed_size(egui::vec2(1920f32, 1080f32)).default_open(false).show(ctx, |ui| {
-        // Workaround for fixed_size not working (https://users.rust-lang.org/t/egui-questions-regarding-window-size/88753/6)
-        ui.set_width(ui.available_width());
-        ui.set_height(ui.available_height());
-        profiling::scope!("Show SimState Size");
-        if ui.button("Reset Cache").clicked() {
-            state_machine_ref.get_size_cache.clear();
-        }
-        ScrollArea::new([false, true]).show(ui, |ui| {
-            ShowInfo::<RAMExtractor, RamUsage>::show_info(
-                &*game_state_ref.simulation_state,
-                &mut RAMExtractor,
-                ui,
-                "",
-                &mut state_machine_ref.get_size_cache,
-            );
-            ShowInfo::<RAMExtractor, RamUsage>::show_info(
-                &*game_state_ref.world,
-                &mut RAMExtractor,
-                ui,
-                "",
-                &mut state_machine_ref.get_size_cache,
-            );
+    Window::new("Size")
+        .fixed_size(egui::vec2(1920f32, 1080f32))
+        .default_open(false)
+        .show(ctx, |ui| {
+            // Workaround for fixed_size not working (https://users.rust-lang.org/t/egui-questions-regarding-window-size/88753/6)
+            ui.set_width(ui.available_width());
+            ui.set_height(ui.available_height());
+            profiling::scope!("Show SimState Size");
+            if ui.button("Reset Cache").clicked() {
+                state_machine_ref.get_size_cache.clear();
+            }
+            ScrollArea::new([false, true]).show(ui, |ui| {
+                ShowInfo::<RAMExtractor, RamUsage>::show_info(
+                    &*game_state_ref.simulation_state,
+                    &mut RAMExtractor,
+                    ui,
+                    "",
+                    &mut state_machine_ref.get_size_cache,
+                );
+                ShowInfo::<RAMExtractor, RamUsage>::show_info(
+                    &*game_state_ref.world,
+                    &mut RAMExtractor,
+                    ui,
+                    "",
+                    &mut state_machine_ref.get_size_cache,
+                );
+            });
         });
-    });
 
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     Window::new("Import BP")
@@ -2317,7 +2327,7 @@ pub fn render_ui<
             ui.add(Slider::new(&mut state_machine_ref.debug_view_options.sushi_belt_len_threshhold, 0..=1_000).logarithmic(true));
 
             ui.label(&format!("Num Sushi Belts with length <= {}: {}", state_machine_ref.debug_view_options.sushi_belt_len_threshhold, game_state_ref.simulation_state.factory.belts.inner.sushi_belts.iter().map(|belt| belt.get_len()).filter(|len| *len as u32 <= state_machine_ref.debug_view_options.sushi_belt_len_threshhold).count()));
-            
+
             ui.checkbox(
                 &mut state_machine_ref.show_graph_dot_output,
                 "Generate Belt Graph",
@@ -2526,8 +2536,8 @@ pub fn render_ui<
         let points = &aux_data.update_times.get_data_points(0)[0..600];
         ui.label(format!(
             "{:.1} mspt",
-            (points.iter().map(|v| v.dur).sum::<Duration>() / points.len() as u32)
-                .as_secs_f32() * 1000.0
+            (points.iter().map(|v| v.dur).sum::<Duration>() / points.len() as u32).as_secs_f32()
+                * 1000.0
         ));
     });
 
@@ -3773,10 +3783,7 @@ fn render_items_straight<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     for (i, item) in items_iter.enumerate() {
         let belt_pos = start_pos - (amount - i as BeltLenType);
         let draw_pos = if belt_pos < last_moved {
-            [
-                item_render_base_pos.0,
-                item_render_base_pos.1,
-            ]
+            [item_render_base_pos.0, item_render_base_pos.1]
         } else {
             [
                 item_render_base_pos.0 + item_render_offs.0 * (1.0 - partial_offs),
