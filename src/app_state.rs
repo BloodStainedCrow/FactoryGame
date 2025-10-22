@@ -67,6 +67,7 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelI
 use std::collections::BTreeMap;
 use std::io::BufReader;
 use std::iter;
+use std::num::NonZero;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
@@ -1376,6 +1377,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     &mut game_state.world,
                                     &mut game_state.simulation_state,
                                     ty,
+                                    user_movetime,
                                     pos,
                                     dir,
                                     filter,
@@ -2795,6 +2797,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         world: &mut World<ItemIdxType, RecipeIdxType>,
         sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
         ty: u8,
+        user_movetime: Option<NonZero<u16>>,
         pos: Position,
         dir: Dir,
         filter: Option<Item<ItemIdxType>>,
@@ -2810,7 +2813,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         if let Err(e) = world.add_entity(
             Entity::Inserter {
                 ty,
-                user_movetime: None,
+                user_movetime,
 
                 pos,
                 direction: dir,
