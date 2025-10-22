@@ -2077,8 +2077,12 @@ pub fn render_ui<
         .show(ctx, |ui| {
             if ui.button("Import").clicked() {
                 if let Some(path) = rfd::FileDialog::new().pick_file() {
-                    if let Ok(file) = File::open(path) {
-                        if let Ok(bp) = ron::de::from_reader(file) {
+                    if let Ok(mut file) = File::open(path) {
+                        let mut bp_string = BlueprintString(String::new());
+                        file.read_to_string(&mut bp_string.0)
+                            .expect("Failed to read from file");
+
+                        if let Ok(bp) = bp_string.try_into() {
                             state_machine_ref.state =
                                 ActionStateMachineState::Holding(HeldObject::Blueprint(bp));
                         }
