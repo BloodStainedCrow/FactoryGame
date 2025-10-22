@@ -1541,6 +1541,26 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
             return;
         }
 
+        if let Some((input_id, side)) = &self.input_splitter {
+            // Last pos
+            if self.query_item(self.get_len() - 1).is_none() {
+                let splitter_loc =
+                    &splitter_list[input_id.index as usize].outputs[usize::from(bool::from(*side))];
+
+                // SAFETY:
+                // This is the only place where we modify splitter_list from a &.
+                // This can never race since only one belt ever has the same values for output_id and side, so only a single belt will ever modify each splitter loc
+                let splitter_loc = unsafe { &mut *splitter_loc.get() };
+
+                if let Some(item) = *splitter_loc {
+                    *splitter_loc = None;
+                    let _ = self
+                        .try_insert_item(self.get_len() - 1, item)
+                        .expect("Should never fail!");
+                }
+            }
+        }
+
         if let Some((output_id, side)) = &self.output_splitter {
             if let Some(item) = self.query_item(0) {
                 let splitter_loc =
@@ -1564,26 +1584,6 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
                     };
                     self.first_free_index = FreeIndex::OldFreeIndex(0);
                     return;
-                }
-            }
-        }
-
-        if let Some((input_id, side)) = &self.input_splitter {
-            // Last pos
-            if self.query_item(self.get_len() - 1).is_none() {
-                let splitter_loc =
-                    &splitter_list[input_id.index as usize].outputs[usize::from(bool::from(*side))];
-
-                // SAFETY:
-                // This is the only place where we modify splitter_list from a &.
-                // This can never race since only one belt ever has the same values for output_id and side, so only a single belt will ever modify each splitter loc
-                let splitter_loc = unsafe { &mut *splitter_loc.get() };
-
-                if let Some(item) = *splitter_loc {
-                    *splitter_loc = None;
-                    let _ = self
-                        .try_insert_item(self.get_len() - 1, item)
-                        .expect("Should never fail!");
                 }
             }
         }
