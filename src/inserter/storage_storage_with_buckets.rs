@@ -12,7 +12,7 @@ use std::{cmp::min, iter};
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
-use get_size::GetSize;
+use get_size2::GetSize;
 
 pub(super) const MAX_MOVE_TIME: usize = 1_000;
 

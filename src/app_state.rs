@@ -58,7 +58,7 @@ use crate::{
 use egui_show_info_derive::ShowInfo;
 use flate2::bufread::ZlibDecoder;
 #[cfg(feature = "client")]
-use get_size::GetSize;
+use get_size2::GetSize;
 use itertools::Itertools;
 use log::error;
 use log::{info, trace, warn};
@@ -213,7 +213,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             Position { x: 6000, y: 12000 },
             data_store,
         );
-        let file = File::open("test_blueprints/murphy/megabase_with_sushi_sorting.bp").unwrap();
+        let file =
+            File::open("test_blueprints/murphy/megabase_with_merged_blue_purple.bp").unwrap();
         let mut bp: Blueprint = ron::de::from_reader(file).unwrap();
         bp.optimize();
 

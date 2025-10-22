@@ -156,14 +156,10 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     state_machine: MutexGuard<ActionStateMachine<ItemIdxType, RecipeIdxType>>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
-    let mut updates = Some(vec![]);
-
     let mut game_state = FakeGameState {
         simulation_state,
         world,
     };
-
-    mem::swap(&mut updates, &mut game_state.world.map_updates);
 
     let ar = renderer.get_aspect_ratio();
 
@@ -187,7 +183,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     );
 
     if num_tiles_across_screen_horizontal > SWITCH_TO_MAPVIEW_TILES {
-        mem::drop(aux_data);
+    let mut updates = Some(vec![]);
+    mem::swap(&mut updates, &mut game_state.world.map_updates);
+    mem::drop(aux_data);
         if let ActionStateMachineState::Holding(HeldObject::Blueprint(bp)) = &state_machine.state {
             let Position { x, y } =
                 ActionStateMachine::<ItemIdxType, RecipeIdxType>::player_mouse_to_tile(
@@ -2237,6 +2235,35 @@ pub fn render_ui<
             } else {
                 'P'
             })));
+
+            CollapsingHeader::new("Lab analysis").show(ui, |ui| {
+                let mut items = vec![0u32; data_store.item_names.len()];
+
+
+                for lab_info in game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter_map(|e| match e {
+                    Entity::Lab {
+                        pole_position: Some((pole_pos, _weak_idx, lab_index)),
+                        ..
+                    } => {
+                        Some(game_state_ref.simulation_state.factory.power_grids.power_grids[game_state_ref.simulation_state.factory.power_grids.pole_pos_to_grid_id[pole_pos] as usize].lab_stores.get_lab_info(*lab_index, &data_store))
+                    },
+
+                    _ => None,
+                }) {
+                    if lab_info.items.iter().filter(|(_, count)| *count == 0).count() == 1 {
+                        // This lab is waiting for exactly one item
+                        for item in lab_info.items {
+                            if item.1 == 0 {
+                                items[item.0.into_usize()] += 1;
+                            }
+                        }
+                    }
+                }
+
+                for (item, lab_count) in items.into_iter().enumerate().filter(|(_i, v)| *v > 0) {
+                    ui.label(&format!("{lab_count} labs are waiting on {}", data_store.item_display_names[item]));
+                }
+            });
 
             let mut lock_view = state_machine_ref.debug_view_options.sushi_finder_view_lock.is_some();
 

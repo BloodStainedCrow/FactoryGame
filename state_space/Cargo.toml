@@ -1,6 +1,0 @@
-[package]
-name = "state_space"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]

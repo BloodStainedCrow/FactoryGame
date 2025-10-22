@@ -14,7 +14,7 @@ use std::cmp::min;
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
-use get_size::GetSize;
+use get_size2::GetSize;
 
 const PERFORMANCE_CHEAT_INSERTER_UPDATE_MODULE: usize = 1;
 

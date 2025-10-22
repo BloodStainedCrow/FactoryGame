@@ -12,7 +12,7 @@ use crate::{
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
-use get_size::GetSize;
+use get_size2::GetSize;
 
 const CHEST_GOAL_AMOUNT: ITEMCOUNTTYPE = ITEMCOUNTTYPE::MAX / 2;
 

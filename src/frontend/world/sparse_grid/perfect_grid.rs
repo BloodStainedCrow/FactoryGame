@@ -17,7 +17,7 @@ use std::path::PathBuf;
 #[cfg(feature = "client")]
 use egui_show_info::{EguiDisplayable, InfoExtractor, ShowInfo};
 #[cfg(feature = "client")]
-use get_size::GetSize;
+use get_size2::GetSize;
 
 pub struct PerfectGrid<I, T> {
     extent: Option<[[I; 2]; 2]>,

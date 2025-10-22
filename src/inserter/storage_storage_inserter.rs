@@ -10,7 +10,7 @@ use super::{FakeUnionStorage, InserterState};
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
-use get_size::GetSize;
+use get_size2::GetSize;
 
 // FIXME: the storage_id cannot properly represent an index into multiple slices (which I have here, since
 // there are multiple lists of storages in the different MultiAssemblerStores (since multiple different recipes take for example Iron Plates))

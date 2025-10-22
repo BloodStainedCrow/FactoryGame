@@ -1,7 +1,7 @@
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
-use get_size::GetSize;
+use get_size2::GetSize;
 
 #[allow(clippy::module_inception)]
 pub mod belt;

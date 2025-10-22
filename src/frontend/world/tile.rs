@@ -31,7 +31,7 @@ use ecolor::hex_color;
 use egui_show_info_derive::ShowInfo;
 use enum_map::Enum;
 #[cfg(feature = "client")]
-use get_size::GetSize;
+use get_size2::GetSize;
 use log::{info, trace, warn};
 use strum::EnumIter;
 

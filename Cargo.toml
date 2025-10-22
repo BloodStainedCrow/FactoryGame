@@ -46,16 +46,15 @@ noise = { version = "0.9.0", features = ["std"] }
 rfd = { version = "0.15.3", optional = true }
 egui_graphs = { version = "0.25.1", optional = true }
 serde_path_to_error = "0.1.17"
-get-size = { version = "0.1.4", features = ["derive"], optional = true }
+get-size2 = { version = "0.1.4", features = ["derive"], optional = true }
 
-egui-show-info = { path = "../egui-show-info", features = ["petgraph", "parking_lot", "enum-map", "bimap"], optional = true }
-egui-show-info-derive = { path = "../egui-show-info/egui-show-info-derive", optional = true }
+egui-show-info = { git = "https://github.com/BloodStainedCrow/egui-show-info", features = ["petgraph", "parking_lot", "enum-map", "bimap"], optional = true }
+egui-show-info-derive = { git = "https://github.com/BloodStainedCrow/egui-show-info", optional = true }
 bytemuck = "1.23.1"
 # ph = "0.9.6"
 memoffset = "0.9.1"
 smallvec = { version = "1.15.1", features = ["serde"] }
 
-state_space = {path = "state_space"}
 ecolor = { version = "0.31.1", features = ["color-hex"] }
 getrandom = { version = "0.3.3", features = ["wasm_js"] }
 getrandom_old = { version = "0.2.16", features = ["js"], package = "getrandom" }
@@ -83,16 +82,9 @@ eframe = { git = "https://github.com/BloodStainedCrow/egui", rev = "4e11a02" }
 ecolor = { git = "https://github.com/BloodStainedCrow/egui", rev = "4e11a02" }
 egui-wgpu = { git = "https://github.com/BloodStainedCrow/egui", rev = "4e11a02" }
 egui_graphs = { git = "https://github.com/BloodStainedCrow/egui_graphs", branch = "tree_layout" }
-
-get-size = { path = "../get-size" }
-petgraph = { path = "../petgraph" }
-
-[patch."https://github.com/BloodStainedCrow/tilelib"]
-tilelib = { path = "../tilelib" }
+petgraph = { git = "https://github.com/BloodStainedCrow/petgraph", branch = "stable_graph_node_weights_mut_indexed" }
 
 [lints.rust]
-# TODO:
-# unsafe_code = "forbid"
 
 [lints.clippy]
 enum_glob_use = { level = "deny", priority = -1 }
@@ -136,5 +128,5 @@ graphics = []
 # dhat-rs memory profiling (https://docs.rs/dhat/latest/dhat/)
 dhat-heap = []
 profiler = ["profiling/profile-with-puffin"]
-client = [ "dep:eframe", "dep:egui", "dep:egui_extras", "dep:egui_plot", "dep:puffin_egui", "dep:egui_graphs", "dep:egui-show-info", "dep:egui-show-info-derive", "dep:tilelib", "dep:image", "dep:rfd", "dep:get-size"]
+client = [ "dep:eframe", "dep:egui", "dep:egui_extras", "dep:egui_plot", "dep:puffin_egui", "dep:egui_graphs", "dep:egui-show-info", "dep:egui-show-info-derive", "dep:tilelib", "dep:image", "dep:rfd", "dep:get-size2"]
 logging = ["simple_logger"]

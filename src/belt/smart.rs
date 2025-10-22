@@ -33,7 +33,7 @@ use crate::inserter::FakeUnionStorage;
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
-use get_size::GetSize;
+use get_size2::GetSize;
 
 // HUGE FIXME:
 const MOVETIME: u8 = 12;

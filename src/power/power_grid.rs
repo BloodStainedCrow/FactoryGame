@@ -33,7 +33,7 @@ use super::Watt;
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
-use get_size::GetSize;
+use get_size2::GetSize;
 
 pub const MAX_POWER_MULT: u8 = 64;
 pub const MIN_BEACON_POWER_MULT: u8 = MAX_POWER_MULT / 2;
@@ -2306,6 +2306,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                             &data_store.recipe_index_lookups,
                             &data_store.recipe_ings.ing0,
                             &data_store.recipe_outputs.out1,
+                            &data_store.recipe_output_maximums.out1,
                             &data_store.recipe_timers,
                             data_store,
                         );
@@ -2333,6 +2334,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                             &data_store.recipe_index_lookups,
                             &data_store.recipe_ings.ing1,
                             &data_store.recipe_outputs.out1,
+                            &data_store.recipe_output_maximums.out1,
                             &data_store.recipe_timers,
                             data_store,
                         );
@@ -2360,6 +2362,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                             &data_store.recipe_index_lookups,
                             &data_store.recipe_ings.ing2,
                             &data_store.recipe_outputs.out1,
+                            &data_store.recipe_output_maximums.out1,
                             &data_store.recipe_timers,
                             data_store,
                         );
@@ -2387,6 +2390,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                             &data_store.recipe_index_lookups,
                             &data_store.recipe_ings.ing2,
                             &data_store.recipe_outputs.out2,
+                            &data_store.recipe_output_maximums.out2,
                             &data_store.recipe_timers,
                             data_store,
                         );
@@ -2414,6 +2418,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                             &data_store.recipe_index_lookups,
                             &data_store.recipe_ings.ing2,
                             &data_store.recipe_outputs.out3,
+                            &data_store.recipe_output_maximums.out3,
                             &data_store.recipe_timers,
                             data_store,
                         );
@@ -2441,6 +2446,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                             &data_store.recipe_index_lookups,
                             &data_store.recipe_ings.ing3,
                             &data_store.recipe_outputs.out1,
+                            &data_store.recipe_output_maximums.out1,
                             &data_store.recipe_timers,
                             data_store,
                         );
@@ -2468,6 +2474,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                             &data_store.recipe_index_lookups,
                             &data_store.recipe_ings.ing4,
                             &data_store.recipe_outputs.out1,
+                            &data_store.recipe_output_maximums.out1,
                             &data_store.recipe_timers,
                             data_store,
                         );
@@ -2495,6 +2502,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                             &data_store.recipe_index_lookups,
                             &data_store.recipe_ings.ing5,
                             &data_store.recipe_outputs.out1,
+                            &data_store.recipe_output_maximums.out1,
                             &data_store.recipe_timers,
                             data_store,
                         );
@@ -2522,6 +2530,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                             &data_store.recipe_index_lookups,
                             &data_store.recipe_ings.ing6,
                             &data_store.recipe_outputs.out1,
+                            &data_store.recipe_output_maximums.out1,
                             &data_store.recipe_timers,
                             data_store,
                         );

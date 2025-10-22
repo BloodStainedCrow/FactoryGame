@@ -26,7 +26,7 @@ use super::{AssemblerOnclickInfo, PowerUsageInfo, Simdtype, TIMERTYPE, arrays};
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
-use get_size::GetSize;
+use get_size2::GetSize;
 
 // FIXME: We store the same slice length n times!
 // TODO: Don´t clump update data and data for adding/removing assemblers together!
@@ -197,6 +197,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         recipe_lookup: &[(usize, usize)],
         recipe_ings: &[[ITEMCOUNTTYPE; NUM_INGS]],
         recipe_outputs: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
+        recipe_maximums: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
         times: &[TIMERTYPE],
         power_list: &[AssemblerInfo],
     ) -> (Watt, u32, u32) {
@@ -204,6 +205,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
         let our_ings: &[ITEMCOUNTTYPE; NUM_INGS] = &recipe_ings[ing_idx];
         let our_outputs: &[ITEMCOUNTTYPE; NUM_OUTPUTS] = &recipe_outputs[out_idx];
+        let our_maximums: &[ITEMCOUNTTYPE; NUM_OUTPUTS] = &recipe_maximums[out_idx];
 
         let mut times_ings_used: u32 = 0;
         let mut num_finished_crafts: u32 = 0;
@@ -297,7 +299,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 let our_outputs = SIMDTYPE::splat(our_outputs[i].into());
                 space_mask = space_mask
                     & (SimdUint::saturating_add(outputs, our_outputs))
-                        .simd_le(SIMDTYPE::splat(100));
+                        .simd_le(SIMDTYPE::splat(our_maximums[i].into()));
             }
 
             let new_timer = space_mask.select(new_timer_output_space, new_timer_output_full);
@@ -955,6 +957,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         recipe_lookup: &[(usize, usize)],
         recipe_ings: &[[ITEMCOUNTTYPE; NUM_INGS]],
         recipe_outputs: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
+        recipe_maximums: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
         times: &[TIMERTYPE],
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (PowerUsageInfo, u32, u32)
@@ -966,6 +969,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             recipe_lookup,
             recipe_ings,
             recipe_outputs,
+            recipe_maximums,
             times,
             &data_store.assembler_info,
         );
@@ -1394,6 +1398,7 @@ mod test {
                         &DATA_STORE.recipe_index_lookups,
                         &DATA_STORE.recipe_ings.ing1,
                         &DATA_STORE.recipe_outputs.out1,
+                        &[[100; 1]; NUM_RECIPES],
                         &DATA_STORE.recipe_timers,
                         &DATA_STORE.assembler_info,
                     )

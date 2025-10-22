@@ -1,7 +1,7 @@
 #[cfg(feature = "client")]
 use egui_show_info::{Cache, EguiDisplayable, InfoExtractor, RemoveSuffix, ShowInfo};
 #[cfg(feature = "client")]
-use get_size::GetSize;
+use get_size2::GetSize;
 use petgraph::Directed;
 use petgraph::{EdgeType, csr::IndexType};
 use std::ops::Deref;

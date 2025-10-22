@@ -1,6 +1,6 @@
 use std::{
     array,
-    cmp::max,
+    cmp::{max, min},
     collections::{BTreeSet, HashMap},
     iter,
 };
@@ -470,6 +470,8 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub recipe_ings: RecipeIngLookups,
     /// A lookup from recipe_out_idx to its output counts
     pub recipe_outputs: RecipeOutputLookups,
+    /// A lookup from recipe_out_idx to its output max counts (the count at which an assembler stops working)
+    pub recipe_output_maximums: RecipeOutputLookups,
 
     pub recipe_timers: Box<[TIMERTYPE]>,
 
@@ -984,6 +986,12 @@ impl RawDataStore {
             }
         }
 
+        let item_stack_sizes: Vec<u8> = self
+            .items
+            .iter()
+            .map(|item| if !item.is_fluid { item.stack_size } else { 255 })
+            .collect();
+
         let recipe_num_ing_lookup = self.recipes.iter().map(|r| r.ings.len()).collect();
         let recipe_num_out_lookup = self.recipes.iter().map(|r| r.output.len()).collect();
 
@@ -1000,6 +1008,13 @@ impl RawDataStore {
         };
 
         let mut recipe_outputs = RecipeOutputLookups {
+            out1: vec![],
+            out2: vec![],
+            out3: vec![],
+            out4: vec![],
+        };
+
+        let mut recipe_maximums = RecipeOutputLookups {
             out1: vec![],
             out2: vec![],
             out3: vec![],
@@ -1055,30 +1070,63 @@ impl RawDataStore {
                 },
             } - 1;
 
+            let max_output = |i: usize, recipe: &RawRecipeData| {
+                // For now the output maximum is independent of crafting speed :/
+                const MACHINE_SPEED: f32 = 5.0;
+                let stack_size =
+                    item_stack_sizes[item_lookup[recipe.output[i].item.as_str()].into_usize()];
+                let output_single_craft = recipe.output[i].amount;
+
+                // FIXME: This being floats, could be bad IF two machines get a different rounding result
+                // 25 ticks is the round trip time for a bulk inserter.
+                let crafts_per_inserter_swing =
+                    70.0 / (recipe.time_to_craft as f32 / MACHINE_SPEED);
+
+                let x = (crafts_per_inserter_swing as u8).clamp(2, 100);
+
+                min(
+                    // We want to have at least the space for a single craft
+                    max(stack_size, output_single_craft),
+                    output_single_craft.saturating_mul(x),
+                )
+            };
+
             let out_idx = match recipe.output.len() {
                 0 => unimplemented!("Recipes without outputs are currently not supported!"),
                 1 => {
                     recipe_outputs
                         .out1
                         .push(array::from_fn(|i| recipe.output[i].amount));
+                    recipe_maximums
+                        .out1
+                        .push(array::from_fn(|i| max_output(i, recipe)));
                     recipe_outputs.out1.len()
                 },
                 2 => {
                     recipe_outputs
                         .out2
                         .push(array::from_fn(|i| recipe.output[i].amount));
+                    recipe_maximums
+                        .out2
+                        .push(array::from_fn(|i| max_output(i, recipe)));
                     recipe_outputs.out2.len()
                 },
                 3 => {
                     recipe_outputs
                         .out3
                         .push(array::from_fn(|i| recipe.output[i].amount));
+                    recipe_maximums
+                        .out3
+                        .push(array::from_fn(|i| max_output(i, recipe)));
                     recipe_outputs.out3.len()
                 },
                 4 => {
                     recipe_outputs
                         .out4
                         .push(array::from_fn(|i| recipe.output[i].amount));
+                    recipe_maximums
+                        .out4
+                        .push(array::from_fn(|i| max_output(i, recipe)));
                     recipe_outputs.out4.len()
                 },
                 n => {
@@ -1514,6 +1562,7 @@ impl RawDataStore {
             recipe_ings,
 
             recipe_outputs,
+            recipe_output_maximums: recipe_maximums,
 
             recipe_timers,
 
@@ -1552,7 +1601,7 @@ impl RawDataStore {
             num_different_static_containers: StaticID::iter().count(),
             num_recipes_with_item,
 
-            item_stack_sizes: self.items.iter().map(|item| item.stack_size).collect(),
+            item_stack_sizes,
             chest_num_slots: self
                 .chests
                 .iter()

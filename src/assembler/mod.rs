@@ -15,7 +15,7 @@ use std::cmp::max;
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
-use get_size::GetSize;
+use get_size2::GetSize;
 
 pub mod bucketed;
 pub mod simd;
@@ -494,6 +494,7 @@ pub trait MultiAssemblerStore<
         recipe_lookup: &[(usize, usize)],
         recipe_ings: &[[ITEMCOUNTTYPE; NUM_INGS]],
         recipe_outputs: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
+        recipe_maximums: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
         times: &[TIMERTYPE],
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (PowerUsageInfo, u32, u32)
