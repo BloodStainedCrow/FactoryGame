@@ -13,7 +13,7 @@ use wasm_timer::Instant;
 use directories::ProjectDirs;
 use parking_lot::Mutex;
 
-use crate::{GameCreationInfo, frontend::action::ActionType, run_client};
+use crate::{GameCreationInfo, run_client};
 use crate::{StartGameInfo, frontend::world::Position};
 use crate::{rendering::render_world::EscapeMenuOptions, run_integrated_server};
 use eframe::{
@@ -92,12 +92,20 @@ impl eframe::App for App {
                 error!("Unable to set up renderer!!!!!")
             }
         }
-        ctx.request_repaint();
+
+        match &self.state {
+            AppState::MainMenu { .. } | AppState::Loading { .. } => {},
+            AppState::Ingame => {
+                // Only request a repaint when we are ingame (otherwise depending on the os we might render like 1k FPS for no reason)
+                ctx.request_repaint();
+            },
+        }
 
         match &mut self.state {
             AppState::Ingame => {},
             _ => {
                 if let Some(raw_renderer) = self.raw_renderer.as_mut() {
+                    // Reset the runtime textures (i.e. map textures), since the user might have come from a game and have some old data floating around on the GPU
                     raw_renderer.reset_runtime_textures();
                 } else {
                     warn!("Tried to reset_runtime_textures, but we are missing a renderer!")
