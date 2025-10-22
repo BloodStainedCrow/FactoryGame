@@ -1,10 +1,3 @@
-use log::{error, info};
-use rayon::slice::ParallelSliceMut;
-use std::num::NonZero;
-use std::{borrow::Borrow, ops::Range};
-#[cfg(feature = "client")]
-use tilelib::types::{DrawInstance, Layer};
-
 use crate::app_state::SimulationState;
 use crate::{
     belt::{belt::BeltLenType, splitter::SplitterDistributionMode},
@@ -12,6 +5,13 @@ use crate::{
     item::Indexable,
 };
 use crate::{frontend::world::tile::UndergroundDir, item::WeakIdxTrait};
+use log::{error, info};
+use rayon::slice::ParallelSliceMut;
+use std::num::NonZero;
+use std::sync::Arc;
+use std::{borrow::Borrow, ops::Range};
+#[cfg(feature = "client")]
+use tilelib::types::{DrawInstance, Layer};
 
 #[cfg(feature = "client")]
 use crate::rendering::TextureAtlas;
@@ -35,6 +35,8 @@ use crate::{
     replays::Replay,
 };
 
+pub mod blueprint_string;
+
 // For now blueprint will just be a list of actions
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Blueprint {
@@ -52,7 +54,7 @@ pub enum BlueprintAction {
 
     SetRecipe {
         pos: Position,
-        recipe: String,
+        recipe: Arc<str>,
     },
 
     OverrideInserterMovetime {
@@ -62,7 +64,7 @@ pub enum BlueprintAction {
 
     AddModules {
         pos: Position,
-        modules: Vec<String>,
+        modules: Vec<Arc<str>>,
     },
 
     SetChestSlotLimit {
@@ -71,8 +73,8 @@ pub enum BlueprintAction {
     },
 }
 
-fn default_inserter() -> String {
-    "factory_game::bulk_inserter".to_string()
+fn default_inserter() -> Arc<str> {
+    "factory_game::bulk_inserter".to_string().into()
 }
 
 #[derive(
@@ -87,7 +89,7 @@ enum BeltId {
 enum BlueprintPlaceEntity {
     Assembler {
         pos: Position,
-        ty: String,
+        ty: Arc<str>,
         #[serde(default = "Dir::default")]
         rotation: Dir,
     },
@@ -95,61 +97,61 @@ enum BlueprintPlaceEntity {
         pos: Position,
         dir: Dir,
         /// The Item the inserter will move, must fit both the in and output side
-        filter: Option<String>,
+        filter: Option<Arc<str>>,
 
         #[serde(default = "default_inserter")]
-        ty: String,
+        ty: Arc<str>,
     },
     Belt {
         pos: Position,
         direction: Dir,
-        ty: String,
+        ty: Arc<str>,
         #[serde(default)]
         copied_belt_info: Option<(BeltId, BeltLenType)>,
     },
     Underground {
         pos: Position,
         direction: Dir,
-        ty: String,
+        ty: Arc<str>,
         underground_dir: UndergroundDir,
         #[serde(default)]
         copied_belt_info: Option<(BeltId, BeltLenType)>,
     },
     PowerPole {
         pos: Position,
-        ty: String,
+        ty: Arc<str>,
     },
     Splitter {
         pos: Position,
         direction: Dir,
-        ty: String,
+        ty: Arc<str>,
 
         in_mode: Option<SplitterDistributionMode>,
         out_mode: Option<SplitterDistributionMode>,
     },
     Chest {
         pos: Position,
-        ty: String,
+        ty: Arc<str>,
     },
     SolarPanel {
         pos: Position,
-        ty: String,
+        ty: Arc<str>,
     },
     Lab {
         pos: Position,
-        ty: String,
+        ty: Arc<str>,
     },
     Beacon {
-        ty: String,
+        ty: Arc<str>,
         pos: Position,
     },
     FluidTank {
-        ty: String,
+        ty: Arc<str>,
         pos: Position,
         rotation: Dir,
     },
     MiningDrill {
-        ty: String,
+        ty: Arc<str>,
         pos: Position,
         rotation: Dir,
     },
@@ -222,7 +224,7 @@ impl BlueprintAction {
                                 pos,
                                 direction,
                                 // FIXME:
-                                ty: "FIXME".to_string(),
+                                ty: "FIXME".to_string().into(),
                                 in_mode,
                                 out_mode,
                             },
@@ -1160,7 +1162,7 @@ impl Blueprint {
                             },
                             direction: *direction,
                             // FIXME:
-                            ty: "FIXME".to_string(),
+                            ty: "FIXME".to_string().into(),
                             in_mode: None,
                             out_mode: None,
                         },

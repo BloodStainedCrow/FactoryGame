@@ -1,5 +1,6 @@
 use crate::belt::BeltTileId;
 use crate::belt::belt::Belt;
+use crate::blueprint::blueprint_string::BlueprintString;
 use crate::chest::ChestSize;
 use crate::data::AllowedFluidDirection;
 use crate::frontend::action::belt_placement::FakeGameState;
@@ -67,6 +68,7 @@ use petgraph::graph::NodeIndex;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::collections::BTreeMap;
 use std::io::BufReader;
+use std::io::Read;
 use std::iter;
 use std::num::NonZero;
 use std::path::Path;
@@ -214,9 +216,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             Position { x: 6000, y: 12000 },
             data_store,
         );
-        let file =
-            File::open("test_blueprints/murphy/megabase_with_merged_blue_purple.bp").unwrap();
-        let mut bp: Blueprint = ron::de::from_reader(file).unwrap();
+        let mut file =
+            File::open("test_blueprints/murphy/megabase_new_blueprint_format.bp").unwrap();
+        let mut s = String::new();
+        file.read_to_string(&mut s).unwrap();
+        let bp: BlueprintString = BlueprintString(s);
+        let mut bp: Blueprint = bp.try_into().expect("Blueprint String Invalid");
         bp.optimize();
 
         let num_calls = bp.action_count();

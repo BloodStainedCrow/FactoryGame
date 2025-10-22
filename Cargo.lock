@@ -1648,6 +1648,7 @@ dependencies = [
 name = "factory"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "bimap",
  "bincode 2.0.1",
  "bitcode",

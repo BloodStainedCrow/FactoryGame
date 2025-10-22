@@ -1,5 +1,6 @@
 use crate::belt::belt::Belt;
 use crate::belt::smart::{HAND_SIZE, SmartBelt};
+use crate::blueprint::blueprint_string::BlueprintString;
 use crate::chest::ChestSize;
 use crate::frontend::action::action_state_machine::ForkSaveInfo;
 use crate::frontend::action::belt_placement::{BeltState, expected_belt_state};
@@ -2406,7 +2407,7 @@ pub fn render_ui<
                                     let item = row.index();
 
                                     row.col(|ui| {
-                                        ui.label(&data_store.item_names[item]);
+                                        ui.label(&*data_store.item_names[item]);
                                     });
 
                                     let (
@@ -2554,19 +2555,17 @@ pub fn render_ui<
             .add_enabled(bp.is_some(), Button::new("Copy Blueprint String"))
             .clicked()
         {
-            let s: String =
-                ron::ser::to_string_pretty(bp.unwrap(), ron::ser::PrettyConfig::default()).unwrap();
-            ctx.copy_text(s);
+            let s: BlueprintString = bp.cloned().unwrap().into();
+            ctx.copy_text(s.0);
         }
 
         if ui
             .add_enabled(bp.is_some(), Button::new("Write Blueprint String to file"))
             .clicked()
         {
-            let s: String =
-                ron::ser::to_string_pretty(bp.unwrap(), ron::ser::PrettyConfig::default()).unwrap();
+            let s: BlueprintString = bp.cloned().unwrap().into();
             let mut file = File::create("saved.bp").unwrap();
-            file.write(s.as_bytes()).unwrap();
+            file.write(s.0.as_bytes()).unwrap();
         }
 
         if ui

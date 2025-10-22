@@ -69,6 +69,7 @@ fork = "0.3.0"
 libc = { version = "0.2.177", default-features = false }
 interprocess = "2.2.3"
 fixed-buffer = "1.0.2"
+base64 = "0.22.1"
 
 [dev-dependencies]
 winit = "0.30.12"
