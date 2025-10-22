@@ -454,6 +454,19 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
         maybe_ret.clone()
     }
 
+    fn get_sushi_splitter_inputs(&mut self, id: SplitterID) -> [Option<Item<ItemIdxType>>; 2] {
+        self.sushi_splitters[id.index as usize]
+            .inputs
+            .each_mut()
+            .map(|v| *v.get_mut())
+    }
+    fn get_sushi_splitter_outputs(&mut self, id: SplitterID) -> [Option<Item<ItemIdxType>>; 2] {
+        self.sushi_splitters[id.index as usize]
+            .outputs
+            .each_mut()
+            .map(|v| *v.get_mut())
+    }
+
     fn get_sushi_splitter_belt_ids_uncached_input(
         &self,
         id: SplitterID,
@@ -2325,6 +2338,24 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                 .collect_array()
                 .unwrap(),
         ]
+    }
+
+    /// This wants a &mut to avoid unsafe
+    pub fn get_splitter_belt_content(
+        &mut self,
+        splitter_id: SplitterTileId,
+    ) -> [[Option<Item<ItemIdxType>>; 2]; 2] {
+        let items = match splitter_id {
+            SplitterTileId::Any(index) => match self.any_splitters[index as usize] {
+                AnySplitter::Pure(item, id) => todo!(),
+                AnySplitter::Sushi(id) => [
+                    self.inner.get_sushi_splitter_inputs(id),
+                    self.inner.get_sushi_splitter_outputs(id),
+                ],
+            },
+        };
+
+        items
     }
 
     pub fn add_length(

@@ -2948,6 +2948,12 @@ pub fn render_ui<
 
                         ui.label(format!("Inputs: {:?}", inputs));
                         ui.label(format!("Outputs: {:?}", outputs));
+
+                        let storage = game_state_ref.simulation_state.factory.belts.get_splitter_belt_content(*id);
+                        let [inputs, outputs] = storage;
+
+                        ui.label(format!("Inputs: {:?}", inputs));
+                        ui.label(format!("Outputs: {:?}", outputs));
                     },
                     Entity::Chest {
                         ty,
