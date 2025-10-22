@@ -234,7 +234,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
         let power_iter = match self.single_type {
             Some(_ty) => Either::Left(std::iter::repeat(&arr)),
-            None => Either::Right(self.base_power_consumption.array_chunks()),
+            None => Either::Right(self.base_power_consumption.as_chunks().0.into_iter()),
         };
 
         for (
@@ -242,16 +242,16 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             (timer_arr, (prod_timer_arr, (speed_mod, (bonus_prod, (base_power, power_mod))))),
         ) in self
             .timers
-            .array_chunks_mut::<{ SIMDTYPE::LEN }>()
-            .zip(
-                self.prod_timers.array_chunks_mut().zip(
-                    self.combined_speed_mod.array_chunks().zip(
-                        self.bonus_productivity
-                            .array_chunks()
-                            .zip(power_iter.zip(self.power_consumption_modifier.array_chunks())),
+            .as_chunks_mut::<{ SIMDTYPE::LEN }>()
+            .0
+            .into_iter()
+            .zip(self.prod_timers.as_chunks_mut().0.into_iter().zip(
+                self.combined_speed_mod.as_chunks().0.into_iter().zip(
+                    self.bonus_productivity.as_chunks().0.into_iter().zip(
+                        power_iter.zip(self.power_consumption_modifier.as_chunks().0.into_iter()),
                     ),
                 ),
-            )
+            ))
             .enumerate()
         {
             let index = index * 16;

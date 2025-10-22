@@ -5,7 +5,6 @@
 #![feature(never_type)]
 #![feature(mixed_integer_ops_unsigned_sub)]
 #![feature(int_roundings)]
-#![feature(array_chunks)]
 #![feature(strict_overflow_ops)]
 #![feature(thin_box)]
 #![feature(ptr_metadata)]
