@@ -64,6 +64,7 @@ pub enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
     },
     Beacon {
         ty: u8,
+        // The module effects. NOT ADJUSTED BY BEACON EFFECTIVENESS
         module_effects: (i16, i16, i16),
         // affected_entities: Vec<BeaconAffectedEntity<RecipeIdxType>>,
     },
@@ -2672,7 +2673,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             assert!(affected_grids_and_potential_match);
         }
 
-        let effect: (i16, i16, i16) = modules
+        let raw_effect: (i16, i16, i16) = modules
             .iter()
             .flatten()
             .map(|module_ty| {
@@ -2686,11 +2687,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             .unwrap_or((0, 0, 0));
 
         let effect = (
-            effect.0 * data_store.beacon_info[usize::from(ty)].effectiveness.0 as i16
+            raw_effect.0 * data_store.beacon_info[usize::from(ty)].effectiveness.0 as i16
                 / data_store.beacon_info[usize::from(ty)].effectiveness.1 as i16,
-            effect.1 * data_store.beacon_info[usize::from(ty)].effectiveness.0 as i16
+            raw_effect.1 * data_store.beacon_info[usize::from(ty)].effectiveness.0 as i16
                 / data_store.beacon_info[usize::from(ty)].effectiveness.1 as i16,
-            effect.2 * data_store.beacon_info[usize::from(ty)].effectiveness.0 as i16
+            raw_effect.2 * data_store.beacon_info[usize::from(ty)].effectiveness.0 as i16
                 / data_store.beacon_info[usize::from(ty)].effectiveness.1 as i16,
         );
 
@@ -2714,7 +2715,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 beacon_pos,
                 PowerGridEntity::Beacon {
                     ty,
-                    module_effects: effect,
+                    module_effects: raw_effect,
                 },
             ),
         );
