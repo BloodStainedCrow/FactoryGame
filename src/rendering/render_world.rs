@@ -1722,7 +1722,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         out_mode,
 
                         ty,
-                    } => {},
+                    } => {
+                        // TODO:
+                    },
                     crate::frontend::world::tile::PlaceEntityType::Chest { pos, ty } => {
                         let size = data_store.chest_tile_sizes[usize::from(*ty)];
                         let size = [size.0, size.1];
@@ -1984,9 +1986,14 @@ pub fn render_ui<
 
                 if ui
                     .add_enabled(
-                        state_machine_ref.current_fork_save_in_progress.is_none(),
+                        cfg!(target_os = "linux")
+                            && state_machine_ref.current_fork_save_in_progress.is_none(),
                         Button::new("Save with fork"),
                     )
+                    .on_disabled_hover_text(if !cfg!(target_os = "linux") {
+                        "Only available on Linux" } else {
+                            "Save already in progress"
+                        })
                     .clicked()
                 {
                     let recv =
