@@ -237,13 +237,15 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             None => Either::Right(self.base_power_consumption.as_chunks().0.into_iter()),
         };
 
+        let (timers, overlap) = self.timers.as_chunks_mut::<{ SIMDTYPE::LEN }>();
+
+        // FIXME:
+        // assert!(overlap.is_empty());
+
         for (
             index,
             (timer_arr, (prod_timer_arr, (speed_mod, (bonus_prod, (base_power, power_mod))))),
-        ) in self
-            .timers
-            .as_chunks_mut::<{ SIMDTYPE::LEN }>()
-            .0
+        ) in timers
             .into_iter()
             .zip(self.prod_timers.as_chunks_mut().0.into_iter().zip(
                 self.combined_speed_mod.as_chunks().0.into_iter().zip(
@@ -603,6 +605,9 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             }
         }
 
+        assert_eq!(self.timers.len() % SIMDTYPE::LEN, 0);
+        assert_eq!(other.timers.len() % SIMDTYPE::LEN, 0);
+
         let new_single_type = match (self.single_type, other.single_type) {
             (None, v) => {
                 if self.len == 0 {
@@ -654,6 +659,12 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         for i in self.len..old_len_stored {
             self.holes.push(i);
         }
+        self.holes.extend(
+            other
+                .holes
+                .iter()
+                .map(|&old_idx| old_idx + self.timers.len()),
+        );
         self.len = old_len_stored;
 
         let new_ings_max: [Box<[u8]>; NUM_INGS] = self
@@ -667,7 +678,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                         .into_iter()
                         .enumerate()
                         .take(other.len)
-                        .filter(|(i, _)| !other.holes.contains(i))
                         .map(|(_, v)| v),
                 );
                 s.into_boxed_slice()
@@ -686,7 +696,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                         .into_iter()
                         .enumerate()
                         .take(other.len)
-                        .filter(|(i, _)| !other.holes.contains(i))
                         .map(|(_, v)| v),
                 );
                 s.into_boxed_slice()
@@ -704,7 +713,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                         .into_iter()
                         .enumerate()
                         .take(other.len)
-                        .filter(|(i, _)| !other.holes.contains(i))
                         .map(|(_, v)| v),
                 );
                 s.into_boxed_slice()
@@ -719,7 +727,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_iter()
                 .enumerate()
                 .take(other.len)
-                .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
 
@@ -731,7 +738,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_iter()
                 .enumerate()
                 .take(other.len)
-                .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
 
@@ -743,7 +749,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_iter()
                 .enumerate()
                 .take(other.len)
-                .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
 
@@ -755,7 +760,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_iter()
                 .enumerate()
                 .take(other.len)
-                .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
 
@@ -767,7 +771,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_iter()
                 .enumerate()
                 .take(other.len)
-                .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
 
@@ -779,7 +782,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_iter()
                 .enumerate()
                 .take(other.len)
-                .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
 
@@ -791,7 +793,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_iter()
                 .enumerate()
                 .take(other.len)
-                .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
 
@@ -803,7 +804,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_iter()
                 .enumerate()
                 .take(other.len)
-                .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
 
@@ -815,7 +815,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_iter()
                 .enumerate()
                 .take(other.len)
-                .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
 
@@ -827,7 +826,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_iter()
                 .enumerate()
                 .take(other.len)
-                .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
 
@@ -839,7 +837,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .copied()
                 .enumerate()
                 .take(other.len)
-                .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
 
@@ -851,7 +848,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .copied()
                 .enumerate()
                 .take(other.len)
-                .filter(|(i, _)| !other.holes.contains(i))
                 .map(|(_, v)| v),
         );
 
@@ -918,6 +914,8 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
 
         //     updates
         // };
+
+        assert_eq!(new_timers.len() % SIMDTYPE::LEN, 0);
 
         let ret = Self {
             single_type: new_single_type,
@@ -1097,7 +1095,8 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             take_mut::take(&mut self.outputs[0], |output| {
                 let mut output = output.into_vec();
                 output.reserve(Simdtype::LEN);
-                new_len = Some(output.capacity());
+                new_len =
+                    Some((output.capacity() - (Simdtype::LEN - 1)).next_multiple_of(Simdtype::LEN));
                 output.into_boxed_slice()
             });
 
@@ -1259,6 +1258,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         self.types[self.len] = ty;
 
         self.len += 1;
+        assert_eq!(self.timers.len() % SIMDTYPE::LEN, 0);
         (self.len - 1).try_into().unwrap()
     }
 

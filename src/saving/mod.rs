@@ -8,7 +8,6 @@ use std::{
 
 use bitcode::Encode;
 use directories::ProjectDirs;
-use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
 use log::error;
 
 use std::io::{BufReader, BufWriter};
@@ -20,6 +19,7 @@ use crate::{
     get_size::Mutex,
     item::IdxTrait,
     join_many::join,
+    par_generation::Timer,
 };
 
 #[derive(Debug, Encode, serde::Deserialize, serde::Serialize)]
@@ -131,6 +131,7 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     chests,
                     fluid_store,
                     item_times,
+                    ore_store,
                 },
         } = simulation_state;
 
@@ -184,6 +185,12 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 );
             },
             || {
+                save_at(
+                    ore_store,
+                    temp_file_dir.join("simulation_state.factory.ore_store"),
+                );
+            },
+            || {
                 profiling::scope!("Serialize world");
                 world.par_save(temp_file_dir.join("world"));
             },
@@ -229,6 +236,7 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     chests,
                     fluid_store,
                     item_times,
+                    ore_store,
                 },
         } = simulation_state;
 
@@ -282,11 +290,17 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         );
         send.write(&[9]).expect("Write to pipe failed");
         // send.flush().expect("Flushing pipe failed");
-        world.save_fork(temp_file_dir.join("world"));
+        save_at_fork(
+            ore_store,
+            temp_file_dir.join("simulation_state.factory.ore_store"),
+        );
         send.write(&[10]).expect("Write to pipe failed");
         // send.flush().expect("Flushing pipe failed");
-        save_at_fork(aux_data, temp_file_dir.join("aux_data"));
+        world.save_fork(temp_file_dir.join("world"));
         send.write(&[11]).expect("Write to pipe failed");
+        // send.flush().expect("Flushing pipe failed");
+        save_at_fork(aux_data, temp_file_dir.join("aux_data"));
+        send.write(&[12]).expect("Write to pipe failed");
         // send.flush().expect("Flushing pipe failed");
     }
 
@@ -363,6 +377,8 @@ pub fn load<
 >(
     path: PathBuf,
 ) -> Option<SaveGame<ItemIdxType, RecipeIdxType, GameState<ItemIdxType, RecipeIdxType>>> {
+    let _timer = Timer::new("Load Save File from disk");
+
     let (
         checksum,
         tech_state,
@@ -373,6 +389,7 @@ pub fn load<
         chests,
         fluid_store,
         item_times,
+        ore_store,
         world,
         aux_data,
     ) = join!(
@@ -413,6 +430,10 @@ pub fn load<
             load_at(path.join("simulation_state.factory.item_times"))
         },
         || {
+            profiling::scope!("Deserialize simulation_state.factory.ore_store");
+            load_at(path.join("simulation_state.factory.ore_store"))
+        },
+        || {
             profiling::scope!("Deserialize world");
             Mutex::new(World::par_load(path.join("world")))
         },
@@ -434,6 +455,7 @@ pub fn load<
                 chests,
                 fluid_store,
                 item_times,
+                ore_store,
             },
         }),
         aux_data,

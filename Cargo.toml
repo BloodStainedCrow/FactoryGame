@@ -70,6 +70,7 @@ libc = { version = "0.2.177", default-features = false }
 interprocess = "2.2.3"
 fixed-buffer = "1.0.2"
 base64 = "0.22.1"
+mimalloc = { version = "0.1.48", features = ["v3"] }
 
 [dev-dependencies]
 winit = "0.30.12"

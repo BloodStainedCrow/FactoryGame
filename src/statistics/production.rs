@@ -27,8 +27,9 @@ pub struct ProductionInfo {
 }
 
 impl ProductionInfo {
-    pub fn from_recipe_info<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    pub fn from_recipe_info_and_per_item<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         info: &RecipeTickInfo,
+        per_item_counts: impl IntoIterator<Item = u32>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         Self {
@@ -45,6 +46,8 @@ impl ProductionInfo {
                         })
                         .sum()
                 })
+                .zip(per_item_counts)
+                .map(|(a, b): (u64, u32)| a + b as u64)
                 .collect(),
         }
     }

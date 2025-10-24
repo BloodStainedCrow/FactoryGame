@@ -6,6 +6,7 @@ use std::{
         mpsc::{Sender, channel},
     },
     thread,
+    time::Duration,
 };
 
 use wasm_timer::Instant;
@@ -94,7 +95,10 @@ impl eframe::App for App {
         }
 
         match &self.state {
-            AppState::MainMenu { .. } | AppState::Loading { .. } => {},
+            AppState::MainMenu { .. } => {},
+            AppState::Loading { .. } => {
+                ctx.request_repaint_after(Duration::from_secs_f32(1.0 / 60.0));
+            },
             AppState::Ingame => {
                 // Only request a repaint when we are ingame (otherwise depending on the os we might render like 1k FPS for no reason)
                 ctx.request_repaint();
@@ -112,6 +116,8 @@ impl eframe::App for App {
                 }
             },
         }
+
+        ctx.set_cursor_icon(egui::CursorIcon::Default);
 
         match &mut self.state {
             AppState::Ingame => {
@@ -443,7 +449,7 @@ impl eframe::App for App {
 
                             ui.add(Slider::new(gigabase_size, 1..=1_000).logarithmic(true).update_while_editing(true).text("Number of base copies to build"));
 
-                            let single_base_size  = 11.4 / 40.0;
+                            let single_base_size  = 15.4 / 40.0;
                             let single_base_usage  = 40.0 / 40.0;
 
                             ui.label(&format!("Est. Memory Usage: ~{:.1}GB", single_base_size * f64::from(*gigabase_size)));

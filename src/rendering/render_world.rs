@@ -367,17 +367,17 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         },
                                     }
 
-                                    // TODO: Get current ore
-                                    if game_state
+                                    if let Some(ore) = game_state
                                         .world
-                                        .get_original_ore_at_pos(Position {
+                                        .get_ore_type_at_pos(Position {
                                             x: chunk_x * CHUNK_SIZE as i32 + x as i32,
                                             y: chunk_y * CHUNK_SIZE as i32 + y as i32,
                                         })
-                                        .is_some()
                                     {
+                                        // TODO: Render different sprites for different rechnesses
+                                        // TODO: Do not use item sprite for ore on the ground
                                         tile_layer.draw_sprite(
-                                            &texture_atlas.items[0],
+                                            &texture_atlas.items[ore.into_usize()],
                                             DrawInstance {
                                                 position: [
                                                     chunk_draw_offs.0 + x as f32,
@@ -1410,6 +1410,23 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             );
                                         },
 
+                                        Entity::MiningDrill { ty, pos, rotation, drill_id } => {
+                                            let size =
+                                                data_store.mining_drill_info[usize::from(*ty)].size(*rotation);
+
+                                            // TODO: Animation
+                                            // TODO: Rotation
+                                            texture_atlas.chest.draw(
+                                                [
+                                                    draw_offset.0 + pos.x as f32,
+                                                    draw_offset.1 + pos.y as f32,
+                                                ],
+                                                size,
+                                                0,
+                                                entity_layer,
+                                            );
+                                        },
+
                                         e => todo!("{:?}", e),
                                     }
                                 }
@@ -1950,7 +1967,7 @@ pub fn render_ui<
     });
 
     if let Some(recv) = &mut state_machine_ref.current_fork_save_in_progress {
-        const NUM_STATES: u8 = 11;
+        const NUM_STATES: u8 = 12;
 
         let mut v = [0];
         if let Err(e) = recv.recv.read_exact(&mut v) {
@@ -1991,9 +2008,10 @@ pub fn render_ui<
                         Button::new("Save with fork"),
                     )
                     .on_disabled_hover_text(if !cfg!(target_os = "linux") {
-                        "Only available on Linux" } else {
-                            "Save already in progress"
-                        })
+                        "Only available on Linux"
+                    } else {
+                        "Save already in progress"
+                    })
                     .clicked()
                 {
                     let recv =
@@ -3129,6 +3147,10 @@ pub fn render_ui<
                         } else {
                             ui.label("Empty");
                         }
+                    }
+                    Entity::MiningDrill { ty, pos, rotation, drill_id } => {
+                        // TODO:
+                        ui.label(&*data_store.mining_drill_info[*ty as usize].display_name);
                     }
                     _ => todo!(),
                 }

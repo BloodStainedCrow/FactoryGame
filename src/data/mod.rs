@@ -562,6 +562,7 @@ pub struct TechnologyEffect<RecipeIdxType: WeakIdxTrait> {
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct MiningDrillInfo {
     pub name: Arc<str>,
+    pub display_name: Arc<str>,
     pub size: [u16; 2],
     // TODO: Currently mining range must be centered on the mining drill
     pub mining_range: [u16; 2],
@@ -569,6 +570,26 @@ pub struct MiningDrillInfo {
     // Fraction
     pub resource_drain: (u8, u8),
     // TODO: Allowed ore types
+}
+
+impl MiningDrillInfo {
+    pub fn size(&self, rotation: Dir) -> [u16; 2] {
+        let base_size = self.size;
+        let size = match rotation {
+            Dir::North | Dir::South => base_size,
+            Dir::East | Dir::West => [base_size[0], base_size[1]],
+        };
+        size
+    }
+
+    pub fn mining_area(&self, rotation: Dir) -> [u16; 2] {
+        let base_area = self.mining_range;
+        let area = match rotation {
+            Dir::North | Dir::South => base_area,
+            Dir::East | Dir::West => [base_area[0], base_area[1]],
+        };
+        area
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
@@ -1072,24 +1093,26 @@ impl RawDataStore {
             } - 1;
 
             let max_output = |i: usize, recipe: &RawRecipeData| {
-                // For now the output maximum is independent of crafting speed :/
-                const MACHINE_SPEED: f32 = 5.0;
+                // TODO: Do I want to make this smarter?
+                // // For now the output maximum is independent of crafting speed :/
+                // const MACHINE_SPEED: f32 = 5.0;
                 let stack_size =
                     item_stack_sizes[item_lookup[recipe.output[i].item.as_str()].into_usize()];
                 let output_single_craft = recipe.output[i].amount;
 
-                // FIXME: This being floats, could be bad IF two machines get a different rounding result
-                // 25 ticks is the round trip time for a bulk inserter.
-                let crafts_per_inserter_swing =
-                    70.0 / (recipe.time_to_craft as f32 / MACHINE_SPEED);
+                // // FIXME: This being floats, could be bad IF two machines get a different rounding result
+                // // 25 ticks is the round trip time for a bulk inserter.
+                // let crafts_per_inserter_swing =
+                //     70.0 / (recipe.time_to_craft as f32 / MACHINE_SPEED);
 
-                let x = (crafts_per_inserter_swing as u8).clamp(2, 100);
+                // let x = (crafts_per_inserter_swing as u8).clamp(2, 100);
 
-                min(
-                    // We want to have at least the space for a single craft
-                    max(stack_size, output_single_craft),
-                    output_single_craft.saturating_mul(x),
-                )
+                // min(
+                //     // We want to have at least the space for a single craft
+                //     max(stack_size, output_single_craft),
+                //     output_single_craft.saturating_mul(x),
+                // )
+                max(stack_size, output_single_craft)
             };
 
             let out_idx = match recipe.output.len() {
@@ -1430,7 +1453,8 @@ impl RawDataStore {
 
             // FIXME:
             mining_drill_info: vec![MiningDrillInfo {
-                name: "Electric Mining Drill".to_string().into(),
+                name: "factory_game::mining_drill".to_string().into(),
+                display_name: "Electric Mining Drill".to_string().into(),
                 size: [3, 3],
                 mining_range: [5, 5],
                 base_speed: 20,

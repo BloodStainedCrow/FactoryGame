@@ -375,6 +375,7 @@ impl<RecipeIdxType: IdxTrait> Storage<RecipeIdxType> {
 #[repr(u8)]
 pub enum StaticID {
     Chest = 0,
+    PureSoloOwnedMiningDrill = 1,
 }
 
 #[cfg(test)]

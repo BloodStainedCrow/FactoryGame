@@ -304,6 +304,12 @@ impl MultiLabStore {
 
         // TODO: use iterators/check that this compiles well
         for timer in self.timer.iter_mut() {
+            // // FIXME: FOR TESTING ONLY
+            // for science in sciences.iter_mut() {
+            //     **science.peek_mut().unwrap() = 0;
+            // }
+            // // FIXME: FOR TESTING ONLY END
+
             let science_mul: u16 = sciences
                 .iter_mut()
                 .zip(needed)

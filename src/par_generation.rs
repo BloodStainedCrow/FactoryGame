@@ -26,7 +26,6 @@ use crate::{
         FluidConnectionDir, FluidSystemStore,
         connection_logic::can_fluid_tanks_connect_to_single_connection,
     },
-    network_graph::WeakIndex,
     power::{PowerGridStorage, power_grid::BeaconAffectedEntity},
 };
 
@@ -159,7 +158,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ParGenerateInfo<ItemIdxType
     pub fn from_gamestate(
         world: &World<ItemIdxType, RecipeIdxType>,
         sim_state: &SimulationState<ItemIdxType, RecipeIdxType>,
-        aux_data: &AuxillaryData,
+        _aux_data: &AuxillaryData,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         let module_combinations = world
@@ -253,7 +252,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ParGenerateInfo<ItemIdxType
                     rotation,
                     recipe: match info {
                         AssemblerInfo::UnpoweredNoRecipe => None,
-                        AssemblerInfo::Unpowered(recipe) => None,
+                        AssemblerInfo::Unpowered(_recipe) => None,
                         AssemblerInfo::PoweredNoRecipe(_) => None,
                         AssemblerInfo::Powered {
                             id, pole_position, ..
@@ -380,7 +379,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ParGenerateInfo<ItemIdxType
                         } => {
                             match data_store.recipe_to_items[assembler_id.recipe.into_usize()]
                                 .iter()
-                                .find(|(dir, item)| *item == id.fluid.unwrap())
+                                .find(|(_dir, item)| *item == id.fluid.unwrap())
                             {
                                 Some((dir, _)) => Some(
                                     data_store.assembler_info[*ty as usize]
@@ -412,7 +411,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ParGenerateInfo<ItemIdxType
                     })
                     .flatten()
                     .flat_map(
-                        |(e_pos, e_dir, e_size, (fluid_conn, allowed_dir), fluid_flow_dir)| {
+                        |(e_pos, e_dir, e_size, (fluid_conn, _allowed_dir), fluid_flow_dir)| {
                             let v = can_fluid_tanks_connect_to_single_connection(
                                 pos,
                                 ty,
@@ -425,7 +424,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ParGenerateInfo<ItemIdxType
                             );
 
                             match v {
-                                Some((conn_pos, conn_dir)) => Some((fluid_flow_dir, conn_pos)),
+                                Some((conn_pos, _conn_dir)) => Some((fluid_flow_dir, conn_pos)),
                                 None => None,
                             }
                         },
@@ -537,7 +536,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ParGenerateInfo<ItemIdxType
                     pos,
                     direction,
                     filter,
-                    info,
+                    ..
                 } => Some(ActionType::PlaceEntity(PlaceEntityInfo {
                     entities: EntityPlaceOptions::Single(PlaceEntityType::Inserter {
                         ty,
@@ -621,15 +620,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ParGenerateInfo<ItemIdxType
             .get_chunks()
             .flat_map(|chunk| chunk.get_entities())
             .filter_map(|e| match e {
-                &Entity::SolarPanel {
-                    pos,
-                    ty,
-                    pole_position,
-                } => Some(ActionType::PlaceEntity(PlaceEntityInfo {
-                    entities: EntityPlaceOptions::Single(PlaceEntityType::SolarPanel { pos, ty }),
-                    force: false,
-                })),
-                &Entity::Splitter { pos, direction, id } => {
+                &Entity::SolarPanel { pos, ty, .. } => {
+                    Some(ActionType::PlaceEntity(PlaceEntityInfo {
+                        entities: EntityPlaceOptions::Single(PlaceEntityType::SolarPanel {
+                            pos,
+                            ty,
+                        }),
+                        force: false,
+                    }))
+                },
+                &Entity::Splitter { pos, direction, .. } => {
                     Some(ActionType::PlaceEntity(PlaceEntityInfo {
                         entities: EntityPlaceOptions::Single(PlaceEntityType::Splitter {
                             pos,
@@ -1419,13 +1419,13 @@ fn pipe_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 //     }
 // }
 
-struct Timer {
+pub struct Timer {
     start: std::time::Instant,
     text: &'static str,
 }
 
 impl Timer {
-    fn new(text: &'static str) -> Self {
+    pub fn new(text: &'static str) -> Self {
         Self {
             start: std::time::Instant::now(),
             text,

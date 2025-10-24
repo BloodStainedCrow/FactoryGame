@@ -889,7 +889,7 @@ impl Blueprint {
                     (1, 1, (BeltId::Pure(0), 0), *pos, 0)
                 },
                 BlueprintPlaceEntity::Lab { pos, .. } => (1, 3, (BeltId::Pure(0), 0), *pos, 0),
-                BlueprintPlaceEntity::Beacon { pos, .. } => (1, 3, (BeltId::Pure(0), 0), *pos, 0),
+                BlueprintPlaceEntity::Beacon { pos, .. } => (1, 4, (BeltId::Pure(0), 0), *pos, 0),
                 BlueprintPlaceEntity::FluidTank { pos, .. } => {
                     (1, 2, (BeltId::Pure(0), 0), *pos, 0)
                 },
@@ -1025,6 +1025,24 @@ impl Blueprint {
         // FIXME: This will underflow if a entity extends past the edge of the selected area
         for e in entities {
             let actions: Vec<BlueprintAction> = match e {
+                crate::frontend::world::tile::Entity::MiningDrill {
+                    ty,
+                    pos,
+                    rotation,
+                    drill_id,
+                    // internal_inserter,
+                } => {
+                    vec![BlueprintAction::PlaceEntity(
+                        BlueprintPlaceEntity::MiningDrill {
+                            ty: todo!(),
+                            pos: Position {
+                                x: pos.x - base_pos.x,
+                                y: pos.y - base_pos.y,
+                            },
+                            rotation: *rotation,
+                        },
+                    )]
+                },
                 crate::frontend::world::tile::Entity::Assembler {
                     ty,
                     pos,

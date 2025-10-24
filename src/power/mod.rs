@@ -499,7 +499,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
 
             for (_, old_storage, new_storage) in &storages_to_move_into_that_grid {
                 let old_beacon_entity = match old_storage {
-                    PowerGridEntity::Assembler { ty, recipe, index } => {
+                    PowerGridEntity::Assembler { recipe, index, .. } => {
                         BeaconAffectedEntity::Assembler {
                             id: AssemblerID {
                                 recipe: *recipe,
@@ -508,18 +508,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                             },
                         }
                     },
-                    PowerGridEntity::Lab { ty, index } => BeaconAffectedEntity::Lab {
+                    PowerGridEntity::Lab { index, .. } => BeaconAffectedEntity::Lab {
                         grid: old_id,
                         index: *index,
                     },
-                    PowerGridEntity::LazyPowerProducer { item, index } => continue,
-                    PowerGridEntity::SolarPanel { ty } => continue,
-                    PowerGridEntity::Accumulator { ty } => continue,
-                    PowerGridEntity::Beacon { ty, module_effects } => continue,
+                    PowerGridEntity::LazyPowerProducer { .. } => continue,
+                    PowerGridEntity::SolarPanel { .. } => continue,
+                    PowerGridEntity::Accumulator { .. } => continue,
+                    PowerGridEntity::Beacon { .. } => continue,
                 };
 
                 let new_beacon_entity = match new_storage {
-                    PowerGridEntity::Assembler { ty, recipe, index } => {
+                    PowerGridEntity::Assembler { recipe, index, .. } => {
                         BeaconAffectedEntity::Assembler {
                             id: AssemblerID {
                                 recipe: *recipe,
@@ -528,14 +528,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                             },
                         }
                     },
-                    PowerGridEntity::Lab { ty, index } => BeaconAffectedEntity::Lab {
+                    PowerGridEntity::Lab { index, .. } => BeaconAffectedEntity::Lab {
                         grid: new_id,
                         index: *index,
                     },
-                    PowerGridEntity::LazyPowerProducer { item, index } => continue,
-                    PowerGridEntity::SolarPanel { ty } => continue,
-                    PowerGridEntity::Accumulator { ty } => continue,
-                    PowerGridEntity::Beacon { ty, module_effects } => continue,
+                    PowerGridEntity::LazyPowerProducer { .. } => continue,
+                    PowerGridEntity::SolarPanel { .. } => continue,
+                    PowerGridEntity::Accumulator { .. } => continue,
+                    PowerGridEntity::Beacon { .. } => continue,
                 };
 
                 for pg in &mut self.power_grids.iter_mut().filter(|pg| !pg.is_placeholder) {
@@ -561,7 +561,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             ));
         }
 
-        // #[cfg(debug_assertions)]
+        #[cfg(debug_assertions)]
         {
             let found_hole = self
                 .power_grids
@@ -633,7 +633,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             assert!(affected_grids_and_potential_match);
         }
 
-        // #[cfg(debug_assertions)]
+        #[cfg(debug_assertions)]
         {
             let found_hole = self
                 .power_grids
@@ -1085,7 +1085,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             })
             .reduce(|acc, v| (acc.0 + v.0, acc.1 + v.1, acc.2 + v.2))
             .unwrap_or((0, 0, 0));
-
         let effect = if self.power_grids[usize::from(grid)].last_power_mult >= MIN_BEACON_POWER_MULT
         {
             // Add the full beacon effect since we are powered

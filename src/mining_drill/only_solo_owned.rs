@@ -1,16 +1,24 @@
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
+use get_size2::GetSize;
 use itertools::Itertools;
 
 use crate::WeakIdxTrait;
 use crate::data::DataStore;
 use crate::item::ITEMCOUNTTYPE;
 use crate::item::IdxTrait;
+use crate::item::Indexable;
 use crate::item::Item;
 use crate::power::Joule;
 
 use std::cmp::min;
 use std::mem;
 
-use crate::storage_list::PANIC_ON_INSERT;
+use crate::storage_list::ALWAYS_FULL;
+
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(super) struct PureDrillStorageOnlySoloOwned<ItemIdxType: WeakIdxTrait> {
     item: Item<ItemIdxType>,
     holes: Vec<usize>,
@@ -66,12 +74,8 @@ impl<ItemIdxType: IdxTrait> PureDrillStorageOnlySoloOwned<ItemIdxType> {
     }
 
     /// mining_prod in percent
-    pub fn update<RecipeIdxType: IdxTrait>(
-        &mut self,
-        power_mult: u8,
-        mining_prod: u16,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Joule {
+    pub fn update(&mut self, power_mult: u8, mining_prod: u16) -> (Joule, u32) {
+        let mut produced = 0u32;
         for (inventory, solo_items) in self
             .inventory
             .iter_mut()
@@ -93,9 +97,10 @@ impl<ItemIdxType: IdxTrait> PureDrillStorageOnlySoloOwned<ItemIdxType> {
 
             // TODO: Productivity
             *inventory += amount_to_remove;
+            produced += amount_to_remove as u32;
         }
 
-        Joule(0)
+        (Joule(0), produced)
     }
 
     pub fn get_current_tile_values(&self, index: u32) -> Vec<u32> {
@@ -127,6 +132,6 @@ impl<ItemIdxType: IdxTrait> PureDrillStorageOnlySoloOwned<ItemIdxType> {
     }
 
     pub fn get_inventories(&mut self) -> (&[ITEMCOUNTTYPE], &mut [ITEMCOUNTTYPE]) {
-        (PANIC_ON_INSERT, self.inventory.as_mut_slice())
+        (ALWAYS_FULL, self.inventory.as_mut_slice())
     }
 }

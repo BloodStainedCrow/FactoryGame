@@ -411,6 +411,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 Entity::Lab { .. } => {},
                                 Entity::Beacon { .. } => {},
                                 Entity::FluidTank { .. } => {},
+                                Entity::MiningDrill { .. } => {},
                             }
                         }
                         vec![]
@@ -667,6 +668,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     ),
                     data_store,
                 ) {
+                    Some(Entity::MiningDrill { ty, rotation, .. }) => {
+                        self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                            PlaceEntityType::MiningDrill {
+                                pos: Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.map_view_info.unwrap_or(self.local_player_pos),
+                                    self.current_mouse_pos,
+                                ),
+                                ty: *ty,
+                                rotation: *rotation,
+                            },
+                        ));
+                    },
                     Some(Entity::Assembler { ty, rotation, .. }) => {
                         self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                             PlaceEntityType::Assembler {
@@ -1168,16 +1182,46 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     }));
                 vec![]
             },
+            // (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key0) => {
+            //     self.state =
+            //         ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Beacon {
+            //             pos: Self::player_mouse_to_tile(
+            //                 self.zoom_level,
+            //                 self.map_view_info.unwrap_or(self.local_player_pos),
+            //                 self.current_mouse_pos,
+            //             ),
+            //             ty: 0,
+            //         }));
+            //     vec![]
+            // },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key0) => {
-                self.state =
-                    ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Beacon {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::MiningDrill {
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
                             self.map_view_info.unwrap_or(self.local_player_pos),
                             self.current_mouse_pos,
                         ),
                         ty: 0,
-                    }));
+                        rotation: Dir::North,
+                    },
+                ));
+                vec![]
+            },
+            (
+                ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::MiningDrill { pos, ty, rotation },
+                )),
+                Key::Key0,
+            ) => {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::MiningDrill {
+                        pos: *pos,
+                        // FIXME: Increase the ty
+                        ty: 0,
+                        rotation: *rotation,
+                    },
+                ));
                 vec![]
             },
             (

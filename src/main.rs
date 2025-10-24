@@ -1,8 +1,14 @@
-// #![feature(generic_const_exprs)]
-#![feature(portable_simd)]
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
+
+#[cfg(not(feature = "dhat-heap"))]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+// #[cfg(not(feature = "dhat-heap"))]
+// #[global_allocator]
+// static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 fn main() -> Result<(), ()> {
     #[cfg(feature = "dhat-heap")]

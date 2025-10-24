@@ -1,3 +1,7 @@
+use crate::mining_drill::AddMinerError;
+use crate::mining_drill::FullOreStore;
+use crate::mining_drill::MiningDrillIdentifier;
+use crate::mining_drill::MiningDrillStore;
 #[cfg(feature = "client")]
 use egui::Color32;
 #[cfg(feature = "client")]
@@ -39,6 +43,7 @@ use itertools::Itertools;
 
 use noise::{NoiseFn, Simplex};
 
+use crate::mining_drill::OreLookup;
 use crate::{
     TICKS_PER_SECOND_LOGIC,
     app_state::{InstantiateInserterError, SimulationState},
@@ -172,6 +177,8 @@ pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     belt_lookup: BeltIdLookup<ItemIdxType>,
     belt_recieving_input_directions: HashMap<Position, EnumMap<Dir, bool>>,
     power_grid_lookup: PowerGridConnectedDevicesLookup,
+
+    ore_lookup: OreLookup<ItemIdxType>,
 
     remaining_updates: Vec<WorldUpdate>,
 
@@ -1274,6 +1281,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             noise,
             players,
             chunks,
+            ore_lookup,
             belt_lookup,
             belt_recieving_input_directions,
             power_grid_lookup,
@@ -1293,6 +1301,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         save_at_fork(noise, base_path.join("noise"));
         save_at_fork(players, base_path.join("players"));
         chunks.save_fork(base_path.join("chunks"));
+        save_at_fork(ore_lookup, base_path.join("ore_lookup"));
         save_at_fork(belt_lookup, base_path.join("belt_lookup"));
         save_at_fork(
             belt_recieving_input_directions,
@@ -1316,6 +1325,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             noise,
             players,
             chunks,
+            ore_lookup,
             belt_lookup,
             belt_recieving_input_directions,
             power_grid_lookup,
@@ -1336,6 +1346,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             || save_at(noise, base_path.join("noise")),
             || save_at(players, base_path.join("players")),
             || chunks.par_save(base_path.join("chunks")),
+            || save_at(ore_lookup, base_path.join("ore_lookup")),
             || save_at(belt_lookup, base_path.join("belt_lookup")),
             || save_at(
                 belt_recieving_input_directions,
@@ -1357,6 +1368,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             noise,
             players,
             chunks,
+            ore_lookup,
             belt_lookup,
             belt_recieving_input_directions,
             power_grid_lookup,
@@ -1368,6 +1380,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             || load_at(base_path.join("noise")),
             || load_at(base_path.join("players")),
             || BoundingBoxGrid::par_load(base_path.join("chunks")),
+            || load_at(base_path.join("ore_lookup")),
             || load_at(base_path.join("belt_lookup")),
             || load_at(base_path.join("belt_recieving_input_directions")),
             || load_at(base_path.join("power_grid_lookup")),
@@ -1382,6 +1395,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             noise,
             players,
             chunks,
+            ore_lookup,
             belt_lookup,
             belt_recieving_input_directions,
             power_grid_lookup,
@@ -1418,6 +1432,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             module_slot_dedup_table: vec![],
             noise: SerializableSimplex { inner: noise },
             chunks: grid,
+            ore_lookup: OreLookup::default(),
             players: vec![PlayerInfo::default(), PlayerInfo::default()],
 
             belt_lookup: BeltIdLookup {
@@ -1441,10 +1456,32 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         Self::new_with_starting_area(top_left, bottom_right)
     }
 
-    pub fn get_original_ore_at_pos(&self, pos: Position) -> Option<(Item<ItemIdxType>, u32)> {
-        // // TODO:
-        // return None;
-        let v = self.noise.get([
+    pub fn get_ore_type_at_pos(&self, pos: Position) -> Option<Item<ItemIdxType>> {
+        self.ore_lookup
+            .ore_lookup
+            .get(&pos)
+            .map(|(item, _)| item)
+            .copied()
+            .or_else(|| self.get_original_ore_at_pos(pos).map(|(item, _)| item))
+    }
+
+    pub fn get_ore_type_and_amount_at_pos(
+        &self,
+        pos: Position,
+        ore_store: &FullOreStore<ItemIdxType>,
+    ) -> Option<(Item<ItemIdxType>, u32)> {
+        ore_store.get_ore_at_position(pos, &self.ore_lookup, || self.get_original_ore_at_pos(pos))
+    }
+
+    fn get_original_ore_at_pos(&self, pos: Position) -> Option<(Item<ItemIdxType>, u32)> {
+        Self::get_original_ore_at_pos_from_noise(&self.noise, pos)
+    }
+
+    fn get_original_ore_at_pos_from_noise(
+        noise: &SerializableSimplex,
+        pos: Position,
+    ) -> Option<(Item<ItemIdxType>, u32)> {
+        let v = noise.get([
             pos.x as f64 * ORE_DISTANCE_MULT,
             pos.y as f64 * ORE_DISTANCE_MULT,
         ]);
@@ -1457,7 +1494,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         ))
     }
 
-    pub fn get_original_ore_in_area(
+    fn get_original_ore_in_area(
         &self,
         pos: Position,
         size: [u16; 2],
@@ -1863,6 +1900,58 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         self.add_entity_trusted(entity, data_store);
     }
 
+    pub fn add_mining_drill(
+        &mut self,
+        pos: Position,
+        ty: u8,
+        rotation: Dir,
+        sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Result<(), AddMinerError> {
+        let size = data_store.mining_drill_info[ty as usize]
+            .size(rotation)
+            .into();
+        if !self.can_fit(pos, size, data_store) {
+            warn!("Tried to place entity where it does not fit");
+            // TODO: Return error here
+            return Ok(());
+        }
+        let [mining_area_width, mining_area_height] =
+            data_store.mining_drill_info[ty as usize].mining_area(rotation);
+
+        let positions = (0..mining_area_width)
+            .cartesian_product(0..mining_area_height)
+            .map(|(x, y)| Position {
+                x: pos.x + i32::from(x),
+                y: pos.y + i32::from(y),
+            });
+
+        let (new_drill_id, updates) = sim_state.factory.ore_store.add_drill_mining_positions(
+            positions,
+            &mut self.ore_lookup,
+            |pos| Self::get_original_ore_at_pos_from_noise(&self.noise, pos),
+        )?;
+
+        for update in updates {
+            // FIXME: Apply update
+        }
+
+        self.add_entity(
+            Entity::MiningDrill {
+                pos,
+                ty,
+                rotation,
+                // internal_inserter: todo!(),
+                drill_id: new_drill_id,
+            },
+            sim_state,
+            data_store,
+        )
+        .expect("We alredy checked it fitting before");
+
+        Ok(())
+    }
+
     #[profiling::function]
     pub fn add_entity(
         &mut self,
@@ -2052,6 +2141,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 ..
             } => {},
             Entity::FluidTank { .. } => {},
+            Entity::MiningDrill { pos, .. } => {
+                // TODO: This needs to change if I want an internal inserter
+                cascading_updates.push(new_possible_inserter_connection(
+                    pos,
+                    entity.get_entity_size(data_store),
+                ));
+            },
         };
 
         if let Some(map_updates) = &mut self.map_updates {
@@ -2247,7 +2343,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         let start_conn: Option<InserterConnectionPossibility<ItemIdxType, RecipeIdxType>> = self
             .get_entity_at(start_pos, data_store)
             .map(|e| match e {
-                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }| Entity::FluidTank { .. }  => None,
+                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }| Entity::FluidTank { .. } => None,
 
                 Entity::Roboport { ty, pos, power_grid, network, id } => {
                     // TODO:
@@ -2327,6 +2423,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
                     let id = outputs[usize::from(bool::from(side))];
 
+
                     Some(InserterConnectionPossibility { conn: InserterConnection::Belt(id, SPLITTER_BELT_LEN), inserter_item_hint: simulation_state
                         .factory
                         .belts
@@ -2353,6 +2450,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     inserter_item_hint: None,
                     possible_item_list: PossibleItem::All
                 }),
+                Entity::MiningDrill { drill_id, .. } => {
+                    let drill_items = drill_id.items();
+
+                    let static_id = drill_id.get_static_id();
+                    let index = drill_id.get_index();
+
+                    Some(InserterConnectionPossibility { conn: InserterConnection::Storage(Static::Done(Storage::Static { static_id: static_id as u16, index })), inserter_item_hint: Some(drill_items.clone()), possible_item_list: PossibleItem::List(drill_items) })
+                },
                 Entity::Lab { .. } => {
                     // No removing items from Labs!
                     None
@@ -2367,7 +2472,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         let dest_conn: Option<InserterConnectionPossibility<ItemIdxType, RecipeIdxType>> = self
             .get_entity_at(end_pos, data_store)
             .map(|e| match e {
-                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }| Entity::FluidTank { .. }  => None,
+                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }| Entity::FluidTank { .. } | Entity::MiningDrill { .. }  => None,
 
                 Entity::Roboport { ty, pos, power_grid, network, id } => {
                     // TODO:
@@ -2983,6 +3088,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             *power_grid = Some(new_id);
                         }
                     },
+                    Entity::MiningDrill {
+                        ty,
+                        pos,
+                        rotation,
+                        drill_id,
+                        // internal_inserter,
+                    } => todo!(),
                     Entity::Belt { .. }
                     | Entity::Underground { .. }
                     | Entity::Splitter { .. }
@@ -3080,6 +3192,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             for entity in &mut chunk.entities {
                 match entity {
                     Entity::Beacon { .. } => {},
+                    Entity::MiningDrill { .. } => {},
                     Entity::Lab { .. } => {},
                     Entity::SolarPanel { .. } => {},
                     Entity::Assembler { .. } => {},
@@ -3171,6 +3284,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 for entity in &mut chunk.entities {
                     match entity {
                         Entity::Beacon { .. } => {},
+                        Entity::MiningDrill { .. } => {},
                         Entity::Lab { .. } => {},
                         Entity::SolarPanel { .. } => {},
                         Entity::Assembler { .. } => {},
@@ -3607,13 +3721,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
         chunk
             .map(|_chunk| {
-                if let Some(ore) = self.get_original_ore_at_pos(pos) {
-                    if ore.1 > 0 {
-                        // TODO ORE COLOR
-                        Color32::LIGHT_BLUE
-                    } else {
-                        floor_color
-                    }
+                // FIXME: I need to update the ore_lookup in the world, and emit map updates whenever a mining drill exhausts some ore.
+                // Otherwise the map view will not correctly reflect the state of ore.
+                if let Some(ore) = self.get_ore_type_at_pos(pos) {
+                    // TODO ORE COLOR
+                    Color32::LIGHT_BLUE
                 } else {
                     floor_color
                 }
@@ -4412,6 +4524,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         );
                     },
                 },
+                Entity::MiningDrill {
+                    ty,
+                    pos,
+                    rotation,
+                    drill_id,
+                    // internal_inserter,
+                } => todo!(),
             }
 
             let chunk = self.get_chunk_for_tile_mut(e_pos).unwrap();
@@ -4873,18 +4992,20 @@ pub enum Entity<ItemIdxType: WeakIdxTrait = u8, RecipeIdxType: WeakIdxTrait = u8
         rotation: Dir,
     },
     // TODO:
-    // MiningDrill {
-    //     ty: u8,
-    //     pos: Position,
-    //     rotation: Dir,
-    //     drill_id: DrillID,
-    //     internal_inserter: InternalInserterInfo<ItemIdxType>,
-    // },
+    MiningDrill {
+        ty: u8,
+        pos: Position,
+        rotation: Dir,
+
+        // FIXME: For now drills will not need power
+        drill_id: MiningDrillIdentifier<ItemIdxType>,
+        // internal_inserter: InternalInserterInfo<ItemIdxType>,
+    },
 }
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
-enum DrillID {
+pub enum DrillID {
     OnlySolo(u32),
     WithShared(u32),
 }
@@ -4911,6 +5032,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::Lab { pos, .. } => *pos,
             Self::Beacon { pos, .. } => *pos,
             Self::FluidTank { pos, .. } => *pos,
+            Self::MiningDrill { pos, .. } => *pos,
         }
     }
 
@@ -4942,6 +5064,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::Lab { ty, .. } => data_store.lab_info[usize::from(*ty)].size,
             Self::Beacon { ty, .. } => data_store.beacon_info[usize::from(*ty)].size,
             Self::FluidTank { ty, .. } => data_store.fluid_tank_infos[usize::from(*ty)].size.into(),
+            Self::MiningDrill { ty, rotation, .. } => data_store.mining_drill_info
+                [usize::from(*ty)]
+            .size(*rotation)
+            .into(),
         }
     }
 
@@ -4960,6 +5086,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::Lab { .. } => hex_color!("#ff90bd"),
             Self::Beacon { .. } => hex_color!("#008192"),
             Self::FluidTank { .. } => hex_color!("#b429ff"),
+            Self::MiningDrill { .. } => hex_color!("#005926"),
         }
     }
 
@@ -4977,6 +5104,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::Lab { .. } => true,
             Self::Beacon { .. } => true,
             Self::FluidTank { .. } => false,
+            Self::MiningDrill { .. } => true,
         }
     }
 
@@ -4994,6 +5122,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::Lab { .. } => "Lab",
             Self::Beacon { .. } => "Beacon",
             Self::FluidTank { .. } => "FluidTank",
+            Self::MiningDrill { .. } => "MiningDrill",
         }
     }
 }

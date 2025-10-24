@@ -4,7 +4,7 @@ use crate::{
     data::DataStore,
     item::{ITEMCOUNTTYPE, IdxTrait, Item, WeakIdxTrait},
     power::Joule,
-    storage_list::PANIC_ON_INSERT,
+    storage_list::ALWAYS_FULL,
 };
 
 struct PureDrillConcept<ItemIdxType: WeakIdxTrait> {
@@ -238,7 +238,7 @@ impl<ItemIdxType: IdxTrait> PureDrillStorageWithSharedOreTiles<ItemIdxType> {
     }
 
     pub fn get_inventories(&mut self) -> (&[ITEMCOUNTTYPE], &mut [ITEMCOUNTTYPE]) {
-        (PANIC_ON_INSERT, self.inventory.as_mut_slice())
+        (ALWAYS_FULL, self.inventory.as_mut_slice())
     }
 }
 

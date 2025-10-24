@@ -8,6 +8,7 @@ use strum::IntoEnumIterator;
 use crate::assembler::MultiAssemblerStore;
 use crate::chest::MultiChestStore;
 use crate::item::Indexable;
+use crate::mining_drill::MiningDrillStore;
 use crate::{
     chest::FullChestStore,
     data::{DataStore, ItemRecipeDir, all_item_iter},
@@ -53,6 +54,9 @@ pub fn static_size<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let mut size = 0;
 
     // Chests
+    size += 1;
+
+    // PureDrillSoloOwned
     size += 1;
 
     size
@@ -210,6 +214,7 @@ fn get_full_storage_index<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     grids: &'a mut PowerGridStorage<ItemIdxType, RecipeIdxType>,
     chest_store: &'a mut FullChestStore<ItemIdxType>,
+    drill_store: &'a mut MiningDrillStore<ItemIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> FullStorages<'a, 'a> {
     let num_power_grids = grids.power_grids.len();
@@ -217,13 +222,13 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     #[cfg(debug_assertions)]
     {
         assert!(
-            all_storages(grids, chest_store, data_store)
+            all_storages(grids, chest_store, drill_store, data_store)
                 .into_iter()
                 .map(|v| get_full_storage_index(v.0, v.1, num_power_grids, data_store))
                 .all_unique(),
             "{:?}",
             Vec::from_iter(
-                all_storages(grids, chest_store, data_store)
+                all_storages(grids, chest_store, drill_store, data_store)
                     .into_iter()
                     .map(|v| {
                         let idx = get_full_storage_index(v.0, v.1, num_power_grids, data_store);
@@ -231,7 +236,7 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     })
             )
         );
-        let max_index = all_storages(grids, chest_store, data_store)
+        let max_index = all_storages(grids, chest_store, drill_store, data_store)
             .into_iter()
             .map(|v| get_full_storage_index(v.0, v.1, num_power_grids, data_store))
             .max();
@@ -240,21 +245,27 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             Some(max_index) => {
                 assert_eq!(
                     max_index,
-                    all_storages(grids, chest_store, data_store)
+                    all_storages(grids, chest_store, drill_store, data_store)
                         .into_iter()
                         .count()
                         - 1,
                     "{:?}",
                     {
-                        let mut storages: Vec<_> = all_storages(grids, chest_store, data_store)
-                            .into_iter()
-                            .map(|v| {
-                                (
-                                    get_full_storage_index(v.0, v.1, num_power_grids, data_store),
-                                    (v.0, v.1, v.2.len()),
-                                )
-                            })
-                            .collect();
+                        let mut storages: Vec<_> =
+                            all_storages(grids, chest_store, drill_store, data_store)
+                                .into_iter()
+                                .map(|v| {
+                                    (
+                                        get_full_storage_index(
+                                            v.0,
+                                            v.1,
+                                            num_power_grids,
+                                            data_store,
+                                        ),
+                                        (v.0, v.1, v.2.len()),
+                                    )
+                                })
+                                .collect();
                         storages.sort_by_key(|v| {
                             get_full_storage_index(v.1.0, v.1.1, num_power_grids, data_store)
                         });
@@ -272,7 +283,7 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             None => {
                 assert_eq!(
                     0,
-                    all_storages(grids, chest_store, data_store)
+                    all_storages(grids, chest_store, drill_store, data_store)
                         .into_iter()
                         .count()
                 )
@@ -330,18 +341,28 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             // );
         }
 
+        // FIXME: This is not easily synced
         {
             profiling::scope!("all_storages_sorted");
             all_item_iter(data_store)
                 .zip(chest_store.stores.iter_mut())
+                .zip(drill_store.storages_by_item())
                 .zip(grids_by_item.into_iter().sorted_by_key(|v| v.0))
-                .flat_map(|((item, chest_store), (grid_item, grid))| {
-                    assert_eq!(item, grid_item);
-                    chest_storages_pre_sorted(item, chest_store, data_store).chain(
-                        grid.into_iter()
-                            .map(|(_item, _storage, max_insert, data)| (max_insert, data)),
-                    )
-                })
+                .flat_map(
+                    |(((item, chest_store), mining_drill_lists), (grid_item, grid))| {
+                        assert_eq!(item, grid_item);
+                        static_storages_pre_sorted(
+                            item,
+                            chest_store,
+                            mining_drill_lists,
+                            data_store,
+                        )
+                        .chain(
+                            grid.into_iter()
+                                .map(|(_item, _storage, max_insert, data)| (max_insert, data)),
+                        )
+                    },
+                )
                 .collect()
         }
     };
@@ -354,6 +375,7 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 fn all_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     grids: &'a mut PowerGridStorage<ItemIdxType, RecipeIdxType>,
     chest_store: &'a mut FullChestStore<ItemIdxType>,
+    drill_store: &'a mut MiningDrillStore<ItemIdxType>,
     data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
 ) -> impl Iterator<
     Item = (
@@ -373,14 +395,15 @@ fn all_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 .into_iter()
                 .chain(all_lab_storages(grid_id, &mut grid.lab_stores, data_store))
         })
-        .chain(all_static_storages(chest_store, data_store));
+        .chain(all_static_storages(chest_store, drill_store, data_store));
     all_storages
 }
 
 #[profiling::function]
-pub fn chest_storages_pre_sorted<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+pub fn static_storages_pre_sorted<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     item: Item<ItemIdxType>,
     chest_store: &'a mut MultiChestStore<ItemIdxType>,
+    drill_lists: (&'a [ITEMCOUNTTYPE], &'a mut [ITEMCOUNTTYPE]),
     data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
 ) -> impl Iterator<Item = (&'a [ITEMCOUNTTYPE], &'a mut [ITEMCOUNTTYPE])>
 + use<'a, 'b, ItemIdxType, RecipeIdxType> {
@@ -392,7 +415,8 @@ pub fn chest_storages_pre_sorted<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: I
     let first_grid_offs = grid_size * first_grid_offs_in_grids;
 
     iter::once(chest_store.storage_list_slices())
-        .chain(iter::repeat_with(|| (PANIC_ON_INSERT, [].as_mut_slice())))
+        .chain(iter::once(drill_lists))
+        .chain(iter::repeat_with(|| (ALWAYS_FULL, [].as_mut_slice())))
         .take(first_grid_offs)
 }
 
@@ -1286,6 +1310,7 @@ fn all_lab_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 #[profiling::function]
 fn all_static_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     chest_store: &'a mut FullChestStore<ItemIdxType>,
+    drill_store: &'a mut MiningDrillStore<ItemIdxType>,
     data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
 ) -> impl Iterator<
     Item = (
@@ -1297,7 +1322,8 @@ fn all_static_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 > + use<'a, 'b, ItemIdxType, RecipeIdxType> {
     (0..data_store.item_display_names.len())
         .zip(chest_store.stores.iter_mut())
-        .flat_map(|(id, chest)| {
+        .zip(drill_store.storages_by_item())
+        .flat_map(|((id, chest), drill_lists)| {
             let item = Item {
                 id: id.try_into().unwrap(),
             };
@@ -1324,6 +1350,14 @@ fn all_static_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         max_insert,
                         data,
                     ))
+                    .chain(iter::once((
+                        Storage::Static {
+                            static_id: crate::inserter::StaticID::PureSoloOwnedMiningDrill as u16,
+                            index: 0,
+                        },
+                        drill_lists.0,
+                        drill_lists.1,
+                    )))
                     .chain(
                         std::iter::repeat_with(|| (PANIC_ON_INSERT, [].as_mut_slice()))
                             .zip(StaticID::iter().count()..)

@@ -10,9 +10,11 @@ use crate::inserter::InserterStateInfo;
 use crate::inserter::storage_storage_with_buckets_indirect::BucketedStorageStorageInserterStore;
 use crate::inserter::storage_storage_with_buckets_indirect::InserterIdentifier;
 use crate::item::ITEMCOUNTTYPE;
+use crate::join_many::join;
 use crate::liquid::FluidConnectionDir;
 use crate::liquid::FluidSystemId;
 use crate::liquid::connection_logic::can_fluid_tanks_connect_to_single_connection;
+use crate::mining_drill::FullOreStore;
 use crate::par_generation::BoundingBox;
 use crate::par_generation::ParGenerateInfo;
 use crate::par_generation::par_generate;
@@ -542,8 +544,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             data_store,
         );
 
-        let file = File::open(bp_path).unwrap();
-        let mut bp: Blueprint = ron::de::from_reader(file).unwrap();
+        let mut file = File::open(bp_path).unwrap();
+        let mut bp_string = BlueprintString(String::new());
+        file.read_to_string(&mut bp_string.0).unwrap();
+        let mut bp: Blueprint = bp_string.try_into().expect("Invalid Blueprint");
         bp.optimize();
 
         bp.apply(false, Position { x: 2000, y: 2000 }, &mut ret, data_store);
@@ -586,6 +590,8 @@ pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub chests: FullChestStore<ItemIdxType>,
 
     pub fluid_store: FluidSystemStore<ItemIdxType>,
+
+    pub ore_store: FullOreStore<ItemIdxType>,
 
     pub item_times: Box<[f32]>,
 }
@@ -844,6 +850,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
             item_times: (0..data_store.item_display_names.len())
                 .map(|_| 0.0)
                 .collect(),
+
+            ore_store: FullOreStore::new(data_store),
         }
     }
 
@@ -874,7 +882,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
         let num_grids_total = self.power_grids.power_grids.len();
         let mut all_storages = {
             profiling::scope!("Generate all_storages list");
-            storages_by_item(&mut self.power_grids, &mut self.chests, data_store)
+            storages_by_item(
+                &mut self.power_grids,
+                &mut self.chests,
+                &mut self.ore_store.drills,
+                data_store,
+            )
         };
         let sizes: Vec<_> = sizes(data_store, num_grids_total).into_iter().collect();
         // dbg!(&all_storages);
@@ -2286,7 +2299,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 ty,
                                 pos,
                                 rotation,
-                            } => todo!("Place Mining Drill"),
+                            } => {
+                                match game_state.world.add_mining_drill(
+                                    pos,
+                                    ty,
+                                    rotation,
+                                    &mut game_state.simulation_state,
+                                    data_store,
+                                ) {
+                                    Ok(_) => {},
+                                    Err(e) => error!(
+                                        "Failed to place mining drill because of error {e:?}"
+                                    ),
+                                }
+                            },
                         },
                     }
                 },
@@ -2626,26 +2652,36 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             // We can downcast here, since this could only cause graphical weirdness for a couple frame every ~2 years of playtime
             .belt_and_inserter_update(aux_data.current_tick as u32, data_store);
 
-        let ((), (tech_progress, recipe_tick_info, lab_info)) = rayon::join(
+        let ((), mining_production_by_item, (tech_progress, recipe_tick_info, lab_info)) = join!(
             || simulation_state.factory.chests.update(data_store),
+            || {
+                simulation_state
+                    .factory
+                    .ore_store
+                    .update(&simulation_state.tech_state.mining_productivity_by_item)
+            },
             || {
                 simulation_state.factory.power_grids.update(
                     &simulation_state.tech_state,
                     0,
                     data_store,
                 )
-            },
+            }
         );
+
+        aux_data.statistics.append_single_set_of_samples((
+            ProductionInfo::from_recipe_info_and_per_item(
+                &recipe_tick_info,
+                mining_production_by_item,
+                data_store,
+            ),
+            ConsumptionInfo::from_infos(&recipe_tick_info, &lab_info, data_store),
+            tech_progress,
+        ));
 
         simulation_state
             .tech_state
             .apply_progress(tech_progress, data_store);
-
-        aux_data.statistics.append_single_set_of_samples((
-            ProductionInfo::from_recipe_info(&recipe_tick_info, data_store),
-            ConsumptionInfo::from_infos(&recipe_tick_info, &lab_info, data_store),
-            tech_progress,
-        ));
 
         let done_updating = Instant::now();
 

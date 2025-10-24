@@ -50,6 +50,7 @@ pub struct TechState {
     pub in_progress_technologies: HashMap<Technology, u64>,
     // current_tech_mod_lookup: (),
     pub recipe_active: Vec<bool>,
+    pub mining_productivity_by_item: Box<[u16]>,
 
     science_overflow_buffer: Box<[u32]>,
 }
@@ -93,6 +94,8 @@ impl TechState {
             recipe_active,
 
             in_progress_technologies: HashMap::new(),
+
+            mining_productivity_by_item: vec![0; data_store.item_names.len()].into_boxed_slice(),
 
             science_overflow_buffer: vec![0; data_store.science_bottle_items.len()]
                 .into_boxed_slice(),
