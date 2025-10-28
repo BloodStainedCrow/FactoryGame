@@ -10,6 +10,7 @@ use crate::item::ITEMCOUNTTYPE;
 use crate::item::IdxTrait;
 use crate::item::Indexable;
 use crate::item::Item;
+use crate::mining_drill::MiningDrillInfo;
 use crate::power::Joule;
 
 use std::cmp::min;
@@ -20,7 +21,7 @@ use crate::storage_list::ALWAYS_FULL;
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(super) struct PureDrillStorageOnlySoloOwned<ItemIdxType: WeakIdxTrait> {
-    item: Item<ItemIdxType>,
+    pub(super) item: Item<ItemIdxType>,
     holes: Vec<usize>,
 
     solo_owned_ore: Vec<u32>,
@@ -133,5 +134,14 @@ impl<ItemIdxType: IdxTrait> PureDrillStorageOnlySoloOwned<ItemIdxType> {
 
     pub fn get_inventories(&mut self) -> (&[ITEMCOUNTTYPE], &mut [ITEMCOUNTTYPE]) {
         (ALWAYS_FULL, self.inventory.as_mut_slice())
+    }
+
+    pub fn get_info(&self, index: u32) -> MiningDrillInfo<ItemIdxType> {
+        MiningDrillInfo {
+            // TODO:
+            timer: 0.0,
+            prod_timer: 0.0,
+            remaining_ore: vec![(self.item, self.solo_owned_ore[index as usize])],
+        }
     }
 }

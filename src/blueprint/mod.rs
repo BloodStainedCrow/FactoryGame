@@ -71,6 +71,12 @@ pub enum BlueprintAction {
         pos: Position,
         num_slots: u8,
     },
+
+    PlaceOre {
+        ore: Arc<str>,
+        pos: Position,
+        amount: u32,
+    },
 }
 
 fn default_inserter() -> Arc<str> {
@@ -288,6 +294,11 @@ impl BlueprintAction {
                 pos: *pos,
                 num_slots: *num_slots,
             },
+            ActionType::PlaceOre { pos, ore, amount } => Self::PlaceOre {
+                ore: data_store.item_names[ore.into_usize()].clone(),
+                pos: *pos,
+                amount: *amount,
+            },
             ActionType::Remove(_) => unimplemented!(),
             ActionType::SetActiveResearch { .. } => unimplemented!(),
             ActionType::CheatUnlockTechnology { .. } => unimplemented!(),
@@ -504,6 +515,18 @@ impl BlueprintAction {
                     pos: *pos,
                     num_slots: *num_slots,
                 }
+            },
+            BlueprintAction::PlaceOre { ore, pos, amount } => ActionType::PlaceOre {
+                pos: *pos,
+                ore: data_store
+                    .item_names
+                    .iter()
+                    .position(|ds_item| ds_item == ore)
+                    .map(|index| Item {
+                        id: index.try_into().unwrap(),
+                    })
+                    .ok_or(())?,
+                amount: *amount,
             },
         };
 
@@ -794,6 +817,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     rotation,
                 }),
             }),
+            &ActionType::PlaceEntity(PlaceEntityInfo {
+                force,
+                entities:
+                    EntityPlaceOptions::Single(PlaceEntityType::MiningDrill { pos, ty, rotation }),
+            }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                force,
+                entities: EntityPlaceOptions::Single(PlaceEntityType::MiningDrill {
+                    pos: Position {
+                        x: base_pos.x + pos.x,
+                        y: base_pos.y + pos.y,
+                    },
+                    ty,
+                    rotation,
+                }),
+            }),
             &ActionType::SetRecipe(SetRecipeInfo { pos, recipe }) => {
                 ActionType::SetRecipe(SetRecipeInfo {
                     pos: Position {
@@ -829,6 +867,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                     },
                     new_movetime,
                 }
+            },
+            &ActionType::PlaceOre { pos, ore, amount } => ActionType::PlaceOre {
+                pos: Position {
+                    x: base_pos.x + pos.x,
+                    y: base_pos.y + pos.y,
+                },
+                ore,
+                amount,
             },
             a => unreachable!("{:?}", a),
         }
@@ -903,6 +949,7 @@ impl Blueprint {
             },
             BlueprintAction::AddModules { pos, .. } => (1, 3, (BeltId::Pure(0), 0), *pos, 1),
             BlueprintAction::SetChestSlotLimit { pos, .. } => (1, 3, (BeltId::Pure(0), 0), *pos, 1),
+            BlueprintAction::PlaceOre { pos, .. } => (0, 0, (BeltId::Pure(0), 0), *pos, 0),
         });
 
         info!("Done Optimizing Blueprint");
@@ -1030,11 +1077,11 @@ impl Blueprint {
                     pos,
                     rotation,
                     drill_id,
-                    // internal_inserter,
+                    internal_inserter,
                 } => {
                     vec![BlueprintAction::PlaceEntity(
                         BlueprintPlaceEntity::MiningDrill {
-                            ty: todo!(),
+                            ty: data_store.mining_drill_info[*ty as usize].name.clone(),
                             pos: Position {
                                 x: pos.x - base_pos.x,
                                 y: pos.y - base_pos.y,
@@ -1423,6 +1470,9 @@ impl Blueprint {
                     *pos = pos_fn(pos, e_size);
                 },
                 BlueprintAction::SetChestSlotLimit { pos, .. } => {
+                    *pos = pos_fn(pos, e_size);
+                },
+                BlueprintAction::PlaceOre { pos, .. } => {
                     *pos = pos_fn(pos, e_size);
                 },
             }

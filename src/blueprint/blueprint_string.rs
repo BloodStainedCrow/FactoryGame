@@ -51,6 +51,9 @@ struct BlueprintStringInternal {
     movetime: Vec<(Position, Option<NonZero<u16>>)>,
     slot_limit: Vec<(Position, u8)>,
 
+    #[serde(skip)]
+    ores: Vec<(Position, usize, u32)>,
+
     module_combinations: Vec<Vec<usize>>,
     modules: Vec<(Position, usize)>,
 }
@@ -87,6 +90,7 @@ impl TryFrom<BlueprintString> for Blueprint {
             slot_limit,
             module_combinations,
             modules,
+            ores,
         } = internal;
 
         let actions = assemblers
@@ -232,6 +236,16 @@ impl TryFrom<BlueprintString> for Blueprint {
             }
         }));
 
+        let actions =
+            actions.chain(
+                ores.into_iter()
+                    .map(|(pos, ore, amount)| BlueprintAction::PlaceOre {
+                        pos,
+                        ore: data_strings[ore].clone(),
+                        amount,
+                    }),
+            );
+
         Ok(Blueprint {
             actions: actions.collect(),
         })
@@ -262,6 +276,8 @@ impl From<Blueprint> for BlueprintString {
             movetime: vec![],
             set_recipe: vec![],
             slot_limit: vec![],
+
+            ores: vec![],
         };
 
         for action in value.actions {
@@ -412,6 +428,13 @@ impl From<Blueprint> for BlueprintString {
                 },
                 super::BlueprintAction::SetChestSlotLimit { pos, num_slots } => {
                     internal.slot_limit.push((pos, num_slots));
+                },
+                super::BlueprintAction::PlaceOre { pos, ore, amount } => {
+                    internal.ores.push((
+                        pos,
+                        internal.data_strings.get_index_or_insert(ore.into()),
+                        amount,
+                    ));
                 },
             }
         }

@@ -4,12 +4,16 @@ use crate::blueprint::blueprint_string::BlueprintString;
 use crate::chest::ChestSize;
 use crate::frontend::action::action_state_machine::ForkSaveInfo;
 use crate::frontend::action::belt_placement::{BeltState, expected_belt_state};
-use crate::frontend::world::tile::World;
+use crate::frontend::action::place_entity::PlaceEntityInfo;
+use crate::frontend::action::place_entity::EntityPlaceOptions;
+use crate::frontend::world::tile::PlaceEntityType;
+use crate::frontend::world::tile::{InternalInserterInfo, World};
 use crate::get_size::RAMExtractor;
 use crate::get_size::RamUsage;
 use crate::item::{ITEMCOUNTTYPE, Indexable};
 use crate::lab::{LabViewInfo, TICKS_PER_SCIENCE};
 use crate::liquid::FluidSystemState;
+use crate::mining_drill;
 use crate::par_generation::ParGenerateInfo;
 use crate::rendering::Corner;
 use crate::saving::{save_components, save_with_fork};
@@ -1410,7 +1414,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             );
                                         },
 
-                                        Entity::MiningDrill { ty, pos, rotation, drill_id } => {
+                                        Entity::MiningDrill { ty, pos, rotation, drill_id, internal_inserter } => {
                                             let size =
                                                 data_store.mining_drill_info[usize::from(*ty)].size(*rotation);
 
@@ -1882,6 +1886,12 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         );
                     },
                 },
+                crate::frontend::action::action_state_machine::HeldObject::OrePlacement {
+                    ore,
+                    amount,
+                } => {
+                    // TODO:
+                },
             }
         },
         crate::frontend::action::action_state_machine::ActionStateMachineState::Viewing(_) => {
@@ -2127,6 +2137,190 @@ pub fn render_ui<
 
                 // mem::drop(new_state);
             }
+
+            if ui.button("Switch from generation assemblers to miners (inserter_transfer)").clicked() {
+                for entity in game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()) {
+                    match entity {
+                        Entity::Assembler { ty, pos: assembler_pos, modules, info, rotation } => {
+                            match info {
+                                AssemblerInfo::UnpoweredNoRecipe => {},
+                                AssemblerInfo::Unpowered(recipe) => {
+                                    if data_store.recipe_names[recipe.into_usize()].contains("generation") {
+                                        todo!()
+                                    }
+                                },
+                                AssemblerInfo::PoweredNoRecipe(position) => {},
+                                AssemblerInfo::Powered { id, pole_position, weak_index } => {
+                                    if data_store.recipe_names[id.recipe.into_usize()].contains("generation") {
+                                        let Some((_, ore)) = data_store.recipe_to_items[id.recipe.into_usize()].iter().find(|(dir, item)| *dir == ItemRecipeDir::Out) else {
+                                            unreachable!();
+                                        };
+                                        if data_store.item_is_fluid[ore.into_usize()] {
+                                            continue;
+                                        }
+
+                                        // Find the inserter which gets items from this assembler
+                                        let assembler_pos = entity.get_pos();
+                                        let assembler_size = entity.get_entity_size(data_store_ref);
+
+                                        actions.push(ActionType::Remove(assembler_pos));
+                                        
+                                        let area = data_store.mining_drill_info[1].size(*rotation);
+
+                                        for x in assembler_pos.x..(assembler_pos.x + i32::from(area[0])) {
+                                            for y in assembler_pos.y..(assembler_pos.y + i32::from(area[1])) {
+                                                // TODO: Is this amount reasonable?
+                                                actions.push(ActionType::PlaceOre{ pos: Position {
+                                                    x,y
+                                                }, ore: *ore,amount: 10_000_000});
+                                            }
+                                        }
+
+                                        let inserter_rotation =  game_state_ref.world.get_entities_colliding_with(Position {
+                                            x: assembler_pos.x - i32::from(data_store.max_inserter_search_range),
+                                            y: assembler_pos.y - i32::from(data_store.max_inserter_search_range),
+                                        }, (assembler_size.0 + 2 * u16::from(data_store.max_inserter_search_range), assembler_size.1 + 2 * u16::from(data_store.max_inserter_search_range)), data_store_ref).into_iter().find_map(|inserter_entity| {
+                                            match inserter_entity {
+                                                Entity::Inserter { ty, user_movetime, pos, direction, filter, info } => {
+                                                    let start_pos = data_store.inserter_start_pos(*ty, *pos, *direction);
+                                                    
+                                                    if start_pos.contained_in(assembler_pos, assembler_size) {
+                                                        Some(*direction)
+                                                    } else {
+                                                        None
+                                                    }
+                                                },
+                                                _ => { None }
+                                            }
+                                        }).unwrap();
+
+                                        actions.push(ActionType::PlaceEntity(PlaceEntityInfo {
+                                            entities: EntityPlaceOptions::Single(PlaceEntityType::MiningDrill {
+                                                pos: assembler_pos,
+                                                rotation: inserter_rotation,
+                                                ty: 1,
+                                            }),
+                                            force: false,
+                                        }));
+                                    }
+                                },
+                            }
+                        },
+
+                        _ => {},
+                    }
+                }
+            }
+            
+            if ui.button("Switch from generation assemblers to miners (correct)").clicked() {
+                let mut drill_actions: Vec<ActionType<ItemIdxType, RecipeIdxType>> = vec![];
+                for entity in game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()) {
+                    match entity {
+                        Entity::Assembler { ty, pos, modules, info, rotation } => {
+                            match info {
+                                AssemblerInfo::UnpoweredNoRecipe => {},
+                                AssemblerInfo::Unpowered(recipe) => {
+                                    if data_store.recipe_names[recipe.into_usize()].contains("generation") {
+                                        todo!()
+                                    }
+                                },
+                                AssemblerInfo::PoweredNoRecipe(position) => {},
+                                AssemblerInfo::Powered { id, pole_position, weak_index } => {
+                                    if data_store.recipe_names[id.recipe.into_usize()].contains("generation") {
+                                        let Some((_, ore)) = data_store.recipe_to_items[id.recipe.into_usize()].iter().find(|(dir, item)| *dir == ItemRecipeDir::Out) else {
+                                            unreachable!();
+                                        };
+                                        if data_store.item_is_fluid[ore.into_usize()] {
+                                            continue;
+                                        }
+
+                                        actions.push(ActionType::Remove(*pos));
+
+                                        // Find the inserter which gets items from this assembler
+                                        let assembler_pos = entity.get_pos();
+                                        let assembler_size = entity.get_entity_size(data_store_ref);
+
+                                        for inserter_entity in  game_state_ref.world.get_entities_colliding_with(Position {
+                                            x: assembler_pos.x - i32::from(data_store.max_inserter_search_range),
+                                            y: assembler_pos.y - i32::from(data_store.max_inserter_search_range),
+                                        }, (assembler_size.0 + 2 * u16::from(data_store.max_inserter_search_range), assembler_size.1 + 2 * u16::from(data_store.max_inserter_search_range)), data_store_ref) {
+                                            match inserter_entity {
+                                                Entity::Inserter { ty, user_movetime, pos, direction, filter, info } => {
+                                                    let start_pos = data_store.inserter_start_pos(*ty, *pos, *direction);
+                                                    
+                                                    if start_pos.contained_in(assembler_pos, assembler_size) {
+                                                        // This inserter is taking from the generating assembler
+                                                        actions.push(ActionType::Remove(*pos));
+                                                        
+                                                        let end_pos = data_store.inserter_end_pos(*ty, *pos, *direction);
+                                                        // Find where to place a mining_drill to output into this same spot
+
+                                                        // The mining drill will end up being rotated the same way as the inserter
+                                                        let rotation = *direction;
+                                                        
+                                                        // TODO: This is hardcoded to only work correctly with factorio base game miners
+                                                        let pos = match rotation {
+                                                            Dir::North => Position {
+                                                                x: end_pos.x - 1,
+                                                                y: end_pos.y + 1,
+                                                            },
+                                                            Dir::South => Position {
+                                                                x: end_pos.x - 1,
+                                                                y: end_pos.y - 3,
+                                                            },
+                                                            Dir::West => Position {
+                                                                x: end_pos.x + 1,
+                                                                y: end_pos.y - 1,
+                                                            },
+                                                            Dir::East => Position {
+                                                                x: end_pos.x - 3,
+                                                                y: end_pos.y - 1,
+                                                            },
+                                                        };
+
+                                                        let area = data_store.mining_drill_info[0].size(rotation);
+
+                                                        let Some((_, ore)) = data_store.recipe_to_items[id.recipe.into_usize()].iter().find(|(dir, item)| *dir == ItemRecipeDir::Out) else {
+                                                            unreachable!();
+                                                        };
+
+                                                        for x in pos.x..(pos.x + i32::from(area[0])) {
+                                                            for y in pos.y..(pos.y + i32::from(area[1])) {
+                                                                // TODO: Is this amount reasonable?
+                                                                // actions.push(ActionType::Remove(Position {
+                                                                //     x,y
+                                                                // }));
+                                                                actions.push(ActionType::PlaceOre{ pos: Position {
+                                                                    x,y
+                                                                }, ore: *ore,amount: 1_000_000});
+                                                            }
+                                                        }
+                                                        drill_actions.push(ActionType::PlaceEntity(PlaceEntityInfo {
+                                                            entities: EntityPlaceOptions::Single(PlaceEntityType::MiningDrill {
+                                                                pos,
+                                                                rotation,
+                                                                ty: 0,
+                                                            }),
+                                                            force: false,
+                                                        }));
+                                                    }
+                                                },
+                                                _ => {}
+                                            }
+                                        }
+                                    }
+                                },
+                            }
+                        },
+
+                        _ => {},
+                    }
+                }
+
+                actions.extend(drill_actions);
+            }
+
+
             if ui.button("⚠️Auto Clock Inserters").clicked() {
                 let inserters_without_values_set = game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter_map(|e| match e {
                     Entity::Inserter { ty, user_movetime, direction, pos, info, .. } => {
@@ -2569,6 +2763,52 @@ pub fn render_ui<
             (points.iter().map(|v| v.dur).sum::<Duration>() / points.len() as u32).as_secs_f32()
                 * 1000.0
         ));
+    });
+
+    Window::new("Editor").default_open(false).show(ctx, |ui| {
+        ui.horizontal(|ui| {
+            ui.label("Place Ore");
+            let (mut ore, mut amount) = match state_machine_ref.state {
+                ActionStateMachineState::Holding(HeldObject::OrePlacement { ore, amount }) => {
+                    (Some(ore), Some(amount))
+                },
+
+                _ => (None, None),
+            };
+            ComboBox::new("OrePlacementDropdown", "Select ore to place")
+                .selected_text(match ore {
+                    Some(ore) => &data_store.item_display_names[ore.into_usize()],
+                    None => "No Ore Selected",
+                })
+                .show_ui(ui, |ui| {
+                    // TOOD: Filter only ores
+                    for ore_opt in 0..data_store.item_names.len() {
+                        ui.selectable_value(
+                            &mut ore,
+                            Some(Item {
+                                id: ore_opt.try_into().unwrap(),
+                            }),
+                            &data_store.item_display_names[ore_opt],
+                        );
+                    }
+                });
+
+            if ore.is_some() && amount.is_none() {
+                amount = Some(1_000_000);
+            }
+
+            if let Some(amount) = amount.as_mut() {
+                ui.add(Slider::new(amount, 0..=100_000_000).logarithmic(true));
+            }
+
+            if let Some(ore) = ore {
+                state_machine_ref.state =
+                    ActionStateMachineState::Holding(HeldObject::OrePlacement {
+                        ore,
+                        amount: amount.unwrap(),
+                    });
+            }
+        });
     });
 
     Window::new("BP").default_open(false).show(ctx, |ui| {
@@ -3148,9 +3388,30 @@ pub fn render_ui<
                             ui.label("Empty");
                         }
                     }
-                    Entity::MiningDrill { ty, pos, rotation, drill_id } => {
+                    Entity::MiningDrill { ty, pos, rotation, drill_id, internal_inserter } => {
                         // TODO:
                         ui.label(&*data_store.mining_drill_info[*ty as usize].display_name);
+
+                        let mining_drill::MiningDrillInfo {
+                            timer: timer_percentage,
+                            prod_timer: prod_timer_percentage,
+                            remaining_ore
+                        } = game_state_ref.simulation_state.factory.ore_store.get_info(*drill_id);
+
+                        let main_pb = ProgressBar::new(timer_percentage).show_percentage().corner_radius(CornerRadius::ZERO);
+                                ui.add(main_pb);
+                                let prod_pb = ProgressBar::new(prod_timer_percentage).fill(Color32::ORANGE).show_percentage().corner_radius(CornerRadius::ZERO);
+                                ui.add(prod_pb);
+
+                        for (ore, amount) in remaining_ore {
+                            ui.label(&format!("{}: {}", data_store.item_display_names[ore.into_usize()], amount));
+                        }
+
+                        if let InternalInserterInfo::Attached {info} = internal_inserter {
+                            ui.label(&format!("{:?}", info));
+                        } else {
+                            ui.label("Not attached");
+                        }
                     }
                     _ => todo!(),
                 }

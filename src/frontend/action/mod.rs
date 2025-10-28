@@ -6,6 +6,7 @@ use set_recipe::SetRecipeInfo;
 
 use super::world::{Position, tile::PlaceEntityType};
 use crate::frontend::world::tile::ModuleTy;
+use crate::item::Item;
 use crate::{
     data::DataStore,
     item::{IdxTrait, WeakIdxTrait},
@@ -64,6 +65,12 @@ pub enum ActionType<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         tech: Technology,
     },
 
+    PlaceOre {
+        pos: Position,
+        ore: Item<ItemIdxType>,
+        amount: u32,
+    },
+
     Ping(Position),
 }
 
@@ -99,6 +106,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, Rec
             ActionType::SetActiveResearch { .. } => None,
             ActionType::CheatUnlockTechnology { .. } => None,
             ActionType::CheatRelockTechnology { .. } => None,
+            ActionType::PlaceOre { pos, .. } => Some(*pos),
             ActionType::Ping(position) => Some(*position),
         }
     }
@@ -162,6 +170,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, Rec
             ActionType::SetActiveResearch { .. } => None,
             ActionType::CheatUnlockTechnology { .. } => None,
             ActionType::CheatRelockTechnology { .. } => None,
+            ActionType::PlaceOre { .. } => None,
             ActionType::Ping(_) => None,
         }
     }
@@ -185,6 +194,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, Rec
             ActionType::SetActiveResearch { .. } => None,
             ActionType::CheatUnlockTechnology { .. } => None,
             ActionType::CheatRelockTechnology { .. } => None,
+            ActionType::PlaceOre { pos, .. } => Some([1, 1]),
             ActionType::Ping(_) => None,
         })
     }

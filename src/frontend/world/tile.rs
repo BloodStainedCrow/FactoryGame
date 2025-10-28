@@ -1,3 +1,4 @@
+use crate::mining_drill;
 use crate::mining_drill::AddMinerError;
 use crate::mining_drill::FullOreStore;
 use crate::mining_drill::MiningDrillIdentifier;
@@ -178,7 +179,7 @@ pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     belt_recieving_input_directions: HashMap<Position, EnumMap<Dir, bool>>,
     power_grid_lookup: PowerGridConnectedDevicesLookup,
 
-    ore_lookup: OreLookup<ItemIdxType>,
+    pub ore_lookup: OreLookup<ItemIdxType>,
 
     remaining_updates: Vec<WorldUpdate>,
 
@@ -497,7 +498,7 @@ fn try_instantiating_inserters_for_belt<ItemIdxType: IdxTrait, RecipeIdxType: Id
             mem::swap(&mut tmp, &mut *by_belt);
 
             tmp.retain(|pos| {
-                match world.try_instantiate_inserter(sim_state, *pos, data_store) {
+                match world.try_instantiate_inserter_entity(sim_state, *pos, data_store) {
                     Ok(newly_instantiated) => {
                         match newly_instantiated {
                             InserterInstantiationNewOptions::Positions(positions) => updates
@@ -583,7 +584,7 @@ fn try_instantiating_all_inserters_cascade<ItemIdxType: IdxTrait, RecipeIdxType:
             mem::swap(&mut tmp, &mut world.to_instantiate);
 
             tmp.retain(|pos| {
-                match world.try_instantiate_inserter(sim_state, *pos, data_store) {
+                match world.try_instantiate_inserter_entity(sim_state, *pos, data_store) {
                     Ok(newly_instantiated) => {
                         match newly_instantiated {
                             InserterInstantiationNewOptions::Positions(positions) => updates
@@ -651,7 +652,8 @@ fn instantiate_inserter_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
         update: Box::new(move |world, sim_state, updates, data_store| {
-            match world.try_instantiate_inserter(sim_state, new_instantiate_pos, data_store) {
+            match world.try_instantiate_inserter_entity(sim_state, new_instantiate_pos, data_store)
+            {
                 Ok(newly_instantiated) => {
                     match newly_instantiated {
                         InserterInstantiationNewOptions::Positions(positions) => {
@@ -750,11 +752,133 @@ fn new_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType: IdxTra
                                     .push(instantiate_inserter_cascade(*inserter_pos, data_store));
                             }
                         },
+                        Entity::MiningDrill {
+                            ty,
+                            pos: mining_drill_pos,
+                            rotation,
+                            internal_inserter: InternalInserterInfo::NotAttached {},
+                            ..
+                        } => {
+                            let end_pos = data_store.mining_drill_info[*ty as usize]
+                                .get_output_pos(*mining_drill_pos, *rotation);
+
+                            if let Some(end_pos) = end_pos {
+                                if end_pos.contained_in(pos, size) {
+                                    updates.push(instantiate_mining_drill_internal_inserter(
+                                        *mining_drill_pos,
+                                    ));
+                                }
+                            }
+                        },
                         _ => {},
                     }
                     ControlFlow::Continue(())
                 },
             );
+        }),
+    }
+}
+
+fn instantiate_mining_drill_internal_inserter<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    drill_pos: Position,
+) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
+    CascadingUpdate {
+        update: Box::new(move |world, sim_state, updates, data_store| {
+            profiling::scope!("instantiate_mining_drill_internal_inserter");
+            let Some(Entity::MiningDrill {
+                ty,
+                pos,
+                rotation,
+                drill_id,
+                internal_inserter: InternalInserterInfo::NotAttached {},
+            }) = world.get_entity_at(drill_pos, data_store)
+            else {
+                return;
+            };
+
+            let Some(end_pos) =
+                data_store.mining_drill_info[*ty as usize].get_output_pos(*pos, *rotation)
+            else {
+                // This drill does not automatically output
+                return;
+            };
+
+            let Some(single_item) = drill_id.items().iter().all_equal_value().ok().copied() else {
+                error!("This mining drill is mining multiple items, and we do not support that :/");
+                return;
+            };
+
+            match world.try_instantiate_inserter(
+                sim_state,
+                1,
+                1,
+                Some(single_item),
+                *pos,
+                end_pos,
+                data_store,
+            ) {
+                Ok((ins, newly_instantiated)) => {
+                    match newly_instantiated {
+                        InserterInstantiationNewOptions::Positions(positions) => {
+                            updates.extend(positions.into_iter().map(|new_pos| {
+                                // FIXME: Size hardcoded
+                                new_possible_inserter_connection(new_pos, (10, 10))
+                            }))
+                        },
+                        InserterInstantiationNewOptions::Belts(belts) => {
+                            updates.extend(belts.into_iter().map(|new_belt| {
+                                try_instantiating_inserters_for_belt_cascade(new_belt)
+                            }))
+                        },
+                        InserterInstantiationNewOptions::PositionsAndBelts(positions, belts) => {
+                            updates.extend(positions.into_iter().map(|new_pos| {
+                                // FIXME: Size hardcoded
+                                new_possible_inserter_connection(new_pos, (10, 10))
+                            }));
+                            updates.extend(belts.into_iter().map(|new_belt| {
+                                try_instantiating_inserters_for_belt_cascade(new_belt)
+                            }));
+                        },
+                        InserterInstantiationNewOptions::All => {
+                            updates.push(try_instantiating_all_inserters_cascade())
+                        },
+                    }
+
+                    let Some(Entity::MiningDrill {
+                        internal_inserter: internal_inserter @ InternalInserterInfo::NotAttached {},
+                        ..
+                    }) = world.get_entity_at_mut(drill_pos, data_store)
+                    else {
+                        unreachable!();
+                    };
+
+                    *internal_inserter = InternalInserterInfo::Attached {
+                        info: match ins {
+                            AttachedInserter::BeltStorage { id, belt_pos } => {
+                                AttachedInternalInserter::BeltStorage { id, belt_pos }
+                            },
+                            AttachedInserter::StorageStorage { item, inserter } => {
+                                AttachedInternalInserter::StorageStorage { item, inserter }
+                            },
+                            AttachedInserter::BeltBelt { .. } => unreachable!(),
+                        },
+                    }
+                },
+                Err(InstantiateInserterError::NotUnattachedInserter) => {
+                    unreachable!("We are bypassing this check");
+                },
+                Err(InstantiateInserterError::PleaseSpecifyFilter {
+                    belts_which_could_help,
+                }) => {
+                    unreachable!("We are specifying a filter");
+                },
+                Err(e) => {
+                    info!(
+                        "instantiate_mining_drill_internal_inserter failed at {:?}, with {e:?}",
+                        drill_pos
+                    );
+                },
+            }
         }),
     }
 }
@@ -1224,6 +1348,52 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                                 }
                             }
                         },
+                        Entity::MiningDrill {
+                            ty,
+                            pos: mining_drill_pos,
+                            rotation,
+                            drill_id,
+                            internal_inserter,
+                        } => {
+                            match internal_inserter {
+                                InternalInserterInfo::NotAttached {} => {},
+                                InternalInserterInfo::Attached { info } => {
+                                    let Some(end_pos) = data_store.mining_drill_info[*ty as usize]
+                                        .get_output_pos(*mining_drill_pos, *rotation)
+                                    else {
+                                        // This type of drill does not have an internal inserter
+                                        return ControlFlow::Continue(());
+                                    };
+
+                                    if end_pos.contained_in(pos, size) {
+                                        match info {
+                                            AttachedInternalInserter::BeltStorage {
+                                                id,
+                                                belt_pos,
+                                            } => {
+                                                sim_state
+                                                    .factory
+                                                    .belts
+                                                    .remove_inserter(*id, *belt_pos);
+                                            },
+                                            AttachedInternalInserter::StorageStorage {
+                                                item,
+                                                inserter,
+                                            } => {
+                                                let movetime = 1;
+
+                                                // This might return something at some point, and this will be a compiler error
+                                                let () = sim_state
+                                                    .factory
+                                                    .storage_storage_inserters
+                                                    .remove_ins(*item, movetime, *inserter);
+                                            },
+                                        }
+                                        *internal_inserter = InternalInserterInfo::NotAttached {};
+                                    }
+                                },
+                            }
+                        },
                         _ => {},
                     }
                     ControlFlow::Continue(())
@@ -1268,6 +1438,40 @@ impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> GetGridIndex<i32>
             self.base_pos.0 / i32::from(CHUNK_SIZE),
             self.base_pos.1 / i32::from(CHUNK_SIZE),
         )
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum InserterConnection<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+    Belt(BeltTileId<ItemIdxType>, u16),
+    Storage(Static<RecipeIdxType>),
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Static<RecipeIdxType: IdxTrait> {
+    Done(Storage<RecipeIdxType>),
+    ToInstantiate,
+}
+
+struct InserterConnectionPossibility<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+    conn: InserterConnection<ItemIdxType, RecipeIdxType>,
+    inserter_item_hint: Option<Vec<Item<ItemIdxType>>>,
+    possible_item_list: PossibleItem<ItemIdxType>,
+}
+#[derive(Debug, Clone, PartialEq)]
+enum PossibleItem<ItemIdxType: IdxTrait> {
+    All,
+    List(Vec<Item<ItemIdxType>>),
+    None,
+}
+
+impl<ItemIdxType: IdxTrait> PossibleItem<ItemIdxType> {
+    fn contains(&self, item: Item<ItemIdxType>) -> bool {
+        match self {
+            PossibleItem::All => true,
+            PossibleItem::List(items) => items.contains(&item),
+            PossibleItem::None => false,
+        }
     }
 }
 
@@ -1916,14 +2120,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             // TODO: Return error here
             return Ok(());
         }
+        let [size_x, size_y] = size.into();
         let [mining_area_width, mining_area_height] =
             data_store.mining_drill_info[ty as usize].mining_area(rotation);
 
         let positions = (0..mining_area_width)
             .cartesian_product(0..mining_area_height)
             .map(|(x, y)| Position {
-                x: pos.x + i32::from(x),
-                y: pos.y + i32::from(y),
+                x: pos.x + (i32::from(size_x) - i32::from(mining_area_width)) / 2 + i32::from(x),
+                y: pos.y + (i32::from(size_y) - i32::from(mining_area_height)) / 2 + i32::from(y),
             });
 
         let (new_drill_id, updates) = sim_state.factory.ore_store.add_drill_mining_positions(
@@ -1934,6 +2139,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
         for update in updates {
             // FIXME: Apply update
+            error!("Apply mining drill update");
         }
 
         self.add_entity(
@@ -1941,7 +2147,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 pos,
                 ty,
                 rotation,
-                // internal_inserter: todo!(),
+                internal_inserter: InternalInserterInfo::NotAttached {},
                 drill_id: new_drill_id,
             },
             sim_state,
@@ -2142,11 +2348,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             } => {},
             Entity::FluidTank { .. } => {},
             Entity::MiningDrill { pos, .. } => {
-                // TODO: This needs to change if I want an internal inserter
                 cascading_updates.push(new_possible_inserter_connection(
                     pos,
                     entity.get_entity_size(data_store),
                 ));
+                cascading_updates.push(instantiate_mining_drill_internal_inserter(pos));
             },
         };
 
@@ -2276,46 +2482,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         Ok(())
     }
 
-    pub fn try_instantiate_inserter(
+    pub fn try_instantiate_inserter_entity(
         &mut self,
         simulation_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
         pos: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Result<InserterInstantiationNewOptions<ItemIdxType>, InstantiateInserterError<ItemIdxType>>
     {
-        enum InserterConnection<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
-            Belt(BeltTileId<ItemIdxType>, u16),
-            Storage(Static<RecipeIdxType>),
-        }
-
-        enum Static<RecipeIdxType: IdxTrait> {
-            Done(Storage<RecipeIdxType>),
-            ToInstantiate,
-        }
-
-        #[derive(Debug, Clone, PartialEq)]
-        enum PossibleItem<ItemIdxType: IdxTrait> {
-            All,
-            List(Vec<Item<ItemIdxType>>),
-            None,
-        }
-
-        impl<ItemIdxType: IdxTrait> PossibleItem<ItemIdxType> {
-            fn contains(&self, item: Item<ItemIdxType>) -> bool {
-                match self {
-                    PossibleItem::All => true,
-                    PossibleItem::List(items) => items.contains(&item),
-                    PossibleItem::None => false,
-                }
-            }
-        }
-
-        struct InserterConnectionPossibility<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
-            conn: InserterConnection<ItemIdxType, RecipeIdxType>,
-            inserter_item_hint: Option<Vec<Item<ItemIdxType>>>,
-            possible_item_list: PossibleItem<ItemIdxType>,
-        }
-
         let Some(Entity::Inserter {
             ty,
             user_movetime,
@@ -2330,6 +2503,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             return Err(InstantiateInserterError::NotUnattachedInserter);
         };
 
+        let pos = *pos;
+
         // TODO: Calculate tech effect
         let hand_size = data_store.inserter_infos[*ty as usize].base_hand_size;
 
@@ -2337,9 +2512,68 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             .map(|v| v.into())
             .unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks);
 
-        let start_pos = data_store.inserter_start_pos(*ty, *pos, *direction);
-        let end_pos = data_store.inserter_end_pos(*ty, *pos, *direction);
+        let start_pos = data_store.inserter_start_pos(*ty, pos, *direction);
+        let end_pos = data_store.inserter_end_pos(*ty, pos, *direction);
 
+        let filter = *filter;
+
+        let (ins, instantiated) = self.try_instantiate_inserter(
+            simulation_state,
+            movetime,
+            hand_size,
+            filter,
+            start_pos,
+            end_pos,
+            data_store,
+        )?;
+
+        match ins {
+            AttachedInserter::BeltStorage { id, .. } => {
+                self.belt_lookup
+                    .belt_id_to_chunks
+                    .entry(id)
+                    .or_default()
+                    .insert((pos.x / i32::from(CHUNK_SIZE), pos.y / i32::from(CHUNK_SIZE)));
+            },
+            AttachedInserter::BeltBelt { item, inserter } => {
+                todo!("Set the correct belt_ids in the belt_lookup")
+            },
+            AttachedInserter::StorageStorage { .. } => {},
+        }
+
+        let Some(Entity::Inserter {
+            info: info @ InserterInfo::NotAttached {},
+            ..
+        }) = self.get_entity_at_mut(pos, data_store)
+        else {
+            unreachable!()
+        };
+
+        *info = InserterInfo::Attached { info: ins };
+
+        Ok(instantiated)
+    }
+
+    fn try_instantiate_inserter(
+        &mut self,
+        simulation_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
+
+        movetime: u16,
+        hand_size: crate::item::ITEMCOUNTTYPE,
+
+        known_filter: Option<Item<ItemIdxType>>,
+
+        start_pos: Position,
+        end_pos: Position,
+
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Result<
+        (
+            AttachedInserter<ItemIdxType>,
+            InserterInstantiationNewOptions<ItemIdxType>,
+        ),
+        InstantiateInserterError<ItemIdxType>,
+    > {
         let start_conn: Option<InserterConnectionPossibility<ItemIdxType, RecipeIdxType>> = self
             .get_entity_at(start_pos, data_store)
             .map(|e| match e {
@@ -2465,7 +2699,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             })
             .flatten();
 
-        let Some(start_conn) = start_conn else {
+        let Some(mut start_conn) = start_conn else {
             return Err(InstantiateInserterError::SourceMissing);
         };
 
@@ -2490,7 +2724,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     },
                     modules: _,
                     rotation: _,
-                    // FIXME: Translate the recipe_idx to
                 } => Some(InserterConnectionPossibility {
                     conn: InserterConnection::Storage(Static::Done(Storage::Assembler {
                         grid: id.grid,
@@ -2577,7 +2810,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             })
             .flatten();
 
-        let Some(dest_conn) = dest_conn else {
+        let Some(mut dest_conn) = dest_conn else {
             return Err(InstantiateInserterError::DestMissing);
         };
 
@@ -2621,15 +2854,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             }
         }
 
-        // For determining the filter we use this plan:
-        // If a filter is specified, use that
-        // If we can determine a single source item use that,
-        // If we can determine a single destination item use that
-        // Else make the user do it
-        let determined_filter = match filter {
+        let determined_filter = match known_filter {
             Some(filter) => {
-                if possible_items.contains(*filter) {
-                    *filter
+                if possible_items.contains(filter) {
+                    filter
                 } else {
                     match (start_conn.conn, dest_conn.conn) {
                         (
@@ -2707,51 +2935,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             },
         };
 
-        let mut instantiated = InserterInstantiationNewOptions::Positions(vec![]);
-
-        match (start_conn.conn, dest_conn.conn) {
+        let instantiated = match (start_conn.conn, dest_conn.conn) {
             (
                 InserterConnection::Belt(start_belt_id, start_belt_pos),
                 InserterConnection::Belt(dest_belt_id, dest_belt_pos),
-            ) => {
-                let pos = *pos;
-                let start_pos = data_store.inserter_start_pos(*ty, pos, *direction);
-                let end_pos = data_store.inserter_end_pos(*ty, pos, *direction);
-                // FIXME: The movetime should be dependent on the inserter type!
-                let index = simulation_state.factory.belts.add_belt_belt_inserter(
-                    (start_belt_id, start_belt_pos),
-                    (dest_belt_id, dest_belt_pos),
-                    BeltBeltInserterAdditionInfo {
-                        cooldown: movetime.into(),
-                        filter: determined_filter,
-                    },
-                );
-                instantiated =
-                    InserterInstantiationNewOptions::Belts(vec![start_belt_id, dest_belt_id]);
-
-                let Entity::Inserter { info, .. } = self
-                    .get_chunk_for_tile_mut(pos)
-                    .unwrap()
-                    .get_entity_at_mut(pos, data_store)
-                    .unwrap()
-                else {
-                    unreachable!("We already checked it was an unattached inserter before")
-                };
-
-                *info = InserterInfo::Attached {
-                    info: AttachedInserter::BeltBelt {
-                        item: determined_filter,
-                        inserter: index,
-                    },
-                }
-            },
+            ) => InserterInstantiationNewOptions::Belts(vec![start_belt_id, dest_belt_id]),
             (
                 InserterConnection::Belt(start_belt_id, start_belt_pos),
                 InserterConnection::Storage(dest_storage_untranslated),
             ) => {
-                let start_pos = data_store.inserter_start_pos(*ty, *pos, *direction);
-                let end_pos = data_store.inserter_end_pos(*ty, *pos, *direction);
-                let pos = *pos;
                 let dest_storage_untranslated = match dest_storage_untranslated {
                     Static::Done(storage) => storage,
                     Static::ToInstantiate => {
@@ -2779,59 +2971,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     },
                 };
 
-                let dest_storage = dest_storage_untranslated
-                    .translate(determined_filter, data_store)
-                    .unwrap();
+                dest_conn.conn =
+                    InserterConnection::Storage(Static::Done(dest_storage_untranslated));
 
-                match simulation_state.factory.belts.add_belt_storage_inserter(
-                    determined_filter,
-                    start_belt_id,
-                    start_belt_pos - 1,
-                    FakeUnionStorage::from_storage_with_statics_at_zero(
-                        determined_filter,
-                        dest_storage,
-                        data_store,
-                    ),
-                ) {
-                    Ok(()) => {},
-                    Err(_) => {
-                        todo!()
-                    },
-                };
-                instantiated = InserterInstantiationNewOptions::PositionsAndBelts(
+                InserterInstantiationNewOptions::PositionsAndBelts(
                     vec![end_pos],
                     vec![start_belt_id],
-                );
-
-                let Entity::Inserter { info, .. } = self
-                    .get_chunk_for_tile_mut(pos)
-                    .unwrap()
-                    .get_entity_at_mut(pos, data_store)
-                    .unwrap()
-                else {
-                    unreachable!("We already checked it was an unattached inserter before")
-                };
-
-                *info = InserterInfo::Attached {
-                    info: AttachedInserter::BeltStorage {
-                        id: start_belt_id,
-                        belt_pos: start_belt_pos - 1,
-                    },
-                };
-
-                self.belt_lookup
-                    .belt_id_to_chunks
-                    .entry(start_belt_id)
-                    .or_default()
-                    .insert((pos.x / CHUNK_SIZE as i32, pos.y / CHUNK_SIZE as i32));
+                )
             },
             (
                 InserterConnection::Storage(start_storage_untranslated),
                 InserterConnection::Belt(dest_belt_id, dest_belt_pos),
             ) => {
-                let start_pos = data_store.inserter_start_pos(*ty, *pos, *direction);
-                let end_pos = data_store.inserter_end_pos(*ty, *pos, *direction);
-                let pos = *pos;
                 let start_storage_untranslated = match start_storage_untranslated {
                     Static::Done(storage) => storage,
                     Static::ToInstantiate => {
@@ -2858,60 +3009,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         storage.unwrap()
                     },
                 };
-                instantiated = InserterInstantiationNewOptions::PositionsAndBelts(
+
+                start_conn.conn =
+                    InserterConnection::Storage(Static::Done(start_storage_untranslated));
+
+                InserterInstantiationNewOptions::PositionsAndBelts(
                     vec![start_pos],
                     vec![dest_belt_id],
-                );
-
-                let start_storage = start_storage_untranslated
-                    .translate(determined_filter, data_store)
-                    .unwrap();
-
-                match simulation_state.factory.belts.add_storage_belt_inserter(
-                    determined_filter,
-                    dest_belt_id,
-                    dest_belt_pos - 1,
-                    FakeUnionStorage::from_storage_with_statics_at_zero(
-                        determined_filter,
-                        start_storage,
-                        data_store,
-                    ),
-                ) {
-                    Ok(()) => {},
-                    Err(_) => {
-                        todo!()
-                    },
-                };
-
-                let Entity::Inserter { info, .. } = self
-                    .get_chunk_for_tile_mut(pos)
-                    .unwrap()
-                    .get_entity_at_mut(pos, data_store)
-                    .unwrap()
-                else {
-                    unreachable!("We already checked it was an unattached inserter before")
-                };
-
-                *info = InserterInfo::Attached {
-                    info: AttachedInserter::BeltStorage {
-                        id: dest_belt_id,
-                        belt_pos: dest_belt_pos - 1,
-                    },
-                };
-
-                self.belt_lookup
-                    .belt_id_to_chunks
-                    .entry(dest_belt_id)
-                    .or_default()
-                    .insert((pos.x / CHUNK_SIZE as i32, pos.y / CHUNK_SIZE as i32));
+                )
             },
             (
                 InserterConnection::Storage(start_storage_untranslated),
                 InserterConnection::Storage(dest_storage_untranslated),
             ) => {
-                let start_pos = data_store.inserter_start_pos(*ty, *pos, *direction);
-                let end_pos = data_store.inserter_end_pos(*ty, *pos, *direction);
-                let pos = *pos;
+                let mut instantiated = InserterInstantiationNewOptions::Positions(vec![]);
 
                 let start_storage_untranslated = match start_storage_untranslated {
                     Static::Done(storage) => storage,
@@ -2945,6 +3056,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         storage.unwrap()
                     },
                 };
+
+                start_conn.conn =
+                    InserterConnection::Storage(Static::Done(start_storage_untranslated));
 
                 let dest_storage_untranslated = match dest_storage_untranslated {
                     Static::Done(storage) => storage,
@@ -2979,15 +3093,155 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     },
                 };
 
+                dest_conn.conn =
+                    InserterConnection::Storage(Static::Done(dest_storage_untranslated));
+
+                instantiated
+            },
+        };
+
+        let ins = self.instantiate_inserter_storages(
+            simulation_state,
+            determined_filter,
+            movetime,
+            hand_size,
+            start_conn.conn,
+            dest_conn.conn,
+            data_store,
+        );
+        Ok((ins, instantiated))
+    }
+
+    fn instantiate_inserter_storages(
+        &mut self,
+        simulation_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
+        filter: Item<ItemIdxType>,
+
+        movetime: u16,
+        hand_size: crate::item::ITEMCOUNTTYPE,
+
+        start: InserterConnection<ItemIdxType, RecipeIdxType>,
+        end: InserterConnection<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> AttachedInserter<ItemIdxType> {
+        match (start, end) {
+            (
+                InserterConnection::Belt(start_belt_id, start_belt_pos),
+                InserterConnection::Belt(dest_belt_id, dest_belt_pos),
+            ) => {
+                let index = simulation_state.factory.belts.add_belt_belt_inserter(
+                    (start_belt_id, start_belt_pos),
+                    (dest_belt_id, dest_belt_pos),
+                    BeltBeltInserterAdditionInfo {
+                        cooldown: movetime.into(),
+                        filter,
+                    },
+                );
+
+                AttachedInserter::BeltBelt {
+                    item: filter,
+                    inserter: index,
+                }
+            },
+            (
+                InserterConnection::Belt(start_belt_id, start_belt_pos),
+                InserterConnection::Storage(dest_storage_untranslated),
+            ) => {
+                let dest_storage_untranslated = match dest_storage_untranslated {
+                    Static::Done(storage) => storage,
+                    Static::ToInstantiate => {
+                        unreachable!("Storages must be instantiated before calling this function")
+                    },
+                };
+
+                let dest_storage = dest_storage_untranslated
+                    .translate(filter, data_store)
+                    .unwrap();
+
+                match simulation_state.factory.belts.add_belt_storage_inserter(
+                    filter,
+                    start_belt_id,
+                    start_belt_pos - 1,
+                    FakeUnionStorage::from_storage_with_statics_at_zero(
+                        filter,
+                        dest_storage,
+                        data_store,
+                    ),
+                ) {
+                    Ok(()) => {},
+                    Err(_) => {
+                        todo!()
+                    },
+                };
+
+                AttachedInserter::BeltStorage {
+                    id: start_belt_id,
+                    belt_pos: start_belt_pos - 1,
+                }
+            },
+            (
+                InserterConnection::Storage(start_storage_untranslated),
+                InserterConnection::Belt(dest_belt_id, dest_belt_pos),
+            ) => {
+                let start_storage_untranslated = match start_storage_untranslated {
+                    Static::Done(storage) => storage,
+                    Static::ToInstantiate => {
+                        unreachable!("Storages must be instantiated before calling this function")
+                    },
+                };
+
                 let start_storage = start_storage_untranslated
-                    .translate(determined_filter, data_store)
+                    .translate(filter, data_store)
+                    .unwrap();
+
+                match simulation_state.factory.belts.add_storage_belt_inserter(
+                    filter,
+                    dest_belt_id,
+                    dest_belt_pos - 1,
+                    FakeUnionStorage::from_storage_with_statics_at_zero(
+                        filter,
+                        start_storage,
+                        data_store,
+                    ),
+                ) {
+                    Ok(()) => {},
+                    Err(_) => {
+                        todo!()
+                    },
+                };
+
+                AttachedInserter::BeltStorage {
+                    id: dest_belt_id,
+                    belt_pos: dest_belt_pos - 1,
+                }
+            },
+            (
+                InserterConnection::Storage(start_storage_untranslated),
+                InserterConnection::Storage(dest_storage_untranslated),
+            ) => {
+                let start_storage_untranslated = match start_storage_untranslated {
+                    Static::Done(storage) => storage,
+                    Static::ToInstantiate => {
+                        unreachable!("Storages must be instantiated before calling this function")
+                    },
+                };
+
+                let dest_storage_untranslated = match dest_storage_untranslated {
+                    Static::Done(storage) => storage,
+                    Static::ToInstantiate => {
+                        unreachable!("Storages must be instantiated before calling this function")
+                    },
+                };
+
+                let start_storage = start_storage_untranslated
+                    .translate(filter, data_store)
                     .unwrap();
                 let dest_storage = dest_storage_untranslated
-                    .translate(determined_filter, data_store)
+                    .translate(filter, data_store)
                     .unwrap();
 
                 let index = simulation_state.factory.storage_storage_inserters.add_ins(
-                    determined_filter,
+                    filter,
                     movetime.into(),
                     start_storage,
                     dest_storage,
@@ -2995,25 +3249,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     data_store,
                 );
 
-                let Entity::Inserter { info, .. } = self
-                    .get_chunk_for_tile_mut(pos)
-                    .unwrap()
-                    .get_entity_at_mut(pos, data_store)
-                    .unwrap()
-                else {
-                    unreachable!("We already checked it was an unattached inserter before")
-                };
-
-                *info = InserterInfo::Attached {
-                    info: AttachedInserter::StorageStorage {
-                        item: determined_filter,
-                        inserter: index,
-                    },
-                };
+                AttachedInserter::StorageStorage {
+                    item: filter,
+                    inserter: index,
+                }
             },
         }
-
-        Ok(instantiated)
     }
 
     pub fn update_power_grid_id(
@@ -3093,7 +3334,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         pos,
                         rotation,
                         drill_id,
-                        // internal_inserter,
+                        internal_inserter,
                     } => todo!(),
                     Entity::Belt { .. }
                     | Entity::Underground { .. }
@@ -3192,7 +3433,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             for entity in &mut chunk.entities {
                 match entity {
                     Entity::Beacon { .. } => {},
-                    Entity::MiningDrill { .. } => {},
+                    Entity::MiningDrill {
+                        internal_inserter: InternalInserterInfo::NotAttached {},
+                        ..
+                    } => {},
+
+                    Entity::MiningDrill {
+                        internal_inserter: InternalInserterInfo::Attached { info },
+                        ..
+                    } => match info {
+                        AttachedInternalInserter::BeltStorage { id, belt_pos } => {
+                            if *id == old_id && belt_pos_earliest <= *belt_pos {
+                                *id = new_id;
+                                found_anything = true;
+                            }
+                        },
+                        AttachedInternalInserter::StorageStorage { .. } => {},
+                    },
                     Entity::Lab { .. } => {},
                     Entity::SolarPanel { .. } => {},
                     Entity::Assembler { .. } => {},
@@ -3284,7 +3541,28 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 for entity in &mut chunk.entities {
                     match entity {
                         Entity::Beacon { .. } => {},
-                        Entity::MiningDrill { .. } => {},
+                        Entity::MiningDrill {
+                            internal_inserter: InternalInserterInfo::Attached { info },
+                            ..
+                        } => match info {
+                            AttachedInternalInserter::BeltStorage { id, belt_pos } => {
+                                if *id == id_to_change {
+                                    found_anything = true;
+                                    if sub {
+                                        *belt_pos =
+                                            belt_pos.checked_sub(offs).expect("belt_pos wrapped!");
+                                    } else {
+                                        *belt_pos =
+                                            belt_pos.checked_add(offs).expect("belt_pos wrapped!");
+                                    }
+                                }
+                            },
+                            AttachedInternalInserter::StorageStorage { .. } => {},
+                        },
+                        Entity::MiningDrill {
+                            internal_inserter: InternalInserterInfo::NotAttached {},
+                            ..
+                        } => {},
                         Entity::Lab { .. } => {},
                         Entity::SolarPanel { .. } => {},
                         Entity::Assembler { .. } => {},
@@ -4529,7 +4807,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     pos,
                     rotation,
                     drill_id,
-                    // internal_inserter,
+                    internal_inserter,
                 } => todo!(),
             }
 
@@ -4782,11 +5060,8 @@ pub enum InserterInfo<ItemIdxType: WeakIdxTrait = u8> {
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum InternalInserterInfo<ItemIdxType: WeakIdxTrait> {
-    NotAttached {
-        end_pos: Position,
-    },
+    NotAttached {},
     Attached {
-        end_pos: Position,
         info: AttachedInternalInserter<ItemIdxType>,
     },
 }
@@ -4999,7 +5274,7 @@ pub enum Entity<ItemIdxType: WeakIdxTrait = u8, RecipeIdxType: WeakIdxTrait = u8
 
         // FIXME: For now drills will not need power
         drill_id: MiningDrillIdentifier<ItemIdxType>,
-        // internal_inserter: InternalInserterInfo<ItemIdxType>,
+        internal_inserter: InternalInserterInfo<ItemIdxType>,
     },
 }
 

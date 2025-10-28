@@ -12,6 +12,7 @@ use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
 use get_size2::GetSize;
 use itertools::Itertools;
+use log::error;
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::IntoParallelRefMutIterator;
 use rayon::iter::ParallelIterator;
@@ -46,6 +47,20 @@ impl<ItemIdxType: WeakIdxTrait> Default for OreLookup<ItemIdxType> {
             ore_lookup: HashMap::default(),
         }
     }
+}
+
+impl<ItemIdxType: IdxTrait> OreLookup<ItemIdxType> {
+    pub fn add_ore(&mut self, pos: Position, ore: Item<ItemIdxType>, amount: u32) {
+        self.ore_lookup
+            .insert(pos, (ore, OreLoc::Unowned { amount }));
+    }
+}
+
+pub struct MiningDrillInfo<ItemIdxType: WeakIdxTrait> {
+    pub timer: f32,
+    pub prod_timer: f32,
+    pub remaining_ore: Vec<(Item<ItemIdxType>, u32)>,
+    // TODO: Power, speed, prod stats
 }
 
 #[derive(Debug)]
@@ -154,7 +169,11 @@ impl<ItemIdxType: IdxTrait> FullOreStore<ItemIdxType> {
     }
 
     /// Returns the amount of each item mined
-    pub fn update(&mut self, mining_productivity_bonus: &[u16]) -> impl Iterator<Item = u32> {
+    pub fn update<RecipeIdxType: IdxTrait>(
+        &mut self,
+        mining_productivity_bonus: &[u16],
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl Iterator<Item = u32> {
         let items_from_pure_solo: Vec<_> = self
             .drills
             .pure_solo_owned
@@ -163,6 +182,13 @@ impl<ItemIdxType: IdxTrait> FullOreStore<ItemIdxType> {
             // TODO: Power
             // TODO: Mining Prod
             .map(|(store, mining_productivity_bonus)| {
+                profiling::scope!(
+                    "Mining Drill Update",
+                    format!(
+                        "Item: {}",
+                        &data_store.item_display_names[store.item.into_usize()]
+                    )
+                );
                 store.update(MAX_POWER_MULT, *mining_productivity_bonus)
             })
             .collect();
@@ -258,13 +284,28 @@ impl<ItemIdxType: IdxTrait> FullOreStore<ItemIdxType> {
                         vec![],
                     ))
                 } else {
-                    todo!("Mining Drills with overlapping mining areas are not supported yet")
+                    error!("Mining Drills with overlapping mining areas are not supported yet");
+                    return Err(AddMinerError::NoOre);
+                    // todo!("Mining Drills with overlapping mining areas are not supported yet")
                 }
             },
 
             Err(None) => return Err(AddMinerError::NoOre),
             Err(Some(_)) => {
-                todo!("Currently mixed mining is not supported yet")
+                error!("Currently mixed mining is not supported yet");
+                return Err(AddMinerError::NoOre);
+                // todo!("Currently mixed mining is not supported yet")
+            },
+        }
+    }
+
+    pub fn get_info(
+        &self,
+        drill_id: MiningDrillIdentifier<ItemIdxType>,
+    ) -> MiningDrillInfo<ItemIdxType> {
+        match drill_id.kind {
+            MiningDrillIdentifierKind::PureOnlySoloOwned { item, id } => {
+                self.drills.pure_solo_owned[item.into_usize()].get_info(id.index)
             },
         }
     }

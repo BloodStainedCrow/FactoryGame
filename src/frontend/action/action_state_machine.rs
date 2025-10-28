@@ -149,6 +149,8 @@ pub enum HeldObject<ItemIdxType: WeakIdxTrait> {
     // TODO: PlaceEntityType is not quite right for this case
     Entity(PlaceEntityType<ItemIdxType>),
 
+    OrePlacement { ore: Item<ItemIdxType>, amount: u32 },
+
     Blueprint(Blueprint),
 }
 
@@ -357,6 +359,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
                                         ret
                                     },
+
+                                    HeldObject::OrePlacement {ore, amount} => {
+                                        vec![ActionType::PlaceOre {
+                                            pos: Self::player_mouse_to_tile(
+                                                self.zoom_level,
+                                                self.map_view_info.unwrap_or(self.local_player_pos),
+                                                self.current_mouse_pos,
+                                            ),
+                                            ore: *ore,
+                                            amount: *amount
+                                        }]
+                                    }
                                 }
                             },
                             ActionStateMachineState::Viewing(Position { .. }) => {
@@ -585,7 +599,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                     self.map_view_info.unwrap_or(self.local_player_pos),
                                     self.current_mouse_pos,
                                 );},
+
                             },
+                            HeldObject::OrePlacement { .. } => {},
                         },
                         ActionStateMachineState::Deconstructing(position, timer) =>{
                             //todo!("Check if we are still over the same thing")

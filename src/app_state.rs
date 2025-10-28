@@ -2573,6 +2573,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         },
                     );
                 },
+
+                ActionType::PlaceOre { pos, ore, amount } => {
+                    game_state.world.ore_lookup.add_ore(*pos, *ore, *amount);
+                },
             }
 
             #[cfg(debug_assertions)]
@@ -2655,10 +2659,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let ((), mining_production_by_item, (tech_progress, recipe_tick_info, lab_info)) = join!(
             || simulation_state.factory.chests.update(data_store),
             || {
-                simulation_state
-                    .factory
-                    .ore_store
-                    .update(&simulation_state.tech_state.mining_productivity_by_item)
+                simulation_state.factory.ore_store.update(
+                    &simulation_state.tech_state.mining_productivity_by_item,
+                    data_store,
+                )
             },
             || {
                 simulation_state.factory.power_grids.update(
@@ -2858,7 +2862,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         }
 
         for pos in inserter_positions {
-            let _ = world.try_instantiate_inserter(&mut simulation_state, pos, data_store);
+            let _ = world.try_instantiate_inserter_entity(&mut simulation_state, pos, data_store);
         }
     }
 

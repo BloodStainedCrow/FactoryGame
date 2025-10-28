@@ -569,6 +569,8 @@ pub struct MiningDrillInfo {
     pub base_speed: u16,
     // Fraction
     pub resource_drain: (u8, u8),
+
+    pub output_offset: Option<[i8; 2]>,
     // TODO: Allowed ore types
 }
 
@@ -589,6 +591,29 @@ impl MiningDrillInfo {
             Dir::East | Dir::West => [base_area[0], base_area[1]],
         };
         area
+    }
+
+    pub fn get_output_pos(&self, pos: Position, dir: Dir) -> Option<Position> {
+        let output_offset = self.output_offset?;
+
+        let rotated_offs = match dir {
+            Dir::North => output_offset,
+            Dir::South => [-output_offset[0], -output_offset[1]],
+            Dir::East => [-output_offset[1], output_offset[0]],
+            Dir::West => [output_offset[1], -output_offset[0]],
+        };
+
+        let rotated_start_offs = match dir {
+            Dir::North => [0, 0],
+            Dir::South => [self.size[0] - 1, self.size[1] - 1],
+            Dir::East => [self.size[0] - 1, 0],
+            Dir::West => [0, self.size[1] - 1],
+        };
+
+        Some(Position {
+            x: pos.x + i32::from(rotated_start_offs[0]) + i32::from(rotated_offs[0]),
+            y: pos.y + i32::from(rotated_start_offs[1]) + i32::from(rotated_offs[1]),
+        })
     }
 }
 
@@ -1452,14 +1477,29 @@ impl RawDataStore {
             ],
 
             // FIXME:
-            mining_drill_info: vec![MiningDrillInfo {
-                name: "factory_game::mining_drill".to_string().into(),
-                display_name: "Electric Mining Drill".to_string().into(),
-                size: [3, 3],
-                mining_range: [5, 5],
-                base_speed: 20,
-                resource_drain: (1, 1),
-            }],
+            mining_drill_info: vec![
+                MiningDrillInfo {
+                    name: "factory_game::mining_drill".to_string().into(),
+                    display_name: "Electric Mining Drill".to_string().into(),
+                    size: [3, 3],
+                    mining_range: [5, 5],
+                    base_speed: 20,
+                    resource_drain: (1, 1),
+                    output_offset: Some([1, -1]),
+                },
+                MiningDrillInfo {
+                    name: "factory_game::mining_drill_small_no_output"
+                        .to_string()
+                        .into(),
+                    display_name: "Electric Mining Drill".to_string().into(),
+                    size: [3, 3],
+                    // TODO:
+                    mining_range: [3, 3],
+                    base_speed: 20,
+                    resource_drain: (1, 1),
+                    output_offset: None,
+                },
+            ],
 
             recipe_allowed_assembling_machines: self
                 .recipes

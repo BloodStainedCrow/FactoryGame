@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use itertools::assert_equal;
+use itertools::{Itertools, assert_equal};
 use log::warn;
 
 use crate::{
@@ -619,18 +619,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ParGenerateInfo<ItemIdxType
         let rest_actions = world
             .get_chunks()
             .flat_map(|chunk| chunk.get_entities())
-            .filter_map(|e| match e {
+            .flat_map(|e| match e {
                 &Entity::SolarPanel { pos, ty, .. } => {
-                    Some(ActionType::PlaceEntity(PlaceEntityInfo {
+                    vec![ActionType::PlaceEntity(PlaceEntityInfo {
                         entities: EntityPlaceOptions::Single(PlaceEntityType::SolarPanel {
                             pos,
                             ty,
                         }),
                         force: false,
-                    }))
+                    })]
                 },
                 &Entity::Splitter { pos, direction, .. } => {
-                    Some(ActionType::PlaceEntity(PlaceEntityInfo {
+                    vec![ActionType::PlaceEntity(PlaceEntityInfo {
                         entities: EntityPlaceOptions::Single(PlaceEntityType::Splitter {
                             pos,
                             direction,
@@ -642,9 +642,48 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ParGenerateInfo<ItemIdxType
                             out_mode: None,
                         }),
                         force: false,
-                    }))
+                    })]
                 },
-                _ => None,
+                Entity::MiningDrill {
+                    ty, pos, rotation, ..
+                } => {
+                    let size = data_store.mining_drill_info[*ty as usize].size(*rotation);
+                    let mining_area =
+                        data_store.mining_drill_info[*ty as usize].mining_area(*rotation);
+
+                    let mining_area_start = Position {
+                        x: pos.x + (i32::from(mining_area[0]) - i32::from(size[0])) / 2,
+                        y: pos.y + (i32::from(mining_area[1]) - i32::from(size[1])) / 2,
+                    };
+
+                    let mut ore_actions = (mining_area_start.x
+                        ..(mining_area_start.x + i32::from(mining_area[0])))
+                        .cartesian_product(
+                            mining_area_start.y..(mining_area_start.y + i32::from(mining_area[1])),
+                        )
+                        .filter_map(|(x, y)| {
+                            let ore = world.get_ore_type_at_pos(Position { x, y });
+
+                            ore.map(|ore| ActionType::PlaceOre {
+                                pos: Position { x, y },
+                                ore,
+                                amount: 10_000_000,
+                            })
+                        })
+                        .collect_vec();
+
+                    ore_actions.push(ActionType::PlaceEntity(PlaceEntityInfo {
+                        entities: EntityPlaceOptions::Single(PlaceEntityType::MiningDrill {
+                            pos: *pos,
+                            ty: *ty,
+                            rotation: *rotation,
+                        }),
+                        force: false,
+                    }));
+
+                    ore_actions
+                },
+                _ => vec![],
             })
             .collect();
 
