@@ -96,15 +96,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 {
     fn into_series(
         values: &[Self],
+        smoothing_window: usize,
         filter: Option<impl Fn(Item<ItemIdxType>) -> bool>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = (usize, Series)> {
         BTreeMap::from_iter(
             values
-                .iter()
-                .map(|info| {
-                    info.items_consumed
+                .windows(smoothing_window)
+                .map(|infos| {
+                    infos
                         .iter()
+                        .fold(ConsumptionInfo::new(data_store), |a, b| a + b)
+                        .items_consumed
+                        .into_iter()
                         .zip(data_store.item_display_names.iter())
                         .enumerate()
                         .filter_map(|(item_id, v)| {
@@ -116,7 +120,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                     })
                                 })
                                 .unwrap_or(true)
-                                .then_some(((item_id, v.1), *v.0))
+                                .then_some(((item_id, v.1), v.0))
                         })
                 })
                 .flatten()
@@ -125,10 +129,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 .map(|(k, v)| (k.0, (k.1, v))),
         )
         .into_iter()
-        .map(|(item_id, a)| {
+        .map(move |(item_id, a)| {
             (
                 item_id.try_into().unwrap(),
-                (a.0.as_str(), a.1.into_iter().map(|v| v as f32).collect()).into(),
+                (
+                    a.0.as_str(),
+                    a.1.into_iter()
+                        .map(|v| v as f32 / smoothing_window as f32)
+                        .collect(),
+                )
+                    .into(),
             )
         })
     }

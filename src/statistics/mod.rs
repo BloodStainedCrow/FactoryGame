@@ -23,7 +23,33 @@ pub mod recipe;
 pub mod research;
 
 pub const NUM_DIFFERENT_TIMESCALES: usize = 5;
+pub const SAMPLES_FOR_SMOOTHING_BASE: usize = 600;
+
+const SAMPLES_FOR_SMOOTHING: [usize; NUM_DIFFERENT_TIMESCALES] = {
+    let mut b = [0; NUM_DIFFERENT_TIMESCALES];
+    let mut i = 0;
+    while i < NUM_DIFFERENT_TIMESCALES {
+        let mut lower_prod = 1;
+        let mut j = 0;
+        while j < i {
+            lower_prod *= RELATIVE_INTERVAL_MULTS[j + 1];
+            j += 1;
+        }
+        b[i] = SAMPLES_FOR_SMOOTHING_BASE.div_ceil(lower_prod); // map
+        i += 1;
+    }
+    b
+};
 pub const NUM_SAMPLES_AT_INTERVALS: [usize; NUM_DIFFERENT_TIMESCALES] = [600, 60, 60, 60, 50];
+pub const NUM_SAMPLES_AT_INTERVALS_STORED: [usize; NUM_DIFFERENT_TIMESCALES] = {
+    let mut b = [0; NUM_DIFFERENT_TIMESCALES];
+    let mut i = 0;
+    while i < NUM_DIFFERENT_TIMESCALES {
+        b[i] = NUM_SAMPLES_AT_INTERVALS[i] + (SAMPLES_FOR_SMOOTHING[i] - 1); // map
+        i += 1;
+    }
+    b
+};
 pub const NUM_X_AXIS_TICKS: [usize; NUM_DIFFERENT_TIMESCALES] = [10, 6, 6, 10, 10];
 pub const RELATIVE_INTERVAL_MULTS: [usize; NUM_DIFFERENT_TIMESCALES] = [1, 60, 60, 10, 5];
 
@@ -90,6 +116,7 @@ impl GenStatistics {
 pub trait IntoSeries<T, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>: Sized {
     fn into_series(
         values: &[Self],
+        smoothing_window: usize,
         filter: Option<impl Fn(T) -> bool>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = (usize, Series)>;
@@ -110,12 +137,15 @@ impl<T: NewWithDataStore + Clone + for<'a> AddAssign<&'a T>> Timeline<T> {
     ) -> Self {
         Self {
             num_samples_pushed: 0,
-            samples: array::from_fn(|i| vec![T::new(data_store); NUM_SAMPLES_AT_INTERVALS[i]]),
+            samples: array::from_fn(|i| {
+                vec![T::new(data_store); NUM_SAMPLES_AT_INTERVALS_STORED[i]]
+            }),
             total: collect_total.then_some(T::new(data_store)),
         }
     }
 
     pub fn append_single_set_of_samples(&mut self, sample: T) {
+        self.num_samples_pushed += 1;
         self.total.as_mut().map(|total| *total += &sample);
 
         self.samples[0].rotate_right(1);
@@ -157,8 +187,6 @@ impl<T: NewWithDataStore + Clone + for<'a> AddAssign<&'a T>> Timeline<T> {
             current_level.rotate_right(1);
             current_level[0] = new_sample;
         }
-
-        self.num_samples_pushed += 1;
     }
 
     pub fn get_series<
@@ -177,7 +205,12 @@ impl<T: NewWithDataStore + Clone + for<'a> AddAssign<&'a T>> Timeline<T> {
     where
         T: IntoSeries<Item, ItemIdxType, RecipeIdxType>,
     {
-        T::into_series(&self.samples[timescale], filter, data_store)
+        T::into_series(
+            &self.samples[timescale],
+            SAMPLES_FOR_SMOOTHING[timescale],
+            filter,
+            data_store,
+        )
     }
 
     pub fn get_data_points(&self, timescale: usize) -> &[T] {

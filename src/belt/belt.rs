@@ -28,6 +28,10 @@ pub trait Belt<ItemIdxType: IdxTrait> {
     //       but a vec adds another allocation
     // fn items(&self) -> impl Iterator<Item = Option<Item<ItemIdxType>>>;
     fn items(&self) -> impl Iterator<Item = Option<Item<ItemIdxType>>>;
+    fn items_in_range(
+        &self,
+        range: std::ops::RangeInclusive<BeltLenType>,
+    ) -> impl Iterator<Item = Option<Item<ItemIdxType>>>;
 
     fn get_len(&self) -> BeltLenType;
     fn add_length(&mut self, amount: BeltLenType, side: Side) -> BeltLenType;

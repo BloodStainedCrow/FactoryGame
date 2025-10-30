@@ -3,7 +3,6 @@ use crate::belt::smart::{HAND_SIZE, SmartBelt};
 use crate::blueprint::blueprint_string::BlueprintString;
 use crate::chest::ChestSize;
 use crate::frontend::action::action_state_machine::ForkSaveInfo;
-use crate::frontend::action::belt_placement::{BeltState, expected_belt_state};
 use crate::frontend::action::place_entity::PlaceEntityInfo;
 use crate::frontend::action::place_entity::EntityPlaceOptions;
 use crate::frontend::world::tile::PlaceEntityType;
@@ -14,8 +13,9 @@ use crate::item::{ITEMCOUNTTYPE, Indexable};
 use crate::lab::{LabViewInfo, TICKS_PER_SCIENCE};
 use crate::liquid::FluidSystemState;
 use crate::mining_drill;
+use crate::frontend::world::tile::BeltState;
 use crate::par_generation::ParGenerateInfo;
-use crate::rendering::Corner;
+use crate::rendering::{BeltSide, Corner};
 use crate::saving::{save_components, save_with_fork};
 use crate::statistics::{NUM_DIFFERENT_TIMESCALES, TIMESCALE_NAMES};
 use crate::{
@@ -398,6 +398,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             {
                                 profiling::scope!("Render Entities");
                                 for entity in chunk.get_entities() {
+                                    profiling::scope!("Single Entity", format!("{}", entity.get_type_name()));
                                     match entity {
                                         crate::frontend::world::tile::Entity::Assembler {
                                             ty,
@@ -632,18 +633,17 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             ty,
                                             id,
                                             belt_pos,
+                                            state,
                                         } => {
-                                            let inputs = game_state
-                                                .world
-                                                .get_belt_possible_inputs_no_cache(*pos);
-                                            let state = expected_belt_state(*direction, inputs);
-                                            let (sprite, corner) =
+                                            let mut source_dir = None;
+                                            let (sprite, corner) = {
                                                 match state {
                                                     BeltState::Straight => {
-                                                        (&texture_atlas.belt[*direction], None)
+                                                        (&texture_atlas.belt[*direction], None::<BeltSide>)
                                                     },
-                                                    BeltState::Curved => {
-                                                        if inputs[direction.turn_right()] {
+                                                    BeltState::Curved { source_dir: found } => {
+                                                        source_dir = Some(*found);
+                                                        if *found == direction.turn_right() {
                                                             (
                                                         &texture_atlas.belt_corners[Corner {
                                                             to_dir: *direction,
@@ -663,13 +663,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                     )
                                                         }
                                                     },
-                                                    BeltState::Sideloading => {
-                                                        (&texture_atlas.belt[*direction], None)
-                                                    },
-                                                    BeltState::DoubleSideloading => {
-                                                        (&texture_atlas.belt[*direction], None)
-                                                    },
-                                                };
+                                                }
+                                            };
                                             sprite.draw(
                                                 [
                                                     draw_offset.0 + pos.x as f32,
@@ -713,14 +708,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 }
                                             }
 
-                                            let curved_source_dir = match state {
-                                                BeltState::Straight => None,
-                                                BeltState::Curved => {
-                                                    Some(inputs.iter().find(|&(dir, v)| *v && dir != direction.reverse()).unwrap().0)
-                                                },
-                                                BeltState::Sideloading => None,
-                                                BeltState::DoubleSideloading => None,
-                                            };
+                                            let curved_source_dir = source_dir;
                                             let belt_progress: u8 = game_state
                                                 .simulation_state
                                                 .factory
@@ -748,7 +736,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                     .simulation_state
                                                     .factory
                                                     .belts
-                                                    .get_item_iter(*id), curved_source_dir.reverse(), *belt_pos, BELT_LEN_PER_TILE / 2, (
+                                                    .get_item_iter_for_subrange(*id, (*belt_pos - BELT_LEN_PER_TILE / 2)..=(*belt_pos - 1)), curved_source_dir.reverse(), *belt_pos, BELT_LEN_PER_TILE / 2, (
                                                         centered_on_tile.0
                                                             - f32::from(first_offs.0)
                                                                 * (0.5
@@ -763,7 +751,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                         .simulation_state
                                                         .factory
                                                         .belts
-                                                        .get_item_iter(*id), *direction, *belt_pos - BELT_LEN_PER_TILE.div_ceil(2), BELT_LEN_PER_TILE.div_ceil(2), (
+                                                        .get_item_iter_for_subrange(*id,  ((*belt_pos - BELT_LEN_PER_TILE.div_ceil(2)) - BELT_LEN_PER_TILE.div_ceil(2))..=(*belt_pos - BELT_LEN_PER_TILE.div_ceil(2) - 1)), *direction, *belt_pos - BELT_LEN_PER_TILE.div_ceil(2), BELT_LEN_PER_TILE.div_ceil(2), (
                                                             centered_on_tile.0
                                                                 + f32::from(second_offs.0) * 0.5 - f32::from(second_offs.0) * (0.5 / f32::from(BELT_LEN_PER_TILE)),
                                                             centered_on_tile.1
@@ -781,7 +769,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                     .simulation_state
                                                     .factory
                                                     .belts
-                                                    .get_item_iter(*id), *direction, *belt_pos, BELT_LEN_PER_TILE, (
+                                                    .get_item_iter_for_subrange(*id, (*belt_pos - BELT_LEN_PER_TILE)..=(*belt_pos - 1)), *direction, *belt_pos, BELT_LEN_PER_TILE, (
                                                         centered_on_tile.0
                                                             + f32::from(offs.0)
                                                                 * (0.5 - 0.5 / (f32::from(BELT_LEN_PER_TILE))),
@@ -855,98 +843,37 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 }
 
                                             // Draw Items
-                                            let items_iter = game_state
+                                            let belt_progress: u8 = game_state
                                                 .simulation_state
                                                 .factory
                                                 .belts
-                                                .get_item_iter(*id)
-                                                .into_iter()
-                                                .enumerate()
-                                                .skip(
-                                                    (belt_pos
-                                                        .checked_sub(BELT_LEN_PER_TILE)
-                                                        .expect("Belt idx wrapped?!?"))
-                                                    .into(),
-                                                )
-                                                .take(BELT_LEN_PER_TILE.into());
-
-                                            let offs = direction.into_offset();
-                                            let item_render_offs = (
-                                                -f32::from(offs.0) / f32::from(BELT_LEN_PER_TILE),
-                                                -f32::from(offs.1) / f32::from(BELT_LEN_PER_TILE),
-                                            );
-
-                                            let centered_on_tile = (
-                                                draw_offset.0 + pos.x as f32 + 0.5
-                                                    - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
-                                                draw_offset.1 + pos.y as f32 + 0.5
-                                                    - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
-                                            );
-
+                                                .get_belt_progress(*ty);
+                                            let offset_perc = belt_progress as f32 / 120.0;
                                             let last_moved: BeltLenType = game_state
                                                 .simulation_state
                                                 .factory
                                                 .belts
                                                 .get_last_moved_pos(*id);
 
-                                            let belt_progress: u8 = game_state
+                                            let offs = direction.into_offset();
+                                            let centered_on_tile = (
+                                                draw_offset.0 + pos.x as f32 + 0.5
+                                                    - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
+                                                draw_offset.1 + pos.y as f32 + 0.5
+                                                    - 0.5 * (1.0 / f32::from(BELT_LEN_PER_TILE)),
+                                            );
+                                            render_items_straight::<ItemIdxType, RecipeIdxType>(game_state
                                                 .simulation_state
                                                 .factory
                                                 .belts
-                                                .get_belt_progress(*ty);
-
-                                            let offset_perc = belt_progress as f32 / 120.0;
-
-                                            let slow_offset = (
-                                                item_render_offs.0 * (1.0 - offset_perc),
-                                                item_render_offs.1 * (1.0 - offset_perc),
-                                            );
-
-                                            // TODO: This needs to be positions correctly and take rotation into account
-                                            let mut item_render_base_pos: (f32, f32) = (
-                                                centered_on_tile.0 + f32::from(offs.0) * 0.5
-                                                    - 0.5
-                                                        * (f32::from(offs.0)
-                                                            / f32::from(BELT_LEN_PER_TILE)),
-                                                centered_on_tile.1 + f32::from(offs.1) * 0.5
-                                                    - 0.5
-                                                        * (f32::from(offs.1)
-                                                            / f32::from(BELT_LEN_PER_TILE)),
-                                            );
-
-                                            for (belt_pos, item) in items_iter {
-                                                if let Some(item) = item {
-                                                    let draw_pos = if belt_pos < last_moved.into() {
-                                                        [
-                                                            item_render_base_pos.0,
-                                                            item_render_base_pos.1,
-                                                        ]
-                                                    } else {
-                                                        [
-                                                            item_render_base_pos.0 + slow_offset.0,
-                                                            item_render_base_pos.1 + slow_offset.1,
-                                                        ]
-                                                    };
-
-                                                    item_layer.draw_sprite(
-                                                        &texture_atlas.items[item.id.into()],
-                                                        // &texture_atlas.items[0],
-                                                        DrawInstance {
-                                                            position: draw_pos,
-                                                            size: [
-                                                                1.0 / f32::from(BELT_LEN_PER_TILE),
-                                                                1.0 / f32::from(BELT_LEN_PER_TILE),
-                                                            ],
-                                                            animation_frame: 0,
-                                                        },
-                                                    );
-                                                }
-
-                                                item_render_base_pos = (
-                                                    item_render_base_pos.0 + item_render_offs.0,
-                                                    item_render_base_pos.1 + item_render_offs.1,
-                                                );
-                                            }
+                                                .get_item_iter_for_subrange(*id, (*belt_pos - BELT_LEN_PER_TILE)..=(*belt_pos - 1)), *direction, *belt_pos, BELT_LEN_PER_TILE, (
+                                                    centered_on_tile.0
+                                                        + f32::from(offs.0)
+                                                            * (0.5 - 0.5 / (f32::from(BELT_LEN_PER_TILE))),
+                                                    centered_on_tile.1
+                                                    + f32::from(offs.1)
+                                                    * (0.5 - 0.5 / (f32::from(BELT_LEN_PER_TILE))),
+                                                ), offset_perc, last_moved, item_layer, texture_atlas);
                                         },
 
                                         Entity::Inserter {
@@ -1180,7 +1107,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                         .simulation_state
                                                         .factory
                                                         .belts
-                                                        .get_item_iter(input),
+                                                        .get_item_iter_for_subrange(input, 0..=(SPLITTER_BELT_LEN - 1)),
                                                     *direction,
                                                     SPLITTER_BELT_LEN,
                                                     SPLITTER_BELT_LEN,
@@ -1209,7 +1136,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                     .simulation_state
                                                     .factory
                                                     .belts
-                                                    .get_item_iter(output);
+                                                    .get_item_iter_for_subrange(output, (out_belt_len - BELT_LEN_PER_TILE)..=(out_belt_len - 1));
                                                 let offs = direction.into_offset();
                                                 let item_render_base_pos: (f32, f32) = (
                                                     centered_on_tile.0 + f32::from(offs.0) * 0.5
@@ -1463,8 +1390,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             |mut a, b| {
                 a.extend(b);
                 a
-            },
-        )
+                },
+            )
     };
 
     // TODO: Why is all of this hashmap based????
@@ -1542,7 +1469,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         );
         trace!("Rendering self at {:?}", state_machine.local_player_pos);
     }
-
+    
     mem::drop(game_state);
     mem::drop(aux_data);
 
@@ -1919,19 +1846,19 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 range_layer,
                 inserter_item_layer,
             } = folded_layers;
-            renderer.draw(&tile_layer);
-
-            renderer.draw(&entity_layer);
-
-            renderer.draw(&item_layer);
-
-            renderer.draw(&entity_overlay_layer);
-
-            renderer.draw(&range_layer);
-
-            renderer.draw(&warning_layer);
-
-            renderer.draw(&inserter_item_layer);
+                renderer.draw(&tile_layer);
+    
+                renderer.draw(&entity_layer);
+    
+                renderer.draw(&item_layer);
+    
+                renderer.draw(&entity_overlay_layer);
+    
+                renderer.draw(&range_layer);
+    
+                renderer.draw(&warning_layer);
+    
+                renderer.draw(&inserter_item_layer);
         }
         renderer.draw(&state_machine_layer);
         renderer.draw(&entity_overlay_layer);
@@ -3509,6 +3436,12 @@ pub fn render_ui<
                     "Fluids",
                 );
             });
+            ui.with_layout(Layout::left_to_right(egui::Align::Min), |ui| {
+                ui.checkbox(
+                    &mut state_machine_ref.statistics_panel_locked_scale,
+                    "Share graph scale",
+                );
+            });
 
             match state_machine_ref.statistics_panel {
                 StatisticsPanel::Items(scale) | StatisticsPanel::Fluids(scale) => {
@@ -3621,6 +3554,61 @@ pub fn render_ui<
                                 }
                             });
 
+                            let cons_points: Vec<(String, usize, f32, PlotPoints)> = aux_data
+                                .statistics
+                                .consumption
+                                .get_series(
+                                    scale,
+                                    data_store_ref,
+                                    Some(|item: Item<ItemIdxType>| {
+                                        data_store_ref.item_is_fluid[usize_from(item.id)]
+                                            == take_fluids
+                                    }),
+                                )
+                                .into_iter()
+                                .map(|(item_id, series)| (series.name, item_id, series.data))
+                                .map(|(name, i, data)| {
+                                    (
+                                        name,
+                                        i,
+                                        data.iter().copied().sum(),
+                                        data.into_iter()
+                                            .enumerate()
+                                            .map(|(i, v)| [i as f64, v.into()])
+                                            .collect(),
+                                    )
+                                })
+                                .filter(|(_, _, sum, _): &(_, _, f32, _)| *sum > 0.0)
+                                .collect();
+
+                            let max_prod_sample = prod_points
+                            .iter()
+                            .filter(|(_, id, _, _)| state_machine_ref.production_filters[*id])
+                                .flat_map(|v| v.3.points())
+                                .map(|point| point.y)
+                                .max_by(|a, b| {
+                                    if a < b {
+                                        Ordering::Less
+                                    } else {
+                                        Ordering::Greater
+                                    }
+                                })
+                                .unwrap_or(0.0);
+
+                            let max_cons_sample = cons_points
+                                .iter()
+                                .filter(|(_, id, _, _)| state_machine_ref.consumption_filters[*id])
+                                .flat_map(|v| v.3.points())
+                                .map(|point| point.y)
+                                .max_by(|a, b| {
+                                    if a < b {
+                                        Ordering::Less
+                                    } else {
+                                        Ordering::Greater
+                                    }
+                                })
+                                .unwrap_or(0.0);
+
                             let lines = prod_points
                                 .into_iter()
                                 .filter(|(_, id, _, _)| state_machine_ref.production_filters[*id])
@@ -3696,6 +3684,7 @@ pub fn render_ui<
                                 .allow_drag([false, false])
                                 .allow_scroll([false, false])
                                 .view_aspect(3.0)
+                                .include_y(if state_machine_ref.statistics_panel_locked_scale { max_cons_sample } else { 0.0 })
                                 .show(ui_production, |ui| {
                                     for line in lines {
                                         ui.line(line);
@@ -3708,52 +3697,13 @@ pub fn render_ui<
                                 .product::<usize>();
                             let ticks_total = min(
                                 ticks_per_sample * NUM_SAMPLES_AT_INTERVALS[time_scale],
-                                aux_data
+                                (aux_data
                                     .statistics
                                     .production
-                                    .num_samples_pushed
+                                    .num_samples_pushed - ticks_per_sample + 1)
                                     .next_multiple_of(ticks_per_sample)
-                                    - ticks_per_sample,
+                                    ,
                             );
-
-                            let cons_points: Vec<(String, usize, f32, PlotPoints)> = aux_data
-                                .statistics
-                                .consumption
-                                .get_series(
-                                    scale,
-                                    data_store_ref,
-                                    Some(|item: Item<ItemIdxType>| {
-                                        data_store_ref.item_is_fluid[usize_from(item.id)]
-                                            == take_fluids
-                                    }),
-                                )
-                                .into_iter()
-                                .map(|(item_id, series)| (series.name, item_id, series.data))
-                                .map(|(name, i, data)| {
-                                    (
-                                        name,
-                                        i,
-                                        data.iter().copied().sum(),
-                                        data.into_iter()
-                                            .enumerate()
-                                            .map(|(i, v)| [i as f64, v.into()])
-                                            .collect(),
-                                    )
-                                })
-                                .filter(|(_, _, sum, _): &(_, _, f32, _)| *sum > 0.0)
-                                .collect();
-
-                            let max_cons = cons_points
-                                .iter()
-                                .map(|v| v.2)
-                                .max_by(|a, b| {
-                                    if a < b {
-                                        Ordering::Less
-                                    } else {
-                                        Ordering::Greater
-                                    }
-                                })
-                                .unwrap_or(0.0);
 
                             let mut sum_list_cons: Vec<_> = cons_points
                                 .iter()
@@ -3843,6 +3793,7 @@ pub fn render_ui<
                                 .allow_drag([false, false])
                                 .allow_scroll([false, false])
                                 .view_aspect(3.0)
+                                .include_y(if state_machine_ref.statistics_panel_locked_scale { max_prod_sample } else { 0.0 })
                                 .show(ui_consumption, |ui| {
                                     for line in lines {
                                         ui.line(line);
@@ -4048,7 +3999,7 @@ pub fn render_ui<
 }
 
 fn render_items_straight<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-    full_items_iter: impl IntoIterator<Item = Option<Item<ItemIdxType>>>,
+    range_items_iter: impl IntoIterator<Item = Option<Item<ItemIdxType>>>,
     dir: Dir,
     start_pos: BeltLenType,
     amount: u16,
@@ -4060,10 +4011,6 @@ fn render_items_straight<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 ) {
     assert!(partial_offs >= 0.0);
     assert!(partial_offs <= 1.0);
-    let items_iter = full_items_iter
-        .into_iter()
-        .skip((start_pos.checked_sub(amount).expect("Belt idx wrapped?!?")).into())
-        .take(amount.into());
 
     let offs = dir.into_offset();
     let item_render_offs = (
@@ -4073,7 +4020,7 @@ fn render_items_straight<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     let mut item_render_base_pos: (f32, f32) = draw_pos_start_pos;
 
-    for (i, item) in items_iter.enumerate() {
+    for (i, item) in range_items_iter.into_iter().enumerate() {
         let belt_pos = start_pos - (amount - i as BeltLenType);
         let draw_pos = if belt_pos < last_moved {
             [item_render_base_pos.0, item_render_base_pos.1]

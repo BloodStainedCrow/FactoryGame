@@ -18,6 +18,7 @@ use bitvec::{
     ptr::{BitRef, Mut},
     slice::BitSlice,
 };
+use itertools::Either;
 use itertools::Itertools;
 use log::trace;
 use std::mem;
@@ -1335,6 +1336,13 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for EmptyBelt {
         std::iter::repeat_n(None, self.len as usize)
     }
 
+    fn items_in_range(
+        &self,
+        range: std::ops::RangeInclusive<BeltLenType>,
+    ) -> impl Iterator<Item = Option<Item<ItemIdxType>>> {
+        std::iter::repeat_n(None, range.len() as usize)
+    }
+
     fn get_len(&self) -> BeltLenType {
         self.len
     }
@@ -1736,6 +1744,30 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
         end.iter()
             .chain(start.iter())
             .map(|loc| if *loc { Some(self.item) } else { None })
+    }
+
+    fn items_in_range(
+        &self,
+        range: std::ops::RangeInclusive<BeltLenType>,
+    ) -> impl Iterator<Item = Option<Item<ItemIdxType>>> {
+        let start_idx = (self.zero_index + range.start()) % self.get_len();
+        let end_idx = (self.zero_index + range.end()) % self.get_len();
+
+        if start_idx <= end_idx {
+            // No chain needed
+            Either::Left(
+                self.locs[(start_idx as usize)..=(end_idx as usize)]
+                    .iter()
+                    .map(|loc| if *loc { Some(self.item) } else { None }),
+            )
+        } else {
+            Either::Right(
+                self.locs[(start_idx as usize)..]
+                    .iter()
+                    .chain(self.locs[..=(end_idx as usize)].iter())
+                    .map(|loc| if *loc { Some(self.item) } else { None }),
+            )
+        }
     }
 
     fn item_hint(&self) -> Option<Vec<Item<ItemIdxType>>> {

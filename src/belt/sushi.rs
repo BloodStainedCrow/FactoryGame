@@ -22,6 +22,7 @@ use super::{
 };
 use crate::inserter::FakeUnionStorage;
 use crate::inserter::belt_storage_inserter_non_const_gen::BeltStorageInserterDyn;
+use itertools::Either;
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -751,6 +752,30 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
         end.iter()
             .chain(start.iter())
             .map(|loc| loc.map(|item| item))
+    }
+
+    fn items_in_range(
+        &self,
+        range: std::ops::RangeInclusive<BeltLenType>,
+    ) -> impl Iterator<Item = Option<Item<ItemIdxType>>> {
+        let start_idx = (self.zero_index + range.start()) % self.get_len();
+        let end_idx = (self.zero_index + range.end()) % self.get_len();
+
+        if start_idx <= end_idx {
+            // No chain needed
+            Either::Left(
+                self.locs[(start_idx as usize)..=(end_idx as usize)]
+                    .iter()
+                    .copied(),
+            )
+        } else {
+            Either::Right(
+                self.locs[(start_idx as usize)..]
+                    .iter()
+                    .chain(self.locs[..=(end_idx as usize)].iter())
+                    .copied(),
+            )
+        }
     }
 
     fn get_len(&self) -> super::belt::BeltLenType {

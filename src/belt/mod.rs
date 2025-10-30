@@ -16,6 +16,7 @@ use crate::belt::smart::EmptyBelt;
 use crate::get_size::{Mutex, StableGraph};
 use crate::par_generation::BeltKind;
 use petgraph::stable_graph::DefaultIx;
+use std::ops::RangeInclusive;
 use std::{
     cell::UnsafeCell,
     collections::{HashMap, HashSet},
@@ -3180,7 +3181,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         }
     }
 
-    pub fn get_item_iter(
+    pub fn get_full_item_iter(
         &self,
         id: BeltTileId<ItemIdxType>,
     ) -> Either<
@@ -3202,6 +3203,32 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     None,
                     <EmptyBelt as Belt<ItemIdxType>>::get_len(&self.inner.get_empty(*idx)) as usize,
                 )),
+            },
+        }
+    }
+
+    pub fn get_item_iter_for_subrange(
+        &self,
+        id: BeltTileId<ItemIdxType>,
+        range: RangeInclusive<BeltLenType>,
+    ) -> Either<
+        Either<
+            impl Iterator<Item = Option<Item<ItemIdxType>>>,
+            impl Iterator<Item = Option<Item<ItemIdxType>>>,
+        >,
+        impl Iterator<Item = Option<Item<ItemIdxType>>>,
+    > {
+        match id {
+            BeltTileId::AnyBelt(index, _) => match &self.any_belts[index as usize] {
+                AnyBelt::Smart(smart_belt) => Either::Left(Either::Left(
+                    self.inner.get_smart(*smart_belt).items_in_range(range),
+                )),
+                AnyBelt::Sushi(sushi_belt) => Either::Left(Either::Right(
+                    self.inner.get_sushi(*sushi_belt).items_in_range(range),
+                )),
+                AnyBelt::Empty(_idx) => {
+                    Either::Right(std::iter::repeat_n(None, range.len() as usize))
+                },
             },
         }
     }

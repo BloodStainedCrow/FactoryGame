@@ -325,6 +325,8 @@ pub fn handle_belt_removal<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 ty,
                 id,
                 belt_pos: front_belt_pos,
+
+                state: front_state_stored,
             } => {
                 let inputs = world.get_belt_possible_inputs_no_cache(*pos);
                 let front_state = expected_belt_state(*direction, inputs);
@@ -433,6 +435,8 @@ pub fn handle_underground_removal<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                     ty,
                     id,
                     belt_pos: front_belt_pos,
+
+                    state: front_state_stored,
                 } => {
                     let inputs = world.get_belt_possible_inputs_no_cache(*pos);
                     let front_state = expected_belt_state(*direction, inputs);
@@ -481,6 +485,22 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     handle_belt_breaking(world, sim_state, front_pos, new_belt_direction, data_store);
 
+    let our_inputs = world.get_belt_possible_inputs(new_belt_pos);
+    let our_state = expected_belt_state(new_belt_direction, our_inputs);
+
+    let our_state_stored = match our_state {
+        BeltState::Straight | BeltState::Sideloading | BeltState::DoubleSideloading => {
+            crate::frontend::world::tile::BeltState::Straight
+        },
+        BeltState::Curved => crate::frontend::world::tile::BeltState::Curved {
+            source_dir: our_inputs
+                .into_iter()
+                .find(|(_dir, has_source)| *has_source)
+                .unwrap()
+                .0,
+        },
+    };
+
     let (self_id, self_len) = if let Some(id) =
         should_merge(world, &sim_state, new_belt_direction, front_pos, data_store)
     {
@@ -494,6 +514,8 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     ty: new_belt_ty,
                     id,
                     belt_pos: result.belt_pos_of_segment,
+
+                    state: our_state_stored,
                 },
                 sim_state,
                 data_store,
@@ -522,6 +544,8 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     ty: new_belt_ty,
                     id: new_belt,
                     belt_pos: BELT_LEN_PER_TILE,
+
+                    state: our_state_stored,
                 },
                 sim_state,
                 data_store,
@@ -541,6 +565,8 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     ty: new_belt_ty,
                     id,
                     belt_pos: BELT_LEN_PER_TILE,
+
+                    state: our_state_stored,
                 },
                 sim_state,
                 data_store,
@@ -652,6 +678,7 @@ pub fn handle_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     ty,
                     id,
                     belt_pos,
+                    ..
                 } => vec![(*pos, *direction, *id), (*pos, direction.reverse(), *id)],
                 Entity::Underground {
                     pos,
@@ -1199,6 +1226,7 @@ pub fn handle_underground_belt_placement<ItemIdxType: IdxTrait, RecipeIdxType: I
                     ty,
                     id,
                     belt_pos,
+                    ..
                 } => vec![(*pos, *direction, *id), (*pos, direction.reverse(), *id)],
                 Entity::Underground {
                     pos,
@@ -1357,6 +1385,7 @@ fn handle_belt_breaking<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     ty,
                     id,
                     belt_pos,
+                    ..
                 } => vec![(*pos, *direction, *id), (*pos, direction.reverse(), *id)],
                 Entity::Underground {
                     pos,

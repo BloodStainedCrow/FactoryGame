@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use itertools::{Itertools, assert_equal};
 use log::warn;
 
+use crate::frontend::world::tile::BeltState;
 use crate::{
     DataStore, GameState, Position, WeakIdxTrait,
     app_state::{AuxillaryData, Factory, SimulationState, StorageStorageInserterStore},
@@ -55,7 +56,7 @@ struct BeltEntity {
 
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 enum BeltEntityKind {
-    Belt,
+    Belt(BeltState),
     Underground(UndergroundDir),
 }
 
@@ -566,7 +567,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ParGenerateInfo<ItemIdxType
                     ty,
                     id,
                     belt_pos,
-                } => Some((pos, direction, ty, id, belt_pos, BeltEntityKind::Belt)),
+                    state,
+                    ..
+                } => Some((
+                    pos,
+                    direction,
+                    ty,
+                    id,
+                    belt_pos,
+                    BeltEntityKind::Belt(state),
+                )),
                 &Entity::Underground {
                     pos,
                     direction,
@@ -936,7 +946,7 @@ fn belt_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             } in entities.iter()
             {
                 let ent = match kind {
-                    BeltEntityKind::Belt => Entity::Belt {
+                    BeltEntityKind::Belt(state) => Entity::Belt {
                         pos: Position {
                             x: base_pos.x + pos.x,
                             y: base_pos.y + pos.y,
@@ -945,6 +955,7 @@ fn belt_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         ty: *ty,
                         id,
                         belt_pos,
+                        state,
                     },
                     BeltEntityKind::Underground(underground_dir) => Entity::Underground {
                         pos: Position {

@@ -1685,17 +1685,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         noise: &SerializableSimplex,
         pos: Position,
     ) -> Option<(Item<ItemIdxType>, u32)> {
-        let v = noise.get([
-            pos.x as f64 * ORE_DISTANCE_MULT,
-            pos.y as f64 * ORE_DISTANCE_MULT,
-        ]);
+        None
+        // let v = noise.get([
+        //     pos.x as f64 * ORE_DISTANCE_MULT,
+        //     pos.y as f64 * ORE_DISTANCE_MULT,
+        // ]);
 
-        (v > ORE_THRESHHOLD).then_some((
-            Item {
-                id: ItemIdxType::try_from(0).unwrap(),
-            },
-            (v * pos.x.abs() as f64 * pos.y.abs() as f64 / 1000.0) as u32,
-        ))
+        // (v > ORE_THRESHHOLD).then_some((
+        //     Item {
+        //         id: ItemIdxType::try_from(0).unwrap(),
+        //     },
+        //     (v * pos.x.abs() as f64 * pos.y.abs() as f64 / 1000.0) as u32,
+        // ))
     }
 
     fn get_original_ore_in_area(
@@ -5178,6 +5179,13 @@ impl From<Box<[Option<u8>]>> for ModuleSlots {
 }
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
+pub enum BeltState {
+    Straight,
+    Curved { source_dir: Dir },
+}
+
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum Entity<ItemIdxType: WeakIdxTrait = u8, RecipeIdxType: WeakIdxTrait = u8> {
     Assembler {
@@ -5202,6 +5210,7 @@ pub enum Entity<ItemIdxType: WeakIdxTrait = u8, RecipeIdxType: WeakIdxTrait = u8
         ty: u8,
         id: BeltTileId<ItemIdxType>,
         belt_pos: u16,
+        state: BeltState,
     },
     Underground {
         pos: Position,

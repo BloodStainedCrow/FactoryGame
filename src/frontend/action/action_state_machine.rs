@@ -57,6 +57,7 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
         >,
     >,
     pub statistics_panel: StatisticsPanel,
+    pub statistics_panel_locked_scale: bool,
     pub production_filters: Vec<bool>,
     pub consumption_filters: Vec<bool>,
 
@@ -172,6 +173,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             statistics_panel_open: false,
             technology_panel_open: true,
             statistics_panel: StatisticsPanel::default(),
+            statistics_panel_locked_scale: false,
             production_filters: vec![true; data_store.item_display_names.len()],
             consumption_filters: vec![true; data_store.item_display_names.len()],
 
