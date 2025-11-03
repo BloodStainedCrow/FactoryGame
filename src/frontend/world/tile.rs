@@ -1,8 +1,8 @@
+use crate::frontend::world::tile::belt_placement::expected_belt_state;
 use crate::mining_drill;
 use crate::mining_drill::AddMinerError;
 use crate::mining_drill::FullOreStore;
 use crate::mining_drill::MiningDrillIdentifier;
-use crate::mining_drill::MiningDrillStore;
 #[cfg(feature = "client")]
 use egui::Color32;
 #[cfg(feature = "client")]
@@ -2003,6 +2003,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
         let x_in_chunk = usize::try_from((e_pos.x).rem_euclid(CHUNK_SIZE as i32)).unwrap();
         let y_in_chunk = usize::try_from((e_pos.y).rem_euclid(CHUNK_SIZE as i32)).unwrap();
+
+        assert!(x_in_chunk < CHUNK_SIZE as usize);
+        assert!(y_in_chunk < CHUNK_SIZE as usize);
         for x_offs in 0..e_size.0 {
             for y_offs in 0..e_size.1 {
                 let x = min(x_in_chunk + usize::from(x_offs), CHUNK_SIZE as usize - 1);
@@ -2213,6 +2216,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         .insert(chunk_pos);
                 }
             },
+            Entity::Accumulator { pole_position, .. } => {
+                if let Some((pole_pos, _)) = pole_position {
+                    let grid = sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos];
+                    self.power_grid_lookup
+                        .grid_to_chunks
+                        .entry(grid)
+                        .or_default()
+                        .insert(chunk_pos);
+                }
+            },
             Entity::Assembler { info, .. } => match info {
                 AssemblerInfo::UnpoweredNoRecipe | AssemblerInfo::Unpowered(_) => {},
                 AssemblerInfo::PoweredNoRecipe(pole_position) => {
@@ -2261,6 +2274,30 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 self.belt_recieving_input_directions
                     .entry(pos + direction)
                     .or_default()[direction.reverse()] = true;
+                let input_dirs = self.belt_recieving_input_directions[&(pos + direction)];
+
+                if let Some(Entity::Belt {
+                    direction: front_belt_dir,
+                    state,
+                    ..
+                }) = self.get_entity_at_mut(pos + direction, data_store)
+                {
+                    let front_expected_state = expected_belt_state(*front_belt_dir, input_dirs);
+                    *state = match front_expected_state {
+                        crate::frontend::action::belt_placement::BeltState::Curved => {
+                            BeltState::Curved {
+                                source_dir: input_dirs
+                                    .into_iter()
+                                    .filter_map(|(dir, v)| v.then_some(dir))
+                                    .find(|incoming_dir| {
+                                        incoming_dir.compare(*front_belt_dir) == DirRelative::Turned
+                                    })
+                                    .unwrap(),
+                            }
+                        },
+                        _ => BeltState::Straight,
+                    };
+                }
 
                 cascading_updates.push(new_possible_inserter_connection(pos, (1, 1)));
                 cascading_updates.push(try_instantiating_inserters_for_belt_cascade(id));
@@ -2282,6 +2319,31 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     self.belt_recieving_input_directions
                         .entry(pos + direction)
                         .or_default()[direction.reverse()] = true;
+                    let input_dirs = self.belt_recieving_input_directions[&(pos + direction)];
+
+                    if let Some(Entity::Belt {
+                        direction: front_belt_dir,
+                        state,
+                        ..
+                    }) = self.get_entity_at_mut(pos + direction, data_store)
+                    {
+                        let front_expected_state = expected_belt_state(*front_belt_dir, input_dirs);
+                        *state = match front_expected_state {
+                            crate::frontend::action::belt_placement::BeltState::Curved => {
+                                BeltState::Curved {
+                                    source_dir: input_dirs
+                                        .into_iter()
+                                        .filter_map(|(dir, v)| v.then_some(dir))
+                                        .find(|incoming_dir| {
+                                            incoming_dir.compare(*front_belt_dir)
+                                                == DirRelative::Turned
+                                        })
+                                        .unwrap(),
+                                }
+                            },
+                            _ => BeltState::Straight,
+                        };
+                    }
                 }
 
                 cascading_updates.push(new_possible_inserter_connection(pos, (1, 1)));
@@ -2402,6 +2464,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
         let x_in_chunk = usize::try_from((e_pos.x).rem_euclid(CHUNK_SIZE as i32)).unwrap();
         let y_in_chunk = usize::try_from((e_pos.y).rem_euclid(CHUNK_SIZE as i32)).unwrap();
+        assert!(x_in_chunk < CHUNK_SIZE as usize);
+        assert!(y_in_chunk < CHUNK_SIZE as usize);
         for x_offs in 0..e_size.0 {
             for y_offs in 0..e_size.1 {
                 let x = min(x_in_chunk + usize::from(x_offs), CHUNK_SIZE as usize - 1);
@@ -2578,7 +2642,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         let start_conn: Option<InserterConnectionPossibility<ItemIdxType, RecipeIdxType>> = self
             .get_entity_at(start_pos, data_store)
             .map(|e| match e {
-                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }| Entity::FluidTank { .. } => None,
+                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Accumulator { .. }| Entity::Beacon { .. }| Entity::FluidTank { .. } => None,
 
                 Entity::Roboport { ty, pos, power_grid, network, id } => {
                     // TODO:
@@ -2707,7 +2771,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         let dest_conn: Option<InserterConnectionPossibility<ItemIdxType, RecipeIdxType>> = self
             .get_entity_at(end_pos, data_store)
             .map(|e| match e {
-                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Beacon { .. }| Entity::FluidTank { .. } | Entity::MiningDrill { .. }  => None,
+                Entity::Inserter { .. } | Entity::PowerPole { .. }| Entity::SolarPanel { .. }| Entity::Accumulator { .. }| Entity::Beacon { .. }| Entity::FluidTank { .. } | Entity::MiningDrill { .. }  => None,
 
                 Entity::Roboport { ty, pos, power_grid, network, id } => {
                     // TODO:
@@ -3168,6 +3232,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         dest_storage,
                         data_store,
                     ),
+                    movetime.into(),
+                    hand_size,
                 ) {
                     Ok(()) => {},
                     Err(_) => {
@@ -3204,6 +3270,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         start_storage,
                         data_store,
                     ),
+                    movetime.into(),
+                    hand_size,
                 ) {
                     Ok(()) => {},
                     Err(_) => {
@@ -3279,6 +3347,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         ..
                     } => {},
                     Entity::SolarPanel {
+                        pole_position: Some(_),
+                        ..
+                    } => todo!(),
+                    Entity::Accumulator {
+                        pole_position: None,
+                        ..
+                    } => {},
+                    Entity::Accumulator {
                         pole_position: Some(_),
                         ..
                     } => todo!(),
@@ -3453,6 +3529,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     },
                     Entity::Lab { .. } => {},
                     Entity::SolarPanel { .. } => {},
+                    Entity::Accumulator { .. } => {},
                     Entity::Assembler { .. } => {},
                     Entity::PowerPole { .. } => {},
                     Entity::Chest { .. } => {},
@@ -3566,6 +3643,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         } => {},
                         Entity::Lab { .. } => {},
                         Entity::SolarPanel { .. } => {},
+                        Entity::Accumulator { .. } => {},
                         Entity::Assembler { .. } => {},
                         Entity::PowerPole { .. } => {},
                         Entity::Chest { .. } => {},
@@ -4463,6 +4541,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         // This was not connected, nothing to do
                     }
                 },
+                Entity::Accumulator { pole_position, .. } => {
+                    if let Some((pole_pos, idx)) = *pole_position {
+                        sim_state.factory.power_grids.power_grids[usize::from(
+                            sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos],
+                        )]
+                        .remove_accumulator(pole_pos, idx, data_store);
+                    } else {
+                        // This was not connected, nothing to do
+                    }
+                },
                 Entity::Assembler { pos, info, .. } => match info {
                     AssemblerInfo::UnpoweredNoRecipe
                     | AssemblerInfo::Unpowered(_)
@@ -5255,6 +5343,11 @@ pub enum Entity<ItemIdxType: WeakIdxTrait = u8, RecipeIdxType: WeakIdxTrait = u8
         ty: u8,
         pole_position: Option<(Position, WeakIndex)>,
     },
+    Accumulator {
+        pos: Position,
+        ty: u8,
+        pole_position: Option<(Position, WeakIndex)>,
+    },
     Lab {
         pos: Position,
         ty: u8,
@@ -5313,6 +5406,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::Chest { pos, .. } => *pos,
             Self::Roboport { pos, .. } => *pos,
             Self::SolarPanel { pos, .. } => *pos,
+            Self::Accumulator { pos, .. } => *pos,
             Self::Lab { pos, .. } => *pos,
             Self::Beacon { pos, .. } => *pos,
             Self::FluidTank { pos, .. } => *pos,
@@ -5341,10 +5435,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             },
             Self::Chest { ty, .. } => data_store.chest_tile_sizes[usize::from(*ty)],
             Self::Roboport { .. } => (4, 4),
-            Self::SolarPanel { ty, .. } => (
-                data_store.solar_panel_info[usize::from(*ty)].size[0],
-                data_store.solar_panel_info[usize::from(*ty)].size[1],
-            ),
+            Self::SolarPanel { ty, .. } => {
+                data_store.solar_panel_info[usize::from(*ty)].size.into()
+            },
+            Self::Accumulator { ty, .. } => {
+                data_store.accumulator_info[usize::from(*ty)].size.into()
+            },
             Self::Lab { ty, .. } => data_store.lab_info[usize::from(*ty)].size,
             Self::Beacon { ty, .. } => data_store.beacon_info[usize::from(*ty)].size,
             Self::FluidTank { ty, .. } => data_store.fluid_tank_infos[usize::from(*ty)].size.into(),
@@ -5367,6 +5463,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::Chest { .. } => hex_color!("#ccd8cc"),
             Self::Roboport { .. } => hex_color!("#4888e8"),
             Self::SolarPanel { .. } => hex_color!("#1f2124"),
+            Self::Accumulator { .. } => hex_color!("#7a7a7a"),
             Self::Lab { .. } => hex_color!("#ff90bd"),
             Self::Beacon { .. } => hex_color!("#008192"),
             Self::FluidTank { .. } => hex_color!("#b429ff"),
@@ -5385,6 +5482,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::Chest { .. } => false,
             Self::Roboport { .. } => true,
             Self::SolarPanel { .. } => true,
+            Self::Accumulator { .. } => true,
             Self::Lab { .. } => true,
             Self::Beacon { .. } => true,
             Self::FluidTank { .. } => false,
@@ -5403,6 +5501,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::Chest { .. } => "Chest",
             Self::Roboport { .. } => "Roboport",
             Self::SolarPanel { .. } => "SolarPanel",
+            Self::Accumulator { .. } => "Accumulator",
             Self::Lab { .. } => "Lab",
             Self::Beacon { .. } => "Beacon",
             Self::FluidTank { .. } => "FluidTank",
@@ -5469,6 +5568,10 @@ pub enum PlaceEntityType<ItemIdxType: WeakIdxTrait> {
         pos: Position,
         ty: u8,
     },
+    Accumulator {
+        pos: Position,
+        ty: u8,
+    },
     Lab {
         pos: Position,
         ty: u8,
@@ -5507,6 +5610,7 @@ impl<ItemIdxType: IdxTrait> PlaceEntityType<ItemIdxType> {
             Self::Chest { .. } => false,
             // Self::Roboport { .. } => true,
             Self::SolarPanel { .. } => true,
+            Self::Accumulator { .. } => true,
             Self::Lab { .. } => true,
             Self::Beacon { .. } => true,
             Self::FluidTank { .. } => false,

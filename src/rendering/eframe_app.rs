@@ -153,14 +153,19 @@ impl eframe::App for App {
                             let text = if mul.is_infinite() {
                                 format!("Calculating Remaining Time...")
                             } else {
-                                format!(
-                                    "Est Remaining: {:?} min",
-                                    start_time
-                                        .elapsed()
-                                        .mul_f64(mul - 1.0)
-                                        .as_secs()
-                                        .div_ceil(60)
-                                )
+                                if mul >= 1.0 {
+                                    format!(
+                                        "Est Remaining: {:?} min",
+                                        start_time
+                                            .elapsed()
+                                            .mul_f64(mul - 1.0)
+                                            .as_secs()
+                                            .div_ceil(60)
+                                    )
+                                } else {
+                                    error!("mul out of range 1.0..: {}", mul);
+                                    format!("Calculating Remaining Time...")
+                                }
                             };
                             ui.add(
                                 ProgressBar::new(progress as f32)
@@ -416,6 +421,29 @@ impl eframe::App for App {
                             start_time: Instant::now(),progress,
                             game_state_receiver: recv,
                         };
+                    } else if ui.button("Lots of Belts").clicked() {
+                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
+                        let (send, recv) = channel();
+
+                        let progress_send = progress.clone();
+                        #[cfg(not(target_arch = "wasm32"))]
+                        thread::spawn(move || {
+                            send.send(run_integrated_server(
+                                progress_send,
+                                StartGameInfo::Create(GameCreationInfo::LotsOfBelts),
+                            )).expect("Channel send failed");
+                        });
+
+                        #[cfg(target_arch = "wasm32")]
+                        send.send(run_integrated_server(
+                            progress_send,
+                            StartGameInfo::Create(GameCreationInfo::LotsOfBelts),
+                        ));
+
+                        self.state = AppState::Loading {
+                            start_time: Instant::now(),progress,
+                            game_state_receiver: recv,
+                        };
                     } else if ui.button("Megabase").clicked() {
                         let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
                         let (send, recv) = channel();
@@ -485,7 +513,7 @@ impl eframe::App for App {
                             send.send(run_integrated_server(
                                 progress_send,
                                 StartGameInfo::Create(GameCreationInfo::SolarField(
-                                    crate::power::Watt(0),
+                                    crate::power::Watt(1_000),
                                     Position { x: 1600, y: 1600 },
                                 )),
                             )).expect("Channel send failed");

@@ -1,9 +1,9 @@
-use crate::power::Watt;
+use crate::{TICKS_PER_SECOND_LOGIC, power::Watt};
 
 use super::{
-    AllowedIn, RawAssemblingMachine, RawBeacon, RawChest, RawDataStore, RawEntity, RawItem,
-    RawItemStack, RawLab, RawModule, RawPowerPole, RawRecipeData, RawSolarPanel, RawTechnology,
-    RawTechnologyEffect,
+    AllowedIn, PowerGenerationSegment, RawAssemblingMachine, RawBeacon, RawChest, RawDataStore,
+    RawEntity, RawItem, RawItemStack, RawLab, RawModule, RawPowerPole, RawRecipeData,
+    RawSolarPanel, RawTechnology, RawTechnologyEffect,
 };
 
 const RAW_DATA_STR: &'static str = include_str!("factorio_1_1.fgmod");
@@ -13,6 +13,8 @@ pub fn get_raw_data_test() -> RawDataStore {
     ron::from_str(RAW_DATA_STR).expect("RAW_DATA_STR invalid")
     // get_raw_data_fn()
 }
+
+const FULL_DAY_TIME: u32 = 420 * TICKS_PER_SECOND_LOGIC as u32;
 
 #[must_use]
 pub fn get_raw_data_fn() -> RawDataStore {
@@ -528,14 +530,35 @@ pub fn get_raw_data_fn() -> RawDataStore {
                 display_name: "Infinity Battery".to_string(),
                 tile_size: (2, 2),
                 // 1 Terrawatt should be enough for now
-                output: Watt(1_000_000_000_000),
+                output: super::SolarPanelOutputFunction::Constant(Watt(1_000_000_000_000)),
             },
             RawSolarPanel {
                 name: "factory_game::solar_panel".to_string(),
                 display_name: "Solar Panel".to_string(),
                 tile_size: (3, 3),
                 // TODO: Non constant output
-                output: Watt(60_000),
+                output: super::SolarPanelOutputFunction::Segmented(vec![
+                    PowerGenerationSegment {
+                        end_tick: 25 * FULL_DAY_TIME / 100,
+                        end_power: Watt(60_000),
+                    },
+                    PowerGenerationSegment {
+                        end_tick: 45 * FULL_DAY_TIME / 100,
+                        end_power: Watt(0),
+                    },
+                    PowerGenerationSegment {
+                        end_tick: 55 * FULL_DAY_TIME / 100,
+                        end_power: Watt(0),
+                    },
+                    PowerGenerationSegment {
+                        end_tick: 75 * FULL_DAY_TIME / 100,
+                        end_power: Watt(60_000),
+                    },
+                    PowerGenerationSegment {
+                        end_tick: 100 * FULL_DAY_TIME / 100,
+                        end_power: Watt(60_000),
+                    },
+                ]),
             },
         ],
         accumulators: vec![],

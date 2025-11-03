@@ -141,7 +141,8 @@ pub struct PowerGrid<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     /// This stores the power_grid_ids which could be affected by this grids beacons.
     /// We do not remove values from here, so it will overapproximate
     pub potential_beacon_affected_powergrids: HashSet<PowerGridIdentifier>,
-    pub beacon_affected_entities: HashMap<BeaconAffectedEntity<RecipeIdxType>, (i16, i16, i16)>,
+    pub beacon_affected_entities:
+        HashMap<BeaconAffectedEntity<RecipeIdxType>, (i16, i16, i16), rustc_hash::FxBuildHasher>,
     pub(super) beacon_affected_entity_map:
         HashMap<(Position, WeakIndex), Vec<BeaconAffectedEntity<RecipeIdxType>>>,
 }
@@ -406,7 +407,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 assert_eq!(other_charge, Joule(0));
             } else {
                 *self_charge = (*self_charge * self_count + other_charge * other_count)
-                    / (self_count / other_count);
+                    / (self_count + other_count);
             }
         }
 
@@ -545,6 +546,41 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         };
 
         self.num_solar_panels_of_type[usize::from(ty)] -= 1;
+    }
+
+    pub fn add_accumulator(
+        &mut self,
+        position: Position,
+        ty: u8,
+        pole_connection: Position,
+        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> WeakIndex {
+        assert!(!self.is_placeholder);
+
+        self.main_accumulator_count[usize::from(ty)] += 1;
+
+        self.grid_graph.add_weak_element(
+            pole_connection,
+            (position, PowerGridEntity::Accumulator { ty }),
+        )
+    }
+
+    pub fn remove_accumulator(
+        &mut self,
+        pole_connection: Position,
+        weak_idx: WeakIndex,
+        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        assert!(!self.is_placeholder);
+
+        let (_, PowerGridEntity::Accumulator { ty }) = self
+            .grid_graph
+            .remove_weak_element(pole_connection, weak_idx)
+        else {
+            unreachable!()
+        };
+
+        self.main_accumulator_count[usize::from(ty)] -= 1;
     }
 
     pub fn add_lab(
@@ -1940,10 +1976,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
 
         self.last_ticks_max_power_production = solar_power.watt_from_tick() + self.max_lazy_power;
 
-        if goal_amount == Joule(0) {
-            return Joule(0);
-        }
-
         let max_charge_amount_per: Box<[Joule]> = self
             .main_accumulator_count
             .iter()
@@ -1965,7 +1997,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                     ((&u64, Joule), Watt),
                     Joule,
                 )| {
-                    min(max_charge_rate.joules_per_tick(), max_charge - charge) * *count
+                    min(
+                        max_charge_rate.joules_per_tick() * *count,
+                        max_charge * *count - charge,
+                    )
                 },
             )
             .collect();
@@ -2094,6 +2129,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         debug_assert!(max_charge_amount_per.is_sorted());
 
         // Since we sort, we can simply go through the list sequentially
+        // TODO: Is the sorting and zipping correct here?
         for ((charge, max_rate), num_left) in self
             .main_accumulator_charge
             .iter_mut()
@@ -2173,7 +2209,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             )
             .map(
                 |((count, charge), max_discharge_rate): ((&u64, Joule), Watt)| {
-                    min(max_discharge_rate.joules_per_tick(), charge) * *count
+                    min(max_discharge_rate.joules_per_tick() * *count, charge)
                 },
             )
             .collect();

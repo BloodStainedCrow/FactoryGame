@@ -424,6 +424,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 },
                                 Entity::Roboport { .. } => todo!(),
                                 Entity::SolarPanel { .. } => {},
+                                Entity::Accumulator { .. } => {},
                                 Entity::Lab { .. } => {},
                                 Entity::Beacon { .. } => {},
                                 Entity::FluidTank { .. } => {},
@@ -577,6 +578,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                                                 self.current_mouse_pos,
                                                             );},
                                 PlaceEntityType::SolarPanel { pos, ty: _ } => {*pos = Self::player_mouse_to_tile(
+                                                                self.zoom_level,
+                                                                self.map_view_info.unwrap_or(self.local_player_pos),
+                                                                self.current_mouse_pos,
+                                                            );},
+                                PlaceEntityType::Accumulator { pos, ty: _ } => {*pos = Self::player_mouse_to_tile(
                                                                 self.zoom_level,
                                                                 self.map_view_info.unwrap_or(self.local_player_pos),
                                                                 self.current_mouse_pos,
@@ -814,6 +820,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     }) => {
                         self.state = ActionStateMachineState::Holding(HeldObject::Entity(
                             PlaceEntityType::SolarPanel {
+                                pos: Self::player_mouse_to_tile(
+                                    self.zoom_level,
+                                    self.map_view_info.unwrap_or(self.local_player_pos),
+                                    self.current_mouse_pos,
+                                ),
+                                ty: *ty,
+                            },
+                        ));
+                    },
+                    Some(Entity::Accumulator {
+                        pos: _,
+                        ty,
+                        pole_position: _,
+                    }) => {
+                        self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                            PlaceEntityType::Accumulator {
                                 pos: Self::player_mouse_to_tile(
                                     self.zoom_level,
                                     self.map_view_info.unwrap_or(self.local_player_pos),
@@ -1151,7 +1173,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 Key::Key8,
             ) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::SolarPanel {
+                    PlaceEntityType::Accumulator {
                         pos: *pos,
                         ty: (*ty + 1) % data_store.solar_panel_info.len() as u8,
                     },
@@ -1160,7 +1182,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             },
             (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key8) => {
                 self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::SolarPanel {
+                    PlaceEntityType::Accumulator {
                         pos: Self::player_mouse_to_tile(
                             self.zoom_level,
                             self.map_view_info.unwrap_or(self.local_player_pos),
@@ -1212,20 +1234,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             //         }));
             //     vec![]
             // },
-            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key0) => {
-                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::MiningDrill {
-                        pos: Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        ),
-                        ty: 0,
-                        rotation: Dir::North,
-                    },
-                ));
-                vec![]
-            },
             (
                 ActionStateMachineState::Holding(HeldObject::Entity(
                     PlaceEntityType::MiningDrill { pos, ty, rotation },
@@ -1238,6 +1246,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         // FIXME: Increase the ty
                         ty: 0,
                         rotation: *rotation,
+                    },
+                ));
+                vec![]
+            },
+            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key0) => {
+                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
+                    PlaceEntityType::MiningDrill {
+                        pos: Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        ),
+                        ty: 0,
+                        rotation: Dir::North,
                     },
                 ));
                 vec![]

@@ -148,6 +148,14 @@ impl<T: Default> NewWithDataStore for T {
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub fn main() -> Result<(), ()> {
+    // use ron::ser::PrettyConfig;
+
+    // let raw = crate::data::factorio_1_1::get_raw_data_fn();
+
+    // let str = ron::ser::to_string_pretty(&raw, PrettyConfig::new()).unwrap();
+    // println!("{}", str);
+    // return Ok(());
+
     puffin::set_scopes_on(true);
 
     #[cfg(feature = "logging")]
@@ -254,6 +262,8 @@ enum GameCreationInfo {
 
     Gigabase(u16),
 
+    LotsOfBelts,
+
     SolarField(Watt, Position),
 
     FromBP(PathBuf),
@@ -292,7 +302,7 @@ fn run_integrated_server(
                     .map(|sg| {
                         if sg.checksum != data_store.checksum {
                             // Try reconciliation
-                            todo!("Checksum mismatch, try to merge old and new mod state")
+                            // todo!("Checksum mismatch, try to merge old and new mod state")
                         } else {
                         }
                         sg.game_state
@@ -332,6 +342,9 @@ fn run_integrated_server(
                             progress,
                             &data_store,
                         )
+                    },
+                    GameCreationInfo::LotsOfBelts => {
+                        GameState::new_with_lots_of_belts(progress, &data_store)
                     },
 
                     GameCreationInfo::FromBP(path) => GameState::new_with_bp(&data_store, path),

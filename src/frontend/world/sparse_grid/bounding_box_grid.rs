@@ -178,13 +178,13 @@ impl<T: GetGridIndex<I>> BoundingBoxGrid<I, T> {
 
     fn calculate_index(extent: &[[I; 2]; 2], point: [I; 2]) -> usize {
         let width = extent[0][1] - extent[0][0] + 1;
-        debug_assert!(width > 0);
+        assert!(width > 0);
 
         let width_offs = point[0] - extent[0][0];
-        debug_assert!(width_offs >= 0);
+        assert!(width_offs >= 0);
 
         let height_offs = point[1] - extent[1][0];
-        debug_assert!(height_offs >= 0);
+        assert!(height_offs >= 0);
 
         height_offs as usize * width as usize + width_offs as usize
     }

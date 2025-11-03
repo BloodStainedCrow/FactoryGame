@@ -29,6 +29,7 @@ struct BlueprintStringInternal {
     data_strings: Vec<Arc<str>>,
 
     solar_panels: Vec<BaseEntity>,
+    accumulators: Vec<BaseEntity>,
     belts: Vec<BaseEntity>,
     underground_belts: Vec<(BaseEntity, UndergroundDir)>,
     power_poles: Vec<BaseEntity>,
@@ -74,6 +75,7 @@ impl TryFrom<BlueprintString> for Blueprint {
         let BlueprintStringInternal {
             data_strings,
             solar_panels,
+            accumulators,
             belts,
             underground_belts,
             power_poles,
@@ -120,6 +122,15 @@ impl TryFrom<BlueprintString> for Blueprint {
         let actions = actions.chain(solar_panels.into_iter().map(
             |BaseEntity { pos, ty, rotation }| {
                 BlueprintAction::PlaceEntity(BlueprintPlaceEntity::SolarPanel {
+                    pos,
+                    ty: data_strings[ty].clone(),
+                })
+            },
+        ));
+
+        let actions = actions.chain(accumulators.into_iter().map(
+            |BaseEntity { pos, ty, rotation }| {
+                BlueprintAction::PlaceEntity(BlueprintPlaceEntity::Accumulator {
                     pos,
                     ty: data_strings[ty].clone(),
                 })
@@ -257,6 +268,7 @@ impl From<Blueprint> for BlueprintString {
         let mut internal = BlueprintStringInternal {
             data_strings: vec![],
             solar_panels: vec![],
+            accumulators: vec![],
             belts: vec![],
             underground_belts: vec![],
             power_poles: vec![],
@@ -369,6 +381,13 @@ impl From<Blueprint> for BlueprintString {
                         },
                         super::BlueprintPlaceEntity::SolarPanel { pos, ty } => {
                             internal.solar_panels.push(BaseEntity {
+                                pos,
+                                ty: internal.data_strings.get_index_or_insert(ty.into()),
+                                rotation: Dir::North,
+                            })
+                        },
+                        super::BlueprintPlaceEntity::Accumulator { pos, ty } => {
+                            internal.accumulators.push(BaseEntity {
                                 pos,
                                 ty: internal.data_strings.get_index_or_insert(ty.into()),
                                 rotation: Dir::North,

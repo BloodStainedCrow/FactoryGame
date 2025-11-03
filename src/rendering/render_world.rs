@@ -1,5 +1,5 @@
 use crate::belt::belt::Belt;
-use crate::belt::smart::{HAND_SIZE, SmartBelt};
+use crate::belt::smart::{SmartBelt, HAND_SIZE, NUM_BELT_LOCS_SEARCHED};
 use crate::blueprint::blueprint_string::BlueprintString;
 use crate::chest::ChestSize;
 use crate::frontend::action::action_state_machine::ForkSaveInfo;
@@ -13,6 +13,7 @@ use crate::item::{ITEMCOUNTTYPE, Indexable};
 use crate::lab::{LabViewInfo, TICKS_PER_SCIENCE};
 use crate::liquid::FluidSystemState;
 use crate::mining_drill;
+use crate::belt::smart::{NUM_BELT_UPDATES, NUM_BELT_FREE_CACHE_HITS};
 use crate::frontend::world::tile::BeltState;
 use crate::par_generation::ParGenerateInfo;
 use crate::rendering::{BeltSide, Corner};
@@ -908,18 +909,24 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         match info {
                                             crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => {
                                                 let hand_size = HAND_SIZE;
-                                                let state = game_state.simulation_state.factory.belts.get_inserter_info_at(*id, *belt_pos).unwrap();
+                                                let Some(state) = game_state.simulation_state.factory.belts.get_inserter_info_at(*id, *belt_pos) else {
+                                                    error!("Could not get rendering info for inserter!");
+                                                    continue;
+                                                };
                                                 let item =  game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos);
 
-                                                let (position, items): (f32, ITEMCOUNTTYPE) = match state.state {
+                                                let (mut position, items): (f32, ITEMCOUNTTYPE) = match state.state {
                                                     crate::inserter::InserterState::WaitingForSourceItems(count) => (0.0, count),
                                                     crate::inserter::InserterState::WaitingForSpaceInDestination(count) => (1.0, count),
                                                     crate::inserter::InserterState::FullAndMovingOut(timer) => (1.0 - (timer as f32 / movetime as f32), hand_size),
                                                     crate::inserter::InserterState::EmptyAndMovingBack(timer) => (timer as f32 / movetime as f32, 0),
                                                 };
 
-                                                assert!(position >= 0.0);
+                                                // FIXME: This currently does not hold if the movetime is clamped to a u8 by the belt inserter implementation
+                                                // assert!(position >= 0.0);
                                                 assert!(position <= 1.0);
+                                                // FIXME: This should not be needed
+                                                position = position.clamp(0.0, 1.0);
 
                                                 let start_pos = [
                                                     draw_offset.0 + start_pos.x as f32 + 0.5 - (0.5 * ITEM_RENDER_SIZE),
@@ -1190,20 +1197,18 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             // TODO: Implement alt mode
                                         },
                                         Entity::SolarPanel { ty, pos, .. } => {
-                                            entity_layer.draw_sprite(
-                                                &texture_atlas.default,
-                                                DrawInstance {
-                                                    position: [
-                                                        draw_offset.0 + pos.x as f32,
-                                                        draw_offset.1 + pos.y as f32,
-                                                    ],
-                                                    size: data_store.solar_panel_info
-                                                        [usize::from(*ty)]
-                                                    .size
-                                                    .map(|v| v as f32),
-                                                    animation_frame: 0,
-                                                },
-                                            );
+                                            texture_atlas.solar_panel.draw([
+                                                draw_offset.0 + pos.x as f32,
+                                                draw_offset.1 + pos.y as f32,
+                                            ], data_store.solar_panel_info
+                                            [usize::from(*ty)].size, 0, entity_layer);
+                                        },
+                                        Entity::Accumulator { ty, pos, .. } => {
+                                            texture_atlas.chest.draw([
+                                                draw_offset.0 + pos.x as f32,
+                                                draw_offset.1 + pos.y as f32,
+                                            ], data_store.solar_panel_info
+                                            [usize::from(*ty)].size, 0, entity_layer);
                                         },
                                         // TODO: Render if a lab is working!
                                         Entity::Lab {
@@ -1347,18 +1352,17 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                                             // TODO: Animation
                                             // TODO: Rotation
-                                            texture_atlas.chest.draw(
+                                            texture_atlas.mining_drill.draw(
                                                 [
                                                     draw_offset.0 + pos.x as f32,
                                                     draw_offset.1 + pos.y as f32,
                                                 ],
                                                 size,
-                                                0,
+                                                (current_tick / 2) % texture_atlas.mining_drill.sprite.texture.number_anim_frames,
                                                 entity_layer,
                                             );
                                         },
-
-                                        e => todo!("{:?}", e),
+                                        Entity::Roboport { ty, pos, power_grid, network, id } => todo!(),
                                     }
                                 }
                             }
@@ -1689,20 +1693,18 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         );
                     },
                     crate::frontend::world::tile::PlaceEntityType::SolarPanel { pos, ty } => {
-                        let size = data_store.solar_panel_info[usize::from(*ty)].size;
-                        state_machine_layer.draw_sprite(
-                            &texture_atlas.default,
-                            DrawInstance {
-                                position: [
-                                    pos.x as f32 - camera_pos.0
-                                        + num_tiles_across_screen_horizontal / 2.0,
-                                    pos.y as f32 - camera_pos.1
-                                        + num_tiles_across_screen_vertical / 2.0,
-                                ],
-                                size: [size[0] as f32, size[1] as f32],
-                                animation_frame: 0,
-                            },
-                        );
+                        texture_atlas.solar_panel.draw([
+                            draw_offset.0 + pos.x as f32,
+                            draw_offset.1 + pos.y as f32,
+                        ], data_store.solar_panel_info
+                        [usize::from(*ty)].size, 0, &mut state_machine_layer);
+                    },
+                    crate::frontend::world::tile::PlaceEntityType::Accumulator { pos, ty } => {
+                        texture_atlas.chest.draw([
+                            draw_offset.0 + pos.x as f32,
+                            draw_offset.1 + pos.y as f32,
+                        ], data_store.accumulator_info
+                        [usize::from(*ty)].size, 0, &mut state_machine_layer);
                     },
                     crate::frontend::world::tile::PlaceEntityType::Lab { pos, ty } => {
                         let size = data_store.lab_info[usize::from(*ty)].size;
@@ -1781,7 +1783,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         let size = data_store.mining_drill_info[usize::from(*ty)].size;
 
                         // TODO:
-                        texture_atlas.chest.draw(
+                        texture_atlas.mining_drill.draw(
                             [
                                 pos.x as f32 - camera_pos.0
                                     + num_tiles_across_screen_horizontal / 2.0,
@@ -2255,10 +2257,13 @@ pub fn render_ui<
                             match info {
                                 crate::frontend::world::tile::InserterInfo::NotAttached { .. } => None,
                                 crate::frontend::world::tile::InserterInfo::Attached { info } => match info {
-                                    crate::frontend::world::tile::AttachedInserter::BeltStorage {belt_pos, .. } => {
-                                        None
-                                        // TODO: Currently BeltStorage Inserters do not support movetime changes
-                                        // Some((ty, pos, start_pos, end_pos))
+                                    crate::frontend::world::tile::AttachedInserter::BeltStorage {id, belt_pos, .. } => {
+                                        let item = game_state_ref.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos);
+                                        let start_pos =
+                                            data_store.inserter_start_pos(*ty, *pos, *direction);
+                                        let end_pos =
+                                            data_store.inserter_end_pos(*ty, *pos, *direction);
+                                        Some((ty, pos, start_pos, end_pos, item))
                                     },
                                     crate::frontend::world::tile::AttachedInserter::BeltBelt { .. } => None,
                                     crate::frontend::world::tile::AttachedInserter::StorageStorage { item, .. } => {
@@ -2266,7 +2271,7 @@ pub fn render_ui<
                                         data_store.inserter_start_pos(*ty, *pos, *direction);
                                     let end_pos =
                                         data_store.inserter_end_pos(*ty, *pos, *direction);
-                                        Some((ty, pos, start_pos, end_pos, item))
+                                        Some((ty, pos, start_pos, end_pos, *item))
                                     },
                                 },
                             }
@@ -2288,7 +2293,7 @@ pub fn render_ui<
                                     AssemblerInfo::Unpowered(_) => {},
                                     AssemblerInfo::PoweredNoRecipe(_) => {},
                                     AssemblerInfo::Powered { id, .. } => {
-                                        let (_, _, count_in_recipe) = data_store_ref.recipe_to_items_and_amounts[id.recipe.into_usize()].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Ing && *item == *recipe_item).unwrap();
+                                        let (_, _, count_in_recipe) = data_store_ref.recipe_to_items_and_amounts[id.recipe.into_usize()].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Ing && item == *recipe_item).unwrap();
                                         let time_per_recipe = data_store_ref.recipe_timers[usize_from(id.recipe.id)] as f32;
 
                                         let AssemblerOnclickInfo { base_speed, speed_mod, .. } = game_state_ref.simulation_state.factory.power_grids.get_assembler_info(*id, data_store_ref);
@@ -2323,7 +2328,7 @@ pub fn render_ui<
                                     AssemblerInfo::Unpowered(_) => {},
                                     AssemblerInfo::PoweredNoRecipe(_) => {},
                                     AssemblerInfo::Powered { id, .. } => {
-                                        let (_, _, count_in_recipe) = data_store_ref.recipe_to_items_and_amounts[id.recipe.into_usize()].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Out && *item == *recipe_item).unwrap();
+                                        let (_, _, count_in_recipe) = data_store_ref.recipe_to_items_and_amounts[id.recipe.into_usize()].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Out && item == *recipe_item).unwrap();
                                         let time_per_recipe = data_store_ref.recipe_timers[usize_from(id.recipe.id)] as f32;
 
                                         let AssemblerOnclickInfo { base_speed, speed_mod, prod_mod, .. } = game_state_ref.simulation_state.factory.power_grids.get_assembler_info(*id, data_store_ref);
@@ -2396,6 +2401,25 @@ pub fn render_ui<
             } else {
                 'P'
             })));
+
+            let num_locs_searched = NUM_BELT_LOCS_SEARCHED.load(std::sync::atomic::Ordering::Relaxed);
+            let num_cache_hits = NUM_BELT_FREE_CACHE_HITS.load(std::sync::atomic::Ordering::Relaxed);
+            let num_updates = NUM_BELT_UPDATES.load(std::sync::atomic::Ordering::Relaxed);
+            ui.label(&format!("BeltUpdates: {}, BeltCacheHits: {}, Cache ratio: {:.2}%", num_updates, num_cache_hits,num_cache_hits as f64 / num_updates as f64 * 100.0 ));
+            ui.label(&format!("BeltLocsSearched: {}, LocsPerUpdate: {:.2}", num_locs_searched, num_locs_searched as f64 / num_updates as f64 ));
+            
+            if ui.button("Remove Infinity Batteries").clicked() {
+                for entity in game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()) {
+                    match entity {
+                        Entity::SolarPanel {ty, pos, ..} => {
+                            if &*data_store.solar_panel_info[*ty as usize].name == "factory_game::infinity_battery" {
+                                actions.push(ActionType::Remove(*pos));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
 
             CollapsingHeader::new("Lab analysis").show(ui, |ui| {
                 let mut items = vec![0u32; data_store.item_names.len()];
@@ -2986,7 +3010,7 @@ pub fn render_ui<
 
                             // Power Storage
                             let max_charge: Joule = pg.main_accumulator_count.iter().copied().zip(data_store_ref.accumulator_info.iter().map(|info| info.max_charge)).map(|(count, charge)| charge * count).sum();
-                            let current_charge: Joule = pg.main_accumulator_count.iter().copied().zip(pg.main_accumulator_charge.iter().copied()).map(|(count, charge)| charge * count).sum();
+                            let current_charge: Joule = pg.main_accumulator_charge.iter().copied().sum();
 
                             ui_storage.add(Label::new(RichText::new("Accumulator charge").heading()).wrap_mode(egui::TextWrapMode::Extend));
                             ui_storage.add(ProgressBar::new(current_charge.0 as f32 / max_charge.0 as f32).corner_radius(CornerRadius::ZERO).text(RichText::new(format!("{}/{}", current_charge, max_charge)).color(Color32::BLACK)));
@@ -3135,7 +3159,13 @@ pub fn render_ui<
                                     ui.label(format!("belt_id: {:?}", *id));
                                     ui.label(format!("belt_pos: {}", *belt_pos));
 
-                                    ui.label(format!("storage: {:?}", game_state_ref.simulation_state.factory.belts.get_inserter_info_at(*id, *belt_pos).expect("No inserter at pos indicated in entity!")));
+                                    if let Some(info) = game_state_ref.simulation_state.factory.belts.get_inserter_info_at(*id, *belt_pos) {
+                                        ui.label(format!("storage: {:?}", info));
+                                    } else {
+                                        error!("No inserter at pos indicated in entity!");
+
+                                    }
+
 
                                     // TODO:
                                 },
@@ -3294,7 +3324,10 @@ pub fn render_ui<
                     },
                     Entity::SolarPanel {  .. } => {
                         // TODO
-                    }
+                    },
+                    Entity::Accumulator {  .. } => {
+                        // TODO
+                    },
                     Entity::Beacon {   .. } => {
                         // TODO
                     },

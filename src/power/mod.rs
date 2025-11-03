@@ -56,7 +56,9 @@ pub struct Joule(pub u64);
 
 impl Display for Joule {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.0 > 1_000_000_000 {
+        if self.0 > 1_000_000_000_000 {
+            write!(f, "{:.1}TJ", self.0 as f64 / 1_000_000_000_000.0)
+        } else if self.0 > 1_000_000_000 {
             write!(f, "{:.1}GJ", self.0 as f64 / 1_000_000_000.0)
         } else if self.0 > 1_000_000 {
             write!(f, "{:.1}MJ", self.0 as f64 / 1_000_000.0)
@@ -86,7 +88,7 @@ impl Sub<Self> for Joule {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        Self(self.0 - rhs.0)
+        Self(self.0.checked_sub(rhs.0).expect("Joules underflowed"))
     }
 }
 
@@ -168,7 +170,9 @@ impl Watt {
 
 impl Display for Watt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.0 > 1_000_000_000 {
+        if self.0 > 1_000_000_000_000 {
+            write!(f, "{:.1}TW", self.0 as f64 / 1_000_000_000_000.0)
+        } else if self.0 > 1_000_000_000 {
             write!(f, "{:.1}GW", self.0 as f64 / 1_000_000_000.0)
         } else if self.0 > 1_000_000 {
             write!(f, "{:.1}MW", self.0 as f64 / 1_000_000.0)
@@ -190,7 +194,7 @@ impl Sum<Watt> for Watt {
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct PowerGridStorage<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub power_grids: Vec<PowerGrid<ItemIdxType, RecipeIdxType>>,
-    pub pole_pos_to_grid_id: HashMap<Position, PowerGridIdentifier>,
+    pub pole_pos_to_grid_id: HashMap<Position, PowerGridIdentifier, rustc_hash::FxBuildHasher>,
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxType, RecipeIdxType> {
@@ -992,7 +996,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
     pub fn update(
         &mut self,
         tech_state: &TechState,
-        current_time: u32,
+        current_tick: u32,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (ResearchProgress, RecipeTickInfo, Option<LabTickInfo>) {
         {
@@ -1011,12 +1015,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         let solar_production = data_store
             .solar_panel_info
             .iter()
-            .map(|info| match &info.power_output {
-                crate::data::SolarPanelOutputFunction::Constant(output) => *output,
-                crate::data::SolarPanelOutputFunction::Lookup(output) => {
-                    output[usize::try_from(current_time).unwrap()]
-                },
-            })
+            .map(|info| info.power_output.get_at_time(current_tick))
             .collect::<Box<[Watt]>>();
 
         let (research_progress, production_info, times_labs_used_science, beacon_updates) = self

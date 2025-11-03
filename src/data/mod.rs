@@ -114,7 +114,7 @@ struct RawSolarPanel {
     tile_size: (u8, u8),
 
     // TODO:
-    output: Watt,
+    output: SolarPanelOutputFunction,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -391,7 +391,58 @@ pub struct SolarPanelInfo {
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub enum SolarPanelOutputFunction {
     Constant(Watt),
+    Segmented(Vec<PowerGenerationSegment>),
     Lookup(Vec<Watt>),
+}
+
+impl SolarPanelOutputFunction {
+    pub fn get_at_time(&self, time: u32) -> Watt {
+        match self {
+            SolarPanelOutputFunction::Constant(output) => *output,
+            SolarPanelOutputFunction::Segmented(segments) => {
+                let time = time
+                    % segments
+                        .last()
+                        .expect("Segmented Power output needs at least one segment")
+                        .end_tick;
+
+                let mut segment_start_tick = 0;
+                let mut segment_start_power = segments
+                    .last()
+                    .expect("Segmented Power output needs at least one segment")
+                    .end_power;
+                for segment in segments {
+                    if time < segment.end_tick {
+                        // This is the current segment
+                        let time_into_the_current_segment = time - segment_start_tick;
+                        let segment_length = segment.end_tick - segment_start_tick;
+                        assert!(time_into_the_current_segment < segment_length);
+                        let power: i64 = i64::try_from(segment_start_power.0).unwrap()
+                            + (i64::try_from(segment.end_power.0).unwrap()
+                                - i64::try_from(segment_start_power.0).unwrap())
+                                * i64::from(time - segment_start_tick)
+                                / i64::from(segment_length);
+
+                        return Watt(power.try_into().expect("Negative Power???"));
+                    } else {
+                        segment_start_tick = segment.end_tick;
+                        segment_start_power = segment.end_power;
+                    }
+                }
+
+                unreachable!()
+            },
+            SolarPanelOutputFunction::Lookup(output) => {
+                output[usize::try_from(time).unwrap() % output.len()]
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
+pub struct PowerGenerationSegment {
+    end_tick: u32,
+    end_power: Watt,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
@@ -1592,14 +1643,14 @@ impl RawDataStore {
 
             solar_panel_info: self
                 .solar_panels
-                .iter()
+                .into_iter()
                 .map(|raw| {
                     SolarPanelInfo {
                         name: raw.name.clone().into(),
                         display_name: raw.display_name.clone(),
                         size: [raw.tile_size.0.into(), raw.tile_size.1.into()],
                         // FIXME:
-                        power_output: SolarPanelOutputFunction::Constant(raw.output),
+                        power_output: raw.output,
                     }
                 })
                 .collect(),

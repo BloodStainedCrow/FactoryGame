@@ -3359,16 +3359,47 @@
             name: "factory_game::infinity_battery",
             display_name: "Infinity Battery",
             tile_size: (2, 2),
-            output: (100000000000),
+            output: Constant((1000000000000)),
         ),
         (
             name: "factory_game::solar_panel",
             display_name: "Solar Panel",
             tile_size: (3, 3),
-            output: (60000),
+            output: Segmented([
+                (
+                    end_tick: 6300,
+                    end_power: (60000),
+                ),
+                (
+                    end_tick: 11340,
+                    end_power: (0),
+                ),
+                (
+                    end_tick: 13860,
+                    end_power: (0),
+                ),
+                (
+                    end_tick: 18900,
+                    end_power: (60000),
+                ),
+                (
+                    end_tick: 25200,
+                    end_power: (60000),
+                ),
+            ]),
         ),
     ],
-    accumulators: [],
+    accumulators: [
+        (
+            name: "factory_game::accumulator",
+            display_name: "Accumulator",
+            tile_size: (2, 2),
+
+            charge: (5000000),
+            max_charge_rate: (300000),
+            max_discharge_rate: (300000),
+        )
+    ],
     fluid_tanks: [
         (
             name: "factory_game::pipe",

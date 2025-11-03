@@ -52,6 +52,10 @@ pub struct TechState {
     pub recipe_active: Vec<bool>,
     pub mining_productivity_by_item: Box<[u16]>,
 
+    /// The buffer of science that was already consumed, but turned out not to be needed for the current technology.
+    /// I.e. if in a single tick 3 units of science are produced, but only 1 is needed to finish the technology
+    /// 2 * (cost of current technology) is added to this buffer
+    /// This buffer is then used on subsequent technolgies.
     science_overflow_buffer: Box<[u32]>,
 }
 
@@ -172,10 +176,6 @@ impl TechState {
                         units_in_overflow_buffer_from_this_science,
                     );
                 }
-            }
-
-            if tech_progress_from_overflow > 0 {
-                dbg!(tech_progress_from_overflow);
             }
 
             tech_progress_from_overflow =

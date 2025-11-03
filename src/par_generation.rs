@@ -29,6 +29,7 @@ use crate::{
     },
     power::{PowerGridStorage, power_grid::BeaconAffectedEntity},
 };
+use std::borrow::Borrow;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum BeltKind<ItemIdxType: WeakIdxTrait> {
@@ -742,14 +743,10 @@ pub fn par_generate<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             &mut grid_store,
             generation_info.assembler_actions,
             num_grids,
-            positions.iter().copied(),
+            &positions,
             data_store,
         ),
-        || belt_stage(
-            generation_info.belt_actions,
-            positions.iter().copied(),
-            data_store,
-        )
+        || belt_stage(generation_info.belt_actions, &positions, data_store,)
     );
 
     for ent in assembler_entities {
@@ -762,7 +759,7 @@ pub fn par_generate<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut grid_store,
         generation_info.lab_actions,
         num_grids,
-        positions.iter().copied(),
+        &positions,
         data_store,
     );
 
@@ -771,7 +768,7 @@ pub fn par_generate<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut grid_store,
         generation_info.beacon_actions,
         num_grids,
-        positions.iter().copied(),
+        &positions,
         data_store,
     );
 
@@ -834,7 +831,7 @@ pub fn par_generate<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut world,
         &mut sim_state,
         generation_info.inserter_actions,
-        positions.iter().copied(),
+        &positions,
         data_store,
     );
 
@@ -911,19 +908,25 @@ fn power_pole_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
 fn belt_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     belt_actions: Vec<Belt<ItemIdxType>>,
-    base_positions: impl IntoIterator<Item = Position>,
+    base_positions: &[Position],
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> (
     BeltStore<ItemIdxType>,
     Vec<Entity<ItemIdxType, RecipeIdxType>>,
 ) {
-    let _timer = Timer::new("belt_stage");
+    let belt_count: usize = belt_actions
+        .iter()
+        .map(|belt| belt.entities.len())
+        .sum::<usize>()
+        * base_positions.len();
+
+    let _timer = Timer::new(format!("Placed {} belts", belt_count));
     warn!("belt_stage");
     let mut store = BeltStore::new(data_store);
 
     let mut ret = vec![];
 
-    for base_pos in base_positions {
+    for &base_pos in base_positions {
         for action in belt_actions.iter() {
             let Belt {
                 ty,
@@ -983,14 +986,17 @@ fn assembler_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     grid_store: &mut PowerGridStorage<ItemIdxType, RecipeIdxType>,
     assembler_actions: Vec<TrustedAssemblerPlacement<RecipeIdxType>>,
     num_grids: usize,
-    base_positions: impl IntoIterator<Item = Position>,
+    base_positions: &[Position],
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> Vec<Entity<ItemIdxType, RecipeIdxType>> {
-    let _timer = Timer::new("assembler_stage");
+    let count: usize = assembler_actions.len() * base_positions.len();
+
+    let _timer = Timer::new(format!("Placed {} assemblers", count));
+
     warn!("assembler_stage");
     let mut ret = vec![];
 
-    for (i, base_pos) in base_positions.into_iter().enumerate() {
+    for (i, &base_pos) in base_positions.into_iter().enumerate() {
         for action in assembler_actions.iter().copied() {
             let TrustedAssemblerPlacement {
                 ty,
@@ -1076,12 +1082,14 @@ fn lab_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     grid_store: &mut PowerGridStorage<ItemIdxType, RecipeIdxType>,
     lab_actions: Vec<TrustedLabPlacement>,
     num_grids: usize,
-    base_positions: impl IntoIterator<Item = Position>,
+    base_positions: &[Position],
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
-    let _timer = Timer::new("lab_stage");
+    let count: usize = lab_actions.len() * base_positions.len();
+
+    let _timer = Timer::new(format!("Placed {} labs", count));
     warn!("lab_stage");
-    for (i, base_pos) in base_positions.into_iter().enumerate() {
+    for (i, &base_pos) in base_positions.into_iter().enumerate() {
         for action in lab_actions.iter().copied() {
             let TrustedLabPlacement {
                 ty,
@@ -1137,12 +1145,15 @@ fn beacon_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     grid_store: &mut PowerGridStorage<ItemIdxType, RecipeIdxType>,
     beacon_actions: Vec<TrustedBeaconPlacement>,
     num_grids: usize,
-    base_positions: impl IntoIterator<Item = Position>,
+    base_positions: &[Position],
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
+    let count: usize = beacon_actions.len() * base_positions.len();
+
+    let _timer = Timer::new(format!("Placed {} beacons", count));
     let _timer = Timer::new("beacon_stage");
     warn!("beacon_stage");
-    for (i, base_pos) in base_positions.into_iter().enumerate() {
+    for (i, &base_pos) in base_positions.into_iter().enumerate() {
         for action in beacon_actions.iter().copied() {
             let TrustedBeaconPlacement {
                 ty,
@@ -1242,14 +1253,17 @@ fn inserter_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     world: &mut World<ItemIdxType, RecipeIdxType>,
     sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
     mut inserter_actions: Vec<ActionType<ItemIdxType, RecipeIdxType>>,
-    base_positions: impl IntoIterator<Item = Position> + Clone,
+    base_positions: &[Position],
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
+    let count: usize = inserter_actions.len() * base_positions.len();
+
+    let _timer = Timer::new(format!("Placed {} inserters", count));
     let _timer = Timer::new("inserter_stage");
     warn!("inserter_stage");
     inserter_actions.sort_by_key(|a| a.get_pos());
     for action in inserter_actions {
-        for base_pos in base_positions.clone() {
+        for &base_pos in base_positions {
             match action {
                 ActionType::PlaceEntity(PlaceEntityInfo {
                     entities: EntityPlaceOptions::Single(ent),
@@ -1469,13 +1483,13 @@ fn pipe_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 //     }
 // }
 
-pub struct Timer {
+pub struct Timer<B: Borrow<str>> {
     start: std::time::Instant,
-    text: &'static str,
+    text: B,
 }
 
-impl Timer {
-    pub fn new(text: &'static str) -> Self {
+impl<B: Borrow<str>> Timer<B> {
+    pub fn new(text: B) -> Self {
         Self {
             start: std::time::Instant::now(),
             text,
@@ -1483,9 +1497,9 @@ impl Timer {
     }
 }
 
-impl Drop for Timer {
+impl<B: Borrow<str>> Drop for Timer<B> {
     fn drop(&mut self) {
         let dur = self.start.elapsed();
-        warn!("[{}]: {:?}", self.text, dur);
+        warn!("[{}]: {:?}", self.text.borrow(), dur);
     }
 }

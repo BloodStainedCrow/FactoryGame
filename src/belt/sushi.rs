@@ -24,6 +24,8 @@ use crate::inserter::FakeUnionStorage;
 use crate::inserter::belt_storage_inserter_non_const_gen::BeltStorageInserterDyn;
 use itertools::Either;
 
+use crate::belt::smart::{HAND_SIZE, MOVETIME};
+
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SushiBelt<ItemIdxType: WeakIdxTrait> {
@@ -398,7 +400,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
                     // if item !=  inserter_item {
                     //     error!("We need to handle inserters which will never work again in smart belts!!!!!!!");
                     // }
-                    ins
+                    (ins, MOVETIME, HAND_SIZE)
                 }).collect(),
             },
             item,

@@ -14,6 +14,7 @@ mod sushi;
 
 use crate::belt::smart::EmptyBelt;
 use crate::get_size::{Mutex, StableGraph};
+use crate::item::ITEMCOUNTTYPE;
 use crate::par_generation::BeltKind;
 use petgraph::stable_graph::DefaultIx;
 use std::ops::RangeInclusive;
@@ -2594,6 +2595,8 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         id: BeltTileId<ItemIdxType>,
         pos: BeltLenType,
         storage_id: FakeUnionStorage,
+        movetime: u16,
+        hand_size: ITEMCOUNTTYPE,
     ) -> Result<(), SpaceOccupiedError> {
         let handle_sushi_belt =
             |belt: &mut SushiBelt<ItemIdxType>| belt.add_in_inserter(filter, pos, storage_id);
@@ -2604,7 +2607,9 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     AnyBelt::Smart(smart_belt_id) => {
                         let smart_belt = self.inner.get_smart_mut(*smart_belt_id);
 
-                        match smart_belt.add_in_inserter(filter, pos, storage_id) {
+                        match smart_belt
+                            .add_in_inserter(filter, pos, storage_id, movetime, hand_size)
+                        {
                             Ok(()) => {
                                 // It succeeded!
                             },
@@ -2640,7 +2645,9 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         let sushi_index = self.inner.instantiate_empty_into_sushi(*empty_index);
                         self.any_belts[index as usize] = AnyBelt::Sushi(sushi_index);
 
-                        self.add_storage_belt_inserter(filter, id, pos, storage_id)?;
+                        self.add_storage_belt_inserter(
+                            filter, id, pos, storage_id, movetime, hand_size,
+                        )?;
                     },
                 }
             },
@@ -2657,6 +2664,8 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         id: BeltTileId<ItemIdxType>,
         pos: BeltLenType,
         storage_id: FakeUnionStorage,
+        movetime: u16,
+        hand_size: ITEMCOUNTTYPE,
     ) -> Result<(), SpaceOccupiedError> {
         let handle_sushi_belt =
             |belt: &mut SushiBelt<ItemIdxType>| belt.add_out_inserter(filter, pos, storage_id);
@@ -2667,7 +2676,9 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     AnyBelt::Smart(smart_belt_id) => {
                         let smart_belt = self.inner.get_smart_mut(*smart_belt_id);
 
-                        match smart_belt.add_out_inserter(filter, pos, storage_id) {
+                        match smart_belt
+                            .add_out_inserter(filter, pos, storage_id, movetime, hand_size)
+                        {
                             Ok(()) => {
                                 // It succeeded!
                             },
@@ -2704,7 +2715,9 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         let sushi_index = self.inner.instantiate_empty_into_sushi(*empty_index);
                         self.any_belts[index as usize] = AnyBelt::Sushi(sushi_index);
 
-                        self.add_belt_storage_inserter(filter, id, pos, storage_id)?;
+                        self.add_belt_storage_inserter(
+                            filter, id, pos, storage_id, movetime, hand_size,
+                        )?;
                     },
                 }
             },
@@ -3156,6 +3169,26 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                             info!("Unable to convert belt {id:?} to pure belt");
                         },
                     }
+                },
+                AnyBelt::Empty(_) => unimplemented!("Empty belt cannot have inserters"),
+            },
+        };
+    }
+
+    pub fn change_inserter_movetime(
+        &mut self,
+        id: BeltTileId<ItemIdxType>,
+        pos: BeltLenType,
+        new_movetime: u16,
+    ) {
+        match id {
+            BeltTileId::AnyBelt(index, _) => match &mut self.any_belts[index as usize] {
+                AnyBelt::Smart(smart_belt_id) => {
+                    let smart_belt = self.inner.get_smart_mut(*smart_belt_id);
+                    smart_belt.change_inserter_movetime(pos, new_movetime);
+                },
+                AnyBelt::Sushi(sushi_belt_id) => {
+                    todo!()
                 },
                 AnyBelt::Empty(_) => unimplemented!("Empty belt cannot have inserters"),
             },

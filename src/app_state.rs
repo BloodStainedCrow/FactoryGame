@@ -215,7 +215,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         // TODO: Increase size to fit solar field
         let mut ret = GameState::new_with_world_area(
             Position { x: 0, y: 0 },
-            Position { x: 6000, y: 12000 },
+            Position {
+                x: 16_000,
+                y: 12_000,
+            },
             data_store,
         );
         let mut file =
@@ -231,6 +234,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let mut current = 0;
 
         puffin::set_scopes_on(false);
+        ret.add_solar_field(
+            Position { x: 4503, y: 2454 },
+            Watt(325_000_000_000),
+            Some(9_000),
+            progress.clone(),
+            data_store,
+        );
+
         bp.apply_at_positions(
             iter::once(Position { x: 1600, y: 1600 }),
             false,
@@ -244,6 +255,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             },
             data_store,
         );
+
         puffin::set_scopes_on(true);
 
         ret
@@ -255,7 +267,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        let width = count.isqrt();
+        // let width = count.isqrt();
+        // Make the stack of factories as tall as possible
+        let width = 1;
 
         let main_height = count / width;
 
@@ -273,6 +287,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let width_in_tiles = i32::from(width) * 4_000;
         let height_in_tiles = i32::from(full_height) * 10_000;
 
+        let start = 0;
+        // let start = -(height_in_tiles / 2);
+
         // let mut ret = GameState::new_with_world_area(
         //     Position { x: 0, y: 0 },
         //     Position {
@@ -287,7 +304,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         puffin::set_scopes_on(false);
         let x_range = (0..width).map(|x| i32::from(x) * MEGABASE_WIDTH);
-        let y_range = (0..full_height).map(|x| i32::from(x) * MEGABASE_HEIGHT);
+        let y_range = (0..full_height).map(|y| i32::from(y) * MEGABASE_HEIGHT);
 
         error!("Loading Generation Info...");
         let file = {
@@ -304,16 +321,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         let ret = par_generate(
             BoundingBox {
-                top_left: Position { x: 0, y: 0 },
+                top_left: Position { x: 0, y: start },
                 bottom_right: Position {
                     x: width_in_tiles + 4000,
-                    y: height_in_tiles + 4000,
+                    y: start + height_in_tiles + 4000,
                 },
             },
             par_data,
             y_range
                 .cartesian_product(x_range)
-                .map(|(y, x)| Position { x, y })
+                .map(|(y, x)| Position { x, y: y + start })
                 .take(count as usize)
                 .collect(),
             data_store,
@@ -426,19 +443,42 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
     #[must_use]
     pub fn new_with_lots_of_belts(
-        _progress: Arc<AtomicU64>,
+        progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        let mut ret = GameState::new(data_store);
+        let mut ret = GameState::new_with_world_area(
+            Position { x: 0, y: 0 },
+            Position {
+                x: 5_000,
+                y: 65_000,
+            },
+            data_store,
+        );
 
-        let file = File::open("test_blueprints/lots_of_belts.bp").unwrap();
-        let bp: Blueprint = ron::de::from_reader(file).unwrap();
-        let bp = bp.get_reusable(false, data_store);
+        let mut file = File::open("test_blueprints/lots_of_belts.bp").unwrap();
+        let mut s = String::new();
+        file.read_to_string(&mut s).unwrap();
+        let bp: BlueprintString = BlueprintString(s);
+        let mut bp: Blueprint = Blueprint::try_from(bp).unwrap();
+        bp.optimize();
+
+        let total = bp.action_count() as f64;
+        let mut current = 0;
 
         puffin::set_scopes_on(false);
-        for y_pos in (1600..60_000).step_by(3) {
-            bp.apply(Position { x: 1600, y: y_pos }, &mut ret, data_store);
-        }
+        let positions = (1600..60_000)
+            .step_by(3)
+            .map(|y_pos| Position { x: 1600, y: y_pos });
+        bp.apply_at_positions(
+            positions,
+            false,
+            &mut ret,
+            || {
+                current += 1;
+                progress.store((current as f64 / total).to_bits(), Ordering::Relaxed);
+            },
+            data_store,
+        );
         puffin::set_scopes_on(true);
 
         ret
@@ -448,7 +488,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     pub fn new_with_tons_of_solar(
         wattage: Watt,
         base_pos: Position,
-        height: Option<u32>,
+        height: Option<u64>,
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
@@ -468,33 +508,40 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         &mut self,
         pos: Position,
         amount: Watt,
-        height: Option<u32>,
+        height_in_tiles: Option<u64>,
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        let file = File::open("test_blueprints/solar_tile.bp").unwrap();
-        let bp: Blueprint = ron::de::from_reader(file).unwrap();
+        let mut file = File::open("test_blueprints/solar_tile.bp").unwrap();
+        let mut s = String::new();
+        file.read_to_string(&mut s).unwrap();
+        let bp: BlueprintString = BlueprintString(s);
+        let mut bp: Blueprint = Blueprint::try_from(bp).unwrap();
+        bp.optimize();
         let bp = bp.get_reusable(false, data_store);
+        let bp = bp.optimize();
 
-        let bp_count = amount.0 / (Watt(42_000) * 104).0;
+        let bp_count = amount.0.div_ceil((Watt(42_000) * 104).0);
 
-        let width = bp_count.isqrt();
+        let height = height_in_tiles.map(|v| v / 36).unwrap_or(bp_count.isqrt());
+        let width = bp_count.div_ceil(height);
 
-        let x_positions = (0..=width).map(|v| pos.x + 36 * v as i32);
-        let y_positions = (0..=width).map(|v| pos.y + 36 * v as i32);
+        let x_positions = (0..width).map(|v| pos.x + 36 * v as i32);
+        let y_positions = (0..height).map(|v| pos.y + 36 * v as i32);
 
         // let total = bp.action_count();
-        let total = y_positions.clone().count();
+        let total = y_positions.clone().count() * x_positions.clone().count();
 
         let mut current = 0;
 
         puffin::set_scopes_on(false);
-        for y_pos in y_positions {
+        for pos in x_positions
+            .cartesian_product(y_positions)
+            .map(|(x_pos, y_pos)| Position { x: x_pos, y: y_pos })
+        {
             progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
             current += 1;
-            for x_pos in x_positions.clone() {
-                bp.apply(Position { x: x_pos, y: y_pos }, self, data_store);
-            }
+            bp.apply(pos, self, data_store);
         }
         // bp.apply_at_positions(
         //     x_positions
@@ -1295,7 +1342,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 match info {
                                     InserterInfo::NotAttached {} => {},
                                     InserterInfo::Attached { info } => match info {
-                                        AttachedInserter::BeltStorage { id, belt_pos } => todo!(),
+                                        AttachedInserter::BeltStorage { id, belt_pos } => {
+                                            game_state
+                                                .simulation_state
+                                                .factory
+                                                .belts
+                                                .change_inserter_movetime(
+                                                    *id,
+                                                    *belt_pos,
+                                                    new_movetime.map(|v| v.into()).unwrap_or(
+                                                        data_store.inserter_infos[*ty as usize]
+                                                            .swing_time_ticks,
+                                                    ),
+                                                );
+                                        },
                                         AttachedInserter::BeltBelt { item, inserter } => todo!(),
                                         AttachedInserter::StorageStorage { item, inserter } => {
                                             let old_movetime =
@@ -1866,6 +1926,54 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                                 if let Err(e) = game_state.world.add_entity(
                                     Entity::SolarPanel {
+                                        pos,
+                                        ty,
+                                        pole_position: powered_by,
+                                    },
+                                    &mut game_state.simulation_state,
+                                    data_store,
+                                ) {
+                                    warn!("Unable to place entity {:?}", e);
+                                }
+                            },
+                            crate::frontend::world::tile::PlaceEntityType::Accumulator {
+                                pos,
+                                ty,
+                            } => {
+                                let size = data_store.accumulator_info[usize::from(ty)].size;
+                                let size = size.into();
+
+                                if !game_state.world.can_fit(pos, size, data_store) {
+                                    warn!("Tried to place accumulator where it does not fit");
+                                    continue;
+                                }
+
+                                let powered_by =
+                                    game_state.world.is_powered_by(pos, size, data_store);
+
+                                let powered_by = if let Some(pole_pos) = powered_by {
+                                    let grid = game_state
+                                        .simulation_state
+                                        .factory
+                                        .power_grids
+                                        .pole_pos_to_grid_id[&pole_pos];
+
+                                    let grid = &mut game_state
+                                        .simulation_state
+                                        .factory
+                                        .power_grids
+                                        .power_grids[usize::from(grid)];
+
+                                    let weak_idx =
+                                        grid.add_accumulator(pos, ty, pole_pos, data_store);
+
+                                    Some((pole_pos, weak_idx))
+                                } else {
+                                    None
+                                };
+
+                                if let Err(e) = game_state.world.add_entity(
+                                    Entity::Accumulator {
                                         pos,
                                         ty,
                                         pole_position: powered_by,
@@ -2667,7 +2775,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             || {
                 simulation_state.factory.power_grids.update(
                     &simulation_state.tech_state,
-                    0,
+                    aux_data.current_tick as u32,
                     data_store,
                 )
             }

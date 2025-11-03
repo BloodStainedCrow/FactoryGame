@@ -38,7 +38,7 @@ pub struct FullOreStore<ItemIdxType: WeakIdxTrait> {
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OreLookup<ItemIdxType: WeakIdxTrait> {
-    pub ore_lookup: HashMap<Position, (Item<ItemIdxType>, OreLoc)>,
+    pub ore_lookup: HashMap<Position, (Item<ItemIdxType>, OreLoc), rustc_hash::FxBuildHasher>,
 }
 
 impl<ItemIdxType: WeakIdxTrait> Default for OreLookup<ItemIdxType> {

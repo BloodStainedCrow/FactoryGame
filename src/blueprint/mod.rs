@@ -143,6 +143,10 @@ enum BlueprintPlaceEntity {
         pos: Position,
         ty: Arc<str>,
     },
+    Accumulator {
+        pos: Position,
+        ty: Arc<str>,
+    },
     Lab {
         pos: Position,
         ty: Arc<str>,
@@ -242,6 +246,12 @@ impl BlueprintAction {
                                 BlueprintPlaceEntity::SolarPanel {
                                     pos,
                                     ty: data_store.solar_panel_info[ty as usize].name.clone(),
+                                }
+                            },
+                            PlaceEntityType::Accumulator { pos, ty } => {
+                                BlueprintPlaceEntity::Accumulator {
+                                    pos,
+                                    ty: data_store.accumulator_info[ty as usize].name.clone(),
                                 }
                             },
                             PlaceEntityType::Lab { pos, ty } => BlueprintPlaceEntity::Lab {
@@ -430,6 +440,15 @@ impl BlueprintAction {
                             .map(|v| v.try_into().unwrap())
                             .ok_or(())?,
                     },
+                    BlueprintPlaceEntity::Accumulator { pos, ty } => PlaceEntityType::Accumulator {
+                        pos: *pos,
+                        ty: data_store
+                            .accumulator_info
+                            .iter()
+                            .position(|info| info.name == *ty)
+                            .map(|v| v.try_into().unwrap())
+                            .ok_or(())?,
+                    },
                     BlueprintPlaceEntity::Lab { pos, ty } => PlaceEntityType::Lab {
                         pos: *pos,
                         ty: data_store
@@ -586,6 +605,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
                 PlaceEntityType::Splitter { .. } => (1, 4, v.get_pos(), 0),
                 PlaceEntityType::Chest { .. } => (1, 3, v.get_pos(), 0),
                 PlaceEntityType::SolarPanel { .. } => (1, 1, v.get_pos(), 0),
+                PlaceEntityType::Accumulator { .. } => (1, 1, v.get_pos(), 0),
                 PlaceEntityType::Lab { .. } => (1, 3, v.get_pos(), 0),
                 PlaceEntityType::Beacon { .. } => (1, 3, v.get_pos(), 0),
                 PlaceEntityType::FluidTank { .. } => (1, 2, v.get_pos(), 0),
@@ -778,6 +798,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
             }),
             &ActionType::PlaceEntity(PlaceEntityInfo {
                 force,
+                entities: EntityPlaceOptions::Single(PlaceEntityType::Accumulator { pos, ty }),
+            }) => ActionType::PlaceEntity(PlaceEntityInfo {
+                force,
+                entities: EntityPlaceOptions::Single(PlaceEntityType::Accumulator {
+                    pos: Position {
+                        x: base_pos.x + pos.x,
+                        y: base_pos.y + pos.y,
+                    },
+                    ty,
+                }),
+            }),
+            &ActionType::PlaceEntity(PlaceEntityInfo {
+                force,
                 entities: EntityPlaceOptions::Single(PlaceEntityType::Lab { pos, ty }),
             }) => ActionType::PlaceEntity(PlaceEntityInfo {
                 force,
@@ -932,6 +965,9 @@ impl Blueprint {
                 BlueprintPlaceEntity::Splitter { pos, .. } => (1, 5, (BeltId::Pure(0), 0), *pos, 0),
                 BlueprintPlaceEntity::Chest { pos, .. } => (1, 3, (BeltId::Pure(0), 0), *pos, 0),
                 BlueprintPlaceEntity::SolarPanel { pos, .. } => {
+                    (1, 1, (BeltId::Pure(0), 0), *pos, 0)
+                },
+                BlueprintPlaceEntity::Accumulator { pos, .. } => {
                     (1, 1, (BeltId::Pure(0), 0), *pos, 0)
                 },
                 BlueprintPlaceEntity::Lab { pos, .. } => (1, 3, (BeltId::Pure(0), 0), *pos, 0),
@@ -1291,6 +1327,17 @@ impl Blueprint {
                         },
                     )]
                 },
+                crate::frontend::world::tile::Entity::Accumulator { pos, ty, .. } => {
+                    vec![BlueprintAction::PlaceEntity(
+                        BlueprintPlaceEntity::Accumulator {
+                            pos: Position {
+                                x: pos.x - base_pos.x,
+                                y: pos.y - base_pos.y,
+                            },
+                            ty: data_store.accumulator_info[*ty as usize].name.clone(),
+                        },
+                    )]
+                },
                 crate::frontend::world::tile::Entity::Lab { pos, ty, .. } => {
                     vec![BlueprintAction::PlaceEntity(BlueprintPlaceEntity::Lab {
                         pos: Position {
@@ -1442,6 +1489,9 @@ impl Blueprint {
                             *pos = pos_fn(pos, e_size);
                         },
                         BlueprintPlaceEntity::SolarPanel { pos, .. } => {
+                            *pos = pos_fn(pos, e_size);
+                        },
+                        BlueprintPlaceEntity::Accumulator { pos, .. } => {
                             *pos = pos_fn(pos, e_size);
                         },
                         BlueprintPlaceEntity::Lab { pos, .. } => {

@@ -169,6 +169,9 @@ pub struct TextureAtlas {
 
     underground: enum_map::EnumMap<Dir, enum_map::EnumMap<UndergroundDir, EntitySprite>>,
 
+    mining_drill: EntitySprite,
+    solar_panel: EntitySprite,
+
     default: Sprite,
 }
 
@@ -303,6 +306,9 @@ fn texture_atlas() -> TextureAtlas {
         dark_square: sprite_from_path!("temp_assets/dark_square.png", 1),
 
         underground: undergrounds,
+
+        mining_drill: Sprite::new(Texture::default()),
+        solar_panel: Sprite::new(Texture::default()),
 
         default: Sprite::new(Texture::default()),
     }
@@ -543,6 +549,9 @@ fn texture_atlas() -> TextureAtlas {
                 ),
             ]),
         ]),
+
+        mining_drill: entity_sprite_from_path_tiling!("temp_assets/krastorio/drill.png", 2 * 9),
+        solar_panel: entity_sprite_from_path_tiling!("temp_assets/krastorio/solar-panel.png", 1),
 
         default: Sprite::new(Texture::default()),
     }

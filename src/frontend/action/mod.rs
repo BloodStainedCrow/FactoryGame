@@ -89,6 +89,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, Rec
                         super::world::tile::PlaceEntityType::Splitter { pos, .. } => Some(*pos),
                         super::world::tile::PlaceEntityType::Chest { pos, .. } => Some(*pos),
                         super::world::tile::PlaceEntityType::SolarPanel { pos, .. } => Some(*pos),
+                        super::world::tile::PlaceEntityType::Accumulator { pos, .. } => Some(*pos),
                         super::world::tile::PlaceEntityType::Lab { pos, .. } => Some(*pos),
                         super::world::tile::PlaceEntityType::Beacon { pos, .. } => Some(*pos),
                         super::world::tile::PlaceEntityType::FluidTank { pos, .. } => Some(*pos),
@@ -144,6 +145,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, Rec
                         },
                         PlaceEntityType::SolarPanel { ty, .. } => {
                             Some(data_store.solar_panel_info[*ty as usize].size)
+                        },
+                        PlaceEntityType::Accumulator { ty, .. } => {
+                            Some(data_store.accumulator_info[*ty as usize].size)
                         },
                         PlaceEntityType::Lab { ty, .. } => {
                             Some(data_store.lab_info[*ty as usize].size.into())
