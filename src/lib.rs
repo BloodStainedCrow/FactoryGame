@@ -11,6 +11,12 @@
 
 extern crate test;
 
+// See https://docs.rs/built/latest/built/
+pub mod built_info {
+    // The file has been placed there by the build script.
+    include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
+
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use eframe::web_sys;
 

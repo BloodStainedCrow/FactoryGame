@@ -4,6 +4,8 @@ name = "factory"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
+build = "build.rs"
+
 
 [dependencies]
 enum-map = { version = "2.7.3", features = ["serde"] }
@@ -46,7 +48,7 @@ noise = { version = "0.9.0", features = ["std"] }
 rfd = { version = "0.15.3", optional = true }
 egui_graphs = { version = "0.25.1", optional = true }
 serde_path_to_error = "0.1.17"
-get-size2 = { version = "0.1.4", features = ["derive"], optional = true }
+get-size2 = { version = "0.7.1", features = ["derive"], optional = true }
 
 egui-show-info = { git = "https://github.com/BloodStainedCrow/egui-show-info", features = ["petgraph", "parking_lot", "enum-map", "bimap"], optional = true }
 egui-show-info-derive = { git = "https://github.com/BloodStainedCrow/egui-show-info", optional = true }
@@ -71,6 +73,10 @@ interprocess = "2.2.3"
 fixed-buffer = "1.0.2"
 base64 = "0.22.1"
 mimalloc = { version = "0.1.48", features = ["v3"] }
+rustc-hash = "2.1.1"
+
+[build-dependencies]
+built = {version = "0.8", features= ["git2", "chrono"]}
 
 [dev-dependencies]
 winit = "0.30.12"
@@ -85,6 +91,9 @@ ecolor = { git = "https://github.com/BloodStainedCrow/egui", rev = "4e11a02" }
 egui-wgpu = { git = "https://github.com/BloodStainedCrow/egui", rev = "4e11a02" }
 egui_graphs = { git = "https://github.com/BloodStainedCrow/egui_graphs", branch = "tree_layout" }
 petgraph = { git = "https://github.com/BloodStainedCrow/petgraph", branch = "stable_graph_node_weights_mut_indexed" }
+
+[patch.'https://github.com/BloodStainedCrow/egui-show-info']
+egui-show-info = { path = "../egui-show-info" }
 
 [lints.rust]
 
