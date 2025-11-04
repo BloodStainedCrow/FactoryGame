@@ -4,6 +4,7 @@ use itertools::{Itertools, assert_equal};
 use log::warn;
 
 use crate::frontend::world::tile::BeltState;
+use crate::inserter::FakeUnionStorage;
 use crate::{
     DataStore, GameState, Position, WeakIdxTrait,
     app_state::{AuxillaryData, Factory, SimulationState, StorageStorageInserterStore},
@@ -466,7 +467,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ParGenerateInfo<ItemIdxType
                             .factory
                             .fluid_store
                             .get_fluid_network(id)
-                            .storage_capacity as u64,
+                            .get_capacity() as u64,
                         tanks: vec![TrustedFluidTankPlacement {
                             ty,
                             pos,
@@ -782,8 +783,6 @@ pub fn par_generate<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let mut storage_storage_store = StorageStorageInserterStore::new(data_store);
     let fluid_store = pipe_stage(
         &mut world,
-        &mut chest_store,
-        &mut storage_storage_store,
         generation_info.pipe_actions.fluid_networks,
         positions.iter().copied(),
         data_store,
@@ -1366,8 +1365,6 @@ fn chest_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
 fn pipe_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     world: &mut World<ItemIdxType, RecipeIdxType>,
-    chest_store: &mut FullChestStore<ItemIdxType>,
-    storage_storage_store: &mut StorageStorageInserterStore,
     pipe_actions: Vec<PipeSystem<ItemIdxType>>,
     base_positions: impl IntoIterator<Item = Position>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -1378,7 +1375,7 @@ fn pipe_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     for base_pos in base_positions {
         for PipeSystem { fluid, size, tanks } in pipe_actions.iter() {
-            let id = store.trusted_add_fluid_network_without_fluid_box(*fluid, chest_store);
+            let id = store.trusted_add_fluid_network_without_fluid_box(*fluid);
 
             for TrustedFluidTankPlacement {
                 ty,
@@ -1412,7 +1409,7 @@ fn pipe_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         (
                             *dir,
                             fluid.unwrap(),
-                            match world.get_entity_at(pos, data_store).unwrap() {
+                            FakeUnionStorage::from_storage_with_statics_at_zero(fluid.unwrap(), match world.get_entity_at(pos, data_store).unwrap() {
                                 Entity::Assembler {
                                     info: AssemblerInfo::Powered { id, .. },
                                     ..
@@ -1423,13 +1420,10 @@ fn pipe_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         .recipe_to_translated_index[&(id.recipe, fluid.unwrap())],
                                 },
                                 _ => unreachable!(),
-                            },
+                            }, data_store),
                             pos,
                         )
                     }),
-                    chest_store,
-                    storage_storage_store,
-                    data_store,
                 );
 
                 let ent = Entity::FluidTank {
@@ -1444,7 +1438,7 @@ fn pipe_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             }
 
             assert_eq!(
-                u64::from(store.get_fluid_network(id).storage_capacity),
+                u64::from(store.get_fluid_network(id).get_capacity()),
                 *size
             );
         }

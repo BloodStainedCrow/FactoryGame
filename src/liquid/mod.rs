@@ -1,20 +1,17 @@
 use std::cmp::min;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::u8;
 
 use itertools::Itertools;
 use log::warn;
 
-use crate::chest::ChestSize;
 use crate::inserter::FakeUnionStorage;
-use crate::inserter::storage_storage_with_buckets_indirect::InserterIdentifier;
 use crate::item::Indexable;
+use crate::storage_list::{SingleItemStorages, index_fake_union};
 use crate::{
-    app_state::StorageStorageInserterStore,
-    chest::FullChestStore,
     data::DataStore,
     frontend::world::Position,
-    inserter::{StaticID, Storage},
     item::{IdxTrait, Item, WeakIdxTrait},
     network_graph::{Network, WeakIndex},
 };
@@ -100,9 +97,8 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
     pub fn trusted_add_fluid_network_without_fluid_box(
         &mut self,
         fluid: Option<Item<ItemIdxType>>,
-        chest_store: &mut FullChestStore<ItemIdxType>,
     ) -> FluidSystemId<ItemIdxType> {
-        let new_network = FluidSystem::trusted_new_without_fluid_box(fluid, chest_store);
+        let new_network = FluidSystem::trusted_new_without_fluid_box(fluid);
 
         let index = match fluid {
             Some(fluid) => {
@@ -136,7 +132,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
         new_id
     }
 
-    pub fn trusted_add_fluid_box<RecipeIdxType: IdxTrait>(
+    pub fn trusted_add_fluid_box(
         &mut self,
 
         fluid_network_id: FluidSystemId<ItemIdxType>,
@@ -149,15 +145,10 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
             Item = (
                 FluidConnectionDir,
                 Item<ItemIdxType>,
-                Storage<RecipeIdxType>,
+                FakeUnionStorage,
                 Position,
             ),
         > + Clone,
-
-        chest_store: &mut FullChestStore<ItemIdxType>,
-        inserter_store: &mut StorageStorageInserterStore,
-
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         self.fluid_box_pos_to_network_id
             .insert(new_fluid_box_position, fluid_network_id);
@@ -168,36 +159,25 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
             new_fluid_box_position,
             fluid_box_capacity,
             connected_fluid_box_positions,
-            chest_store,
         );
 
         for (dir, fluid, storage, pos) in connected_storages {
             assert_eq!(fluid, fluid_network_id.fluid.unwrap());
 
             let weak_index = match dir {
-                FluidConnectionDir::Input => network.add_input(
-                    fluid,
-                    new_fluid_box_position,
-                    storage,
-                    pos,
-                    inserter_store,
-                    data_store,
-                ),
-                FluidConnectionDir::Output => network.add_output(
-                    fluid,
-                    new_fluid_box_position,
-                    storage,
-                    pos,
-                    inserter_store,
-                    data_store,
-                ),
+                FluidConnectionDir::Input => {
+                    network.add_input(fluid, new_fluid_box_position, storage, pos)
+                },
+                FluidConnectionDir::Output => {
+                    network.add_output(fluid, new_fluid_box_position, storage, pos)
+                },
             };
         }
     }
 
     /// # Errors:
     /// If adding this fluid box would connect fluid systems with different fluids
-    pub fn try_add_fluid_box<RecipeIdxType: IdxTrait>(
+    pub fn try_add_fluid_box(
         &mut self,
         new_fluid_box_position: Position,
         fluid_box_capacity: u32,
@@ -207,16 +187,11 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
             Item = (
                 FluidConnectionDir,
                 Item<ItemIdxType>,
-                Storage<RecipeIdxType>,
+                FakeUnionStorage,
                 Position,
                 Box<dyn FnOnce(WeakIndex) -> ()>,
             ),
         > + Clone,
-
-        chest_store: &mut FullChestStore<ItemIdxType>,
-        inserter_store: &mut StorageStorageInserterStore,
-
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Result<(), CannotMixFluidsError<ItemIdxType>> {
         let connected_boxes: Vec<_> = connected_fluid_box_positions.into_iter().collect();
 
@@ -297,12 +272,9 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                     self.merge_fluid_system(
                         network_to_join_into,
                         removed_id,
-                        chest_store,
-                        inserter_store,
                         new_fluid_box_position,
                         fluid_box_capacity,
                         connected_boxes.iter().copied(),
-                        data_store,
                     );
                 }
 
@@ -331,7 +303,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                     (FluidSystemState::NoFluid, Some(fluid)) => {
                         let mut network = network.take().unwrap();
 
-                        network.set_fluid(fluid, chest_store);
+                        network.set_fluid(fluid);
 
                         let index = self.fluid_systems_with_fluid_holes[fluid.into_usize()].pop();
 
@@ -392,31 +364,16 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                     },
                 };
 
-                network.add_fluid_box(
-                    new_fluid_box_position,
-                    fluid_box_capacity,
-                    connected_boxes,
-                    chest_store,
-                );
+                network.add_fluid_box(new_fluid_box_position, fluid_box_capacity, connected_boxes);
 
                 for (dir, fluid, storage, pos, callback) in connected_storages {
                     let weak_index = match dir {
-                        FluidConnectionDir::Input => network.add_input(
-                            fluid,
-                            new_fluid_box_position,
-                            storage,
-                            pos,
-                            inserter_store,
-                            data_store,
-                        ),
-                        FluidConnectionDir::Output => network.add_output(
-                            fluid,
-                            new_fluid_box_position,
-                            storage,
-                            pos,
-                            inserter_store,
-                            data_store,
-                        ),
+                        FluidConnectionDir::Input => {
+                            network.add_input(fluid, new_fluid_box_position, storage, pos)
+                        },
+                        FluidConnectionDir::Output => {
+                            network.add_output(fluid, new_fluid_box_position, storage, pos)
+                        },
                     };
 
                     callback(weak_index);
@@ -432,27 +389,16 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                 connected_storages_fluid,
                 new_fluid_box_position,
                 fluid_box_capacity,
-                chest_store,
             );
 
             for (dir, fluid, storage, pos, callback) in connected_storages {
                 let weak_index = match dir {
-                    FluidConnectionDir::Input => new_network.add_input(
-                        fluid,
-                        new_fluid_box_position,
-                        storage,
-                        pos,
-                        inserter_store,
-                        data_store,
-                    ),
-                    FluidConnectionDir::Output => new_network.add_output(
-                        fluid,
-                        new_fluid_box_position,
-                        storage,
-                        pos,
-                        inserter_store,
-                        data_store,
-                    ),
+                    FluidConnectionDir::Input => {
+                        new_network.add_input(fluid, new_fluid_box_position, storage, pos)
+                    },
+                    FluidConnectionDir::Output => {
+                        new_network.add_output(fluid, new_fluid_box_position, storage, pos)
+                    },
                 };
 
                 callback(weak_index);
@@ -517,23 +463,17 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                 [id_the_box_ends_up_with.index]
                 .as_ref()
                 .unwrap()
-                .check_consistency(chest_store),
+                .check_consistency(),
             None => self.empty_fluid_systems[id_the_box_ends_up_with.index]
                 .as_ref()
                 .unwrap()
-                .check_consistency(chest_store),
+                .check_consistency(),
         }
 
         Ok(())
     }
 
-    pub fn remove_fluid_box<RecipeIdxType: IdxTrait>(
-        &mut self,
-        fluid_box_position: Position,
-        chest_store: &mut FullChestStore<ItemIdxType>,
-        inserter_store: &mut StorageStorageInserterStore,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) {
+    pub fn remove_fluid_box(&mut self, fluid_box_position: Position) {
         let old_id = self
             .fluid_box_pos_to_network_id
             .remove(&fluid_box_position)
@@ -543,11 +483,11 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
             Some(fluid) => self.fluid_systems_with_fluid[fluid.into_usize()][old_id.index]
                 .as_mut()
                 .unwrap()
-                .remove_fluid_box(fluid_box_position, chest_store, inserter_store, data_store),
+                .remove_fluid_box(fluid_box_position),
             None => self.empty_fluid_systems[old_id.index]
                 .as_mut()
                 .unwrap()
-                .remove_fluid_box(fluid_box_position, chest_store, inserter_store, data_store),
+                .remove_fluid_box(fluid_box_position),
         };
 
         if delete {
@@ -592,7 +532,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                         assert_eq!(old, Some(old_id));
                     }
                 },
-                FluidSystemState::HasFluid { fluid, chest_id: _ } => {
+                FluidSystemState::HasFluid { fluid } => {
                     let index = self.fluid_systems_with_fluid_holes[fluid.into_usize()].pop();
 
                     let new_index = if let Some(hole_idx) = index {
@@ -630,9 +570,6 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
         &mut self,
         first_fluid_box_position: Position,
         second_fluid_box_position: Position,
-        chest_store: &mut FullChestStore<ItemIdxType>,
-        inserter_store: &mut StorageStorageInserterStore,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         let old_id = *self
             .fluid_box_pos_to_network_id
@@ -643,23 +580,11 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
             Some(fluid) => self.fluid_systems_with_fluid[fluid.into_usize()][old_id.index]
                 .as_mut()
                 .unwrap()
-                .remove_fluid_box_connection(
-                    first_fluid_box_position,
-                    second_fluid_box_position,
-                    chest_store,
-                    inserter_store,
-                    data_store,
-                ),
+                .remove_fluid_box_connection(first_fluid_box_position, second_fluid_box_position),
             None => self.empty_fluid_systems[old_id.index]
                 .as_mut()
                 .unwrap()
-                .remove_fluid_box_connection(
-                    first_fluid_box_position,
-                    second_fluid_box_position,
-                    chest_store,
-                    inserter_store,
-                    data_store,
-                ),
+                .remove_fluid_box_connection(first_fluid_box_position, second_fluid_box_position),
         };
 
         if delete {
@@ -704,7 +629,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                         assert_eq!(old, Some(old_id));
                     }
                 },
-                FluidSystemState::HasFluid { fluid, chest_id: _ } => {
+                FluidSystemState::HasFluid { fluid } => {
                     let index = self.fluid_systems_with_fluid_holes[fluid.into_usize()].pop();
 
                     let new_index = if let Some(hole_idx) = index {
@@ -738,42 +663,49 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
         }
     }
 
-    pub fn update_fluid_conn_if_needed<RecipeIdxType: IdxTrait>(
+    pub fn update_fluid_conn_if_needed(
         &mut self,
         fluid_box_position: Position,
         old_storage: FakeUnionStorage,
-        new_storage: Storage<RecipeIdxType>,
-        inserter_store: &mut StorageStorageInserterStore,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        new_storage: FakeUnionStorage,
     ) {
         let id = self.fluid_box_pos_to_network_id[&fluid_box_position];
 
         match id.fluid {
             Some(fluid) => {
-                self.fluid_systems_with_fluid[fluid.into_usize()][id.index]
+                for inc in self.fluid_systems_with_fluid[fluid.into_usize()][id.index]
                     .as_mut()
                     .unwrap()
-                    .update_fluid_conn_if_needed(
-                        fluid,
-                        old_storage,
-                        new_storage,
-                        inserter_store,
-                        data_store,
-                    );
+                    .hot_data
+                    .incoming_connections
+                    .iter_mut()
+                {
+                    if *inc == old_storage {
+                        *inc = new_storage;
+                    }
+                }
+                for outgoing in self.fluid_systems_with_fluid[fluid.into_usize()][id.index]
+                    .as_mut()
+                    .unwrap()
+                    .hot_data
+                    .outgoing_connections
+                    .iter_mut()
+                {
+                    if *outgoing == old_storage {
+                        *outgoing = new_storage;
+                    }
+                }
             },
             None => {},
         }
     }
 
-    pub fn try_add_output<RecipeIdxType: IdxTrait>(
+    pub fn try_add_output(
         &mut self,
         fluid_box_position: Position,
         conn_fluid: Item<ItemIdxType>,
-        dest: Storage<RecipeIdxType>,
+        dest: FakeUnionStorage,
         dest_pos: Position,
-        chest_store: &mut FullChestStore<ItemIdxType>,
-        inserter_store: &mut StorageStorageInserterStore,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Result<WeakIndex, CannotMixFluidsError<ItemIdxType>> {
         let id = self.fluid_box_pos_to_network_id[&fluid_box_position];
 
@@ -787,28 +719,14 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                 let weak_index = self.fluid_systems_with_fluid[fluid.into_usize()][id.index]
                     .as_mut()
                     .unwrap()
-                    .add_output(
-                        fluid,
-                        fluid_box_position,
-                        dest,
-                        dest_pos,
-                        inserter_store,
-                        data_store,
-                    );
+                    .add_output(fluid, fluid_box_position, dest, dest_pos);
                 Ok(weak_index)
             },
             None => {
                 let mut removed = self.empty_fluid_systems[id.index].take().unwrap();
                 let removed_id = id;
-                removed.set_fluid(conn_fluid, chest_store);
-                let weak_index = removed.add_output(
-                    conn_fluid,
-                    fluid_box_position,
-                    dest,
-                    dest_pos,
-                    inserter_store,
-                    data_store,
-                );
+                removed.set_fluid(conn_fluid);
+                let weak_index = removed.add_output(conn_fluid, fluid_box_position, dest, dest_pos);
 
                 let fluid_box_positions = removed.graph.keys().copied().collect_vec();
 
@@ -847,15 +765,12 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
         }
     }
 
-    pub fn try_add_input<RecipeIdxType: IdxTrait>(
+    pub fn try_add_input(
         &mut self,
         fluid_box_position: Position,
         conn_fluid: Item<ItemIdxType>,
-        source: Storage<RecipeIdxType>,
+        source: FakeUnionStorage,
         source_pos: Position,
-        chest_store: &mut FullChestStore<ItemIdxType>,
-        inserter_store: &mut StorageStorageInserterStore,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Result<WeakIndex, CannotMixFluidsError<ItemIdxType>> {
         let id = self.fluid_box_pos_to_network_id[&fluid_box_position];
 
@@ -869,28 +784,15 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                 let weak_index = self.fluid_systems_with_fluid[fluid.into_usize()][id.index]
                     .as_mut()
                     .unwrap()
-                    .add_input(
-                        fluid,
-                        fluid_box_position,
-                        source,
-                        source_pos,
-                        inserter_store,
-                        data_store,
-                    );
+                    .add_input(fluid, fluid_box_position, source, source_pos);
                 Ok(weak_index)
             },
             None => {
                 let mut removed = self.empty_fluid_systems[id.index].take().unwrap();
                 let removed_id = id;
-                removed.set_fluid(conn_fluid, chest_store);
-                let weak_index = removed.add_input(
-                    conn_fluid,
-                    fluid_box_position,
-                    source,
-                    source_pos,
-                    inserter_store,
-                    data_store,
-                );
+                removed.set_fluid(conn_fluid);
+                let weak_index =
+                    removed.add_input(conn_fluid, fluid_box_position, source, source_pos);
 
                 let fluid_box_positions = removed.graph.keys().copied().collect_vec();
 
@@ -929,19 +831,14 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
         }
     }
 
-    fn merge_fluid_system<RecipeIdxType: IdxTrait>(
+    fn merge_fluid_system(
         &mut self,
         kept_id: FluidSystemId<ItemIdxType>,
         removed_id: FluidSystemId<ItemIdxType>,
 
-        chest_store: &mut FullChestStore<ItemIdxType>,
-        inserter_store: &mut StorageStorageInserterStore,
-
         new_fluid_box_position: Position,
         fluid_box_capacity: u32,
         connected_fluid_box_positions: impl IntoIterator<Item = Position>,
-
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         if kept_id == removed_id {
             warn!("Tried to merge a fluid system with itself!");
@@ -986,9 +883,6 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                     new_fluid_box_position,
                     fluid_box_capacity,
                     connected_fluid_box_positions,
-                    chest_store,
-                    inserter_store,
-                    data_store,
                 ),
             None => self.empty_fluid_systems[kept_id.index]
                 .as_mut()
@@ -998,9 +892,6 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                     new_fluid_box_position,
                     fluid_box_capacity,
                     connected_fluid_box_positions,
-                    chest_store,
-                    inserter_store,
-                    data_store,
                 ),
         }
     }
@@ -1009,10 +900,16 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum FluidSystemEntity {
-    OutgoingPump { inserter_id: InserterIdentifier },
-    IncomingPump { inserter_id: InserterIdentifier },
-    Input { inserter_id: InserterIdentifier },
-    Output { inserter_id: InserterIdentifier },
+    OutgoingPump { inserter_id: PumpID },
+    IncomingPump { inserter_id: PumpID },
+    Input { inserter_id: u32 },
+    Output { inserter_id: u32 },
+}
+
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct PumpID {
+    index: u32,
 }
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
@@ -1025,36 +922,46 @@ pub struct FluidBox {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum FluidSystemState<ItemIdxType: WeakIdxTrait> {
     NoFluid,
-    HasFluid {
-        fluid: Item<ItemIdxType>,
-        chest_id: u32,
-    },
+    HasFluid { fluid: Item<ItemIdxType> },
 }
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct FluidSystem<ItemIdxType: WeakIdxTrait> {
     pub graph: Network<Position, FluidBox, FluidSystemEntity>,
-    pub storage_capacity: u32,
     pub state: FluidSystemState<ItemIdxType>,
+    // TODO: Maybe move the hot_data out of here for better cache efficiency
+    pub hot_data: FluidSystemHotData,
+}
+
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct FluidSystemHotData {
+    pub storage_capacity: u32,
+    current_fluid_level: u32,
+    incoming_connections: Box<[FakeUnionStorage]>,
+    incoming_start_index: u32,
+    outgoing_connections: Box<[FakeUnionStorage]>,
+    outgoing_start_index: u32,
 }
 
 impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
-    pub fn trusted_new_without_fluid_box(
-        fluid: Option<Item<ItemIdxType>>,
-        chest_store: &mut FullChestStore<ItemIdxType>,
-    ) -> Self {
+    pub fn trusted_new_without_fluid_box(fluid: Option<Item<ItemIdxType>>) -> Self {
         let mut ret = Self {
             graph: Network::trusted_new_empty(),
-            storage_capacity: 0,
             state: FluidSystemState::NoFluid,
+            hot_data: FluidSystemHotData {
+                storage_capacity: 0,
+                current_fluid_level: 0,
+                incoming_connections: vec![].into_boxed_slice(),
+                incoming_start_index: 0,
+                outgoing_connections: vec![].into_boxed_slice(),
+                outgoing_start_index: 0,
+            },
         };
 
         if let Some(fluid) = fluid {
-            ret.state = FluidSystemState::HasFluid {
-                fluid,
-                chest_id: chest_store.stores[fluid.into_usize()].add_custom_chest(0),
-            }
+            ret.state = FluidSystemState::HasFluid { fluid }
         }
 
         ret
@@ -1065,7 +972,6 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         fluid: Option<Item<ItemIdxType>>,
         fluid_box_position: Position,
         fluid_box_capacity: u32,
-        chest_store: &mut FullChestStore<ItemIdxType>,
     ) -> Self {
         let mut ret = Self {
             graph: Network::new(
@@ -1074,66 +980,28 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                 },
                 fluid_box_position,
             ),
-            storage_capacity: fluid_box_capacity,
             state: FluidSystemState::NoFluid,
+            hot_data: FluidSystemHotData {
+                storage_capacity: fluid_box_capacity,
+                current_fluid_level: 0,
+                incoming_connections: vec![].into_boxed_slice(),
+                incoming_start_index: 0,
+                outgoing_connections: vec![].into_boxed_slice(),
+                outgoing_start_index: 0,
+            },
         };
         if let Some(fluid) = fluid {
-            ret.state = FluidSystemState::HasFluid {
-                fluid,
-                // TODO: Use fluid atoms to increase max size
-                chest_id: chest_store.stores[fluid.into_usize()].add_custom_chest(
-                    fluid_box_capacity
-                        .try_into()
-                        .expect("Fluid system too large"),
-                ),
-            }
+            ret.state = FluidSystemState::HasFluid { fluid }
         }
 
         ret
     }
 
-    pub fn update_fluid_conn_if_needed<RecipeIdxType: IdxTrait>(
-        &mut self,
-        fluid: Item<ItemIdxType>,
-        old_storage: FakeUnionStorage,
-        new_storage: Storage<RecipeIdxType>,
-        inserter_store: &mut StorageStorageInserterStore,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) {
-        for e in self.graph.weak_components_mut() {
-            match e {
-                FluidSystemEntity::OutgoingPump { .. } => {},
-                FluidSystemEntity::IncomingPump { .. } => {},
-                FluidSystemEntity::Input { inserter_id } => {
-                    *inserter_id = inserter_store.update_inserter_src_if_equal(
-                        fluid,
-                        FLUID_INSERTER_MOVETIME,
-                        *inserter_id,
-                        old_storage,
-                        new_storage,
-                        data_store,
-                    );
-                },
-                FluidSystemEntity::Output { inserter_id } => {
-                    *inserter_id = inserter_store.update_inserter_dest_if_equal(
-                        fluid,
-                        FLUID_INSERTER_MOVETIME,
-                        *inserter_id,
-                        old_storage,
-                        new_storage,
-                        data_store,
-                    );
-                },
-            }
-        }
-    }
-
     fn new_from_graph(
         graph: Network<Position, FluidBox, FluidSystemEntity>,
         old_fluid: Option<Item<ItemIdxType>>,
-        fluid_level_to_distribute: &mut ChestSize,
+        fluid_level_to_distribute: &mut u32,
         fluid_capacity_to_distribute: &mut u32,
-        chest_store: &mut FullChestStore<ItemIdxType>,
     ) -> Self {
         let new_capacity = graph
             .nodes()
@@ -1149,7 +1017,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
 
         // Clamp the fluid in this network to the capacity
         let fluid_left_for_us =
-            ChestSize::try_from(min(our_share_of_fluid.into(), new_capacity)).unwrap();
+            u32::try_from(min(our_share_of_fluid.into(), new_capacity)).unwrap();
         *fluid_level_to_distribute -= fluid_left_for_us;
         *fluid_capacity_to_distribute -= new_capacity;
 
@@ -1162,31 +1030,22 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
 
         Self {
             graph,
-            storage_capacity: new_capacity,
             state: match new_fluid {
-                Some(fluid) => {
-                    // TODO: Use fluid atoms to increase max size
-                    let chest_id = chest_store.stores[fluid.into_usize()]
-                        .add_custom_chest(new_capacity.try_into().expect("Fluid system too large"));
-
-                    chest_store.stores[fluid.into_usize()]
-                        .add_items_to_chest(chest_id, fluid_left_for_us)
-                        .expect(
-                            "Adding the contents of two chests (and their sizes) should always fit",
-                        );
-
-                    FluidSystemState::HasFluid { fluid, chest_id }
-                },
+                Some(fluid) => FluidSystemState::HasFluid { fluid },
                 None => FluidSystemState::NoFluid,
+            },
+            hot_data: FluidSystemHotData {
+                storage_capacity: new_capacity,
+                current_fluid_level: fluid_left_for_us,
+                incoming_connections: vec![].into_boxed_slice(),
+                incoming_start_index: 0,
+                outgoing_connections: vec![].into_boxed_slice(),
+                outgoing_start_index: 0,
             },
         }
     }
 
-    fn set_fluid(
-        &mut self,
-        fluid: Item<ItemIdxType>,
-        chest_store: &mut FullChestStore<ItemIdxType>,
-    ) {
+    fn set_fluid(&mut self, fluid: Item<ItemIdxType>) {
         if let FluidSystemState::HasFluid {
             fluid: our_fluid, ..
         } = self.state
@@ -1194,12 +1053,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
             assert_eq!(our_fluid, fluid);
             return;
         } else {
-            let chest_id = chest_store.stores[fluid.into_usize()].add_custom_chest(
-                self.storage_capacity
-                    .try_into()
-                    .expect("Fluid system too large"),
-            );
-            self.state = FluidSystemState::HasFluid { fluid, chest_id };
+            self.state = FluidSystemState::HasFluid { fluid };
         }
     }
 
@@ -1210,66 +1064,56 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         }
     }
 
-    fn get_chest_id(&self) -> Option<u32> {
-        match self.state {
-            FluidSystemState::NoFluid => None,
-            FluidSystemState::HasFluid { chest_id, .. } => Some(chest_id),
-        }
+    pub fn get_capacity(&self) -> u32 {
+        self.hot_data.storage_capacity
     }
 
-    fn add_output<RecipeIdxType: IdxTrait>(
+    fn add_output(
         &mut self,
         fluid: Item<ItemIdxType>,
         source_pipe_position: Position,
-        dest: Storage<RecipeIdxType>,
+        dest: FakeUnionStorage,
         _dest_pos: Position,
-        inserter_store: &mut StorageStorageInserterStore,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> WeakIndex {
-        let inserter_id = inserter_store.add_ins(
-            fluid,
-            FLUID_INSERTER_MOVETIME,
-            crate::inserter::Storage::Static {
-                static_id: StaticID::Chest as u16,
-                index: self.get_chest_id().unwrap(),
-            },
-            dest,
-            50,
-            data_store,
-        );
+        let id = {
+            // This is take_mut but instead of aborting we have emptied the vec
+            let mut outgoing = std::mem::take(&mut self.hot_data.outgoing_connections).into_vec();
+            outgoing.push(dest);
+            self.hot_data.outgoing_connections = outgoing.into_boxed_slice();
+            self.hot_data.outgoing_connections.len() - 1
+        };
 
         let weak_index = self.graph.add_weak_element(
             source_pipe_position,
-            FluidSystemEntity::Output { inserter_id },
+            FluidSystemEntity::Output {
+                inserter_id: id.try_into().unwrap(),
+            },
         );
 
         weak_index
     }
 
-    fn add_input<RecipeIdxType: IdxTrait>(
+    fn add_input(
         &mut self,
         fluid: Item<ItemIdxType>,
         dest_pipe_position: Position,
-        source: Storage<RecipeIdxType>,
+        source: FakeUnionStorage,
         _source_pos: Position,
-        inserter_store: &mut StorageStorageInserterStore,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> WeakIndex {
-        let inserter_id = inserter_store.add_ins(
-            fluid,
-            FLUID_INSERTER_MOVETIME,
-            source,
-            crate::inserter::Storage::Static {
-                static_id: StaticID::Chest as u16,
-                index: self.get_chest_id().unwrap(),
-            },
-            50,
-            data_store,
-        );
+        let id = {
+            // This is take_mut but instead of aborting we have emptied the vec
+            let mut incoming = std::mem::take(&mut self.hot_data.incoming_connections).into_vec();
+            incoming.push(source);
+            self.hot_data.incoming_connections = incoming.into_boxed_slice();
+            self.hot_data.incoming_connections.len() - 1
+        };
 
-        let weak_index = self
-            .graph
-            .add_weak_element(dest_pipe_position, FluidSystemEntity::Input { inserter_id });
+        let weak_index = self.graph.add_weak_element(
+            dest_pipe_position,
+            FluidSystemEntity::Input {
+                inserter_id: id.try_into().unwrap(),
+            },
+        );
 
         weak_index
     }
@@ -1282,43 +1126,12 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         source_pipe_position: Position,
         dest_fluid_network: &mut Self,
         dest_pipe_position: Position,
-        inserter_store: &mut StorageStorageInserterStore,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (WeakIndex, WeakIndex) {
-        let inserter_id = inserter_store.add_ins(
-            self.get_fluid().unwrap(),
-            FLUID_INSERTER_MOVETIME,
-            crate::inserter::Storage::Static {
-                static_id: StaticID::Chest as u16,
-                index: self.get_chest_id().unwrap(),
-            },
-            crate::inserter::Storage::Static {
-                static_id: StaticID::Chest as u16,
-                index: dest_fluid_network.get_chest_id().unwrap(),
-            },
-            50,
-            data_store,
-        );
-
-        let weak_index_self = self.graph.add_weak_element(
-            source_pipe_position,
-            FluidSystemEntity::OutgoingPump { inserter_id },
-        );
-
-        let weak_index_dest = self.graph.add_weak_element(
-            dest_pipe_position,
-            FluidSystemEntity::IncomingPump { inserter_id },
-        );
-
-        (weak_index_self, weak_index_dest)
+        todo!()
     }
 
-    pub fn remove_output(
-        &mut self,
-        source_pipe_position: Position,
-        weak_index: WeakIndex,
-        inserter_store: &mut StorageStorageInserterStore,
-    ) {
+    pub fn remove_output(&mut self, source_pipe_position: Position, weak_index: WeakIndex) {
         let FluidSystemEntity::Output { inserter_id, .. } = self
             .graph
             .remove_weak_element(source_pipe_position, weak_index)
@@ -1326,20 +1139,32 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
             unreachable!("Tried to remove output with non output weakindex");
         };
 
-        let _inserter_removal_info: () = inserter_store.remove_ins(
-            self.get_fluid()
-                .expect("Fluid Networks without a set fluid cannot have outputs"),
-            FLUID_INSERTER_MOVETIME,
-            inserter_id,
-        );
+        let removed_inserter_id = inserter_id;
+
+        let mut v = std::mem::take(&mut self.hot_data.incoming_connections).into_vec();
+        // TODO: Maybe swap_remove?
+        v.remove(removed_inserter_id as usize);
+        self.hot_data.incoming_connections = v.into_boxed_slice();
+        if self.hot_data.incoming_start_index > removed_inserter_id {
+            self.hot_data.incoming_start_index -= 1;
+        }
+
+        for weak in self.graph.weak_components_mut() {
+            match weak {
+                FluidSystemEntity::Output { inserter_id } => {
+                    if *inserter_id > removed_inserter_id {
+                        // Effect of remove
+                        *inserter_id -= 1;
+                    }
+                },
+                FluidSystemEntity::Input { .. }
+                | FluidSystemEntity::OutgoingPump { .. }
+                | FluidSystemEntity::IncomingPump { .. } => {},
+            }
+        }
     }
 
-    pub fn remove_input(
-        &mut self,
-        dest_pipe_position: Position,
-        weak_index: WeakIndex,
-        inserter_store: &mut StorageStorageInserterStore,
-    ) {
+    pub fn remove_input(&mut self, dest_pipe_position: Position, weak_index: WeakIndex) {
         let FluidSystemEntity::Input { inserter_id, .. } = self
             .graph
             .remove_weak_element(dest_pipe_position, weak_index)
@@ -1347,12 +1172,29 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
             unreachable!("Tried to remove output with non input weakindex");
         };
 
-        let _inserter_removal_info: () = inserter_store.remove_ins(
-            self.get_fluid()
-                .expect("Fluid Networks without a set fluid cannot have inputs"),
-            FLUID_INSERTER_MOVETIME,
-            inserter_id,
-        );
+        let removed_inserter_id = inserter_id;
+
+        let mut v = std::mem::take(&mut self.hot_data.outgoing_connections).into_vec();
+        // TODO: Maybe swap_remove?
+        v.remove(removed_inserter_id as usize);
+        self.hot_data.outgoing_connections = v.into_boxed_slice();
+        if self.hot_data.outgoing_start_index > removed_inserter_id {
+            self.hot_data.outgoing_start_index -= 1;
+        }
+
+        for weak in self.graph.weak_components_mut() {
+            match weak {
+                FluidSystemEntity::Input { inserter_id } => {
+                    if *inserter_id > removed_inserter_id {
+                        // Effect of remove
+                        *inserter_id -= 1;
+                    }
+                },
+                FluidSystemEntity::Output { .. }
+                | FluidSystemEntity::OutgoingPump { .. }
+                | FluidSystemEntity::IncomingPump { .. } => {},
+            }
+        }
     }
 
     fn add_fluid_box_trusted(
@@ -1360,24 +1202,12 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         fluid_box_position: Position,
         fluid_box_capacity: u32,
         fluid_box_connections: impl IntoIterator<Item = Position>,
-        chest_store: &mut FullChestStore<ItemIdxType>,
     ) {
-        self.storage_capacity = self
+        self.hot_data.storage_capacity = self
+            .hot_data
             .storage_capacity
             .checked_add(fluid_box_capacity)
             .expect("TODO: Fluid network size exceeded u32::MAX");
-        if let FluidSystemState::HasFluid { fluid, chest_id } = self.state {
-            let 0 = chest_store.stores[fluid.into_usize()].change_chest_size(
-                chest_id,
-                self.storage_capacity
-                    .try_into()
-                    .expect("Fluid system too large"),
-            ) else {
-                unreachable!(
-                    "We increase the size of the fluid network. It should not be possible remove items with it"
-                );
-            };
-        }
 
         self.graph.add_node_trusted(
             FluidBox {
@@ -1393,25 +1223,13 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         fluid_box_position: Position,
         fluid_box_capacity: u32,
         fluid_box_connections: impl IntoIterator<Item = Position>,
-        chest_store: &mut FullChestStore<ItemIdxType>,
     ) {
         let mut fluid_box_connections = fluid_box_connections.into_iter();
-        self.storage_capacity = self
+        self.hot_data.storage_capacity = self
+            .hot_data
             .storage_capacity
             .checked_add(fluid_box_capacity)
             .expect("TODO: Fluid network size exceeded u32::MAX");
-        if let FluidSystemState::HasFluid { fluid, chest_id } = self.state {
-            let 0 = chest_store.stores[fluid.into_usize()].change_chest_size(
-                chest_id,
-                self.storage_capacity
-                    .try_into()
-                    .expect("Fluid system too large"),
-            ) else {
-                unreachable!(
-                    "We increase the size of the fluid network. It should not be possible remove items with it"
-                );
-            };
-        }
 
         self.graph.add_node(
             FluidBox {
@@ -1422,18 +1240,15 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         );
     }
 
-    fn join<RecipeIdxType: IdxTrait>(
+    fn join(
         &mut self,
         mut other: Self,
         new_fluid_box_position: Position,
         fluid_box_capacity: u32,
         connected_fluid_box_positions: impl IntoIterator<Item = Position>,
-        chest_store: &mut FullChestStore<ItemIdxType>,
-        inserter_store: &mut StorageStorageInserterStore,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        self.check_consistency(chest_store);
-        other.check_consistency(chest_store);
+        self.check_consistency();
+        other.check_consistency();
 
         if !self
             .graph
@@ -1441,11 +1256,12 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
             .into_iter()
             .any(|pos| *pos == new_fluid_box_position)
         {
-            self.storage_capacity += fluid_box_capacity;
+            self.hot_data.storage_capacity += fluid_box_capacity;
         }
-        self.storage_capacity = self
+        self.hot_data.storage_capacity = self
+            .hot_data
             .storage_capacity
-            .checked_add(other.storage_capacity)
+            .checked_add(other.hot_data.storage_capacity)
             .expect("TODO: Fluid network size exceeded u32::MAX");
 
         let mut connected_fluid_box_positions = connected_fluid_box_positions.into_iter();
@@ -1479,107 +1295,55 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                         })
                 );
             },
-            (FluidSystemState::NoFluid, FluidSystemState::HasFluid { fluid, chest_id }) => {
-                let 0 = chest_store.stores[fluid.into_usize()].change_chest_size(
-                    chest_id,
-                    (self.storage_capacity)
-                        .try_into()
-                        .expect("Fluid system too large"),
-                ) else {
-                    unreachable!();
-                };
-
-                self.state = FluidSystemState::HasFluid { fluid, chest_id }
+            (FluidSystemState::NoFluid, FluidSystemState::HasFluid { fluid }) => {
+                self.state = FluidSystemState::HasFluid { fluid }
             },
-            (FluidSystemState::HasFluid { fluid, chest_id }, FluidSystemState::NoFluid) => {
-                let 0 = chest_store.stores[fluid.into_usize()].change_chest_size(
-                    chest_id,
-                    (self.storage_capacity)
-                        .try_into()
-                        .expect("Fluid system too large"),
-                ) else {
-                    unreachable!();
-                };
-            },
+            (FluidSystemState::HasFluid { .. }, FluidSystemState::NoFluid) => {},
             (
-                FluidSystemState::HasFluid {
-                    fluid: fluid_a,
-                    chest_id: chest_id_a,
-                },
-                FluidSystemState::HasFluid {
-                    fluid: fluid_b,
-                    chest_id: chest_id_b,
-                },
+                FluidSystemState::HasFluid { fluid: fluid_a },
+                FluidSystemState::HasFluid { fluid: fluid_b },
             ) => {
                 assert_eq!(fluid_a, fluid_b);
-                let fluid = fluid_a;
 
-                let removed_fluid = chest_store.stores[fluid.into_usize()].remove_chest(chest_id_b);
+                let removed_fluid = other.hot_data.current_fluid_level;
 
-                let 0 = chest_store.stores[fluid.into_usize()].change_chest_size(
-                    chest_id_a,
-                    (self.storage_capacity)
-                        .try_into()
-                        .expect("Fluid system too large"),
-                ) else {
-                    unreachable!();
-                };
-
-                chest_store.stores[fluid.into_usize()]
-                    .add_items_to_chest(chest_id_a, removed_fluid)
-                    .expect(
-                        "Adding the contents of two chests (and their sizes) should always fit",
-                    );
+                self.hot_data.current_fluid_level += removed_fluid;
 
                 for conn in other.graph.weak_components_mut() {
                     match conn {
                         FluidSystemEntity::OutgoingPump { inserter_id } => {
-                            *inserter_id = inserter_store.update_inserter_src(
-                                fluid,
-                                FLUID_INSERTER_MOVETIME,
-                                *inserter_id,
-                                Storage::Static {
-                                    static_id: StaticID::Chest as u16,
-                                    index: chest_id_a,
-                                },
-                                data_store,
-                            );
+                            todo!()
                         },
                         FluidSystemEntity::IncomingPump { inserter_id } => {
-                            *inserter_id = inserter_store.update_inserter_dest(
-                                fluid,
-                                FLUID_INSERTER_MOVETIME,
-                                *inserter_id,
-                                Storage::Static {
-                                    static_id: StaticID::Chest as u16,
-                                    index: chest_id_a,
-                                },
-                                data_store,
-                            );
+                            todo!()
                         },
                         FluidSystemEntity::Input { inserter_id, .. } => {
-                            *inserter_id = inserter_store.update_inserter_dest(
-                                fluid,
-                                FLUID_INSERTER_MOVETIME,
-                                *inserter_id,
-                                Storage::Static {
-                                    static_id: StaticID::Chest as u16,
-                                    index: chest_id_a,
-                                },
-                                data_store,
-                            );
+                            // TODO: This code is terrible and O(n^2) beacuse of reallocations!
+                            let fake = other.hot_data.incoming_connections[*inserter_id as usize];
+                            let id = {
+                                // This is take_mut but instead of aborting we have emptied the vec
+                                let mut incoming =
+                                    std::mem::take(&mut self.hot_data.incoming_connections)
+                                        .into_vec();
+                                incoming.push(fake);
+                                self.hot_data.incoming_connections = incoming.into_boxed_slice();
+                                self.hot_data.incoming_connections.len() - 1
+                            };
+                            *inserter_id = id.try_into().unwrap();
                         },
                         FluidSystemEntity::Output { inserter_id, .. } => {
-                            *inserter_id = inserter_store.update_inserter_src(
-                                fluid,
-                                FLUID_INSERTER_MOVETIME,
-                                *inserter_id,
-                                Storage::Static {
-                                    static_id: StaticID::Chest as u16,
-                                    index: chest_id_a,
-                                },
-                                data_store,
-                            );
+                            // TODO: This code is terrible and O(n^2) beacuse of reallocations!
+                            let fake = other.hot_data.outgoing_connections[*inserter_id as usize];
+                            let id = {
+                                // This is take_mut but instead of aborting we have emptied the vec
+                                let mut outgoing =
+                                    std::mem::take(&mut self.hot_data.outgoing_connections)
+                                        .into_vec();
+                                outgoing.push(fake);
+                                self.hot_data.outgoing_connections = outgoing.into_boxed_slice();
+                                self.hot_data.outgoing_connections.len() - 1
+                            };
+                            *inserter_id = id.try_into().unwrap();
                         },
                     }
                 }
@@ -1599,106 +1363,64 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         );
     }
 
-    fn remove_fluid_box<RecipeIdxType: IdxTrait>(
+    fn remove_fluid_box(
         &mut self,
         fluid_box_position: Position,
-        chest_store: &mut FullChestStore<ItemIdxType>,
-        inserter_store: &mut StorageStorageInserterStore,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> (
-        impl Iterator<Item = Self> + use<RecipeIdxType, ItemIdxType>,
-        bool,
-    ) {
+    ) -> (impl Iterator<Item = Self> + use<ItemIdxType>, bool) {
         let old_fluid = self.get_fluid();
 
         let (removed_fluid_box, connections_to_remove, new_graphs) =
             self.graph.remove_node(fluid_box_position);
 
-        let old_fluid_level = match self.state {
-            FluidSystemState::NoFluid => 0,
-            FluidSystemState::HasFluid { fluid, chest_id } => {
-                let (fluid_level, _max) =
-                    chest_store.stores[fluid.into_usize()].get_chest(chest_id);
-                fluid_level
-            },
-        };
+        let new_graphs = new_graphs.into_iter().flatten().collect_vec();
+
+        let old_fluid_level = self.hot_data.current_fluid_level;
         let mut fluid_distribution = old_fluid_level;
 
-        for (_weak_index, connection_to_remove) in connections_to_remove {
+        for (weak_index, connection_to_remove) in connections_to_remove.into_iter().collect_vec() {
             let fluid = old_fluid.expect("If we have any connections we MUST have a fluid set");
             match connection_to_remove {
                 FluidSystemEntity::OutgoingPump { inserter_id } => {
-                    inserter_store.remove_ins(fluid, FLUID_INSERTER_MOVETIME, inserter_id)
+                    todo!()
                 },
                 FluidSystemEntity::IncomingPump { inserter_id } => {
-                    inserter_store.remove_ins(fluid, FLUID_INSERTER_MOVETIME, inserter_id)
+                    todo!()
                 },
                 FluidSystemEntity::Input { inserter_id, .. } => {
-                    inserter_store.remove_ins(fluid, FLUID_INSERTER_MOVETIME, inserter_id)
+                    self.remove_input(fluid_box_position, weak_index);
                 },
                 FluidSystemEntity::Output { inserter_id, .. } => {
-                    inserter_store.remove_ins(fluid, FLUID_INSERTER_MOVETIME, inserter_id)
+                    self.remove_output(fluid_box_position, weak_index);
                 },
             }
         }
 
         let new_grids: Vec<_> = new_graphs
             .into_iter()
-            .flatten()
             .map(|(graph, _positions)| {
                 let mut new_system = Self::new_from_graph(
                     graph,
                     old_fluid,
                     &mut fluid_distribution,
-                    &mut self.storage_capacity,
-                    chest_store,
+                    &mut self.hot_data.storage_capacity,
                 );
 
                 match new_system.state {
                     FluidSystemState::NoFluid => {},
-                    FluidSystemState::HasFluid { fluid, chest_id } => {
-                        let our_storage = Storage::Static {
-                            static_id: StaticID::Chest as u16,
-                            index: chest_id,
-                        };
-
+                    FluidSystemState::HasFluid { fluid } => {
                         for connection in new_system.graph.weak_components_mut() {
                             match connection {
                                 FluidSystemEntity::OutgoingPump { inserter_id } => {
-                                    *inserter_id = inserter_store.update_inserter_src(
-                                        fluid,
-                                        FLUID_INSERTER_MOVETIME,
-                                        *inserter_id,
-                                        our_storage,
-                                        data_store,
-                                    );
+                                    todo!()
                                 },
                                 FluidSystemEntity::IncomingPump { inserter_id } => {
-                                    *inserter_id = inserter_store.update_inserter_dest(
-                                        fluid,
-                                        FLUID_INSERTER_MOVETIME,
-                                        *inserter_id,
-                                        our_storage,
-                                        data_store,
-                                    );
+                                    todo!()
                                 },
                                 FluidSystemEntity::Input { inserter_id, .. } => {
-                                    *inserter_id = inserter_store.update_inserter_dest(
-                                        fluid,
-                                        FLUID_INSERTER_MOVETIME,
-                                        *inserter_id,
-                                        our_storage,
-                                        data_store,
-                                    );
+                                    todo!()
                                 },
                                 FluidSystemEntity::Output { inserter_id, .. } => {
-                                    *inserter_id = inserter_store.update_inserter_src(
-                                        fluid,
-                                        FLUID_INSERTER_MOVETIME,
-                                        *inserter_id,
-                                        our_storage,
-                                        data_store,
-                                    );
+                                    todo!()
                                 },
                             }
                         }
@@ -1709,67 +1431,52 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
             })
             .collect();
 
-        self.storage_capacity -= removed_fluid_box.capacity;
+        self.hot_data.storage_capacity -= removed_fluid_box.capacity;
 
-        let fluid_left_for_us =
-            ChestSize::try_from(min(fluid_distribution.into(), self.storage_capacity)).unwrap();
+        let fluid_left_for_us = u32::try_from(min(
+            fluid_distribution.into(),
+            self.hot_data.storage_capacity,
+        ))
+        .unwrap();
 
         if self.graph.nodes().into_iter().next().is_none() {
             // We no longer exist
-            assert!(self.storage_capacity == 0);
+            assert!(self.hot_data.storage_capacity == 0);
             assert!(fluid_left_for_us == 0);
-            match self.state {
-                FluidSystemState::NoFluid => {},
-                FluidSystemState::HasFluid { fluid, chest_id } => {
-                    let _ = chest_store.stores[fluid.into_usize()].remove_chest(chest_id);
-                },
-            }
             return (new_grids.into_iter(), true);
         }
 
         match self.state {
             FluidSystemState::NoFluid => {},
-            FluidSystemState::HasFluid { fluid, chest_id } => {
-                chest_store.stores[fluid.into_usize()]
-                    .remove_items_from_chest(chest_id, old_fluid_level - fluid_left_for_us)
-                    .expect("Not enough items in fluid system chest");
-                assert!(fluid_left_for_us <= self.storage_capacity.try_into().unwrap());
-                let 0 = chest_store.stores[fluid.into_usize()]
-                    .change_chest_size(chest_id, self.storage_capacity.try_into().unwrap())
-                else {
-                    unreachable!();
-                };
+            FluidSystemState::HasFluid { fluid } => {
+                // chest_store.stores[fluid.into_usize()]
+                //     .remove_items_from_chest(chest_id, old_fluid_level - fluid_left_for_us)
+                //     .expect("Not enough items in fluid system chest");
+                // assert!(fluid_left_for_us <= self.hot_data.try_into().unwrap());
+                // let 0 = chest_store.stores[fluid.into_usize()]
+                //     .change_chest_size(chest_id, self.storage_capacity.try_into().unwrap())
+                // else {
+                //     unreachable!();
+                // };
+                todo!()
             },
         }
 
         (new_grids.into_iter(), false)
     }
 
-    fn remove_fluid_box_connection<RecipeIdxType: IdxTrait>(
+    fn remove_fluid_box_connection(
         &mut self,
         first_fluid_box_position: Position,
         second_fluid_box_position: Position,
-        chest_store: &mut FullChestStore<ItemIdxType>,
-        inserter_store: &mut StorageStorageInserterStore,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> (
-        impl Iterator<Item = Self> + use<RecipeIdxType, ItemIdxType>,
-        bool,
-    ) {
+    ) -> (impl Iterator<Item = Self> + use<ItemIdxType>, bool) {
         let old_fluid = self.get_fluid();
 
         let new_graphs = self
             .graph
             .remove_edge(first_fluid_box_position, second_fluid_box_position);
 
-        let old_fluid_level = match self.state {
-            FluidSystemState::NoFluid => 0,
-            FluidSystemState::HasFluid { fluid, chest_id } => {
-                let (fluid_level, _max) =
-                    chest_store.stores[fluid.into_usize()].get_chest(chest_id);
-                fluid_level
-            },
-        };
+        let old_fluid_level = self.hot_data.current_fluid_level;
         let mut fluid_distribution = old_fluid_level;
 
         let new_grids: Vec<_> = new_graphs
@@ -1780,55 +1487,25 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                     graph,
                     old_fluid,
                     &mut fluid_distribution,
-                    &mut self.storage_capacity,
-                    chest_store,
+                    &mut self.hot_data.storage_capacity,
                 );
 
                 match new_system.state {
                     FluidSystemState::NoFluid => {},
-                    FluidSystemState::HasFluid { fluid, chest_id } => {
-                        let our_storage = Storage::Static {
-                            static_id: StaticID::Chest as u16,
-                            index: chest_id,
-                        };
-
+                    FluidSystemState::HasFluid { fluid } => {
                         for connection in new_system.graph.weak_components_mut() {
                             match connection {
                                 FluidSystemEntity::OutgoingPump { inserter_id } => {
-                                    *inserter_id = inserter_store.update_inserter_src(
-                                        fluid,
-                                        FLUID_INSERTER_MOVETIME,
-                                        *inserter_id,
-                                        our_storage,
-                                        data_store,
-                                    );
+                                    todo!()
                                 },
                                 FluidSystemEntity::IncomingPump { inserter_id } => {
-                                    *inserter_id = inserter_store.update_inserter_dest(
-                                        fluid,
-                                        FLUID_INSERTER_MOVETIME,
-                                        *inserter_id,
-                                        our_storage,
-                                        data_store,
-                                    );
+                                    todo!()
                                 },
                                 FluidSystemEntity::Input { inserter_id, .. } => {
-                                    *inserter_id = inserter_store.update_inserter_dest(
-                                        fluid,
-                                        FLUID_INSERTER_MOVETIME,
-                                        *inserter_id,
-                                        our_storage,
-                                        data_store,
-                                    );
+                                    todo!()
                                 },
                                 FluidSystemEntity::Output { inserter_id, .. } => {
-                                    *inserter_id = inserter_store.update_inserter_src(
-                                        fluid,
-                                        FLUID_INSERTER_MOVETIME,
-                                        *inserter_id,
-                                        our_storage,
-                                        data_store,
-                                    );
+                                    todo!()
                                 },
                             }
                         }
@@ -1839,41 +1516,31 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
             })
             .collect();
 
-        let fluid_left_for_us =
-            ChestSize::try_from(min(fluid_distribution.into(), self.storage_capacity)).unwrap();
+        let fluid_left_for_us = u32::try_from(min(
+            fluid_distribution.into(),
+            self.hot_data.storage_capacity,
+        ))
+        .unwrap();
 
         if self.graph.nodes().into_iter().next().is_none() {
             // We no longer exist
-            assert!(self.storage_capacity == 0);
+            assert!(self.hot_data.storage_capacity == 0);
             assert!(fluid_left_for_us == 0);
-            match self.state {
-                FluidSystemState::NoFluid => {},
-                FluidSystemState::HasFluid { fluid, chest_id } => {
-                    let _ = chest_store.stores[fluid.into_usize()].remove_chest(chest_id);
-                },
-            }
             return (new_grids.into_iter(), true);
         }
 
         match self.state {
             FluidSystemState::NoFluid => {},
-            FluidSystemState::HasFluid { fluid, chest_id } => {
-                chest_store.stores[fluid.into_usize()]
-                    .remove_items_from_chest(chest_id, old_fluid_level - fluid_left_for_us)
-                    .expect("Not enough items in fluid system chest");
-                assert!(fluid_left_for_us <= self.storage_capacity.try_into().unwrap());
-                let 0 = chest_store.stores[fluid.into_usize()]
-                    .change_chest_size(chest_id, self.storage_capacity.try_into().unwrap())
-                else {
-                    unreachable!();
-                };
+            FluidSystemState::HasFluid { fluid } => {
+                assert!(fluid_left_for_us <= self.hot_data.storage_capacity.try_into().unwrap());
+                self.hot_data.current_fluid_level = fluid_left_for_us;
             },
         }
 
         (new_grids.into_iter(), false)
     }
 
-    pub fn check_consistency(&self, chest_store: &FullChestStore<ItemIdxType>) {
+    pub fn check_consistency(&self) {
         let calculated_capacity: u32 = self
             .graph
             .nodes()
@@ -1881,18 +1548,66 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
             .map(|node| node.capacity)
             .sum();
 
-        assert_eq!(self.storage_capacity, calculated_capacity);
-
-        match self.state {
-            FluidSystemState::NoFluid => {},
-            FluidSystemState::HasFluid { fluid, chest_id } => {
-                let (current_fluid_level, max_fluid_level_chest) =
-                    chest_store.stores[fluid.into_usize()].get_chest(chest_id);
-
-                assert_eq!(self.storage_capacity, u32::from(max_fluid_level_chest));
-
-                assert!(u32::from(current_fluid_level) <= self.storage_capacity);
-            },
-        }
+        assert_eq!(self.hot_data.storage_capacity, calculated_capacity);
     }
+}
+
+pub fn update_fluid_system(
+    hot_data: &mut FluidSystemHotData,
+    storages: SingleItemStorages,
+    grid_size: usize,
+) {
+    // Do outgoing first
+    let mut i = hot_data.outgoing_start_index;
+    for &outgoing_conn in hot_data.outgoing_connections[(hot_data.outgoing_start_index as usize)..]
+        .iter()
+        .chain(hot_data.outgoing_connections[..(hot_data.outgoing_start_index as usize)].iter())
+    {
+        if hot_data.current_fluid_level == 0 {
+            break;
+        }
+        let (max, data) = index_fake_union(storages, outgoing_conn, grid_size);
+        let amount_wanted = *max - *data;
+
+        let amount_extracted = min(
+            amount_wanted,
+            u8::try_from(hot_data.current_fluid_level).unwrap_or(u8::MAX),
+        );
+
+        *data += amount_extracted;
+        hot_data.current_fluid_level -= u32::from(amount_extracted);
+        i += 1;
+    }
+    hot_data.outgoing_start_index = if i > hot_data.outgoing_connections.len() as u32 {
+        i - hot_data.outgoing_connections.len() as u32
+    } else {
+        i
+    };
+
+    let mut i = hot_data.incoming_start_index;
+    for &incoming_conn in hot_data.incoming_connections[(hot_data.incoming_start_index as usize)..]
+        .iter()
+        .chain(hot_data.incoming_connections[..(hot_data.incoming_start_index as usize)].iter())
+    {
+        if hot_data.current_fluid_level == hot_data.storage_capacity {
+            break;
+        }
+        let (_max, data) = index_fake_union(storages, incoming_conn, grid_size);
+        let amount_wanted = *data;
+
+        let amount_extracted = min(
+            amount_wanted,
+            u8::try_from(hot_data.storage_capacity - hot_data.current_fluid_level)
+                .unwrap_or(u8::MAX),
+        );
+
+        *data -= amount_extracted;
+        hot_data.current_fluid_level += u32::from(amount_extracted);
+        i += 1;
+    }
+    hot_data.incoming_start_index = if i > hot_data.incoming_connections.len() as u32 {
+        i - hot_data.incoming_connections.len() as u32
+    } else {
+        i
+    };
 }

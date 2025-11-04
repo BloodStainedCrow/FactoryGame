@@ -415,22 +415,24 @@ fn try_attaching_fluids<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     sim_state.factory.fluid_store.try_add_output(
                                         *pos,
                                         conn_fluid,
-                                        conn_storage,
+                                        FakeUnionStorage::from_storage_with_statics_at_zero(
+                                            conn_fluid,
+                                            conn_storage,
+                                            data_store,
+                                        ),
                                         conn_pos,
-                                        &mut sim_state.factory.chests,
-                                        &mut sim_state.factory.storage_storage_inserters,
-                                        data_store,
                                     )
                                 },
                                 FluidConnectionDir::Input => {
                                     sim_state.factory.fluid_store.try_add_input(
                                         *pos,
                                         conn_fluid,
-                                        conn_storage,
+                                        FakeUnionStorage::from_storage_with_statics_at_zero(
+                                            conn_fluid,
+                                            conn_storage,
+                                            data_store,
+                                        ),
                                         conn_pos,
-                                        &mut sim_state.factory.chests,
-                                        &mut sim_state.factory.storage_storage_inserters,
-                                        data_store,
                                     )
                                 },
                             };
@@ -4493,12 +4495,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
             match &entity {
                 Entity::FluidTank { pos, .. } => {
-                    sim_state.factory.fluid_store.remove_fluid_box(
-                        *pos,
-                        &mut sim_state.factory.chests,
-                        &mut sim_state.factory.storage_storage_inserters,
-                        data_store,
-                    );
+                    sim_state.factory.fluid_store.remove_fluid_box(*pos);
                 },
                 Entity::Beacon { pole_position, .. } => {
                     if let Some((pole_pos, idx)) = *pole_position {

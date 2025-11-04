@@ -14,6 +14,7 @@ use crate::join_many::join;
 use crate::liquid::FluidConnectionDir;
 use crate::liquid::FluidSystemId;
 use crate::liquid::connection_logic::can_fluid_tanks_connect_to_single_connection;
+use crate::liquid::update_fluid_system;
 use crate::mining_drill::FullOreStore;
 use crate::par_generation::BoundingBox;
 use crate::par_generation::ParGenerateInfo;
@@ -984,7 +985,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                             .pure_to_pure_inserters
                             .iter_mut(),
                     )
-                    .zip(self.storage_storage_inserters.inserters.iter_mut())
+                    .zip(self.storage_storage_inserters.inserters.iter_mut().zip(self.fluid_store.fluid_systems_with_fluid.iter_mut()))
                     .zip(self.item_times.iter_mut())
                     .enumerate()
                     // Queue long running items first, so we do not end up waiting for a long running item at the end, which we could have started early on
@@ -996,7 +997,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                             (
                                 (
                                     ((belt_store, item_storages), pure_to_pure_inserters),
-                                    storage_storage_inserter_stores,
+                                    (storage_storage_inserter_stores, fluid_store),
                                 ),
                                 avg_time,
                             ),
@@ -1033,12 +1034,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                             belt.update_inserters(item_storages, grid_size);
                                         }
                                     }
-                                    // {
-                                    //     profiling::scope!("Update BeltStorageInserters");
-                                    //     for belt in &mut belt_store.belts {
-                                    //         belt.update_inserters(item_storages, grid_size);
-                                    //     }
-                                    // }
 
                                     {
                                         profiling::scope!("Update PurePure Inserters");
@@ -1100,31 +1095,46 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                 }
 
                                 {
-                                    profiling::scope!(
-                                        "StorageStorage Inserter Update",
-                                        format!("Item: {}", data_store.item_display_names[item_id])
-                                            .as_str()
-                                    );
-
+                                    
                                     let item = Item {
                                         id: item_id.try_into().unwrap(),
                                     };
-
+                                    
                                     let grid_size = grid_size(item, data_store);
                                     let num_recipes = num_recipes(item, data_store);
-
-                                    for (ins_store,) in storage_storage_inserter_stores.values_mut()
-                                    {
+                                    
+                                    if data_store.item_is_fluid[item_id] {
+                                        profiling::scope!(
+                                            "FluidSystem Update",
+                                            format!("Item: {}", data_store.item_display_names[item_id])
+                                                .as_str()
+                                        );
+                                        for fluid_system in fluid_store {
+                                            // FIXME: Switch to holes
+                                            if let Some(fluid_system) = fluid_system {
+                                                update_fluid_system(&mut fluid_system.hot_data, item_storages, grid_size);
+                                                
+                                            }
+                                        }
+                                    } else {
                                         profiling::scope!(
                                             "StorageStorage Inserter Update",
-                                            format!("Movetime: {}", ins_store.movetime).as_str()
+                                            format!("Item: {}", data_store.item_display_names[item_id])
+                                                .as_str()
                                         );
-                                        ins_store.update(
-                                            item_id,
-                                            item_storages,
-                                            grid_size,
-                                            current_tick,
-                                        );
+                                        for (ins_store,) in storage_storage_inserter_stores.values_mut()
+                                        {
+                                            profiling::scope!(
+                                                "StorageStorage Inserter Update",
+                                                format!("Movetime: {}", ins_store.movetime).as_str()
+                                            );
+                                            ins_store.update(
+                                                item_id,
+                                                item_storages,
+                                                grid_size,
+                                                current_tick,
+                                            );
+                                        }
                                     }
                                 }
 
@@ -1757,7 +1767,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                             crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                             crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
                                                         }.translate(fluid, data_store).unwrap();
-                                                        game_state.simulation_state.factory.fluid_store.update_fluid_conn_if_needed(*pos, old_storage, new_storage, &mut game_state.simulation_state.factory.storage_storage_inserters, data_store);
+                                                        game_state.simulation_state.factory.fluid_store.update_fluid_conn_if_needed(*pos, old_storage, FakeUnionStorage::from_storage_with_statics_at_zero(fluid, new_storage, data_store));
                                                     }
                                                 },
 
@@ -2282,14 +2292,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                         (
                                                             fluid_dir,
                                                             item,
-                                                            Storage::Assembler {
+                                                            FakeUnionStorage::from_storage_with_statics_at_zero(item, Storage::Assembler {
                                                                 grid: id.grid,
                                                                 index: id.assembler_index,
                                                                 recipe_idx_with_this_item:
                                                                     data_store
                                                                         .recipe_to_translated_index
                                                                         [&(id.recipe, item)],
-                                                            },
+                                                            }, data_store) ,
                                                             dest_conn,
                                                             Box::new(|_weak_index: WeakIndex| {})
                                                                 as Box<dyn FnOnce(WeakIndex) -> ()>,
@@ -2377,12 +2387,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         data_store.fluid_tank_infos[usize::from(ty)].capacity,
                                         connecting_fluid_box_positions.map(|v| v.0),
                                         in_out_connections,
-                                        &mut game_state.simulation_state.factory.chests,
-                                        &mut game_state
-                                            .simulation_state
-                                            .factory
-                                            .storage_storage_inserters,
-                                        data_store,
                                     );
                                 match ret {
                                     Ok(_id) => {
