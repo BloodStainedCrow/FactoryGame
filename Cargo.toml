@@ -1,7 +1,7 @@
 # cargo-features = ["codegen-backend"]
 [package]
 name = "factory"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.85"
 build = "build.rs"
@@ -91,9 +91,6 @@ ecolor = { git = "https://github.com/BloodStainedCrow/egui", rev = "4e11a02" }
 egui-wgpu = { git = "https://github.com/BloodStainedCrow/egui", rev = "4e11a02" }
 egui_graphs = { git = "https://github.com/BloodStainedCrow/egui_graphs", branch = "tree_layout" }
 petgraph = { git = "https://github.com/BloodStainedCrow/petgraph", branch = "stable_graph_node_weights_mut_indexed" }
-
-[patch.'https://github.com/BloodStainedCrow/egui-show-info']
-egui-show-info = { path = "../egui-show-info" }
 
 [lints.rust]
 

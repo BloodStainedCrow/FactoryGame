@@ -1377,6 +1377,7 @@ dependencies = [
 [[package]]
 name = "egui-show-info"
 version = "0.1.0"
+source = "git+https://github.com/BloodStainedCrow/egui-show-info#0b1a1a7e6b2b75935b7bb7710de4fc4900a35fa9"
 dependencies = [
  "bimap",
  "egui",
@@ -1388,7 +1389,7 @@ dependencies = [
 [[package]]
 name = "egui-show-info-derive"
 version = "0.1.0"
-source = "git+https://github.com/BloodStainedCrow/egui-show-info#606e1d3176773dc0df6965580a84c5ba2b2b7cee"
+source = "git+https://github.com/BloodStainedCrow/egui-show-info#0b1a1a7e6b2b75935b7bb7710de4fc4900a35fa9"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1691,7 +1692,7 @@ dependencies = [
 
 [[package]]
 name = "factory"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "bimap",
