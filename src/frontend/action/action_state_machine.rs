@@ -1,10 +1,13 @@
 use std::{
+    array,
+    borrow::Cow,
     cmp::{max, min},
     collections::{HashMap, HashSet},
     marker::PhantomData,
     num::NonZero,
 };
 
+use egui::Layout;
 use egui_graphs::{DefaultEdgeShape, DefaultNodeShape, Graph};
 use itertools::Itertools;
 use log::{error, warn};
@@ -38,6 +41,18 @@ const MAP_VIEW_PAN_SPEED: f32 = 0.05;
 
 const MIN_ZOOM_WIDTH: f32 = 1.0;
 pub const WIDTH_PER_LEVEL: usize = 16;
+
+#[derive(Debug, Clone)]
+pub struct Hotbar<ItemIdxType: WeakIdxTrait> {
+    slots: [Option<HeldObject<ItemIdxType>>; 10],
+}
+impl<ItemIdxType: IdxTrait> Default for Hotbar<ItemIdxType> {
+    fn default() -> Self {
+        Self {
+            slots: array::from_fn(|_| None),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
@@ -84,6 +99,9 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     pub mouse_wheel_sensitivity: f32,
 
     pub current_fork_save_in_progress: Option<ForkSaveInfo>,
+
+    pub hotbar: Hotbar<ItemIdxType>,
+    pub hotbar_window_open: bool,
 }
 
 #[derive(Debug)]
@@ -144,7 +162,7 @@ pub enum ActionStateMachineState<ItemIdxType: WeakIdxTrait> {
     DeleteDragInProgress { start_pos: Position },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum HeldObject<ItemIdxType: WeakIdxTrait> {
     Tile(FloorTile),
     // TODO: PlaceEntityType is not quite right for this case
@@ -203,6 +221,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             mouse_wheel_sensitivity: 1.0,
 
             current_fork_save_in_progress: None,
+
+            hotbar: Hotbar::default(),
+            hotbar_window_open: true,
         }
     }
 
@@ -516,106 +537,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 Input::MouseMove(x, y) => {
                     self.current_mouse_pos = (x, y);
 
-                    match &mut self.state {
-                        ActionStateMachineState::CtrlCPressed | ActionStateMachineState::CopyDragInProgress { start_pos:_ } => {},
-                        ActionStateMachineState::DelPressed | ActionStateMachineState::DeleteDragInProgress { start_pos:_ } => {},
-
-                        ActionStateMachineState::Idle | ActionStateMachineState::Viewing(_) => {},
-                        ActionStateMachineState::Holding(held_object) => match held_object {
-                            HeldObject::Blueprint(_) => {},
-
-                            HeldObject::Tile(_floor_tile) => {},
-                            HeldObject::Entity(place_entity_type) => match place_entity_type {
-                                PlaceEntityType::Assembler {
-                                                                pos: position,
-                                                                ty: _,
-                                                                rotation: _, ..
-                                                            } => {
-                                                                *position = Self::player_mouse_to_tile(
-                                                                    self.zoom_level,
-                                                                    self.map_view_info.unwrap_or(self.local_player_pos),
-                                                                    self.current_mouse_pos,
-                                                                );
-                                                            },
-                                PlaceEntityType::Inserter { pos, dir: _, filter: _, ty: _, .. } => {
-                                                                *pos = Self::player_mouse_to_tile(
-                                                                    self.zoom_level,
-                                                                    self.map_view_info.unwrap_or(self.local_player_pos),
-                                                                    self.current_mouse_pos,
-                                                                );
-                                                            },
-                                PlaceEntityType::Belt { pos, ty: _, direction: _ } => {
-                                                                *pos = Self::player_mouse_to_tile(
-                                                                    self.zoom_level,
-                                                                    self.map_view_info.unwrap_or(self.local_player_pos),
-                                                                    self.current_mouse_pos,
-                                                                );
-                                                            },
-                                                    PlaceEntityType::Underground { pos, ty: _, direction: _, underground_dir: _ } => {
-                                                        *pos = Self::player_mouse_to_tile(
-                                                            self.zoom_level,
-                                                            self.map_view_info.unwrap_or(self.local_player_pos),
-                                                            self.current_mouse_pos,
-                                                        );
-                                                    },
-                                PlaceEntityType::PowerPole { pos, ty: _ } => {
-                                                                *pos = Self::player_mouse_to_tile(
-                                                                    self.zoom_level,
-                                                                    self.map_view_info.unwrap_or(self.local_player_pos),
-                                                                    self.current_mouse_pos,
-                                                                );
-                                                            },
-                                PlaceEntityType::Splitter { pos, direction: _, ty: _, in_mode: _, out_mode: _ } => {
-                                                                *pos = Self::player_mouse_to_tile(
-                                                                    self.zoom_level,
-                                                                    self.map_view_info.unwrap_or(self.local_player_pos),
-                                                                    self.current_mouse_pos,
-                                                                );
-                                                            },
-                                PlaceEntityType::Chest { pos, .. } => {*pos = Self::player_mouse_to_tile(
-                                                                self.zoom_level,
-                                                                self.map_view_info.unwrap_or(self.local_player_pos),
-                                                                self.current_mouse_pos,
-                                                            );},
-                                PlaceEntityType::SolarPanel { pos, ty: _ } => {*pos = Self::player_mouse_to_tile(
-                                                                self.zoom_level,
-                                                                self.map_view_info.unwrap_or(self.local_player_pos),
-                                                                self.current_mouse_pos,
-                                                            );},
-                                PlaceEntityType::Accumulator { pos, ty: _ } => {*pos = Self::player_mouse_to_tile(
-                                                                self.zoom_level,
-                                                                self.map_view_info.unwrap_or(self.local_player_pos),
-                                                                self.current_mouse_pos,
-                                                            );},
-                                PlaceEntityType::Lab { pos, ty: _, .. } => {*pos = Self::player_mouse_to_tile(
-                                                                self.zoom_level,
-                                                                self.map_view_info.unwrap_or(self.local_player_pos),
-                                                                self.current_mouse_pos,
-                                                            );},
-                                PlaceEntityType::Beacon { ty: _, pos, .. } => {*pos = Self::player_mouse_to_tile(
-                                    self.zoom_level,
-                                    self.map_view_info.unwrap_or(self.local_player_pos),
-                                    self.current_mouse_pos,
-                                );},
-                                PlaceEntityType::FluidTank { ty: _, pos, rotation: _  } => {*pos = Self::player_mouse_to_tile(
-                                    self.zoom_level,
-                                    self.map_view_info.unwrap_or(self.local_player_pos),
-                                    self.current_mouse_pos,
-                                );},
-                                PlaceEntityType::MiningDrill { ty: _, pos, rotation: _  } => {*pos = Self::player_mouse_to_tile(
-                                    self.zoom_level,
-                                    self.map_view_info.unwrap_or(self.local_player_pos),
-                                    self.current_mouse_pos,
-                                );},
-
-                            },
-                            HeldObject::OrePlacement { .. } => {},
-                        },
-                        ActionStateMachineState::Deconstructing(position, timer) =>{
-                            //todo!("Check if we are still over the same thing")
-                            },
-                    }
-
                     vec![]
                 },
                 Input::KeyPress(code) => {
@@ -887,22 +808,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 vec![]
             },
 
-            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key1) => {
-                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::Splitter {
-                        ty: 0,
-                        pos: Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        ),
-                        direction: Dir::North,
-                        in_mode: None,
-                        out_mode: None,
-                    },
-                ));
+            (_, Key::E) => {
+                self.hotbar_window_open = !self.hotbar_window_open;
                 vec![]
             },
+
             (
                 ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Assembler {
                     pos,
@@ -918,51 +828,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         rotation: rotation.turn_right(),
                     },
                 ));
-                vec![]
-            },
-            (
-                ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Assembler {
-                    pos,
-                    ty,
-                    rotation,
-                })),
-                Key::Key2,
-            ) => {
-                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::Assembler {
-                        pos: *pos,
-                        ty: (*ty + 1) % data_store.assembler_info.len() as u8,
-                        rotation: *rotation,
-                    },
-                ));
-                vec![]
-            },
-            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key2) => {
-                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::Assembler {
-                        pos: Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        ),
-                        // TODO:
-                        ty: 0,
-                        rotation: Dir::North,
-                    },
-                ));
-                vec![]
-            },
-            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key3) => {
-                self.state =
-                    ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Belt {
-                        pos: Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        ),
-                        direction: Dir::North,
-                        ty: 0,
-                    }));
                 vec![]
             },
             (
@@ -1026,246 +891,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             },
             (
                 ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Inserter {
-                    ty,
-                    pos,
-                    dir,
-                    filter,
-                    user_movetime,
-                })),
-                Key::Key4,
-            ) => {
-                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::Inserter {
-                        ty: (*ty + 1) % (data_store.inserter_infos.len() as u8),
-                        pos: *pos,
-                        dir: *dir,
-                        filter: *filter,
-                        user_movetime: *user_movetime,
-                    },
-                ));
-                vec![]
-            },
-            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key4) => {
-                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::Inserter {
-                        pos: Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        ),
-                        dir: Dir::North,
-                        // TODO:
-                        filter: None,
-
-                        ty: 0,
-                        user_movetime: None,
-                    },
-                ));
-                vec![]
-            },
-            (
-                ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::PowerPole {
-                    pos,
-                    ty,
-                })),
-                Key::Key5,
-            ) => {
-                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::PowerPole {
-                        pos: *pos,
-                        ty: (*ty + 1) % data_store.power_pole_data.len() as u8,
-                    },
-                ));
-                vec![]
-            },
-            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key5) => {
-                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::PowerPole {
-                        pos: Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        ),
-                        ty: 0,
-                    },
-                ));
-                vec![]
-            },
-            // (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key6) => {
-            //     self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-            //         PlaceEntityType::FluidTank {
-            //             ty: 0,
-            //             pos: Self::player_mouse_to_tile(
-            //                 self.zoom_level,
-            //                 self.map_view_info.unwrap_or(self.local_player_pos),
-            //                 self.current_mouse_pos,
-            //             ),
-            //             rotation: Dir::North,
-            //         },
-            //     ));
-            //     vec![]
-            // },
-            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key6) => {
-                self.state =
-                    ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Chest {
-                        ty: 0,
-                        pos: Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        ),
-                    }));
-                vec![]
-            },
-            (
-                ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::Underground {
-                        pos,
-                        direction,
-                        ty,
-                        underground_dir,
-                    },
-                )),
-                Key::Key7,
-            ) => {
-                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::Underground {
-                        pos: *pos,
-                        direction: *direction,
-                        ty: dbg!((*ty + 1) % u8::try_from(data_store.belt_infos.len()).unwrap()),
-                        underground_dir: *underground_dir,
-                    },
-                ));
-                vec![]
-            },
-            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key7) => {
-                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::Underground {
-                        pos: Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        ),
-                        ty: 0,
-                        direction: Dir::North,
-                        underground_dir: UndergroundDir::Entrance,
-                    },
-                ));
-                vec![]
-            },
-            // (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key7) => {
-            //     self.state =
-            //         ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Chest {
-            //             pos: Self::player_mouse_to_tile(
-            //                 self.zoom_level,
-            //                 self.map_view_info.unwrap_or(self.local_player_pos),
-            //                 self.current_mouse_pos,
-            //             ),
-            //             ty: 0,
-            //         }));
-            //     vec![]
-            // },
-            (
-                ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::SolarPanel {
-                    pos,
-                    ty,
-                })),
-                Key::Key8,
-            ) => {
-                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::Accumulator {
-                        pos: *pos,
-                        ty: (*ty + 1) % data_store.solar_panel_info.len() as u8,
-                    },
-                ));
-                vec![]
-            },
-            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key8) => {
-                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::Accumulator {
-                        pos: Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        ),
-                        ty: 0,
-                    },
-                ));
-                vec![]
-            },
-            // (
-            //     ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::FluidTank {
-            //         pos,
-            //         ty,
-            //         rotation,
-            //     })),
-            //     Key::Key9,
-            // ) => {
-            //     self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-            //         PlaceEntityType::FluidTank {
-            //             pos: *pos,
-            //             ty: (*ty + 1) % data_store.fluid_tank_infos.len() as u8,
-            //             rotation: *rotation,
-            //         },
-            //     ));
-            //     vec![]
-            // },
-            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key9) => {
-                self.state =
-                    ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Lab {
-                        ty: 0,
-                        pos: Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        ),
-                    }));
-                vec![]
-            },
-            // (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key0) => {
-            //     self.state =
-            //         ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Beacon {
-            //             pos: Self::player_mouse_to_tile(
-            //                 self.zoom_level,
-            //                 self.map_view_info.unwrap_or(self.local_player_pos),
-            //                 self.current_mouse_pos,
-            //             ),
-            //             ty: 0,
-            //         }));
-            //     vec![]
-            // },
-            (
-                ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::MiningDrill { pos, ty, rotation },
-                )),
-                Key::Key0,
-            ) => {
-                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::MiningDrill {
-                        pos: *pos,
-                        // FIXME: Increase the ty
-                        ty: 0,
-                        rotation: *rotation,
-                    },
-                ));
-                vec![]
-            },
-            (ActionStateMachineState::Idle | ActionStateMachineState::Holding(_), Key::Key0) => {
-                self.state = ActionStateMachineState::Holding(HeldObject::Entity(
-                    PlaceEntityType::MiningDrill {
-                        pos: Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        ),
-                        ty: 0,
-                        rotation: Dir::North,
-                    },
-                ));
-                vec![]
-            },
-            (
-                ActionStateMachineState::Holding(HeldObject::Entity(PlaceEntityType::Inserter {
                     pos,
                     dir,
                     filter,
@@ -1303,27 +928,71 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 vec![]
             },
 
+            (_, Key::Key1) => {
+                if let Some(slot) = self.hotbar.slots[0].clone() {
+                    self.state = ActionStateMachineState::Holding(slot);
+                }
+                vec![]
+            },
+            (_, Key::Key2) => {
+                if let Some(slot) = self.hotbar.slots[1].clone() {
+                    self.state = ActionStateMachineState::Holding(slot);
+                }
+                vec![]
+            },
+            (_, Key::Key3) => {
+                if let Some(slot) = self.hotbar.slots[2].clone() {
+                    self.state = ActionStateMachineState::Holding(slot);
+                }
+                vec![]
+            },
+            (_, Key::Key4) => {
+                if let Some(slot) = self.hotbar.slots[3].clone() {
+                    self.state = ActionStateMachineState::Holding(slot);
+                }
+                vec![]
+            },
+            (_, Key::Key5) => {
+                if let Some(slot) = self.hotbar.slots[4].clone() {
+                    self.state = ActionStateMachineState::Holding(slot);
+                }
+                vec![]
+            },
+            (_, Key::Key6) => {
+                if let Some(slot) = self.hotbar.slots[5].clone() {
+                    self.state = ActionStateMachineState::Holding(slot);
+                }
+                vec![]
+            },
+            (_, Key::Key7) => {
+                if let Some(slot) = self.hotbar.slots[6].clone() {
+                    self.state = ActionStateMachineState::Holding(slot);
+                }
+                vec![]
+            },
+            (_, Key::Key8) => {
+                if let Some(slot) = self.hotbar.slots[7].clone() {
+                    self.state = ActionStateMachineState::Holding(slot);
+                }
+                vec![]
+            },
+            (_, Key::Key9) => {
+                if let Some(slot) = self.hotbar.slots[8].clone() {
+                    self.state = ActionStateMachineState::Holding(slot);
+                }
+                vec![]
+            },
+            (_, Key::Key0) => {
+                if let Some(slot) = self.hotbar.slots[9].clone() {
+                    self.state = ActionStateMachineState::Holding(slot);
+                }
+                vec![]
+            },
+
             (_, Key::Del) => {
                 self.state = ActionStateMachineState::DelPressed;
 
                 vec![]
-            },
-
-            (ActionStateMachineState::Viewing(pos), Key::Key1) => {
-                let chunk = world
-                    .get_chunk_for_tile(*pos)
-                    .expect("Viewing position out of bounds");
-                if matches!(
-                    chunk.get_entity_at(*pos, data_store),
-                    Some(Entity::Assembler { .. })
-                ) {
-                    vec![ActionType::SetRecipe(SetRecipeInfo {
-                        pos: *pos,
-                        recipe: Recipe { id: 0.into() },
-                    })]
-                } else {
-                    vec![]
-                }
             },
 
             (_, Key::P) => {
@@ -1409,6 +1078,151 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
     {
+        match &mut self.state {
+            ActionStateMachineState::CtrlCPressed
+            | ActionStateMachineState::CopyDragInProgress { start_pos: _ } => {},
+            ActionStateMachineState::DelPressed
+            | ActionStateMachineState::DeleteDragInProgress { start_pos: _ } => {},
+
+            ActionStateMachineState::Idle | ActionStateMachineState::Viewing(_) => {},
+            ActionStateMachineState::Holding(held_object) => match held_object {
+                HeldObject::Blueprint(_) => {},
+
+                HeldObject::Tile(_floor_tile) => {},
+                HeldObject::Entity(place_entity_type) => match place_entity_type {
+                    PlaceEntityType::Assembler {
+                        pos: position,
+                        ty: _,
+                        rotation: _,
+                        ..
+                    } => {
+                        *position = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Inserter {
+                        pos,
+                        dir: _,
+                        filter: _,
+                        ty: _,
+                        ..
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Belt {
+                        pos,
+                        ty: _,
+                        direction: _,
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Underground {
+                        pos,
+                        ty: _,
+                        direction: _,
+                        underground_dir: _,
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::PowerPole { pos, ty: _ } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Splitter {
+                        pos,
+                        direction: _,
+                        ty: _,
+                        in_mode: _,
+                        out_mode: _,
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Chest { pos, .. } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::SolarPanel { pos, ty: _ } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Accumulator { pos, ty: _ } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Lab { pos, ty: _, .. } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Beacon { ty: _, pos, .. } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::FluidTank {
+                        ty: _,
+                        pos,
+                        rotation: _,
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::MiningDrill {
+                        ty: _,
+                        pos,
+                        rotation: _,
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                },
+                HeldObject::OrePlacement { .. } => {},
+            },
+            ActionStateMachineState::Deconstructing(position, timer) => {
+                //todo!("Check if we are still over the same thing")
+            },
+        }
+
         let mut actions = Vec::new();
 
         if let ActionStateMachineState::Deconstructing(pos, timer) = &mut self.state {
@@ -1468,5 +1282,231 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         }
 
         actions.into_iter()
+    }
+
+    pub fn hotbar_window(
+        &mut self,
+        ui: &mut egui::Ui,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        // Possible Actions
+        ui.columns_const(|uis: &mut [egui::Ui; 12]| {
+            for (i, ui) in uis.iter_mut().enumerate() {
+                let ty_count = match i {
+                    0 => data_store.assembler_info.len(),
+                    1 => data_store.power_pole_data.len(),
+                    2 => data_store.chest_names.len(),
+                    3 => data_store.beacon_info.len(),
+                    4 => data_store.fluid_tank_infos.len(),
+                    5 => data_store.accumulator_info.len(),
+                    6 => data_store.belt_infos.len(),
+                    7 => data_store.belt_infos.len(),
+                    8 => data_store.belt_infos.len(),
+                    9 => data_store.solar_panel_info.len(),
+                    10 => data_store.lab_info.len(),
+                    11 => data_store.inserter_infos.len(),
+
+                    _ => unreachable!(),
+                } as u8;
+
+                for ty in 0..ty_count {
+                    let source_id = egui::Id::new(("hotbase_source", i, ty));
+                    let (item, name): (HeldObject<ItemIdxType>, _) = match i {
+                        0 => (
+                            HeldObject::Entity(PlaceEntityType::Assembler {
+                                pos: Position { x: 0, y: 0 },
+                                ty,
+                                rotation: Dir::North,
+                            }),
+                            data_store.assembler_info[ty as usize].display_name.as_str(),
+                        ),
+                        1 => (
+                            HeldObject::Entity(PlaceEntityType::PowerPole {
+                                pos: Position { x: 0, y: 0 },
+                                ty,
+                            }),
+                            &data_store.power_pole_data[ty as usize].display_name,
+                        ),
+                        2 => (
+                            HeldObject::Entity(PlaceEntityType::Chest {
+                                pos: Position { x: 0, y: 0 },
+                                ty,
+                            }),
+                            &*data_store.chest_names[ty as usize],
+                        ),
+                        3 => (
+                            HeldObject::Entity(PlaceEntityType::Beacon {
+                                pos: Position { x: 0, y: 0 },
+                                ty,
+                            }),
+                            &data_store.beacon_info[ty as usize].display_name,
+                        ),
+                        4 => (
+                            HeldObject::Entity(PlaceEntityType::FluidTank {
+                                pos: Position { x: 0, y: 0 },
+                                ty,
+                                rotation: Dir::North,
+                            }),
+                            &data_store.fluid_tank_infos[ty as usize].display_name,
+                        ),
+                        5 => (
+                            HeldObject::Entity(PlaceEntityType::Accumulator {
+                                pos: Position { x: 0, y: 0 },
+                                ty,
+                            }),
+                            &data_store.accumulator_info[ty as usize].display_name,
+                        ),
+                        6 => (
+                            HeldObject::Entity(PlaceEntityType::Belt {
+                                pos: Position { x: 0, y: 0 },
+                                ty,
+                                direction: Dir::North,
+                            }),
+                            &data_store.belt_infos[ty as usize].display_name,
+                        ),
+                        7 => (
+                            HeldObject::Entity(PlaceEntityType::Underground {
+                                pos: Position { x: 0, y: 0 },
+                                ty,
+                                direction: Dir::North,
+                                underground_dir: UndergroundDir::Entrance,
+                            }),
+                            &format!(
+                                "{} Underground",
+                                data_store.belt_infos[ty as usize].display_name
+                            ),
+                        ),
+                        8 => (
+                            HeldObject::Entity(PlaceEntityType::Splitter {
+                                pos: Position { x: 0, y: 0 },
+                                ty,
+                                direction: Dir::North,
+                                in_mode: None,
+                                out_mode: None,
+                            }),
+                            &format!(
+                                "{} Splitter",
+                                data_store.belt_infos[ty as usize].display_name
+                            ),
+                        ),
+                        9 => (
+                            HeldObject::Entity(PlaceEntityType::SolarPanel {
+                                pos: Position { x: 0, y: 0 },
+                                ty,
+                            }),
+                            &data_store.solar_panel_info[ty as usize].display_name,
+                        ),
+                        10 => (
+                            HeldObject::Entity(PlaceEntityType::Lab {
+                                pos: Position { x: 0, y: 0 },
+                                ty,
+                            }),
+                            &data_store.lab_info[ty as usize].display_name,
+                        ),
+                        11 => (
+                            HeldObject::Entity(PlaceEntityType::Inserter {
+                                pos: Position { x: 0, y: 0 },
+                                ty,
+                                dir: Dir::North,
+                                filter: None,
+                                user_movetime: None,
+                            }),
+                            &data_store.inserter_infos[ty as usize].display_name,
+                        ),
+
+                        _ => unreachable!(),
+                    };
+
+                    let text = format!("{}", name);
+                    ui.dnd_drag_source(source_id, item, |ui| {
+                        ui.vertical_centered_justified(|ui| {
+                            ui.add(
+                                egui::Label::new(text)
+                                    .selectable(false)
+                                    .wrap_mode(egui::TextWrapMode::Truncate),
+                            );
+                        });
+                    });
+                }
+            }
+        });
+
+        ui.separator();
+
+        // Hotbar
+        ui.columns_const(|uis: &mut [egui::Ui; 10]| {
+            for (slot_idx, (ui, hotbar_slot)) in
+                uis.iter_mut().zip(self.hotbar.slots.iter_mut()).enumerate()
+            {
+                ui.label(&format!("{}", (slot_idx + 1) % 10));
+                ui.set_min_size(egui::vec2(100.0, 100.0));
+                let text = hotbar_slot
+                    .as_ref()
+                    .map(|slot| match slot {
+                        HeldObject::Entity(e) => match *e {
+                            PlaceEntityType::Assembler { ty, .. } => Cow::Borrowed(
+                                data_store.assembler_info[ty as usize].display_name.as_str(),
+                            ),
+                            PlaceEntityType::Beacon { ty, .. } => Cow::Borrowed(
+                                data_store.beacon_info[ty as usize].display_name.as_str(),
+                            ),
+                            PlaceEntityType::Belt { ty, .. } => Cow::Borrowed(
+                                data_store.belt_infos[ty as usize].display_name.as_str(),
+                            ),
+                            PlaceEntityType::FluidTank { ty, .. } => Cow::Borrowed(
+                                data_store.fluid_tank_infos[ty as usize]
+                                    .display_name
+                                    .as_str(),
+                            ),
+                            PlaceEntityType::PowerPole { ty, .. } => Cow::Borrowed(
+                                data_store.power_pole_data[ty as usize]
+                                    .display_name
+                                    .as_str(),
+                            ),
+                            PlaceEntityType::Accumulator { ty, .. } => Cow::Borrowed(
+                                data_store.accumulator_info[ty as usize]
+                                    .display_name
+                                    .as_str(),
+                            ),
+                            PlaceEntityType::SolarPanel { ty, .. } => Cow::Borrowed(
+                                data_store.solar_panel_info[ty as usize]
+                                    .display_name
+                                    .as_str(),
+                            ),
+                            PlaceEntityType::Chest { ty, .. } => {
+                                Cow::Borrowed(&*data_store.chest_names[ty as usize])
+                            },
+                            PlaceEntityType::Inserter { ty, .. } => Cow::Borrowed(
+                                data_store.inserter_infos[ty as usize].display_name.as_str(),
+                            ),
+                            PlaceEntityType::Splitter { ty, .. } => Cow::Owned(format!(
+                                "{} Splitter",
+                                data_store.belt_infos[ty as usize].display_name
+                            )),
+                            PlaceEntityType::Underground { ty, .. } => Cow::Owned(format!(
+                                "{} Underground",
+                                data_store.belt_infos[ty as usize].display_name
+                            )),
+                            PlaceEntityType::Lab { ty, .. } => Cow::Borrowed(
+                                data_store.lab_info[ty as usize].display_name.as_str(),
+                            ),
+                            PlaceEntityType::MiningDrill { ty, .. } => Cow::Borrowed(
+                                &*data_store.mining_drill_info[ty as usize].display_name,
+                            ),
+
+                            _ => unreachable!(),
+                        },
+
+                        _ => unreachable!(),
+                    })
+                    .unwrap_or(Cow::Borrowed("None"));
+                let slot_id = egui::Id::new(("hotbar_slot", slot_idx));
+                let response = ui.label(&format!("{}", text));
+
+                if let Some(new) = response.dnd_release_payload::<HeldObject<ItemIdxType>>() {
+                    *hotbar_slot = Some((&*new).clone());
+                }
+            }
+        });
     }
 }
