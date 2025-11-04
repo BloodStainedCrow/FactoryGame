@@ -202,27 +202,24 @@ impl eframe::App for App {
                 in_ip_box,
                 gigabase_size,
             } => {
-                // HACK: This is a hack
-                if ctx.cumulative_pass_nr() > 100 {
-                    Window::new("Version")
-                        .default_pos(Align2::RIGHT_TOP.pos_in_rect(&ctx.screen_rect()))
-                        .show(ctx, |ui| {
-                            Grid::new("version_grid").num_columns(2).show(ui, |ui| {
-                                ui.label("Version:");
-                                if crate::built_info::GIT_HEAD_REF == Some("refs/head/master") {
-                                    ui.label(crate::built_info::PKG_VERSION);
-                                } else {
-                                    ui.label(crate::built_info::GIT_VERSION.unwrap());
-                                }
-                                ui.end_row();
+                Window::new("Version")
+                    .default_pos(Align2::RIGHT_TOP.pos_in_rect(&ctx.screen_rect()))
+                    .show(ctx, |ui| {
+                        Grid::new("version_grid").num_columns(2).show(ui, |ui| {
+                            ui.label("Version:");
+                            if crate::built_info::GIT_HEAD_REF == Some("refs/head/master") {
+                                ui.label(crate::built_info::PKG_VERSION);
+                            } else {
+                                ui.label(crate::built_info::GIT_VERSION.unwrap());
+                            }
+                            ui.end_row();
 
-                                // TODO: This does not work because of nixos :/
-                                // ui.label("Built at:");
-                                // ui.label(crate::built_info::BUILT_TIME_UTC);
-                                // ui.end_row();
-                            })
-                        });
-                }
+                            // TODO: This does not work because of nixos :/
+                            // ui.label("Built at:");
+                            // ui.label(crate::built_info::BUILT_TIME_UTC);
+                            // ui.end_row();
+                        })
+                    });
 
                 if let Some((current_text, error_pupup)) = in_ip_box {
                     if ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
