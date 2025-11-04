@@ -1,16 +1,43 @@
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
+use get_size2::GetSize;
 use std::fmt::Debug;
-
 use std::hash::Hash;
 
 pub type ITEMCOUNTTYPE = u8;
+
+pub trait Indexable {
+    fn into_usize(self) -> usize;
+}
 
 pub trait IdxTrait:
     Debug + serde::Serialize + for<'de> serde::Deserialize<'de> + WeakIdxTrait
 {
 }
 
+#[cfg(feature = "client")]
 pub trait WeakIdxTrait:
-    Into<usize>
+    Indexable
+    + Into<usize>
+    + Copy
+    + Send
+    + Sync
+    + From<u8>
+    + TryFrom<usize, Error: Debug>
+    + Eq
+    + Hash
+    + Ord
+    + 'static
+    + GetSize
+    + Debug
+{
+}
+
+#[cfg(not(feature = "client"))]
+pub trait WeakIdxTrait:
+    Indexable
+    + Into<usize>
     + Copy
     + Send
     + Sync
@@ -33,11 +60,18 @@ pub fn usize_from<T: IdxTrait>(t: T) -> usize {
 //    }
 //}
 
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(
     Debug, PartialEq, Eq, Hash, Clone, Copy, serde::Serialize, serde::Deserialize, PartialOrd, Ord,
 )]
 pub struct Item<ItemIdxType: WeakIdxTrait> {
     pub id: ItemIdxType,
+}
+
+impl<ItemIdxType: IdxTrait> Indexable for Item<ItemIdxType> {
+    fn into_usize(self) -> usize {
+        self.id.into_usize()
+    }
 }
 
 impl<ItemIdxType: IdxTrait> From<ItemIdxType> for Item<ItemIdxType> {
@@ -52,6 +86,7 @@ impl<ItemIdxType: IdxTrait> Item<ItemIdxType> {
     }
 }
 
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(
     Debug, PartialEq, Eq, Hash, Clone, Copy, serde::Serialize, serde::Deserialize, PartialOrd, Ord,
 )]
@@ -59,7 +94,13 @@ pub struct Recipe<RecipeIdxType: WeakIdxTrait> {
     pub id: RecipeIdxType,
 }
 
-impl<RecipeIdxType: IdxTrait> From<RecipeIdxType> for Recipe<RecipeIdxType> {
+impl<RecipeIdxType: WeakIdxTrait> Indexable for Recipe<RecipeIdxType> {
+    fn into_usize(self) -> usize {
+        self.id.into_usize()
+    }
+}
+
+impl<RecipeIdxType: WeakIdxTrait> From<RecipeIdxType> for Recipe<RecipeIdxType> {
     fn from(value: RecipeIdxType) -> Self {
         Self { id: value }
     }

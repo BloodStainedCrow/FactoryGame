@@ -1,21 +1,39 @@
-use std::marker::ConstParamTy;
+use std::{cmp::min, marker::ConstParamTy};
 
 use crate::{
-    item::{IdxTrait, WeakIdxTrait},
-    storage_list::{index, SingleItemStorages},
+    item::ITEMCOUNTTYPE,
+    storage_list::{SingleItemStorages, index_fake_union},
 };
 
-use super::{InserterState, Storage};
+use super::{FakeUnionStorage, InserterState};
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
+use get_size2::GetSize;
 
-#[derive(Debug, ConstParamTy, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(
+    Debug,
+    ConstParamTy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Clone,
+    Copy,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub enum Dir {
     BeltToStorage = 0,
     StorageToBelt = 1,
 }
 
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct BeltStorageInserter<RecipeIdxType: WeakIdxTrait, const DIR: Dir> {
-    pub storage_id: Storage<RecipeIdxType>,
+pub struct BeltStorageInserter<const DIR: Dir> {
+    pub storage_id: FakeUnionStorage,
     pub state: InserterState,
 }
 
@@ -27,50 +45,56 @@ pub struct BeltStorageInserter<RecipeIdxType: WeakIdxTrait, const DIR: Dir> {
 //       Luckily since inserter only have limited range (3 tiles or whatever) there is inherent locality in the accesses, if the MultiStores are somewhat spacially aligned.
 //       Though this could also lead to particularly poor access patterns if the belt/line of inserters is perpendicular to the stride pattern of the Multistore
 //       (maybe some quadtree weirdness could help?)
-impl<RecipeIdxType: IdxTrait, const DIR: Dir> BeltStorageInserter<RecipeIdxType, DIR> {
+impl<const DIR: Dir> BeltStorageInserter<DIR> {
     #[must_use]
-    pub const fn new(id: Storage<RecipeIdxType>) -> Self {
+    pub const fn new(id: FakeUnionStorage) -> Self {
         Self {
             storage_id: id,
-            state: InserterState::Empty,
+            state: InserterState::WaitingForSourceItems(0),
         }
     }
 }
 
-impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::BeltToStorage }> {
+impl BeltStorageInserter<{ Dir::BeltToStorage }> {
     pub fn update(
         &mut self,
         loc: &mut bool,
         storages: SingleItemStorages,
         movetime: u8,
-        num_grids_total: usize,
-        num_recipes: usize,
+        max_hand_size: ITEMCOUNTTYPE,
         grid_size: usize,
-    ) {
+    ) -> bool {
         // TODO: I just added InserterStates and it is a lot slower (unsurprisingly),
         // Try and find a faster implementation of similar logic
 
         match self.state {
-            InserterState::Empty => {
+            InserterState::WaitingForSourceItems(count) => {
                 if *loc {
                     *loc = false;
-                    self.state = InserterState::FullAndMovingOut(movetime);
+                    if count + 1 == max_hand_size {
+                        self.state = InserterState::FullAndMovingOut(movetime);
+                    } else {
+                        self.state = InserterState::WaitingForSourceItems(count + 1);
+                    }
+                    true
+                } else {
+                    false
                 }
             },
-            InserterState::FullAndWaitingForSlot => {
-                let (max_insert, old) = index(
-                    storages,
-                    self.storage_id,
-                    num_grids_total,
-                    num_recipes,
-                    grid_size,
-                );
-                // TODO:
-                if *old < *max_insert {
-                    // There is space in the machine
-                    *old += 1;
+            InserterState::WaitingForSpaceInDestination(count) => {
+                let (max_insert, old) = index_fake_union(storages, self.storage_id, grid_size);
+                let to_insert = min(count, *max_insert - *old);
 
-                    self.state = InserterState::EmptyAndMovingBack(movetime);
+                if to_insert > 0 {
+                    *old += to_insert;
+                    if to_insert == count {
+                        self.state = InserterState::EmptyAndMovingBack(movetime);
+                    } else {
+                        self.state = InserterState::WaitingForSpaceInDestination(count - to_insert);
+                    }
+                    true
+                } else {
+                    false
                 }
             },
             InserterState::FullAndMovingOut(time) => {
@@ -78,55 +102,68 @@ impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::BeltToSt
                     self.state = InserterState::FullAndMovingOut(time - 1);
                 } else {
                     // TODO: Do I want to try inserting immediately?
-                    self.state = InserterState::FullAndWaitingForSlot;
+                    self.state = InserterState::WaitingForSpaceInDestination(max_hand_size);
                 }
+                false
             },
             InserterState::EmptyAndMovingBack(time) => {
                 if time > 0 {
                     self.state = InserterState::EmptyAndMovingBack(time - 1);
                 } else {
                     // TODO: Do I want to try getting a new item immediately?
-                    self.state = InserterState::Empty;
+                    self.state = InserterState::WaitingForSourceItems(0);
                 }
+                false
             },
         }
     }
 }
 
-impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::StorageToBelt }> {
+impl BeltStorageInserter<{ Dir::StorageToBelt }> {
     pub fn update(
         &mut self,
         loc: &mut bool,
         storages: SingleItemStorages,
         movetime: u8,
-        num_grids_total: usize,
-        num_recipes: usize,
+        max_hand_size: ITEMCOUNTTYPE,
         grid_size: usize,
-    ) {
+    ) -> bool {
         // TODO: I just added InserterStates and it is a lot slower (unsurprisingly),
         // Try and find a faster implementation of similar logic,
         // Ideally reduce branch mispredictions as much as possible, while also reducing random loads from storages
 
         match self.state {
-            InserterState::Empty => {
-                let (_max_insert, old) = index(
-                    storages,
-                    self.storage_id,
-                    num_grids_total,
-                    num_recipes,
-                    grid_size,
-                );
-                if *old > 0 {
-                    // There is an item in the machine
-                    *old -= 1;
+            InserterState::WaitingForSourceItems(count) => {
+                let (_max_insert, old) = index_fake_union(storages, self.storage_id, grid_size);
 
-                    self.state = InserterState::FullAndMovingOut(movetime);
+                let to_extract = min(max_hand_size - count, *old);
+
+                if to_extract > 0 {
+                    // There is an item in the machine
+                    *old -= to_extract;
+
+                    if to_extract + count == max_hand_size {
+                        self.state = InserterState::FullAndMovingOut(movetime);
+                    } else {
+                        self.state = InserterState::WaitingForSourceItems(count + to_extract);
+                    }
+                    true
+                } else {
+                    false
                 }
             },
-            InserterState::FullAndWaitingForSlot => {
+            InserterState::WaitingForSpaceInDestination(count) => {
                 if !*loc {
                     *loc = true;
-                    self.state = InserterState::EmptyAndMovingBack(movetime);
+
+                    if count == 1 {
+                        self.state = InserterState::EmptyAndMovingBack(movetime);
+                    } else {
+                        self.state = InserterState::WaitingForSpaceInDestination(count - 1);
+                    }
+                    true
+                } else {
+                    false
                 }
             },
             InserterState::FullAndMovingOut(time) => {
@@ -134,16 +171,18 @@ impl<RecipeIdxType: IdxTrait> BeltStorageInserter<RecipeIdxType, { Dir::StorageT
                     self.state = InserterState::FullAndMovingOut(time - 1);
                 } else {
                     // TODO: Do I want to try inserting immediately?
-                    self.state = InserterState::FullAndWaitingForSlot;
+                    self.state = InserterState::WaitingForSpaceInDestination(max_hand_size);
                 }
+                false
             },
             InserterState::EmptyAndMovingBack(time) => {
                 if time > 0 {
                     self.state = InserterState::EmptyAndMovingBack(time - 1);
                 } else {
                     // TODO: Do I want to try getting a new item immediately?
-                    self.state = InserterState::Empty;
+                    self.state = InserterState::WaitingForSourceItems(0);
                 }
+                false
             },
         }
     }

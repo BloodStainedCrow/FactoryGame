@@ -1,57 +1,81 @@
 use std::{
-    net::{IpAddr, TcpStream},
+    env,
+    net::{SocketAddr, TcpStream},
     ops::ControlFlow,
-    sync::{atomic::AtomicU64, mpsc::Receiver, Arc, Mutex},
-    time::{Duration, Instant},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64},
+        mpsc::Receiver,
+    },
+    time::Duration,
 };
 
-use log::info;
-use plumbing::{Client, IntegratedServer, Server};
+use parking_lot::Mutex;
+
+use plumbing::Server;
+#[cfg(feature = "client")]
+use plumbing::{Client, IntegratedServer};
 use server::{ActionSource, GameStateUpdateHandler, HandledActionConsumer};
 
+#[cfg(feature = "client")]
+use crate::frontend::action::action_state_machine::ActionStateMachine;
 use crate::{
-    data::DataStore,
-    frontend::{
-        action::{action_state_machine::ActionStateMachine, ActionType},
-        input::Input,
-        world::tile::World,
-    },
-    item::{IdxTrait, WeakIdxTrait},
-    rendering::app_state::GameState,
     TICKS_PER_SECOND_RUNSPEED,
+    app_state::{GameState, SimulationState},
+    data::DataStore,
+    frontend::{action::ActionType, input::Input, world::tile::World},
+    item::{IdxTrait, WeakIdxTrait},
+    replays::Replay,
 };
 
 mod plumbing;
-mod protocol;
+// mod protocol;
 mod server;
 
-pub mod connection_reciever;
+pub mod connection_reciever_tcp;
 
-pub enum Game<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+pub(crate) enum Game<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
+    #[cfg(feature = "client")]
     Client(
-        Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
+        Arc<GameState<ItemIdxType, RecipeIdxType>>,
         GameStateUpdateHandler<ItemIdxType, RecipeIdxType, Client<ItemIdxType, RecipeIdxType>>,
         Arc<AtomicU64>,
     ),
     DedicatedServer(
         GameState<ItemIdxType, RecipeIdxType>,
+        Replay<ItemIdxType, RecipeIdxType, DataStore<ItemIdxType, RecipeIdxType>>,
         GameStateUpdateHandler<ItemIdxType, RecipeIdxType, Server<ItemIdxType, RecipeIdxType>>,
+        Box<dyn FnMut() + Send + Sync>,
     ),
     /// Integrated Server is also how Singleplayer works
+    #[cfg(feature = "client")]
     IntegratedServer(
-        Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
+        Arc<GameState<ItemIdxType, RecipeIdxType>>,
+        Replay<ItemIdxType, RecipeIdxType, DataStore<ItemIdxType, RecipeIdxType>>,
         GameStateUpdateHandler<
             ItemIdxType,
             RecipeIdxType,
             IntegratedServer<ItemIdxType, RecipeIdxType>,
         >,
         Arc<AtomicU64>,
+        Box<dyn FnMut() + Send + Sync>,
     ),
 }
 
+impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Drop for Game<ItemIdxType, RecipeIdxType> {
+    fn drop(&mut self) {
+        match self {
+            #[cfg(feature = "client")]
+            Game::Client(..) => {},
+            Game::DedicatedServer(.., cancel_socket) => cancel_socket(),
+            #[cfg(feature = "client")]
+            Game::IntegratedServer(.., cancel_socket) => cancel_socket(),
+        }
+    }
+}
+
 pub struct ClientConnectionInfo {
-    pub ip: IpAddr,
-    pub port: u16,
+    pub addr: SocketAddr,
 }
 
 pub struct ServerInfo {
@@ -59,33 +83,45 @@ pub struct ServerInfo {
 }
 
 pub enum GameInitData<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+    #[cfg(feature = "client")]
     Client {
-        game_state: Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
+        game_state: Arc<GameState<ItemIdxType, RecipeIdxType>>,
         action_state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
         inputs: Receiver<Input>,
         ui_actions: Receiver<ActionType<ItemIdxType, RecipeIdxType>>,
         tick_counter: Arc<AtomicU64>,
         info: ClientConnectionInfo,
     },
-    DedicatedServer(GameState<ItemIdxType, RecipeIdxType>, ServerInfo),
+    DedicatedServer(
+        GameState<ItemIdxType, RecipeIdxType>,
+        ServerInfo,
+        Box<dyn FnMut() + Send + Sync>,
+    ),
+    #[cfg(feature = "client")]
     IntegratedServer {
-        game_state: Arc<Mutex<GameState<ItemIdxType, RecipeIdxType>>>,
+        game_state: Arc<GameState<ItemIdxType, RecipeIdxType>>,
         action_state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
         inputs: Receiver<Input>,
         ui_actions: Receiver<ActionType<ItemIdxType, RecipeIdxType>>,
         tick_counter: Arc<AtomicU64>,
         info: ServerInfo,
+        cancel_socket: Box<dyn FnMut() + Send + Sync>,
     },
 }
 
 pub enum ExitReason {
+    LoopStopped,
     UserQuit,
     ConnectionDropped,
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdxType> {
-    pub fn new(init: GameInitData<ItemIdxType, RecipeIdxType>) -> Result<Self, std::io::Error> {
+    pub fn new(
+        init: GameInitData<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Result<Self, std::io::Error> {
         match init {
+            #[cfg(feature = "client")]
             GameInitData::Client {
                 game_state,
                 action_state_machine,
@@ -94,7 +130,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 info,
                 ui_actions,
             } => {
-                let stream = std::net::TcpStream::connect((info.ip, info.port))?;
+                let stream = std::net::TcpStream::connect(info.addr)?;
                 Ok(Self::Client(
                     game_state,
                     GameStateUpdateHandler::new(Client {
@@ -106,10 +142,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                     tick_counter,
                 ))
             },
-            GameInitData::DedicatedServer(game_state, info) => Ok(Self::DedicatedServer(
-                game_state,
-                GameStateUpdateHandler::new(Server::new(info)),
-            )),
+            GameInitData::DedicatedServer(game_state, info, cancel_socket) => {
+                #[cfg(debug_assertions)]
+                let replay = Replay::new(&game_state, None, data_store.clone());
+                #[cfg(not(debug_assertions))]
+                let replay = Replay::new_dummy(data_store.clone());
+                Ok(Self::DedicatedServer(
+                    game_state,
+                    replay,
+                    GameStateUpdateHandler::new(Server::new(info)),
+                    cancel_socket,
+                ))
+            },
+            #[cfg(feature = "client")]
             GameInitData::IntegratedServer {
                 game_state,
                 tick_counter,
@@ -117,35 +162,52 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 action_state_machine,
                 inputs,
                 ui_actions,
-            } => Ok(Self::IntegratedServer(
-                game_state,
-                GameStateUpdateHandler::new(IntegratedServer {
-                    local_actions: action_state_machine,
-                    local_input: inputs,
-                    server: Server::new(info),
-                    ui_actions,
-                }),
-                tick_counter,
-            )),
+                cancel_socket,
+            } => {
+                #[cfg(debug_assertions)]
+                let replay = Replay::new(&game_state, None, data_store.clone());
+                #[cfg(not(debug_assertions))]
+                let replay = Replay::new_dummy(data_store.clone());
+                Ok(Self::IntegratedServer(
+                    game_state,
+                    replay,
+                    GameStateUpdateHandler::new(IntegratedServer {
+                        local_actions: action_state_machine,
+                        local_input: inputs,
+                        server: Server::new(info),
+                        ui_actions,
+                    }),
+                    tick_counter,
+                    cancel_socket,
+                ))
+            },
         }
     }
 
-    pub fn run(&mut self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> ExitReason {
+    pub fn run(
+        &mut self,
+        stop: Arc<AtomicBool>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> ExitReason {
         let mut update_interval =
             spin_sleep_util::interval(Duration::from_secs(1) / TICKS_PER_SECOND_RUNSPEED as u32);
 
-        loop {
-            let start = Instant::now();
-            update_interval.tick();
+        while stop.load(std::sync::atomic::Ordering::Relaxed) == false {
+            profiling::finish_frame!();
+            profiling::scope!("Update Loop");
 
-            info!("Waited for {:?}", start.elapsed());
             match self.do_tick(data_store) {
                 ControlFlow::Continue(_) => {},
                 ControlFlow::Break(e) => return e,
             }
 
-            info!("Full tick time: {:?}", start.elapsed());
+            if !env::var("ZOOM").is_ok() {
+                profiling::scope!("Wait");
+                update_interval.tick();
+            }
         }
+
+        ExitReason::LoopStopped
     }
 
     fn do_tick(
@@ -153,21 +215,35 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> ControlFlow<ExitReason> {
         match self {
+            #[cfg(feature = "client")]
             Game::Client(game_state, game_state_update_handler, tick_counter) => {
-                game_state_update_handler.update(
-                    &mut game_state.lock().expect("Lock poison for update"),
+                game_state_update_handler.update::<&DataStore<ItemIdxType, RecipeIdxType>>(
+                    &game_state,
+                    None,
                     data_store,
                 );
                 tick_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             },
-            Game::DedicatedServer(game_state, game_state_update_handler) => {
-                game_state_update_handler.update(game_state, data_store)
-            },
-            Game::IntegratedServer(game_state, game_state_update_handler, tick_counter) => {
-                game_state_update_handler.update(
-                    &mut game_state.lock().expect("Lock poison for update"),
-                    data_store,
-                );
+            Game::DedicatedServer(
+                game_state,
+                replay,
+                game_state_update_handler,
+                _cancel_socket,
+            ) => game_state_update_handler.update(game_state, Some(replay), data_store),
+            #[cfg(feature = "client")]
+            Game::IntegratedServer(
+                game_state,
+                replay,
+                game_state_update_handler,
+                tick_counter,
+                _cancel_socket,
+            ) => {
+                // #[cfg(debug_assertions)]
+                // {
+                //     profiling::scope!("Crash anticipation save to disk");
+                //     save(&game_state, data_store);
+                // }
+                game_state_update_handler.update(game_state, Some(replay), data_store);
                 tick_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             },
         }
@@ -181,11 +257,12 @@ impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
 {
     fn get<'a>(
         &'a self,
-        current_tick: u64,
+        _current_tick: u64,
         _: &World<ItemIdxType, RecipeIdxType>,
+        _: &SimulationState<ItemIdxType, RecipeIdxType>,
         _: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
-           + use<'a, ItemIdxType, RecipeIdxType> {
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<'a, ItemIdxType, RecipeIdxType>
+    {
         self.try_iter()
     }
 }
@@ -195,8 +272,8 @@ impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
 {
     fn consume(
         &mut self,
-        current_tick: u64,
-        actions: impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>,
+        _current_tick: u64,
+        _actions: impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>,
     ) {
         // Do nothing
     }

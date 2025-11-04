@@ -3,65 +3,101 @@
 #![feature(adt_const_params)]
 #![feature(array_try_map)]
 #![feature(never_type)]
+#![feature(mixed_integer_ops_unsigned_sub)]
+#![feature(int_roundings)]
+#![feature(strict_overflow_ops)]
+#![feature(thin_box)]
+#![feature(ptr_metadata)]
 
 extern crate test;
 
+// See https://docs.rs/built/latest/built/
+pub mod built_info {
+    // The file has been placed there by the build script.
+    include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+use eframe::web_sys;
+
 use std::{
-    array,
     borrow::Borrow,
-    env,
-    net::{IpAddr, Ipv4Addr},
+    net::{SocketAddr, TcpStream},
     process::exit,
-    simd::cmp::SimdPartialEq,
+    simd::Mask,
     sync::{
-        atomic::AtomicU64,
-        mpsc::{channel, Sender},
-        Arc, Mutex,
+        Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        mpsc::{Sender, channel},
     },
     thread,
 };
 
-use data::{get_raw_data_test, DataStore};
+use parking_lot::Mutex;
+
+use app_state::GameState;
+use data::{DataStore, factorio_1_1::get_raw_data_test};
+#[cfg(feature = "client")]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use eframe::NativeOptions;
-use frontend::{
-    action::action_state_machine::ActionStateMachine, input::Input, world::tile::CHUNK_SIZE_FLOAT,
-};
+use frontend::world::{Position, tile::CHUNK_SIZE_FLOAT};
+#[cfg(feature = "client")]
+use frontend::{action::action_state_machine::ActionStateMachine, input::Input};
 use item::{IdxTrait, WeakIdxTrait};
 use multiplayer::{
-    connection_reciever::accept_continously, ClientConnectionInfo, Game, GameInitData, ServerInfo,
+    ClientConnectionInfo, Game, GameInitData, ServerInfo,
+    connection_reciever_tcp::accept_continously,
 };
+use power::Watt;
+#[cfg(feature = "client")]
 use rendering::{
-    app_state::{AppState, GameState},
     eframe_app,
-    window::{LoadedGame, LoadedGameInfo, LoadedGameSized},
+    window::{LoadedGame, LoadedGameSized},
 };
-use saving::load;
-use simple_logger::SimpleLogger;
+
+#[cfg(not(feature = "client"))]
+use directories::ProjectDirs;
+
+use saving::{load, load_readable};
+use std::path::PathBuf;
+
+use crate::item::Indexable;
 
 const TICKS_PER_SECOND_LOGIC: u64 = 60;
 
 const TICKS_PER_SECOND_RUNSPEED: u64 = 60;
+
+pub mod get_size;
 
 pub mod assembler;
 pub mod belt;
 pub mod inserter;
 pub mod item;
 pub mod lab;
+pub mod mining_drill;
 pub mod power;
 pub mod research;
+
+mod shopping_list_arena;
+
+// This is an experiment. Before I can use it, I need to run it through a miri gauntlet
+// mod small_box_slice;
 
 pub mod data;
 pub mod mod_manager;
 
 pub mod frontend;
 
+pub mod app_state;
+
+#[cfg(feature = "client")]
 pub mod rendering;
 
 pub mod bot_system;
 
 mod statistics;
 
-mod replays;
+pub mod replays;
 
 mod saving;
 
@@ -71,19 +107,35 @@ mod storage_list;
 
 pub mod split_arbitrary;
 
+pub mod join_many;
+
 mod chest;
 
 pub mod blueprint;
 
 mod network_graph;
 
+pub mod liquid;
+
+mod par_generation;
+
 impl WeakIdxTrait for u8 {}
 impl WeakIdxTrait for u16 {}
 impl IdxTrait for u8 {}
 impl IdxTrait for u16 {}
 
-#[cfg(test)]
-static DATA_STORE: std::sync::LazyLock<DataStore<u8, u8>> =
+impl Indexable for u8 {
+    fn into_usize(self) -> usize {
+        self.into()
+    }
+}
+impl Indexable for u16 {
+    fn into_usize(self) -> usize {
+        self.into()
+    }
+}
+
+pub static DATA_STORE: std::sync::LazyLock<DataStore<u8, u8>> =
     std::sync::LazyLock::new(|| get_raw_data_test().turn::<u8, u8>());
 
 pub trait NewWithDataStore {
@@ -92,66 +144,140 @@ pub trait NewWithDataStore {
     ) -> Self;
 }
 
-impl NewWithDataStore for u32 {
+impl<T: Default> NewWithDataStore for T {
     fn new<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         _data_store: impl Borrow<DataStore<ItemIdxType, RecipeIdxType>>,
     ) -> Self {
-        0
+        T::default()
     }
 }
 
-pub fn main() {
-    SimpleLogger::new()
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+pub fn main() -> Result<(), ()> {
+    // use ron::ser::PrettyConfig;
+
+    // let raw = crate::data::factorio_1_1::get_raw_data_fn();
+
+    // let str = ron::ser::to_string_pretty(&raw, PrettyConfig::new()).unwrap();
+    // println!("{}", str);
+    // return Ok(());
+
+    puffin::set_scopes_on(true);
+
+    #[cfg(feature = "logging")]
+    simple_logger::SimpleLogger::new()
         .with_level(log::LevelFilter::Warn)
         .env()
         .init()
         .unwrap();
 
-    let mode = env::args().nth(1);
+    #[cfg(feature = "client")]
+    {
+        eframe::run_native(
+            "FactoryGame",
+            NativeOptions {
+                // depth_buffer: 32,
+                ..Default::default()
+            },
+            Box::new(|cc| {
+                let app = eframe_app::App::new(cc);
 
-    dbg!(&mode);
+                Ok(Box::new(app))
+            }),
+        )
+        .unwrap();
 
-    let (loaded, tick, sender) = if Some("--client") == mode.as_deref() {
-        run_client(StartGameInfo {})
-    } else if Some("--dedicated") == mode.as_deref() {
-        run_dedicated_server(StartGameInfo {});
-    } else {
-        run_integrated_server(StartGameInfo {})
-    };
-    // let mut app = App::new(sender);
+        Ok(())
+    }
 
-    // app.currently_loaded_game = Some(LoadedGameInfo {
-    //     state: loaded,
-    //     tick: tick,
-    // });
-    // app.state = AppState::Ingame;
-    // let event_loop = EventLoop::new().unwrap();
-
-    // event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
-
-    // let _ = event_loop.run_app(&mut app);
-
-    eframe::run_native(
-        "FactoryGame",
-        NativeOptions::default(),
-        Box::new(|cc| {
-            let mut app = eframe_app::App::new(cc, sender);
-
-            app.state = AppState::Ingame;
-            app.currently_loaded_game = Some(LoadedGameInfo {
-                state: loaded,
-                tick,
-            });
-
-            Ok(Box::new(app))
-        }),
-    )
-    .unwrap();
+    #[cfg(not(feature = "client"))]
+    {
+        info!("Running Dedicated server!");
+        // let dir = ProjectDirs::from("de", "aschhoff", "factory_game").expect("No Home path found");
+        // let save_file_dir = dir.data_dir().join("save.save");
+        // run_dedicated_server(StartGameInfo::Load(save_file_dir));
+        run_dedicated_server(StartGameInfo::Load(
+            "/home/tim/.local/share/factory_game/save.save"
+                .try_into()
+                .unwrap(),
+        ));
+    }
 }
 
-struct StartGameInfo {}
+#[cfg(target_arch = "wasm32")]
+pub fn main() {
+    puffin::set_scopes_on(true);
+    use eframe::wasm_bindgen::JsCast as _;
 
+    // Redirect `log` message to `console.log` and friends:
+    eframe::WebLogger::init(log::LevelFilter::Error).ok();
+
+    let web_options = eframe::WebOptions::default();
+
+    wasm_bindgen_futures::spawn_local(async {
+        let document = web_sys::window()
+            .expect("No window")
+            .document()
+            .expect("No document");
+
+        let canvas = document
+            .get_element_by_id("the_canvas_id")
+            .expect("Failed to find the_canvas_id")
+            .dyn_into::<web_sys::HtmlCanvasElement>()
+            .expect("the_canvas_id was not a HtmlCanvasElement");
+
+        let start_result = eframe::WebRunner::new()
+            .start(
+                canvas,
+                web_options,
+                Box::new(|cc| Ok(Box::new(eframe_app::App::new(cc)))),
+            )
+            .await;
+
+        // Remove the loading text and spinner:
+        if let Some(loading_text) = document.get_element_by_id("loading_text") {
+            match start_result {
+                Ok(_) => {
+                    loading_text.remove();
+                },
+                Err(e) => {
+                    loading_text.set_inner_html(
+                        "<p> The app has crashed. See the developer console for details. </p>",
+                    );
+                    panic!("Failed to start eframe: {e:?}");
+                },
+            }
+        }
+    });
+}
+
+enum StartGameInfo {
+    Load(PathBuf),
+    LoadReadable(PathBuf),
+    Create(GameCreationInfo),
+}
+
+enum GameCreationInfo {
+    Empty,
+    RedGreen,
+    RedGreenBelts,
+
+    RedWithLabs,
+
+    Megabase(bool),
+
+    Gigabase(u16),
+
+    LotsOfBelts,
+
+    SolarField(Watt, Position),
+
+    FromBP(PathBuf),
+}
+
+#[cfg(feature = "client")]
 fn run_integrated_server(
+    progress: Arc<AtomicU64>,
     start_game_info: StartGameInfo,
 ) -> (LoadedGame, Arc<AtomicU64>, Sender<Input>) {
     // TODO: Do mod loading here
@@ -162,55 +288,123 @@ fn run_integrated_server(
 
     let connections: Arc<Mutex<Vec<std::net::TcpStream>>> = Arc::default();
 
-    accept_continously(connections.clone()).unwrap();
+    let local_addr = "127.0.0.1:57267";
+    let cancel: Arc<AtomicBool> = Default::default();
+
+    // accept_continously(local_addr, connections.clone(), cancel.clone()).unwrap();
 
     match data_store {
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
-            let data_store = Arc::new(data_store);
-
             let (send, recv) = channel();
-            let state_machine: Arc<Mutex<ActionStateMachine<_, _>>> = Arc::new(Mutex::new(
-                ActionStateMachine::new(0, (100.0 * CHUNK_SIZE_FLOAT, 100.0 * CHUNK_SIZE_FLOAT)),
-            ));
+            let state_machine: Arc<Mutex<ActionStateMachine<_, _>>> =
+                Arc::new(Mutex::new(ActionStateMachine::new(
+                    0,
+                    (100.0 * CHUNK_SIZE_FLOAT, 100.0 * CHUNK_SIZE_FLOAT),
+                    &data_store,
+                )));
 
-            let game_state = Arc::new(Mutex::new(
-                load().map(|save| save.game_state).unwrap_or_else(|| {
-                    GameState::new_with_bp(&data_store, "test_blueprints/red_sci.bp")
-                    // GameState::new_with_production(&data_store)
-                }),
-            ));
+            let game_state = Arc::new(match start_game_info {
+                StartGameInfo::Load(path) => load(path)
+                    .map(|sg| {
+                        if sg.checksum != data_store.checksum {
+                            // Try reconciliation
+                            // todo!("Checksum mismatch, try to merge old and new mod state")
+                        } else {
+                        }
+                        sg.game_state
+                    })
+                    .unwrap(),
+                StartGameInfo::LoadReadable(path) => load_readable(path)
+                    .map(|sg| {
+                        assert_eq!(
+                            sg.checksum, data_store.checksum,
+                            "A savegame can only be loaded with the EXACT same mods!"
+                        );
+                        sg.game_state
+                    })
+                    .unwrap(),
+                StartGameInfo::Create(info) => match info {
+                    GameCreationInfo::Empty => GameState::new(&data_store),
+                    GameCreationInfo::RedGreen => {
+                        GameState::new_with_beacon_production(progress, &data_store)
+                    },
+                    GameCreationInfo::RedGreenBelts => {
+                        GameState::new_with_beacon_belt_production(progress, &data_store)
+                    },
+                    GameCreationInfo::RedWithLabs => {
+                        GameState::new_with_production(progress, &data_store)
+                    },
+                    GameCreationInfo::Megabase(use_solar_field) => {
+                        GameState::new_with_megabase(use_solar_field, progress, &data_store)
+                    },
+                    GameCreationInfo::Gigabase(count) => {
+                        GameState::new_with_gigabase(count, progress, &data_store)
+                    },
+                    GameCreationInfo::SolarField(wattage, base_pos) => {
+                        GameState::new_with_tons_of_solar(
+                            wattage,
+                            base_pos,
+                            None,
+                            progress,
+                            &data_store,
+                        )
+                    },
+                    GameCreationInfo::LotsOfBelts => {
+                        GameState::new_with_lots_of_belts(progress, &data_store)
+                    },
+
+                    GameCreationInfo::FromBP(path) => GameState::new_with_bp(&data_store, path),
+                },
+            });
 
             let (ui_sender, ui_recv) = channel();
 
-            let mut game = Game::new(GameInitData::IntegratedServer {
-                game_state: game_state.clone(),
-                tick_counter: tick_counter.clone(),
-                info: ServerInfo { connections },
-                action_state_machine: state_machine.clone(),
-                inputs: recv,
-                ui_actions: ui_recv,
-            })
+            let mut game = Game::new(
+                GameInitData::IntegratedServer {
+                    game_state: game_state.clone(),
+                    tick_counter: tick_counter.clone(),
+                    info: ServerInfo { connections },
+                    action_state_machine: state_machine.clone(),
+                    inputs: recv,
+                    ui_actions: ui_recv,
+                    cancel_socket: Box::new(move || {
+                        cancel.store(true, Ordering::SeqCst);
+                        // This is a little hack. Our connection accept thread is stuck waiting for connections and will only exit if anything connects.
+                        // So we just connect to ourselves :)
+                        // See https://stackoverflow.com/questions/56692961/how-do-i-gracefully-exit-tcplistener-incoming
+                        let _ = TcpStream::connect(local_addr);
+                    }),
+                },
+                &data_store,
+            )
             .unwrap();
 
+            let stop = Arc::new(AtomicBool::new(false));
+
             let m_data_store = data_store.clone();
+            let m_stop: Arc<AtomicBool> = stop.clone();
+
+            #[cfg(not(target_arch = "wasm32"))]
             thread::spawn(move || {
-                game.run(&m_data_store);
+                profiling::register_thread!("Game Update Thread");
+                game.run(m_stop, &m_data_store);
             });
 
+            let data_store = Arc::new(Mutex::new(data_store));
             return (
                 LoadedGame::ItemU8RecipeU8(LoadedGameSized {
                     state: game_state,
                     state_machine,
                     data_store,
                     ui_action_sender: ui_sender,
+
+                    stop_update_thread: stop,
                 }),
                 tick_counter,
                 send,
             );
         },
-        data::DataStoreOptions::ItemU8RecipeU16(data_store) => todo!(),
-        data::DataStoreOptions::ItemU16RecipeU8(data_store) => todo!(),
-        data::DataStoreOptions::ItemU16RecipeU16(data_store) => todo!(),
+        _ => todo!(),
     }
 }
 
@@ -219,35 +413,55 @@ fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
     let raw_data = get_raw_data_test();
     let data_store = raw_data.process();
 
+    let progress = Default::default();
+
     let connections: Arc<Mutex<Vec<std::net::TcpStream>>> = Arc::default();
 
-    accept_continously(connections.clone()).unwrap();
+    let local_addr = "127.0.0.1:8080";
+    let cancel: Arc<AtomicBool> = Default::default();
+
+    accept_continously(local_addr, connections.clone(), cancel.clone()).unwrap();
 
     match data_store {
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
-            let game_state = load()
+            let game_state = load(todo!("Add a console argument for the save file path"))
                 .map(|save| save.game_state)
-                .unwrap_or_else(|| GameState::new(&data_store));
+                .unwrap_or_else(|| {
+                    // GameState::new(&data_store)
+                    GameState::new_with_beacon_production(progress, &data_store)
+                });
 
-            let mut game = Game::new(GameInitData::DedicatedServer(
-                game_state,
-                ServerInfo { connections },
-            ))
+            let mut game = Game::new(
+                GameInitData::DedicatedServer(
+                    game_state,
+                    ServerInfo { connections },
+                    Box::new(move || {
+                        cancel.store(true, Ordering::Relaxed);
+                        // This is a little hack. Our connection accept thread is stuck waiting for connections and will only exit if anything connects.
+                        // So we just connect to ourselves :)
+                        // See https://stackoverflow.com/questions/56692961/how-do-i-gracefully-exit-tcplistener-incoming
+                        let _ = TcpStream::connect(local_addr);
+                    }),
+                ),
+                &data_store,
+            )
             .unwrap();
 
+            let stop = Arc::new(AtomicBool::new(false));
+
             let data_store = Arc::new(data_store);
-            match game.run(&data_store) {
+            match game.run(stop, &data_store) {
                 multiplayer::ExitReason::UserQuit => exit(0),
                 multiplayer::ExitReason::ConnectionDropped => exit(1),
+                multiplayer::ExitReason::LoopStopped => exit(0),
             }
         },
-        data::DataStoreOptions::ItemU8RecipeU16(data_store) => todo!(),
-        data::DataStoreOptions::ItemU16RecipeU8(data_store) => todo!(),
-        data::DataStoreOptions::ItemU16RecipeU16(data_store) => todo!(),
+        _ => todo!(),
     }
 }
 
-fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Sender<Input>) {
+#[cfg(feature = "client")]
+fn run_client(remote_addr: SocketAddr) -> (LoadedGame, Arc<AtomicU64>, Sender<Input>) {
     // TODO: Do mod loading here
     let raw_data = get_raw_data_test();
     let data_store = raw_data.process();
@@ -256,116 +470,68 @@ fn run_client(start_game_info: StartGameInfo) -> (LoadedGame, Arc<AtomicU64>, Se
 
     match data_store {
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
-            let data_store = Arc::new(data_store);
-
             let (send, recv) = channel();
-            let state_machine: Arc<Mutex<ActionStateMachine<_, _>>> = Arc::new(Mutex::new(
-                ActionStateMachine::new(1, (100.0 * CHUNK_SIZE_FLOAT, 100.0 * CHUNK_SIZE_FLOAT)),
-            ));
+            let state_machine: Arc<Mutex<ActionStateMachine<_, _>>> =
+                Arc::new(Mutex::new(ActionStateMachine::new(
+                    1,
+                    (100.0 * CHUNK_SIZE_FLOAT, 100.0 * CHUNK_SIZE_FLOAT),
+                    &data_store,
+                )));
 
-            let game_state = Arc::new(Mutex::new(
-                load()
+            let game_state = Arc::new(
+                // FIXME: When running in client mode, we should download the gamestate from the server instead of loading it from disk
+                load(PathBuf::new())
                     .map(|save| save.game_state)
                     .unwrap_or_else(|| GameState::new(&data_store)),
-            ));
+            );
 
             let (ui_sender, ui_recv) = channel();
 
-            let mut game = Game::new(GameInitData::Client {
-                game_state: game_state.clone(),
-                action_state_machine: state_machine.clone(),
-                inputs: recv,
-                tick_counter: tick_counter.clone(),
-                info: ClientConnectionInfo {
-                    ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
-                    port: 8080,
+            let mut game = Game::new(
+                GameInitData::Client {
+                    game_state: game_state.clone(),
+                    action_state_machine: state_machine.clone(),
+                    inputs: recv,
+                    tick_counter: tick_counter.clone(),
+                    info: ClientConnectionInfo { addr: remote_addr },
+                    ui_actions: ui_recv,
                 },
-                ui_actions: ui_recv,
-            })
-            .unwrap();
+                &data_store,
+            )
+            .expect("Could not start Game");
+
+            let stop = Arc::new(AtomicBool::new(false));
 
             let m_data_store = data_store.clone();
+            let m_stop = stop.clone();
             thread::spawn(move || {
-                game.run(&m_data_store);
+                game.run(m_stop, &m_data_store);
             });
 
+            let data_store = Arc::new(Mutex::new(data_store));
             return (
                 LoadedGame::ItemU8RecipeU8(LoadedGameSized {
                     state: game_state,
                     state_machine,
                     data_store,
                     ui_action_sender: ui_sender,
+
+                    stop_update_thread: stop,
                 }),
                 tick_counter,
                 send,
             );
         },
-        data::DataStoreOptions::ItemU8RecipeU16(data_store) => todo!(),
-        data::DataStoreOptions::ItemU16RecipeU8(data_store) => todo!(),
-        data::DataStoreOptions::ItemU16RecipeU16(data_store) => todo!(),
+        _ => todo!(),
     }
 }
-
-// fn main_loop<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-//     current_tick: Arc<AtomicU64>,
-//     input_reciever: Receiver<Input>,
-//     app_state: Arc<Mutex<AppState<ItemIdxType, RecipeIdxType>>>,
-//     state_machine: Arc<Mutex<ActionStateMachine<ItemIdxType>>>,
-//     data_store: Arc<DataStore<ItemIdxType, RecipeIdxType>>,
-// ) -> ! {
-//     let mut update_interval =
-//         spin_sleep_util::interval(Duration::from_secs(1) / TICKS_PER_SECOND as u32);
-
-//     loop {
-//         update_interval.tick();
-//         match &mut *app_state.lock().unwrap() {
-//             AppState::Ingame(game_state) => {
-//                 // TODO: For now I collect the actions here.
-
-//                 let actions: Vec<ActionType<ItemIdxType, RecipeIdxType>> = {
-//                     let mut state_machine = state_machine.lock().unwrap();
-//                     let mut ret: Vec<ActionType<ItemIdxType, RecipeIdxType>> = input_reciever
-//                         .try_iter()
-//                         .flat_map(|input| {
-//                             state_machine.handle_input(input, &game_state.world, &data_store)
-//                         })
-//                         .collect();
-
-//                     ret.extend(state_machine.once_per_update_actions());
-
-//                     ret
-//                 };
-
-//                 let start = Instant::now();
-//                 game_state.apply_actions(actions, &data_store);
-
-//                 info!("Apply Actions Time: {:?}", start.elapsed());
-//                 let start = Instant::now();
-
-//                 game_state.update(&data_store);
-//                 info!("Update Time: {:?}", start.elapsed());
-//             },
-//         }
-//         current_tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-//     }
-// }
-
-// #[cfg(not(debug_assertions))]
-
-// Type your code here, or load an example.
 
 use std::simd::Simd;
 
 // TODO: Increase if possible
-type BOOLSIMDTYPE = Simd<u8, 4>;
-type SIMDTYPE = Simd<u8, 4>;
+type MASKTYPE = Mask<i16, 16>;
+type SIMDTYPE = Simd<u16, 16>;
 
-// As of Rust 1.75, small functions are automatically
-// marked as `#[inline]` so they will not show up in
-// the output when compiling with optimisations. Use
-// `#[no_mangle]` or `#[inline(never)]` to work around
-// this issue.
-// See https://github.com/compiler-explorer/compiler-explorer/issues/5939
 pub struct InserterInfo {
     num_items: u8,
 }
@@ -393,119 +559,127 @@ pub fn simple(
         });
 }
 
-pub fn simd(
-    locs: &mut [u8],
-    inserter_info: &mut [u8],
-    inserter_ouput_idx: &[usize],
-    outputs: &mut [u16; 5],
-) {
-    const HANDSIZE: u16 = 8;
+#[cfg(test)]
+mod tests {
+    use std::{iter, rc::Rc};
 
-    let HAS_ITEM_TEST: SIMDTYPE = SIMDTYPE::splat(1);
+    use test::{Bencher, black_box};
 
-    let mut local_accs = [0; 5 * SIMDTYPE::LEN];
-    let LOCAL_IDX: Simd<usize, 4> =
-        Simd::<usize, 4>::from_array(array::from_fn(|i| (i * local_accs.len() / SIMDTYPE::LEN)));
+    use crate::{
+        TICKS_PER_SECOND_LOGIC,
+        app_state::GameState,
+        data::factorio_1_1::get_raw_data_test,
+        frontend::{action::ActionType, world::Position},
+        replays::{Replay, run_till_finished},
+    };
 
-    assert!(locs.len() == inserter_info.len());
-    assert!(locs.len() % 64 == 0);
-    assert!(inserter_info.len() % 64 == 0);
+    #[bench]
+    fn clone_empty_simulation(b: &mut Bencher) {
+        let data_store = get_raw_data_test().process().assume_simple();
 
-    for i in (0..locs.len().min(locs.len() - (locs.len() % SIMDTYPE::LEN))).step_by(SIMDTYPE::LEN) {
-        let input = BOOLSIMDTYPE::from_slice(locs.split_at(i).1);
+        let game_state = GameState::new(&data_store);
 
-        let input_has_items = input.simd_eq(HAS_ITEM_TEST);
+        let replay = Replay::new(&game_state, None, Rc::new(data_store));
 
-        let num_items_in_hand = SIMDTYPE::from_slice(inserter_info.split_at(i).1);
-
-        let post_items_in_hand =
-            input_has_items.select(num_items_in_hand + SIMDTYPE::splat(1), num_items_in_hand);
-
-        let full_hand_mask = post_items_in_hand.simd_eq(SIMDTYPE::splat(8));
-
-        let final_items_in_hand = full_hand_mask.select(SIMDTYPE::splat(0), post_items_in_hand);
-
-        final_items_in_hand.copy_to_slice(inserter_info.split_at_mut(i).1);
-
-        let output_idx = Simd::<usize, 4>::from_slice(inserter_ouput_idx.split_at(i).1);
-
-        let old_vals = SIMDTYPE::gather_or(&local_accs, LOCAL_IDX + output_idx, SIMDTYPE::splat(0));
-
-        let new_vals = full_hand_mask.select(old_vals + SIMDTYPE::splat(8), old_vals);
-
-        new_vals.scatter(&mut local_accs, LOCAL_IDX + output_idx);
+        b.iter(|| replay.clone());
     }
 
-    for (i, local) in local_accs.iter().enumerate() {
-        let real_index = i % 5;
+    #[bench]
+    fn empty_simulation(b: &mut Bencher) {
+        // 1 hour
+        const NUM_TICKS: u64 = TICKS_PER_SECOND_LOGIC * 60 * 60;
 
-        outputs[real_index] += u16::from(*local);
+        let data_store = get_raw_data_test().process().assume_simple();
+
+        let game_state = GameState::new(&data_store);
+
+        let mut replay = Replay::new(&game_state, None, Rc::new(data_store));
+
+        for _ in 0..NUM_TICKS {
+            replay.tick();
+        }
+
+        replay.finish();
+
+        b.iter(|| black_box(replay.clone().run().with(run_till_finished)));
     }
+
+    #[bench]
+    fn noop_actions_simulation(b: &mut Bencher) {
+        // 1 hour
+        const NUM_TICKS: u64 = TICKS_PER_SECOND_LOGIC * 60 * 60;
+
+        let data_store = get_raw_data_test().process().assume_simple();
+
+        let game_state = GameState::new(&data_store);
+
+        let mut replay = Replay::new(&game_state, None, Rc::new(data_store));
+
+        for _ in 0..NUM_TICKS {
+            replay.append_actions(
+                iter::repeat(ActionType::Ping(Position { x: 100, y: 100 })).take(5),
+            );
+            replay.tick();
+        }
+
+        replay.finish();
+
+        b.iter(|| replay.clone().run().with(run_till_finished));
+    }
+
+    // #[rstest]
+    // fn crashing_replays(#[files("crash_replays/*.rep")] path: PathBuf) {
+    //     use std::io::Read;
+
+    //     // Keep running for 30 seconds
+    //     const RUNTIME_AFTER_PRESUMED_CRASH: u64 = 30 * 60;
+
+    //     let mut file = File::open(&path).unwrap();
+
+    //     let mut v = Vec::with_capacity(file.metadata().unwrap().len() as usize);
+
+    //     file.read_to_end(&mut v).unwrap();
+
+    //     // TODO: For non u8 IdxTypes this will fail
+    //     let mut replay: Replay<u8, u8, DataStore<u8, u8>> = bitcode::deserialize(v.as_slice())
+    //         .expect(
+    //             format!("Test replay {path:?} did not deserialize, consider removing it.").as_str(),
+    //         );
+
+    //     replay.finish();
+
+    //     let running_replay = replay.run();
+
+    //     let (mut game_state_before_crash, data_store) = running_replay.with(run_till_finished);
+
+    //     for _ in 0..RUNTIME_AFTER_PRESUMED_CRASH {
+    //         game_state_before_crash.update(&data_store);
+    //     }
+    // }
+
+    // #[bench]
+    // fn bench_huge_red_green_sci(b: &mut Bencher) {
+    //     let game_state = GameState::new_with_beacon_red_green_production_many_grids(
+    //         Default::default(),
+    //         &DATA_STORE,
+    //     );
+
+    //     let mut game_state = game_state.clone();
+
+    //     b.iter(|| {
+    //         game_state.update(&DATA_STORE);
+    //     })
+    // }
+
+    // #[bench]
+    // fn bench_12_beacon_red(b: &mut Bencher) {
+    //     let game_state =
+    //         GameState::new_with_beacon_belt_production(Default::default(), &DATA_STORE);
+
+    //     let mut game_state = game_state.clone();
+
+    //     b.iter(|| {
+    //         game_state.update(&DATA_STORE);
+    //     })
+    // }
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use std::{iter, rc::Rc};
-
-//     use test::{black_box, Bencher};
-
-//     use crate::{
-//         data::get_raw_data_test,
-//         frontend::{action::ActionType, world::tile::World},
-//         rendering::app_state::{GameState, SimulationState},
-//         replays::{run_till_finished, Replay},
-//         TICKS_PER_SECOND_LOGIC,
-//     };
-
-//     #[bench]
-//     fn clone_empty_simulation(b: &mut Bencher) {
-//         let data_store = get_raw_data_test().process().assume_simple();
-
-//         let game_state = GameState::new(&data_store);
-
-//         let replay = Replay::new(game_state, Rc::new(data_store));
-
-//         b.iter(|| replay.clone());
-//     }
-
-//     #[bench]
-//     fn empty_simulation(b: &mut Bencher) {
-//         // 1 hour
-//         const NUM_TICKS: u64 = TICKS_PER_SECOND_LOGIC * 60 * 60;
-
-//         let data_store = get_raw_data_test().process().assume_simple();
-
-//         let game_state = GameState::new(&data_store);
-
-//         let mut replay = Replay::new(game_state, Rc::new(data_store));
-
-//         for _ in 0..NUM_TICKS {
-//             replay.tick();
-//         }
-
-//         replay.finish();
-
-//         b.iter(|| black_box(replay.clone().run().with(run_till_finished)));
-//     }
-
-//     #[bench]
-//     fn noop_actions_simulation(b: &mut Bencher) {
-//         // 1 hour
-//         const NUM_TICKS: u64 = TICKS_PER_SECOND_LOGIC * 60 * 60;
-
-//         let data_store = get_raw_data_test().process().assume_simple();
-
-//         let game_state = GameState::new(&data_store);
-
-//         let mut replay = Replay::new(game_state, Rc::new(data_store));
-
-//         for _ in 0..NUM_TICKS {
-//             replay.append_actions(iter::repeat(ActionType::Ping((100, 100))).take(5));
-//             replay.tick();
-//         }
-
-//         replay.finish();
-
-//         b.iter(|| replay.clone().run().with(run_till_finished));
-//     }
-// }

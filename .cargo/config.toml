@@ -1,2 +1,7 @@
-[build]
-rustflags = ["-Ctarget-cpu=native"]
+
+# It's recommended to set the flag on a per-target basis:
+[target.wasm32-unknown-unknown]
+rustflags = ['--cfg', 'getrandom_backend="wasm_js"']
+
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
