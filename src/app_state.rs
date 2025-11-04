@@ -2005,7 +2005,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 }
 
                                 let modules: ModuleSlots = vec![
-                                    None;
+                                    Some(1);
                                     data_store.lab_info[usize::from(ty)].num_module_slots
                                         as usize
                                 ]

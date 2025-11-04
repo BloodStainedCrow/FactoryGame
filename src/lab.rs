@@ -25,6 +25,7 @@ pub struct MultiLabStore {
     pub max_insert: Box<[Vec<ITEMCOUNTTYPE>]>,
     pub sciences: Box<[Vec<ITEMCOUNTTYPE>]>,
     timer: Vec<TIMERTYPE>,
+    prod_timer: Vec<TIMERTYPE>,
     holes: Vec<usize>,
 
     /// Base Crafting Speed in 5% increments
@@ -73,6 +74,7 @@ impl MultiLabStore {
             max_insert: vec![Vec::new(); science_bottle_items.len()].into_boxed_slice(),
             sciences: vec![Vec::new(); science_bottle_items.len()].into_boxed_slice(),
             timer: vec![],
+            prod_timer: vec![],
 
             base_speed: vec![],
             combined_speed_mod: vec![],
@@ -132,6 +134,15 @@ impl MultiLabStore {
         self.timer.extend(
             other
                 .timer
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !other.holes.contains(i))
+                .map(|(_, v)| v),
+        );
+
+        self.prod_timer.extend(
+            other
+                .prod_timer
                 .into_iter()
                 .enumerate()
                 .filter(|(i, _)| !other.holes.contains(i))
@@ -254,6 +265,7 @@ impl MultiLabStore {
             max_insert: self.max_insert,
             sciences: self.sciences,
             timer: self.timer,
+            prod_timer: self.prod_timer,
             holes: self.holes,
             positions: self.positions,
 
@@ -303,7 +315,12 @@ impl MultiLabStore {
             .collect::<Box<[_]>>();
 
         // TODO: use iterators/check that this compiles well
-        for timer in self.timer.iter_mut() {
+        for ((timer, prod_timer), prod_bonus) in self
+            .timer
+            .iter_mut()
+            .zip(self.prod_timer.iter_mut())
+            .zip(self.bonus_productivity.iter())
+        {
             // // FIXME: FOR TESTING ONLY
             // for science in sciences.iter_mut() {
             //     **science.peek_mut().unwrap() = 0;
@@ -318,14 +335,18 @@ impl MultiLabStore {
                 .product();
 
             let new_timer_if_all_required = timer.wrapping_add(increase);
+            let new_prod_timer_if_all_required =
+                prod_timer.wrapping_add(increase * TIMERTYPE::from(*prod_bonus) / 100);
 
             let new_timer = new_timer_if_all_required * science_mul + *timer * (1 - science_mul);
+            let new_prod_timer =
+                new_prod_timer_if_all_required * science_mul + *prod_timer * (1 - science_mul);
 
             let did_finish_work: u8 = (new_timer < *timer).into();
 
             times_ings_used += u32::from(did_finish_work);
 
-            finished_cycle += u16::from(did_finish_work);
+            finished_cycle += u16::from(did_finish_work) + u16::from(new_prod_timer < *prod_timer);
 
             // Power calculation
             // We use power if any work was done
@@ -333,6 +354,7 @@ impl MultiLabStore {
             running += u32::from(science_mul);
 
             *timer = new_timer;
+            *prod_timer = new_prod_timer;
             sciences
                 .iter_mut()
                 .zip(needed)
@@ -377,6 +399,7 @@ impl MultiLabStore {
             self.max_insert.iter_mut().for_each(|v| v[hole_idx] = 10);
             self.sciences.iter_mut().for_each(|v| v[hole_idx] = 0);
             self.timer[hole_idx] = 0;
+            self.prod_timer[hole_idx] = 0;
             self.types[hole_idx] = ty;
 
             self.base_power_consumption[hole_idx] = base_power;
@@ -405,6 +428,7 @@ impl MultiLabStore {
             self.max_insert.iter_mut().for_each(|v| v.push(10));
             self.sciences.iter_mut().for_each(|v| v.push(0));
             self.timer.push(0);
+            self.prod_timer.push(0);
             self.types.push(ty);
 
             self.base_power_consumption.push(base_power);
@@ -593,8 +617,7 @@ impl MultiLabStore {
                 .zip(self.sciences.iter().map(|list| list[index as usize]))
                 .collect(),
             timer_percentage: self.timer[index as usize] as f32 / TIMERTYPE::MAX as f32,
-            // prod_timer_percentage: self.prod_timer[index as usize] as f32 / TIMERTYPE::MAX as f32,
-            prod_timer_percentage: 0.0 / TIMERTYPE::MAX as f32,
+            prod_timer_percentage: self.prod_timer[index as usize] as f32 / TIMERTYPE::MAX as f32,
             base_speed: self.base_speed[index as usize] as f32 / 20.0,
             speed_mod: self.raw_speed_mod[index as usize] as f32 / 20.0,
             prod_mod: self.raw_bonus_productivity[index as usize] as f32 / 100.0,
