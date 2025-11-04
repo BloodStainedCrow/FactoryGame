@@ -1,24 +1,22 @@
 use eframe::egui;
 use winit::{dpi::PhysicalPosition, event::MouseScrollDelta, keyboard::KeyCode};
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum Input {
-    LeftClickPressed { shift: bool },
+    LeftClickPressed,
     LeftClickReleased,
-    RightClickPressed { shift: bool },
+    RightClickPressed,
     RightClickReleased,
     MouseMove(f32, f32),
     KeyPress(Key),
     KeyRelease(Key),
-
-    Copy,
 
     MouseScoll(MouseScrollDelta),
 
     UnknownInput(UnknownInput),
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 enum UnknownInput {
     UnknownKeyInput(winit::keyboard::NativeKeyCode),
 }
@@ -50,17 +48,11 @@ impl TryFrom<egui::Event> for Input {
         let ret = match event {
             eframe::egui::Event::Key {
                 key,
-                physical_key: _,
+                physical_key,
                 pressed,
-                repeat: _,
+                repeat,
                 modifiers,
             } => {
-                let key = EguiInputState {
-                    key,
-                    shift: modifiers.shift,
-                    ctrl: modifiers.ctrl,
-                };
-
                 if pressed {
                     Ok(Input::KeyPress(key.try_into()?))
                 } else {
@@ -69,17 +61,13 @@ impl TryFrom<egui::Event> for Input {
             },
             eframe::egui::Event::PointerMoved(pos2) => Ok(Input::MouseMove(pos2.x, pos2.y)),
             eframe::egui::Event::PointerButton {
-                pos: _,
+                pos,
                 button,
                 pressed,
                 modifiers,
             } => match (pressed, button) {
-                (true, eframe::egui::PointerButton::Primary) => Ok(Input::LeftClickPressed {
-                    shift: modifiers.shift,
-                }),
-                (true, eframe::egui::PointerButton::Secondary) => Ok(Input::RightClickPressed {
-                    shift: modifiers.shift,
-                }),
+                (true, eframe::egui::PointerButton::Primary) => Ok(Input::LeftClickPressed),
+                (true, eframe::egui::PointerButton::Secondary) => Ok(Input::RightClickPressed),
                 (true, eframe::egui::PointerButton::Middle) => Err(()),
                 (true, eframe::egui::PointerButton::Extra1) => Err(()),
                 (true, eframe::egui::PointerButton::Extra2) => Err(()),
@@ -105,7 +93,6 @@ impl TryFrom<egui::Event> for Input {
                 )),
                 eframe::egui::MouseWheelUnit::Page => Err(()),
             },
-            egui::Event::Copy => Ok(Self::Copy),
 
             _ => Err(()),
         };
@@ -116,17 +103,13 @@ impl TryFrom<egui::Event> for Input {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Key {
-    Shift,
     W,
     A,
     S,
     D,
     Q,
+    R,
     P,
-    T,
-    M,
-    V,
-    H,
     Key0,
     Key1,
     Key2,
@@ -137,9 +120,6 @@ pub enum Key {
     Key7,
     Key8,
     Key9,
-    R,
-    ShiftR,
-    Esc,
 }
 
 impl TryFrom<winit::keyboard::KeyCode> for Key {
@@ -154,7 +134,6 @@ impl TryFrom<winit::keyboard::KeyCode> for Key {
             KeyCode::KeyQ => Key::Q,
             KeyCode::KeyR => Key::R,
             KeyCode::KeyP => Key::P,
-            KeyCode::KeyT => Key::T,
             KeyCode::Digit0 => Key::Key0,
             KeyCode::Digit1 => Key::Key1,
             KeyCode::Digit2 => Key::Key2,
@@ -165,7 +144,6 @@ impl TryFrom<winit::keyboard::KeyCode> for Key {
             KeyCode::Digit7 => Key::Key7,
             KeyCode::Digit8 => Key::Key8,
             KeyCode::Digit9 => Key::Key9,
-            KeyCode::ShiftLeft | KeyCode::ShiftRight => Key::Shift,
 
             _ => return Err(()),
         };
@@ -174,40 +152,28 @@ impl TryFrom<winit::keyboard::KeyCode> for Key {
     }
 }
 
-struct EguiInputState {
-    key: egui::Key,
-    shift: bool,
-    ctrl: bool,
-}
-
-impl TryFrom<EguiInputState> for Key {
+impl TryFrom<egui::Key> for Key {
     type Error = ();
 
-    fn try_from(value: EguiInputState) -> Result<Self, Self::Error> {
-        let ret = match (value.key, value.shift, value.ctrl) {
-            (egui::Key::W, _, false) => Key::W,
-            (egui::Key::A, _, false) => Key::A,
-            (egui::Key::S, _, false) => Key::S,
-            (egui::Key::D, _, false) => Key::D,
-            (egui::Key::Q, _, false) => Key::Q,
-            (egui::Key::R, false, false) => Key::R,
-            (egui::Key::R, true, false) => Key::ShiftR,
-            (egui::Key::T, _, false) => Key::T,
-            (egui::Key::P, _, false) => Key::P,
-            (egui::Key::M, _, false) => Key::M,
-            (egui::Key::V, _, false) => Key::V,
-            (egui::Key::H, _, false) => Key::H,
-            (egui::Key::Num0, _, false) => Key::Key0,
-            (egui::Key::Num1, _, false) => Key::Key1,
-            (egui::Key::Num2, _, false) => Key::Key2,
-            (egui::Key::Num3, _, false) => Key::Key3,
-            (egui::Key::Num4, _, false) => Key::Key4,
-            (egui::Key::Num5, _, false) => Key::Key5,
-            (egui::Key::Num6, _, false) => Key::Key6,
-            (egui::Key::Num7, _, false) => Key::Key7,
-            (egui::Key::Num8, _, false) => Key::Key8,
-            (egui::Key::Num9, _, false) => Key::Key9,
-            (egui::Key::Escape, _, false) => Key::Esc,
+    fn try_from(value: egui::Key) -> Result<Self, Self::Error> {
+        let ret = match value {
+            egui::Key::W => Key::W,
+            egui::Key::A => Key::A,
+            egui::Key::S => Key::S,
+            egui::Key::D => Key::D,
+            egui::Key::Q => Key::Q,
+            egui::Key::R => Key::R,
+            egui::Key::P => Key::P,
+            egui::Key::Num0 => Key::Key0,
+            egui::Key::Num1 => Key::Key1,
+            egui::Key::Num2 => Key::Key2,
+            egui::Key::Num3 => Key::Key3,
+            egui::Key::Num4 => Key::Key4,
+            egui::Key::Num5 => Key::Key5,
+            egui::Key::Num6 => Key::Key6,
+            egui::Key::Num7 => Key::Key7,
+            egui::Key::Num8 => Key::Key8,
+            egui::Key::Num9 => Key::Key9,
 
             _ => return Err(()),
         };

@@ -1,1 +1,0 @@
-Placing the static storages at the start of the storage list, we an skip some calculations in the inserter indexing. I have tested this, and it seems to save ~300us on a full factory.

@@ -1,14 +1,14 @@
 use std::{cmp::min, mem};
 
 use rayon::iter::{
+    plumbing::{bridge, Producer},
     IndexedParallelIterator, ParallelIterator,
-    plumbing::{Producer, bridge},
 };
 
 pub fn split_arbitrary_mut<T>(
     slice: &mut [T],
     sizes: impl IntoIterator<Item = usize>,
-) -> impl Iterator<Item = &mut [T]> {
+) -> impl IntoIterator<Item = &mut [T]> {
     SplitArbitraryMut {
         slice,
         sizes: sizes.into_iter(),
@@ -41,7 +41,7 @@ impl<'a, T, C: Iterator<Item = usize>> Iterator for SplitArbitraryMut<'a, T, C> 
 pub fn split_arbitrary_mut_slice<'a, 'b, T: Send>(
     slice: &'a mut [T],
     sizes: &'b [usize],
-) -> impl Iterator<Item = &'a mut [T]> + use<'a, 'b, T> + IndexedParallelIterator<Item = &'a mut [T]>
+) -> impl IntoIterator<Item = &'a mut [T]> + use<'a, 'b, T> + IndexedParallelIterator<Item = &'a mut [T]>
 {
     SplitArbitraryMutSlice { slice, sizes }
 }

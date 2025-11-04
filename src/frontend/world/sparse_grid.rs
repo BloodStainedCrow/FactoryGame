@@ -1,41 +1,99 @@
 use std::collections::HashMap;
-use std::hash::Hash;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SparseGrid<I: PartialEq + Eq + Hash + Copy, T> {
-    values: HashMap<(I, I), T>,
+pub struct SparseGrid<T> {
+    width: usize,
+    height: usize,
+    values: HashMap<(usize, usize), T>,
 }
 
-impl<I: PartialEq + Eq + Hash + Copy, T> SparseGrid<I, T> {
-    pub fn new() -> Self {
+impl<T> SparseGrid<T> {
+    pub fn new(width: usize, height: usize) -> Self {
         Self {
+            width,
+            height,
             values: HashMap::new(),
         }
     }
 
-    pub fn get_default(&mut self, x: I, y: I) -> &T
+    pub fn get_default(&mut self, x: usize, y: usize) -> &T
     where
         T: Default,
     {
+        assert!(
+            x < self.width,
+            "index {x} out of bounds for width {}",
+            self.width
+        );
+        assert!(
+            y < self.height,
+            "index {y} out of bounds for height {}",
+            self.height
+        );
+
         self.values.entry((x, y)).or_default()
     }
 
-    pub fn get(&self, x: I, y: I) -> Option<&T> {
+    pub fn get(&self, x: usize, y: usize) -> Option<&T> {
+        assert!(
+            x < self.width,
+            "index {x} out of bounds for width {}",
+            self.width
+        );
+        assert!(
+            y < self.height,
+            "index {y} out of bounds for height {}",
+            self.height
+        );
+
         self.values.get(&(x, y))
     }
 
-    pub fn get_mut(&mut self, x: I, y: I) -> Option<&mut T> {
+    pub fn get_mut(&mut self, x: usize, y: usize) -> Option<&mut T> {
+        assert!(
+            x < self.width,
+            "index {x} out of bounds for width {}",
+            self.width
+        );
+        assert!(
+            y < self.height,
+            "index {y} out of bounds for height {}",
+            self.height
+        );
+
         self.values.get_mut(&(x, y))
     }
 
-    pub fn insert(&mut self, x: I, y: I, value: T) -> Option<T> {
+    pub fn insert(&mut self, x: usize, y: usize, value: T) -> Option<T> {
+        assert!(
+            x < self.width,
+            "index {x} out of bounds for width {}",
+            self.width
+        );
+        assert!(
+            y < self.height,
+            "index {y} out of bounds for height {}",
+            self.height
+        );
+
         self.values.insert((x, y), value)
     }
 
-    pub fn insert_deduplicate(&mut self, x: I, y: I, value: T) -> Option<T>
+    pub fn insert_deduplicate(&mut self, x: usize, y: usize, value: T) -> Option<T>
     where
         T: PartialEq + Default,
     {
+        assert!(
+            x < self.width,
+            "index {x} out of bounds for width {}",
+            self.width
+        );
+        assert!(
+            y < self.height,
+            "index {y} out of bounds for height {}",
+            self.height
+        );
+
         if value == T::default() {
             self.values.remove(&(x, y))
         } else {
@@ -43,11 +101,11 @@ impl<I: PartialEq + Eq + Hash + Copy, T> SparseGrid<I, T> {
         }
     }
 
-    pub fn occupied_entries(&self) -> impl Iterator<Item = ((I, I), &T)> {
+    pub fn occupied_entries(&self) -> impl Iterator<Item = ((usize, usize), &T)> {
         self.values.iter().map(|(a, b)| (*a, b))
     }
 
-    pub fn occupied_entries_mut(&mut self) -> impl Iterator<Item = ((I, I), &mut T)> {
+    pub fn occupied_entries_mut(&mut self) -> impl Iterator<Item = ((usize, usize), &mut T)> {
         self.values.iter_mut().map(|(a, b)| (*a, b))
     }
 }

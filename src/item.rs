@@ -4,12 +4,8 @@ use std::hash::Hash;
 
 pub type ITEMCOUNTTYPE = u8;
 
-pub trait Indexable {
-    fn into_usize(self) -> usize;
-}
-
 pub trait IdxTrait:
-    Debug + Indexable + serde::Serialize + for<'de> serde::Deserialize<'de> + WeakIdxTrait
+    Debug + serde::Serialize + for<'de> serde::Deserialize<'de> + WeakIdxTrait
 {
 }
 
@@ -44,12 +40,6 @@ pub struct Item<ItemIdxType: WeakIdxTrait> {
     pub id: ItemIdxType,
 }
 
-impl<ItemIdxType: IdxTrait> Indexable for Item<ItemIdxType> {
-    fn into_usize(self) -> usize {
-        self.id.into_usize()
-    }
-}
-
 impl<ItemIdxType: IdxTrait> From<ItemIdxType> for Item<ItemIdxType> {
     fn from(value: ItemIdxType) -> Self {
         Self { id: value }
@@ -67,12 +57,6 @@ impl<ItemIdxType: IdxTrait> Item<ItemIdxType> {
 )]
 pub struct Recipe<RecipeIdxType: WeakIdxTrait> {
     pub id: RecipeIdxType,
-}
-
-impl<RecipeIdxType: IdxTrait> Indexable for Recipe<RecipeIdxType> {
-    fn into_usize(self) -> usize {
-        self.id.into_usize()
-    }
 }
 
 impl<RecipeIdxType: IdxTrait> From<RecipeIdxType> for Recipe<RecipeIdxType> {

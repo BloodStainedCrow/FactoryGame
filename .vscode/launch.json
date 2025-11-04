@@ -32,7 +32,6 @@
                     "build",
                     "--bin=factory",
                     "--package=factory",
-                    "--features=graphics",
                 ],
                 "filter": {
                     "name": "factory",
@@ -45,52 +44,12 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'factory' verbose",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=factory",
-                    "--package=factory",
-                    "--features=graphics",
-                ],
-                "filter": {
-                    "name": "factory",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}",
-            "env": { "RUST_LOG": "info" }
-        },{
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug executable 'factory' without tick wait",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=factory",
-                    "--package=factory",
-                    "--features=graphics",
-                ],
-                "filter": {
-                    "name": "factory",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}",
-            "env": { "ZOOM": "true" }
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
             "name": "Debug factory client",
             "cargo": {
                 "args": [
                     "build",
                     "--bin=factory",
                     "--package=factory",
-                    "--features=graphics",
                 ],
                 "filter": {
                     "name": "factory",
@@ -109,12 +68,30 @@
                     "test",
                     "--no-run",
                     "--bin=factory",
-                    "--package=factory",
-                    "--features=graphics",
+                    "--package=factory"
                 ],
                 "filter": {
                     "name": "factory",
                     "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'test'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=test",
+                    "--package=factory"
+                ],
+                "filter": {
+                    "name": "test",
+                    "kind": "test"
                 }
             },
             "args": [],

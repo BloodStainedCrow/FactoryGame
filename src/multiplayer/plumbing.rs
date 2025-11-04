@@ -3,18 +3,17 @@ use std::{
     marker::PhantomData,
     mem,
     net::TcpStream,
-    sync::{Arc, mpsc::Receiver},
+    sync::{mpsc::Receiver, Arc, Mutex},
     time::{Duration, Instant},
 };
 
-use parking_lot::Mutex;
-
+use eframe::wgpu::hal::auxil::db;
 use log::{error, warn};
 
 use crate::{
     data::DataStore,
     frontend::{
-        action::{ActionType, action_state_machine::ActionStateMachine},
+        action::{action_state_machine::ActionStateMachine, ActionType},
         input::Input,
         world::tile::World,
     },
@@ -22,9 +21,9 @@ use crate::{
 };
 
 use super::{
-    ServerInfo,
     connection_reciever::ConnectionList,
     server::{ActionSource, HandledActionConsumer},
+    ServerInfo,
 };
 
 pub(super) struct Client<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
@@ -59,8 +58,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         current_tick: u64,
         world: &World<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<'a, ItemIdxType, RecipeIdxType>
-    {
+    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
+           + use<'a, ItemIdxType, RecipeIdxType> {
         // This will block (?) if we did not yet recieve the actions from the server for this tick
         // TODO: This could introduce hitches which might be noticeable.
         //       This could be solved either by introducing some fixed delay on all actions (i.e. just running the client a couple ticks in the past compared to the server)
@@ -68,7 +67,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         // Get the actions from what the server sent us
         let pre_lock = Instant::now();
 
-        let mut state_machine = self.local_actions.lock();
+        let mut state_machine = self.local_actions.lock().unwrap();
 
         let mut local_actions: Vec<_> = state_machine
             .handle_inputs(&self.local_input, world, data_store)
@@ -110,7 +109,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         current_tick: u64,
         world: &World<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
+    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
     {
         let start = Instant::now();
         // This is the Server, it will just keep on chugging along and never block
@@ -123,6 +122,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         let recieved_actions: Vec<ActionType<_, _>> = self
             .client_connections
             .lock()
+            .unwrap()
             .iter()
             .flat_map(|mut conn| {
                 let start = Instant::now();
@@ -153,7 +153,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
             error!("recieved_actions {:?}", start.elapsed());
         }
 
-        recieved_actions.into_iter()
+        recieved_actions
     }
 }
 
@@ -167,7 +167,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     ) {
         let actions: Vec<_> = actions.into_iter().collect();
         // Send the actions to the clients
-        for conn in self.client_connections.lock().iter() {
+        for conn in self.client_connections.lock().unwrap().iter() {
             postcard::to_io(&actions, conn).expect("tcp send failed");
         }
     }
@@ -188,10 +188,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         current_tick: u64,
         world: &'b World<ItemIdxType, RecipeIdxType>,
         data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
-    + use<'a, 'b, 'c, ItemIdxType, RecipeIdxType> {
+    ) -> impl IntoIterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
+           + use<'a, 'b, 'c, ItemIdxType, RecipeIdxType> {
         let start = Instant::now();
-        let mut state_machine = self.local_actions.lock();
+        let mut state_machine = self.local_actions.lock().unwrap();
         if start.elapsed() > Duration::from_millis(10) {
             error!("Post lock {:?}", start.elapsed());
         }

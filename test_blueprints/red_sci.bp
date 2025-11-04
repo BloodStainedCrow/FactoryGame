@@ -1,3 +1,245 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:772a709b63a46d70b3d34ba581e9f9ddf5fb168f881339dcb53e649de7c7ba0c
-size 6415
+(
+    actions: [
+        PlaceEntity((
+            entities: Single(Assembler(pos: (
+                x: 10,
+                y: 9,
+            ), ty: 0)),
+        )),
+        SetRecipe((
+            pos: (
+                x: 10,
+                y: 9,
+            ),
+            recipe: (
+                id: 0,
+            ),
+        )),
+        PlaceEntity((
+            entities: Single(SolarPanel(
+                pos: (
+                    x: 10,
+                    y: 12,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Assembler(pos:(
+                x: 14,
+                y: 9,
+            ), ty: 0)),
+        )),
+        SetRecipe((
+            pos: (
+                x: 14,
+                y: 9,
+            ),
+            recipe: (
+                id: 2,
+            ),
+        )),
+        PlaceEntity((
+            entities: Single(Assembler(pos: (
+                x: 18,
+                y: 9,
+            ), ty: 0)),
+        )),
+        SetRecipe((
+            pos: (
+                x: 18,
+                y: 9,
+            ),
+            recipe: (
+                id: 4,
+            ),
+        )),
+        PlaceEntity((
+            entities: Single(Assembler(pos: (
+                x: 22,
+                y: 11,
+            ), ty: 0)),
+        )),
+        SetRecipe((
+            pos: (
+                x: 22,
+                y: 11,
+            ),
+            recipe: (
+                id: 5,
+            ),
+        )),
+        PlaceEntity((
+            entities: Single(SolarPanel(
+                pos: (
+                    x: 22,
+                    y: 14,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Assembler(pos: (
+                x: 18,
+                y: 13,
+            ), ty: 0)),
+        )),
+        SetRecipe((
+            pos: (
+                x: 18,
+                y: 13,
+            ),
+            recipe: (
+                id: 3,
+            ),
+        )),
+        PlaceEntity((
+            entities: Single(Assembler(pos: (
+                x: 14,
+                y: 13,
+            ), ty: 0)),
+        )),
+        SetRecipe((
+            pos: (
+                x: 14,
+                y: 13,
+            ),
+            recipe: (
+                id: 1,
+            ),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 13,
+                    y: 9,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 13,
+                    y: 12,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 17,
+                    y: 12,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 21,
+                    y: 12,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(PowerPole(
+                pos: (
+                    x: 25,
+                    y: 12,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Inserter(
+                pos: (
+                    x: 13,
+                    y: 11,
+                ),
+                dir: East,
+                filter: None,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Inserter(
+                pos: (
+                    x: 17,
+                    y: 11,
+                ),
+                dir: East,
+                filter: None,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Inserter(
+                pos: (
+                    x: 21,
+                    y: 11,
+                ),
+                dir: East,
+                filter: None,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Inserter(
+                pos: (
+                    x: 17,
+                    y: 13,
+                ),
+                dir: East,
+                filter: None,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Inserter(
+                pos: (
+                    x: 21,
+                    y: 13,
+                ),
+                dir: East,
+                filter: None,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Lab(
+                pos: (
+                    x: 26,
+                    y: 9,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Lab(
+                pos: (
+                    x: 26,
+                    y: 13,
+                ),
+                ty: 0,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Inserter(
+                pos: (
+                    x: 25,
+                    y: 11,
+                ),
+                dir: East,
+                filter: None,
+            )),
+        )),
+        PlaceEntity((
+            entities: Single(Inserter(
+                pos: (
+                    x: 25,
+                    y: 13,
+                ),
+                dir: East,
+                filter: None,
+            )),
+        )),
+    ],
+)

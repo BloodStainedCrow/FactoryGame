@@ -8,16 +8,17 @@ use charts_rs::Series;
 use itertools::Itertools;
 
 use crate::{
-    NewWithDataStore,
     data::DataStore,
     item::{IdxTrait, Item},
+    NewWithDataStore,
 };
 
-use super::{IntoSeries, recipe::RecipeTickInfo};
+use super::{recipe::RecipeTickInfo, IntoSeries};
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ProductionInfo {
     pub items_produced: Vec<u64>,
+    items_used: Vec<u64>,
 }
 
 impl ProductionInfo {
@@ -40,6 +41,19 @@ impl ProductionInfo {
                         .sum()
                 })
                 .collect(),
+            items_used: data_store
+                .item_to_recipe_count_where_its_ingredient
+                .iter()
+                .map(|values| {
+                    values
+                        .iter()
+                        .map(|(recipe, amount)| {
+                            info.num_crafts_finished[recipe.id.into()].full_crafts
+                                * u64::from(*amount)
+                        })
+                        .sum()
+                })
+                .collect(),
         }
     }
 }
@@ -56,6 +70,10 @@ impl Add<&ProductionInfo> for ProductionInfo {
             *s += rhs;
         }
 
+        for (s, rhs) in self.items_used.iter_mut().zip(rhs.items_used.iter()) {
+            *s += rhs;
+        }
+
         self
     }
 }
@@ -69,6 +87,10 @@ impl AddAssign<&ProductionInfo> for ProductionInfo {
         {
             *s += rhs;
         }
+
+        for (s, rhs) in self.items_used.iter_mut().zip(rhs.items_used.iter()) {
+            *s += rhs;
+        }
     }
 }
 
@@ -79,14 +101,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         values: &[Self],
         filter: Option<impl Fn(Item<ItemIdxType>) -> bool>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl Iterator<Item = (usize, Series)> {
+    ) -> impl IntoIterator<Item = Series> {
         BTreeMap::from_iter(
             values
                 .iter()
                 .map(|info| {
                     info.items_produced
                         .iter()
-                        .zip(data_store.item_display_names.iter())
+                        .zip(data_store.item_names.iter())
                         .enumerate()
                         .filter_map(|(item_id, v)| {
                             filter
@@ -105,13 +127,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 .into_iter()
                 .map(|(k, v)| (k.0, (k.1, v))),
         )
-        .into_iter()
-        .map(|(item_id, a)| {
-            (
-                item_id.try_into().unwrap(),
-                (a.0.as_str(), a.1.into_iter().map(|v| v as f32).collect()).into(),
-            )
-        })
+        .into_values()
+        .map(|a| (a.0.as_str(), a.1.into_iter().map(|v| v as f32).collect()).into())
     }
 }
 
@@ -121,6 +138,7 @@ impl NewWithDataStore for ProductionInfo {
     ) -> Self {
         Self {
             items_produced: vec![0; data_store.borrow().item_names.len()],
+            items_used: vec![0; data_store.borrow().item_names.len()],
         }
     }
 }

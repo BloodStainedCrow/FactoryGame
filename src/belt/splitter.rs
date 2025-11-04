@@ -1,17 +1,19 @@
 use std::cmp::min;
 
-use std::cell::UnsafeCell;
-
 use itertools::Itertools;
-use serde::ser::SerializeSeq;
 
-use crate::item::{IdxTrait, Item, WeakIdxTrait};
+use crate::item::{IdxTrait, Item};
 
-use strum::EnumIter;
+use super::{
+    belt::{Belt, ItemInfo},
+    MultiBeltStore, SushiBelt,
+};
+
+type BeltBeltInserterID = u32;
 
 pub const SPLITTER_BELT_LEN: u16 = 2;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, EnumIter)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub enum SplitterSide {
     Left,
     Right,
@@ -36,7 +38,7 @@ impl From<SplitterSide> for usize {
 }
 
 impl SplitterSide {
-    pub fn switch(self) -> Self {
+    fn switch(self) -> Self {
         match self {
             SplitterSide::Left => SplitterSide::Right,
             SplitterSide::Right => SplitterSide::Left,
@@ -60,21 +62,44 @@ impl Default for SplitterDistributionMode {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct PureSplitter {
+pub struct Splitter {
     pub in_mode: SplitterDistributionMode,
     pub out_mode: SplitterDistributionMode,
 
     /// 0 is left
-    pub inputs: [bool; 2],
+    pub input_belts: [usize; 2],
     /// 0 is left
-    pub outputs: [bool; 2],
+    pub output_belts: [usize; 2],
 }
 
-impl PureSplitter {
+impl Splitter {
     // TODO: Test this
-    pub fn update(&mut self) {
-        let num_items_possible_to_input = self.inputs.iter().filter(|belt| **belt).count();
-        let num_items_possible_to_output = self.outputs.iter().filter(|belt| !**belt).count();
+    pub fn update<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        &mut self,
+        belts: &mut MultiBeltStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        // FIXME: Handle the case where an input and output are the same belt!
+        let [input_1, input_2, output_1, output_2] = belts
+            .belts
+            .get_disjoint_mut([
+                self.input_belts[0],
+                self.input_belts[1],
+                self.output_belts[0],
+                self.output_belts[1],
+            ])
+            .expect("Inputs or outputs overlap (or something is out of bounds)");
+        let mut inputs: [&mut super::smart::SmartBelt<ItemIdxType, RecipeIdxType>; 2] =
+            [input_1, input_2];
+        let mut outputs = [output_1, output_2];
+
+        let num_items_possible_to_input = inputs
+            .iter()
+            .filter(|belt| belt.get_front().is_some())
+            .count();
+        let num_items_possible_to_output = outputs
+            .iter()
+            .filter(|belt| belt.get_back().is_none())
+            .count();
 
         let num_items = min(num_items_possible_to_input, num_items_possible_to_output);
 
@@ -87,23 +112,21 @@ impl PureSplitter {
                 };
 
                 if should_switch_in {
-                    self.inputs.rotate_left(1);
+                    inputs.rotate_left(1);
                 }
 
-                let should_switch_out: bool = match self.out_mode {
+                let should_switch_out = match self.out_mode {
                     SplitterDistributionMode::Fair { next } => next.into(),
                     SplitterDistributionMode::Priority(splitter_side) => splitter_side.into(),
                 };
-
-                let mut outputs = self.outputs.each_mut();
 
                 if should_switch_out {
                     outputs.rotate_left(1);
                 }
 
-                for (i, input) in self.inputs.iter_mut().enumerate() {
-                    let old = *input;
-                    *input = false;
+                for (i, input) in inputs.iter_mut().enumerate() {
+                    let old = input.get_front().is_some();
+                    *input.get_front_mut() = false;
                     if old {
                         let original_index = (i + usize::from(should_switch_in)) % 2;
                         if let SplitterDistributionMode::Fair { next } = &mut self.in_mode {
@@ -116,8 +139,8 @@ impl PureSplitter {
                 }
 
                 for (i, output) in outputs.iter_mut().enumerate() {
-                    let old = **output;
-                    **output = true;
+                    let old = output.get_back().is_some();
+                    *output.get_back_mut() = true;
                     if !old {
                         let original_index = (i + usize::from(should_switch_in)) % 2;
                         if let SplitterDistributionMode::Fair { next } = &mut self.out_mode {
@@ -130,119 +153,57 @@ impl PureSplitter {
                 }
             },
             2 => {
-                self.inputs = [false, false];
-                self.outputs = [true, true];
+                for input in inputs {
+                    debug_assert_eq!(*input.get_front_mut(), true);
+                    *input.get_front_mut() = false;
+                }
+
+                for output in outputs {
+                    debug_assert_eq!(*output.get_back_mut(), false);
+                    *output.get_back_mut() = true;
+                }
             },
             _ => unreachable!("A Splitter can move at most 2 items every tick"),
         }
     }
 }
 
-#[derive(Debug)]
-pub(super) struct SushiSplitter<ItemIdxType: WeakIdxTrait> {
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct SushiSplitter {
     pub in_mode: SplitterDistributionMode,
     pub out_mode: SplitterDistributionMode,
 
     /// 0 is left
-    pub(super) inputs: [UnsafeCell<Option<Item<ItemIdxType>>>; 2],
+    pub input_belts: [usize; 2],
     /// 0 is left
-    pub(super) outputs: [UnsafeCell<Option<Item<ItemIdxType>>>; 2],
+    pub output_belts: [usize; 2],
 }
 
-// SAFETY:
-// Since all accesses to the UnsafeCells are tightly controlled inside the super module, we can share this between threads
-unsafe impl<ItemIdxType: WeakIdxTrait + Sync> Sync for SushiSplitter<ItemIdxType> {}
-
-#[derive(serde::Deserialize, serde::Serialize)]
-struct SushiSplitterReplacement<ItemIdxType: WeakIdxTrait> {
-    pub in_mode: SplitterDistributionMode,
-    pub out_mode: SplitterDistributionMode,
-
-    /// 0 is left
-    pub inputs: [Option<Item<ItemIdxType>>; 2],
-    /// 0 is left
-    pub outputs: [Option<Item<ItemIdxType>>; 2],
-}
-
-impl<'de, ItemIdxType: WeakIdxTrait> serde::Deserialize<'de> for SushiSplitter<ItemIdxType>
-where
-    ItemIdxType: serde::Deserialize<'de>,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        SushiSplitterReplacement::deserialize(deserializer).map(
-            |SushiSplitterReplacement {
-                 in_mode,
-                 out_mode,
-                 inputs,
-                 outputs,
-             }| SushiSplitter {
-                in_mode,
-                out_mode,
-                inputs: inputs.map(|v| UnsafeCell::new(v)),
-                outputs: outputs.map(|v| UnsafeCell::new(v)),
-            },
-        )
-    }
-}
-
-impl<ItemIdxType: WeakIdxTrait> SushiSplitter<ItemIdxType> {
-    /// The caller must ensure, reads from self cannot race on the unsafe cell (i.e. that this is not called during a belt update)
-    pub unsafe fn unsafe_clone(&self) -> Self {
-        // SAFETY:
-        // This is safe, since the caller is responsible
-        unsafe {
-            Self {
-                in_mode: self.in_mode.clone(),
-                out_mode: self.out_mode.clone(),
-                inputs: [
-                    UnsafeCell::new(*self.inputs[0].get()),
-                    UnsafeCell::new(*self.inputs[1].get()),
-                ],
-                outputs: [
-                    UnsafeCell::new(*self.outputs[0].get()),
-                    UnsafeCell::new(*self.outputs[1].get()),
-                ],
-            }
-        }
-    }
-
-    /// The caller must ensure, reads from self cannot race on the unsafe cell (i.e. that this is not called during a belt update)
-    pub unsafe fn unsafe_serialize_elem<S>(
-        &self,
-        seq: &mut <S as serde::Serializer>::SerializeSeq,
-    ) -> Result<(), S::Error>
-    where
-        S: serde::Serializer,
-        ItemIdxType: serde::Serialize,
-    {
-        // SAFETY:
-        // This is safe, since the caller is responsible
-        unsafe {
-            seq.serialize_element(&SushiSplitterReplacement {
-                in_mode: self.in_mode,
-                out_mode: self.out_mode,
-                inputs: [*self.inputs[0].get(), *self.inputs[1].get()],
-                outputs: [*self.outputs[0].get(), *self.outputs[1].get()],
-            })
-        }
-    }
-}
-
-impl<ItemIdxType: IdxTrait> SushiSplitter<ItemIdxType> {
+impl SushiSplitter {
     // TODO: Test this
-    pub fn update(&mut self) {
-        let num_items_possible_to_input = self
-            .inputs
-            .iter_mut()
-            .filter_map(|i| i.get_mut().is_some().then_some(()))
+    pub fn update<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        &mut self,
+        belts: &mut [SushiBelt<ItemIdxType, RecipeIdxType>],
+    ) {
+        // FIXME: Handle the case where an input and output are the same belt!
+        let [input_1, input_2, output_1, output_2] = belts
+            .get_disjoint_mut([
+                self.input_belts[0],
+                self.input_belts[1],
+                self.output_belts[0],
+                self.output_belts[1],
+            ])
+            .expect("Inputs or outputs overlap (or something is out of bounds)");
+        let mut inputs: [&mut SushiBelt<ItemIdxType, RecipeIdxType>; 2] = [input_1, input_2];
+        let mut outputs: [&mut SushiBelt<ItemIdxType, RecipeIdxType>; 2] = [output_1, output_2];
+
+        let num_items_possible_to_input = inputs
+            .iter()
+            .filter(|belt| belt.get_front().is_some())
             .count();
-        let num_items_possible_to_output = self
-            .outputs
-            .iter_mut()
-            .filter_map(|i| i.get_mut().is_none().then_some(()))
+        let num_items_possible_to_output = outputs
+            .iter()
+            .filter(|belt| belt.get_back().is_none())
             .count();
 
         let num_items = min(num_items_possible_to_input, num_items_possible_to_output);
@@ -256,7 +217,7 @@ impl<ItemIdxType: IdxTrait> SushiSplitter<ItemIdxType> {
                 };
 
                 if should_switch_in {
-                    self.inputs.rotate_left(1);
+                    inputs.rotate_left(1);
                 }
 
                 let should_switch_out = match self.out_mode {
@@ -264,45 +225,48 @@ impl<ItemIdxType: IdxTrait> SushiSplitter<ItemIdxType> {
                     SplitterDistributionMode::Priority(splitter_side) => splitter_side.into(),
                 };
 
+                if should_switch_out {
+                    outputs.rotate_left(1);
+                }
+
                 #[cfg(debug_assertions)]
                 let mut removed = false;
 
-                let items: [Item<ItemIdxType>; 1] = self
-                    .inputs
+                let items: [Item<ItemIdxType>; 1] = inputs
                     .iter_mut()
                     .enumerate()
                     .flat_map(|(i, input)| {
-                        if input.get_mut().is_some() {
+                        if input.get_front().is_some() {
                             let original_index = (i + usize::from(should_switch_in)) % 2;
                             if let SplitterDistributionMode::Fair { next } = &mut self.in_mode {
                                 if Into::<usize>::into(*next) == original_index {
                                     *next = next.switch();
                                 }
                             }
-                            #[cfg(debug_assertions)]
-                            {
-                                assert!(!removed);
-                                removed = true;
-                            }
                         }
 
-                        input.get_mut().take()
+                        #[cfg(debug_assertions)]
+                        {
+                            assert!(!removed);
+                            removed = true;
+                        }
+                        input.remove_item(0)
                     })
                     .take(1)
+                    .map(|info| {
+                        let ItemInfo::Sushi(item) = info else {
+                            unreachable!()
+                        };
+                        item
+                    })
                     .collect_array()
                     .expect("We already checked that has to be at least one item");
 
-                let mut outputs = self.outputs.each_mut();
-
-                if should_switch_out {
-                    outputs.rotate_left(1);
-                }
-
                 for (i, output) in outputs.iter_mut().enumerate() {
-                    if output.get_mut().is_none() {
+                    if !output.get_back().is_some() {
                         // There is space here
-                        *output.get_mut() = Some(items[0]);
-                        let original_index = (i + usize::from(should_switch_out)) % 2;
+                        output.try_insert_item(output.get_len() - 1, items[0]);
+                        let original_index = (i + usize::from(should_switch_in)) % 2;
                         if let SplitterDistributionMode::Fair { next } = &mut self.out_mode {
                             if Into::<usize>::into(*next) == original_index {
                                 *next = next.switch();
@@ -313,19 +277,27 @@ impl<ItemIdxType: IdxTrait> SushiSplitter<ItemIdxType> {
                 }
             },
             2 => {
-                let items: [Item<ItemIdxType>; 2] = self
-                    .inputs
+                let items: [Item<ItemIdxType>; 2] = inputs
                     .iter_mut()
-                    .map(|input| input.get_mut().take().unwrap())
+                    .enumerate()
+                    .map(|(i, input)| input.remove_item(0).unwrap())
+                    .map(|info| {
+                        let ItemInfo::Sushi(item) = info else {
+                            unreachable!()
+                        };
+                        item
+                    })
                     .collect_array()
                     .expect("We already checked that has to be 2 items to pick up");
 
                 // TODO: How do I want to distribute these items?
                 // Currently if both input lines are full the items are not shuffled.
 
-                for (output, item) in self.outputs.iter_mut().zip_eq(items) {
-                    debug_assert!(output.get_mut().is_none());
-                    *output.get_mut() = Some(item);
+                for (output, item) in outputs.iter_mut().zip_eq(items) {
+                    debug_assert!(output.get_back().is_none());
+                    output
+                        .try_insert_item(output.get_len() - 1, item)
+                        .expect("There should be space on the belt!");
                 }
             },
             _ => unreachable!("A Splitter can move at most 2 items every tick"),
