@@ -2666,12 +2666,16 @@ pub fn render_ui<
                         .iter()
                         .flat_map(|store| store.belts.iter())
                         .count()
-                        * std::mem::size_of::<SmartBelt<ItemIdxType>>().div_ceil(64);
+                        * std::mem::size_of::<SmartBelt<ItemIdxType>>();
 
                     let num_bytes = num_bytes_inner + num_bytes_outer;
                     ui.label(&format!(
                         "Total RAM usage (belt update) next tick: {}",
                         RamUsage(num_bytes_belt_update)
+                    ));
+                    ui.label(&format!(
+                        "Total RAM usage (belt update and Belt struct load) next tick: {}",
+                        RamUsage(num_bytes_belt_update + num_bytes_outer)
                     ));
                     ui.label(&format!(
                         "Total RAM usage (inserter struct) next tick: {}",
@@ -3337,13 +3341,14 @@ pub fn render_ui<
                         ui.label(format!("{:?}", id));
                         if let Some(fluid) = id.fluid {
                             ui.label(&data_store.item_display_names[fluid.into_usize()]);
-                            let FluidSystemState::HasFluid { fluid, chest_id } = game_state_ref.simulation_state.factory.fluid_store.fluid_systems_with_fluid[fluid.into_usize()][id.index].as_ref().unwrap().state else {
+                            let FluidSystemState::HasFluid { fluid } = game_state_ref.simulation_state.factory.fluid_store.fluid_systems_with_fluid[fluid.into_usize()][id.index].as_ref().unwrap().state else {
                                 unreachable!();
                             };
 
-                            let (units, _max_units) = game_state_ref.simulation_state.factory.chests.stores[fluid.into_usize()].get_chest(chest_id);
+                            // TODO:
+                            // let (units, _max_units) = game_state_ref.simulation_state.factory.chests.stores[fluid.into_usize()].get_chest(chest_id);
 
-                            ui.label(format!("{} units", units));
+                            // ui.label(format!("{} units", units));
                         } else {
                             ui.label("Empty");
                         }

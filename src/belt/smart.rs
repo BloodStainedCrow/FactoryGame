@@ -705,14 +705,13 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
     pub fn get_update_size(&self) -> (usize, usize, usize, usize, usize) {
         let free_index_search_indices = match self.first_free_index {
-            FreeIndex::FreeIndex(idx) => vec![0, idx as usize],
+            FreeIndex::FreeIndex(idx) => vec![],
             FreeIndex::OldFreeIndex(idx) => self
                 .items()
                 .skip(usize::from(idx))
                 .enumerate()
                 .take_while(|(_, loc)| loc.is_some())
                 .map(|(i, _)| i)
-                .chain(std::iter::once(0))
                 .collect(),
         };
 
