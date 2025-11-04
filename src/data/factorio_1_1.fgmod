@@ -1730,7 +1730,7 @@
         (
             name: "factory_game::rocket_part",
             display_name: "Rocket Part",
-            stack_size: 1,
+            stack_size: 10,
             placed_as: None,
             burnable_in: [],
             science_data: None,
