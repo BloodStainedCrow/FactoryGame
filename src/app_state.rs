@@ -293,9 +293,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        // let width = count.isqrt();
+        let width = count.isqrt();
         // Make the stack of factories as tall as possible
-        let width = 1;
+        // let width = 1;
 
         let main_height = count / width;
 
