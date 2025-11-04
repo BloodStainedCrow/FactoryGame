@@ -2282,8 +2282,8 @@ pub fn render_ui<
                     _ => None,
                 });
 
-                let inserter_pos_and_time = inserters_without_values_set.map(|(_ty, pos, start_pos, end_pos, item)| {
-                    let mut goal_movetime = 12;
+                let inserter_pos_and_time = inserters_without_values_set.map(|(ty, pos, start_pos, end_pos, item)| {
+                    let mut goal_movetime = data_store.inserter_infos[*ty as usize].swing_time_ticks;
 
                     if let Some(e) = game_state_ref.world.get_entity_at(end_pos, data_store_ref) {
                         match e {
@@ -2302,8 +2302,8 @@ pub fn render_ui<
 
                                         let items_needed_per_tick = *count_in_recipe as f32 / time_per_craft;
 
-                                        // FIXME: Hardcoded hand size
-                                        let hand_size = 12 as f32;
+                                        // FIXME: Take tech level into consideration
+                                        let hand_size = data_store.inserter_infos[*ty as usize].base_hand_size as f32;
 
                                         let full_rotations_needed_per_tick = items_needed_per_tick / hand_size;
 
@@ -2337,8 +2337,8 @@ pub fn render_ui<
 
                                         let items_produced_per_tick = (*count_in_recipe as f32 * (1.0 + prod_mod)) / time_per_craft;
 
-                                        // FIXME: Hardcoded hand size
-                                        let hand_size = 12 as f32;
+                                        // FIXME: Take tech level into consideration
+                                        let hand_size = data_store.inserter_infos[*ty as usize].base_hand_size as f32;
 
                                         let full_rotations_needed_per_tick = items_produced_per_tick / hand_size;
 
