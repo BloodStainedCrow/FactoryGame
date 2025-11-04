@@ -1409,18 +1409,23 @@ fn pipe_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         (
                             *dir,
                             fluid.unwrap(),
-                            FakeUnionStorage::from_storage_with_statics_at_zero(fluid.unwrap(), match world.get_entity_at(pos, data_store).unwrap() {
-                                Entity::Assembler {
-                                    info: AssemblerInfo::Powered { id, .. },
-                                    ..
-                                } => Storage::Assembler {
-                                    grid: id.grid,
-                                    index: id.assembler_index,
-                                    recipe_idx_with_this_item: data_store
-                                        .recipe_to_translated_index[&(id.recipe, fluid.unwrap())],
+                            FakeUnionStorage::from_storage_with_statics_at_zero(
+                                fluid.unwrap(),
+                                match world.get_entity_at(pos, data_store).unwrap() {
+                                    Entity::Assembler {
+                                        info: AssemblerInfo::Powered { id, .. },
+                                        ..
+                                    } => Storage::Assembler {
+                                        grid: id.grid,
+                                        index: id.assembler_index,
+                                        recipe_idx_with_this_item: data_store
+                                            .recipe_to_translated_index
+                                            [&(id.recipe, fluid.unwrap())],
+                                    },
+                                    _ => unreachable!(),
                                 },
-                                _ => unreachable!(),
-                            }, data_store),
+                                data_store,
+                            ),
                             pos,
                         )
                     }),
@@ -1437,10 +1442,7 @@ fn pipe_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 assert_eq!(store.fluid_box_pos_to_network_id.get(&pos), Some(&id));
             }
 
-            assert_eq!(
-                u64::from(store.get_fluid_network(id).get_capacity()),
-                *size
-            );
+            assert_eq!(u64::from(store.get_fluid_network(id).get_capacity()), *size);
         }
     }
 

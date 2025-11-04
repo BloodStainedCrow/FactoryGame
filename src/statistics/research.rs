@@ -7,7 +7,7 @@ use super::IntoSeries;
 pub struct ResearchInfo {}
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> IntoSeries<(), ItemIdxType, RecipeIdxType>
-    for ResearchProgress
+    for u64
 {
     fn into_series(
         values: &[Self],

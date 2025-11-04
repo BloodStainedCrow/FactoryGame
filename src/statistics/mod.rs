@@ -69,7 +69,7 @@ pub const TIMESCALE_LEGEND: [fn(f64) -> String; NUM_DIFFERENT_TIMESCALES] = [
 pub struct GenStatistics {
     pub production: Timeline<ProductionInfo>,
     pub consumption: Timeline<ConsumptionInfo>,
-    research: Timeline<u64>,
+    pub research: Timeline<u64>,
 }
 
 impl GenStatistics {
