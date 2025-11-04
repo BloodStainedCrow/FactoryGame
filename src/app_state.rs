@@ -4,6 +4,7 @@ use crate::blueprint::blueprint_string::BlueprintString;
 use crate::chest::ChestSize;
 use crate::data::AllowedFluidDirection;
 use crate::frontend::action::belt_placement::FakeGameState;
+use crate::frontend::action::place_entity::PlaceEntityInfo;
 use crate::frontend::world::tile::ModuleSlots;
 use crate::frontend::world::tile::ModuleTy;
 use crate::inserter::InserterStateInfo;
@@ -210,6 +211,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
     #[must_use]
     pub fn new_with_megabase(
+        use_solar_field: bool,
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
@@ -235,13 +237,36 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let mut current = 0;
 
         puffin::set_scopes_on(false);
-        ret.add_solar_field(
-            Position { x: 4503, y: 2454 },
-            Watt(325_000_000_000),
-            Some(9_000),
-            progress.clone(),
-            data_store,
-        );
+        if use_solar_field {
+            ret.add_solar_field(
+                Position { x: 4503, y: 2454 },
+                Watt(325_000_000_000),
+                Some(9_000),
+                progress.clone(),
+                data_store,
+            );
+        } else {
+            GameState::apply_actions(
+                &mut *ret.simulation_state.lock(),
+                &mut *ret.world.lock(),
+                vec![ActionType::PlaceEntity(PlaceEntityInfo {
+                    entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
+                        crate::frontend::world::tile::PlaceEntityType::SolarPanel {
+                            pos: Position { x: 4502, y: 2454 },
+                            ty: data_store
+                                .solar_panel_info
+                                .iter()
+                                .position(|info| &*info.name == "factory_game::infinity_battery")
+                                .expect("Mod set does not include factory_game::infinity_battery")
+                                .try_into()
+                                .unwrap(),
+                        },
+                    ),
+                    force: false,
+                })],
+                data_store,
+            );
+        }
 
         bp.apply_at_positions(
             iter::once(Position { x: 1600, y: 1600 }),
@@ -1095,14 +1120,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                 }
 
                                 {
-                                    
+
                                     let item = Item {
                                         id: item_id.try_into().unwrap(),
                                     };
-                                    
+
                                     let grid_size = grid_size(item, data_store);
                                     let num_recipes = num_recipes(item, data_store);
-                                    
+
                                     if data_store.item_is_fluid[item_id] {
                                         profiling::scope!(
                                             "FluidSystem Update",
@@ -1113,7 +1138,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                             // FIXME: Switch to holes
                                             if let Some(fluid_system) = fluid_system {
                                                 update_fluid_system(&mut fluid_system.hot_data, item_storages, grid_size);
-                                                
+
                                             }
                                         }
                                     } else {
@@ -2004,6 +2029,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     continue;
                                 }
 
+                                // let modules: ModuleSlots = vec![
+                                //     None;
+                                //     data_store.lab_info[usize::from(ty)].num_module_slots
+                                //         as usize
+                                // ]
+                                // .into_boxed_slice()
+                                // .into();
+
+                                // FIXME: Remove cheated modules
                                 let modules: ModuleSlots = vec![
                                     Some(1);
                                     data_store.lab_info[usize::from(ty)].num_module_slots

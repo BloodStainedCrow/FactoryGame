@@ -325,33 +325,35 @@ impl eframe::App for App {
                                 game_state_receiver: recv,
                             };
                         }
-                    } else if ui.button("Load Debug Save").clicked() {
-                        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-                        if let Some(path) = rfd::FileDialog::new()
-                            .set_directory(
-                                ProjectDirs::from("de", "aschhoff", "factory_game")
-                                    .expect("No Home path found")
-                                    .data_dir(),
-                            )
-                            .pick_file()
-                        {
-                            let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
-                            let (send, recv) = channel();
+                    } 
+                    // else if ui.button("Load Debug Save").clicked() {
+                    //     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                    //     if let Some(path) = rfd::FileDialog::new()
+                    //         .set_directory(
+                    //             ProjectDirs::from("de", "aschhoff", "factory_game")
+                    //                 .expect("No Home path found")
+                    //                 .data_dir(),
+                    //         )
+                    //         .pick_file()
+                    //     {
+                    //         let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
+                    //         let (send, recv) = channel();
 
-                            let progress_send = progress.clone();
-                            thread::spawn(move || {
-                                send.send(run_integrated_server(
-                                    progress_send,
-                                    StartGameInfo::LoadReadable(path),
-                                )).expect("Channel send failed");
-                            });
+                    //         let progress_send = progress.clone();
+                    //         thread::spawn(move || {
+                    //             send.send(run_integrated_server(
+                    //                 progress_send,
+                    //                 StartGameInfo::LoadReadable(path),
+                    //             )).expect("Channel send failed");
+                    //         });
 
-                            self.state = AppState::Loading {
-                                start_time: Instant::now(),progress,
-                                game_state_receiver: recv,
-                            };
-                        }
-                    } else if ui.add_enabled(cfg!(not(target_arch = "wasm32")), egui::Button::new("Connect over network")).on_disabled_hover_text("Disabled on WASM").clicked() {
+                    //         self.state = AppState::Loading {
+                    //             start_time: Instant::now(),progress,
+                    //             game_state_receiver: recv,
+                    //         };
+                    //     }
+                    // } 
+                    else if ui.add_enabled(cfg!(not(target_arch = "wasm32")), egui::Button::new("Connect over network")).on_disabled_hover_text("Disabled on WASM").clicked() {
                         let AppState::MainMenu { in_ip_box, .. } = &mut self.state else {
                             unreachable!()
                         };
@@ -374,68 +376,6 @@ impl eframe::App for App {
                         send.send(run_integrated_server(
                             progress_send,
                             StartGameInfo::Create(GameCreationInfo::Empty),
-                        ));
-
-                        self.state = AppState::Loading {
-                            start_time: Instant::now(),progress,
-                            game_state_receiver: recv,
-                        };
-                    } else if ui.button("Red Green Chest Insertion").clicked() {
-                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
-                        let (send, recv) = channel();
-
-                        let progress_send = progress.clone();
-                        #[cfg(not(target_arch = "wasm32"))]
-                        thread::spawn(move || {
-                            send.send(run_integrated_server(
-                                progress_send,
-                                StartGameInfo::Create(GameCreationInfo::RedGreen),
-                            )).expect("Channel send failed");
-                        });
-
-                        #[cfg(target_arch = "wasm32")]
-                        send.send(run_integrated_server(
-                            progress_send,
-                            StartGameInfo::Create(GameCreationInfo::RedGreen),
-                        ));
-
-                        self.state = AppState::Loading {
-                            start_time: Instant::now(),progress,
-                            game_state_receiver: recv,
-                        };
-                    } else if ui.button("Red Green 1 to 1 belts").clicked() {
-                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
-                        let (send, recv) = channel();
-
-                        let progress_send = progress.clone();
-                        thread::spawn(move || {
-                            send.send(run_integrated_server(
-                                progress_send,
-                                StartGameInfo::Create(GameCreationInfo::RedGreenBelts),
-                            )).expect("Channel send failed");
-                        });
-
-                        self.state = AppState::Loading {
-                            start_time: Instant::now(),progress,
-                            game_state_receiver: recv,
-                        };
-                    } else if ui.button("Red with labs").clicked() {
-                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
-                        let (send, recv) = channel();
-
-                        let progress_send = progress.clone();
-                        #[cfg(not(target_arch = "wasm32"))]
-                        thread::spawn(move || {
-                            send.send(run_integrated_server(
-                                progress_send,
-                                StartGameInfo::Create(GameCreationInfo::RedWithLabs),
-                            )).expect("Channel send failed");
-                        });
-
-                        #[cfg(target_arch = "wasm32")]
-                        send.send(run_integrated_server(
-                            progress_send,
-                            StartGameInfo::Create(GameCreationInfo::RedWithLabs),
                         ));
 
                         self.state = AppState::Loading {
@@ -474,14 +414,37 @@ impl eframe::App for App {
                         thread::spawn(move || {
                             send.send(run_integrated_server(
                                 progress_send,
-                                StartGameInfo::Create(GameCreationInfo::Megabase),
+                                StartGameInfo::Create(GameCreationInfo::Megabase(true)),
                             )).expect("Channel send failed");
                         });
 
                         #[cfg(target_arch = "wasm32")]
                         send.send(run_integrated_server(
                             progress_send,
-                            StartGameInfo::Create(GameCreationInfo::Megabase),
+                            StartGameInfo::Create(GameCreationInfo::Megabase(true)),
+                        ));
+
+                        self.state = AppState::Loading {
+                            start_time: Instant::now(),progress,
+                            game_state_receiver: recv,
+                        };
+                    } else if ui.button("Megabase with Infinity Battery").clicked() {
+                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
+                        let (send, recv) = channel();
+
+                        let progress_send = progress.clone();
+                        #[cfg(not(target_arch = "wasm32"))]
+                        thread::spawn(move || {
+                            send.send(run_integrated_server(
+                                progress_send,
+                                StartGameInfo::Create(GameCreationInfo::Megabase(false)),
+                            )).expect("Channel send failed");
+                        });
+
+                        #[cfg(target_arch = "wasm32")]
+                        send.send(run_integrated_server(
+                            progress_send,
+                            StartGameInfo::Create(GameCreationInfo::Megabase(false)),
                         ));
 
                         self.state = AppState::Loading {
