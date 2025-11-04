@@ -1680,9 +1680,9 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
                 FreeIndex::OldFreeIndex(_) => {},
             }
         }
-        let old_free = match self.first_free_index {
-            FreeIndex::FreeIndex(idx) => idx,
-            FreeIndex::OldFreeIndex(idx) => idx,
+        let (old_free, need_to_check) = match self.first_free_index {
+            FreeIndex::FreeIndex(idx) => (idx, false),
+            FreeIndex::OldFreeIndex(idx) => (idx, true),
         };
 
         let first_free_index_real = self.find_and_update_real_first_free_index();
@@ -1719,7 +1719,16 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
                 new_val
             };
             self.last_moving_spot = 0;
-            self.first_free_index = FreeIndex::OldFreeIndex(0);
+            if need_to_check {
+                // We already loaded this cacheline, so we can cheaply get this to freeIndex here
+                if self.query_item(0).is_some() {
+                    self.first_free_index = FreeIndex::OldFreeIndex(0);
+                } else {
+                    self.first_free_index = FreeIndex::FreeIndex(0);
+                }
+            } else {
+                self.first_free_index = FreeIndex::OldFreeIndex(0);
+            }
             return;
         }
 
@@ -1797,7 +1806,15 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
 
         // Instead of finding the real first_free_index after the update, we just use OldFreeIndex since most likely an inserter
         // Will update it for us before the next update
-        self.first_free_index = FreeIndex::OldFreeIndex(first_free_index_real);
+
+        // This does not really hold.
+        // Since we already have loaded first_free_index_real into cache, just check it now
+        // TODO: Maybe we could even look at more indices as longs as we do not cross any cache line boundries
+        if self.query_item(first_free_index_real).is_some() {
+            self.first_free_index = FreeIndex::OldFreeIndex(first_free_index_real);
+        } else {
+            self.first_free_index = FreeIndex::FreeIndex(first_free_index_real);
+        }
     }
 
     fn get_len(&self) -> BeltLenType {
