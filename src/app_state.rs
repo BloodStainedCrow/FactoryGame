@@ -451,7 +451,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             Position { x: 0, y: 0 },
             Position {
                 x: 5_000,
-                y: 65_000,
+                y: 250_000,
             },
             data_store,
         );
@@ -467,7 +467,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let mut current = 0;
 
         puffin::set_scopes_on(false);
-        let positions = (1600..60_000)
+        let positions = (1600..250_000)
             .step_by(3)
             .map(|y_pos| Position { x: 1600, y: y_pos });
         bp.apply_at_positions(
