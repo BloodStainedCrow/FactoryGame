@@ -16,7 +16,7 @@ use get_size2::GetSize;
 
 const CHEST_GOAL_AMOUNT: ITEMCOUNTTYPE = ITEMCOUNTTYPE::MAX / 2;
 
-// TODO: Add specilised chests for different sizes
+// TODO: Add specialised chests for different sizes
 pub type ChestSize = u32;
 pub type SignedChestSize = i32;
 
@@ -55,6 +55,8 @@ pub struct MultiChestStore<ItemIdxType: WeakIdxTrait> {
     // TODO: Any way to not have to store this a billion times?
     max_items: Vec<ChestSize>,
     holes: Vec<usize>,
+
+    num_large_chests: usize,
 }
 
 impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
@@ -67,6 +69,8 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
             max_insert: vec![],
             max_items: vec![],
             holes: vec![],
+
+            num_large_chests: 0,
         }
     }
 
@@ -80,6 +84,10 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         assert!(slot_limit <= data_store.chest_num_slots[usize::from(ty)]);
         let num_stacks = slot_limit;
         let max_items = ChestSize::from(stack_size) * ChestSize::from(num_stacks);
+
+        if max_items > 255 {
+            self.num_large_chests += 1;
+        }
 
         if let Some(hole) = self.holes.pop() {
             self.inout[hole] = 0;
@@ -101,6 +109,10 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
     }
 
     pub fn add_custom_chest(&mut self, max_items: ChestSize) -> u32 {
+        if max_items > 255 {
+            self.num_large_chests += 1;
+        }
+
         if let Some(hole) = self.holes.pop() {
             self.inout[hole] = 0;
             self.storage[hole] = 0;
@@ -124,6 +136,9 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         let index = index as usize;
         self.holes.push(index);
 
+        if self.max_items[index] > 0 {
+            self.num_large_chests -= 1;
+        }
         let items = ChestSize::from(self.inout[index]) + self.storage[index];
         self.inout[index] = 0;
         self.storage[index] = 0;
@@ -165,26 +180,39 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
     }
 
     pub fn update_simd(&mut self) {
-        for (inout, (storage, max_items)) in self
-            .inout
-            .iter_mut()
-            .zip(self.storage.iter_mut().zip(self.max_items.iter().copied()))
+        #[cfg(debug_assertions)]
         {
-            let to_move = inout.abs_diff(CHEST_GOAL_AMOUNT);
+            if self.num_large_chests == 0 {
+                assert!(self.max_items.iter().copied().all(|v| v == 0));
+            }
+        }
 
-            let switch = ChestSize::from(*inout >= CHEST_GOAL_AMOUNT);
+        // TODO: Splitting this into large chests and small chests would be better since now a single large chest will make all small chests in the world expensive
+        if self.num_large_chests > 0 {
+            for (inout, (storage, max_items)) in self
+                .inout
+                .iter_mut()
+                .zip(self.storage.iter_mut().zip(self.max_items.iter().copied()))
+            {
+                let to_move = inout.abs_diff(CHEST_GOAL_AMOUNT);
 
-            let moved: SignedChestSize = (switch as SignedChestSize
-                + (1 - switch as SignedChestSize) * -1)
-                * (min(
-                    ChestSize::from(to_move),
-                    (max_items - *storage) * switch + (1 - switch) * *storage,
-                ) as SignedChestSize);
+                let switch = ChestSize::from(*inout >= CHEST_GOAL_AMOUNT);
 
-            *inout = (ChestSize::from(*inout)).wrapping_sub_signed(moved) as u8;
-            *storage = (*storage).wrapping_add_signed(moved) as ChestSize;
+                let moved: SignedChestSize = (switch as SignedChestSize
+                    + (1 - switch as SignedChestSize) * -1)
+                    * (min(
+                        ChestSize::from(to_move),
+                        (max_items - *storage) * switch + (1 - switch) * *storage,
+                    ) as SignedChestSize);
 
-            debug_assert!(*storage <= max_items);
+                *inout = (ChestSize::from(*inout)).wrapping_sub_signed(moved) as u8;
+                *storage = (*storage).wrapping_add_signed(moved) as ChestSize;
+
+                debug_assert!(*storage <= max_items);
+            }
+        } else {
+            // Since all chests have a max_items of 0, we will never need/want to move items out of the inout
+            // So we can just return
         }
     }
 
@@ -282,6 +310,12 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
                 0
             };
 
+        if self.max_items[index] > 0 {
+            self.num_large_chests -= 1;
+        }
+        if new_size > 255 {
+            self.num_large_chests += 1;
+        }
         self.max_items[index] = new_size.saturating_sub(ChestSize::from(ITEMCOUNTTYPE::MAX));
         self.max_insert[index] = new_size.try_into().unwrap_or(ITEMCOUNTTYPE::MAX);
 
