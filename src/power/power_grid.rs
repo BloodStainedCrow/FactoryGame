@@ -2312,6 +2312,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         &mut self,
         solar_panel_production_amounts: &[Watt],
         tech_state: &TechState,
+        current_tick: u32,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
         ResearchProgress,

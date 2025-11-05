@@ -1021,7 +1021,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         let (research_progress, production_info, times_labs_used_science, beacon_updates) = self
             .power_grids
             .par_iter_mut()
-            .map(|grid| grid.update(&solar_production, tech_state, data_store))
+            .map(|grid| grid.update(&solar_production, tech_state, current_tick, data_store))
             .reduce(
                 || (0, RecipeTickInfo::new(data_store), 0, vec![]),
                 |(acc_progress, infos, times_labs_used_science, mut old_updates),
