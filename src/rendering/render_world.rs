@@ -2201,7 +2201,6 @@ pub fn render_ui<
                             lower_dec = 1.0;
                         }
 
-                        dbg!(lower_dec);
                         lower_dec = lower_dec * ticks_per_value / 60.0 / 60.0;
 
                         (0..40)
