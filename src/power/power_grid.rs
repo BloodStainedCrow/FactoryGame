@@ -128,6 +128,7 @@ pub struct PowerGrid<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     max_lazy_power: Watt,
 
     pub last_power_mult: u8,
+    pub power_mult_at_last_beacon_update: u8,
     pub power_mult_history: Timeline<u32>,
     // FIXME: Not actually storing where the power consumption/production originates is not very useful :/
     // pub power_consumption_history: Timeline<Watt>,
@@ -209,6 +210,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             last_ticks_max_power_production: Watt(0),
 
             last_power_mult: MAX_POWER_MULT,
+            power_mult_at_last_beacon_update: MAX_POWER_MULT,
 
             power_mult_history: Timeline::new(false, data_store),
 
@@ -255,6 +257,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             last_ticks_max_power_production: Watt(0),
 
             last_power_mult: MAX_POWER_MULT,
+            power_mult_at_last_beacon_update: MAX_POWER_MULT,
 
             power_mult_history: Timeline::new(false, data_store),
 
@@ -298,6 +301,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             last_ticks_max_power_production: Watt(0),
 
             last_power_mult: MAX_POWER_MULT,
+            power_mult_at_last_beacon_update: MAX_POWER_MULT,
 
             power_mult_history: Timeline::new(false, data_store),
 
@@ -474,6 +478,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                     self.last_power_mult
                 } else {
                     other.last_power_mult
+                }
+            },
+            power_mult_at_last_beacon_update: {
+                // FIXME: When changing the power_mult_at_last_beacon_update this needs to be accompanied with beacon updates if the value changes!!!!!
+                if self.power_mult_at_last_beacon_update >= other.power_mult_at_last_beacon_update {
+                    self.power_mult_at_last_beacon_update
+                } else {
+                    other.power_mult_at_last_beacon_update
                 }
             },
             power_mult_history: {
@@ -2642,23 +2654,65 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         self.last_produced_power = power_extracted.watt_from_tick();
 
         // TODO: Factorio just scales the beacon effect linearly
-        let beacon_updates: Vec<(BeaconAffectedEntity<_>, (_, _, _))> = if next_power_mult
-            < MIN_BEACON_POWER_MULT
-            && self.last_power_mult >= MIN_BEACON_POWER_MULT
-        {
-            // Disable beacons (But keep power consumption modifier unchanged, to prevent flickering)
-            self.beacon_affected_entities
-                .iter()
-                .map(|(k, v)| (*k, (-v.0, -v.1, -0)))
-                .collect()
-        } else if next_power_mult >= MIN_BEACON_POWER_MULT
-            && self.last_power_mult < MIN_BEACON_POWER_MULT
-        {
-            // Enable beacons (But keep power consumption modifier unchanged, to prevent flickering)
-            self.beacon_affected_entities
-                .iter()
-                .map(|(k, v)| (*k, (v.0, v.1, 0)))
-                .collect()
+        // let beacon_updates: Vec<(BeaconAffectedEntity<_>, (_, _, _))> = if next_power_mult
+        //     < MIN_BEACON_POWER_MULT
+        //     && self.last_power_mult >= MIN_BEACON_POWER_MULT
+        // {
+        //     // Disable beacons (But keep power consumption modifier unchanged, to prevent flickering)
+        //     self.beacon_affected_entities
+        //         .iter()
+        //         .map(|(k, v)| (*k, (-v.0, -v.1, -0)))
+        //         .collect()
+        // } else if next_power_mult >= MIN_BEACON_POWER_MULT
+        //     && self.last_power_mult < MIN_BEACON_POWER_MULT
+        // {
+        //     // Enable beacons (But keep power consumption modifier unchanged, to prevent flickering)
+        //     self.beacon_affected_entities
+        //         .iter()
+        //         .map(|(k, v)| (*k, (v.0, v.1, 0)))
+        //         .collect()
+        // } else {
+        //     vec![]
+        // };
+
+        // This is scaling beacon effect linearly
+        // FIXME: For this to be correct, when adding a beacon/adding modules to beacon etc, we need to calculate the effect the same way
+
+        // TODO: AFAIK Factorio does not update the effects of beacons every tick but more sparsely (to save UPS)
+        // For now I will do the same, and only update the beacon effectiveness every 60 ticks (1/seconds)
+        // We are still much more effective than Factorio here since AFAIK, they need to update beacosn even if the power satisfaction (and as such the beacon effect) did not change
+        // In that case I can just not do any updates
+        let beacon_updates = if current_tick % 60 == 0 {
+            let ret = if next_power_mult != self.power_mult_at_last_beacon_update {
+                profiling::scope!("Generate Beacon updates");
+                self.beacon_affected_entities
+                    .iter()
+                    .map(|(&entity, &effect)| {
+                        let effect: [i16; 3] = effect.into();
+                        let old_effect = effect.map(|e| {
+                            i32::from(e) * i32::from(self.power_mult_at_last_beacon_update) / 64
+                        });
+                        let new_effect =
+                            effect.map(|e| i32::from(e) * i32::from(next_power_mult) / 64);
+
+                        let change = old_effect
+                            .into_iter()
+                            .zip(new_effect)
+                            .map(|(old, new)| new - old)
+                            .map(|v| v.try_into().unwrap())
+                            .collect_array()
+                            .unwrap();
+
+                        (entity, change.into())
+                    })
+                    .collect()
+            } else {
+                vec![]
+            };
+
+            self.power_mult_at_last_beacon_update = next_power_mult;
+
+            ret
         } else {
             vec![]
         };
