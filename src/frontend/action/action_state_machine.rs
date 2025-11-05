@@ -1290,7 +1290,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         // Possible Actions
-        ui.columns_const(|uis: &mut [egui::Ui; 12]| {
+        ui.columns_const(|uis: &mut [egui::Ui; 13]| {
             for (i, ui) in uis.iter_mut().enumerate() {
                 let ty_count = match i {
                     0 => data_store.assembler_info.len(),
@@ -1305,6 +1305,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     9 => data_store.solar_panel_info.len(),
                     10 => data_store.lab_info.len(),
                     11 => data_store.inserter_infos.len(),
+                    12 => data_store.mining_drill_info.len(),
 
                     _ => unreachable!(),
                 } as u8;
@@ -1412,6 +1413,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 user_movetime: None,
                             }),
                             &data_store.inserter_infos[ty as usize].display_name,
+                        ),
+                        12 => (
+                            HeldObject::Entity(PlaceEntityType::MiningDrill {
+                                pos: Position { x: 0, y: 0 },
+                                ty,
+                                rotation: Dir::North,
+                            }),
+                            &data_store.mining_drill_info[ty as usize].display_name,
                         ),
 
                         _ => unreachable!(),
