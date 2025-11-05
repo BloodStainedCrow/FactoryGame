@@ -1513,7 +1513,7 @@ impl RawDataStore {
             belt_infos: vec![
                 // TODO: For now only have one kind of transport belt since connection is still borked
                 BeltInfo {
-                    name: "factory_game::express_transport_belt".to_string().into(),
+                    name: "factory_game::fast_transport_belt".to_string().into(),
                     display_name: "Express Transport Belt".to_string(),
                     has_underground: Some(BeltUndergroundInfo { max_distance: 9 }),
                     has_splitter: None,
