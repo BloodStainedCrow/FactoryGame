@@ -1,5 +1,6 @@
 use crate::belt::belt::Belt;
 use crate::belt::smart::{NUM_BELT_FREE_CACHE_HITS, NUM_BELT_UPDATES};
+use crate::belt::smart::{NUM_BELT_LOCS_SEARCHED, SmartBelt};
 use crate::blueprint::blueprint_string::BlueprintString;
 use crate::chest::ChestSize;
 use crate::frontend::action::action_state_machine::ForkSaveInfo;
@@ -2302,7 +2303,7 @@ pub fn render_ui<
 
                                         actions.push(ActionType::Remove(assembler_pos));
 
-                                        let area = data_store.mining_drill_info[1].size(*rotation);
+                                        let area = data_store.mining_drill_info[0].size(*rotation);
 
                                         for x in assembler_pos.x..(assembler_pos.x + i32::from(area[0])) {
                                             for y in assembler_pos.y..(assembler_pos.y + i32::from(area[1])) {
@@ -2335,7 +2336,7 @@ pub fn render_ui<
                                             entities: EntityPlaceOptions::Single(PlaceEntityType::MiningDrill {
                                                 pos: assembler_pos,
                                                 rotation: inserter_rotation,
-                                                ty: 1,
+                                                ty: 0,
                                             }),
                                             force: false,
                                         }));
