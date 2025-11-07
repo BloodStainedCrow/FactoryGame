@@ -9,6 +9,7 @@ use egui_show_info_derive::ShowInfo;
 use get_size2::GetSize;
 
 use crate::inserter::belt_storage_inserter::Dir;
+use crate::item::ITEMCOUNTTYPE;
 use crate::{
     belt::belt::NoSpaceError,
     item::{IdxTrait, Item, WeakIdxTrait},
@@ -23,8 +24,6 @@ use super::{
 use crate::inserter::FakeUnionStorage;
 use crate::inserter::belt_storage_inserter_non_const_gen::BeltStorageInserterDyn;
 use itertools::Either;
-
-use crate::belt::smart::{HAND_SIZE, MOVETIME};
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -48,7 +47,7 @@ pub struct SushiBelt<ItemIdxType: WeakIdxTrait> {
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub(super) struct SushiInserterStoreDyn<ItemIdxType: WeakIdxTrait> {
-    pub(super) inserters: Box<[(BeltStorageInserterDyn, Item<ItemIdxType>)]>,
+    pub(super) inserters: Box<[(BeltStorageInserterDyn, Item<ItemIdxType>, u8, ITEMCOUNTTYPE)]>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -82,6 +81,8 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         filter: Item<ItemIdxType>,
         pos: BeltLenType,
         storage_id: FakeUnionStorage,
+        movetime: u16,
+        hand_size: ITEMCOUNTTYPE,
     ) -> Result<(), SpaceOccupiedError> {
         assert!(
             usize::from(pos) < self.locs.len(),
@@ -92,7 +93,12 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         let mut pos_after_last_inserter = 0;
         let mut i = 0;
 
-        for offset in self.inserters.inserters.iter().map(|(i, _item)| i.offset) {
+        for offset in self
+            .inserters
+            .inserters
+            .iter()
+            .map(|(i, _item, _movetime, _hand_size)| i.offset)
+        {
             let next_inserter_pos = pos_after_last_inserter + offset;
 
             match next_inserter_pos.cmp(&pos) {
@@ -119,6 +125,8 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
                         storage_id,
                     ),
                     filter,
+                    movetime.try_into().unwrap_or(u8::MAX),
+                    hand_size,
                 ),
             );
             ins.into_boxed_slice()
@@ -126,7 +134,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
 
         let next = self.inserters.inserters.get_mut(i + 1);
 
-        if let Some((next_ins, _item)) = next {
+        if let Some((next_ins, _item, _movetime, _hand_size)) = next {
             next_ins.offset -= new_inserter_offset + 1;
         }
 
@@ -138,6 +146,8 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         filter: Item<ItemIdxType>,
         pos: BeltLenType,
         storage_id: FakeUnionStorage,
+        movetime: u16,
+        hand_size: ITEMCOUNTTYPE,
     ) -> Result<(), SpaceOccupiedError> {
         assert!(
             usize::from(pos) < self.locs.len(),
@@ -148,7 +158,12 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         let mut pos_after_last_inserter = 0;
         let mut i = 0;
 
-        for offset in self.inserters.inserters.iter().map(|(i, _item)| i.offset) {
+        for offset in self
+            .inserters
+            .inserters
+            .iter()
+            .map(|(i, _item, _movetime, _hand_size)| i.offset)
+        {
             let next_inserter_pos = pos_after_last_inserter + offset;
 
             match next_inserter_pos.cmp(&pos) {
@@ -175,6 +190,8 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
                         storage_id,
                     ),
                     filter,
+                    movetime.try_into().unwrap_or(u8::MAX),
+                    hand_size,
                 ),
             );
             ins.into_boxed_slice()
@@ -182,7 +199,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
 
         let next = self.inserters.inserters.get_mut(i + 1);
 
-        if let Some((next_ins, _item)) = next {
+        if let Some((next_ins, _item, _movetime, _hand_size)) = next {
             next_ins.offset -= new_inserter_offset + 1;
         }
 
@@ -193,7 +210,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
     pub fn get_inserter_info_at(&self, belt_pos: u16) -> Option<BeltInserterInfo> {
         let mut pos = 0;
 
-        for (inserter, _item) in self.inserters.inserters.iter() {
+        for (inserter, _item, movetime, hand_size) in self.inserters.inserters.iter() {
             pos += inserter.offset;
             if pos == belt_pos {
                 let (dir, state) = inserter.state.into();
@@ -201,6 +218,9 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
                     outgoing: dir == Dir::BeltToStorage,
                     state,
                     connection: inserter.storage_id,
+
+                    hand_size: *hand_size,
+                    movetime: *movetime,
                 });
             } else if pos > belt_pos {
                 return None;
@@ -221,7 +241,12 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         let mut pos_after_last_inserter = 0;
         let mut i = 0;
 
-        for offset in self.inserters.inserters.iter().map(|(i, _item)| i.offset) {
+        for offset in self
+            .inserters
+            .inserters
+            .iter()
+            .map(|(i, _item, _movetime, _hand_size)| i.offset)
+        {
             let next_inserter_pos = pos_after_last_inserter + offset;
 
             match next_inserter_pos.cmp(&belt_pos) {
@@ -243,7 +268,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
     pub fn set_inserter_storage_id(&mut self, belt_pos: u16, new: FakeUnionStorage) {
         let mut pos = 0;
 
-        for (inserter, _item) in self.inserters.inserters.iter_mut() {
+        for (inserter, _item, _movetime, _hand_size) in self.inserters.inserters.iter_mut() {
             pos += inserter.offset;
             if pos == belt_pos {
                 inserter.storage_id = new;
@@ -265,7 +290,12 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         let mut pos_after_last_inserter = 0;
         let mut i = 0;
 
-        for offset in self.inserters.inserters.iter().map(|(i, _item)| i.offset) {
+        for offset in self
+            .inserters
+            .inserters
+            .iter()
+            .map(|(i, _item, _movetime, _hand_size)| i.offset)
+        {
             let next_inserter_pos = pos_after_last_inserter + offset;
 
             match next_inserter_pos.cmp(&pos) {
@@ -309,7 +339,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             .inserters
             .inserters
             .iter()
-            .map(|(_, item)| *item)
+            .map(|(_, item, _movetime, _hand_size)| *item)
             .chain(belt_belt_filter_in.into_iter().filter_map(|info| {
                 let SushiInfo::Pure(item) = info else {
                     unreachable!()
@@ -395,12 +425,12 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
                 .collect::<bitvec::prelude::BitBox>().into(),
             inserters: InserterStoreDyn {
                 // FIXME: Some of these inserters might have a different item than what we are converting to. This will result in crashes and item transmutation
-                inserters: inserters.into_iter().map(|(ins, inserter_item)| {
+                inserters: inserters.into_iter().map(|(ins, inserter_item, movetime, hand_size)| {
                     assert_eq!(item, inserter_item, "FIXME: We need to handle inserters which will never work again in smart belts");
                     // if item !=  inserter_item {
                     //     error!("We need to handle inserters which will never work again in smart belts!!!!!!!");
                     // }
-                    (ins, MOVETIME, HAND_SIZE)
+                    (ins, movetime, hand_size)
                 }).collect(),
             },
             item,
@@ -485,7 +515,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             .inserters
             .inserters
             .iter()
-            .map(|(i, _item)| i.offset)
+            .map(|(i, _item, _movetime, _hand_size)| i.offset)
             .enumerate();
 
         let mut current_pos = 0;
@@ -606,7 +636,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         let free_spots_before_last_inserter_front: u16 = front_inserters
             .inserters
             .iter()
-            .map(|(i, _item)| i.offset)
+            .map(|(i, _item, _movetime, _hand_size)| i.offset)
             .sum();
         let length_after_last_inserter = TryInto::<u16>::try_into(front_len)
             .expect("Belt should be max u16::MAX long")
@@ -614,7 +644,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             - TryInto::<u16>::try_into(num_front_inserters)
                 .expect("Belt should be max u16::MAX long");
 
-        if let Some((i, _item)) = back_inserters.inserters.get_mut(0) {
+        if let Some((i, _item, _movetime, _hand_size)) = back_inserters.inserters.get_mut(0) {
             i.offset += length_after_last_inserter;
         }
 
@@ -1047,7 +1077,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
         });
 
         if side == Side::FRONT {
-            if let Some((i, _ietm)) = self.inserters.inserters.first_mut() {
+            if let Some((i, _item, _movetime, _hand_size)) = self.inserters.inserters.first_mut() {
                 i.offset -= amount - pos_after_last_removed_inserter;
             }
         }

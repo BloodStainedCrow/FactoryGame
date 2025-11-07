@@ -1,5 +1,4 @@
 use crate::belt::belt::Belt;
-use crate::belt::smart::{HAND_SIZE, NUM_BELT_LOCS_SEARCHED, SmartBelt};
 use crate::belt::smart::{NUM_BELT_FREE_CACHE_HITS, NUM_BELT_UPDATES};
 use crate::blueprint::blueprint_string::BlueprintString;
 use crate::chest::ChestSize;
@@ -909,11 +908,16 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         let movetime: u16 = user_movetime.map(|v| v.into()).unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks).into();
                                         match info {
                                             crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => {
-                                                let hand_size = HAND_SIZE;
                                                 let Some(state) = game_state.simulation_state.factory.belts.get_inserter_info_at(*id, *belt_pos) else {
                                                     error!("Could not get rendering info for inserter!");
                                                     continue;
                                                 };
+                                                let hand_size = state.hand_size;
+
+                                                // TODO: Due to clamping this does not currently hold:
+                                                // assert_eq!(movetime, u16::from(state.movetime));
+                                                let movetime = u16::from(state.movetime);
+
                                                 let item =  game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos);
 
                                                 let (mut position, items): (f32, ITEMCOUNTTYPE) = match state.state {
@@ -960,7 +964,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 // TODO:
                                             },
                                             crate::frontend::world::tile::AttachedInserter::StorageStorage { item, inserter } => {
-                                                let hand_size = HAND_SIZE;
+                                                let hand_size = data_store.inserter_infos[*ty as usize].base_hand_size;
                                                 let item =  *item;
                                                 let state = game_state.simulation_state.factory.storage_storage_inserters.get_inserter(item, movetime, *inserter, current_tick);
 

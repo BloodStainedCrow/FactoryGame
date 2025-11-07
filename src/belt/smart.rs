@@ -46,10 +46,6 @@ pub static NUM_BELT_FREE_CACHE_HITS: AtomicUsize = AtomicUsize::new(0);
 // #[cfg(debug_assertions)]
 pub static NUM_BELT_LOCS_SEARCHED: AtomicUsize = AtomicUsize::new(0);
 
-// HUGE FIXME:
-pub const MOVETIME: u8 = 12;
-pub const HAND_SIZE: u8 = 12;
-
 #[allow(clippy::module_name_repetitions)]
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -98,6 +94,8 @@ pub struct BeltInserterInfo {
     pub outgoing: bool,
     pub state: InserterState,
     pub connection: FakeUnionStorage,
+    pub hand_size: ITEMCOUNTTYPE,
+    pub movetime: u8,
 }
 
 #[derive(Debug)]
@@ -180,7 +178,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             inserters: SushiInserterStoreDyn {
                 inserters: inserters
                     .into_iter()
-                    .map(|(inserter, _movetime, _hand_size)| (inserter, item))
+                    .map(|(inserter, movetime, hand_size)| (inserter, item, movetime, hand_size))
                     .collect(),
             },
 
@@ -347,6 +345,8 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
                     outgoing: dir == Dir::BeltToStorage,
                     state,
                     connection: inserter.0.storage_id,
+                    movetime: inserter.1,
+                    hand_size: inserter.2,
                 });
             } else if pos > belt_pos {
                 return None;

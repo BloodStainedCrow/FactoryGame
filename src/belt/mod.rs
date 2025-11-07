@@ -1539,7 +1539,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             .inserters
             .inserters
             .iter()
-            .filter_map(|(ins, item)| {
+            .filter_map(|(ins, item, _movetime, _hand_size)| {
                 let (dir, _state) = ins.state.into();
                 (dir == Dir::StorageToBelt).then_some(*item)
             })
@@ -2100,7 +2100,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         belt.inserters
                             .inserters
                             .iter()
-                            .filter_map(|(ins, item)| {
+                            .filter_map(|(ins, item, _movetime, _hand_size)| {
                                 let (dir, _state) = ins.state.into();
                                 (dir == Dir::StorageToBelt).then_some(*item)
                             })
@@ -2598,8 +2598,9 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         movetime: u16,
         hand_size: ITEMCOUNTTYPE,
     ) -> Result<(), SpaceOccupiedError> {
-        let handle_sushi_belt =
-            |belt: &mut SushiBelt<ItemIdxType>| belt.add_in_inserter(filter, pos, storage_id);
+        let handle_sushi_belt = |belt: &mut SushiBelt<ItemIdxType>| {
+            belt.add_in_inserter(filter, pos, storage_id, movetime, hand_size)
+        };
 
         match id {
             BeltTileId::AnyBelt(index, _) => {
@@ -2626,7 +2627,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                                 let now_sushi_belt = self.inner.get_sushi_mut(new_index);
 
                                 now_sushi_belt
-                                    .add_in_inserter(filter, pos, storage_id)
+                                    .add_in_inserter(filter, pos, storage_id, movetime, hand_size)
                                     .expect("We already became sushi, it should now work!");
                             },
                         }
@@ -2667,8 +2668,9 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         movetime: u16,
         hand_size: ITEMCOUNTTYPE,
     ) -> Result<(), SpaceOccupiedError> {
-        let handle_sushi_belt =
-            |belt: &mut SushiBelt<ItemIdxType>| belt.add_out_inserter(filter, pos, storage_id);
+        let handle_sushi_belt = |belt: &mut SushiBelt<ItemIdxType>| {
+            belt.add_out_inserter(filter, pos, storage_id, movetime, hand_size)
+        };
 
         match id {
             BeltTileId::AnyBelt(index, _) => {
@@ -2695,7 +2697,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                                 let now_sushi_belt = self.inner.get_sushi_mut(new_index);
 
                                 now_sushi_belt
-                                    .add_out_inserter(filter, pos, storage_id)
+                                    .add_out_inserter(filter, pos, storage_id, movetime, hand_size)
                                     .expect("We already became sushi, it should now work!");
                             },
                         }
