@@ -682,6 +682,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                 {
                     if *inc == old_storage {
                         *inc = new_storage;
+                        log::trace!("Found connection to update");
                     }
                 }
                 for outgoing in self.fluid_systems_with_fluid[fluid.into_usize()][id.index]
@@ -693,10 +694,13 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                 {
                     if *outgoing == old_storage {
                         *outgoing = new_storage;
+                        log::trace!("Found connection to update");
                     }
                 }
             },
-            None => {},
+            None => {
+                log::trace!("No need to update fluid connections for empty fluid network");
+            },
         }
     }
 
@@ -1553,6 +1557,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
 }
 
 pub fn update_fluid_system(
+    item_id: usize,
     hot_data: &mut FluidSystemHotData,
     storages: SingleItemStorages,
     grid_size: usize,
@@ -1566,7 +1571,7 @@ pub fn update_fluid_system(
         if hot_data.current_fluid_level == 0 {
             break;
         }
-        let (max, data) = index_fake_union(storages, outgoing_conn, grid_size);
+        let (max, data) = index_fake_union(item_id, storages, outgoing_conn, grid_size);
         let amount_wanted = *max - *data;
 
         let amount_extracted = min(
@@ -1592,7 +1597,7 @@ pub fn update_fluid_system(
         if hot_data.current_fluid_level == hot_data.storage_capacity {
             break;
         }
-        let (_max, data) = index_fake_union(storages, incoming_conn, grid_size);
+        let (_max, data) = index_fake_union(item_id, storages, incoming_conn, grid_size);
         let amount_wanted = *data;
 
         let amount_extracted = min(

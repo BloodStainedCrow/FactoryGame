@@ -5,6 +5,7 @@ use std::{
     u8,
 };
 
+use crate::item::Indexable;
 use crate::{
     inserter::{
         InserterState, belt_storage_inserter::Dir,
@@ -639,7 +640,14 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
                 // We KNOW this position is filled
                 debug_assert!(self.locs[loc_idx]);
                 let mut loc = true;
-                let _changed = ins.update(&mut loc, storages, *movetime, *hand_size, grid_size);
+                let _changed = ins.update(
+                    self.item.into_usize(),
+                    &mut loc,
+                    storages,
+                    *movetime,
+                    *hand_size,
+                    grid_size,
+                );
 
                 if !loc {
                     self.locs.set(loc_idx, false);
@@ -651,7 +659,14 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             } else {
                 let mut loc = self.locs.get_mut(loc_idx).unwrap();
 
-                let changed = ins.update(loc.as_mut(), storages, *movetime, *hand_size, grid_size);
+                let changed = ins.update(
+                    self.item.into_usize(),
+                    loc.as_mut(),
+                    storages,
+                    *movetime,
+                    *hand_size,
+                    grid_size,
+                );
 
                 if changed {
                     // the inserter changed something.

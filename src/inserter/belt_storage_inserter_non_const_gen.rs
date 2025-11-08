@@ -88,6 +88,7 @@ impl BeltStorageInserterDyn {
     #[inline(always)]
     pub fn update(
         &mut self,
+        item_id: usize,
         mut loc: impl DerefMut + Deref<Target = bool>,
         storages: SingleItemStorages,
         movetime: u8,
@@ -109,7 +110,8 @@ impl BeltStorageInserterDyn {
                 }
             },
             DynInserterState::BSWaitingForSpaceInDestination(count) => {
-                let (max_insert, old) = index_fake_union(storages, self.storage_id, grid_size);
+                let (max_insert, old) =
+                    index_fake_union(item_id, storages, self.storage_id, grid_size);
                 let to_insert = min(count, *max_insert - *old);
 
                 if to_insert > 0 {
@@ -144,7 +146,8 @@ impl BeltStorageInserterDyn {
                 false
             },
             DynInserterState::SBWaitingForSourceItems(count) => {
-                let (_max_insert, old) = index_fake_union(storages, self.storage_id, grid_size);
+                let (_max_insert, old) =
+                    index_fake_union(item_id, storages, self.storage_id, grid_size);
 
                 let to_extract = min(max_hand_size - count, *old);
 

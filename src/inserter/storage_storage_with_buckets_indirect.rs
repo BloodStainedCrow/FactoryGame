@@ -272,6 +272,7 @@ impl BucketedStorageStorageInserterStore {
     }
 
     fn handle_waiting_for_item_ins(
+        item_id: usize,
         inserter: &mut InserterState,
         bucket_data: &mut InserterBucketData,
 
@@ -282,7 +283,7 @@ impl BucketedStorageStorageInserterStore {
     ) -> bool {
         let storage_id = bucket_data.storage_id_in;
 
-        let (_max_insert, old) = index_fake_union(storages, storage_id, grid_size);
+        let (_max_insert, old) = index_fake_union(item_id, storages, storage_id, grid_size);
 
         let old_val = *old;
         let max_hand_size = bucket_data.max_hand_size;
@@ -309,6 +310,7 @@ impl BucketedStorageStorageInserterStore {
     }
 
     fn handle_waiting_for_space_ins(
+        item_id: usize,
         inserter: &mut InserterState,
         bucket_data: &mut InserterBucketData,
 
@@ -319,7 +321,7 @@ impl BucketedStorageStorageInserterStore {
     ) -> bool {
         let storage_id = bucket_data.storage_id_out;
 
-        let (max_insert, old) = index_fake_union(storages, storage_id, grid_size);
+        let (max_insert, old) = index_fake_union(item_id, storages, storage_id, grid_size);
 
         let old_val = *old;
         let max_insert = *max_insert;
@@ -456,6 +458,7 @@ impl BucketedStorageStorageInserterStore {
             );
             let now_moving = self.waiting_for_item.extract_if(start..end, |inserter| {
                 Self::handle_waiting_for_item_ins(
+                    item_id,
                     &mut self.inserters[inserter.index.index as usize],
                     inserter,
                     storages,
@@ -529,6 +532,7 @@ impl BucketedStorageStorageInserterStore {
                 self.waiting_for_space_in_destination
                     .extract_if(start..end, |inserter| {
                         Self::handle_waiting_for_space_ins(
+                            item_id,
                             &mut self.inserters[inserter.index.index as usize],
                             inserter,
                             storages,

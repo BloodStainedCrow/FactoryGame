@@ -746,8 +746,10 @@ impl StorageStorageInserterStore {
         hand_size: ITEMCOUNTTYPE,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> InserterIdentifier {
-        let source = FakeUnionStorage::from_storage_with_statics_at_zero(item, start, data_store);
-        let dest = FakeUnionStorage::from_storage_with_statics_at_zero(item, dest, data_store);
+        let source =
+            FakeUnionStorage::from_storage_with_statics_at_zero(item, start, data_store).unwrap();
+        let dest =
+            FakeUnionStorage::from_storage_with_statics_at_zero(item, dest, data_store).unwrap();
 
         let id: InserterIdentifier = self.inserters[item.into_usize()]
             .entry(movetime)
@@ -829,7 +831,8 @@ impl StorageStorageInserterStore {
             .0
             .update_inserter_src(
                 id,
-                FakeUnionStorage::from_storage_with_statics_at_zero(item, new_src, data_store),
+                FakeUnionStorage::from_storage_with_statics_at_zero(item, new_src, data_store)
+                    .unwrap(),
             )
     }
 
@@ -848,7 +851,8 @@ impl StorageStorageInserterStore {
             .0
             .update_inserter_dest(
                 id,
-                FakeUnionStorage::from_storage_with_statics_at_zero(item, new_dest, data_store),
+                FakeUnionStorage::from_storage_with_statics_at_zero(item, new_dest, data_store)
+                    .unwrap(),
             )
     }
 
@@ -869,7 +873,8 @@ impl StorageStorageInserterStore {
             .update_inserter_src_if_equal(
                 id,
                 old_src,
-                FakeUnionStorage::from_storage_with_statics_at_zero(item, new_src, data_store),
+                FakeUnionStorage::from_storage_with_statics_at_zero(item, new_src, data_store)
+                    .unwrap(),
             )
     }
 
@@ -890,7 +895,8 @@ impl StorageStorageInserterStore {
             .update_inserter_dest_if_equal(
                 id,
                 old_dest,
-                FakeUnionStorage::from_storage_with_statics_at_zero(item, new_dest, data_store),
+                FakeUnionStorage::from_storage_with_statics_at_zero(item, new_dest, data_store)
+                    .unwrap(),
             )
     }
 }
@@ -1137,8 +1143,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                         for fluid_system in fluid_store {
                                             // FIXME: Switch to holes
                                             if let Some(fluid_system) = fluid_system {
-                                                update_fluid_system(&mut fluid_system.hot_data, item_storages, grid_size);
-
+                                                update_fluid_system(item_id, &mut fluid_system.hot_data, item_storages, grid_size);
                                             }
                                         }
                                     } else {
@@ -1631,31 +1636,36 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     Some(storage_updates) => {
                                         // Handle storage updates
                                         for storage_update in storage_updates {
-                                            let mut entity_size = None;
-                                            game_state.world.get_entity_at_mut(storage_update.position, data_store).map(|e| {
-                                        match (e, storage_update.new_pg_entity.clone()) {
-                                            (Entity::Assembler { ty, pos: _, info: AssemblerInfo::Powered { id, pole_position: _, weak_index: _ }, modules: _, rotation }, crate::power::power_grid::PowerGridEntity::Assembler { ty: _, recipe, index }) => {
-                                                entity_size = Some(data_store.assembler_info[usize::from(*ty)].size(*rotation));
+                                            let entity = game_state.world.get_entity_at_mut(storage_update.position, data_store).expect(&format!("Did not find entity at {:?} for storage update", storage_update.position));
+
+                                            let entity_size = match (entity, storage_update.new_pg_entity.clone()) {
+                                            (Entity::Assembler {
+                                                ty,
+                                                pos: _,
+                                                info: AssemblerInfo::Powered { id, pole_position: _, weak_index: _ }, modules: _, rotation },
+                                            crate::power::power_grid::PowerGridEntity::Assembler { ty: _, recipe, index }) => {
 
                                                 assert_eq!(id.recipe, recipe);
                                                 id.grid = storage_update.new_grid;
                                                 id.assembler_index = index;
                                                 // FIXME: Store and update the weak_index
+
+                                                data_store.assembler_info[usize::from(*ty)].size(*rotation)
                                             },
                                             (Entity::Lab { pos: _, ty, modules: _, pole_position: Some((_pole_pos, _weak_idx, lab_store_index)) }, crate::power::power_grid::PowerGridEntity::Lab { ty: _, index: new_idx  }) => {
-                                                entity_size = Some(data_store.lab_info[usize::from(*ty)].size);
 
 
                                                 *lab_store_index = new_idx;
                                                 // The weak index stays the same since it it still connected to the same power pole
+
+                                                data_store.lab_info[usize::from(*ty)].size
                                             }
 
                                             (_, _) => todo!("Handler storage_update {storage_update:?}")
-                                        }
-                                    });
+                                        };
 
                                             // FIXME: Rotation
-                                            let e_size = entity_size.unwrap();
+                                            let e_size = entity_size;
 
                                             let inserter_range =
                                                 data_store.max_inserter_search_range;
@@ -1702,7 +1712,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
-                                                                    }.translate(game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), data_store).unwrap();
+                                                                    };
                                                                     game_state.simulation_state.factory.belts.update_belt_storage_inserter_src(*id, *belt_pos, game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), new_storage, data_store);
                                                                 },
                                                                 AttachedInserter::BeltBelt { .. } => {
@@ -1716,7 +1726,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
-                                                                    }.translate(*item, data_store).unwrap();
+                                                                    };
 
                                                                     let movetime = user_movetime.map(|v| v.into()).unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks);
 
@@ -1740,7 +1750,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
-                                                                    }.translate(game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), data_store).unwrap();
+                                                                    };
                                                                     game_state.simulation_state.factory.belts.update_belt_storage_inserter_dest(*id, *belt_pos, game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), new_storage, data_store);
                                                                 },
                                                                 AttachedInserter::BeltBelt { .. } => {
@@ -1754,7 +1764,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
-                                                                    }.translate(*item, data_store).unwrap();
+                                                                    };
                                                                     let movetime = user_movetime.map(|v| v.into()).unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks);
 
                                                                     let new_id = game_state.simulation_state.factory.storage_storage_inserters.update_inserter_dest(*item, movetime.into(), *inserter, new_storage, data_store);
@@ -1768,7 +1778,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                 Entity::FluidTank { ty, pos, rotation } => {
                                                     let id: FluidSystemId<_> = game_state.simulation_state.factory.fluid_store.fluid_box_pos_to_network_id[pos];
                                                     if let Some(fluid) = id.fluid {
-                                                        let storage = match storage_update.new_pg_entity {
+                                                        let storage = match storage_update.old_pg_entity {
                                                             crate::power::power_grid::PowerGridEntity::Assembler { ty, recipe, index } => Storage::Assembler { grid: storage_update.old_grid, recipe_idx_with_this_item: recipe.id, index },
                                                             crate::power::power_grid::PowerGridEntity::Lab { ty, index } => Storage::Lab { grid: storage_update.old_grid, index },
                                                             crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
@@ -1776,13 +1786,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                             crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                             crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
                                                         };
-                                                        dbg!(storage);
-                                                        let Some(translated_storage) = storage.translate(fluid, data_store) else {
+                                                        let Ok(old_storage) = FakeUnionStorage::from_storage_with_statics_at_zero(fluid, storage, data_store) else {
                                                             return ControlFlow::Continue(());
                                                         };
-                                                        dbg!(translated_storage);
-                                                        let old_storage = FakeUnionStorage::from_storage_with_statics_at_zero(fluid, translated_storage, data_store);
-                                                        dbg!(old_storage);
 
                                                         let new_storage = match storage_update.new_pg_entity {
                                                             crate::power::power_grid::PowerGridEntity::Assembler { ty, recipe, index } => Storage::Assembler { grid: storage_update.new_grid, recipe_idx_with_this_item: recipe.id, index },
@@ -1791,8 +1797,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                             crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                             crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                             crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
-                                                        }.translate(fluid, data_store).unwrap();
-                                                        game_state.simulation_state.factory.fluid_store.update_fluid_conn_if_needed(*pos, old_storage, FakeUnionStorage::from_storage_with_statics_at_zero(fluid, new_storage, data_store));
+                                                        };
+                                                        game_state.simulation_state.factory.fluid_store.update_fluid_conn_if_needed(*pos, old_storage, FakeUnionStorage::from_storage_with_statics_at_zero(fluid, new_storage, data_store).unwrap());
                                                     }
                                                 },
 
@@ -2333,7 +2339,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                     data_store
                                                                         .recipe_to_translated_index
                                                                         [&(id.recipe, item)],
-                                                            }, data_store) ,
+                                                            }, data_store).unwrap() ,
                                                             dest_conn,
                                                             Box::new(|_weak_index: WeakIndex| {})
                                                                 as Box<dyn FnOnce(WeakIndex) -> ()>,

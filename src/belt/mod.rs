@@ -3012,7 +3012,8 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                                 belt_id.item,
                                 new_src,
                                 data_store,
-                            ),
+                            )
+                            .unwrap(),
                         );
                 },
                 AnyBelt::Sushi(index) => {
@@ -3020,7 +3021,8 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         belt_pos,
                         FakeUnionStorage::from_storage_with_statics_at_zero(
                             src_item, new_src, data_store,
-                        ),
+                        )
+                        .unwrap(),
                     );
                 },
                 AnyBelt::Empty(_) => unimplemented!("Empty belt cannot have inserters"),
@@ -3047,7 +3049,8 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                                 belt_id.item,
                                 new_dest,
                                 data_store,
-                            ),
+                            )
+                            .unwrap(),
                         );
                 },
                 AnyBelt::Sushi(index) => {
@@ -3055,7 +3058,8 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         belt_pos,
                         FakeUnionStorage::from_storage_with_statics_at_zero(
                             dest_item, new_dest, data_store,
-                        ),
+                        )
+                        .unwrap(),
                     );
                 },
                 AnyBelt::Empty(_) => unimplemented!("Empty belt cannot have inserters"),

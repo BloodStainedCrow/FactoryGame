@@ -419,7 +419,8 @@ fn try_attaching_fluids<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             conn_fluid,
                                             conn_storage,
                                             data_store,
-                                        ),
+                                        )
+                                        .unwrap(),
                                         conn_pos,
                                     )
                                 },
@@ -431,7 +432,8 @@ fn try_attaching_fluids<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             conn_fluid,
                                             conn_storage,
                                             data_store,
-                                        ),
+                                        )
+                                        .unwrap(),
                                         conn_pos,
                                     )
                                 },
@@ -3214,16 +3216,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 InserterConnection::Belt(start_belt_id, start_belt_pos),
                 InserterConnection::Storage(dest_storage_untranslated),
             ) => {
-                let dest_storage_untranslated = match dest_storage_untranslated {
+                let dest_storage = match dest_storage_untranslated {
                     Static::Done(storage) => storage,
                     Static::ToInstantiate => {
                         unreachable!("Storages must be instantiated before calling this function")
                     },
                 };
-
-                let dest_storage = dest_storage_untranslated
-                    .translate(filter, data_store)
-                    .unwrap();
 
                 match simulation_state.factory.belts.add_belt_storage_inserter(
                     filter,
@@ -3233,7 +3231,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         filter,
                         dest_storage,
                         data_store,
-                    ),
+                    )
+                    .unwrap(),
                     movetime.into(),
                     hand_size,
                 ) {
@@ -3252,16 +3251,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 InserterConnection::Storage(start_storage_untranslated),
                 InserterConnection::Belt(dest_belt_id, dest_belt_pos),
             ) => {
-                let start_storage_untranslated = match start_storage_untranslated {
+                let start_storage = match start_storage_untranslated {
                     Static::Done(storage) => storage,
                     Static::ToInstantiate => {
                         unreachable!("Storages must be instantiated before calling this function")
                     },
                 };
-
-                let start_storage = start_storage_untranslated
-                    .translate(filter, data_store)
-                    .unwrap();
 
                 match simulation_state.factory.belts.add_storage_belt_inserter(
                     filter,
@@ -3271,7 +3266,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         filter,
                         start_storage,
                         data_store,
-                    ),
+                    )
+                    .unwrap(),
                     movetime.into(),
                     hand_size,
                 ) {
@@ -3290,26 +3286,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 InserterConnection::Storage(start_storage_untranslated),
                 InserterConnection::Storage(dest_storage_untranslated),
             ) => {
-                let start_storage_untranslated = match start_storage_untranslated {
+                let start_storage = match start_storage_untranslated {
                     Static::Done(storage) => storage,
                     Static::ToInstantiate => {
                         unreachable!("Storages must be instantiated before calling this function")
                     },
                 };
 
-                let dest_storage_untranslated = match dest_storage_untranslated {
+                let dest_storage = match dest_storage_untranslated {
                     Static::Done(storage) => storage,
                     Static::ToInstantiate => {
                         unreachable!("Storages must be instantiated before calling this function")
                     },
                 };
-
-                let start_storage = start_storage_untranslated
-                    .translate(filter, data_store)
-                    .unwrap();
-                let dest_storage = dest_storage_untranslated
-                    .translate(filter, data_store)
-                    .unwrap();
 
                 let index = simulation_state.factory.storage_storage_inserters.add_ins(
                     filter,
