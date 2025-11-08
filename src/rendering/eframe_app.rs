@@ -325,7 +325,7 @@ impl eframe::App for App {
                                 game_state_receiver: recv,
                             };
                         }
-                    } 
+                    }
                     // else if ui.button("Load Debug Save").clicked() {
                     //     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                     //     if let Some(path) = rfd::FileDialog::new()
