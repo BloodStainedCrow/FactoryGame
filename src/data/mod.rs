@@ -1511,33 +1511,34 @@ impl RawDataStore {
             instantly_finished_technologies,
 
             belt_infos: vec![
+                // TODO: For now only have one kind of transport belt since connection is still borked
                 BeltInfo {
                     name: "factory_game::fast_transport_belt".to_string().into(),
-                    display_name: "Fast Transport Belt".to_string(),
+                    display_name: "Express Transport Belt".to_string(),
                     has_underground: Some(BeltUndergroundInfo { max_distance: 9 }),
                     has_splitter: None,
                     timer_increase: 45 * 2,
                 },
-                BeltInfo {
-                    name: "factory_game::transport_belt".to_string().into(),
-                    display_name: "Transport Belt".to_string(),
-                    has_underground: Some(BeltUndergroundInfo { max_distance: 6 }),
-                    has_splitter: None,
-                    timer_increase: 15 * 2,
-                },
+                // BeltInfo {
+                //     name: "factory_game::transport_belt".to_string().into(),
+                //     display_name: "Transport Belt".to_string(),
+                //     has_underground: Some(BeltUndergroundInfo { max_distance: 6 }),
+                //     has_splitter: None,
+                //     timer_increase: 15 * 2,
+                // },
             ],
 
             // FIXME:
             mining_drill_info: vec![
-                MiningDrillInfo {
-                    name: "factory_game::mining_drill".to_string().into(),
-                    display_name: "Electric Mining Drill".to_string().into(),
-                    size: [3, 3],
-                    mining_range: [5, 5],
-                    base_speed: 20,
-                    resource_drain: (1, 1),
-                    output_offset: Some([1, -1]),
-                },
+                // MiningDrillInfo {
+                //     name: "factory_game::mining_drill".to_string().into(),
+                //     display_name: "Electric Mining Drill".to_string().into(),
+                //     size: [3, 3],
+                //     mining_range: [5, 5],
+                //     base_speed: 20,
+                //     resource_drain: (1, 1),
+                //     output_offset: Some([1, -1]),
+                // },
                 MiningDrillInfo {
                     name: "factory_game::mining_drill_small_no_output"
                         .to_string()

@@ -1425,7 +1425,8 @@ fn pipe_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     _ => unreachable!(),
                                 },
                                 data_store,
-                            ),
+                            )
+                            .unwrap(),
                             pos,
                         )
                     }),

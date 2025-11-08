@@ -26,7 +26,7 @@ pub struct MultiLabStore {
     pub sciences: Box<[Vec<ITEMCOUNTTYPE>]>,
     timer: Vec<TIMERTYPE>,
     prod_timer: Vec<TIMERTYPE>,
-    holes: Vec<usize>,
+    pub holes: Vec<usize>,
 
     /// Base Crafting Speed in 5% increments
     /// i.e. 28 => 140% Crafting speed

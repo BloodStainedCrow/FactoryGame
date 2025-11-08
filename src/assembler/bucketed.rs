@@ -877,4 +877,8 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             data.11.into(),
         )
     }
+
+    fn num_assemblers(&self) -> usize {
+        self.hot_data.len() - self.holes.len()
+    }
 }

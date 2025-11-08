@@ -505,6 +505,58 @@ impl<
             _ => unreachable!(),
         }
     }
+
+    pub fn num_assemblers(&self) -> usize {
+        let Self {
+            assemblers_0_1,
+            assemblers_1_1,
+            assemblers_2_1,
+            assemblers_2_2,
+            assemblers_2_3,
+            assemblers_3_1,
+            assemblers_4_1,
+            assemblers_5_1,
+            assemblers_6_1,
+            recipe: _,
+        } = self;
+
+        assemblers_0_1
+            .iter()
+            .map(|store| store.num_assemblers())
+            .sum::<usize>()
+            + assemblers_1_1
+                .iter()
+                .map(|store| store.num_assemblers())
+                .sum::<usize>()
+            + assemblers_2_1
+                .iter()
+                .map(|store| store.num_assemblers())
+                .sum::<usize>()
+            + assemblers_2_2
+                .iter()
+                .map(|store| store.num_assemblers())
+                .sum::<usize>()
+            + assemblers_2_3
+                .iter()
+                .map(|store| store.num_assemblers())
+                .sum::<usize>()
+            + assemblers_3_1
+                .iter()
+                .map(|store| store.num_assemblers())
+                .sum::<usize>()
+            + assemblers_4_1
+                .iter()
+                .map(|store| store.num_assemblers())
+                .sum::<usize>()
+            + assemblers_5_1
+                .iter()
+                .map(|store| store.num_assemblers())
+                .sum::<usize>()
+            + assemblers_6_1
+                .iter()
+                .map(|store| store.num_assemblers())
+                .sum::<usize>()
+    }
 }
 
 // FIXME:
@@ -799,6 +851,8 @@ pub trait MultiAssemblerStore<
 
         ret
     }
+
+    fn num_assemblers(&self) -> usize;
 }
 
 pub mod arrays {

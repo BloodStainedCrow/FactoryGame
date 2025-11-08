@@ -665,6 +665,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .iter()
                 .map(|&old_idx| old_idx + self.timers.len()),
         );
+        self.holes.extend(other.len..(other.timers.len()));
         self.len = old_len_stored;
 
         let new_ings_max: [Box<[u8]>; NUM_INGS] = self
@@ -673,13 +674,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             .zip(other.ings_max_insert)
             .map(|(s, o)| {
                 let mut s = s.into_vec();
-                s.extend(
-                    o.into_vec()
-                        .into_iter()
-                        .enumerate()
-                        .take(other.len)
-                        .map(|(_, v)| v),
-                );
+                s.extend(o.into_vec().into_iter().enumerate().map(|(_, v)| v));
                 s.into_boxed_slice()
             })
             .collect_array()
@@ -691,13 +686,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             .zip(other.ings)
             .map(|(s, o)| {
                 let mut s = s.into_vec();
-                s.extend(
-                    o.into_vec()
-                        .into_iter()
-                        .enumerate()
-                        .take(other.len)
-                        .map(|(_, v)| v),
-                );
+                s.extend(o.into_vec().into_iter().enumerate().map(|(_, v)| v));
                 s.into_boxed_slice()
             })
             .collect_array()
@@ -708,13 +697,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             .zip(other.outputs)
             .map(|(s, o)| {
                 let mut s = s.into_vec();
-                s.extend(
-                    o.into_vec()
-                        .into_iter()
-                        .enumerate()
-                        .take(other.len)
-                        .map(|(_, v)| v),
-                );
+                s.extend(o.into_vec().into_iter().enumerate().map(|(_, v)| v));
                 s.into_boxed_slice()
             })
             .collect_array()
@@ -726,7 +709,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_vec()
                 .into_iter()
                 .enumerate()
-                .take(other.len)
                 .map(|(_, v)| v),
         );
 
@@ -737,7 +719,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_vec()
                 .into_iter()
                 .enumerate()
-                .take(other.len)
                 .map(|(_, v)| v),
         );
 
@@ -748,7 +729,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_vec()
                 .into_iter()
                 .enumerate()
-                .take(other.len)
                 .map(|(_, v)| v),
         );
 
@@ -759,7 +739,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_vec()
                 .into_iter()
                 .enumerate()
-                .take(other.len)
                 .map(|(_, v)| v),
         );
 
@@ -770,7 +749,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_vec()
                 .into_iter()
                 .enumerate()
-                .take(other.len)
                 .map(|(_, v)| v),
         );
 
@@ -781,7 +759,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_vec()
                 .into_iter()
                 .enumerate()
-                .take(other.len)
                 .map(|(_, v)| v),
         );
 
@@ -792,7 +769,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_vec()
                 .into_iter()
                 .enumerate()
-                .take(other.len)
                 .map(|(_, v)| v),
         );
 
@@ -803,7 +779,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_vec()
                 .into_iter()
                 .enumerate()
-                .take(other.len)
                 .map(|(_, v)| v),
         );
 
@@ -814,7 +789,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_vec()
                 .into_iter()
                 .enumerate()
-                .take(other.len)
                 .map(|(_, v)| v),
         );
 
@@ -825,39 +799,22 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_vec()
                 .into_iter()
                 .enumerate()
-                .take(other.len)
                 .map(|(_, v)| v),
         );
 
         let mut new_positions = self.positions.into_vec();
-        new_positions.extend(
-            other
-                .positions
-                .iter()
-                .copied()
-                .enumerate()
-                .take(other.len)
-                .map(|(_, v)| v),
-        );
+        new_positions.extend(other.positions.iter().copied().enumerate().map(|(_, v)| v));
 
         let mut new_types = self.types.into_vec();
-        new_types.extend(
-            other
-                .types
-                .iter()
-                .copied()
-                .enumerate()
-                .take(other.len)
-                .map(|(_, v)| v),
-        );
+        new_types.extend(other.types.iter().copied().enumerate().map(|(_, v)| v));
 
         let updates = IntoIterator::into_iter(other.positions)
             .take(other.len)
             .zip(other.types)
             .enumerate()
             .take(other.len)
-            .filter(move |(i, _)| !other.holes.contains(i))
             .enumerate()
+            .filter(move |(_offs, (i, _))| !other.holes.contains(i))
             .map(move |(new_index_offs, (old_index, (pos, ty)))| {
                 assert!(new_index_offs <= old_index);
                 IndexUpdateInfo {
@@ -1341,6 +1298,10 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             data.10.into(),
             data.11.into(),
         )
+    }
+
+    fn num_assemblers(&self) -> usize {
+        self.len - self.holes.len()
     }
 }
 

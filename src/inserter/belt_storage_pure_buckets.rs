@@ -613,6 +613,7 @@ impl BucketedStorageStorageInserterStore {
     }
 
     fn handle_waiting_for_item_ins<ItemIdxType: IdxTrait, const DIR: Dir>(
+        item_id: usize,
         inserter: &mut UpdatingInserter,
         frontend: &mut BucketedStorageStorageInserterStoreFrontend,
         storages: SingleItemStorages,
@@ -633,7 +634,8 @@ impl BucketedStorageStorageInserterStore {
                 }
             },
             Dir::StorageToBelt => {
-                let (_max_insert, old) = index_fake_union(storages, inserter.storage_id, grid_size);
+                let (_max_insert, old) =
+                    index_fake_union(item_id, storages, inserter.storage_id, grid_size);
 
                 let to_extract = min(inserter.max_hand_size - inserter.current_hand, *old);
 
@@ -663,6 +665,7 @@ impl BucketedStorageStorageInserterStore {
     }
 
     fn handle_waiting_for_space_ins<ItemIdxType: IdxTrait, const DIR: Dir>(
+        item_id: usize,
         inserter: &mut UpdatingInserter,
         frontend: &mut BucketedStorageStorageInserterStoreFrontend,
         storages: SingleItemStorages,
@@ -673,7 +676,8 @@ impl BucketedStorageStorageInserterStore {
     ) -> bool {
         match DIR {
             Dir::BeltToStorage => {
-                let (max_insert, old) = index_fake_union(storages, inserter.storage_id, grid_size);
+                let (max_insert, old) =
+                    index_fake_union(item_id, storages, inserter.storage_id, grid_size);
 
                 let to_insert = min(inserter.current_hand, *max_insert - *old);
 
@@ -751,6 +755,7 @@ impl BucketedStorageStorageInserterStore {
     #[profiling::function]
     pub fn update<ItemIdxType: IdxTrait>(
         &mut self,
+        item_id: usize,
         frontend: &mut BucketedStorageStorageInserterStoreFrontend,
         storages: SingleItemStorages,
         belts: &mut [SmartBelt<ItemIdxType>],
@@ -808,6 +813,7 @@ impl BucketedStorageStorageInserterStore {
                 Dir::BeltToStorage => {
                     let now_moving = self.waiting_for_item.extract_if(.., |inserter| {
                         Self::handle_waiting_for_item_ins::<ItemIdxType, { Dir::BeltToStorage }>(
+                            item_id,
                             inserter,
                             frontend,
                             storages,
@@ -835,6 +841,7 @@ impl BucketedStorageStorageInserterStore {
                 Dir::StorageToBelt => {
                     let now_moving = self.waiting_for_item.extract_if(.., |inserter| {
                         Self::handle_waiting_for_item_ins::<ItemIdxType, { Dir::StorageToBelt }>(
+                            item_id,
                             inserter,
                             frontend,
                             storages,
@@ -912,6 +919,7 @@ impl BucketedStorageStorageInserterStore {
                                     ItemIdxType,
                                     { Dir::BeltToStorage },
                                 >(
+                                    item_id,
                                     inserter,
                                     frontend,
                                     storages,
@@ -944,6 +952,7 @@ impl BucketedStorageStorageInserterStore {
                                     ItemIdxType,
                                     { Dir::StorageToBelt },
                                 >(
+                                    item_id,
                                     inserter,
                                     frontend,
                                     storages,
@@ -1312,6 +1321,7 @@ mod test {
             for (storage, belt) in values.into_iter().zip(belt_ids) {
                 if random::<u16>() < 1 {
                     store[item].0.update(
+                        item,
                         &mut frontend[item],
                         &mut [
                             (max_insert.as_slice(), storages_in[item].as_mut_slice()),
@@ -1322,6 +1332,7 @@ mod test {
                         current_tick,
                     );
                     store[item].1.update(
+                        item,
                         &mut frontend[item],
                         &mut [
                             (max_insert.as_slice(), storages_in[item].as_mut_slice()),
@@ -1394,6 +1405,7 @@ mod test {
                         }
                     }
                     store.0.update(
+                        0,
                         frontend,
                         &mut [
                             (max_insert.as_slice(), storage_in.as_mut_slice()),
@@ -1404,6 +1416,7 @@ mod test {
                         current_tick,
                     );
                     store.1.update(
+                        0,
                         frontend,
                         &mut [
                             (max_insert.as_slice(), storage_in.as_mut_slice()),

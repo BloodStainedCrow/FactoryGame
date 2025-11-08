@@ -341,12 +341,51 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                 });
             assert!(affected_grids_and_potential_match);
         }
+
+        #[cfg(debug_assertions)]
+        {
+            for grid in &self.power_grids {
+                if grid.is_placeholder {
+                    continue;
+                }
+
+                let num_labs_in_list: usize = grid.num_labs_of_type.iter().copied().sum();
+                let num_labs_in_graph = grid
+                    .grid_graph
+                    .weak_components()
+                    .filter(|grid_entity| match grid_entity {
+                        (_, PowerGridEntity::Lab { .. }) => true,
+                        _ => false,
+                    })
+                    .count();
+                let num_labs_in_sim =
+                    grid.lab_stores.sciences[0].len() - grid.lab_stores.holes.len();
+
+                assert_eq!(num_labs_in_list, num_labs_in_graph);
+                assert_eq!(num_labs_in_list, num_labs_in_sim);
+
+                let num_assemblers_in_list: usize =
+                    grid.num_assemblers_of_type.iter().copied().sum();
+                let num_assemblers_in_graph = grid
+                    .grid_graph
+                    .weak_components()
+                    .filter(|grid_entity| match grid_entity {
+                        (_, PowerGridEntity::Assembler { .. }) => true,
+                        _ => false,
+                    })
+                    .count();
+                let num_assemblers_in_sim: usize = grid.stores.num_assemblers();
+
+                assert_eq!(num_assemblers_in_list, num_assemblers_in_graph);
+                assert_eq!(num_assemblers_in_list, num_assemblers_in_sim);
+            }
+        }
         let mut connected_poles: Vec<_> = connected_poles.into_iter().collect();
 
         let ret = if !connected_poles.is_empty() {
             // Find the largest grid, and choose it as the base
             // If the size is a tossup pick the one with the smaller grid_id to reduce holes in the power_grid list
-            let grid = connected_poles
+            let kept_grid_id = connected_poles
                 .iter()
                 .map(|pos| self.pole_pos_to_grid_id[pos])
                 .max_by_key(|grid_id| {
@@ -364,7 +403,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                 .map(|pos| self.pole_pos_to_grid_id[pos])
                 .all_equal();
 
-            self.pole_pos_to_grid_id.insert(pole_position, grid);
+            self.pole_pos_to_grid_id.insert(pole_position, kept_grid_id);
 
             if need_to_merge {
                 let mut storage_update_vec = vec![];
@@ -377,29 +416,38 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                     .collect::<Vec<_>>()
                 {
                     // No need to merge a grid with itself.
-                    if other_grid == grid {
+                    if other_grid == kept_grid_id {
                         continue;
                     }
 
                     ran_once = true;
                     let storage_updates = self
                         .merge_power_grids(
-                            grid,
+                            kept_grid_id,
                             other_grid,
                             data_store,
                             pole_position,
                             connected_poles.iter().copied(),
                         )
                         .into_iter()
-                        .flatten();
+                        .flatten()
+                        .map(|update| {
+                            // TODO: Make debug assert
+                            assert_eq!(update.new_grid, kept_grid_id);
+                            assert_eq!(update.old_grid, other_grid);
 
+                            update
+                        });
+
+                    let old_len = storage_update_vec.len();
                     storage_update_vec.extend(storage_updates);
+                    let new_updates = storage_update_vec.len() - old_len;
                 }
                 assert!(ran_once);
 
                 #[cfg(debug_assertions)]
                 {
-                    for key in self.power_grids[grid as usize].grid_graph.keys() {
+                    for key in self.power_grids[kept_grid_id as usize].grid_graph.keys() {
                         if let Some(index) = connected_poles.iter().position(|v| v == key) {
                             connected_poles.remove(index);
                         }
@@ -419,7 +467,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
 
                 Some(storage_update_vec)
             } else {
-                self.power_grids[grid as usize].add_pole(pole_position, connected_poles);
+                self.power_grids[kept_grid_id as usize].add_pole(pole_position, connected_poles);
                 None
             }
         } else {
@@ -1021,7 +1069,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         let (research_progress, production_info, times_labs_used_science, beacon_updates) = self
             .power_grids
             .par_iter_mut()
-            .map(|grid| grid.update(&solar_production, tech_state, data_store))
+            .map(|grid| grid.update(&solar_production, tech_state, current_tick, data_store))
             .reduce(
                 || (0, RecipeTickInfo::new(data_store), 0, vec![]),
                 |(acc_progress, infos, times_labs_used_science, mut old_updates),

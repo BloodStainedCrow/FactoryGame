@@ -43,6 +43,7 @@ impl StorageStorageInserter {
 
     pub fn update(
         &mut self,
+        item_id: usize,
         storages: SingleItemStorages,
         movetime: u8,
         max_hand_size: ITEMCOUNTTYPE,
@@ -53,7 +54,8 @@ impl StorageStorageInserter {
 
         match self.state {
             InserterState::WaitingForSourceItems(count) => {
-                let (_max_insert, old) = index_fake_union(storages, self.storage_id_in, grid_size);
+                let (_max_insert, old) =
+                    index_fake_union(item_id, storages, self.storage_id_in, grid_size);
 
                 let to_extract = min(max_hand_size - count, *old);
 
@@ -69,7 +71,8 @@ impl StorageStorageInserter {
                 }
             },
             InserterState::WaitingForSpaceInDestination(count) => {
-                let (max_insert, old) = index_fake_union(storages, self.storage_id_out, grid_size);
+                let (max_insert, old) =
+                    index_fake_union(item_id, storages, self.storage_id_out, grid_size);
 
                 let to_insert = min(count, *max_insert - *old);
 

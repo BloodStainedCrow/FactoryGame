@@ -183,7 +183,7 @@ impl FakeUnionStorage {
         item: Item<ItemIdxType>,
         storage: Storage<RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Self {
+    ) -> Result<Self, ()> {
         let grid_size: usize = grid_size(item, data_store);
         let static_size: usize = static_size(item, data_store);
 
@@ -195,11 +195,16 @@ impl FakeUnionStorage {
                 recipe_idx_with_this_item,
                 index,
             } => {
-                assert!(
-                    recipe_idx_with_this_item.into_usize()
-                        < data_store.num_recipes_with_item[item.into_usize()]
-                );
-                Self {
+                let recipe_idx_with_this_item = *data_store
+                    .recipe_to_translated_index
+                    .get(&(
+                        Recipe {
+                            id: recipe_idx_with_this_item,
+                        },
+                        item,
+                    ))
+                    .ok_or(())?;
+                Ok(Self {
                     index: u32::from(index),
                     grid_or_static_flag: u16::from(grid)
                         .checked_add(u16::try_from(grid_offset).unwrap())
@@ -208,21 +213,21 @@ impl FakeUnionStorage {
                         recipe_idx_with_this_item,
                     ))
                     .unwrap(),
-                }
+                })
             },
-            Storage::Lab { grid, index } => Self {
+            Storage::Lab { grid, index } => Ok(Self {
                 index: u32::from(index),
                 grid_or_static_flag: u16::from(grid)
                     .checked_add(u16::try_from(grid_offset).unwrap())
                     .expect("Grid ID too high (would overflow the grid_or_static)"),
                 recipe_idx_with_this_item: data_store.num_recipes_with_item[usize_from(item.id)]
                     as u16,
-            },
-            Storage::Static { index, static_id } => Self {
+            }),
+            Storage::Static { index, static_id } => Ok(Self {
                 index: u32::try_from(index).unwrap(),
                 grid_or_static_flag: 0,
                 recipe_idx_with_this_item: static_id,
-            },
+            }),
         }
     }
 }
@@ -248,30 +253,6 @@ pub enum Storage<RecipeIdxType: WeakIdxTrait> {
 }
 
 impl<RecipeIdxType: IdxTrait> Storage<RecipeIdxType> {
-    pub fn translate<ItemIdxType: IdxTrait>(
-        self,
-        item: Item<ItemIdxType>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Option<Self> {
-        match self {
-            Storage::Assembler {
-                grid,
-                recipe_idx_with_this_item,
-                index,
-            } => Some(Storage::Assembler {
-                grid,
-                recipe_idx_with_this_item: *data_store.recipe_to_translated_index.get(&(
-                    Recipe {
-                        id: recipe_idx_with_this_item,
-                    },
-                    item,
-                ))?,
-                index,
-            }),
-            storage => Some(storage),
-        }
-    }
-
     pub fn change_grid(self, new_id: PowerGridIdentifier) -> Self {
         match self {
             Storage::Assembler {
@@ -291,43 +272,13 @@ impl<RecipeIdxType: IdxTrait> Storage<RecipeIdxType> {
         }
     }
 
-    fn into_inner_and_outer_indices(
+    fn into_inner_and_outer_indices_with_statics_at_zero<ItemIdxType: IdxTrait>(
         self,
-        num_grids_total: usize,
-        num_recipes: usize,
-        grid_size: usize,
-    ) -> (usize, usize) {
-        match self {
-            Storage::Assembler {
-                grid,
-                recipe_idx_with_this_item,
-                index,
-            } => {
-                debug_assert!(
-                    usize_from(recipe_idx_with_this_item) < num_recipes,
-                    "The recipe stored in an inserter needs to be translated!"
-                );
-                let outer = Into::<usize>::into(grid) * grid_size
-                    + Into::<usize>::into(recipe_idx_with_this_item);
-                (outer, index.try_into().unwrap())
-            },
-            Storage::Lab { grid, index } => {
-                let outer = Into::<usize>::into(grid) * grid_size + num_recipes;
-                (outer, index.try_into().unwrap())
-            },
-            Storage::Static { static_id, index } => {
-                // debug_assert!(usize::from(static_id) < data_store.num_different_static_containers);
-                let outer = num_grids_total * grid_size + Into::<usize>::into(static_id as u8);
-                (outer, index.try_into().unwrap())
-            },
-        }
-    }
-
-    fn into_inner_and_outer_indices_with_statics_at_zero(
-        self,
+        item: Item<ItemIdxType>,
         num_recipes: usize,
         grid_size: usize,
         static_size: usize,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (usize, usize) {
         let grid_offset = static_size.div_ceil(grid_size);
 
@@ -337,6 +288,15 @@ impl<RecipeIdxType: IdxTrait> Storage<RecipeIdxType> {
                 recipe_idx_with_this_item,
                 index,
             } => {
+                let recipe_idx_with_this_item = *data_store
+                    .recipe_to_translated_index
+                    .get(&(
+                        Recipe {
+                            id: recipe_idx_with_this_item,
+                        },
+                        item,
+                    ))
+                    .unwrap();
                 debug_assert!(
                     usize_from(recipe_idx_with_this_item) < num_recipes,
                     "The recipe stored in an inserter needs to be translated!"
@@ -376,6 +336,17 @@ impl<RecipeIdxType: IdxTrait> Storage<RecipeIdxType> {
 pub enum StaticID {
     Chest = 0,
     PureSoloOwnedMiningDrill = 1,
+}
+
+impl TryFrom<u8> for StaticID {
+    type Error = ();
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Chest),
+            1 => Ok(Self::PureSoloOwnedMiningDrill),
+            _ => Err(()),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -443,28 +414,28 @@ mod test {
     proptest! {
 
 
-        #[test]
-        fn storage_and_fake_union_result_in_same_indices((item, num_grids, storage) in union_test_input()) {
-            let grid_size = grid_size(item, &DATA_STORE);
+        // #[test]
+        // fn storage_and_fake_union_result_in_same_indices((item, num_grids, storage) in union_test_input()) {
+        //     let grid_size = grid_size(item, &DATA_STORE);
 
-            let storage_union = FakeUnionStorage::from_storage(item, storage, &DATA_STORE);
+        //     let storage_union = FakeUnionStorage::from_storage(item, storage, &DATA_STORE);
 
-            let union_indices = storage_union.into_inner_and_outer_indices(num_grids.into(), grid_size);
+        //     let union_indices = storage_union.into_inner_and_outer_indices(num_grids.into(), grid_size);
 
-            let storage_indices = storage.into_inner_and_outer_indices(num_grids.into(), DATA_STORE.num_recipes_with_item[usize_from(item.id)], grid_size);
+        //     let storage_indices = storage.into_inner_and_outer_indices(Item::try_from(0).unwrap(), num_grids.into(), DATA_STORE.num_recipes_with_item[usize_from(item.id)], grid_size, &DATA_STORE);
 
-            prop_assert_eq!(union_indices, storage_indices);
-        }
+        //     prop_assert_eq!(union_indices, storage_indices);
+        // }
 
         #[test]
         fn storage_and_fake_union_result_in_same_indices_with_statics_at_zero((item, _num_grids, storage) in union_test_input()) {
             let grid_size = grid_size(item, &DATA_STORE);
 
-            let storage_union = FakeUnionStorage::from_storage_with_statics_at_zero(item, storage, &DATA_STORE);
+            let storage_union = FakeUnionStorage::from_storage_with_statics_at_zero(item, storage, &DATA_STORE).unwrap();
 
             let union_indices = storage_union.into_inner_and_outer_indices_with_statics_at_zero(grid_size);
 
-            let storage_indices = storage.into_inner_and_outer_indices_with_statics_at_zero(DATA_STORE.num_recipes_with_item[usize_from(item.id)], grid_size, static_size(item, &DATA_STORE));
+            let storage_indices = storage.into_inner_and_outer_indices_with_statics_at_zero(item, DATA_STORE.num_recipes_with_item[usize_from(item.id)], grid_size, static_size(item, &DATA_STORE), &DATA_STORE);
 
             prop_assert_eq!(union_indices, storage_indices);
         }

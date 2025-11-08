@@ -14,6 +14,7 @@ use log::{error, warn};
 use petgraph::Directed;
 
 use crate::{
+    NewWithDataStore,
     app_state::SimulationState,
     belt::splitter::SplitterDistributionMode,
     blueprint::Blueprint,
@@ -46,10 +47,63 @@ pub const WIDTH_PER_LEVEL: usize = 16;
 pub struct Hotbar<ItemIdxType: WeakIdxTrait> {
     slots: [Option<HeldObject<ItemIdxType>>; 10],
 }
-impl<ItemIdxType: IdxTrait> Default for Hotbar<ItemIdxType> {
-    fn default() -> Self {
+impl<ItemIdxType: IdxTrait> NewWithDataStore for Hotbar<ItemIdxType> {
+    fn new<DataStoreItem: IdxTrait, RecipeIdxType: IdxTrait>(
+        data_store: impl std::borrow::Borrow<DataStore<DataStoreItem, RecipeIdxType>>,
+    ) -> Self {
         Self {
-            slots: array::from_fn(|_| None),
+            slots: array::from_fn(|idx| match idx + 1 {
+                1 => Some(HeldObject::Entity(PlaceEntityType::Lab {
+                    pos: Position { x: 0, y: 0 },
+                    ty: 0,
+                })),
+                2 => Some(HeldObject::Entity(PlaceEntityType::Assembler {
+                    pos: Position { x: 0, y: 0 },
+                    ty: 0,
+                    rotation: Dir::North,
+                })),
+                3 => Some(HeldObject::Entity(PlaceEntityType::Belt {
+                    pos: Position { x: 0, y: 0 },
+                    ty: 0,
+                    direction: Dir::North,
+                })),
+                4 => Some(HeldObject::Entity(PlaceEntityType::Inserter {
+                    pos: Position { x: 0, y: 0 },
+                    ty: 0,
+                    dir: Dir::North,
+                    filter: None,
+                    user_movetime: None,
+                })),
+                5 => Some(HeldObject::Entity(PlaceEntityType::PowerPole {
+                    pos: Position { x: 0, y: 0 },
+                    ty: 0,
+                })),
+                6 => Some(HeldObject::Entity(PlaceEntityType::Chest {
+                    pos: Position { x: 0, y: 0 },
+                    ty: 0,
+                })),
+                7 => Some(HeldObject::Entity(PlaceEntityType::Underground {
+                    pos: Position { x: 0, y: 0 },
+                    ty: 0,
+                    direction: Dir::North,
+                    underground_dir: UndergroundDir::Entrance,
+                })),
+                8 => Some(HeldObject::Entity(PlaceEntityType::SolarPanel {
+                    pos: Position { x: 0, y: 0 },
+                    ty: 0,
+                })),
+                9 => Some(HeldObject::Entity(PlaceEntityType::FluidTank {
+                    pos: Position { x: 0, y: 0 },
+                    ty: 0,
+                    rotation: Dir::North,
+                })),
+                10 => Some(HeldObject::Entity(PlaceEntityType::Beacon {
+                    pos: Position { x: 0, y: 0 },
+                    ty: 0,
+                })),
+
+                _ => unreachable!(),
+            }),
         }
     }
 }
@@ -222,7 +276,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
             current_fork_save_in_progress: None,
 
-            hotbar: Hotbar::default(),
+            hotbar: Hotbar::new(data_store),
             hotbar_window_open: true,
         }
     }
@@ -1290,7 +1344,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         // Possible Actions
-        ui.columns_const(|uis: &mut [egui::Ui; 12]| {
+        ui.columns_const(|uis: &mut [egui::Ui; 13]| {
             for (i, ui) in uis.iter_mut().enumerate() {
                 let ty_count = match i {
                     0 => data_store.assembler_info.len(),
@@ -1305,6 +1359,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     9 => data_store.solar_panel_info.len(),
                     10 => data_store.lab_info.len(),
                     11 => data_store.inserter_infos.len(),
+                    12 => data_store.mining_drill_info.len(),
 
                     _ => unreachable!(),
                 } as u8;
@@ -1412,6 +1467,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 user_movetime: None,
                             }),
                             &data_store.inserter_infos[ty as usize].display_name,
+                        ),
+                        12 => (
+                            HeldObject::Entity(PlaceEntityType::MiningDrill {
+                                pos: Position { x: 0, y: 0 },
+                                ty,
+                                rotation: Dir::North,
+                            }),
+                            &data_store.mining_drill_info[ty as usize].display_name,
                         ),
 
                         _ => unreachable!(),

@@ -1,6 +1,6 @@
 use crate::belt::belt::Belt;
-use crate::belt::smart::{HAND_SIZE, NUM_BELT_LOCS_SEARCHED, SmartBelt};
 use crate::belt::smart::{NUM_BELT_FREE_CACHE_HITS, NUM_BELT_UPDATES};
+use crate::belt::smart::{NUM_BELT_LOCS_SEARCHED, SmartBelt};
 use crate::blueprint::blueprint_string::BlueprintString;
 use crate::chest::ChestSize;
 use crate::frontend::action::action_state_machine::ForkSaveInfo;
@@ -909,11 +909,16 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         let movetime: u16 = user_movetime.map(|v| v.into()).unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks).into();
                                         match info {
                                             crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => {
-                                                let hand_size = HAND_SIZE;
                                                 let Some(state) = game_state.simulation_state.factory.belts.get_inserter_info_at(*id, *belt_pos) else {
                                                     error!("Could not get rendering info for inserter!");
                                                     continue;
                                                 };
+                                                let hand_size = state.hand_size;
+
+                                                // TODO: Due to clamping this does not currently hold:
+                                                // assert_eq!(movetime, u16::from(state.movetime));
+                                                let movetime = u16::from(state.movetime);
+
                                                 let item =  game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos);
 
                                                 let (mut position, items): (f32, ITEMCOUNTTYPE) = match state.state {
@@ -960,7 +965,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 // TODO:
                                             },
                                             crate::frontend::world::tile::AttachedInserter::StorageStorage { item, inserter } => {
-                                                let hand_size = HAND_SIZE;
+                                                let hand_size = data_store.inserter_infos[*ty as usize].base_hand_size;
                                                 let item =  *item;
                                                 let state = game_state.simulation_state.factory.storage_storage_inserters.get_inserter(item, movetime, *inserter, current_tick);
 
@@ -1205,7 +1210,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             [usize::from(*ty)].size, 0, entity_layer);
                                         },
                                         Entity::Accumulator { ty, pos, .. } => {
-                                            texture_atlas.chest.draw([
+                                            texture_atlas.accumulator.draw([
                                                 draw_offset.0 + pos.x as f32,
                                                 draw_offset.1 + pos.y as f32,
                                             ], data_store.solar_panel_info
@@ -1702,7 +1707,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         );
                     },
                     crate::frontend::world::tile::PlaceEntityType::Accumulator { pos, ty } => {
-                        texture_atlas.chest.draw(
+                        texture_atlas.accumulator.draw(
                             [draw_offset.0 + pos.x as f32, draw_offset.1 + pos.y as f32],
                             data_store.accumulator_info[usize::from(*ty)].size,
                             0,
@@ -2201,7 +2206,6 @@ pub fn render_ui<
                             lower_dec = 1.0;
                         }
 
-                        dbg!(lower_dec);
                         lower_dec = lower_dec * ticks_per_value / 60.0 / 60.0;
 
                         (0..40)
@@ -2299,7 +2303,7 @@ pub fn render_ui<
 
                                         actions.push(ActionType::Remove(assembler_pos));
 
-                                        let area = data_store.mining_drill_info[1].size(*rotation);
+                                        let area = data_store.mining_drill_info[0].size(*rotation);
 
                                         for x in assembler_pos.x..(assembler_pos.x + i32::from(area[0])) {
                                             for y in assembler_pos.y..(assembler_pos.y + i32::from(area[1])) {
@@ -2332,7 +2336,7 @@ pub fn render_ui<
                                             entities: EntityPlaceOptions::Single(PlaceEntityType::MiningDrill {
                                                 pos: assembler_pos,
                                                 rotation: inserter_rotation,
-                                                ty: 1,
+                                                ty: 0,
                                             }),
                                             force: false,
                                         }));

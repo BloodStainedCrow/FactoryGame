@@ -5,6 +5,7 @@ use std::{
     u8,
 };
 
+use crate::item::Indexable;
 use crate::{
     inserter::{
         InserterState, belt_storage_inserter::Dir,
@@ -45,10 +46,6 @@ pub static NUM_BELT_UPDATES: AtomicUsize = AtomicUsize::new(0);
 pub static NUM_BELT_FREE_CACHE_HITS: AtomicUsize = AtomicUsize::new(0);
 // #[cfg(debug_assertions)]
 pub static NUM_BELT_LOCS_SEARCHED: AtomicUsize = AtomicUsize::new(0);
-
-// HUGE FIXME:
-pub const MOVETIME: u8 = 12;
-pub const HAND_SIZE: u8 = 12;
 
 #[allow(clippy::module_name_repetitions)]
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
@@ -98,6 +95,8 @@ pub struct BeltInserterInfo {
     pub outgoing: bool,
     pub state: InserterState,
     pub connection: FakeUnionStorage,
+    pub hand_size: ITEMCOUNTTYPE,
+    pub movetime: u8,
 }
 
 #[derive(Debug)]
@@ -180,7 +179,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             inserters: SushiInserterStoreDyn {
                 inserters: inserters
                     .into_iter()
-                    .map(|(inserter, _movetime, _hand_size)| (inserter, item))
+                    .map(|(inserter, movetime, hand_size)| (inserter, item, movetime, hand_size))
                     .collect(),
             },
 
@@ -347,6 +346,8 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
                     outgoing: dir == Dir::BeltToStorage,
                     state,
                     connection: inserter.0.storage_id,
+                    movetime: inserter.1,
+                    hand_size: inserter.2,
                 });
             } else if pos > belt_pos {
                 return None;
@@ -639,7 +640,14 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
                 // We KNOW this position is filled
                 debug_assert!(self.locs[loc_idx]);
                 let mut loc = true;
-                let _changed = ins.update(&mut loc, storages, *movetime, *hand_size, grid_size);
+                let _changed = ins.update(
+                    self.item.into_usize(),
+                    &mut loc,
+                    storages,
+                    *movetime,
+                    *hand_size,
+                    grid_size,
+                );
 
                 if !loc {
                     self.locs.set(loc_idx, false);
@@ -651,7 +659,14 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             } else {
                 let mut loc = self.locs.get_mut(loc_idx).unwrap();
 
-                let changed = ins.update(loc.as_mut(), storages, *movetime, *hand_size, grid_size);
+                let changed = ins.update(
+                    self.item.into_usize(),
+                    loc.as_mut(),
+                    storages,
+                    *movetime,
+                    *hand_size,
+                    grid_size,
+                );
 
                 if changed {
                     // the inserter changed something.
