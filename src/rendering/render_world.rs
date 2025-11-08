@@ -1210,7 +1210,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             [usize::from(*ty)].size, 0, entity_layer);
                                         },
                                         Entity::Accumulator { ty, pos, .. } => {
-                                            texture_atlas.chest.draw([
+                                            texture_atlas.accumulator.draw([
                                                 draw_offset.0 + pos.x as f32,
                                                 draw_offset.1 + pos.y as f32,
                                             ], data_store.solar_panel_info
@@ -1707,7 +1707,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         );
                     },
                     crate::frontend::world::tile::PlaceEntityType::Accumulator { pos, ty } => {
-                        texture_atlas.chest.draw(
+                        texture_atlas.accumulator.draw(
                             [draw_offset.0 + pos.x as f32, draw_offset.1 + pos.y as f32],
                             data_store.accumulator_info[usize::from(*ty)].size,
                             0,
