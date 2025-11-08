@@ -1,7 +1,7 @@
 # cargo-features = ["codegen-backend"]
 [package]
 name = "factory"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 rust-version = "1.85"
 build = "build.rs"
