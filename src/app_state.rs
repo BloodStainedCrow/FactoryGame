@@ -2335,10 +2335,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                             FakeUnionStorage::from_storage_with_statics_at_zero(item, Storage::Assembler {
                                                                 grid: id.grid,
                                                                 index: id.assembler_index,
-                                                                recipe_idx_with_this_item:
-                                                                    data_store
-                                                                        .recipe_to_translated_index
-                                                                        [&(id.recipe, item)],
+                                                                recipe_idx_with_this_item:id.recipe.id,
                                                             }, data_store).unwrap() ,
                                                             dest_conn,
                                                             Box::new(|_weak_index: WeakIndex| {})

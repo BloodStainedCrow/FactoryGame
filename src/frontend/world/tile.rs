@@ -398,8 +398,7 @@ fn try_attaching_fluids<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             Storage::Assembler {
                                                 grid: id.grid,
                                                 index: id.assembler_index,
-                                                recipe_idx_with_this_item: data_store
-                                                    .recipe_to_translated_index[&(id.recipe, item)],
+                                                recipe_idx_with_this_item: id.recipe.id,
                                             },
                                             dest_conn,
                                             Box::new(|_weak_index: WeakIndex| {})

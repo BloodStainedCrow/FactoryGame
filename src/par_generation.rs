@@ -1418,9 +1418,7 @@ fn pipe_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     } => Storage::Assembler {
                                         grid: id.grid,
                                         index: id.assembler_index,
-                                        recipe_idx_with_this_item: data_store
-                                            .recipe_to_translated_index
-                                            [&(id.recipe, fluid.unwrap())],
+                                        recipe_idx_with_this_item: id.recipe.id,
                                     },
                                     _ => unreachable!(),
                                 },
