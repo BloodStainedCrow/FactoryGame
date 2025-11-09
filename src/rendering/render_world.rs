@@ -2561,7 +2561,7 @@ pub fn render_ui<
                                             if !data_store_ref.item_is_fluid[item.into_usize()] && amount_removed_by_inserters_per_tick > 0.0 {
                                                 if recipes_per_tick < crafts_per_tick {
                                                     crafts_per_tick = recipes_per_tick;
-                                                } 
+                                                }
 
                                             }
                                         }
@@ -2716,7 +2716,7 @@ pub fn render_ui<
                                             if list_item != item && !data_store_ref.item_is_fluid[item.into_usize()] && amount_removed_by_inserters_per_tick > 0.0 {
                                                 if recipes_per_tick < crafts_per_tick {
                                                     crafts_per_tick = recipes_per_tick;
-                                                } 
+                                                }
                                             }
                                         }
 
