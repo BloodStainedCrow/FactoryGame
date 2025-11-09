@@ -2462,30 +2462,26 @@ pub fn render_ui<
             if ui.button("⚠️Auto Clock Inserters").clicked() {
                 let inserters_without_values_set = game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter_map(|e| match e {
                     Entity::Inserter { ty, user_movetime, direction, pos, info, .. } => {
-                        if user_movetime.is_none() {
-                            match info {
-                                crate::frontend::world::tile::InserterInfo::NotAttached { .. } => None,
-                                crate::frontend::world::tile::InserterInfo::Attached { info } => match info {
-                                    crate::frontend::world::tile::AttachedInserter::BeltStorage {id, belt_pos, .. } => {
-                                        let item = game_state_ref.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos);
-                                        let start_pos =
-                                            data_store.inserter_start_pos(*ty, *pos, *direction);
-                                        let end_pos =
-                                            data_store.inserter_end_pos(*ty, *pos, *direction);
-                                        Some((ty, pos, start_pos, end_pos, item, true))
-                                    },
-                                    crate::frontend::world::tile::AttachedInserter::BeltBelt { .. } => None,
-                                    crate::frontend::world::tile::AttachedInserter::StorageStorage { item, .. } => {
-                                        let start_pos =
+                        match info {
+                            crate::frontend::world::tile::InserterInfo::NotAttached { .. } => None,
+                            crate::frontend::world::tile::InserterInfo::Attached { info } => match info {
+                                crate::frontend::world::tile::AttachedInserter::BeltStorage {id, belt_pos, .. } => {
+                                    let item = game_state_ref.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos);
+                                    let start_pos =
                                         data_store.inserter_start_pos(*ty, *pos, *direction);
                                     let end_pos =
                                         data_store.inserter_end_pos(*ty, *pos, *direction);
-                                        Some((ty, pos, start_pos, end_pos, *item, false))
-                                    },
+                                    Some((ty, pos, start_pos, end_pos, item, true))
                                 },
-                            }
-                        } else {
-                            None
+                                crate::frontend::world::tile::AttachedInserter::BeltBelt { .. } => None,
+                                crate::frontend::world::tile::AttachedInserter::StorageStorage { item, .. } => {
+                                    let start_pos =
+                                    data_store.inserter_start_pos(*ty, *pos, *direction);
+                                let end_pos =
+                                    data_store.inserter_end_pos(*ty, *pos, *direction);
+                                    Some((ty, pos, start_pos, end_pos, *item, false))
+                                },
+                            },
                         }
                     },
                     _ => None,
@@ -2496,7 +2492,7 @@ pub fn render_ui<
 
                     if let Some(e) = game_state_ref.world.get_entity_at(end_pos, data_store_ref) {
                         match e {
-                            Entity::Assembler {info, .. } => {
+                            Entity::Assembler {pos: assembler_pos, ty: assembler_ty, rotation: assembler_rotation, info, .. } => {
                                 match info {
                                     AssemblerInfo::UnpoweredNoRecipe => {},
                                     AssemblerInfo::Unpowered(_) => {},
@@ -2505,11 +2501,73 @@ pub fn render_ui<
                                         let (_, _, count_in_recipe) = data_store_ref.recipe_to_items_and_amounts[id.recipe.into_usize()].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Ing && item == *recipe_item).unwrap();
                                         let time_per_recipe = data_store_ref.recipe_timers[usize_from(id.recipe.id)] as f32;
 
-                                        let AssemblerOnclickInfo { base_speed, speed_mod, .. } = game_state_ref.simulation_state.factory.power_grids.get_assembler_info(*id, data_store_ref);
+                                        let AssemblerOnclickInfo { base_speed, speed_mod, prod_mod, .. } = game_state_ref.simulation_state.factory.power_grids.get_assembler_info(*id, data_store_ref);
                                         let crafting_speed = base_speed * (1.0 + speed_mod);
-                                        let time_per_craft = time_per_recipe / crafting_speed;
+                                        let mut crafts_per_tick = crafting_speed / time_per_recipe;
 
-                                        let items_needed_per_tick = *count_in_recipe as f32 / time_per_craft;
+                                        let mut outputs = data_store.recipe_to_items_and_amounts[id.recipe.into_usize()]
+                                            .iter()
+                                            .filter(|(dir, _, _)| *dir == data::ItemRecipeDir::Out).map(|(_, item ,amount_in_recipe)| (*item, *amount_in_recipe, 0.0))
+                                            .collect_vec();
+
+                                        let inserters = game_state_ref.world.get_entities_colliding_with(Position {
+                                            x: assembler_pos.x - i32::from(data_store_ref.max_inserter_search_range),
+                                            y: assembler_pos.y - i32::from(data_store_ref.max_inserter_search_range),
+                                        }, [
+                                            u16::from(data_store_ref.max_inserter_search_range) * 2 + data_store_ref.assembler_info[*assembler_ty as usize].size(*assembler_rotation).0,
+                                            u16::from(data_store_ref.max_inserter_search_range) * 2 + data_store_ref.assembler_info[*assembler_ty as usize].size(*assembler_rotation).1
+                                        ].into(), data_store_ref).into_iter().filter(|e| matches!(e, Entity::Inserter { .. })).filter_map(|e| match e {
+                                            Entity::Inserter {
+                                                pos, direction, ty, user_movetime, info, ..
+                                            } => {
+                                                let start_pos = data_store_ref.inserter_start_pos(*ty, *pos, *direction);
+
+                                                let item = match info {
+                                                    crate::frontend::world::tile::InserterInfo::NotAttached {  } => return None,
+                                                    crate::frontend::world::tile::InserterInfo::Attached { info } => {
+                                                        match info {
+                                                            crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => {
+                                                                let item = game_state_ref.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos);
+
+                                                                item
+                                                            },
+                                                            crate::frontend::world::tile::AttachedInserter::BeltBelt { item, .. } => *item,
+                                                            crate::frontend::world::tile::AttachedInserter::StorageStorage { item, .. } => *item,
+                                                        }
+                                                    },
+                                                };
+
+                                                if start_pos.contained_in(*assembler_pos, data_store.assembler_info[*assembler_ty as usize].size(*assembler_rotation)) {
+                                                    let movetime = user_movetime.map(|v| v.into()).unwrap_or(data_store_ref.inserter_infos[*ty as usize].swing_time_ticks);
+
+                                                    let items_per_tick = f32::from(data_store_ref.inserter_infos[*ty as usize].base_hand_size) / (2.0 * f32::from(movetime) + 2.0);
+
+                                                    Some((item, items_per_tick))
+                                                } else {
+                                                    None
+                                                }
+                                            }
+                                            _ => unreachable!(),
+                                        });
+
+                                        for (item, amount) in inserters {
+                                            outputs.iter_mut().find(|(list_item, _, _)| *list_item == item).unwrap().2 += amount;
+                                        }
+
+                                        for (item, amount_in_recipe, amount_removed_by_inserters_per_tick) in outputs {
+                                            let recipes_per_tick = amount_removed_by_inserters_per_tick / (f32::from(amount_in_recipe) * (1.0 + prod_mod));
+
+
+                                            if !data_store_ref.item_is_fluid[item.into_usize()] && amount_removed_by_inserters_per_tick > 0.0 {
+                                                if recipes_per_tick < crafts_per_tick {
+                                                    crafts_per_tick = recipes_per_tick;
+                                                } 
+
+                                            }
+                                        }
+
+
+                                        let items_needed_per_tick = *count_in_recipe as f32 * crafts_per_tick;
 
                                         // FIXME: Take tech level into consideration
                                         let hand_size = data_store.inserter_infos[*ty as usize].base_hand_size as f32;
@@ -2531,13 +2589,66 @@ pub fn render_ui<
                                 }
                             },
 
+                            Entity::Chest { ty: chest_ty, pos: chest_pos, item, slot_limit } => {
+                                let inserters = game_state_ref.world.get_entities_colliding_with(Position {
+                                    x: chest_pos.x - i32::from(data_store_ref.max_inserter_search_range),
+                                    y: chest_pos.y - i32::from(data_store_ref.max_inserter_search_range),
+                                }, [
+                                    u16::from(data_store_ref.max_inserter_search_range) * 3, u16::from(data_store_ref.max_inserter_search_range) * 3
+                                ].into(), data_store_ref).into_iter().filter(|e| matches!(e, Entity::Inserter { .. })).filter_map(|e| match e {
+                                    Entity::Inserter {
+                                        pos, direction, ty, user_movetime, info, ..
+                                    } => {
+                                        let start_pos = data_store_ref.inserter_start_pos(*ty, *pos, *direction);
+
+                                        let item = match info {
+                                            crate::frontend::world::tile::InserterInfo::NotAttached {  } => return None,
+                                            crate::frontend::world::tile::InserterInfo::Attached { info } => {
+                                                match info {
+                                                    crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => {
+                                                        let item = game_state_ref.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos);
+
+                                                        item
+                                                    },
+                                                    crate::frontend::world::tile::AttachedInserter::BeltBelt { item, .. } => *item,
+                                                    crate::frontend::world::tile::AttachedInserter::StorageStorage { item, .. } => *item,
+                                                }
+                                            },
+                                        };
+
+                                        if start_pos.contained_in(*chest_pos, data_store_ref.chest_tile_sizes[*chest_ty as usize]) {
+                                            let movetime = user_movetime.map(|v| v.into()).unwrap_or(data_store_ref.inserter_infos[*ty as usize].swing_time_ticks);
+
+                                            let items_per_tick = f32::from(data_store_ref.inserter_infos[*ty as usize].base_hand_size) / (2.0 * f32::from(movetime));
+
+                                            Some((item, items_per_tick))
+                                        } else {
+                                            None
+                                        }
+                                    }
+                                    _ => unreachable!(),
+                                });
+
+                                let outgoing_amount: f32 = inserters.map(|(_item, amount_per_tick)| amount_per_tick).sum();
+
+                                let hand_size = data_store.inserter_infos[*ty as usize].base_hand_size as f32;
+
+                                let full_rotations_needed_per_tick = outgoing_amount / hand_size;
+
+                                let full_rotation_time_in_ticks = 1.0 / full_rotations_needed_per_tick;
+
+                                let swing_time_in_ticks = full_rotation_time_in_ticks / 2.0 - 1.0;
+
+                                goal_movetime = max(goal_movetime, swing_time_in_ticks as u16 / 10 * 10);
+                            }
+
                             _ => {}
                         }
                     }
 
                     if let Some(e) = game_state_ref.world.get_entity_at(start_pos, data_store_ref) {
                         match e {
-                            Entity::Assembler { info, .. } => {
+                            Entity::Assembler { pos: assembler_pos, ty: assembler_ty, rotation: assembler_rotation, info, .. } => {
                                 match info {
                                     AssemblerInfo::UnpoweredNoRecipe => {},
                                     AssemblerInfo::Unpowered(_) => {},
@@ -2548,9 +2659,68 @@ pub fn render_ui<
 
                                         let AssemblerOnclickInfo { base_speed, speed_mod, prod_mod, .. } = game_state_ref.simulation_state.factory.power_grids.get_assembler_info(*id, data_store_ref);
                                         let crafting_speed = base_speed * (1.0 + speed_mod);
-                                        let time_per_craft = time_per_recipe / crafting_speed;
+                                        let mut crafts_per_tick = crafting_speed / time_per_recipe;
 
-                                        let items_produced_per_tick = (*count_in_recipe as f32 * (1.0 + prod_mod)) / time_per_craft;
+                                        let mut outputs = data_store.recipe_to_items_and_amounts[id.recipe.into_usize()]
+                                            .iter()
+                                            .filter(|(dir, _, _)| *dir == data::ItemRecipeDir::Out).map(|(_, item ,amount_in_recipe)| (*item, *amount_in_recipe, 0.0))
+                                            .collect_vec();
+
+                                        let inserters = game_state_ref.world.get_entities_colliding_with(Position {
+                                            x: assembler_pos.x - i32::from(data_store_ref.max_inserter_search_range),
+                                            y: assembler_pos.y - i32::from(data_store_ref.max_inserter_search_range),
+                                        }, [
+                                            u16::from(data_store_ref.max_inserter_search_range) * 2 + data_store_ref.assembler_info[*assembler_ty as usize].size(*assembler_rotation).0,
+                                            u16::from(data_store_ref.max_inserter_search_range) * 2 + data_store_ref.assembler_info[*assembler_ty as usize].size(*assembler_rotation).1
+                                        ].into(), data_store_ref).into_iter().filter(|e| matches!(e, Entity::Inserter { .. })).filter_map(|e| match e {
+                                            Entity::Inserter {
+                                                pos, direction, ty, user_movetime, info, ..
+                                            } => {
+                                                let start_pos = data_store_ref.inserter_start_pos(*ty, *pos, *direction);
+
+                                                let item = match info {
+                                                    crate::frontend::world::tile::InserterInfo::NotAttached {  } => return None,
+                                                    crate::frontend::world::tile::InserterInfo::Attached { info } => {
+                                                        match info {
+                                                            crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => {
+                                                                let item = game_state_ref.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos);
+
+                                                                item
+                                                            },
+                                                            crate::frontend::world::tile::AttachedInserter::BeltBelt { item, .. } => *item,
+                                                            crate::frontend::world::tile::AttachedInserter::StorageStorage { item, .. } => *item,
+                                                        }
+                                                    },
+                                                };
+
+                                                if start_pos.contained_in(*assembler_pos, data_store.assembler_info[*assembler_ty as usize].size(*assembler_rotation)) {
+                                                    let movetime = user_movetime.map(|v| v.into()).unwrap_or(data_store_ref.inserter_infos[*ty as usize].swing_time_ticks);
+
+                                                    let items_per_tick = f32::from(data_store_ref.inserter_infos[*ty as usize].base_hand_size) / (2.0 * f32::from(movetime) + 2.0);
+
+                                                    Some((item, items_per_tick))
+                                                } else {
+                                                    None
+                                                }
+                                            }
+                                            _ => unreachable!(),
+                                        });
+
+                                        for (item, amount) in inserters {
+                                            outputs.iter_mut().find(|(list_item, _, _)| *list_item == item).unwrap().2 += amount;
+                                        }
+
+                                        for (list_item, amount_in_recipe, amount_removed_by_inserters_per_tick) in outputs {
+                                            let recipes_per_tick = amount_removed_by_inserters_per_tick / (f32::from(amount_in_recipe) * (1.0 + prod_mod));
+
+                                            if list_item != item && !data_store_ref.item_is_fluid[item.into_usize()] && amount_removed_by_inserters_per_tick > 0.0 {
+                                                if recipes_per_tick < crafts_per_tick {
+                                                    crafts_per_tick = recipes_per_tick;
+                                                } 
+                                            }
+                                        }
+
+                                        let items_produced_per_tick = (*count_in_recipe as f32 * (1.0 + prod_mod)) * crafts_per_tick;
 
                                         // FIXME: Take tech level into consideration
                                         let hand_size = data_store.inserter_infos[*ty as usize].base_hand_size as f32;
@@ -2561,7 +2731,10 @@ pub fn render_ui<
 
                                         let swing_time_in_ticks = full_rotation_time_in_ticks / 2.0 - 1.0;
 
-                                        goal_movetime = max(goal_movetime, swing_time_in_ticks as u16);
+                                        goal_movetime = max(goal_movetime, swing_time_in_ticks as u16 / 10 * 10);
+                                        if goal_movetime > 10_000 {
+                                            dbg!(items_produced_per_tick);
+                                        }
                                     },
                                 }
                             },
@@ -2574,9 +2747,41 @@ pub fn render_ui<
                 });
 
                 actions.extend(inserter_pos_and_time.map(|(pos, time)| {
+                    if time > 10_000 {
+                        dbg!(pos);
+                    }
+
                     ActionType::OverrideInserterMovetime { pos, new_movetime: Some(time.try_into().unwrap()) }
                 }))
             }
+
+            // if ui.button("⚠️Auto Clock Inserters (SLOW!)").clicked() {
+            //     let mut clocking_state = crate::clocking::ClockingState::default();
+
+            //     for assembler in game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter(|e| matches!(e, Entity::Assembler { ..})) {
+            //         clocking_state.assume_enough_ingredients(assembler, &game_state_ref.world, &game_state_ref.simulation_state, data_store_ref);
+            //     }
+
+            //     for _ in 0..5 {
+            //         for inserter in game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter(|e| matches!(e, Entity::Inserter { ..})) {
+            //             clocking_state.get_clocking(inserter, &game_state_ref.world, &game_state_ref.simulation_state, data_store_ref);
+            //         }
+
+            //         for assembler in game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter(|e| matches!(e, Entity::Assembler { ..})) {
+            //             clocking_state.calculate_machine_slowdown(assembler, &game_state_ref.world, &game_state_ref.simulation_state, data_store_ref);
+            //         }
+            //     }
+
+            //     actions.extend(game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter(|e| matches!(e, Entity::Inserter { ..})).map(|inserter| {
+            //         let pos = inserter.get_pos();
+
+            //         let ticks = clocking_state.get_clocking(inserter, &game_state_ref.world, &game_state_ref.simulation_state, data_store_ref);
+
+
+            //         ActionType::OverrideInserterMovetime { pos, new_movetime: ticks.map(|v| v.try_into().unwrap()) }
+            //     }));
+            // }
+
             if ui.button("Remove Clocking from all Inserters").clicked() {
                 let inserters_without_values_set = game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter_map(|e| match e {
                     Entity::Inserter { pos, info, .. } => {
