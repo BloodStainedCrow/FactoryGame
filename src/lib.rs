@@ -6,8 +6,6 @@
 #![feature(mixed_integer_ops_unsigned_sub)]
 #![feature(int_roundings)]
 #![feature(strict_overflow_ops)]
-#![feature(thin_box)]
-#![feature(ptr_metadata)]
 
 extern crate test;
 
@@ -66,6 +64,8 @@ use crate::item::Indexable;
 const TICKS_PER_SECOND_LOGIC: u64 = 60;
 
 const TICKS_PER_SECOND_RUNSPEED: u64 = 60;
+
+pub mod clocking;
 
 pub mod get_size;
 
