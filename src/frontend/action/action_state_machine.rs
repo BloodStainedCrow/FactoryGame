@@ -14,7 +14,7 @@ use log::{error, warn};
 use petgraph::Directed;
 
 use crate::{
-    NewWithDataStore,
+    NewWithDataStore, TICKS_PER_SECOND_LOGIC,
     app_state::SimulationState,
     belt::splitter::SplitterDistributionMode,
     blueprint::Blueprint,
@@ -156,6 +156,8 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
 
     pub hotbar: Hotbar<ItemIdxType>,
     pub hotbar_window_open: bool,
+
+    pub autosave_interval: u32,
 }
 
 #[derive(Debug)]
@@ -278,6 +280,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
             hotbar: Hotbar::new(data_store),
             hotbar_window_open: true,
+
+            autosave_interval: (60 * TICKS_PER_SECOND_LOGIC) as u32,
         }
     }
 

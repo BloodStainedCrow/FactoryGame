@@ -14,7 +14,7 @@ use crate::get_size::RamUsage;
 use crate::item::{ITEMCOUNTTYPE, Indexable};
 use crate::lab::{LabViewInfo, TICKS_PER_SCIENCE};
 use crate::liquid::FluidSystemState;
-use crate::par_generation::ParGenerateInfo;
+use crate::par_generation::{ParGenerateInfo, Timer};
 use crate::rendering::{BeltSide, Corner};
 use crate::saving::{save_components, save_with_fork};
 use crate::statistics::{NUM_DIFFERENT_TIMESCALES, TIMESCALE_NAMES};
@@ -1899,6 +1899,45 @@ pub fn render_ui<
     let data_store_ref = &*data_store;
     let mut actions = vec![];
 
+    let current_tick = aux_data.current_tick;
+
+    let tick = current_tick % u64::from(state_machine_ref.autosave_interval);
+
+    if cfg!(target_os = "linux") {
+        if tick == 0 {
+            if state_machine_ref.current_fork_save_in_progress.is_none() {
+                let recv = save_with_fork(&*world, &*simulation_state, &*aux_data, data_store_ref);
+                if let Some(recv) = recv {
+                    recv.set_nonblocking(true)
+                        .expect("Could not set pipe to nonblocking!");
+                    state_machine_ref.current_fork_save_in_progress = Some(ForkSaveInfo {
+                        recv,
+                        current_state: 0,
+                    });
+                } else {
+                    error!("Nonblocking save failed to start! Saving in blocking mode");
+                    save_components(&*world, &*simulation_state, &*aux_data, data_store_ref);
+                }
+            } else {
+                warn!(
+                    "Save already in progress while trying to start autosave interval. If this was due to autosaves taking too long, consider increasing your autosave interval."
+                );
+            }
+        }
+    } else {
+        // Ensure that the saving Window is on screen when the window freezes
+        if tick >= u64::from(state_machine_ref.autosave_interval) - 10 || tick <= 5 {
+            let progress = if tick > 1 && tick <= 5 { 1.0 } else { 0.0 };
+            if tick == 0 {
+                let _timer = Timer::new("Saving");
+                save_components(&*world, &*simulation_state, &*aux_data, data_store_ref);
+            }
+            Window::new("Saving...").default_open(true).show(ctx, |ui| {
+                ui.add(ProgressBar::new(progress).corner_radius(0.0));
+            });
+        }
+    }
+
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     ui.vertical_centered(|ui|{
         ui.label(
@@ -1981,6 +2020,19 @@ pub fn render_ui<
                         .text("Mouse Wheel sensitivity")
                         .logarithmic(true),
                 );
+
+                let mut autosave_interval_minutes = state_machine_ref.autosave_interval / 60 / (TICKS_PER_SECOND_LOGIC as u32); 
+                ui.add(
+                    egui::Slider::new(&mut autosave_interval_minutes, 1..=100)
+                        .integer()
+                        .custom_formatter(|v, _range| {
+                            let value: u32 = v as u32;
+
+                            format!("{value} min")
+                        })
+                        .text("Autosave interval"),
+                );
+                state_machine_ref.autosave_interval = autosave_interval_minutes * 60 * (TICKS_PER_SECOND_LOGIC as u32);
 
                 None
             })
@@ -3820,31 +3872,31 @@ pub fn render_ui<
         },
     }
 
-    egui::Area::new("Hotbar".into())
-        .anchor(Align2::CENTER_BOTTOM, (0.0, 0.0))
-        .show(ui.ctx(), |ui| {
-            egui_extras::TableBuilder::new(ui)
-                .columns(Column::auto().resizable(false), 10)
-                .body(|mut body| {
-                    body.row(30.0, |mut row| {
-                        for i in 0..10 {
-                            if row
-                                .col(|ui| {
-                                    let button_response = ui.button(format!("{i}"));
+    // egui::Area::new("Hotbar".into())
+    //     .anchor(Align2::CENTER_BOTTOM, (0.0, 0.0))
+    //     .show(ui.ctx(), |ui| {
+    //         egui_extras::TableBuilder::new(ui)
+    //             .columns(Column::auto().resizable(false), 10)
+    //             .body(|mut body| {
+    //                 body.row(30.0, |mut row| {
+    //                     for i in 0..10 {
+    //                         if row
+    //                             .col(|ui| {
+    //                                 let button_response = ui.button(format!("{i}"));
 
-                                    if button_response.hovered() {
-                                        dbg!(i);
-                                    }
-                                })
-                                .1
-                                .hovered()
-                            {
-                                dbg!(i);
-                            };
-                        }
-                    });
-                });
-        });
+    //                                 if button_response.hovered() {
+    //                                     dbg!(i);
+    //                                 }
+    //                             })
+    //                             .1
+    //                             .hovered()
+    //                         {
+    //                             dbg!(i);
+    //                         };
+    //                     }
+    //                 });
+    //             });
+    //     });
 
     Window::new("Technology")
         .collapsible(false)
