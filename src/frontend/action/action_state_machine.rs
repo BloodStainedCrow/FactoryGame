@@ -157,6 +157,7 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     pub hotbar: Hotbar<ItemIdxType>,
     pub hotbar_window_open: bool,
 
+    pub last_tick_seen_for_autosave: u32,
     pub autosave_interval: u32,
 }
 
@@ -281,6 +282,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             hotbar: Hotbar::new(data_store),
             hotbar_window_open: true,
 
+            last_tick_seen_for_autosave: 0,
             autosave_interval: (60 * TICKS_PER_SECOND_LOGIC) as u32,
         }
     }

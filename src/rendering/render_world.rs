@@ -1901,10 +1901,10 @@ pub fn render_ui<
 
     let current_tick = aux_data.current_tick;
 
-    let tick = current_tick % u64::from(state_machine_ref.autosave_interval);
+    let tick = (current_tick % u64::from(state_machine_ref.autosave_interval)) as u32;
 
     if cfg!(target_os = "linux") {
-        if tick == 0 {
+        if tick < state_machine_ref.last_tick_seen_for_autosave {
             if state_machine_ref.current_fork_save_in_progress.is_none() {
                 let recv = save_with_fork(&*world, &*simulation_state, &*aux_data, data_store_ref);
                 if let Some(recv) = recv {
@@ -1926,9 +1926,9 @@ pub fn render_ui<
         }
     } else {
         // Ensure that the saving Window is on screen when the window freezes
-        if tick >= u64::from(state_machine_ref.autosave_interval) - 10 || tick <= 5 {
+        if tick >= state_machine_ref.autosave_interval - 10 || tick <= 5 {
             let progress = if tick > 1 && tick <= 5 { 1.0 } else { 0.0 };
-            if tick == 0 {
+            if tick < state_machine_ref.last_tick_seen_for_autosave {
                 let _timer = Timer::new("Saving");
                 save_components(&*world, &*simulation_state, &*aux_data, data_store_ref);
             }
@@ -1937,6 +1937,7 @@ pub fn render_ui<
             });
         }
     }
+    state_machine_ref.last_tick_seen_for_autosave = tick;
 
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     ui.vertical_centered(|ui|{
@@ -2021,7 +2022,8 @@ pub fn render_ui<
                         .logarithmic(true),
                 );
 
-                let mut autosave_interval_minutes = state_machine_ref.autosave_interval / 60 / (TICKS_PER_SECOND_LOGIC as u32); 
+                let mut autosave_interval_minutes =
+                    state_machine_ref.autosave_interval / 60 / (TICKS_PER_SECOND_LOGIC as u32);
                 ui.add(
                     egui::Slider::new(&mut autosave_interval_minutes, 1..=100)
                         .integer()
@@ -2032,7 +2034,8 @@ pub fn render_ui<
                         })
                         .text("Autosave interval"),
                 );
-                state_machine_ref.autosave_interval = autosave_interval_minutes * 60 * (TICKS_PER_SECOND_LOGIC as u32);
+                state_machine_ref.autosave_interval =
+                    autosave_interval_minutes * 60 * (TICKS_PER_SECOND_LOGIC as u32);
 
                 None
             })
