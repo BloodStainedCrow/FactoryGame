@@ -181,8 +181,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     };
 
     let player_chunk = (
-        (camera_pos.0 / CHUNK_SIZE_FLOAT) as i32,
-        (camera_pos.1 / CHUNK_SIZE_FLOAT) as i32,
+        (camera_pos.0 / CHUNK_SIZE_FLOAT).floor() as i32,
+        (camera_pos.1 / CHUNK_SIZE_FLOAT).floor() as i32,
     );
 
     if num_tiles_across_screen_horizontal > SWITCH_TO_MAPVIEW_TILES {
