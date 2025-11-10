@@ -300,9 +300,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         pos_iter
             .map(|(x_offs, y_offs)| {
                 let chunk_draw_offs = (
-                    x_offs as f32 * CHUNK_SIZE_FLOAT - camera_pos.0 % CHUNK_SIZE_FLOAT
+                    x_offs as f32 * CHUNK_SIZE_FLOAT - camera_pos.0.rem_euclid(CHUNK_SIZE_FLOAT)
                         + (0.5 * num_tiles_across_screen_horizontal),
-                    y_offs as f32 * CHUNK_SIZE_FLOAT - camera_pos.1 % CHUNK_SIZE_FLOAT
+                    y_offs as f32 * CHUNK_SIZE_FLOAT - camera_pos.1.rem_euclid(CHUNK_SIZE_FLOAT)
                         + (0.5 * num_tiles_across_screen_vertical),
                 );
 
