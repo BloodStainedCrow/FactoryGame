@@ -1438,8 +1438,8 @@ impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> GetGridIndex<i32>
 {
     fn get_grid_index(&self) -> (i32, i32) {
         (
-            self.base_pos.0 / i32::from(CHUNK_SIZE),
-            self.base_pos.1 / i32::from(CHUNK_SIZE),
+            self.base_pos.0.div_floor(i32::from(CHUNK_SIZE)),
+            self.base_pos.1.div_floor(i32::from(CHUNK_SIZE)),
         )
     }
 }
@@ -1616,14 +1616,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     #[must_use]
     pub fn new_with_starting_area(top_left: Position, bottom_right: Position) -> Self {
         let grid = BoundingBoxGrid::new_with_filled_grid(
-            [
-                top_left.x / i32::from(CHUNK_SIZE),
-                top_left.y / i32::from(CHUNK_SIZE),
-            ],
-            [
-                bottom_right.x / i32::from(CHUNK_SIZE),
-                bottom_right.y / i32::from(CHUNK_SIZE),
-            ],
+            Self::get_chunk_pos_for_tile(top_left).into(),
+            Self::get_chunk_pos_for_tile(bottom_right).into(),
             |[x, y]| Chunk {
                 base_pos: (x * i32::from(CHUNK_SIZE), y * i32::from(CHUNK_SIZE)),
                 floor_tiles: None,
@@ -1974,8 +1968,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     ) {
         let pos = entity.get_pos();
 
-        let chunk_x = pos.x / i32::from(CHUNK_SIZE);
-        let chunk_y = pos.y / i32::from(CHUNK_SIZE);
+        let (chunk_x, chunk_y) = Self::get_chunk_pos_for_tile(pos);
         let Some(chunk) = self.get_chunk_mut((chunk_x, chunk_y)) else {
             panic!("Chunk outside the world: {:?}!", entity);
         };
@@ -2060,8 +2053,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     ) {
         let pos = entity.get_pos();
 
-        let chunk_x = pos.x / i32::from(CHUNK_SIZE);
-        let chunk_y = pos.y / i32::from(CHUNK_SIZE);
+        let (chunk_x, chunk_y) = Self::get_chunk_pos_for_tile(pos);
 
         match entity {
             Entity::Belt {
@@ -2185,7 +2177,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
         let pos = entity.get_pos();
 
-        let chunk_pos = self.get_chunk_pos_for_tile(pos);
+        let chunk_pos = Self::get_chunk_pos_for_tile(pos);
 
         if self.get_chunk_for_tile_mut(pos).is_none() {
             error!("Tried to place entity outside generated chunks");
@@ -2435,8 +2427,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             }
         }
 
-        let chunk_x = pos.x / i32::from(CHUNK_SIZE);
-        let chunk_y = pos.y / i32::from(CHUNK_SIZE);
+        let (chunk_x, chunk_y) = Self::get_chunk_pos_for_tile(pos);
         let chunk = self
             .get_chunk_mut((chunk_x, chunk_y))
             .expect("Chunk outside the world!");
@@ -2597,11 +2588,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
         match ins {
             AttachedInserter::BeltStorage { id, .. } => {
+                let chunk_pos = Self::get_chunk_pos_for_tile(pos);
                 self.belt_lookup
                     .belt_id_to_chunks
                     .entry(id)
                     .or_default()
-                    .insert((pos.x / i32::from(CHUNK_SIZE), pos.y / i32::from(CHUNK_SIZE)));
+                    .insert(chunk_pos);
             },
             AttachedInserter::BeltBelt { item, inserter } => {
                 todo!("Set the correct belt_ids in the belt_lookup")
@@ -3722,20 +3714,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
     #[must_use]
     pub fn get_chunk_for_tile(&self, pos: Position) -> Option<&Chunk<ItemIdxType, RecipeIdxType>> {
-        self.chunks
-            .get(pos.x / i32::from(CHUNK_SIZE), pos.y / i32::from(CHUNK_SIZE))
+        let (chunk_x, chunk_y) = Self::get_chunk_pos_for_tile(pos);
+        self.chunks.get(chunk_x, chunk_y)
     }
 
     fn get_chunk_for_tile_mut(
         &mut self,
         pos: Position,
     ) -> Option<&mut Chunk<ItemIdxType, RecipeIdxType>> {
-        self.chunks
-            .get_mut(pos.x / i32::from(CHUNK_SIZE), pos.y / i32::from(CHUNK_SIZE))
+        let (chunk_x, chunk_y) = Self::get_chunk_pos_for_tile(pos);
+        self.chunks.get_mut(chunk_x, chunk_y)
     }
 
-    fn get_chunk_pos_for_tile(&self, pos: Position) -> (i32, i32) {
-        (pos.x / i32::from(CHUNK_SIZE), pos.y / i32::from(CHUNK_SIZE))
+    fn get_chunk_pos_for_tile(pos: Position) -> (i32, i32) {
+        (
+            pos.x.div_floor(i32::from(CHUNK_SIZE)),
+            pos.y.div_floor(i32::from(CHUNK_SIZE)),
+        )
     }
 
     fn get_chunk_mut(
@@ -3827,11 +3822,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         const OVERLAP: i32 = 1;
         let chunk_x_start = max(
             x_extent.start,
-            (x_range_tiles.start / i32::from(CHUNK_SIZE)) - OVERLAP,
+            (x_range_tiles.start.div_floor(i32::from(CHUNK_SIZE))) - OVERLAP,
         );
         let chunk_x_end = min(
             x_extent.end - 1,
-            (x_range_tiles.end / i32::from(CHUNK_SIZE)) + OVERLAP,
+            (x_range_tiles.end.div_floor(i32::from(CHUNK_SIZE))) + OVERLAP,
         );
 
         data.par_chunks_mut(chunk_size)
@@ -3850,8 +3845,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     (my_y_start_pixel * pixel_to_tile) as i32 + y_range_tiles.start;
                 let my_y_end_tile = (my_y_end_pixel * pixel_to_tile) as i32 + y_range_tiles.start;
 
-                let chunk_y_start = my_y_start_tile / i32::from(CHUNK_SIZE);
-                let chunk_y_end = my_y_end_tile / i32::from(CHUNK_SIZE);
+                let chunk_y_start = my_y_start_tile.div_floor(i32::from(CHUNK_SIZE));
+                let chunk_y_end = my_y_end_tile.div_floor(i32::from(CHUNK_SIZE));
 
 
                 {
@@ -4090,10 +4085,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
         let bb_bottom_right = (pos.x + i32::from(size.0), pos.y + i32::from(size.1));
 
-        let chunk_range_x =
-            (bb_top_left.0 / i32::from(CHUNK_SIZE))..=(bb_bottom_right.0 / i32::from(CHUNK_SIZE));
-        let chunk_range_y =
-            (bb_top_left.1 / i32::from(CHUNK_SIZE))..=(bb_bottom_right.1 / i32::from(CHUNK_SIZE));
+        let chunk_range_x = (bb_top_left.0.div_floor(i32::from(CHUNK_SIZE)))
+            ..=(bb_bottom_right.0.div_floor(i32::from(CHUNK_SIZE)));
+        let chunk_range_y = (bb_top_left.1.div_floor(i32::from(CHUNK_SIZE)))
+            ..=(bb_bottom_right.1.div_floor(i32::from(CHUNK_SIZE)));
 
         assert!(chunk_range_x.clone().count() >= 1);
         assert!(chunk_range_y.clone().count() >= 1);
@@ -4148,10 +4143,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
         let bb_bottom_right = (pos.x + i32::from(size.0), pos.y + i32::from(size.1));
 
-        let chunk_range_x =
-            (bb_top_left.0 / i32::from(CHUNK_SIZE))..=(bb_bottom_right.0 / i32::from(CHUNK_SIZE));
-        let chunk_range_y =
-            (bb_top_left.1 / i32::from(CHUNK_SIZE))..=(bb_bottom_right.1 / i32::from(CHUNK_SIZE));
+        let chunk_range_x = (bb_top_left.0.div_floor(i32::from(CHUNK_SIZE)))
+            ..=(bb_bottom_right.0.div_floor(i32::from(CHUNK_SIZE)));
+        let chunk_range_y = (bb_top_left.1.div_floor(i32::from(CHUNK_SIZE)))
+            ..=(bb_bottom_right.1.div_floor(i32::from(CHUNK_SIZE)));
 
         debug_assert!(chunk_range_x.clone().count() >= 1);
         debug_assert!(chunk_range_y.clone().count() >= 1);
@@ -4421,10 +4416,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
         let bb_bottom_right = (pos.x + i32::from(size.0), pos.y + i32::from(size.1));
 
-        let chunk_range_x =
-            (bb_top_left.0 / i32::from(CHUNK_SIZE))..=(bb_bottom_right.0 / i32::from(CHUNK_SIZE));
-        let chunk_range_y =
-            (bb_top_left.1 / i32::from(CHUNK_SIZE))..=(bb_bottom_right.1 / i32::from(CHUNK_SIZE));
+        let chunk_range_x = (bb_top_left.0.div_floor(i32::from(CHUNK_SIZE)))
+            ..=(bb_bottom_right.0.div_floor(i32::from(CHUNK_SIZE)));
+        let chunk_range_y = (bb_top_left.1.div_floor(i32::from(CHUNK_SIZE)))
+            ..=(bb_bottom_right.1.div_floor(i32::from(CHUNK_SIZE)));
 
         debug_assert!(chunk_range_x.clone().count() >= 1);
         debug_assert!(chunk_range_y.clone().count() >= 1);
@@ -4951,10 +4946,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         //     !self.any_entity_colliding_with(pos, size, data_store)
         // );
 
-        // let chunk_range_x = (pos.x / i32::from(CHUNK_SIZE))
-        //     ..=((pos.x + i32::from(size.0) - 1) / i32::from(CHUNK_SIZE));
-        // let chunk_range_y = (pos.y / i32::from(CHUNK_SIZE))
-        //     ..=((pos.y + i32::from(size.1) - 1) / i32::from(CHUNK_SIZE));
+        // let chunk_range_x = (pos.x .div_floor( i32::from(CHUNK_SIZE)))
+        //     ..=((pos.x + i32::from(size.0) - 1) .div_floor( i32::from(CHUNK_SIZE)));
+        // let chunk_range_y = (pos.y .div_floor( i32::from(CHUNK_SIZE)))
+        //     ..=((pos.y + i32::from(size.1) - 1) .div_floor( i32::from(CHUNK_SIZE)));
 
         // chunk_range_x
         //     .cartesian_product(chunk_range_y)
