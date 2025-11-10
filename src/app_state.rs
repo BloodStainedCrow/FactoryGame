@@ -215,12 +215,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
+        const X_OFFS: i32 = -1_800;
+
         // TODO: Increase size to fit solar field
         let mut ret = GameState::new_with_world_area(
-            Position { x: 0, y: 0 },
             Position {
-                x: 16_000,
-                y: 12_000,
+                x: X_OFFS,
+                y: -6_000,
+            },
+            Position {
+                x: 16_000 + X_OFFS,
+                y: 6_000,
             },
             data_store,
         );
@@ -239,7 +244,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         puffin::set_scopes_on(false);
         if use_solar_field {
             ret.add_solar_field(
-                Position { x: 4503, y: 2454 },
+                Position {
+                    x: 4503 + X_OFFS,
+                    y: 2454 - 6_000,
+                },
                 Watt(325_000_000_000),
                 Some(9_000),
                 progress.clone(),
@@ -252,7 +260,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 vec![ActionType::PlaceEntity(PlaceEntityInfo {
                     entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
                         crate::frontend::world::tile::PlaceEntityType::SolarPanel {
-                            pos: Position { x: 4502, y: 2454 },
+                            pos: Position {
+                                x: 4502 + X_OFFS,
+                                y: 2454 - 6_000,
+                            },
                             ty: data_store
                                 .solar_panel_info
                                 .iter()
@@ -269,7 +280,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         }
 
         bp.apply_at_positions(
-            iter::once(Position { x: 1600, y: 1600 }),
+            iter::once(Position {
+                x: 1600 + X_OFFS,
+                y: 1600 - 6_000,
+            }),
             false,
             &mut ret,
             || {
