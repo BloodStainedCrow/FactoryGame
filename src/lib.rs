@@ -65,8 +65,6 @@ const TICKS_PER_SECOND_LOGIC: u64 = 60;
 
 const TICKS_PER_SECOND_RUNSPEED: u64 = 60;
 
-pub mod clocking;
-
 pub mod get_size;
 
 pub mod assembler;
