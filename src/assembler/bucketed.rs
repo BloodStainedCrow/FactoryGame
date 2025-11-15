@@ -804,6 +804,8 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             ticks_wanted: 1,
         });
 
+        self.num_by_types[usize::from(new_ty)] += 1;
+
         index.try_into().unwrap()
     }
 
@@ -826,6 +828,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         Position,
     ) {
         let index = index as usize;
+        self.num_by_types[self.hot_data[index].ty as usize] -= 1;
         debug_assert!(!self.holes.contains(&index));
         self.holes.push(index);
 
