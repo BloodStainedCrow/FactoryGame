@@ -4,14 +4,14 @@ use std::{array, iter, u8};
 use itertools::Itertools;
 use log::warn;
 
+use crate::assembler::arrays;
 use crate::assembler::{PowerUsageInfo, TIMERTYPE};
 use crate::data::{DataStore, ItemRecipeDir};
 use crate::frontend::world::Position;
 use crate::item::{ITEMCOUNTTYPE, IdxTrait, Indexable, Recipe};
 use crate::power::Watt;
 use crate::power::power_grid::{IndexUpdateInfo, MAX_POWER_MULT, PowerGridIdentifier};
-
-use crate::assembler::arrays;
+use crate::storage_list::{MaxInsertionLimit, PANIC_ON_INSERT};
 
 use crate::WeakIdxTrait;
 
@@ -632,14 +632,17 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         &mut self,
     ) -> (
         (
-            [&[ITEMCOUNTTYPE]; NUM_INGS],
+            [MaxInsertionLimit<'_>; NUM_INGS],
             [&mut [ITEMCOUNTTYPE]; NUM_INGS],
         ),
         [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS],
     ) {
         (
             (
-                self.ings_max_insert.each_mut().map(|b| &**b),
+                self.ings_max_insert.each_mut().map(|b| match b.get(0) {
+                    Some(v) => MaxInsertionLimit::Global(*v),
+                    None => PANIC_ON_INSERT,
+                }),
                 self.ings.each_mut().map(|b| &mut **b),
             ),
             self.outputs.each_mut().map(|b| &mut **b),

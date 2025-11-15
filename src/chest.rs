@@ -4,6 +4,7 @@ use std::{cmp::min, u8};
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
+use crate::storage_list::MaxInsertionLimit;
 use crate::{
     data::DataStore,
     item::{ITEMCOUNTTYPE, IdxTrait, Item, WeakIdxTrait, usize_from},
@@ -322,8 +323,13 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         removed_items
     }
 
-    pub fn storage_list_slices(&mut self) -> (&[ITEMCOUNTTYPE], &mut [ITEMCOUNTTYPE]) {
-        (self.max_insert.as_slice(), self.inout.as_mut_slice())
+    pub fn storage_list_slices<'a>(
+        &'a mut self,
+    ) -> (MaxInsertionLimit<'a>, &'a mut [ITEMCOUNTTYPE]) {
+        (
+            MaxInsertionLimit::PerMachine(self.max_insert.as_slice()),
+            self.inout.as_mut_slice(),
+        )
     }
 }
 

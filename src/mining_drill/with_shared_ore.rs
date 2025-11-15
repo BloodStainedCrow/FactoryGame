@@ -1,5 +1,6 @@
 use std::{cmp::min, iter, u8};
 
+use crate::storage_list::MaxInsertionLimit;
 use crate::{
     data::DataStore,
     item::{ITEMCOUNTTYPE, IdxTrait, Item, WeakIdxTrait},
@@ -237,7 +238,7 @@ impl<ItemIdxType: IdxTrait> PureDrillStorageWithSharedOreTiles<ItemIdxType> {
         Joule(0)
     }
 
-    pub fn get_inventories(&mut self) -> (&[ITEMCOUNTTYPE], &mut [ITEMCOUNTTYPE]) {
+    pub fn get_inventories(&mut self) -> (MaxInsertionLimit<'_>, &mut [ITEMCOUNTTYPE]) {
         (ALWAYS_FULL, self.inventory.as_mut_slice())
     }
 }

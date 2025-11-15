@@ -1,6 +1,7 @@
 use std::{array, marker::PhantomData, simd::Simd, u8};
 
 use crate::frontend::world::tile::ModuleTy;
+use crate::storage_list::MaxInsertionLimit;
 use crate::{
     data::DataStore,
     frontend::world::{Position, tile::AssemblerID},
@@ -672,7 +673,7 @@ pub trait MultiAssemblerStore<
         &mut self,
     ) -> (
         (
-            [&[ITEMCOUNTTYPE]; NUM_INGS],
+            [MaxInsertionLimit<'_>; NUM_INGS],
             [&mut [ITEMCOUNTTYPE]; NUM_INGS],
         ),
         [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS],

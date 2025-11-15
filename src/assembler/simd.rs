@@ -18,6 +18,7 @@ use crate::{
         Watt,
         power_grid::{IndexUpdateInfo, MAX_POWER_MULT, PowerGridEntity, PowerGridIdentifier},
     },
+    storage_list::{MaxInsertionLimit, PANIC_ON_INSERT},
 };
 use itertools::{Either, Itertools};
 
@@ -942,14 +943,18 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         &mut self,
     ) -> (
         (
-            [&[ITEMCOUNTTYPE]; NUM_INGS],
+            [MaxInsertionLimit<'_>; NUM_INGS],
             [&mut [ITEMCOUNTTYPE]; NUM_INGS],
         ),
         [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS],
     ) {
         (
             (
-                self.ings_max_insert.each_mut().map(|b| &**b),
+                self.ings_max_insert.each_mut().map(|b| match b.get(0) {
+                    Some(v) => MaxInsertionLimit::Global(*v),
+                    None => PANIC_ON_INSERT,
+                }),
+                // self.ings_max_insert.each_mut().map(|b| &**b),
                 self.ings.each_mut().map(|b| &mut **b),
             ),
             self.outputs.each_mut().map(|b| &mut **b),

@@ -1,5 +1,6 @@
 use core::panic;
 use std::iter;
+use std::ops::Index;
 use std::u16;
 
 use itertools::Itertools;
@@ -22,11 +23,36 @@ use crate::{
     split_arbitrary::split_arbitrary_mut_slice,
 };
 
-// FIXME: We just yeet 10MB of RAM into the wind here :/
-pub const ALWAYS_FULL: &'static [ITEMCOUNTTYPE] = &[0; 10_000_000];
-pub const PANIC_ON_INSERT: &'static [ITEMCOUNTTYPE] = &[0; 0];
+pub const ALWAYS_FULL: MaxInsertionLimit<'static> = MaxInsertionLimit::Global(0);
+pub const PANIC_ON_INSERT: MaxInsertionLimit<'static> = MaxInsertionLimit::PerMachine(&[]);
 
-type SingleGridStorage<'a, 'b> = (&'a [ITEMCOUNTTYPE], &'b mut [ITEMCOUNTTYPE]);
+#[derive(Debug)]
+pub enum MaxInsertionLimit<'a> {
+    PerMachine(&'a [ITEMCOUNTTYPE]),
+    Global(ITEMCOUNTTYPE),
+}
+
+impl<'a> Index<usize> for MaxInsertionLimit<'a> {
+    type Output = ITEMCOUNTTYPE;
+    fn index(&self, index: usize) -> &Self::Output {
+        // return &30;
+        match self {
+            MaxInsertionLimit::PerMachine(items) => &items[index],
+            MaxInsertionLimit::Global(value) => value,
+        }
+    }
+}
+impl<'a> MaxInsertionLimit<'a> {
+    fn get(&self, index: usize) -> Option<&ITEMCOUNTTYPE> {
+        // return Some(&30);
+        match self {
+            MaxInsertionLimit::PerMachine(items) => items.get(index),
+            MaxInsertionLimit::Global(value) => Some(value),
+        }
+    }
+}
+
+type SingleGridStorage<'a, 'b> = (MaxInsertionLimit<'a>, &'b mut [ITEMCOUNTTYPE]);
 pub type SingleItemStorages<'a, 'b> = &'a mut [SingleGridStorage<'b, 'b>]; //[SingleGridStorage; NUM_RECIPES * NUM_GRIDS];
 pub type FullStorages<'a, 'b> = Box<[SingleGridStorage<'a, 'b>]>; //[SingleGridStorage; NUM_ITEMS * NUM_RECIPES * NUM_GRIDS];
 
@@ -352,7 +378,7 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             num_power_grids,
                                             data_store,
                                         ),
-                                        (v.0, v.1, v.2.len()),
+                                        (v.0, v.1, v.3.len()),
                                     )
                                 })
                                 .collect();
@@ -471,7 +497,7 @@ fn all_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     Item = (
         Item<ItemIdxType>,
         Storage<RecipeIdxType>,
-        &'a [ITEMCOUNTTYPE],
+        MaxInsertionLimit<'a>,
         &'a mut [ITEMCOUNTTYPE],
     ),
 > + use<'a, 'b, ItemIdxType, RecipeIdxType> {
@@ -493,9 +519,9 @@ fn all_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 pub fn static_storages_pre_sorted<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     item: Item<ItemIdxType>,
     chest_store: &'a mut MultiChestStore<ItemIdxType>,
-    drill_lists: (&'a [ITEMCOUNTTYPE], &'a mut [ITEMCOUNTTYPE]),
+    drill_lists: (MaxInsertionLimit<'a>, &'a mut [ITEMCOUNTTYPE]),
     data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
-) -> impl Iterator<Item = (&'a [ITEMCOUNTTYPE], &'a mut [ITEMCOUNTTYPE])>
+) -> impl Iterator<Item = (MaxInsertionLimit<'a>, &'a mut [ITEMCOUNTTYPE])>
 + use<'a, 'b, ItemIdxType, RecipeIdxType> {
     let grid_size = grid_size(item, data_store);
     let static_size = static_size(item, data_store);
@@ -518,7 +544,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
     Item = (
         Item<ItemIdxType>,
         Storage<RecipeIdxType>,
-        &'a [ITEMCOUNTTYPE],
+        MaxInsertionLimit<'a>,
         &'a mut [ITEMCOUNTTYPE],
     ),
 > + use<'a, 'b, ItemIdxType, RecipeIdxType> {
@@ -1378,7 +1404,7 @@ fn all_lab_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     Item = (
         Item<ItemIdxType>,
         Storage<RecipeIdxType>,
-        &'a [ITEMCOUNTTYPE],
+        MaxInsertionLimit<'a>,
         &'a mut [ITEMCOUNTTYPE],
     ),
 > + use<'a, 'b, ItemIdxType, RecipeIdxType> {
@@ -1391,7 +1417,11 @@ fn all_lab_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             (
                 item,
                 Storage::Lab { grid, index: 0 },
-                max_insert.as_slice(),
+                // max_insert.as_slice(),
+                match max_insert.get(0) {
+                    Some(v) => MaxInsertionLimit::Global(*v),
+                    None => PANIC_ON_INSERT,
+                },
                 science.as_mut_slice(),
             )
         })
@@ -1406,7 +1436,7 @@ fn all_static_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     Item = (
         Item<ItemIdxType>,
         Storage<RecipeIdxType>,
-        &'a [ITEMCOUNTTYPE],
+        MaxInsertionLimit<'a>,
         &'a mut [ITEMCOUNTTYPE],
     ),
 > + use<'a, 'b, ItemIdxType, RecipeIdxType> {
@@ -1475,7 +1505,7 @@ fn all_chest_storages<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     Item = (
         Item<ItemIdxType>,
         Storage<RecipeIdxType>,
-        &'a [ITEMCOUNTTYPE],
+        MaxInsertionLimit<'a>,
         &'a mut [ITEMCOUNTTYPE],
     ),
 > + use<'a, ItemIdxType, RecipeIdxType> {
