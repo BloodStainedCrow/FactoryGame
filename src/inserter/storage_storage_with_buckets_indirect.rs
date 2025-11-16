@@ -936,6 +936,8 @@ mod test {
     use rand::{random, seq::SliceRandom};
     use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 
+    use crate::storage_list::MaxInsertionLimit;
+
     use super::*;
 
     #[bench]
@@ -957,8 +959,14 @@ mod test {
                     store[item].update(
                         0,
                         &mut [
-                            (max_insert.as_slice(), storages_in[item].as_mut_slice()),
-                            (max_insert.as_slice(), storages_out[item].as_mut_slice()),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storages_in[item].as_mut_slice(),
+                            ),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storages_out[item].as_mut_slice(),
+                            ),
                         ],
                         10,
                         current_tick,
@@ -1012,8 +1020,14 @@ mod test {
                     store.update(
                         0,
                         &mut [
-                            (max_insert.as_slice(), storage_in.as_mut_slice()),
-                            (max_insert.as_slice(), storage_out.as_mut_slice()),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storage_in.as_mut_slice(),
+                            ),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storage_out.as_mut_slice(),
+                            ),
                         ],
                         10,
                         current_tick,

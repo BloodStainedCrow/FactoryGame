@@ -1277,11 +1277,14 @@ mod test {
     use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
     use test::Bencher;
 
-    use crate::inserter::{
-        FakeUnionStorage,
-        storage_storage_with_buckets::{
-            BucketedStorageStorageInserterStoreFrontend, InserterId, InserterIdentifier,
+    use crate::{
+        inserter::{
+            FakeUnionStorage,
+            storage_storage_with_buckets::{
+                BucketedStorageStorageInserterStoreFrontend, InserterId, InserterIdentifier,
+            },
         },
+        storage_list::MaxInsertionLimit,
     };
 
     use super::BucketedStorageStorageInserterStore;
@@ -1307,8 +1310,14 @@ mod test {
                     store[item].update(
                         &mut frontend[item],
                         &mut [
-                            (max_insert.as_slice(), storages_in[item].as_mut_slice()),
-                            (max_insert.as_slice(), storages_out[item].as_mut_slice()),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storages_in[item].as_mut_slice(),
+                            ),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storages_out[item].as_mut_slice(),
+                            ),
                         ],
                         10,
                         current_tick,
@@ -1366,8 +1375,14 @@ mod test {
                     store.update(
                         frontend,
                         &mut [
-                            (max_insert.as_slice(), storage_in.as_mut_slice()),
-                            (max_insert.as_slice(), storage_out.as_mut_slice()),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storage_in.as_mut_slice(),
+                            ),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storage_out.as_mut_slice(),
+                            ),
                         ],
                         10,
                         current_tick,
@@ -1404,8 +1419,14 @@ mod test {
                 store.update(
                     &mut frontend,
                     &mut [
-                        (max_insert.as_slice(), storages_in.as_mut_slice()),
-                        (max_insert.as_slice(), storages_out.as_mut_slice()),
+                        (
+                            MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                            storages_in.as_mut_slice(),
+                        ),
+                        (
+                            MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                            storages_out.as_mut_slice(),
+                        ),
                     ],
                     10,
                     current_time,
@@ -1491,8 +1512,14 @@ mod test {
             store.update(
                 &mut frontend,
                 &mut [
-                    (max_insert.as_slice(), storages_in.as_mut_slice()),
-                    (max_insert.as_slice(), storages_out.as_mut_slice()),
+                    (
+                        MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                        storages_in.as_mut_slice(),
+                    ),
+                    (
+                        MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                        storages_out.as_mut_slice(),
+                    ),
                 ],
                 10,
                 current_time,
@@ -1528,8 +1555,14 @@ mod test {
                 store.update(
                     &mut frontend,
                     &mut [
-                        (max_insert.as_slice(), storages_in.as_mut_slice()),
-                        (max_insert.as_slice(), storages_out.as_mut_slice()),
+                        (
+                            MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                            storages_in.as_mut_slice(),
+                        ),
+                        (
+                            MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                            storages_out.as_mut_slice(),
+                        ),
                     ],
                     10,
                     current_time,
@@ -1603,8 +1636,14 @@ mod test {
             store.update(
                 &mut frontend,
                 &mut [
-                    (max_insert.as_slice(), storages_in.as_mut_slice()),
-                    (max_insert.as_slice(), storages_out.as_mut_slice()),
+                    (
+                        MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                        storages_in.as_mut_slice(),
+                    ),
+                    (
+                        MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                        storages_out.as_mut_slice(),
+                    ),
                 ],
                 10,
                 current_time,

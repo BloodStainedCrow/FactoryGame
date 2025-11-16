@@ -1278,6 +1278,7 @@ mod test {
     use crate::{
         belt::smart::SmartBelt,
         inserter::{FakeUnionStorage, belt_storage_inserter::Dir},
+        storage_list::MaxInsertionLimit,
     };
 
     use super::*;
@@ -1324,8 +1325,14 @@ mod test {
                         item,
                         &mut frontend[item],
                         &mut [
-                            (max_insert.as_slice(), storages_in[item].as_mut_slice()),
-                            (max_insert.as_slice(), storages_out[item].as_mut_slice()),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storages_in[item].as_mut_slice(),
+                            ),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storages_out[item].as_mut_slice(),
+                            ),
                         ],
                         &mut belts[item],
                         10,
@@ -1335,8 +1342,14 @@ mod test {
                         item,
                         &mut frontend[item],
                         &mut [
-                            (max_insert.as_slice(), storages_in[item].as_mut_slice()),
-                            (max_insert.as_slice(), storages_out[item].as_mut_slice()),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storages_in[item].as_mut_slice(),
+                            ),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storages_out[item].as_mut_slice(),
+                            ),
                         ],
                         &mut belts[item],
                         10,
@@ -1408,8 +1421,14 @@ mod test {
                         0,
                         frontend,
                         &mut [
-                            (max_insert.as_slice(), storage_in.as_mut_slice()),
-                            (max_insert.as_slice(), storage_out.as_mut_slice()),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storage_in.as_mut_slice(),
+                            ),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storage_out.as_mut_slice(),
+                            ),
                         ],
                         belts,
                         10,
@@ -1419,8 +1438,14 @@ mod test {
                         0,
                         frontend,
                         &mut [
-                            (max_insert.as_slice(), storage_in.as_mut_slice()),
-                            (max_insert.as_slice(), storage_out.as_mut_slice()),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storage_in.as_mut_slice(),
+                            ),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storage_out.as_mut_slice(),
+                            ),
                         ],
                         belts,
                         10,
