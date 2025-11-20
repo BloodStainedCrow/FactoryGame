@@ -1288,10 +1288,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         });
                 },
                 ActionType::OverrideInserterMovetime { pos, new_movetime } => {
-                    game_state
-                        .world
-                        .get_entity_at_mut(*pos, data_store)
-                        .map(|e| match e {
+                    let e = game_state.world.get_entity_at_mut(*pos, data_store);
+
+                    if let Some(e) = e {
+                        match e {
                             Entity::Inserter {
                                 ty,
                                 user_movetime,
@@ -1351,7 +1351,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             _ => {
                                 warn!("Tried to set Inserter Settings on non inserter");
                             },
-                        });
+                        }
+                    } else {
+                        warn!("Tried to set Inserter Settings on empty tile");
+                    }
                 },
                 ActionType::PlaceEntity(place_entity_info) => {
                     let force = place_entity_info.force;
