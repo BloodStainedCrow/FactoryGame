@@ -172,44 +172,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     }
 
     #[must_use]
-    pub fn new_with_production(
-        progress: Arc<AtomicU64>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Self {
-        let mut ret = GameState::new_with_world_area(
-            Position { x: 0, y: 0 },
-            Position { x: 3500, y: 31000 },
-            data_store,
-        );
-
-        const BP_STRING: &'static str = include_str!("../test_blueprints/red_sci.bp");
-        let bp: Blueprint = ron::de::from_str(BP_STRING).unwrap();
-        // let file = File::open("test_blueprints/red_sci.bp").unwrap();
-        // let bp: Blueprint = ron::de::from_reader(file).unwrap();
-        let bp = bp.get_reusable(false, data_store);
-
-        puffin::set_scopes_on(false);
-        let y_range = (1590..3000).step_by(7);
-        let x_range = (1590..3000).step_by(20);
-
-        let total = y_range.size_hint().0 * x_range.size_hint().0;
-
-        let mut current = 0;
-
-        for y_pos in y_range {
-            for x_pos in x_range.clone() {
-                progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
-                current += 1;
-
-                bp.apply(Position { x: x_pos, y: y_pos }, &mut ret, data_store);
-            }
-        }
-        puffin::set_scopes_on(true);
-
-        ret
-    }
-
-    #[must_use]
     pub fn new_with_megabase(
         use_solar_field: bool,
         progress: Arc<AtomicU64>,
@@ -376,63 +338,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             data_store,
         );
 
-        puffin::set_scopes_on(true);
-
-        ret
-    }
-
-    #[must_use]
-    pub fn new_with_beacon_production(
-        progress: Arc<AtomicU64>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Self {
-        Self::new_with_beacon_red_green_production_many_grids(progress, data_store)
-    }
-
-    #[must_use]
-    pub fn new_with_beacon_red_green_production_many_grids(
-        progress: Arc<AtomicU64>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Self {
-        let mut ret = GameState::new_with_world_area(
-            Position { x: 0, y: 0 },
-            Position { x: 44000, y: 44000 },
-            data_store,
-        );
-
-        const BP_STRING: &'static str =
-            include_str!("../test_blueprints/red_and_green_with_clocking.bp");
-        let bp: Blueprint = ron::de::from_str(BP_STRING).unwrap();
-        // let file = File::open("test_blueprints/red_and_green_with_clocking.bp").unwrap();
-        // let bp: Blueprint = ron::de::from_reader(file).unwrap();
-        let bp = bp.get_reusable(false, data_store);
-
-        puffin::set_scopes_on(false);
-        let y_range = (0..40_000).step_by(4_000);
-        let x_range = (0..40_000).step_by(4_000);
-
-        let total = y_range.size_hint().0 * x_range.size_hint().0;
-
-        let mut current = 0;
-
-        for y_start in y_range {
-            for x_start in x_range.clone() {
-                progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
-                current += 1;
-                for y_pos in (1590..4000).step_by(40) {
-                    for x_pos in (1590..4000).step_by(50) {
-                        bp.apply(
-                            Position {
-                                x: x_start + x_pos,
-                                y: y_start + y_pos,
-                            },
-                            &mut ret,
-                            data_store,
-                        );
-                    }
-                }
-            }
-        }
         puffin::set_scopes_on(true);
 
         ret
