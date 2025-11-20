@@ -1,5 +1,6 @@
 use base64::engine::general_purpose::STANDARD;
 use flate2::Compression;
+use log::error;
 
 use super::Blueprint;
 use super::BlueprintAction;
@@ -46,7 +47,7 @@ struct BlueprintStringInternal {
         Option<SplitterDistributionMode>,
     )>,
 
-    inserters: Vec<(BaseEntity, Option<usize>)>,
+    inserters: Vec<(BaseEntity, Option<usize>, Option<NonZero<u16>>)>,
 
     set_recipe: Vec<(Position, usize)>,
     movetime: Vec<(Position, Option<NonZero<u16>>)>,
@@ -69,6 +70,7 @@ impl TryFrom<BlueprintString> for Blueprint {
 
         let Ok(internal) = bincode::serde::decode_from_reader(dec, bincode::config::standard())
         else {
+            error!("Blueprint failed to deserialize!");
             return Err(());
         };
 
@@ -94,6 +96,8 @@ impl TryFrom<BlueprintString> for Blueprint {
             modules,
             ores,
         } = internal;
+
+        // dbg!(&movetime);
 
         let actions = assemblers
             .into_iter()
@@ -207,12 +211,14 @@ impl TryFrom<BlueprintString> for Blueprint {
         ));
 
         let actions = actions.chain(inserters.into_iter().map(
-            |(BaseEntity { pos, ty, rotation }, filter)| {
+            |(BaseEntity { pos, ty, rotation }, filter, movetime)| {
                 BlueprintAction::PlaceEntity(BlueprintPlaceEntity::Inserter {
                     pos,
                     ty: data_strings[ty].clone(),
                     dir: rotation,
                     filter: filter.map(|idx| data_strings[idx].clone()),
+
+                    movetime,
                 })
             },
         ));
@@ -308,6 +314,7 @@ impl From<Blueprint> for BlueprintString {
                             dir,
                             filter,
                             ty,
+                            movetime,
                         } => {
                             internal.inserters.push((
                                 BaseEntity {
@@ -318,6 +325,7 @@ impl From<Blueprint> for BlueprintString {
                                 filter.map(|item| {
                                     internal.data_strings.get_index_or_insert(item.into())
                                 }),
+                                movetime,
                             ));
                         },
                         super::BlueprintPlaceEntity::Belt {

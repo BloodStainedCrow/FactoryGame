@@ -105,6 +105,8 @@ enum BlueprintPlaceEntity {
         /// The Item the inserter will move, must fit both the in and output side
         filter: Option<Arc<str>>,
 
+        movetime: Option<NonZero<u16>>,
+
         #[serde(default = "default_inserter")]
         ty: Arc<str>,
     },
@@ -190,13 +192,15 @@ impl BlueprintAction {
                                 dir,
                                 filter,
                                 ty,
-                                user_movetime: _,
+                                user_movetime,
                             } => BlueprintPlaceEntity::Inserter {
                                 pos,
                                 dir,
                                 filter: filter
                                     .map(|item| data_store.item_names[item.into_usize()].clone()),
                                 ty: data_store.inserter_infos[ty as usize].name.clone(),
+
+                                movetime: user_movetime,
                             },
                             PlaceEntityType::Belt { pos, direction, ty } => {
                                 BlueprintPlaceEntity::Belt {
@@ -342,6 +346,7 @@ impl BlueprintAction {
                         dir,
                         filter,
                         ty,
+                        movetime,
                     } => PlaceEntityType::Inserter {
                         pos: *pos,
                         dir: *dir,
@@ -365,7 +370,7 @@ impl BlueprintAction {
                             .position(|info| info.name == *ty)
                             .expect("No inserter for name") as u8,
 
-                        user_movetime: None,
+                        user_movetime: *movetime,
                     },
                     BlueprintPlaceEntity::Belt {
                         pos,
@@ -981,7 +986,7 @@ impl Blueprint {
             },
             BlueprintAction::SetRecipe { pos, .. } => (1, 3, (BeltId::Pure(0), 0), *pos, 1),
             BlueprintAction::OverrideInserterMovetime { pos, .. } => {
-                (1, 5, (BeltId::Pure(0), 0), *pos, 1)
+                (1, 6, (BeltId::Pure(0), 0), *pos, 1)
             },
             BlueprintAction::AddModules { pos, .. } => (1, 3, (BeltId::Pure(0), 0), *pos, 1),
             BlueprintAction::SetChestSlotLimit { pos, .. } => (1, 3, (BeltId::Pure(0), 0), *pos, 1),
@@ -1285,18 +1290,19 @@ impl Blueprint {
                             dir: *direction,
                             filter: None,
                             ty: data_store.inserter_infos[*ty as usize].name.clone(),
+                            movetime: *user_movetime,
                         },
                     )];
 
-                    if let Some(user_movetime) = *user_movetime {
-                        ret.push(BlueprintAction::OverrideInserterMovetime {
-                            pos: Position {
-                                x: pos.x - base_pos.x,
-                                y: pos.y - base_pos.y,
-                            },
-                            new_movetime: Some(user_movetime),
-                        });
-                    }
+                    // if let Some(user_movetime) = *user_movetime {
+                    //     ret.push(BlueprintAction::OverrideInserterMovetime {
+                    //         pos: Position {
+                    //             x: pos.x - base_pos.x,
+                    //             y: pos.y - base_pos.y,
+                    //         },
+                    //         new_movetime: Some(user_movetime),
+                    //     });
+                    // }
 
                     ret
                 },
