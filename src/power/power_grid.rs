@@ -209,8 +209,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
 
             last_ticks_max_power_production: Watt(0),
 
-            last_power_mult: MAX_POWER_MULT,
-            power_mult_at_last_beacon_update: MAX_POWER_MULT,
+            last_power_mult: 0,
+            power_mult_at_last_beacon_update: 0,
 
             power_mult_history: Timeline::new(false, data_store),
 
@@ -256,8 +256,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
 
             last_ticks_max_power_production: Watt(0),
 
-            last_power_mult: MAX_POWER_MULT,
-            power_mult_at_last_beacon_update: MAX_POWER_MULT,
+            last_power_mult: 0,
+            power_mult_at_last_beacon_update: 0,
 
             power_mult_history: Timeline::new(false, data_store),
 
@@ -2633,9 +2633,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             })
             .sum();
 
+        let drain_power: Watt = self
+            .num_assemblers_of_type
+            .iter()
+            .zip(&data_store.assembler_info)
+            .map(|(&count, info)| {
+                let drain_power = info.power_drain;
+
+                drain_power * (count as u64)
+            })
+            .sum();
+
         let power_used = assembler_power_used.joules_per_tick()
             + lab_power_used
-            + beacon_power_used.joules_per_tick();
+            + beacon_power_used.joules_per_tick()
+            + drain_power.joules_per_tick();
 
         self.last_power_consumption = power_used.watt_from_tick();
 

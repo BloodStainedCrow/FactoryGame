@@ -65,6 +65,7 @@ struct RawAssemblingMachine {
     name: String,
     display_name: String,
     tile_size: (u8, u8),
+    power_drain: Watt,
     working_power_draw: Watt,
     fluid_connection_offsets: Vec<RawFluidConnection>,
     fluid_connection_flowthrough: Vec<RawFluidFlowthrough>,
@@ -329,6 +330,8 @@ pub struct AssemblerInfo {
     pub base_speed: u8,
     pub base_prod: u8,
     pub base_power_consumption: Watt,
+
+    pub power_drain: Watt,
 }
 
 impl AssemblerInfo {

@@ -527,7 +527,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         let power_consumption = if let Some(ty) = self.single_type {
             data_store.assembler_info[ty as usize].base_power_consumption
         } else {
-            assert!(self.positions.get(index as usize).is_some());
+            assert!(self.base_power_consumption.get(index as usize).is_some());
             self.base_power_consumption[index as usize]
         };
 

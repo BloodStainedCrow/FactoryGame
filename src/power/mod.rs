@@ -1066,7 +1066,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             .map(|info| info.power_output.get_at_time(current_tick))
             .collect::<Box<[Watt]>>();
 
-        let (research_progress, production_info, times_labs_used_science, beacon_updates) = self
+        let (research_progress, production_info, times_labs_used_science, beacon_updates) = {
+            self
             .power_grids
             .par_iter_mut()
             .map(|grid| grid.update(&solar_production, tech_state, current_tick, data_store))
@@ -1082,7 +1083,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                         old_updates,
                     )
                 },
-            );
+            )
+        };
 
         {
             profiling::scope!("Propagate beacon modifier changes");

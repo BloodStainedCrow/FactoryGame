@@ -614,6 +614,7 @@ impl<T: Iterator, const N: usize> Iterator for ZipArray<T, N> {
     }
 }
 
+#[derive(Debug)]
 pub enum PowerUsageInfo {
     ByType(Vec<Watt>),
     Combined(Watt),
