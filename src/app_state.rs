@@ -186,7 +186,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 y: -6_000,
             },
             Position {
-                x: 16_000 + X_OFFS,
+                x: 17_000 + X_OFFS,
                 y: 6_000,
             },
             data_store,
@@ -210,7 +210,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     x: 4503 + X_OFFS,
                     y: 2454 - 6_000,
                 },
-                Watt(325_000_000_000),
+                Watt(360_000_000_000),
                 Some(9_000),
                 progress.clone(),
                 data_store,
@@ -394,8 +394,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let mut ret = GameState::new_with_world_area(
             Position { x: 0, y: 0 },
             Position {
-                x: 5_000,
-                y: 250_000,
+                x: 1_000,
+                y: 250_000_00,
             },
             data_store,
         );
@@ -411,9 +411,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let mut current = 0;
 
         puffin::set_scopes_on(false);
-        let positions = (1600..250_000)
+        let positions = (1600..250_000_00)
             .step_by(3)
-            .map(|y_pos| Position { x: 1600, y: y_pos });
+            .map(|y_pos| Position { x: 600, y: y_pos });
         bp.apply_at_positions(
             positions,
             false,
@@ -2730,20 +2730,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let ((), mining_production_by_item, (tech_progress, recipe_tick_info, lab_info)) = {
             profiling::scope!("Power Grid, Chest, Mining Drill Stage");
             join!(
-            || simulation_state.factory.chests.update(data_store),
-            || {
-                simulation_state.factory.ore_store.update(
-                    &simulation_state.tech_state.mining_productivity_by_item,
-                    data_store,
-                )
-            },
-            || {
-                simulation_state.factory.power_grids.update(
-                    &simulation_state.tech_state,
-                    aux_data.current_tick as u32,
-                    data_store,
-                )
-            }
+                || simulation_state.factory.chests.update(data_store),
+                || {
+                    simulation_state.factory.ore_store.update(
+                        &simulation_state.tech_state.mining_productivity_by_item,
+                        data_store,
+                    )
+                },
+                || {
+                    simulation_state.factory.power_grids.update(
+                        &simulation_state.tech_state,
+                        aux_data.current_tick as u32,
+                        data_store,
+                    )
+                }
             )
         };
 
