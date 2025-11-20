@@ -323,15 +323,6 @@ fn run_integrated_server(
                     .unwrap(),
                 StartGameInfo::Create(info) => match info {
                     GameCreationInfo::Empty => GameState::new(&data_store),
-                    GameCreationInfo::RedGreen => {
-                        GameState::new_with_beacon_production(progress, &data_store)
-                    },
-                    GameCreationInfo::RedGreenBelts => {
-                        GameState::new_with_beacon_belt_production(progress, &data_store)
-                    },
-                    GameCreationInfo::RedWithLabs => {
-                        GameState::new_with_production(progress, &data_store)
-                    },
                     GameCreationInfo::Megabase(use_solar_field) => {
                         GameState::new_with_megabase(use_solar_field, progress, &data_store)
                     },
@@ -352,6 +343,8 @@ fn run_integrated_server(
                     },
 
                     GameCreationInfo::FromBP(path) => GameState::new_with_bp(&data_store, path),
+
+                    _ => unimplemented!(),
                 },
             });
 
@@ -411,7 +404,7 @@ fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
     let raw_data = get_raw_data_test();
     let data_store = raw_data.process();
 
-    let progress = Default::default();
+    // let progress = Default::default();
 
     let connections: Arc<Mutex<Vec<std::net::TcpStream>>> = Arc::default();
 
@@ -424,10 +417,7 @@ fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
             let game_state = load(todo!("Add a console argument for the save file path"))
                 .map(|save| save.game_state)
-                .unwrap_or_else(|| {
-                    // GameState::new(&data_store)
-                    GameState::new_with_beacon_production(progress, &data_store)
-                });
+                .unwrap_or_else(|| GameState::new(&data_store));
 
             let mut game = Game::new(
                 GameInitData::DedicatedServer(
