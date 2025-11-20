@@ -21,6 +21,7 @@ mod power;
 pub mod production;
 pub mod recipe;
 pub mod research;
+pub mod time_usage;
 
 pub const NUM_DIFFERENT_TIMESCALES: usize = 5;
 pub const SAMPLES_FOR_SMOOTHING_BASE: usize = 600;
