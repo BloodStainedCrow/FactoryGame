@@ -2724,7 +2724,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             // We can downcast here, since this could only cause graphical weirdness for a couple frame every ~2 years of playtime
             .belt_and_inserter_update(aux_data.current_tick as u32, data_store);
 
-        let ((), mining_production_by_item, (tech_progress, recipe_tick_info, lab_info)) = join!(
+        let ((), mining_production_by_item, (tech_progress, recipe_tick_info, lab_info)) = {
+            profiling::scope!("Power Grid, Chest, Mining Drill Stage");
+            join!(
             || simulation_state.factory.chests.update(data_store),
             || {
                 simulation_state.factory.ore_store.update(
@@ -2739,7 +2741,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     data_store,
                 )
             }
-        );
+            )
+        };
 
         aux_data.statistics.append_single_set_of_samples((
             ProductionInfo::from_recipe_info_and_per_item(
