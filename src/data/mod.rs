@@ -1592,6 +1592,8 @@ impl RawDataStore {
                     base_prod: m.base_bonus_prod,
                     base_power_consumption: m.working_power_draw,
 
+                    power_drain: m.power_drain,
+
                     fluid_connections: m
                         .fluid_connection_offsets
                         .iter()
