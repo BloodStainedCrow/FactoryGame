@@ -1,5 +1,5 @@
 let
-  pkgs = import (fetchTarball("https://github.com/NixOS/nixpkgs/archive/929116e316068c7318c54eb4d827f7d9756d5e9c.tar.gz")) { overlays = [  ]; };
+  pkgs = import (fetchTarball("https://github.com/NixOS/nixpkgs/archive/91c9a64ce2a84e648d0cf9671274bb9c2fb9ba60.tar.gz")) { overlays = [  ]; };
   buildInputs = [
   ] ++ (with pkgs; [
     rustup

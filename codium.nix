@@ -1,12 +1,13 @@
 let
   nix-vscode-extensions.url = "github:nix-community/nix-vscode-extensions";
-  pkgs = import (fetchTarball("https://github.com/NixOS/nixpkgs/archive/1750f3c1c89488e2ffdd47cab9d05454dddfb734.tar.gz")) { };
+  pkgs = import (fetchTarball("https://github.com/NixOS/nixpkgs/archive/91c9a64ce2a84e648d0cf9671274bb9c2fb9ba60.tar.gz")) { };
   addr2linePkg = pkgs.callPackage ./addr2line-rs/default.nix {};
 in
 pkgs.mkShell {
   buildInputs = [
   ] ++ (with pkgs; [
     bacon
+    openssl
 
     (vscode-with-extensions.override {
     vscode = vscodium;
