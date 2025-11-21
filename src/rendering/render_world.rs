@@ -4214,9 +4214,13 @@ pub fn render_ui<
                                 .product::<usize>();
                             let ticks_total = min(
                                 ticks_per_sample * NUM_SAMPLES_AT_INTERVALS[time_scale],
-                                (aux_data.statistics.production.num_samples_pushed
-                                    - ticks_per_sample
-                                    + 1)
+                                (aux_data
+                                    .statistics
+                                    .production
+                                    .num_samples_pushed
+                                    .checked_sub(ticks_per_sample)
+                                    .map(|v| v + 1)
+                                    .unwrap_or(0))
                                 .next_multiple_of(ticks_per_sample),
                             );
 
