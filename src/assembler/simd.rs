@@ -13,6 +13,7 @@ use crate::{
     MASKTYPE, SIMDTYPE,
     data::{AssemblerInfo, DataStore, ItemRecipeDir},
     frontend::world::Position,
+    inserter::FakeUnionStorage,
     item::{ITEMCOUNTTYPE, IdxTrait, Indexable, Recipe, WeakIdxTrait},
     power::{
         Watt,
@@ -21,6 +22,7 @@ use crate::{
     storage_list::{MaxInsertionLimit, PANIC_ON_INSERT},
 };
 use itertools::{Either, Itertools};
+use static_assertions::const_assert;
 
 use super::{AssemblerOnclickInfo, PowerUsageInfo, Simdtype, TIMERTYPE, arrays};
 
@@ -29,9 +31,32 @@ use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
 use get_size2::GetSize;
 
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[repr(align(64))]
+struct InserterWaitList {
+    inserters: [Option<Inserter>; 3],
+}
+
+const_assert!(std::mem::size_of::<InserterWaitList>() <= 64);
+
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+struct Inserter {
+    item: u8,
+    self_is_source: bool,
+    // Ideally we would track the hand here so we avoid having to reinsert them each time the assembler produces anything
+    // This does mean we can only fit 3 Inserters per cacheline :/
+    // This is fixed by the item arena optimization
+    current_hand: ITEMCOUNTTYPE,
+    max_hand: ITEMCOUNTTYPE,
+    movetime: u16,
+    index: u32,
+    other: FakeUnionStorage,
+}
+
 // FIXME: We store the same slice length n times!
 // TODO: Don´t clump update data and data for adding/removing assemblers together!
-
 // FIXME: Using Boxed slices here is probably the main contributor to the time usage for building large power grids, since this means reallocation whenever we add assemblers!
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -75,6 +100,11 @@ pub struct MultiAssemblerStore<
     outputs: [Box<[ITEMCOUNTTYPE]>; NUM_OUTPUTS],
     timers: Box<[TIMERTYPE]>,
     prod_timers: Box<[TIMERTYPE]>,
+
+    // FIXME: For me to be able to add inserters to waitlists during parallel/per item updates,
+    //        We would need a list of waitlists per ING and OUTPUT item
+    //        This is a pretty big commitment in terms of memory
+    waitlists: Box<[InserterWaitList]>,
 
     holes: Vec<usize>,
     positions: Box<[Position]>,
@@ -363,6 +393,25 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                             .as_array(),
                     );
                 }
+
+                // let has_produced = timer_mask | prod_timer_mask;
+
+                // for (i, has_produced) in has_produced.to_array().into_iter().enumerate() {
+                //     if has_produced {
+                //         let final_idx = index + i;
+
+                //         self.waitlists[final_idx]
+                //             .inserters
+                //             .iter_mut()
+                //             .for_each(|v| {
+                //                 let v = v.take();
+
+                //                 if let Some(v) = v {
+                //                     todo!()
+                //                 }
+                //             });
+                //     }
+                // }
             }
             if timer_mask.any() {
                 for i in 0..NUM_INGS {
@@ -373,6 +422,29 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                         timer_mask.select(ings - our_ings, ings).cast().as_array(),
                     );
                 }
+
+                // let has_consumed = timer_mask;
+                // for (i, has_consumed) in has_consumed.to_array().into_iter().enumerate() {
+                //     if has_consumed {
+                //         let final_idx = index + i;
+
+                //         self.waitlists[final_idx]
+                //             .inserters
+                //             .iter_mut()
+                //             .for_each(|v| {
+                //                 let v = v.take();
+
+                //                 if let Some(v) = v {
+                //                     todo!()
+                //                     // FIXME: Here we technically need to insert the inserter back into its storage.
+                //                     // But since different recipes/power grids are updated in parallel this will not work :/
+                //                     // So we either collect into a temporary collection, which does not sound ideal, or ensure only a single
+                //                     // assembler update with any individual item is active at the same time.
+                //                     // That also does not sound great
+                //                 }
+                //             });
+                //     }
+                // }
             }
             times_ings_used += (timer_mask.to_int().reduce_sum() * -1) as u32;
             num_finished_crafts += ((timer_mask.to_int().reduce_sum()
@@ -458,6 +530,8 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             raw_power_consumption_modifier: vec![].into_boxed_slice(),
 
             base_power_consumption: vec![].into_boxed_slice(),
+
+            waitlists: vec![].into_boxed_slice(),
 
             holes: vec![],
             positions: vec![].into_boxed_slice(),
@@ -809,6 +883,9 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         let mut new_types = self.types.into_vec();
         new_types.extend(other.types.iter().copied().enumerate().map(|(_, v)| v));
 
+        let mut new_waitlists = self.waitlists.into_vec();
+        new_waitlists.extend(other.waitlists);
+
         let updates = IntoIterator::into_iter(other.positions)
             .take(other.len)
             .zip(other.types)
@@ -896,6 +973,8 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             raw_power_consumption_modifier: new_raw_power_consumption_modifier.into_boxed_slice(),
 
             base_power_consumption: new_base_power_consumption.into_boxed_slice(),
+
+            waitlists: new_waitlists.into_boxed_slice(),
             positions: new_positions.into_boxed_slice(),
             types: new_types.into_boxed_slice(),
         };
@@ -1043,6 +1122,8 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .try_into()
                 .expect("Value clamped already");
 
+            self.waitlists[hole_index] = InserterWaitList::default();
+
             self.types[hole_index] = ty;
             self.positions[hole_index] = position;
             return hole_index.try_into().unwrap();
@@ -1175,6 +1256,11 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 );
                 pos.into_boxed_slice()
             });
+            take_mut::take(&mut self.waitlists, |list| {
+                let mut list = list.into_vec();
+                list.resize(new_len, InserterWaitList::default());
+                list.into_boxed_slice()
+            });
 
             take_mut::take(&mut self.types, |ty| {
                 let mut ty = ty.into_vec();
@@ -1215,6 +1301,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             .clamp(0, u8::MAX.into())
             .try_into()
             .expect("Values already clamped");
+        self.waitlists[self.len] = InserterWaitList::default();
 
         self.positions[self.len] = position;
         self.types[self.len] = ty;
@@ -1288,6 +1375,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             x: i32::MAX,
             y: i32::MAX,
         };
+        self.waitlists[index] = InserterWaitList::default();
 
         (
             data.0.into(),
