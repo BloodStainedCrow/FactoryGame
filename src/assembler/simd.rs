@@ -39,7 +39,7 @@ use get_size2::GetSize;
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[repr(align(64))]
 pub struct InserterWaitList {
-    pub inserters: [Option<Inserter>; 4],
+    pub inserters: [Option<Inserter>; 3],
 }
 
 const_assert!(std::mem::size_of::<InserterWaitList>() <= 64);
@@ -48,7 +48,8 @@ const_assert!(std::mem::size_of::<InserterWaitList>() <= 64);
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Inserter {
     // item: u8,
-    // self_is_source: bool,
+    // TODO: This is not needed for assemblers, just for chests.
+    pub self_is_source: bool,
     // Ideally we would track the hand here so we avoid having to reinsert them each time the assembler produces anything
     // This does mean we can only fit 3 Inserters per cacheline :/
     // This is fixed by the item arena optimization

@@ -341,6 +341,7 @@ impl BucketedStorageStorageInserterStore {
             if let Some(wait_list) = wait_list {
                 if let Some(pos) = wait_list.inserters.iter_mut().find(|slot| slot.is_none()) {
                     *pos = Some(WaitListInserter {
+                        self_is_source: true,
                         current_hand: bucket_data.current_hand,
                         max_hand: bucket_data.max_hand_size.try_into().unwrap(),
                         movetime: movetime,
@@ -406,6 +407,7 @@ impl BucketedStorageStorageInserterStore {
             if let Some(wait_list) = wait_list {
                 if let Some(pos) = wait_list.inserters.iter_mut().find(|slot| slot.is_none()) {
                     *pos = Some(WaitListInserter {
+                        self_is_source: false,
                         current_hand: bucket_data.current_hand,
                         max_hand: bucket_data.max_hand_size.try_into().unwrap(),
                         movetime: movetime,

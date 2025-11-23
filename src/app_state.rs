@@ -1005,6 +1005,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                             belt_store.belts.iter_mut().zip(&belt_store.belt_ty)
                                         {
                                             // TODO: Avoid last minute decision making
+                                            // If I have a list per type, I can avoid loading belts if they are not updated
                                             if update_timers[usize::from(*ty)] >= 120 {
                                                 belt.update(sushi_splitters);
                                             }
