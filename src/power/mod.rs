@@ -1,4 +1,8 @@
-use crate::frontend::world::tile::ModuleSlots;
+use crate::inserter::storage_storage_with_buckets_indirect::InserterBucketData;
+use crate::item::Indexable;
+use crate::{
+    app_state::StorageStorageInserterStore, frontend::world::tile::ModuleSlots, join_many::join,
+};
 use itertools::Itertools;
 use log::{error, warn};
 use power_grid::{
@@ -213,7 +217,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         (0..count).map(|_| {
             let hole_idx = self.power_grids.iter().position(|grid| grid.is_placeholder);
 
-            let new_grid = PowerGrid::new_trusted(data_store);
+            let new_grid = PowerGrid::new_trusted(
+                hole_idx.unwrap_or(self.power_grids.len()) as u16,
+                data_store,
+            );
 
             let id = if let Some(hole_idx) = hole_idx {
                 self.power_grids[hole_idx] = new_grid;
@@ -261,7 +268,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         // TODO: This is O(N). Is that a problem?
         let hole_idx = self.power_grids.iter().position(|grid| grid.is_placeholder);
 
-        let new_grid = PowerGrid::new(data_store, first_pole_position);
+        let new_grid = PowerGrid::new(
+            hole_idx.unwrap_or(self.power_grids.len()) as u16,
+            data_store,
+            first_pole_position,
+        );
 
         let id = if let Some(hole_idx) = hole_idx {
             self.power_grids[hole_idx] = new_grid;
@@ -649,7 +660,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         let removed = if usize::from(id) == self.power_grids.len() - 1 {
             self.power_grids.pop().unwrap()
         } else {
-            let mut tmp = PowerGrid::new_placeholder(data_store);
+            let mut tmp = PowerGrid::new_placeholder(id, data_store);
             std::mem::swap(&mut tmp, &mut self.power_grids[usize::from(id)]);
             tmp
         };
@@ -786,7 +797,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         //     })
         //     .collect();
 
-        let mut placeholder = PowerGrid::new_placeholder(data_store);
+        let mut placeholder = PowerGrid::new_placeholder(kept_id, data_store);
 
         mem::swap(
             &mut placeholder,
@@ -1045,6 +1056,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         &mut self,
         tech_state: &TechState,
         current_tick: u32,
+        inserter_store: &mut StorageStorageInserterStore,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (ResearchProgress, RecipeTickInfo, Option<LabTickInfo>) {
         {
@@ -1067,23 +1079,63 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             .collect::<Box<[Watt]>>();
 
         let (research_progress, production_info, times_labs_used_science, beacon_updates) = {
-            self
-            .power_grids
-            .par_iter_mut()
-            .map(|grid| grid.update(&solar_production, tech_state, current_tick, data_store))
-            .reduce(
-                || (0, RecipeTickInfo::new(data_store), 0, vec![]),
-                |(acc_progress, infos, times_labs_used_science, mut old_updates),
-                 (rhs_progress, info, new_times_labs_used_science, new_updates)| {
-                    old_updates.extend(new_updates);
-                    (
-                        acc_progress + rhs_progress,
-                        infos + &info,
-                        times_labs_used_science + new_times_labs_used_science,
-                        old_updates,
-                    )
-                },
-            )
+            let lists = {
+                profiling::scope!("Update Grids");
+
+                self.power_grids
+                    .par_iter_mut()
+                    .map(|grid| {
+                        grid.update(&solar_production, tech_state, current_tick, data_store)
+                    })
+                    .collect_vec_list()
+            };
+
+            {
+                profiling::scope!("Fold lists");
+                lists.into_iter().flatten().fold(
+                    (0, RecipeTickInfo::new(data_store), 0, vec![]),
+                    |(acc_progress, infos, times_labs_used_science, mut old_updates),
+                     (
+                        rhs_progress,
+                        info,
+                        new_times_labs_used_science,
+                        new_updates,
+                        reinsertions,
+                    )| {
+                        join!(
+                            || {
+                                old_updates.extend(new_updates);
+                            },
+                            || {
+                                for inserter in reinsertions {
+                                    let store = inserter_store.inserters
+                                        [inserter.item.into_usize()]
+                                    .get_mut(&inserter.movetime)
+                                    .unwrap();
+                                    let ins = InserterBucketData {
+                                        storage_id_in: inserter.storage_id_in,
+                                        storage_id_out: inserter.storage_id_out,
+                                        index: inserter.index,
+                                        current_hand: inserter.current_hand,
+                                        max_hand_size: inserter.max_hand,
+                                    };
+                                    if inserter.current_hand == 0 {
+                                        store.0.reinsert_empty(ins);
+                                    } else {
+                                        store.0.reinsert_empty(ins);
+                                    }
+                                }
+                            }
+                        );
+                        (
+                            acc_progress + rhs_progress,
+                            infos + &info,
+                            times_labs_used_science + new_times_labs_used_science,
+                            old_updates,
+                        )
+                    },
+                )
+            }
         };
 
         {

@@ -634,7 +634,7 @@ impl BucketedStorageStorageInserterStore {
                 }
             },
             Dir::StorageToBelt => {
-                let (_max_insert, old) =
+                let (_max_insert, old, _) =
                     index_fake_union(item_id, storages, inserter.storage_id, grid_size);
 
                 let to_extract = min(inserter.max_hand_size - inserter.current_hand, *old);
@@ -676,7 +676,7 @@ impl BucketedStorageStorageInserterStore {
     ) -> bool {
         match DIR {
             Dir::BeltToStorage => {
-                let (max_insert, old) =
+                let (max_insert, old, _) =
                     index_fake_union(item_id, storages, inserter.storage_id, grid_size);
 
                 let to_insert = min(inserter.current_hand, *max_insert - *old);

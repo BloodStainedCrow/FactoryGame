@@ -50,7 +50,7 @@ pub trait WeakIdxTrait:
 {
 }
 
-pub fn usize_from<T: IdxTrait>(t: T) -> usize {
+pub fn usize_from<T: WeakIdxTrait>(t: T) -> usize {
     Into::<usize>::into(t)
 }
 

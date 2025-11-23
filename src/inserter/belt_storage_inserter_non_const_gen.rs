@@ -110,7 +110,7 @@ impl BeltStorageInserterDyn {
                 }
             },
             DynInserterState::BSWaitingForSpaceInDestination(count) => {
-                let (max_insert, old) =
+                let (max_insert, old, _) =
                     index_fake_union(item_id, storages, self.storage_id, grid_size);
                 let to_insert = min(count, *max_insert - *old);
 
@@ -146,7 +146,7 @@ impl BeltStorageInserterDyn {
                 false
             },
             DynInserterState::SBWaitingForSourceItems(count) => {
-                let (_max_insert, old) =
+                let (_max_insert, old, _) =
                     index_fake_union(item_id, storages, self.storage_id, grid_size);
 
                 let to_extract = min(max_hand_size - count, *old);

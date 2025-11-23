@@ -1,5 +1,8 @@
 use std::{
-    array, i32,
+    array,
+    cmp::min,
+    i32,
+    num::NonZero,
     ops::{Add, Sub},
     simd::{
         Simd,
@@ -7,14 +10,15 @@ use std::{
         num::{SimdInt, SimdUint},
     },
     u8,
+    vec::Drain,
 };
 
 use crate::{
     MASKTYPE, SIMDTYPE,
     data::{AssemblerInfo, DataStore, ItemRecipeDir},
     frontend::world::Position,
-    inserter::FakeUnionStorage,
-    item::{ITEMCOUNTTYPE, IdxTrait, Indexable, Recipe, WeakIdxTrait},
+    inserter::{FakeUnionStorage, Storage, storage_storage_with_buckets_indirect::InserterId},
+    item::{ITEMCOUNTTYPE, IdxTrait, Indexable, Item, Recipe, WeakIdxTrait},
     power::{
         Watt,
         power_grid::{IndexUpdateInfo, MAX_POWER_MULT, PowerGridEntity, PowerGridIdentifier},
@@ -34,25 +38,47 @@ use get_size2::GetSize;
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[repr(align(64))]
-struct InserterWaitList {
-    inserters: [Option<Inserter>; 3],
+pub struct InserterWaitList {
+    pub inserters: [Option<Inserter>; 4],
 }
 
 const_assert!(std::mem::size_of::<InserterWaitList>() <= 64);
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
-struct Inserter {
-    item: u8,
-    self_is_source: bool,
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Inserter {
+    // item: u8,
+    // self_is_source: bool,
     // Ideally we would track the hand here so we avoid having to reinsert them each time the assembler produces anything
     // This does mean we can only fit 3 Inserters per cacheline :/
     // This is fixed by the item arena optimization
-    current_hand: ITEMCOUNTTYPE,
-    max_hand: ITEMCOUNTTYPE,
-    movetime: u16,
-    index: u32,
-    other: FakeUnionStorage,
+    pub current_hand: ITEMCOUNTTYPE,
+    pub max_hand: NonZero<ITEMCOUNTTYPE>,
+    pub movetime: u16,
+    pub(crate) index: InserterId,
+    pub other: FakeUnionStorage,
+}
+
+#[derive(Debug)]
+pub struct InserterReinsertionInfo<ItemIdxType: WeakIdxTrait> {
+    pub movetime: u16,
+    pub item: Item<ItemIdxType>,
+    pub current_hand: ITEMCOUNTTYPE,
+    pub max_hand: ITEMCOUNTTYPE,
+    pub(crate) index: InserterId,
+    pub storage_id_in: FakeUnionStorage,
+    pub storage_id_out: FakeUnionStorage,
+}
+
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone)]
+struct InternalInserterReinsertionInfo {
+    pub movetime: u16,
+    pub item: u8,
+    pub max_hand: ITEMCOUNTTYPE,
+    pub(crate) index: InserterId,
+    pub self_index: u32,
+    pub other: FakeUnionStorage,
 }
 
 // FIXME: We store the same slice length n times!
@@ -104,12 +130,22 @@ pub struct MultiAssemblerStore<
     // FIXME: For me to be able to add inserters to waitlists during parallel/per item updates,
     //        We would need a list of waitlists per ING and OUTPUT item
     //        This is a pretty big commitment in terms of memory
-    waitlists: Box<[InserterWaitList]>,
+    #[serde(with = "arrays")]
+    waitlists_ings: [Box<[InserterWaitList]>; NUM_INGS],
+    #[serde(with = "arrays")]
+    waitlists_outputs: [Box<[InserterWaitList]>; NUM_OUTPUTS],
 
     holes: Vec<usize>,
     positions: Box<[Position]>,
     types: Box<[u8]>,
     len: usize,
+
+    #[serde(skip)]
+    inserter_waitlist_output_vec: Vec<InternalInserterReinsertionInfo>,
+    #[serde(with = "arrays")]
+    self_fake_union_ing: [FakeUnionStorage; NUM_INGS],
+    #[serde(with = "arrays")]
+    self_fake_union_out: [FakeUnionStorage; NUM_OUTPUTS],
 }
 
 // TODO: Maybe also add a defragmentation routine to mend the ineffeciencies left by deconstruction large amounts of assemblers
@@ -232,6 +268,10 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         times: &[TIMERTYPE],
         power_list: &[AssemblerInfo],
     ) -> (Watt, u32, u32) {
+        // FIXME: This could technically not be enough if enough items are produced in a single tick
+        self.inserter_waitlist_output_vec
+            .reserve((self.len * 4).saturating_sub(self.inserter_waitlist_output_vec.len()));
+
         let (ing_idx, out_idx) = recipe_lookup[self.recipe.id.into()];
 
         let our_ings: &[ITEMCOUNTTYPE; NUM_INGS] = &recipe_ings[ing_idx];
@@ -381,70 +421,138 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             *timer_arr = new_timer.to_array();
             *prod_timer_arr = new_prod_timer.to_array();
             if timer_mask.any() || prod_timer_mask.any() {
-                for i in 0..NUM_OUTPUTS {
-                    let our_outputs = SIMDTYPE::splat(our_outputs[i].into());
-                    let outputs: Simd<u8, 16> =
-                        Simd::<u8, 16>::from_slice(&self.outputs[i][index..]);
-                    let outputs = outputs.cast();
-                    let int_output = timer_mask.select(outputs + our_outputs, outputs);
-                    self.outputs[i][index..(index + 16)].copy_from_slice(
-                        (prod_timer_mask.select(int_output + our_outputs, int_output))
-                            .cast()
-                            .as_array(),
-                    );
-                }
-
-                // let has_produced = timer_mask | prod_timer_mask;
-
-                // for (i, has_produced) in has_produced.to_array().into_iter().enumerate() {
-                //     if has_produced {
-                //         let final_idx = index + i;
-
-                //         self.waitlists[final_idx]
-                //             .inserters
-                //             .iter_mut()
-                //             .for_each(|v| {
-                //                 let v = v.take();
-
-                //                 if let Some(v) = v {
-                //                     todo!()
-                //                 }
-                //             });
-                //     }
+                // for i in 0..NUM_OUTPUTS {
+                //     let our_outputs = SIMDTYPE::splat(our_outputs[i].into());
+                //     let outputs: Simd<u8, 16> =
+                //         Simd::<u8, 16>::from_slice(&self.outputs[i][index..]);
+                //     let outputs = outputs.cast();
+                //     let int_output = timer_mask.select(outputs + our_outputs, outputs);
+                //     self.outputs[i][index..(index + 16)].copy_from_slice(
+                //         (prod_timer_mask.select(int_output + our_outputs, int_output))
+                //             .cast()
+                //             .as_array(),
+                //     );
                 // }
+
+                let has_produced = timer_mask | prod_timer_mask;
+
+                for (i, has_produced) in has_produced.to_array().into_iter().enumerate() {
+                    if has_produced {
+                        let final_idx = index + i;
+                        let mut items = our_outputs.clone();
+
+                        for (item, (out, items_to_distribute)) in self
+                            .waitlists_outputs
+                            .iter_mut()
+                            .zip(&mut items)
+                            .enumerate()
+                        {
+                            for ins in &mut out[final_idx].inserters {
+                                if let Some(v) = ins {
+                                    let amount_taken_by_this_inserter = min(
+                                        *items_to_distribute,
+                                        ITEMCOUNTTYPE::from(v.max_hand) - v.current_hand,
+                                    );
+                                    if v.current_hand + amount_taken_by_this_inserter
+                                        == ITEMCOUNTTYPE::from(v.max_hand)
+                                    {
+                                        let ins = ins.take().unwrap();
+                                        let Ok(()) =
+                                            self.inserter_waitlist_output_vec.push_within_capacity(
+                                                InternalInserterReinsertionInfo {
+                                                    movetime: ins.movetime,
+                                                    item: (NUM_INGS + item) as u8,
+                                                    max_hand: ins.max_hand.into(),
+                                                    index: ins.index,
+                                                    self_index: final_idx as u32,
+                                                    other: ins.other,
+                                                },
+                                            )
+                                        else {
+                                            panic!(
+                                                "Not enough space in inserter readdition vec. Capacity is {}",
+                                                self.inserter_waitlist_output_vec.capacity()
+                                            );
+                                        };
+                                    } else {
+                                        v.current_hand += amount_taken_by_this_inserter;
+                                    }
+                                    *items_to_distribute -= amount_taken_by_this_inserter;
+
+                                    // TODO: Check if this is good or bad
+                                    if *items_to_distribute == 0 {
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if *items_to_distribute > 0 {
+                                self.outputs[item][final_idx] += *items_to_distribute;
+                            }
+                        }
+                    }
+                }
             }
             if timer_mask.any() {
-                for i in 0..NUM_INGS {
-                    let ings: Simd<u8, 16> = Simd::<u8, 16>::from_slice(&self.ings[i][index..]);
-                    let ings = ings.cast();
-                    let our_ings = SIMDTYPE::splat(our_ings[i].into());
-                    self.ings[i][index..(index + 16)].copy_from_slice(
-                        timer_mask.select(ings - our_ings, ings).cast().as_array(),
-                    );
-                }
-
-                // let has_consumed = timer_mask;
-                // for (i, has_consumed) in has_consumed.to_array().into_iter().enumerate() {
-                //     if has_consumed {
-                //         let final_idx = index + i;
-
-                //         self.waitlists[final_idx]
-                //             .inserters
-                //             .iter_mut()
-                //             .for_each(|v| {
-                //                 let v = v.take();
-
-                //                 if let Some(v) = v {
-                //                     todo!()
-                //                     // FIXME: Here we technically need to insert the inserter back into its storage.
-                //                     // But since different recipes/power grids are updated in parallel this will not work :/
-                //                     // So we either collect into a temporary collection, which does not sound ideal, or ensure only a single
-                //                     // assembler update with any individual item is active at the same time.
-                //                     // That also does not sound great
-                //                 }
-                //             });
-                //     }
+                // for i in 0..NUM_INGS {
+                //     let ings: Simd<u8, 16> = Simd::<u8, 16>::from_slice(&self.ings[i][index..]);
+                //     let ings = ings.cast();
+                //     let our_ings = SIMDTYPE::splat(our_ings[i].into());
+                //     self.ings[i][index..(index + 16)].copy_from_slice(
+                //         timer_mask.select(ings - our_ings, ings).cast().as_array(),
+                //     );
                 // }
+
+                let has_consumed = timer_mask;
+                for (i, has_consumed) in has_consumed.to_array().into_iter().enumerate() {
+                    if has_consumed {
+                        let final_idx = index + i;
+                        let mut items = our_ings.clone();
+
+                        for (item, (ing, items_to_drain)) in
+                            self.waitlists_ings.iter_mut().zip(&mut items).enumerate()
+                        {
+                            for ins in &mut ing[final_idx].inserters {
+                                if let Some(v) = ins {
+                                    let amount_taken_by_this_inserter =
+                                        min(*items_to_drain, v.current_hand);
+                                    if v.current_hand - amount_taken_by_this_inserter == 0 {
+                                        let ins = ins.take().unwrap();
+                                        let Ok(()) =
+                                            self.inserter_waitlist_output_vec.push_within_capacity(
+                                                InternalInserterReinsertionInfo {
+                                                    movetime: ins.movetime,
+                                                    item: item as u8,
+                                                    max_hand: ins.max_hand.into(),
+                                                    index: ins.index,
+                                                    self_index: final_idx as u32,
+                                                    other: ins.other,
+                                                },
+                                            )
+                                        else {
+                                            panic!(
+                                                "Not enough space in inserter readdition vec. Capacity is {}.",
+                                                self.inserter_waitlist_output_vec.capacity()
+                                            );
+                                        };
+                                    } else {
+                                        v.current_hand -= amount_taken_by_this_inserter;
+                                    }
+                                    *items_to_drain -= amount_taken_by_this_inserter;
+
+                                    // TODO: Check if this is good or bad
+                                    if *items_to_drain == 0 {
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if *items_to_drain > 0 {
+                                self.ings[item][final_idx] -= *items_to_drain;
+                            }
+                        }
+                    }
+                }
             }
             times_ings_used += (timer_mask.to_int().reduce_sum() * -1) as u32;
             num_finished_crafts += ((timer_mask.to_int().reduce_sum()
@@ -507,7 +615,8 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
 {
     fn new<ItemIdxType: IdxTrait>(
         recipe: Recipe<RecipeIdxType>,
-        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        grid: PowerGridIdentifier,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         Self {
             recipe,
@@ -531,13 +640,90 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
 
             base_power_consumption: vec![].into_boxed_slice(),
 
-            waitlists: vec![].into_boxed_slice(),
+            waitlists_ings: array::from_fn(|_| vec![].into_boxed_slice()),
+            waitlists_outputs: array::from_fn(|_| vec![].into_boxed_slice()),
 
             holes: vec![],
             positions: vec![].into_boxed_slice(),
             types: vec![].into_boxed_slice(),
             len: 0,
+
+            inserter_waitlist_output_vec: vec![],
+
+            self_fake_union_ing: {
+                array::from_fn(|index| {
+                    let item = data_store.recipe_item_index_to_item[recipe.into_usize()][index];
+
+                    FakeUnionStorage::from_storage_with_statics_at_zero(
+                        item,
+                        Storage::Assembler {
+                            grid,
+                            recipe_idx_with_this_item: recipe.id,
+                            index: 0,
+                        },
+                        data_store,
+                    )
+                    .unwrap()
+                })
+            },
+            self_fake_union_out: {
+                array::from_fn(|index| {
+                    let item =
+                        data_store.recipe_item_index_to_item[recipe.into_usize()][index + NUM_INGS];
+
+                    FakeUnionStorage::from_storage_with_statics_at_zero(
+                        item,
+                        Storage::Assembler {
+                            grid,
+                            recipe_idx_with_this_item: recipe.id,
+                            index: 0,
+                        },
+                        data_store,
+                    )
+                    .unwrap()
+                })
+            },
         }
+    }
+
+    fn set_grid_id<ItemIdxType: IdxTrait>(
+        &mut self,
+        new_grid_id: PowerGridIdentifier,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        self.self_fake_union_ing = {
+            array::from_fn(|index| {
+                let item = data_store.recipe_item_index_to_item[self.recipe.into_usize()][index];
+
+                FakeUnionStorage::from_storage_with_statics_at_zero(
+                    item,
+                    Storage::Assembler {
+                        grid: new_grid_id,
+                        recipe_idx_with_this_item: self.recipe.id,
+                        index: 0,
+                    },
+                    data_store,
+                )
+                .unwrap()
+            })
+        };
+        self.self_fake_union_out = {
+            array::from_fn(|index| {
+                let item = data_store.recipe_item_index_to_item[self.recipe.into_usize()]
+                    [index + NUM_INGS];
+
+                FakeUnionStorage::from_storage_with_statics_at_zero(
+                    item,
+                    Storage::Assembler {
+                        grid: new_grid_id,
+                        recipe_idx_with_this_item: self.recipe.id,
+                        index: 0,
+                    },
+                    data_store,
+                )
+                .unwrap()
+            })
+        };
     }
 
     fn modify_modifiers<ItemIdxType: IdxTrait>(
@@ -883,8 +1069,18 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         let mut new_types = self.types.into_vec();
         new_types.extend(other.types.iter().copied().enumerate().map(|(_, v)| v));
 
-        let mut new_waitlists = self.waitlists.into_vec();
-        new_waitlists.extend(other.waitlists);
+        let mut new_waitlists_ings = self.waitlists_ings.map(|v| v.into_vec());
+        for (new, other) in new_waitlists_ings.iter_mut().zip(other.waitlists_ings) {
+            new.extend(other);
+        }
+
+        let mut new_waitlists_outputs = self.waitlists_outputs.map(|v| v.into_vec());
+        for (new, other) in new_waitlists_outputs
+            .iter_mut()
+            .zip(other.waitlists_outputs)
+        {
+            new.extend(other);
+        }
 
         let updates = IntoIterator::into_iter(other.positions)
             .take(other.len)
@@ -974,9 +1170,53 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
 
             base_power_consumption: new_base_power_consumption.into_boxed_slice(),
 
-            waitlists: new_waitlists.into_boxed_slice(),
+            waitlists_ings: new_waitlists_ings.map(|v| v.into_boxed_slice()),
+            waitlists_outputs: new_waitlists_outputs.map(|v| v.into_boxed_slice()),
             positions: new_positions.into_boxed_slice(),
             types: new_types.into_boxed_slice(),
+
+            inserter_waitlist_output_vec: if self.inserter_waitlist_output_vec.capacity()
+                > other.inserter_waitlist_output_vec.capacity()
+            {
+                self.inserter_waitlist_output_vec
+            } else {
+                other.inserter_waitlist_output_vec
+            },
+
+            self_fake_union_ing: {
+                array::from_fn(|index| {
+                    let item =
+                        data_store.recipe_item_index_to_item[self.recipe.into_usize()][index];
+
+                    FakeUnionStorage::from_storage_with_statics_at_zero(
+                        item,
+                        Storage::Assembler {
+                            grid: new_grid_id,
+                            recipe_idx_with_this_item: self.recipe.id,
+                            index: 0,
+                        },
+                        data_store,
+                    )
+                    .unwrap()
+                })
+            },
+            self_fake_union_out: {
+                array::from_fn(|index| {
+                    let item = data_store.recipe_item_index_to_item[self.recipe.into_usize()]
+                        [index + NUM_INGS];
+
+                    FakeUnionStorage::from_storage_with_statics_at_zero(
+                        item,
+                        Storage::Assembler {
+                            grid: new_grid_id,
+                            recipe_idx_with_this_item: self.recipe.id,
+                            index: 0,
+                        },
+                        data_store,
+                    )
+                    .unwrap()
+                })
+            },
         };
 
         #[cfg(debug_assertions)]
@@ -1001,7 +1241,12 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         recipe_maximums: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
         times: &[TIMERTYPE],
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> (PowerUsageInfo, u32, u32)
+    ) -> (
+        PowerUsageInfo,
+        u32,
+        u32,
+        impl Iterator<Item = InserterReinsertionInfo<ItemIdxType>>,
+    )
     where
         RecipeIdxType: IdxTrait,
     {
@@ -1015,7 +1260,54 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             &data_store.assembler_info,
         );
 
-        (PowerUsageInfo::Combined(power), ings_used, produced)
+        (
+            PowerUsageInfo::Combined(power),
+            ings_used,
+            produced,
+            self.inserter_waitlist_output_vec
+                .drain(..)
+                .map(|internal| InserterReinsertionInfo {
+                    movetime: internal.movetime,
+                    item: data_store.recipe_item_index_to_item[self.recipe.into_usize()]
+                        [internal.item as usize],
+                    current_hand: if (internal.item as usize) < NUM_INGS {
+                        // This is an ingredient inserter
+                        // So it is now empty
+                        0
+                    } else {
+                        internal.max_hand
+                    },
+                    max_hand: internal.max_hand,
+                    index: internal.index,
+                    storage_id_in: if (internal.item as usize) < NUM_INGS {
+                        // This is an ingredient inserter
+                        internal.other
+                    } else {
+                        FakeUnionStorage {
+                            index: internal.self_index,
+                            grid_or_static_flag: self.self_fake_union_out
+                                [internal.item as usize - NUM_INGS]
+                                .grid_or_static_flag,
+                            recipe_idx_with_this_item: self.self_fake_union_out
+                                [internal.item as usize - NUM_INGS]
+                                .recipe_idx_with_this_item,
+                        }
+                    },
+                    storage_id_out: if (internal.item as usize) < NUM_INGS {
+                        // This is an ingredient inserter
+                        FakeUnionStorage {
+                            index: internal.self_index,
+                            grid_or_static_flag: self.self_fake_union_ing[internal.item as usize]
+                                .grid_or_static_flag,
+                            recipe_idx_with_this_item: self.self_fake_union_ing
+                                [internal.item as usize]
+                                .recipe_idx_with_this_item,
+                        }
+                    } else {
+                        internal.other
+                    },
+                }),
+        )
     }
 
     fn get_all_mut(
@@ -1024,8 +1316,12 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         (
             [MaxInsertionLimit<'_>; NUM_INGS],
             [&mut [ITEMCOUNTTYPE]; NUM_INGS],
+            [&mut [InserterWaitList]; NUM_INGS],
         ),
-        [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS],
+        (
+            [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS],
+            [&mut [InserterWaitList]; NUM_OUTPUTS],
+        ),
     ) {
         (
             (
@@ -1035,8 +1331,12 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 }),
                 // self.ings_max_insert.each_mut().map(|b| &**b),
                 self.ings.each_mut().map(|b| &mut **b),
+                self.waitlists_ings.each_mut().map(|b| &mut **b),
             ),
-            self.outputs.each_mut().map(|b| &mut **b),
+            (
+                self.outputs.each_mut().map(|b| &mut **b),
+                self.waitlists_outputs.each_mut().map(|b| &mut **b),
+            ),
         )
     }
 
@@ -1122,7 +1422,12 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .try_into()
                 .expect("Value clamped already");
 
-            self.waitlists[hole_index] = InserterWaitList::default();
+            for ings in &mut self.waitlists_ings {
+                ings[hole_index] = InserterWaitList::default();
+            }
+            for out in &mut self.waitlists_outputs {
+                out[hole_index] = InserterWaitList::default();
+            }
 
             self.types[hole_index] = ty;
             self.positions[hole_index] = position;
@@ -1256,11 +1561,20 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 );
                 pos.into_boxed_slice()
             });
-            take_mut::take(&mut self.waitlists, |list| {
-                let mut list = list.into_vec();
-                list.resize(new_len, InserterWaitList::default());
-                list.into_boxed_slice()
-            });
+            for ing in &mut self.waitlists_ings {
+                take_mut::take(ing, |list| {
+                    let mut list = list.into_vec();
+                    list.resize(new_len, InserterWaitList::default());
+                    list.into_boxed_slice()
+                });
+            }
+            for out in &mut self.waitlists_outputs {
+                take_mut::take(out, |list| {
+                    let mut list = list.into_vec();
+                    list.resize(new_len, InserterWaitList::default());
+                    list.into_boxed_slice()
+                });
+            }
 
             take_mut::take(&mut self.types, |ty| {
                 let mut ty = ty.into_vec();
@@ -1301,7 +1615,12 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             .clamp(0, u8::MAX.into())
             .try_into()
             .expect("Values already clamped");
-        self.waitlists[self.len] = InserterWaitList::default();
+        for ing in &mut self.waitlists_ings {
+            ing[self.len] = InserterWaitList::default();
+        }
+        for out in &mut self.waitlists_outputs {
+            out[self.len] = InserterWaitList::default();
+        }
 
         self.positions[self.len] = position;
         self.types[self.len] = ty;
@@ -1375,7 +1694,12 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             x: i32::MAX,
             y: i32::MAX,
         };
-        self.waitlists[index] = InserterWaitList::default();
+        for ing in &mut self.waitlists_ings {
+            ing[index] = InserterWaitList::default();
+        }
+        for out in &mut self.waitlists_outputs {
+            out[index] = InserterWaitList::default();
+        }
 
         (
             data.0.into(),
@@ -1396,6 +1720,74 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
     fn num_assemblers(&self) -> usize {
         self.len - self.holes.len()
     }
+
+    fn remove_wait_list_inserter<ItemIdxType: IdxTrait>(
+        &mut self,
+        index: u32,
+        item: Item<ItemIdxType>,
+        id: InserterId,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> self::InserterReinsertionInfo<ItemIdxType> {
+        let item_index = data_store.recipe_item_index_to_item[self.recipe.into_usize()]
+            .iter()
+            .position(|recipe_item| recipe_item == &item)
+            .unwrap();
+
+        if item_index < NUM_INGS {
+            let v = self.waitlists_ings[item_index][index as usize]
+                .inserters
+                .iter_mut()
+                .filter(|v| v.is_some())
+                .find(|ins| ins.as_ref().unwrap().index == id)
+                .unwrap();
+
+            let ins = v.take().unwrap();
+
+            InserterReinsertionInfo {
+                movetime: ins.movetime,
+                item: item,
+                current_hand: ins.current_hand,
+                max_hand: ins.max_hand.into(),
+                index: ins.index,
+                // This is an ingredient inserter
+                storage_id_in: ins.other,
+                // This is an ingredient inserter
+                storage_id_out: FakeUnionStorage {
+                    index: index,
+                    grid_or_static_flag: self.self_fake_union_ing[item_index].grid_or_static_flag,
+                    recipe_idx_with_this_item: self.self_fake_union_ing[item_index]
+                        .recipe_idx_with_this_item,
+                },
+            }
+        } else {
+            let item_index = item_index - NUM_INGS;
+            let v = self.waitlists_outputs[item_index][index as usize]
+                .inserters
+                .iter_mut()
+                .filter(|v| v.is_some())
+                .find(|ins| ins.as_ref().unwrap().index == id)
+                .unwrap();
+
+            let ins = v.take().unwrap();
+
+            InserterReinsertionInfo {
+                movetime: ins.movetime,
+                item: item,
+                current_hand: ins.current_hand,
+                max_hand: ins.max_hand.into(),
+                index: ins.index,
+                // This is an output inserter
+                storage_id_in: FakeUnionStorage {
+                    index: index,
+                    grid_or_static_flag: self.self_fake_union_out[item_index].grid_or_static_flag,
+                    recipe_idx_with_this_item: self.self_fake_union_out[item_index]
+                        .recipe_idx_with_this_item,
+                },
+                // This is an output inserter
+                storage_id_out: ins.other,
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1414,7 +1806,7 @@ mod test {
         const NUM_ASSEMBLERS: usize = 30_000_000;
 
         let mut assemblers: Vec<MultiAssemblerStore<u8, 1, 1>> = (0..NUM_RECIPES as u8)
-            .map(|_| MultiAssemblerStore::new(Recipe { id: 11 }, &DATA_STORE))
+            .map(|_| MultiAssemblerStore::new(Recipe { id: 11 }, 0, &DATA_STORE))
             .collect_vec();
 
         let items: Vec<Vec<_>> = vec![

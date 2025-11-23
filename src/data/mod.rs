@@ -578,6 +578,7 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub technology_costs: Vec<(u64, Box<[ITEMCOUNTTYPE]>)>,
     pub belt_infos: Vec<BeltInfo>,
     pub mining_drill_info: Vec<MiningDrillInfo>,
+    pub recipe_item_index_to_item: Box<[Box<[Item<ItemIdxType>]>]>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
@@ -735,7 +736,9 @@ pub struct PowerPoleData {
     pub connection_range: u8,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[derive(
+    Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, serde::Deserialize, serde::Serialize,
+)]
 pub enum ItemRecipeDir {
     Ing,
     Out,
@@ -1555,6 +1558,19 @@ impl RawDataStore {
                     output_offset: None,
                 },
             ],
+
+            recipe_item_index_to_item: recipe_to_items
+                .iter()
+                .map(|recipe| {
+                    let items = recipe
+                        .clone()
+                        .into_iter()
+                        .sorted_by_key(|p| p.0)
+                        .map(|p| p.1);
+
+                    items.collect()
+                })
+                .collect(),
 
             recipe_allowed_assembling_machines: self
                 .recipes

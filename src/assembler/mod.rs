@@ -1,6 +1,8 @@
 use std::{array, marker::PhantomData, simd::Simd, u8};
 
+use crate::assembler::simd::{Inserter, InserterReinsertionInfo, InserterWaitList};
 use crate::frontend::world::tile::ModuleTy;
+use crate::inserter::storage_storage_with_buckets_indirect::InserterId;
 use crate::storage_list::MaxInsertionLimit;
 use crate::{
     data::DataStore,
@@ -91,69 +93,72 @@ impl<
     >
 {
     #[must_use]
-    pub fn new<ItemIdxType: IdxTrait>(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+    pub fn new<ItemIdxType: IdxTrait>(
+        grid_id: PowerGridIdentifier,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
         let assemblers_0_1 = data_store
             .ing_out_num_to_recipe
             .get(&(0, 1))
             .unwrap()
             .iter()
-            .map(|r| MultiAssemblerStore::new(*r, data_store))
+            .map(|r| MultiAssemblerStore::new(*r, grid_id, data_store))
             .collect();
         let assemblers_1_1 = data_store
             .ing_out_num_to_recipe
             .get(&(1, 1))
             .unwrap()
             .iter()
-            .map(|r| MultiAssemblerStore::new(*r, data_store))
+            .map(|r| MultiAssemblerStore::new(*r, grid_id, data_store))
             .collect();
         let assemblers_2_1 = data_store
             .ing_out_num_to_recipe
             .get(&(2, 1))
             .unwrap()
             .iter()
-            .map(|r| MultiAssemblerStore::new(*r, data_store))
+            .map(|r| MultiAssemblerStore::new(*r, grid_id, data_store))
             .collect();
         let assemblers_2_2 = data_store
             .ing_out_num_to_recipe
             .get(&(2, 2))
             .unwrap()
             .iter()
-            .map(|r| MultiAssemblerStore::new(*r, data_store))
+            .map(|r| MultiAssemblerStore::new(*r, grid_id, data_store))
             .collect();
         let assemblers_2_3 = data_store
             .ing_out_num_to_recipe
             .get(&(2, 3))
             .unwrap()
             .iter()
-            .map(|r| MultiAssemblerStore::new(*r, data_store))
+            .map(|r| MultiAssemblerStore::new(*r, grid_id, data_store))
             .collect();
         let assemblers_3_1 = data_store
             .ing_out_num_to_recipe
             .get(&(3, 1))
             .unwrap()
             .iter()
-            .map(|r| MultiAssemblerStore::new(*r, data_store))
+            .map(|r| MultiAssemblerStore::new(*r, grid_id, data_store))
             .collect();
         let assemblers_4_1 = data_store
             .ing_out_num_to_recipe
             .get(&(4, 1))
             .unwrap()
             .iter()
-            .map(|r| MultiAssemblerStore::new(*r, data_store))
+            .map(|r| MultiAssemblerStore::new(*r, grid_id, data_store))
             .collect();
         let assemblers_5_1 = data_store
             .ing_out_num_to_recipe
             .get(&(5, 1))
             .unwrap()
             .iter()
-            .map(|r| MultiAssemblerStore::new(*r, data_store))
+            .map(|r| MultiAssemblerStore::new(*r, grid_id, data_store))
             .collect();
         let assemblers_6_1 = data_store
             .ing_out_num_to_recipe
             .get(&(6, 1))
             .unwrap()
             .iter()
-            .map(|r| MultiAssemblerStore::new(*r, data_store))
+            .map(|r| MultiAssemblerStore::new(*r, grid_id, data_store))
             .collect();
 
         Self {
@@ -281,6 +286,54 @@ impl<
                 .chain(assemblers_5_1_updates.into_iter().flatten())
                 .chain(assemblers_6_1_updates.into_iter().flatten()),
         )
+    }
+
+    pub fn set_grid<ItemIdxType: IdxTrait>(
+        &mut self,
+        grid_id: PowerGridIdentifier,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        let Self {
+            assemblers_0_1,
+            assemblers_1_1,
+            assemblers_2_1,
+            assemblers_2_2,
+            assemblers_2_3,
+            assemblers_3_1,
+            assemblers_4_1,
+            assemblers_5_1,
+            assemblers_6_1,
+            recipe: _,
+        } = self;
+
+        for ass in assemblers_0_1 {
+            ass.set_grid_id(grid_id, data_store);
+        }
+
+        for ass in assemblers_1_1 {
+            ass.set_grid_id(grid_id, data_store);
+        }
+        for ass in assemblers_2_1 {
+            ass.set_grid_id(grid_id, data_store);
+        }
+        for ass in assemblers_2_2 {
+            ass.set_grid_id(grid_id, data_store);
+        }
+        for ass in assemblers_2_3 {
+            ass.set_grid_id(grid_id, data_store);
+        }
+        for ass in assemblers_3_1 {
+            ass.set_grid_id(grid_id, data_store);
+        }
+        for ass in assemblers_4_1 {
+            ass.set_grid_id(grid_id, data_store);
+        }
+        for ass in assemblers_5_1 {
+            ass.set_grid_id(grid_id, data_store);
+        }
+        for ass in assemblers_6_1 {
+            ass.set_grid_id(grid_id, data_store);
+        }
     }
 
     pub fn get_info<ItemIdxType: IdxTrait>(
@@ -507,6 +560,165 @@ impl<
         }
     }
 
+    pub fn remove_wait_list_inserter<ItemIdxType: IdxTrait>(
+        &mut self,
+        assembler_id: AssemblerID<RecipeIdxType>,
+        item: Item<ItemIdxType>,
+        inserter_id: InserterId,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> simd::InserterReinsertionInfo<ItemIdxType> {
+        let recipe_id = assembler_id.recipe.id.into();
+
+        match (
+            data_store.recipe_num_ing_lookup[recipe_id],
+            data_store.recipe_num_out_lookup[recipe_id],
+        ) {
+            (0, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_0_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                        .get_recipe()
+                );
+
+                self.assemblers_0_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .remove_wait_list_inserter(
+                        assembler_id.assembler_index,
+                        item,
+                        inserter_id,
+                        data_store,
+                    )
+            },
+            (1, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_1_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                        .get_recipe()
+                );
+
+                self.assemblers_1_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .remove_wait_list_inserter(
+                        assembler_id.assembler_index,
+                        item,
+                        inserter_id,
+                        data_store,
+                    )
+            },
+            (2, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_2_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                        .get_recipe()
+                );
+
+                self.assemblers_2_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .remove_wait_list_inserter(
+                        assembler_id.assembler_index,
+                        item,
+                        inserter_id,
+                        data_store,
+                    )
+            },
+
+            (2, 2) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_2_2[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                        .get_recipe()
+                );
+
+                self.assemblers_2_2[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .remove_wait_list_inserter(
+                        assembler_id.assembler_index,
+                        item,
+                        inserter_id,
+                        data_store,
+                    )
+            },
+
+            (2, 3) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_2_3[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                        .get_recipe()
+                );
+
+                self.assemblers_2_3[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .remove_wait_list_inserter(
+                        assembler_id.assembler_index,
+                        item,
+                        inserter_id,
+                        data_store,
+                    )
+            },
+
+            (3, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_3_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                        .get_recipe()
+                );
+
+                self.assemblers_3_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .remove_wait_list_inserter(
+                        assembler_id.assembler_index,
+                        item,
+                        inserter_id,
+                        data_store,
+                    )
+            },
+
+            (4, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_4_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                        .get_recipe()
+                );
+
+                self.assemblers_4_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .remove_wait_list_inserter(
+                        assembler_id.assembler_index,
+                        item,
+                        inserter_id,
+                        data_store,
+                    )
+            },
+
+            (5, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_5_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                        .get_recipe()
+                );
+
+                self.assemblers_5_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .remove_wait_list_inserter(
+                        assembler_id.assembler_index,
+                        item,
+                        inserter_id,
+                        data_store,
+                    )
+            },
+
+            (6, 1) => {
+                assert_eq!(
+                    assembler_id.recipe,
+                    self.assemblers_6_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                        .get_recipe()
+                );
+
+                self.assemblers_6_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
+                    .remove_wait_list_inserter(
+                        assembler_id.assembler_index,
+                        item,
+                        inserter_id,
+                        data_store,
+                    )
+            },
+
+            _ => unreachable!(),
+        }
+    }
+
     pub fn num_assemblers(&self) -> usize {
         let Self {
             assemblers_0_1,
@@ -637,8 +849,14 @@ pub trait MultiAssemblerStore<
 {
     fn new<ItemIdxType: IdxTrait>(
         recipe: Recipe<RecipeIdxType>,
+        grid: PowerGridIdentifier,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self;
+    fn set_grid_id<ItemIdxType: IdxTrait>(
+        &mut self,
+        new_grid_id: PowerGridIdentifier,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    );
     fn get_recipe(&self) -> Recipe<RecipeIdxType>;
     fn get_info<ItemIdxType: IdxTrait>(
         &self,
@@ -666,7 +884,12 @@ pub trait MultiAssemblerStore<
         recipe_maximums: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
         times: &[TIMERTYPE],
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> (PowerUsageInfo, u32, u32)
+    ) -> (
+        PowerUsageInfo,
+        u32,
+        u32,
+        impl Iterator<Item = InserterReinsertionInfo<ItemIdxType>>,
+    )
     where
         RecipeIdxType: IdxTrait;
 
@@ -676,8 +899,12 @@ pub trait MultiAssemblerStore<
         (
             [MaxInsertionLimit<'_>; NUM_INGS],
             [&mut [ITEMCOUNTTYPE]; NUM_INGS],
+            [&mut [InserterWaitList]; NUM_INGS],
         ),
-        [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS],
+        (
+            [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS],
+            [&mut [InserterWaitList]; NUM_OUTPUTS],
+        ),
     );
 
     fn modify_modifiers<ItemIdxType: IdxTrait>(
@@ -855,6 +1082,14 @@ pub trait MultiAssemblerStore<
     }
 
     fn num_assemblers(&self) -> usize;
+
+    fn remove_wait_list_inserter<ItemIdxType: IdxTrait>(
+        &mut self,
+        index: u32,
+        item: Item<ItemIdxType>,
+        id: InserterId,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> simd::InserterReinsertionInfo<ItemIdxType>;
 }
 
 pub mod arrays {

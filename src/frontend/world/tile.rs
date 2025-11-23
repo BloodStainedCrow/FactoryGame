@@ -1340,10 +1340,29 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                                                 );
 
                                             // This might return something at some point, and this will be a compiler error
-                                            let () = sim_state
+                                            match sim_state
                                                 .factory
                                                 .storage_storage_inserters
-                                                .remove_ins(*item, movetime.into(), *inserter);
+                                                .remove_ins(*item, movetime.into(), *inserter)
+                                            {
+                                                Ok(()) => {},
+                                                Err(side) => match side {
+                                                    crate::inserter::WaitlistSearchSide::Source => {
+                                                        if start_pos.contained_in(pos, size) {
+                                                            // No need to remove it. The storage which this inserter was waiting on was removed anywy
+                                                        } else {
+                                                            todo!()
+                                                        }
+                                                    },
+                                                    crate::inserter::WaitlistSearchSide::Dest => {
+                                                        if end_pos.contained_in(pos, size) {
+                                                            // No need to remove it. The storage which this inserter was waiting on was removed anywy
+                                                        } else {
+                                                            todo!()
+                                                        }
+                                                    },
+                                                },
+                                            };
 
                                             *info = InserterInfo::NotAttached {};
                                         },
@@ -1386,10 +1405,20 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                                                 let movetime = 1;
 
                                                 // This might return something at some point, and this will be a compiler error
-                                                let () = sim_state
+                                                match sim_state
                                                     .factory
                                                     .storage_storage_inserters
-                                                    .remove_ins(*item, movetime, *inserter);
+                                                    .remove_ins(*item, movetime, *inserter){
+                                                    Ok(()) => {},
+                                                    Err(side) => match side {
+                                                        crate::inserter::WaitlistSearchSide::Source => {
+                                                            // No need to remove it. The mining_drill which this inserter was waiting on was removed anywy
+                                                        },
+                                                        crate::inserter::WaitlistSearchSide::Dest => {
+                                                            todo!()
+                                                        },
+                                                    },
+                                                };
                                             },
                                         }
                                         *internal_inserter = InternalInserterInfo::NotAttached {};

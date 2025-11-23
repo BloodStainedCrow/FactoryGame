@@ -8,7 +8,9 @@ use crate::frontend::action::place_entity::PlaceEntityInfo;
 use crate::frontend::world::tile::ModuleSlots;
 use crate::frontend::world::tile::ModuleTy;
 use crate::inserter::InserterStateInfo;
+use crate::inserter::WaitlistSearchSide;
 use crate::inserter::storage_storage_with_buckets_indirect::BucketedStorageStorageInserterStore;
+use crate::inserter::storage_storage_with_buckets_indirect::InserterBucketData;
 use crate::inserter::storage_storage_with_buckets_indirect::InserterIdentifier;
 use crate::item::ITEMCOUNTTYPE;
 use crate::join_many::join;
@@ -698,13 +700,20 @@ impl StorageStorageInserterStore {
         item: Item<ItemIdxType>,
         movetime: u16,
         id: InserterIdentifier,
-    ) {
+    ) -> Result<(), WaitlistSearchSide> {
         let inserter = self.inserters[item.into_usize()]
             .get_mut(&movetime)
             .unwrap()
             .0
             .remove_inserter(id);
-        // TODO: Handle what happens with the items
+
+        match inserter {
+            Ok(_) => {
+                // TODO: Handle what happens with the items
+                Ok(())
+            },
+            Err(side) => Err(side),
+        }
     }
 
     #[must_use]
@@ -714,25 +723,43 @@ impl StorageStorageInserterStore {
         old_movetime: u16,
         new_movetime: u16,
         id: InserterIdentifier,
-    ) -> InserterIdentifier {
+    ) -> Result<
+        InserterIdentifier,
+        (
+            WaitlistSearchSide,
+            impl FnMut(FakeUnionStorage, FakeUnionStorage, ITEMCOUNTTYPE) -> InserterIdentifier,
+        ),
+    > {
         // FIXME: This does not preserve the inserter state at all!
-        let inserter = self.inserters[item.into_usize()]
+        let inner_id = match self.inserters[item.into_usize()]
             .get_mut(&old_movetime)
             .unwrap()
             .0
-            .remove_inserter(id);
+            .remove_inserter(id)
+        {
+            Ok(inserter) => self.inserters[item.into_usize()]
+                .entry(new_movetime)
+                .or_insert_with(|| (BucketedStorageStorageInserterStore::new(new_movetime),))
+                .0
+                .add_inserter(
+                    inserter.storage_id_in,
+                    inserter.storage_id_out,
+                    inserter.max_hand_size,
+                ),
+            Err(wait_list_side) => {
+                return Err((wait_list_side, move |source, dest, max_hand_size| {
+                    self.inserters[item.into_usize()]
+                        .entry(new_movetime)
+                        .or_insert_with(
+                            || (BucketedStorageStorageInserterStore::new(new_movetime),),
+                        )
+                        .0
+                        .add_inserter(source, dest, max_hand_size)
+                }));
+            },
+        };
 
-        let inner_id: InserterIdentifier = self.inserters[item.into_usize()]
-            .entry(new_movetime)
-            .or_insert_with(|| (BucketedStorageStorageInserterStore::new(new_movetime),))
-            .0
-            .add_inserter(
-                inserter.storage_id_in,
-                inserter.storage_id_out,
-                inserter.max_hand_size,
-            );
-
-        inner_id
+        Ok(inner_id)
     }
 
     #[profiling::function]
@@ -1296,6 +1323,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 ty,
                                 user_movetime,
                                 info,
+                                pos: inserter_pos,
+                                direction,
                                 ..
                             } => {
                                 match info {
@@ -1330,7 +1359,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                 );
 
                                             if old_movetime != new_movetime {
-                                                let new_id = game_state
+                                                let new_id = match game_state
                                                     .simulation_state
                                                     .factory
                                                     .storage_storage_inserters
@@ -1339,14 +1368,110 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                         old_movetime.into(),
                                                         new_movetime.into(),
                                                         *inserter,
-                                                    );
+                                                    ) {
+                                                    Ok(new_id) => new_id,
+                                                    Err((search_side, mut handle_fn)) => {
+                                                        match search_side {
+                                                            WaitlistSearchSide::Source => {
+                                                                let start_pos = data_store
+                                                                    .inserter_start_pos(
+                                                                        *ty,
+                                                                        *inserter_pos,
+                                                                        *direction,
+                                                                    );
 
+                                                                let item = *item;
+                                                                let inserter = *inserter;
+                                                                match game_state
+                                                                    .world
+                                                                    .get_entity_at(
+                                                                        start_pos, data_store,
+                                                                    )
+                                                                    .unwrap()
+                                                                {
+                                                                    Entity::Assembler {
+                                                                        info:
+                                                                            AssemblerInfo::Powered {
+                                                                                id,
+                                                                                ..
+                                                                            },
+                                                                        ..
+                                                                    } => {
+                                                                        let removed = game_state.simulation_state.factory.power_grids.power_grids[id.grid as usize].stores.remove_wait_list_inserter(*id, item, inserter.id, data_store);
+                                                                        handle_fn(
+                                                                            removed.storage_id_in,
+                                                                            removed.storage_id_out,
+                                                                            removed.max_hand.into(),
+                                                                        )
+                                                                    },
+
+                                                                    e => unreachable!("{e:?}"),
+                                                                }
+                                                            },
+                                                            WaitlistSearchSide::Dest => {
+                                                                let end_pos = data_store
+                                                                    .inserter_end_pos(
+                                                                        *ty,
+                                                                        *inserter_pos,
+                                                                        *direction,
+                                                                    );
+
+                                                                let item = *item;
+                                                                let inserter = *inserter;
+                                                                match game_state
+                                                                    .world
+                                                                    .get_entity_at(
+                                                                        end_pos, data_store,
+                                                                    )
+                                                                    .unwrap()
+                                                                {
+                                                                    Entity::Assembler {
+                                                                        info:
+                                                                            AssemblerInfo::Powered {
+                                                                                id,
+                                                                                ..
+                                                                            },
+                                                                        ..
+                                                                    } => {
+                                                                        let removed = game_state.simulation_state.factory.power_grids.power_grids[id.grid as usize].stores.remove_wait_list_inserter(*id, item, inserter.id, data_store);
+                                                                        handle_fn(
+                                                                            removed.storage_id_in,
+                                                                            removed.storage_id_out,
+                                                                            removed.max_hand.into(),
+                                                                        )
+                                                                    },
+
+                                                                    e => unreachable!("{e:?}"),
+                                                                }
+                                                            },
+                                                        }
+                                                    },
+                                                };
+
+                                                let Some(Entity::Inserter {
+                                                    user_movetime,
+                                                    info:
+                                                        InserterInfo::Attached {
+                                                            info:
+                                                                AttachedInserter::StorageStorage {
+                                                                    inserter,
+                                                                    ..
+                                                                },
+                                                        },
+                                                    ..
+                                                }) = game_state
+                                                    .world
+                                                    .get_entity_at_mut(*pos, data_store)
+                                                else {
+                                                    unreachable!();
+                                                };
+                                                *user_movetime =
+                                                    Some(new_movetime.try_into().unwrap());
                                                 *inserter = new_id;
                                             }
                                         },
                                     },
                                 }
-                                *user_movetime = *new_movetime;
                             },
                             _ => {
                                 warn!("Tried to set Inserter Settings on non inserter");
@@ -2727,7 +2852,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             // We can downcast here, since this could only cause graphical weirdness for a couple frame every ~2 years of playtime
             .belt_and_inserter_update(aux_data.current_tick as u32, data_store);
 
-        let ((), mining_production_by_item, (tech_progress, recipe_tick_info, lab_info)) = {
+        let (reinsertions, mining_production_by_item, (tech_progress, recipe_tick_info, lab_info)) = {
             profiling::scope!("Power Grid, Chest, Mining Drill Stage");
             join!(
                 || simulation_state.factory.chests.update(data_store),
@@ -2741,11 +2866,40 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     simulation_state.factory.power_grids.update(
                         &simulation_state.tech_state,
                         aux_data.current_tick as u32,
+                        &mut simulation_state.factory.storage_storage_inserters,
                         data_store,
                     )
                 }
             )
         };
+        {
+            profiling::scope!("Chest inserter waitlist reinsertion");
+            reinsertions
+                .zip(
+                    simulation_state
+                        .factory
+                        .storage_storage_inserters
+                        .inserters
+                        .par_iter_mut(),
+                )
+                .for_each(|(reinsertions, store)| {
+                    for inserter in reinsertions {
+                        let store = store.get_mut(&inserter.movetime).unwrap();
+                        let ins = InserterBucketData {
+                            storage_id_in: inserter.storage_id_in,
+                            storage_id_out: inserter.storage_id_out,
+                            index: inserter.index,
+                            current_hand: inserter.current_hand,
+                            max_hand_size: inserter.max_hand,
+                        };
+                        if inserter.current_hand == 0 {
+                            store.0.reinsert_empty(ins);
+                        } else {
+                            store.0.reinsert_empty(ins);
+                        }
+                    }
+                });
+        }
 
         aux_data.statistics.append_single_set_of_samples((
             ProductionInfo::from_recipe_info_and_per_item(

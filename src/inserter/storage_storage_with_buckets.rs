@@ -653,7 +653,7 @@ impl BucketedStorageStorageInserterStore {
         _current_tick: u32,
         _movetime: u16,
     ) -> bool {
-        let (_max_insert, old) =
+        let (_max_insert, old, _) =
             index_fake_union(todo!(), storages, inserter.storage_id_in, grid_size);
 
         let to_extract = min(inserter.max_hand_size - inserter.current_hand, *old);
@@ -687,7 +687,7 @@ impl BucketedStorageStorageInserterStore {
         _current_tick: u32,
         _movetime: u16,
     ) -> bool {
-        let (max_insert, old) =
+        let (max_insert, old, _) =
             index_fake_union(todo!(), storages, inserter.storage_id_out, grid_size);
 
         let to_insert = min(inserter.current_hand, *max_insert - *old);

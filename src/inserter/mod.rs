@@ -55,6 +55,19 @@ enum SushiInserterState<ItemIdxType: WeakIdxTrait> {
     EmptyAndMovingBack(u8),
 }
 
+#[derive(Debug)]
+pub struct WaitlistSearchInfo {
+    side_to_search: WaitlistSearchSide,
+    source_id: FakeUnionStorage,
+    dest_id: FakeUnionStorage,
+}
+
+#[derive(Debug)]
+pub enum WaitlistSearchSide {
+    Source,
+    Dest,
+}
+
 // TODO: We still need to store the timer and hand fullness. For the timer, 5 bits should suffice
 //       I don't think we need to store the recipe_id in 8 bits, since 32 recipes should be max for any resource (so 5 bits)
 // Current Plan: htttttrrrrrsssssssssssssssssssss
@@ -179,7 +192,10 @@ impl FakeUnionStorage {
         }
     }
 
-    pub fn from_storage_with_statics_at_zero<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    pub fn from_storage_with_statics_at_zero<
+        ItemIdxType: WeakIdxTrait,
+        RecipeIdxType: WeakIdxTrait,
+    >(
         item: Item<ItemIdxType>,
         storage: Storage<RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,

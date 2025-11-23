@@ -1,3 +1,5 @@
+use crate::assembler::simd::Inserter;
+use crate::assembler::simd::InserterReinsertionInfo;
 use crate::frontend::world::tile::ModuleSlots;
 use crate::frontend::world::tile::ModuleTy;
 use crate::{
@@ -183,11 +185,14 @@ pub struct PowerPoleUpdateInfo {
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, RecipeIdxType> {
     #[must_use]
-    pub fn new_trusted(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+    pub fn new_trusted(
+        future_grid_id: PowerGridIdentifier,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
         let network = Network::trusted_new_empty();
 
         Self {
-            stores: FullAssemblerStore::new(data_store),
+            stores: FullAssemblerStore::new(future_grid_id, data_store),
             lab_stores: MultiLabStore::new(&data_store.science_bottle_items),
             grid_graph: network,
             steam_power_producers: SteamPowerProducerStore {
@@ -228,13 +233,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
 
     #[must_use]
     pub fn new(
+        future_grid_id: PowerGridIdentifier,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
         first_pole_pos: Position,
     ) -> Self {
         let network = Network::new((), first_pole_pos);
 
         Self {
-            stores: FullAssemblerStore::new(data_store),
+            stores: FullAssemblerStore::new(future_grid_id, data_store),
             lab_stores: MultiLabStore::new(&data_store.science_bottle_items),
             grid_graph: network,
             steam_power_producers: SteamPowerProducerStore {
@@ -274,11 +280,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     }
 
     #[must_use]
-    pub fn new_placeholder(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+    pub fn new_placeholder(
+        future_grid_id: PowerGridIdentifier,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
         let network = Network::new((), Position { x: 0, y: 0 });
 
         Self {
-            stores: FullAssemblerStore::new(data_store),
+            stores: FullAssemblerStore::new(future_grid_id, data_store),
             lab_stores: MultiLabStore::new(&data_store.science_bottle_items),
             grid_graph: network,
             steam_power_producers: SteamPowerProducerStore {
@@ -318,14 +327,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     }
 
     fn new_from_graph(
+        future_grid_id: PowerGridIdentifier,
         graph: Network<Position, (), (Position, PowerGridEntity<ItemIdxType, RecipeIdxType>)>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         Self {
             grid_graph: graph,
             // TODO: If adding a power pole has addition side effect besides changing the graph, this is not correct
-            ..Self::new(data_store, Position { x: 0, y: 0 })
+            ..Self::new(future_grid_id, data_store, Position { x: 0, y: 0 })
         }
+    }
+
+    pub fn set_grid_id(
+        &mut self,
+        grid_id: PowerGridIdentifier,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        self.stores.set_grid(grid_id, data_store);
     }
 
     #[must_use]
@@ -721,7 +739,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 .into_iter()
                 .map(|(network, _positions)| {
                     let mut new_network: PowerGrid<ItemIdxType, RecipeIdxType> =
-                        Self::new_from_graph(network, data_store);
+                        Self::new_from_graph(PowerGridIdentifier::MAX, network, data_store);
 
                     let storage_updates: Vec<_> = self
                         .move_connected_entities(&mut new_network, data_store)
@@ -2288,35 +2306,52 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
     // }
 
     fn reduce_update(
-        iter: impl ParallelIterator<Item = (Watt, u32, u32)>,
-    ) -> (Watt, Vec<SingleRecipeTickInfo>) {
-        iter.map(|(power_used, times_ings_used, crafts_finished)| {
-            (
-                power_used,
-                SingleRecipeTickInfo {
-                    full_crafts: times_ings_used as u64,
-                    prod_crafts: crafts_finished.checked_sub(times_ings_used).expect(
-                        "More ingredients used than crafts finished?!? Negative productivity?",
-                    ) as u64,
+        iter: impl ParallelIterator<
+            Item = (
+                Watt,
+                u32,
+                u32,
+                impl Iterator<Item = InserterReinsertionInfo<ItemIdxType>>,
+            ),
+        >,
+    ) -> (
+        Watt,
+        Vec<SingleRecipeTickInfo>,
+        Vec<InserterReinsertionInfo<ItemIdxType>>,
+    ) {
+        iter.collect_vec_list()
+            .into_iter()
+            .flatten()
+            .map(
+                |(power_used, times_ings_used, crafts_finished, reinsertion)| {
+                    (
+                    power_used,
+                    SingleRecipeTickInfo {
+                        full_crafts: times_ings_used as u64,
+                        prod_crafts: crafts_finished.checked_sub(times_ings_used).expect(
+                            "More ingredients used than crafts finished?!? Negative productivity?",
+                        ) as u64,
+                    },
+                    reinsertion,
+                )
                 },
             )
-        })
-        .fold_with(
-            (Watt(0), vec![]),
-            |(acc_power, mut infos), (rhs_power, info)| {
-                infos.push(info);
+            // .fold_with(
+            //     (Watt(0), vec![]),
+            //     |(acc_power, mut infos), (rhs_power, info)| {
+            //         infos.push(info);
+            //         (acc_power + rhs_power, infos)
+            //     },
+            // )
+            .fold(
+                (Watt(0), vec![], vec![]),
+                |(acc_power, mut infos, mut reinsertions), (rhs_power, info, reinsertion)| {
+                    infos.push(info);
+                    reinsertions.extend(reinsertion);
 
-                (acc_power + rhs_power, infos)
-            },
-        )
-        .reduce(
-            || (Watt(0), vec![]),
-            |(acc_power, mut infos), (rhs_power, info)| {
-                infos.extend_from_slice(&info);
-
-                (acc_power + rhs_power, infos)
-            },
-        )
+                    (acc_power + rhs_power, infos, reinsertions)
+                },
+            )
     }
 
     #[profiling::function]
@@ -2331,23 +2366,33 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         RecipeTickInfo,
         u64,
         Vec<(BeaconAffectedEntity<RecipeIdxType>, (i16, i16, i16))>,
+        itertools::Either<
+            impl Iterator<Item = crate::assembler::simd::InserterReinsertionInfo<ItemIdxType>>,
+            std::iter::Empty<crate::assembler::simd::InserterReinsertionInfo<ItemIdxType>>,
+        >,
     ) {
         if self.is_placeholder {
-            return (0, RecipeTickInfo::new(data_store), 0, vec![]);
+            return (
+                0,
+                RecipeTickInfo::new(data_store),
+                0,
+                vec![],
+                itertools::Either::Right(std::iter::empty()),
+            );
         }
 
         let active_recipes = tech_state.get_active_recipes();
 
         let (
-            (power_used_0_1, infos_0_1),
-            (power_used_1_1, infos_1_1),
-            (power_used_2_1, infos_2_1),
-            (power_used_2_2, infos_2_2),
-            (power_used_2_3, infos_2_3),
-            (power_used_3_1, infos_3_1),
-            (power_used_4_1, infos_4_1),
-            (power_used_5_1, infos_5_1),
-            (power_used_6_1, infos_6_1),
+            (power_used_0_1, infos_0_1, reinsertions_0_1),
+            (power_used_1_1, infos_1_1, reinsertions_1_1),
+            (power_used_2_1, infos_2_1, reinsertions_2_1),
+            (power_used_2_2, infos_2_2, reinsertions_2_2),
+            (power_used_2_3, infos_2_3, reinsertions_2_3),
+            (power_used_3_1, infos_3_1, reinsertions_3_1),
+            (power_used_4_1, infos_4_1, reinsertions_4_1),
+            (power_used_5_1, infos_5_1, reinsertions_5_1),
+            (power_used_6_1, infos_6_1, reinsertions_6_1),
             (lab_power_used, times_labs_used_science, tech_progress),
         ) = join!(
             || {
@@ -2361,21 +2406,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         )
                         .as_str()
                     );
-                    if active_recipes[s.get_recipe().into_usize()] {
-                        let (info, ings, prod) = s.do_single_tick_update(
-                            self.last_power_mult,
-                            &data_store.recipe_index_lookups,
-                            &data_store.recipe_ings.ing0,
-                            &data_store.recipe_outputs.out1,
-                            &data_store.recipe_output_maximums.out1,
-                            &data_store.recipe_timers,
-                            data_store,
-                        );
+                    let (info, ings, prod, inserter_reinsertion) = s.do_single_tick_update(
+                        if active_recipes[s.get_recipe().into_usize()] {
+                            self.last_power_mult
+                        } else {
+                            0
+                        },
+                        &data_store.recipe_index_lookups,
+                        &data_store.recipe_ings.ing0,
+                        &data_store.recipe_outputs.out1,
+                        &data_store.recipe_output_maximums.out1,
+                        &data_store.recipe_timers,
+                        data_store,
+                    );
 
-                        (info.into(), ings, prod)
-                    } else {
-                        (Watt(0), 0, 0)
-                    }
+                    (info.into(), ings, prod, inserter_reinsertion)
                 }))
             },
             || {
@@ -2389,21 +2434,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         )
                         .as_str()
                     );
-                    if active_recipes[s.get_recipe().into_usize()] {
-                        let (info, ings, prod) = s.do_single_tick_update(
-                            self.last_power_mult,
-                            &data_store.recipe_index_lookups,
-                            &data_store.recipe_ings.ing1,
-                            &data_store.recipe_outputs.out1,
-                            &data_store.recipe_output_maximums.out1,
-                            &data_store.recipe_timers,
-                            data_store,
-                        );
+                    let (info, ings, prod, inserter_reinsertion) = s.do_single_tick_update(
+                        if active_recipes[s.get_recipe().into_usize()] {
+                            self.last_power_mult
+                        } else {
+                            0
+                        },
+                        &data_store.recipe_index_lookups,
+                        &data_store.recipe_ings.ing1,
+                        &data_store.recipe_outputs.out1,
+                        &data_store.recipe_output_maximums.out1,
+                        &data_store.recipe_timers,
+                        data_store,
+                    );
 
-                        (info.into(), ings, prod)
-                    } else {
-                        (Watt(0), 0, 0)
-                    }
+                    (info.into(), ings, prod, inserter_reinsertion)
                 }))
             },
             || {
@@ -2417,21 +2462,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         )
                         .as_str()
                     );
-                    if active_recipes[s.get_recipe().into_usize()] {
-                        let (info, ings, prod) = s.do_single_tick_update(
-                            self.last_power_mult,
-                            &data_store.recipe_index_lookups,
-                            &data_store.recipe_ings.ing2,
-                            &data_store.recipe_outputs.out1,
-                            &data_store.recipe_output_maximums.out1,
-                            &data_store.recipe_timers,
-                            data_store,
-                        );
+                    let (info, ings, prod, inserter_reinsertion) = s.do_single_tick_update(
+                        if active_recipes[s.get_recipe().into_usize()] {
+                            self.last_power_mult
+                        } else {
+                            0
+                        },
+                        &data_store.recipe_index_lookups,
+                        &data_store.recipe_ings.ing2,
+                        &data_store.recipe_outputs.out1,
+                        &data_store.recipe_output_maximums.out1,
+                        &data_store.recipe_timers,
+                        data_store,
+                    );
 
-                        (info.into(), ings, prod)
-                    } else {
-                        (Watt(0), 0, 0)
-                    }
+                    (info.into(), ings, prod, inserter_reinsertion)
                 }))
             },
             || {
@@ -2445,21 +2490,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         )
                         .as_str()
                     );
-                    if active_recipes[s.get_recipe().into_usize()] {
-                        let (info, ings, prod) = s.do_single_tick_update(
-                            self.last_power_mult,
-                            &data_store.recipe_index_lookups,
-                            &data_store.recipe_ings.ing2,
-                            &data_store.recipe_outputs.out2,
-                            &data_store.recipe_output_maximums.out2,
-                            &data_store.recipe_timers,
-                            data_store,
-                        );
+                    let (info, ings, prod, inserter_reinsertion) = s.do_single_tick_update(
+                        if active_recipes[s.get_recipe().into_usize()] {
+                            self.last_power_mult
+                        } else {
+                            0
+                        },
+                        &data_store.recipe_index_lookups,
+                        &data_store.recipe_ings.ing2,
+                        &data_store.recipe_outputs.out2,
+                        &data_store.recipe_output_maximums.out2,
+                        &data_store.recipe_timers,
+                        data_store,
+                    );
 
-                        (info.into(), ings, prod)
-                    } else {
-                        (Watt(0), 0, 0)
-                    }
+                    (info.into(), ings, prod, inserter_reinsertion)
                 }))
             },
             || {
@@ -2473,21 +2518,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         )
                         .as_str()
                     );
-                    if active_recipes[s.get_recipe().into_usize()] {
-                        let (info, ings, prod) = s.do_single_tick_update(
-                            self.last_power_mult,
-                            &data_store.recipe_index_lookups,
-                            &data_store.recipe_ings.ing2,
-                            &data_store.recipe_outputs.out3,
-                            &data_store.recipe_output_maximums.out3,
-                            &data_store.recipe_timers,
-                            data_store,
-                        );
+                    let (info, ings, prod, inserter_reinsertion) = s.do_single_tick_update(
+                        if active_recipes[s.get_recipe().into_usize()] {
+                            self.last_power_mult
+                        } else {
+                            0
+                        },
+                        &data_store.recipe_index_lookups,
+                        &data_store.recipe_ings.ing2,
+                        &data_store.recipe_outputs.out3,
+                        &data_store.recipe_output_maximums.out3,
+                        &data_store.recipe_timers,
+                        data_store,
+                    );
 
-                        (info.into(), ings, prod)
-                    } else {
-                        (Watt(0), 0, 0)
-                    }
+                    (info.into(), ings, prod, inserter_reinsertion)
                 }))
             },
             || {
@@ -2501,21 +2546,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         )
                         .as_str()
                     );
-                    if active_recipes[s.get_recipe().into_usize()] {
-                        let (info, ings, prod) = s.do_single_tick_update(
-                            self.last_power_mult,
-                            &data_store.recipe_index_lookups,
-                            &data_store.recipe_ings.ing3,
-                            &data_store.recipe_outputs.out1,
-                            &data_store.recipe_output_maximums.out1,
-                            &data_store.recipe_timers,
-                            data_store,
-                        );
+                    let (info, ings, prod, inserter_reinsertion) = s.do_single_tick_update(
+                        if active_recipes[s.get_recipe().into_usize()] {
+                            self.last_power_mult
+                        } else {
+                            0
+                        },
+                        &data_store.recipe_index_lookups,
+                        &data_store.recipe_ings.ing3,
+                        &data_store.recipe_outputs.out1,
+                        &data_store.recipe_output_maximums.out1,
+                        &data_store.recipe_timers,
+                        data_store,
+                    );
 
-                        (info.into(), ings, prod)
-                    } else {
-                        (Watt(0), 0, 0)
-                    }
+                    (info.into(), ings, prod, inserter_reinsertion)
                 }))
             },
             || {
@@ -2529,21 +2574,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         )
                         .as_str()
                     );
-                    if active_recipes[s.get_recipe().into_usize()] {
-                        let (info, ings, prod) = s.do_single_tick_update(
-                            self.last_power_mult,
-                            &data_store.recipe_index_lookups,
-                            &data_store.recipe_ings.ing4,
-                            &data_store.recipe_outputs.out1,
-                            &data_store.recipe_output_maximums.out1,
-                            &data_store.recipe_timers,
-                            data_store,
-                        );
+                    let (info, ings, prod, inserter_reinsertion) = s.do_single_tick_update(
+                        if active_recipes[s.get_recipe().into_usize()] {
+                            self.last_power_mult
+                        } else {
+                            0
+                        },
+                        &data_store.recipe_index_lookups,
+                        &data_store.recipe_ings.ing4,
+                        &data_store.recipe_outputs.out1,
+                        &data_store.recipe_output_maximums.out1,
+                        &data_store.recipe_timers,
+                        data_store,
+                    );
 
-                        (info.into(), ings, prod)
-                    } else {
-                        (Watt(0), 0, 0)
-                    }
+                    (info.into(), ings, prod, inserter_reinsertion)
                 }))
             },
             || {
@@ -2557,21 +2602,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         )
                         .as_str()
                     );
-                    if active_recipes[s.get_recipe().into_usize()] {
-                        let (info, ings, prod) = s.do_single_tick_update(
-                            self.last_power_mult,
-                            &data_store.recipe_index_lookups,
-                            &data_store.recipe_ings.ing5,
-                            &data_store.recipe_outputs.out1,
-                            &data_store.recipe_output_maximums.out1,
-                            &data_store.recipe_timers,
-                            data_store,
-                        );
+                    let (info, ings, prod, inserter_reinsertion) = s.do_single_tick_update(
+                        if active_recipes[s.get_recipe().into_usize()] {
+                            self.last_power_mult
+                        } else {
+                            0
+                        },
+                        &data_store.recipe_index_lookups,
+                        &data_store.recipe_ings.ing5,
+                        &data_store.recipe_outputs.out1,
+                        &data_store.recipe_output_maximums.out1,
+                        &data_store.recipe_timers,
+                        data_store,
+                    );
 
-                        (info.into(), ings, prod)
-                    } else {
-                        (Watt(0), 0, 0)
-                    }
+                    (info.into(), ings, prod, inserter_reinsertion)
                 }))
             },
             || {
@@ -2585,21 +2630,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         )
                         .as_str()
                     );
-                    if active_recipes[s.get_recipe().into_usize()] {
-                        let (info, ings, prod) = s.do_single_tick_update(
-                            self.last_power_mult,
-                            &data_store.recipe_index_lookups,
-                            &data_store.recipe_ings.ing6,
-                            &data_store.recipe_outputs.out1,
-                            &data_store.recipe_output_maximums.out1,
-                            &data_store.recipe_timers,
-                            data_store,
-                        );
+                    let (info, ings, prod, inserter_reinsertion) = s.do_single_tick_update(
+                        if active_recipes[s.get_recipe().into_usize()] {
+                            self.last_power_mult
+                        } else {
+                            0
+                        },
+                        &data_store.recipe_index_lookups,
+                        &data_store.recipe_ings.ing6,
+                        &data_store.recipe_outputs.out1,
+                        &data_store.recipe_output_maximums.out1,
+                        &data_store.recipe_timers,
+                        data_store,
+                    );
 
-                        (info.into(), ings, prod)
-                    } else {
-                        (Watt(0), 0, 0)
-                    }
+                    (info.into(), ings, prod, inserter_reinsertion)
                 }))
             },
             || {
@@ -2751,6 +2796,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             RecipeTickInfo::from_parts(parts, data_store),
             times_labs_used_science.into(),
             beacon_updates,
+            itertools::Either::Left(
+                reinsertions_0_1
+                    .into_iter()
+                    .chain(reinsertions_1_1)
+                    .chain(reinsertions_2_1)
+                    .chain(reinsertions_2_2)
+                    .chain(reinsertions_2_3)
+                    .chain(reinsertions_3_1)
+                    .chain(reinsertions_4_1)
+                    .chain(reinsertions_5_1)
+                    .chain(reinsertions_6_1),
+            ),
         )
     }
 

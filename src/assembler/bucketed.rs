@@ -5,6 +5,7 @@ use itertools::Itertools;
 use log::warn;
 
 use crate::assembler::arrays;
+use crate::assembler::simd::{Inserter, InserterReinsertionInfo, InserterWaitList};
 use crate::assembler::{PowerUsageInfo, TIMERTYPE};
 use crate::data::{DataStore, ItemRecipeDir};
 use crate::frontend::world::Position;
@@ -331,6 +332,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
 {
     fn new<ItemIdxType: IdxTrait>(
         recipe: Recipe<RecipeIdxType>,
+        _grid: PowerGridIdentifier,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         let ticks_per_craft = data_store.recipe_timers[recipe.into_usize()];
@@ -365,6 +367,14 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             cold_data: vec![],
             holes: vec![],
         }
+    }
+
+    fn set_grid_id<ItemIdxType: IdxTrait>(
+        &mut self,
+        new_grid_id: PowerGridIdentifier,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        // Do nothing
     }
 
     fn get_recipe(&self) -> Recipe<RecipeIdxType> {
@@ -589,7 +599,12 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         recipe_maximums: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
         times: &[TIMERTYPE],
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> (PowerUsageInfo, u32, u32)
+    ) -> (
+        PowerUsageInfo,
+        u32,
+        u32,
+        impl Iterator<Item = InserterReinsertionInfo<ItemIdxType>>,
+    )
     where
         RecipeIdxType: IdxTrait,
     {
@@ -719,6 +734,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             ),
             times_ing_used,
             times_main_timer_done + times_prod_timer_done,
+            iter::empty(),
         )
     }
 
@@ -728,19 +744,24 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         (
             [MaxInsertionLimit<'_>; NUM_INGS],
             [&mut [ITEMCOUNTTYPE]; NUM_INGS],
+            [&mut [InserterWaitList]; NUM_INGS],
         ),
-        [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS],
-    ) {
         (
-            (
-                self.ings_max_insert.each_mut().map(|b| match b.get(0) {
-                    Some(v) => MaxInsertionLimit::Global(*v),
-                    None => PANIC_ON_INSERT,
-                }),
-                self.ings.each_mut().map(|b| &mut **b),
-            ),
-            self.outputs.each_mut().map(|b| &mut **b),
-        )
+            [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS],
+            [&mut [InserterWaitList]; NUM_OUTPUTS],
+        ),
+    ) {
+        // (
+        //     (
+        //         self.ings_max_insert.each_mut().map(|b| match b.get(0) {
+        //             Some(v) => MaxInsertionLimit::Global(*v),
+        //             None => PANIC_ON_INSERT,
+        //         }),
+        //         self.ings.each_mut().map(|b| &mut **b),
+        //     ),
+        //     self.outputs.each_mut().map(|b| &mut **b),
+        // )
+        todo!()
     }
 
     fn modify_modifiers<ItemIdxType: IdxTrait>(
@@ -983,5 +1004,15 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
 
     fn num_assemblers(&self) -> usize {
         self.hot_data.len() - self.holes.len()
+    }
+
+    fn remove_wait_list_inserter<ItemIdxType: IdxTrait>(
+        &mut self,
+        index: u32,
+        item: crate::item::Item<ItemIdxType>,
+        id: crate::inserter::storage_storage_with_buckets_indirect::InserterId,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> super::simd::InserterReinsertionInfo<ItemIdxType> {
+        unreachable!()
     }
 }
