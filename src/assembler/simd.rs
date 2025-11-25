@@ -60,6 +60,34 @@ pub struct Inserter {
     pub other: FakeUnionStorage,
 }
 
+const_assert!(std::mem::size_of::<Option<InserterWithBelts>>() <= 20);
+const_assert!(std::mem::size_of::<InserterWithBelts>() <= 20);
+
+pub struct InserterWithBelts {
+    current_hand: ITEMCOUNTTYPE,
+    max_hand: NonZero<ITEMCOUNTTYPE>,
+
+    rest: InserterWithBeltsEnum,
+}
+
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum InserterWithBeltsEnum {
+    StorageStorage {
+        // TODO: This is not needed for assemblers, just for chests.
+        self_is_source: bool,
+        movetime: NonZero<u16>,
+        index: InserterId,
+
+        other: FakeUnionStorage,
+    },
+    BeltStorage {
+        movetime: NonZero<u16>,
+        belt_id: u32,
+        belt_pos: u16,
+    },
+}
+
 #[derive(Debug)]
 pub struct InserterReinsertionInfo<ItemIdxType: WeakIdxTrait> {
     pub movetime: u16,
