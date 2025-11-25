@@ -64,7 +64,7 @@ pub struct InserterIdentifier {
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
-pub(crate) struct InserterId {
+pub struct InserterId {
     index: u32,
 }
 
