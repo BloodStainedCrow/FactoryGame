@@ -2896,6 +2896,37 @@ pub fn render_ui<
                 }
             }
 
+            CollapsingHeader::new("Inserter Counts").show(ui, |ui| {
+                let mut storage_storage = 0;
+                let mut belt_storage = 0;
+                let mut belt_belt = 0;
+
+
+                for inserter_info in game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter_map(|e| match e {
+                    Entity::Inserter {
+                        info: crate::frontend::world::tile::InserterInfo::Attached {
+                            info
+                        },
+                        ..
+                    } => {
+                        Some(info)
+                    },
+
+                    _ => None,
+                }) {
+                    match inserter_info {
+                        crate::frontend::world::tile::AttachedInserter::StorageStorage { ..} => storage_storage += 1,
+                        crate::frontend::world::tile::AttachedInserter::BeltStorage { ..} => belt_storage += 1,
+                        crate::frontend::world::tile::AttachedInserter::BeltBelt { ..} => belt_belt += 1,
+                    }
+                }
+
+                ui.label(&format!("StorageStorage: {}", storage_storage));
+                ui.label(&format!("BeltStorage: {}", belt_storage));
+                ui.label(&format!("BeltBelt: {}", belt_belt));
+
+            });
+
             CollapsingHeader::new("Lab analysis").show(ui, |ui| {
                 let mut items = vec![0u32; data_store.item_names.len()];
 
