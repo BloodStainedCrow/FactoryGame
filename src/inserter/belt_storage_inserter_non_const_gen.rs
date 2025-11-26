@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::{
+    belt::belt::BeltLenType,
     item::ITEMCOUNTTYPE,
     storage_list::{SingleItemStorages, index_fake_union},
 };
@@ -65,16 +66,16 @@ impl From<DynInserterState> for (Dir, InserterState) {
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BeltStorageInserterDyn {
-    pub offset: u16,
+    pub belt_pos: u16,
     pub storage_id: FakeUnionStorage,
     pub state: DynInserterState,
 }
 
 impl BeltStorageInserterDyn {
     #[must_use]
-    pub const fn new(dir: Dir, offset: u16, id: FakeUnionStorage) -> Self {
+    pub const fn new(dir: Dir, belt_pos: BeltLenType, id: FakeUnionStorage) -> Self {
         Self {
-            offset,
+            belt_pos,
             storage_id: id,
             state: match dir {
                 Dir::BeltToStorage => DynInserterState::BSWaitingForSourceItems(0),

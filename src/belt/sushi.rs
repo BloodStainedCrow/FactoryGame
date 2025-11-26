@@ -90,53 +90,16 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             self.locs.len()
         );
 
-        let mut pos_after_last_inserter = 0;
-        let mut i = 0;
-
-        for offset in self
-            .inserters
-            .inserters
-            .iter()
-            .map(|(i, _item, _movetime, _hand_size)| i.offset)
-        {
-            let next_inserter_pos = pos_after_last_inserter + offset;
-
-            match next_inserter_pos.cmp(&pos) {
-                std::cmp::Ordering::Greater => break, // This is the index to insert at
-                std::cmp::Ordering::Equal => return Err(SpaceOccupiedError),
-
-                std::cmp::Ordering::Less => {
-                    pos_after_last_inserter = next_inserter_pos + 1;
-                    i += 1;
-                },
-            }
-        }
-
-        // Insert at i
-        let new_inserter_offset = pos - pos_after_last_inserter;
         take_mut::take(&mut self.inserters.inserters, |ins| {
             let mut ins = ins.into_vec();
-            ins.insert(
-                i,
-                (
-                    BeltStorageInserterDyn::new(
-                        Dir::StorageToBelt,
-                        new_inserter_offset,
-                        storage_id,
-                    ),
-                    filter,
-                    movetime.try_into().unwrap_or(u8::MAX),
-                    hand_size,
-                ),
-            );
+            ins.push((
+                BeltStorageInserterDyn::new(Dir::StorageToBelt, pos, storage_id),
+                filter,
+                movetime.try_into().unwrap_or(u8::MAX),
+                hand_size,
+            ));
             ins.into_boxed_slice()
         });
-
-        let next = self.inserters.inserters.get_mut(i + 1);
-
-        if let Some((next_ins, _item, _movetime, _hand_size)) = next {
-            next_ins.offset -= new_inserter_offset + 1;
-        }
 
         Ok(())
     }
@@ -155,80 +118,36 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             self.locs.len()
         );
 
-        let mut pos_after_last_inserter = 0;
-        let mut i = 0;
-
-        for offset in self
-            .inserters
-            .inserters
-            .iter()
-            .map(|(i, _item, _movetime, _hand_size)| i.offset)
-        {
-            let next_inserter_pos = pos_after_last_inserter + offset;
-
-            match next_inserter_pos.cmp(&pos) {
-                std::cmp::Ordering::Greater => break, // This is the index to insert at
-                std::cmp::Ordering::Equal => return Err(SpaceOccupiedError),
-
-                std::cmp::Ordering::Less => {
-                    pos_after_last_inserter = next_inserter_pos + 1;
-                    i += 1;
-                },
-            }
-        }
-
-        // Insert at i
-        let new_inserter_offset = pos - pos_after_last_inserter;
         take_mut::take(&mut self.inserters.inserters, |ins| {
             let mut ins = ins.into_vec();
-            ins.insert(
-                i,
-                (
-                    BeltStorageInserterDyn::new(
-                        Dir::BeltToStorage,
-                        new_inserter_offset,
-                        storage_id,
-                    ),
-                    filter,
-                    movetime.try_into().unwrap_or(u8::MAX),
-                    hand_size,
-                ),
-            );
+            ins.push((
+                BeltStorageInserterDyn::new(Dir::BeltToStorage, pos, storage_id),
+                filter,
+                movetime.try_into().unwrap_or(u8::MAX),
+                hand_size,
+            ));
             ins.into_boxed_slice()
         });
-
-        let next = self.inserters.inserters.get_mut(i + 1);
-
-        if let Some((next_ins, _item, _movetime, _hand_size)) = next {
-            next_ins.offset -= new_inserter_offset + 1;
-        }
 
         Ok(())
     }
 
     #[must_use]
     pub fn get_inserter_info_at(&self, belt_pos: u16) -> Option<BeltInserterInfo> {
-        let mut pos = 0;
-
-        for (inserter, _item, movetime, hand_size) in self.inserters.inserters.iter() {
-            pos += inserter.offset;
-            if pos == belt_pos {
-                let (dir, state) = inserter.state.into();
-                return Some(BeltInserterInfo {
+        self.inserters
+            .inserters
+            .iter()
+            .find(|ins| ins.0.belt_pos == belt_pos)
+            .map(|ins| {
+                let (dir, state) = ins.0.state.into();
+                BeltInserterInfo {
                     outgoing: dir == Dir::BeltToStorage,
                     state,
-                    connection: inserter.storage_id,
-
-                    hand_size: *hand_size,
-                    movetime: *movetime,
-                });
-            } else if pos > belt_pos {
-                return None;
-            }
-            pos += 1;
-        }
-
-        None
+                    connection: ins.0.storage_id,
+                    hand_size: ins.3,
+                    movetime: ins.2,
+                }
+            })
     }
 
     pub fn get_inserter_item(&self, belt_pos: u16) -> Item<ItemIdxType> {
@@ -238,46 +157,24 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             self.locs.len()
         );
 
-        let mut pos_after_last_inserter = 0;
-        let mut i = 0;
-
-        for offset in self
-            .inserters
+        self.inserters
             .inserters
             .iter()
-            .map(|(i, _item, _movetime, _hand_size)| i.offset)
-        {
-            let next_inserter_pos = pos_after_last_inserter + offset;
-
-            match next_inserter_pos.cmp(&belt_pos) {
-                std::cmp::Ordering::Greater => panic!(
-                    "The belt did not have an inserter at position specified to remove inserter from"
-                ), // This is the index to insert at
-                std::cmp::Ordering::Equal => break,
-
-                std::cmp::Ordering::Less => {
-                    pos_after_last_inserter = next_inserter_pos + 1;
-                    i += 1;
-                },
-            }
-        }
-
-        self.inserters.inserters[i].1
+            .find(|ins| ins.0.belt_pos == belt_pos)
+            .map(|ins| ins.1)
+            .expect("No inserter at pos")
     }
 
     pub fn set_inserter_storage_id(&mut self, belt_pos: u16, new: FakeUnionStorage) {
-        let mut pos = 0;
-
-        for (inserter, _item, _movetime, _hand_size) in self.inserters.inserters.iter_mut() {
-            pos += inserter.offset;
-            if pos == belt_pos {
-                inserter.storage_id = new;
-                return;
-            } else if pos >= belt_pos {
-                unreachable!()
-            }
-            pos += 1;
-        }
+        let Some(ins) = self
+            .inserters
+            .inserters
+            .iter_mut()
+            .find(|ins| ins.0.belt_pos == belt_pos)
+        else {
+            unreachable!()
+        };
+        ins.0.storage_id = new;
     }
 
     pub fn remove_inserter(&mut self, pos: BeltLenType) {
@@ -287,29 +184,12 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             self.locs.len()
         );
 
-        let mut pos_after_last_inserter = 0;
-        let mut i = 0;
-
-        for offset in self
+        let i = self
             .inserters
             .inserters
             .iter()
-            .map(|(i, _item, _movetime, _hand_size)| i.offset)
-        {
-            let next_inserter_pos = pos_after_last_inserter + offset;
-
-            match next_inserter_pos.cmp(&pos) {
-                std::cmp::Ordering::Greater => panic!(
-                    "The belt did not have an inserter at position specified to remove inserter from"
-                ), // This is the index to insert at
-                std::cmp::Ordering::Equal => break,
-
-                std::cmp::Ordering::Less => {
-                    pos_after_last_inserter = next_inserter_pos + 1;
-                    i += 1;
-                },
-            }
-        }
+            .position(|ins| ins.0.belt_pos == pos)
+            .unwrap();
 
         let mut removed = None;
         take_mut::take(&mut self.inserters.inserters, |ins| {
@@ -318,8 +198,6 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             ins.into_boxed_slice()
         });
         let removed = removed.unwrap();
-        // The offset after i (which has now shifted left to i)
-        self.inserters.inserters[i].0.offset += removed.0.offset + 1;
     }
 
     pub(super) fn check_sushi(
@@ -477,98 +355,99 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
     }
 
     pub fn break_belt_at(&mut self, belt_pos_to_break_at: u16) -> Option<Self> {
-        // TODO: Is this correct
-        if self.is_circular {
-            self.is_circular = false;
-            self.first_free_index = FreeIndex::OldFreeIndex(0);
-            self.zero_index = belt_pos_to_break_at;
-            return None;
-        }
+        todo!()
+        // // TODO: Is this correct
+        // if self.is_circular {
+        //     self.is_circular = false;
+        //     self.first_free_index = FreeIndex::OldFreeIndex(0);
+        //     self.zero_index = belt_pos_to_break_at;
+        //     return None;
+        // }
 
-        if belt_pos_to_break_at == 0 || belt_pos_to_break_at == self.get_len() {
-            return None;
-        }
+        // if belt_pos_to_break_at == 0 || belt_pos_to_break_at == self.get_len() {
+        //     return None;
+        // }
 
-        let mut new_locs = None;
-        take_mut::take(&mut self.locs, |locs| {
-            let mut locs_vec = locs.into_vec();
+        // let mut new_locs = None;
+        // take_mut::take(&mut self.locs, |locs| {
+        //     let mut locs_vec = locs.into_vec();
 
-            let len = locs_vec.len();
+        //     let len = locs_vec.len();
 
-            locs_vec.rotate_left(usize::from(self.zero_index) % len);
+        //     locs_vec.rotate_left(usize::from(self.zero_index) % len);
 
-            new_locs = Some(
-                locs_vec
-                    .split_off(belt_pos_to_break_at.into())
-                    .into_boxed_slice(),
-            );
+        //     new_locs = Some(
+        //         locs_vec
+        //             .split_off(belt_pos_to_break_at.into())
+        //             .into_boxed_slice(),
+        //     );
 
-            locs_vec.into_boxed_slice()
-        });
+        //     locs_vec.into_boxed_slice()
+        // });
 
-        self.zero_index = 0;
-        self.first_free_index = FreeIndex::OldFreeIndex(0);
+        // self.zero_index = 0;
+        // self.first_free_index = FreeIndex::OldFreeIndex(0);
 
-        let new_locs = new_locs.unwrap();
+        // let new_locs = new_locs.unwrap();
 
-        let mut offsets = self
-            .inserters
-            .inserters
-            .iter()
-            .map(|(i, _item, _movetime, _hand_size)| i.offset)
-            .enumerate();
+        // let mut offsets = self
+        //     .inserters
+        //     .inserters
+        //     .iter()
+        //     .map(|(i, _item, _movetime, _hand_size)| i.offset)
+        //     .enumerate();
 
-        let mut current_pos = 0;
+        // let mut current_pos = 0;
 
-        let (split_at_inserters, new_offs) = loop {
-            let Some((i, next_offset)) = offsets.next() else {
-                break (self.inserters.inserters.len(), 0);
-            };
+        // let (split_at_inserters, new_offs) = loop {
+        //     let Some((i, next_offset)) = offsets.next() else {
+        //         break (self.inserters.inserters.len(), 0);
+        //     };
 
-            // Skip next_offset spots
-            current_pos += next_offset;
+        //     // Skip next_offset spots
+        //     current_pos += next_offset;
 
-            if current_pos >= belt_pos_to_break_at {
-                break (i, current_pos - belt_pos_to_break_at);
-            }
+        //     if current_pos >= belt_pos_to_break_at {
+        //         break (i, current_pos - belt_pos_to_break_at);
+        //     }
 
-            // The spot, the inserter corresponding to this offset is placed
-            current_pos += 1;
-        };
+        //     // The spot, the inserter corresponding to this offset is placed
+        //     current_pos += 1;
+        // };
 
-        let mut new_inserters = None;
-        take_mut::take(&mut self.inserters.inserters, |ins| {
-            let mut ins = ins.into_vec();
-            new_inserters = Some(ins.split_off(split_at_inserters).into_boxed_slice());
-            ins.into_boxed_slice()
-        });
-        let mut new_inserters = new_inserters.unwrap();
+        // let mut new_inserters = None;
+        // take_mut::take(&mut self.inserters.inserters, |ins| {
+        //     let mut ins = ins.into_vec();
+        //     new_inserters = Some(ins.split_off(split_at_inserters).into_boxed_slice());
+        //     ins.into_boxed_slice()
+        // });
+        // let mut new_inserters = new_inserters.unwrap();
 
-        if let Some(new_ins) = new_inserters.get_mut(0) {
-            new_ins.0.offset = new_offs;
-        }
+        // if let Some(new_ins) = new_inserters.get_mut(0) {
+        //     new_ins.0.offset = new_offs;
+        // }
 
-        // Since self will end up as the front half, any inputting splitter will end up at the back belt
-        let input_splitter = self.input_splitter.take();
+        // // Since self will end up as the front half, any inputting splitter will end up at the back belt
+        // let input_splitter = self.input_splitter.take();
 
-        let new_belt = Self {
-            ty: self.ty,
+        // let new_belt = Self {
+        //     ty: self.ty,
 
-            is_circular: false,
-            first_free_index: FreeIndex::OldFreeIndex(0),
-            zero_index: 0,
-            locs: new_locs,
-            inserters: SushiInserterStoreDyn {
-                inserters: new_inserters,
-            },
+        //     is_circular: false,
+        //     first_free_index: FreeIndex::OldFreeIndex(0),
+        //     zero_index: 0,
+        //     locs: new_locs,
+        //     inserters: SushiInserterStoreDyn {
+        //         inserters: new_inserters,
+        //     },
 
-            last_moving_spot: self.last_moving_spot.saturating_sub(belt_pos_to_break_at),
+        //     last_moving_spot: self.last_moving_spot.saturating_sub(belt_pos_to_break_at),
 
-            input_splitter,
-            output_splitter: None,
-        };
+        //     input_splitter,
+        //     output_splitter: None,
+        // };
 
-        Some(new_belt)
+        // Some(new_belt)
     }
 
     pub fn make_circular(&mut self) {
@@ -630,30 +509,19 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         // Important, first_free_index must ALWAYS be used using mod len
         let back_zero_index = usize::from(back_zero_index) % back_locs.len();
 
-        let num_front_inserters = front_inserters.inserters.len();
-        let _num_back_inserters = back_inserters.inserters.len();
-
-        let free_spots_before_last_inserter_front: u16 = front_inserters
-            .inserters
-            .iter()
-            .map(|(i, _item, _movetime, _hand_size)| i.offset)
-            .sum();
-        let length_after_last_inserter = TryInto::<u16>::try_into(front_len)
-            .expect("Belt should be max u16::MAX long")
-            - free_spots_before_last_inserter_front
-            - TryInto::<u16>::try_into(num_front_inserters)
-                .expect("Belt should be max u16::MAX long");
-
-        if let Some((i, _item, _movetime, _hand_size)) = back_inserters.inserters.get_mut(0) {
-            i.offset += length_after_last_inserter;
-        }
-
         let mut new_inserters = front_inserters;
         take_mut::take(&mut new_inserters.inserters, |ins| {
             let mut ins = ins.into_vec();
             let mut other = vec![].into_boxed_slice();
             mem::swap(&mut other, &mut back_inserters.inserters);
-            ins.extend(other.into_vec().drain(..));
+            ins.extend(other.into_vec().drain(..).map(|mut back_ins| {
+                back_ins.0.belt_pos = back_ins
+                    .0
+                    .belt_pos
+                    .checked_add(front_len.try_into().unwrap())
+                    .unwrap();
+                back_ins
+            }));
             ins.into_boxed_slice()
         });
 
@@ -1025,157 +893,159 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
         amount: BeltLenType,
         side: Side,
     ) -> (Vec<(Item<ItemIdxType>, u32)>, BeltLenType) {
-        if amount == 0 {
-            return (vec![], self.get_len());
-        }
+        todo!()
+        // if amount == 0 {
+        //     return (vec![], self.get_len());
+        // }
 
-        assert!(!self.is_circular);
-        assert!(amount <= self.get_len());
+        // assert!(!self.is_circular);
+        // assert!(amount <= self.get_len());
 
-        self.locs
-            .rotate_left(self.zero_index as usize % self.locs.len());
-        self.zero_index = 0;
-        let mut item_counts = HashMap::default();
-        take_mut::take(&mut self.locs, |locs| {
-            let mut locs = locs.into_vec();
+        // self.locs
+        //     .rotate_left(self.zero_index as usize % self.locs.len());
+        // self.zero_index = 0;
+        // let mut item_counts = HashMap::default();
+        // take_mut::take(&mut self.locs, |locs| {
+        //     let mut locs = locs.into_vec();
 
-            let removed_items = match side {
-                Side::FRONT => locs.drain(..(amount as usize)),
-                Side::BACK => locs.drain((locs.len() - (amount as usize))..),
-            };
+        //     let removed_items = match side {
+        //         Side::FRONT => locs.drain(..(amount as usize)),
+        //         Side::BACK => locs.drain((locs.len() - (amount as usize))..),
+        //     };
 
-            item_counts = removed_items.flatten().counts();
+        //     item_counts = removed_items.flatten().counts();
 
-            locs.into_boxed_slice()
-        });
+        //     locs.into_boxed_slice()
+        // });
 
-        let kept_range = match side {
-            Side::FRONT => amount..(self.get_len() + amount),
-            Side::BACK => 0..self.get_len(),
-        };
+        // let kept_range = match side {
+        //     Side::FRONT => amount..(self.get_len() + amount),
+        //     Side::BACK => 0..self.get_len(),
+        // };
 
-        let mut pos_after_last_inserter = 0;
-        let mut pos_after_last_removed_inserter = 0;
+        // let mut pos_after_last_inserter = 0;
+        // let mut pos_after_last_removed_inserter = 0;
 
-        take_mut::take(&mut self.inserters.inserters, |inserters| {
-            let mut inserters = inserters.into_vec();
+        // take_mut::take(&mut self.inserters.inserters, |inserters| {
+        //     let mut inserters = inserters.into_vec();
 
-            // FIXME: This is awful, but it should work
-            inserters.retain(|inserter| {
-                let next_inserter_pos = pos_after_last_inserter + inserter.0.offset;
-                pos_after_last_inserter = next_inserter_pos + 1;
+        //     // FIXME: This is awful, but it should work
+        //     inserters.retain(|inserter| {
+        //         let next_inserter_pos = pos_after_last_inserter + inserter.0.offset;
+        //         pos_after_last_inserter = next_inserter_pos + 1;
 
-                if !kept_range.contains(&next_inserter_pos) {
-                    pos_after_last_removed_inserter = pos_after_last_inserter;
-                    false
-                } else {
-                    true
-                }
-            });
+        //         if !kept_range.contains(&next_inserter_pos) {
+        //             pos_after_last_removed_inserter = pos_after_last_inserter;
+        //             false
+        //         } else {
+        //             true
+        //         }
+        //     });
 
-            inserters.into_boxed_slice()
-        });
+        //     inserters.into_boxed_slice()
+        // });
 
-        if side == Side::FRONT {
-            if let Some((i, _item, _movetime, _hand_size)) = self.inserters.inserters.first_mut() {
-                i.offset -= amount - pos_after_last_removed_inserter;
-            }
-        }
+        // if side == Side::FRONT {
+        //     if let Some((i, _item, _movetime, _hand_size)) = self.inserters.inserters.first_mut() {
+        //         i.offset -= amount - pos_after_last_removed_inserter;
+        //     }
+        // }
 
-        self.first_free_index = FreeIndex::OldFreeIndex(0);
+        // self.first_free_index = FreeIndex::OldFreeIndex(0);
 
-        (
-            item_counts
-                .into_iter()
-                .sorted_by_key(|(k, _)| *k)
-                .map(|(k, v)| (k, v.try_into().unwrap()))
-                .collect_vec(),
-            self.get_len(),
-        )
+        // (
+        //     item_counts
+        //         .into_iter()
+        //         .sorted_by_key(|(k, _)| *k)
+        //         .map(|(k, v)| (k, v.try_into().unwrap()))
+        //         .collect_vec(),
+        //     self.get_len(),
+        // )
     }
 
     fn add_length(&mut self, amount: BeltLenType, side: super::smart::Side) -> BeltLenType {
-        let len = self.get_len();
+        todo!()
+        // let len = self.get_len();
 
-        take_mut::take(self, |slf| {
-            let Self {
-                ty,
+        // take_mut::take(self, |slf| {
+        //     let Self {
+        //         ty,
 
-                is_circular: _,
-                first_free_index,
-                zero_index,
-                locs,
-                mut inserters,
+        //         is_circular: _,
+        //         first_free_index,
+        //         zero_index,
+        //         locs,
+        //         mut inserters,
 
-                last_moving_spot,
+        //         last_moving_spot,
 
-                input_splitter,
-                output_splitter,
-            } = slf;
+        //         input_splitter,
+        //         output_splitter,
+        //     } = slf;
 
-            match side {
-                Side::FRONT => assert!(output_splitter.is_none()),
-                Side::BACK => assert!(input_splitter.is_none()),
-            }
+        //     match side {
+        //         Side::FRONT => assert!(output_splitter.is_none()),
+        //         Side::BACK => assert!(input_splitter.is_none()),
+        //     }
 
-            // Important, first_free_index must ALWAYS be used using mod len
-            let zero_index = zero_index % len;
+        //     // Important, first_free_index must ALWAYS be used using mod len
+        //     let zero_index = zero_index % len;
 
-            let mut locs = locs.into_vec();
+        //     let mut locs = locs.into_vec();
 
-            let old_len = locs.len();
+        //     let old_len = locs.len();
 
-            let (new_empty, new_zero, front_extension_amount) = match side {
-                Side::FRONT => {
-                    locs.splice(
-                        usize::from(zero_index)..usize::from(zero_index),
-                        repeat(None).take(usize::from(amount)),
-                    );
-                    (FreeIndex::FreeIndex(0), zero_index, amount)
-                },
-                Side::BACK => {
-                    locs.splice(
-                        ((usize::from(zero_index) + (old_len - 1)) % old_len)
-                            ..((usize::from(zero_index) + (old_len - 1)) % old_len),
-                        repeat(None).take(usize::from(amount)),
-                    );
-                    (
-                        match first_free_index {
-                            FreeIndex::FreeIndex(idx) => FreeIndex::FreeIndex(idx),
-                            FreeIndex::OldFreeIndex(idx) => FreeIndex::OldFreeIndex(idx),
-                        },
-                        zero_index + amount,
-                        0,
-                    )
-                },
-            };
+        //     let (new_empty, new_zero, front_extension_amount) = match side {
+        //         Side::FRONT => {
+        //             locs.splice(
+        //                 usize::from(zero_index)..usize::from(zero_index),
+        //                 repeat(None).take(usize::from(amount)),
+        //             );
+        //             (FreeIndex::FreeIndex(0), zero_index, amount)
+        //         },
+        //         Side::BACK => {
+        //             locs.splice(
+        //                 ((usize::from(zero_index) + (old_len - 1)) % old_len)
+        //                     ..((usize::from(zero_index) + (old_len - 1)) % old_len),
+        //                 repeat(None).take(usize::from(amount)),
+        //             );
+        //             (
+        //                 match first_free_index {
+        //                     FreeIndex::FreeIndex(idx) => FreeIndex::FreeIndex(idx),
+        //                     FreeIndex::OldFreeIndex(idx) => FreeIndex::OldFreeIndex(idx),
+        //                 },
+        //                 zero_index + amount,
+        //                 0,
+        //             )
+        //         },
+        //     };
 
-            if side == Side::FRONT {
-                if !inserters.inserters.is_empty() {
-                    inserters.inserters[0].0.offset = inserters.inserters[0]
-                        .0
-                        .offset
-                        .checked_add(front_extension_amount)
-                        .expect("Max length of belt (u16::MAX) reached");
-                }
-            }
+        //     if side == Side::FRONT {
+        //         if !inserters.inserters.is_empty() {
+        //             inserters.inserters[0].0.offset = inserters.inserters[0]
+        //                 .0
+        //                 .offset
+        //                 .checked_add(front_extension_amount)
+        //                 .expect("Max length of belt (u16::MAX) reached");
+        //         }
+        //     }
 
-            Self {
-                ty,
+        //     Self {
+        //         ty,
 
-                is_circular: false,
-                first_free_index: new_empty,
-                zero_index: new_zero,
-                locs: locs.into_boxed_slice(),
-                inserters,
+        //         is_circular: false,
+        //         first_free_index: new_empty,
+        //         zero_index: new_zero,
+        //         locs: locs.into_boxed_slice(),
+        //         inserters,
 
-                last_moving_spot,
+        //         last_moving_spot,
 
-                input_splitter,
-                output_splitter,
-            }
-        });
+        //         input_splitter,
+        //         output_splitter,
+        //     }
+        // });
 
-        len + amount
+        // len + amount
     }
 }
