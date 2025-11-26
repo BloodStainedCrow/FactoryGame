@@ -6,7 +6,9 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelIterator};
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use static_assertions::const_assert;
 
-use crate::assembler::simd::{Inserter, InserterReinsertionInfo, InserterWaitList};
+use crate::assembler::simd::{
+    Inserter, InserterReinsertionInfo, InserterWaitList, InserterWithBelts,
+};
 use crate::inserter::storage_storage_with_buckets_indirect::InserterId;
 use crate::inserter::{FakeUnionStorage, StaticID};
 use crate::storage_list::{InserterWaitLists, MaxInsertionLimit};
@@ -53,8 +55,7 @@ pub type SignedChestSize = i32;
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone)]
 struct InternalInserterReinsertionInfo {
-    inserter: Inserter,
-    self_is_source: bool,
+    inserter: InserterWithBelts,
     self_index: u32,
 }
 
@@ -85,31 +86,53 @@ impl<ItemIdxType: IdxTrait> FullChestStore<ItemIdxType> {
                 store.update_simd().map(
                     move |InternalInserterReinsertionInfo {
                               inserter,
-                              self_is_source,
                               self_index,
                           }| InserterReinsertionInfo {
-                        movetime: inserter.movetime,
+                        movetime: inserter.movetime.into(),
                         item,
                         current_hand: inserter.current_hand,
                         max_hand: inserter.max_hand.into(),
-                        index: inserter.index,
-                        storage_id_in: if self_is_source {
-                            FakeUnionStorage {
-                                index: self_index,
-                                grid_or_static_flag: 0,
-                                recipe_idx_with_this_item: StaticID::Chest as u16,
-                            }
-                        } else {
-                            inserter.other
-                        },
-                        storage_id_out: if self_is_source {
-                            inserter.other
-                        } else {
-                            FakeUnionStorage {
-                                index: self_index,
-                                grid_or_static_flag: 0,
-                                recipe_idx_with_this_item: StaticID::Chest as u16,
-                            }
+
+                        conn: match inserter.rest {
+                            crate::assembler::simd::InserterWithBeltsEnum::StorageStorage {
+                                self_is_source,
+                                index,
+                                other,
+                            } => crate::assembler::simd::Conn::Storage {
+                                index,
+                                storage_id_in: if self_is_source {
+                                    FakeUnionStorage {
+                                        index: self_index,
+                                        grid_or_static_flag: 0,
+                                        recipe_idx_with_this_item: StaticID::Chest as u16,
+                                    }
+                                } else {
+                                    other
+                                },
+                                storage_id_out: if self_is_source {
+                                    other
+                                } else {
+                                    FakeUnionStorage {
+                                        index: self_index,
+                                        grid_or_static_flag: 0,
+                                        recipe_idx_with_this_item: StaticID::Chest as u16,
+                                    }
+                                },
+                            },
+                            crate::assembler::simd::InserterWithBeltsEnum::BeltStorage {
+                                belt_id,
+                                belt_pos,
+                                self_is_source,
+                            } => crate::assembler::simd::Conn::Belt {
+                                belt_id,
+                                belt_pos,
+                                self_is_source,
+                                self_storage: FakeUnionStorage {
+                                    index: self_index,
+                                    grid_or_static_flag: 0,
+                                    recipe_idx_with_this_item: StaticID::Chest as u16,
+                                },
+                            },
                         },
                     },
                 )
@@ -313,7 +336,18 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
             if (was_full && !is_full) || (was_empty && !is_empty) {
                 for ins in wait_list.inserters.iter_mut() {
                     if let Some(inserter) = ins {
-                        if inserter.self_is_source && !is_empty {
+                        let self_is_source = match inserter.rest {
+                            crate::assembler::simd::InserterWithBeltsEnum::StorageStorage {
+                                self_is_source,
+                                ..
+                            } => self_is_source,
+                            crate::assembler::simd::InserterWithBeltsEnum::BeltStorage {
+                                self_is_source,
+                                ..
+                            } => self_is_source,
+                        };
+
+                        if self_is_source && !is_empty {
                             let taken_by_this_inserter = min(
                                 ITEMCOUNTTYPE::from(inserter.max_hand) - inserter.current_hand,
                                 *inout,
@@ -321,26 +355,23 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
 
                             *inout -= taken_by_this_inserter;
                             inserter.current_hand += taken_by_this_inserter;
-                        } else if !inserter.self_is_source && !is_full {
-                            let taken_by_this_inserter = min(
-                                inserter.current_hand,
-                                *max_insert - *inout,
-                            );
+                        } else if !self_is_source && !is_full {
+                            let taken_by_this_inserter =
+                                min(inserter.current_hand, *max_insert - *inout);
 
                             *inout += taken_by_this_inserter;
                             inserter.current_hand -= taken_by_this_inserter;
                         }
 
                         if (inserter.current_hand == ITEMCOUNTTYPE::from(inserter.max_hand)
-                            && inserter.self_is_source)
-                            || (inserter.current_hand == 0 && !inserter.self_is_source)
+                            && self_is_source)
+                            || (inserter.current_hand == 0 && !self_is_source)
                         {
                             let removed = ins.take().unwrap();
-                            let is_source = removed.self_is_source;
+                            let is_source = self_is_source;
                             self.inserter_reinsertion_vec
                                 .push_within_capacity(InternalInserterReinsertionInfo {
                                     inserter: removed,
-                                    self_is_source: is_source,
                                     self_index: index as u32,
                                 })
                                 .unwrap();

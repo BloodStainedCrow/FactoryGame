@@ -66,6 +66,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::cmp::max;
 use std::fs::File;
 use std::io::{Read, Write};
+use std::num::NonZero;
 use std::sync::LazyLock;
 use std::{
     cmp::{Ordering, min},
@@ -906,7 +907,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         let start_pos = data_store.inserter_start_pos(*ty, *pos, *direction);
                                         let end_pos = data_store.inserter_end_pos(*ty, *pos, *direction);
 
-                                        let movetime: u16 = user_movetime.map(|v| v.into()).unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks).into();
+                                        let movetime = user_movetime.map(|v| v.into()).unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks).into();
                                         match info {
                                             crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => {
                                                 let Some(state) = game_state.simulation_state.factory.belts.get_inserter_info_at(*id, *belt_pos) else {
@@ -972,8 +973,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                 let (position, items): (f32, ITEMCOUNTTYPE) = match state.state {
                                                     crate::inserter::storage_storage_with_buckets::LargeInserterState::WaitingForSourceItems(count) => (0.0, count),
                                                     crate::inserter::storage_storage_with_buckets::LargeInserterState::WaitingForSpaceInDestination(count) => (1.0, count),
-                                                    crate::inserter::storage_storage_with_buckets::LargeInserterState::FullAndMovingOut(timer) => (1.0 - (timer as f32 / movetime as f32), hand_size),
-                                                    crate::inserter::storage_storage_with_buckets::LargeInserterState::EmptyAndMovingBack(timer) => (timer as f32 / movetime as f32, 0),
+                                                    crate::inserter::storage_storage_with_buckets::LargeInserterState::FullAndMovingOut(timer) => (1.0 - (timer as f32 / u16::from(movetime) as f32), hand_size),
+                                                    crate::inserter::storage_storage_with_buckets::LargeInserterState::EmptyAndMovingBack(timer) => (timer as f32 / u16::from(movetime) as f32, 0),
                                                 };
 
                                                 assert!(position >= 0.0);
@@ -2595,7 +2596,7 @@ pub fn render_ui<
                                                 if start_pos.contained_in(*assembler_pos, data_store.assembler_info[*assembler_ty as usize].size(*assembler_rotation)) {
                                                     let movetime = user_movetime.map(|v| v.into()).unwrap_or(data_store_ref.inserter_infos[*ty as usize].swing_time_ticks);
 
-                                                    let items_per_tick = f32::from(data_store_ref.inserter_infos[*ty as usize].base_hand_size) / (2.0 * f32::from(movetime) + 2.0);
+                                                    let items_per_tick = f32::from(data_store_ref.inserter_infos[*ty as usize].base_hand_size) / (2.0 * f32::from(u16::from(movetime)) + 2.0);
 
                                                     Some((item, items_per_tick))
                                                 } else {
@@ -2639,7 +2640,7 @@ pub fn render_ui<
 
                                         let swing_time_in_ticks = full_rotation_time_in_ticks / 2.0 - 1.0;
 
-                                        goal_movetime = max(goal_movetime, swing_time_in_ticks as u16 / 10 * 10);
+                                        goal_movetime = max(goal_movetime, (swing_time_in_ticks as u16 / 10 * 10).try_into().unwrap());
                                     },
                                 }
                             },
@@ -2674,7 +2675,7 @@ pub fn render_ui<
                                         if start_pos.contained_in(*chest_pos, data_store_ref.chest_tile_sizes[*chest_ty as usize]) {
                                             let movetime = user_movetime.map(|v| v.into()).unwrap_or(data_store_ref.inserter_infos[*ty as usize].swing_time_ticks);
 
-                                            let items_per_tick = f32::from(data_store_ref.inserter_infos[*ty as usize].base_hand_size) / (2.0 * f32::from(movetime));
+                                            let items_per_tick = f32::from(data_store_ref.inserter_infos[*ty as usize].base_hand_size) / (2.0 * f32::from(u16::from(movetime)));
 
                                             Some((item, items_per_tick))
                                         } else {
@@ -2694,7 +2695,7 @@ pub fn render_ui<
 
                                 let swing_time_in_ticks = full_rotation_time_in_ticks / 2.0 - 1.0;
 
-                                goal_movetime = max(goal_movetime, swing_time_in_ticks as u16 / 10 * 10);
+                                goal_movetime = max(goal_movetime, (swing_time_in_ticks as u16 / 10 * 10).try_into().unwrap());
                             }
 
                             _ => {}
@@ -2751,7 +2752,7 @@ pub fn render_ui<
                                                 if start_pos.contained_in(*assembler_pos, data_store.assembler_info[*assembler_ty as usize].size(*assembler_rotation)) {
                                                     let movetime = user_movetime.map(|v| v.into()).unwrap_or(data_store_ref.inserter_infos[*ty as usize].swing_time_ticks);
 
-                                                    let items_per_tick = f32::from(data_store_ref.inserter_infos[*ty as usize].base_hand_size) / (2.0 * f32::from(movetime) + 2.0);
+                                                    let items_per_tick = f32::from(data_store_ref.inserter_infos[*ty as usize].base_hand_size) / (2.0 * f32::from(u16::from(movetime)) + 2.0);
 
                                                     Some((item, items_per_tick))
                                                 } else {
@@ -2786,10 +2787,7 @@ pub fn render_ui<
 
                                         let swing_time_in_ticks = full_rotation_time_in_ticks / 2.0 - 1.0;
 
-                                        goal_movetime = max(goal_movetime, swing_time_in_ticks as u16 / 10 * 10);
-                                        if goal_movetime > 10_000 {
-                                            dbg!(items_produced_per_tick);
-                                        }
+                                        goal_movetime = max(goal_movetime, (swing_time_in_ticks as u16 / 10 * 10).try_into().unwrap());
                                     },
                                 }
                             },
@@ -2802,10 +2800,6 @@ pub fn render_ui<
                 });
 
                 actions.extend(inserter_pos_and_time.map(|(pos, time)| {
-                    if time > 10_000 {
-                        dbg!(pos);
-                    }
-
                     ActionType::OverrideInserterMovetime { pos, new_movetime: Some(time.try_into().unwrap()) }
                 }))
             }
@@ -3040,7 +3034,7 @@ pub fn render_ui<
                         .storage_storage_inserters
                         .inserters
                         .iter()
-                        .flat_map(|tree: &std::collections::BTreeMap<u16, (crate::inserter::storage_storage_with_buckets_indirect::BucketedStorageStorageInserterStore,)>| tree.values())
+                        .flat_map(|tree| tree.values())
                         .map(|(store, )| store.get_load_info())
                         .map(|(_, _, num_storage_cachelines, num_struct_cachelines)| {
                             num_storage_cachelines + num_struct_cachelines
@@ -3702,7 +3696,7 @@ pub fn render_ui<
                         if movetime_overridden {
                             let mut movetime = user_movetime.map(|v| v.into()).unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks);
 
-                            ui.add(egui::Slider::new(&mut movetime, (data_store.inserter_infos[*ty as usize].swing_time_ticks)..=u16::MAX).text("Ticks per half swing"));
+                            ui.add(egui::Slider::new(&mut movetime, (data_store.inserter_infos[*ty as usize].swing_time_ticks)..=NonZero::<u16>::MAX).text("Ticks per half swing"));
 
                             if *user_movetime != Some(movetime.try_into().unwrap()) {
                                 actions.push(ActionType::OverrideInserterMovetime { pos: *pos, new_movetime: Some(movetime.try_into().unwrap()) });

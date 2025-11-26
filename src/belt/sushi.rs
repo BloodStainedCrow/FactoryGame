@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::num::NonZero;
 use std::{iter::repeat, mem};
 
 use itertools::Itertools;
@@ -8,6 +9,7 @@ use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
 use get_size2::GetSize;
 
+use crate::belt::smart::InserterExtractedWhenMoving;
 use crate::inserter::belt_storage_inserter::Dir;
 use crate::item::ITEMCOUNTTYPE;
 use crate::{
@@ -47,7 +49,14 @@ pub struct SushiBelt<ItemIdxType: WeakIdxTrait> {
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub(super) struct SushiInserterStoreDyn<ItemIdxType: WeakIdxTrait> {
-    pub(super) inserters: Box<[(BeltStorageInserterDyn, Item<ItemIdxType>, u8, ITEMCOUNTTYPE)]>,
+    pub(super) inserters: Box<
+        [(
+            BeltStorageInserterDyn,
+            Item<ItemIdxType>,
+            NonZero<u8>,
+            ITEMCOUNTTYPE,
+        )],
+    >,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -95,7 +104,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             ins.push((
                 BeltStorageInserterDyn::new(Dir::StorageToBelt, pos, storage_id),
                 filter,
-                movetime.try_into().unwrap_or(u8::MAX),
+                movetime.try_into().unwrap_or(u8::MAX).try_into().unwrap(),
                 hand_size,
             ));
             ins.into_boxed_slice()
@@ -123,7 +132,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             ins.push((
                 BeltStorageInserterDyn::new(Dir::BeltToStorage, pos, storage_id),
                 filter,
-                movetime.try_into().unwrap_or(u8::MAX),
+                movetime.try_into().unwrap_or(u8::MAX).try_into().unwrap(),
                 hand_size,
             ));
             ins.into_boxed_slice()
@@ -145,7 +154,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
                     state,
                     connection: ins.0.storage_id,
                     hand_size: ins.3,
-                    movetime: ins.2,
+                    movetime: ins.2.into(),
                 }
             })
     }
@@ -308,7 +317,20 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
                     // if item !=  inserter_item {
                     //     error!("We need to handle inserters which will never work again in smart belts!!!!!!!");
                     // }
-                    (ins, movetime, hand_size)
+                    let (dir, state) = ins.state.into();
+                    InserterExtractedWhenMoving {
+                        storage: ins.storage_id,
+                        belt_pos: ins.belt_pos,
+                        movetime,
+                        outgoing: dir == Dir::BeltToStorage,
+                        max_hand_size: hand_size,
+                        current_hand: match state {
+                            crate::inserter::InserterState::WaitingForSourceItems(hand) => hand,
+                            crate::inserter::InserterState::WaitingForSpaceInDestination(hand) => hand,
+                            crate::inserter::InserterState::FullAndMovingOut(_) => hand_size,
+                            crate::inserter::InserterState::EmptyAndMovingBack(_) => 0,
+                        },
+                    }
                 }).collect(),
             },
             item,

@@ -1,3 +1,7 @@
+use crate::inserter::belt_storage_inserter::Dir;
+use crate::inserter::belt_storage_movement_list::{
+    BeltStorageInserterInMovement, List, ReinsertionLists,
+};
 use crate::inserter::storage_storage_with_buckets_indirect::InserterBucketData;
 use crate::item::Indexable;
 use crate::{
@@ -1057,6 +1061,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         tech_state: &TechState,
         current_tick: u32,
         inserter_store: &mut StorageStorageInserterStore,
+
+        belt_storage_reinsertion_list: &mut [(
+            (
+                List<{ Dir::BeltToStorage }, { Dir::BeltToStorage }>,
+                List<{ Dir::StorageToBelt }, { Dir::BeltToStorage }>,
+            ),
+            (
+                List<{ Dir::BeltToStorage }, { Dir::StorageToBelt }>,
+                List<{ Dir::StorageToBelt }, { Dir::StorageToBelt }>,
+            ),
+        )],
+
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (ResearchProgress, RecipeTickInfo, Option<LabTickInfo>) {
         {
@@ -1108,25 +1124,76 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                             },
                             || {
                                 for inserter in reinsertions {
-                                    let store = inserter_store.inserters
-                                        [inserter.item.into_usize()]
-                                    .get_mut(&inserter.movetime)
-                                    .unwrap();
-                                    let ins = InserterBucketData {
-                                        storage_id_in: inserter.storage_id_in,
-                                        storage_id_out: inserter.storage_id_out,
-                                        index: inserter.index,
-                                        current_hand: inserter.current_hand,
-                                        max_hand_size: inserter.max_hand,
-                                    };
-                                    if inserter.current_hand == 0 {
-                                        store.0.reinsert_empty(ins);
-                                    } else {
-                                        store.0.reinsert_empty(ins);
+                                    match inserter.conn {
+                                        crate::assembler::simd::Conn::Storage {
+                                            index,
+                                            storage_id_in,
+                                            storage_id_out,
+                                        } => {
+                                            let store = inserter_store.inserters
+                                                [inserter.item.into_usize()]
+                                            .get_mut(&inserter.movetime)
+                                            .unwrap();
+                                            let ins = InserterBucketData {
+                                                storage_id_in: storage_id_in,
+                                                storage_id_out: storage_id_out,
+                                                index: index,
+                                                current_hand: inserter.current_hand,
+                                                max_hand_size: inserter.max_hand,
+                                            };
+                                            if inserter.current_hand == 0 {
+                                                store.0.reinsert_empty(ins);
+                                            } else {
+                                                store.0.reinsert_empty(ins);
+                                            }
+                                        },
+                                        crate::assembler::simd::Conn::Belt {
+                                            belt_id,
+                                            belt_pos,
+                                            self_is_source,
+                                            self_storage,
+                                        } => {
+                                            let ((_a, belt_storage), (_c, storage_belt)) =
+                                                &mut belt_storage_reinsertion_list
+                                                    [inserter.item.into_usize()];
+
+                                            if self_is_source {
+                                                storage_belt.reinsert(
+                                                    inserter.movetime,
+                                                    BeltStorageInserterInMovement {
+                                                        current_hand: inserter.max_hand,
+                                                        movetime: inserter
+                                                            .movetime
+                                                            .try_into()
+                                                            .unwrap(),
+                                                        storage: self_storage,
+                                                        belt: belt_id,
+                                                        belt_pos,
+                                                        max_hand_size: inserter.max_hand,
+                                                    },
+                                                );
+                                            } else {
+                                                belt_storage.reinsert(
+                                                    inserter.movetime,
+                                                    BeltStorageInserterInMovement {
+                                                        current_hand: 0,
+                                                        movetime: inserter
+                                                            .movetime
+                                                            .try_into()
+                                                            .unwrap(),
+                                                        storage: self_storage,
+                                                        belt: belt_id,
+                                                        belt_pos,
+                                                        max_hand_size: inserter.max_hand,
+                                                    },
+                                                );
+                                            }
+                                        },
                                     }
                                 }
                             }
                         );
+
                         (
                             acc_progress + rhs_progress,
                             infos + &info,

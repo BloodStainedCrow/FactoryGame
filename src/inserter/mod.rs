@@ -29,6 +29,7 @@ pub mod belt_storage_pure_buckets;
 pub mod storage_storage_inserter;
 pub mod storage_storage_with_buckets;
 // pub mod storage_storage_with_buckets_compressed;
+pub mod belt_storage_movement_list;
 pub mod storage_storage_with_buckets_indirect;
 
 // mod bucket_bit_compressed;

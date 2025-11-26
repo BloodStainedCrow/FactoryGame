@@ -5,7 +5,9 @@ use super::{
     FakeUnionStorage, InserterStateInfo, storage_storage_with_buckets::LargeInserterState,
 };
 use crate::{
-    assembler::simd::{Inserter as WaitListInserter, InserterReinsertionInfo, InserterWaitList},
+    assembler::simd::{
+        InserterReinsertionInfo, InserterWaitList, InserterWithBelts as WaitListInserter,
+    },
     inserter::WaitlistSearchSide,
     item::ITEMCOUNTTYPE,
     join_many::join,
@@ -13,6 +15,8 @@ use crate::{
     storage_list::{SingleItemStorages, index_fake_union},
 };
 use std::cmp::min;
+
+use std::num::NonZero;
 
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
@@ -81,7 +85,7 @@ pub struct InserterBucketData {
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BucketedStorageStorageInserterStore {
-    pub movetime: u16,
+    pub movetime: NonZero<u16>,
 
     holes: Vec<u32>,
     inserters: Vec<InserterState>,
@@ -104,16 +108,17 @@ struct UpdateResult {
 }
 
 impl BucketedStorageStorageInserterStore {
-    pub fn new(movetime: u16) -> Self {
+    pub fn new(movetime: NonZero<u16>) -> Self {
         Self {
             movetime,
             holes: vec![],
             inserters: vec![],
 
             waiting_for_item: vec![],
-            full_and_moving_out: vec![vec![]; movetime as usize + 1].into_boxed_slice(),
+            full_and_moving_out: vec![vec![]; u16::from(movetime) as usize + 1].into_boxed_slice(),
             waiting_for_space_in_destination: vec![],
-            empty_and_moving_back: vec![vec![]; movetime as usize + 1].into_boxed_slice(),
+            empty_and_moving_back: vec![vec![]; u16::from(movetime) as usize + 1]
+                .into_boxed_slice(),
             current_tick: 0,
         }
     }
@@ -154,7 +159,7 @@ impl BucketedStorageStorageInserterStore {
     }
 
     fn list_len(&self) -> usize {
-        self.movetime as usize + 1
+        u16::from(self.movetime) as usize + 1
     }
 
     pub fn remove_inserter(
@@ -309,7 +314,7 @@ impl BucketedStorageStorageInserterStore {
         storages: SingleItemStorages,
         grid_size: usize,
         current_tick: u32,
-        movetime: u16,
+        movetime: std::num::NonZero<u16>,
     ) -> UpdateResult {
         let storage_id = bucket_data.storage_id_in;
 
@@ -341,12 +346,15 @@ impl BucketedStorageStorageInserterStore {
             if let Some(wait_list) = wait_list {
                 if let Some(pos) = wait_list.inserters.iter_mut().find(|slot| slot.is_none()) {
                     *pos = Some(WaitListInserter {
-                        self_is_source: true,
                         current_hand: bucket_data.current_hand,
                         max_hand: bucket_data.max_hand_size.try_into().unwrap(),
                         movetime: movetime,
-                        index: bucket_data.index,
-                        other: bucket_data.storage_id_out,
+
+                        rest: crate::assembler::simd::InserterWithBeltsEnum::StorageStorage {
+                            self_is_source: true,
+                            index: bucket_data.index,
+                            other: bucket_data.storage_id_out,
+                        },
                     });
 
                     UpdateResult {
@@ -376,7 +384,7 @@ impl BucketedStorageStorageInserterStore {
         storages: SingleItemStorages,
         grid_size: usize,
         current_tick: u32,
-        movetime: u16,
+        movetime: std::num::NonZero<u16>,
     ) -> UpdateResult {
         let storage_id = bucket_data.storage_id_out;
 
@@ -407,12 +415,15 @@ impl BucketedStorageStorageInserterStore {
             if let Some(wait_list) = wait_list {
                 if let Some(pos) = wait_list.inserters.iter_mut().find(|slot| slot.is_none()) {
                     *pos = Some(WaitListInserter {
-                        self_is_source: false,
                         current_hand: bucket_data.current_hand,
                         max_hand: bucket_data.max_hand_size.try_into().unwrap(),
                         movetime: movetime,
-                        index: bucket_data.index,
-                        other: bucket_data.storage_id_in,
+
+                        rest: crate::assembler::simd::InserterWithBeltsEnum::StorageStorage {
+                            self_is_source: false,
+                            index: bucket_data.index,
+                            other: bucket_data.storage_id_in,
+                        },
                     });
 
                     UpdateResult {
@@ -558,7 +569,8 @@ impl BucketedStorageStorageInserterStore {
                 .extract
             });
 
-            self.full_and_moving_out[(self.current_tick + usize::from(self.movetime)) % len]
+            self.full_and_moving_out
+                [(self.current_tick + usize::from(u16::from(self.movetime))) % len]
                 .extend(now_moving.filter(|ins| ins.current_hand == ins.max_hand_size));
         }
 
@@ -633,7 +645,8 @@ impl BucketedStorageStorageInserterStore {
                         .extract
                     });
 
-            self.empty_and_moving_back[(self.current_tick + usize::from(self.movetime)) % len]
+            self.empty_and_moving_back
+                [(self.current_tick + usize::from(u16::from(self.movetime))) % len]
                 .extend(now_moving_back.filter(|ins| ins.current_hand == 0));
         }
 
@@ -761,25 +774,27 @@ impl BucketedStorageStorageInserterStore {
                         first_tick_value_with_this_lower_part(ins.last_update_time, current_tick),
                     );
 
-                    u16::try_from(u32::from(self.movetime).strict_sub(time_passed)).expect(
-                        &format!(
+                    u16::try_from(u32::from(u16::from(self.movetime)).strict_sub(time_passed))
+                        .expect(&format!(
                             "Inserter has been moving for more than u16::MAX ticks: {}",
-                            u32::from(self.movetime).strict_sub(current_tick.strict_sub(
-                                first_tick_value_with_this_lower_part(
+                            u32::from(u16::from(self.movetime)).strict_sub(
+                                current_tick.strict_sub(first_tick_value_with_this_lower_part(
                                     ins.last_update_time,
                                     current_tick
-                                )
-                            ))
-                        ),
-                    )
+                                ))
+                            )
+                        ))
                 }),
                 ImplicitState::EmptyAndMovingBack => LargeInserterState::EmptyAndMovingBack(
-                    u16::try_from(u32::from(self.movetime).strict_sub(current_tick.strict_sub(
-                        first_tick_value_with_this_lower_part(ins.last_update_time, current_tick),
-                    )))
+                    u16::try_from(u32::from(u16::from(self.movetime)).strict_sub(
+                        current_tick.strict_sub(first_tick_value_with_this_lower_part(
+                            ins.last_update_time,
+                            current_tick,
+                        )),
+                    ))
                     .expect(&format!(
                         "Inserter has been moving for more than u16::MAX ticks: {}",
-                        u32::from(self.movetime).strict_sub(current_tick.strict_sub(
+                        u32::from(u16::from(self.movetime)).strict_sub(current_tick.strict_sub(
                             first_tick_value_with_this_lower_part(
                                 ins.last_update_time,
                                 current_tick
@@ -1014,21 +1029,21 @@ impl BucketedStorageStorageInserterStore {
     }
 
     pub fn reinsert_empty(&mut self, inserter: InserterBucketData) {
-        self.empty_and_moving_back
-            [(self.current_tick + usize::from(self.movetime)) % self.empty_and_moving_back.len()]
+        self.empty_and_moving_back[(self.current_tick + usize::from(u16::from(self.movetime)))
+            % self.empty_and_moving_back.len()]
         .push(inserter);
     }
 
     pub fn reinsert_full(&mut self, inserter: InserterBucketData) {
-        self.full_and_moving_out
-            [(self.current_tick + usize::from(self.movetime)) % self.full_and_moving_out.len()]
+        self.full_and_moving_out[(self.current_tick + usize::from(u16::from(self.movetime)))
+            % self.full_and_moving_out.len()]
         .push(inserter);
     }
 }
 
 #[cfg(test)]
 mod test {
-    const MOVETIME: u16 = 120;
+    const MOVETIME: NonZero<u16> = NonZero::new(120).unwrap();
     const NUM_INSERTERS: usize = 20_000_000;
     const NUM_ITEMS: usize = 5;
 

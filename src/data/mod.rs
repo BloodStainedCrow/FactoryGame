@@ -25,6 +25,7 @@ use crate::{
     item::{ITEMCOUNTTYPE, IdxTrait, Item, Recipe, WeakIdxTrait},
     power::{Joule, Watt},
 };
+use std::num::NonZero;
 
 type ItemString = String;
 type RecipeString = String;
@@ -162,7 +163,7 @@ struct RawFluidFlowthrough {
 struct RawInserter {
     name: String,
     display_name: String,
-    time_per_trip: TIMERTYPE,
+    time_per_trip: NonZero<u16>,
     handsize: ITEMCOUNTTYPE,
     tile_size: [u8; 2],
 
@@ -476,7 +477,7 @@ pub struct InserterInfo {
     pub display_name: String,
     pub size: [u8; 2],
 
-    pub swing_time_ticks: u16,
+    pub swing_time_ticks: NonZero<u16>,
 
     /// pre any increases by technology
     pub base_hand_size: ITEMCOUNTTYPE,

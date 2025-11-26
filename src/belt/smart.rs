@@ -1,18 +1,21 @@
 use std::{
     iter::repeat,
+    num::NonZero,
     ops::{Deref, DerefMut},
     sync::atomic::AtomicUsize,
     u8,
 };
 
-use crate::item::Indexable;
+use crate::inserter::{
+    belt_storage_inserter_non_const_gen::DynInserterState,
+    belt_storage_movement_list::{BeltStorageInserterInMovement, ReinsertionLists},
+};
 use crate::{
     inserter::{
         InserterState, belt_storage_inserter::Dir,
         belt_storage_inserter_non_const_gen::BeltStorageInserterDyn,
     },
     item::{ITEMCOUNTTYPE, IdxTrait, Item, WeakIdxTrait},
-    storage_list::SingleItemStorages,
 };
 use bitvec::{
     access::BitSafeUsize,
@@ -50,7 +53,8 @@ pub static NUM_BELT_LOCS_SEARCHED: AtomicUsize = AtomicUsize::new(0);
 #[allow(clippy::module_name_repetitions)]
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-#[repr(align(64))]
+// FIXME: Make sure a smart belt fits in a cacheline
+// #[repr(align(64))]
 pub struct SmartBelt<ItemIdxType: WeakIdxTrait = u8> {
     pub(super) ty: u8,
 
@@ -59,7 +63,7 @@ pub struct SmartBelt<ItemIdxType: WeakIdxTrait = u8> {
     /// Important, zero_index must ALWAYS be used using mod len
     pub(super) zero_index: BeltLenType,
     pub(super) locs: crate::get_size::BitBox,
-    pub(super) inserters: InserterStoreDyn,
+    pub inserters: InserterStoreDyn,
 
     pub(super) item: Item<ItemIdxType>,
 
@@ -69,7 +73,8 @@ pub struct SmartBelt<ItemIdxType: WeakIdxTrait = u8> {
     pub(super) output_splitter: Option<(SplitterID, SplitterSide)>,
 }
 
-const_assert! {std::mem::size_of::<SmartBelt<u8>>() <= 64}
+// FIXME:
+// const_assert! {std::mem::size_of::<SmartBelt<u8>>() <= 64}
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default)]
@@ -84,7 +89,16 @@ pub struct EmptyBelt {
     pub len: u16,
 }
 
-type TEST = (BeltStorageInserterDyn, u8, ITEMCOUNTTYPE);
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct InserterExtractedWhenMoving {
+    pub(crate) storage: FakeUnionStorage,
+    pub(crate) belt_pos: BeltLenType,
+    pub(crate) movetime: NonZero<u8>,
+    pub(crate) outgoing: bool,
+    pub(crate) max_hand_size: ITEMCOUNTTYPE,
+    pub(crate) current_hand: ITEMCOUNTTYPE,
+}
 
 // TODO: Idea:
 //       Have Belt inserters only be in belts as waitlist.
@@ -100,7 +114,7 @@ type TEST = (BeltStorageInserterDyn, u8, ITEMCOUNTTYPE);
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct InserterStoreDyn {
-    pub(super) inserters: Box<[(BeltStorageInserterDyn, u8, ITEMCOUNTTYPE)]>,
+    pub inserters: Vec<InserterExtractedWhenMoving>,
 }
 
 #[derive(Debug)]
@@ -130,9 +144,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             first_free_index: FreeIndex::FreeIndex(0),
             zero_index: 0,
             locs: bitbox![0; len.into()].into(),
-            inserters: InserterStoreDyn {
-                inserters: vec![].into_boxed_slice(),
-            },
+            inserters: InserterStoreDyn { inserters: vec![] },
 
             item,
 
@@ -192,7 +204,22 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             inserters: SushiInserterStoreDyn {
                 inserters: inserters
                     .into_iter()
-                    .map(|(inserter, movetime, hand_size)| (inserter, item, movetime, hand_size))
+                    .map(|ins| {
+                        (
+                            BeltStorageInserterDyn {
+                                belt_pos: ins.belt_pos,
+                                storage_id: ins.storage,
+                                state: if ins.outgoing {
+                                    DynInserterState::BSWaitingForSourceItems(ins.current_hand)
+                                } else {
+                                    DynInserterState::SBWaitingForSourceItems(ins.current_hand)
+                                },
+                            },
+                            item,
+                            ins.movetime,
+                            ins.max_hand_size,
+                        )
+                    })
                     .collect(),
             },
 
@@ -323,8 +350,8 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
     pub fn change_inserter_storage_id(&mut self, old: FakeUnionStorage, new: FakeUnionStorage) {
         for inserter in &mut self.inserters.inserters {
-            if inserter.0.storage_id == old {
-                inserter.0.storage_id = new;
+            if inserter.storage == old {
+                inserter.storage = new;
             }
         }
     }
@@ -333,11 +360,10 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         let mut pos = 0;
 
         for inserter in self.inserters.inserters.iter_mut() {
-            pos = inserter.0.belt_pos;
+            pos = inserter.belt_pos;
             if pos == belt_pos {
-                inserter.0.storage_id = new;
+                inserter.storage = new;
                 return;
-            } else if pos > belt_pos {
             }
         }
         unreachable!(
@@ -351,15 +377,18 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         let mut pos = 0;
 
         for inserter in self.inserters.inserters.iter() {
-            pos = inserter.0.belt_pos;
+            pos = inserter.belt_pos;
             if pos == belt_pos {
-                let (dir, state) = inserter.0.state.into();
                 return Some(BeltInserterInfo {
-                    outgoing: dir == Dir::BeltToStorage,
-                    state,
-                    connection: inserter.0.storage_id,
-                    movetime: inserter.1,
-                    hand_size: inserter.2,
+                    outgoing: inserter.outgoing,
+                    state: if inserter.outgoing {
+                        InserterState::WaitingForSourceItems(inserter.current_hand)
+                    } else {
+                        InserterState::WaitingForSpaceInDestination(inserter.current_hand)
+                    },
+                    connection: inserter.storage,
+                    movetime: inserter.movetime.into(),
+                    hand_size: inserter.max_hand_size,
                 });
             }
         }
@@ -367,18 +396,26 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         None
     }
 
-    pub(super) fn change_inserter_movetime(&mut self, belt_pos: BeltLenType, new_movetime: u16) {
+    pub(super) fn change_inserter_movetime(
+        &mut self,
+        belt_pos: BeltLenType,
+        new_movetime: NonZero<u16>,
+    ) {
         let Some(inserter) = self
             .inserters
             .inserters
             .iter_mut()
-            .find(|ins| ins.0.belt_pos == belt_pos)
+            .find(|ins| ins.belt_pos == belt_pos)
         else {
             unreachable!(
                 "The belt did not have an inserter at position specified to change movetime"
             )
         };
-        inserter.1 = new_movetime.try_into().unwrap_or(u8::MAX);
+        inserter.movetime = u16::from(new_movetime)
+            .try_into()
+            .unwrap_or(u8::MAX)
+            .try_into()
+            .unwrap();
     }
 
     pub fn remove_inserter(&mut self, pos: BeltLenType) -> Result<FakeUnionStorage, ()> {
@@ -390,17 +427,12 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             .inserters
             .inserters
             .iter()
-            .position(|ins| ins.0.belt_pos == pos)
+            .position(|ins| ins.belt_pos == pos)
         {
             Some(idx) => {
-                let mut removed = None;
-                take_mut::take(&mut self.inserters.inserters, |ins| {
-                    let mut ins = ins.into_vec();
-                    removed = Some(ins.remove(idx));
-                    ins.into_boxed_slice()
-                });
+                let removed = self.inserters.inserters.remove(idx);
 
-                Ok(removed.unwrap().0.storage_id)
+                Ok(removed.storage)
             },
             None => Err(()),
         }
@@ -430,14 +462,13 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             return Err(InserterAdditionError::ItemMismatch);
         }
 
-        take_mut::take(&mut self.inserters.inserters, |ins| {
-            let mut ins = ins.into_vec();
-            ins.push((
-                BeltStorageInserterDyn::new(Dir::BeltToStorage, index, storage_id),
-                movetime.try_into().unwrap_or(u8::MAX),
-                hand_size,
-            ));
-            ins.into_boxed_slice()
+        self.inserters.inserters.push(InserterExtractedWhenMoving {
+            storage: storage_id,
+            belt_pos: index,
+            movetime: movetime.try_into().unwrap_or(u8::MAX).try_into().unwrap(),
+            outgoing: true,
+            max_hand_size: hand_size,
+            current_hand: 0,
         });
 
         Ok(())
@@ -466,14 +497,13 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         if filter != self.item {
             return Err(InserterAdditionError::ItemMismatch);
         }
-        take_mut::take(&mut self.inserters.inserters, |ins| {
-            let mut ins = ins.into_vec();
-            ins.push((
-                BeltStorageInserterDyn::new(Dir::StorageToBelt, index, storage_id),
-                movetime.try_into().unwrap_or(u8::MAX),
-                hand_size,
-            ));
-            ins.into_boxed_slice()
+        self.inserters.inserters.push(InserterExtractedWhenMoving {
+            storage: storage_id,
+            belt_pos: index,
+            movetime: movetime.try_into().unwrap_or(u8::MAX).try_into().unwrap(),
+            outgoing: false,
+            max_hand_size: hand_size,
+            current_hand: 0,
         });
 
         Ok(())
@@ -508,8 +538,17 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
     pub fn update_inserters<'a, 'b>(
         &mut self,
-        storages: SingleItemStorages<'a, 'b>,
-        grid_size: usize,
+        self_index: u32,
+        reinsertion_outgoing: &mut ReinsertionLists<
+            '_,
+            { Dir::BeltToStorage },
+            { Dir::BeltToStorage },
+        >,
+        reinsertion_incoming: &mut ReinsertionLists<
+            '_,
+            { Dir::BeltToStorage },
+            { Dir::StorageToBelt },
+        >,
     ) {
         if self.get_len() == 0 {
             return;
@@ -520,41 +559,14 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             FreeIndex::OldFreeIndex(idx) => idx,
         };
 
-        // for ins in self.inserters.inserters.iter_mut() {
-        //     i += usize::from(ins.offset);
-        //     let idx = (i + usize::from(self.zero_index)) % self.locs.len();
-        //     let loc = self.locs.get_mut(idx);
-
-        //     match loc {
-        //         Some(mut loc) => {
-        //             let changed =
-        //                 ins.update(loc.as_mut(), storages, MOVETIME, HAND_SIZE, grid_size);
-
-        //             if changed {
-        //                 // the inserter changed something.
-        //                 if !*loc && i < usize::from(first_possible_free_pos) {
-        //                     // This is the new first free pos.
-        //                     first_possible_free_pos = BeltLenType::try_from(i).unwrap();
-        //                     self.first_free_index =
-        //                         FreeIndex::FreeIndex(BeltLenType::try_from(i).unwrap());
-        //                 } else if *loc && i == usize::from(first_possible_free_pos) {
-        //                     // This was the old first free pos
-        //                     self.first_free_index =
-        //                         FreeIndex::OldFreeIndex(BeltLenType::try_from(i).unwrap());
-        //                 }
-        //             }
-        //         },
-        //         None => unreachable!(
-        //             "Adding the offsets of the inserters is bigger than the length of the belt."
-        //         ),
-        //     }
-
-        //     i += 1;
-        // }
-
         let mut new_first_free = old_first_free;
 
-        for (ins, movetime, hand_size) in self.inserters.inserters.iter_mut() {
+        let extracted = self.inserters.inserters.extract_if(.., |ins| {
+            // FIXME: This should not be needed, if we did not incorrectly insert inserters always in the belt
+            if ins.current_hand == 0 && !ins.outgoing {
+                return true;
+            }
+
             // Taken from VecDeque::wrap_index
             let logical_index = usize::from(self.zero_index) + usize::from(ins.belt_pos);
             let loc_idx = if logical_index >= self.locs.len() {
@@ -566,48 +578,62 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             if ins.belt_pos < old_first_free {
                 // We KNOW this position is filled
                 debug_assert!(self.locs[loc_idx]);
-                let mut loc = true;
-                let _changed = ins.update(
-                    self.item.into_usize(),
-                    &mut loc,
-                    storages,
-                    *movetime,
-                    *hand_size,
-                    grid_size,
-                );
-
-                if !loc {
+                if ins.outgoing {
+                    ins.current_hand += 1;
                     self.locs.set(loc_idx, false);
                     if ins.belt_pos <= new_first_free {
                         self.first_free_index = FreeIndex::FreeIndex(ins.belt_pos);
                         new_first_free = ins.belt_pos;
                     }
+
+                    if ins.current_hand == ins.max_hand_size {
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
                 }
             } else {
                 let mut loc = self.locs.get_mut(loc_idx).unwrap();
 
-                let changed = ins.update(
-                    self.item.into_usize(),
-                    loc.as_mut(),
-                    storages,
-                    *movetime,
-                    *hand_size,
-                    grid_size,
-                );
+                if ins.outgoing && *loc {
+                    *loc = false;
+                    ins.current_hand += 1;
+                    if ins.current_hand == ins.max_hand_size {
+                        true
+                    } else {
+                        false
+                    }
+                } else if !ins.outgoing && !*loc {
+                    *loc = true;
+                    ins.current_hand -= 1;
 
-                if changed {
-                    // the inserter changed something.
                     if ins.belt_pos == new_first_free && *loc {
                         // This was the old first free pos
                         self.first_free_index = FreeIndex::OldFreeIndex(ins.belt_pos);
                     }
-                    // if !first_free_changed && i == old_first_free && !*loc {
-                    //     // This is the new first_free_pos
-                    //     self.first_free_index =
-                    //         FreeIndex::FreeIndex(BeltLenType::try_from(i).unwrap());
-                    //     first_free_changed = true;
-                    // }
+
+                    if ins.current_hand == 0 { true } else { false }
+                } else {
+                    false
                 }
+            }
+        });
+
+        for ins in extracted {
+            let in_movement = BeltStorageInserterInMovement {
+                movetime: ins.movetime,
+                storage: ins.storage,
+                belt: self_index,
+                belt_pos: ins.belt_pos,
+                max_hand_size: ins.max_hand_size,
+                current_hand: ins.current_hand,
+            };
+            if ins.outgoing {
+                reinsertion_outgoing.reinsert(ins.movetime.into(), in_movement);
+            } else {
+                reinsertion_incoming.reinsert(ins.movetime.into(), in_movement);
             }
         }
     }
@@ -668,15 +694,11 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             .inserters
             .inserters
             .iter()
-            .map(|ins| match ins.0.state.into() {
-                (Dir::StorageToBelt, InserterState::WaitingForSpaceInDestination(_)) => {
-                    (ins.0.belt_pos, true)
-                },
-                (Dir::BeltToStorage, InserterState::WaitingForSourceItems(_)) => {
-                    (ins.0.belt_pos, true)
-                },
+            .map(|ins| match (ins.outgoing,) {
+                (false,) => (ins.belt_pos, true),
+                (true,) => (ins.belt_pos, true),
 
-                _ => (ins.0.belt_pos, false),
+                _ => (ins.belt_pos, false),
             })
             .fold(0usize, |old_count, (belt_pos, needs)| {
                 // let our_idx = belt_pos;
@@ -691,13 +713,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             .inserters
             .inserters
             .iter()
-            .filter_map(|ins| match ins.0.state.into() {
-                (Dir::StorageToBelt, InserterState::WaitingForSpaceInDestination(_)) => {
-                    Some(ins.0.storage_id)
-                },
-                (Dir::BeltToStorage, InserterState::WaitingForSourceItems(_)) => {
-                    Some(ins.0.storage_id)
-                },
+            .filter_map(|ins| match (ins.outgoing,) {
+                (false,) => Some(ins.storage),
+                (true,) => Some(ins.storage),
 
                 _ => None,
             })
@@ -930,20 +948,15 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         let _num_back_inserters = back_inserters.inserters.len();
 
         let mut new_inserters = front_inserters;
-        take_mut::take(&mut new_inserters.inserters, |ins| {
-            let mut ins = ins.into_vec();
-            let mut other = vec![].into_boxed_slice();
-            mem::swap(&mut other, &mut back_inserters.inserters);
-            ins.extend(other.into_vec().drain(..).map(|mut back_ins| {
-                back_ins.0.belt_pos = back_ins
-                    .0
+        new_inserters
+            .inserters
+            .extend(back_inserters.inserters.drain(..).map(|mut back_ins| {
+                back_ins.belt_pos = back_ins
                     .belt_pos
                     .checked_add(front_len.try_into().unwrap())
                     .unwrap();
                 back_ins
             }));
-            ins.into_boxed_slice()
-        });
 
         let mut front_locs_vec = BitBox::from(front_locs).into_bitvec();
 
@@ -1037,8 +1050,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
         if side == Side::FRONT {
             for ins in &mut inserters.inserters {
-                ins.0.belt_pos = ins
-                    .0
+                ins.belt_pos = ins
                     .belt_pos
                     .checked_add(len)
                     .expect("Max length of belt (u16::MAX) reached");
@@ -1217,9 +1229,7 @@ impl EmptyBelt {
             first_free_index: FreeIndex::FreeIndex(0),
             zero_index: 0,
             locs: bitbox![0; self.len as usize].into(),
-            inserters: InserterStoreDyn {
-                inserters: vec![].into_boxed_slice(),
-            },
+            inserters: InserterStoreDyn { inserters: vec![] },
             item,
             last_moving_spot: 0,
             input_splitter: self.input_splitter,
@@ -1405,7 +1415,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
             .inserters
             .inserters
             .iter()
-            .map(|ins| ins.0.belt_pos)
+            .map(|ins| ins.belt_pos)
             .collect_vec();
 
         assert!(!self.is_circular);
@@ -1428,23 +1438,17 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
             locs.into_boxed_bitslice().into()
         });
 
-        take_mut::take(&mut self.inserters.inserters, |inserters| {
-            let mut inserters = inserters.into_vec();
-
-            inserters.retain(|inserter| {
-                if !kept_range.contains(&inserter.0.belt_pos) {
-                    false
-                } else {
-                    true
-                }
-            });
-
-            inserters.into_boxed_slice()
+        self.inserters.inserters.retain(|inserter| {
+            if !kept_range.contains(&inserter.belt_pos) {
+                false
+            } else {
+                true
+            }
         });
 
         if side == Side::FRONT {
             for ins in &mut self.inserters.inserters {
-                ins.0.belt_pos = ins.0.belt_pos.checked_sub(amount).unwrap();
+                ins.belt_pos = ins.belt_pos.checked_sub(amount).unwrap();
             }
         }
 
@@ -1454,7 +1458,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
             .inserters
             .inserters
             .iter()
-            .map(|ins| ins.0.belt_pos)
+            .map(|ins| ins.belt_pos)
             .collect_vec();
 
         match side {

@@ -17,6 +17,7 @@ use crate::get_size::{Mutex, StableGraph};
 use crate::item::ITEMCOUNTTYPE;
 use crate::par_generation::BeltKind;
 use petgraph::stable_graph::DefaultIx;
+use std::num::NonZero;
 use std::ops::RangeInclusive;
 use std::{
     cell::UnsafeCell,
@@ -3185,7 +3186,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         &mut self,
         id: BeltTileId<ItemIdxType>,
         pos: BeltLenType,
-        new_movetime: u16,
+        new_movetime: NonZero<u16>,
     ) {
         match id {
             BeltTileId::AnyBelt(index, _) => match &mut self.any_belts[index as usize] {

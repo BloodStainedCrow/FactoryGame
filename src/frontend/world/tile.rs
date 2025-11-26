@@ -813,7 +813,7 @@ fn instantiate_mining_drill_internal_inserter<ItemIdxType: IdxTrait, RecipeIdxTy
 
             match world.try_instantiate_inserter(
                 sim_state,
-                1,
+                1.try_into().unwrap(),
                 1,
                 Some(single_item),
                 *pos,
@@ -1408,7 +1408,7 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                                                 match sim_state
                                                     .factory
                                                     .storage_storage_inserters
-                                                    .remove_ins(*item, movetime, *inserter){
+                                                    .remove_ins(*item, NonZero::new(movetime).unwrap(), *inserter){
                                                     Ok(()) => {},
                                                     Err(side) => match side {
                                                         crate::inserter::WaitlistSearchSide::Source => {
@@ -2596,9 +2596,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         // TODO: Calculate tech effect
         let hand_size = data_store.inserter_infos[*ty as usize].base_hand_size;
 
-        let movetime = user_movetime
-            .map(|v| v.into())
-            .unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks);
+        let movetime =
+            user_movetime.unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks);
 
         let start_pos = data_store.inserter_start_pos(*ty, pos, *direction);
         let end_pos = data_store.inserter_end_pos(*ty, pos, *direction);
@@ -2647,7 +2646,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         &mut self,
         simulation_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
 
-        movetime: u16,
+        movetime: NonZero<u16>,
         hand_size: crate::item::ITEMCOUNTTYPE,
 
         known_filter: Option<Item<ItemIdxType>>,
@@ -3206,7 +3205,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         simulation_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
         filter: Item<ItemIdxType>,
 
-        movetime: u16,
+        movetime: NonZero<u16>,
         hand_size: crate::item::ITEMCOUNTTYPE,
 
         start: InserterConnection<ItemIdxType, RecipeIdxType>,
@@ -3322,7 +3321,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
                 let index = simulation_state.factory.storage_storage_inserters.add_ins(
                     filter,
-                    movetime.into(),
+                    movetime,
                     start_storage,
                     dest_storage,
                     hand_size,

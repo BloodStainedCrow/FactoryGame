@@ -1,3 +1,4 @@
+use crate::belt::belt::BeltLenType;
 use std::{
     array,
     cmp::min,
@@ -39,7 +40,7 @@ use get_size2::GetSize;
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[repr(align(64))]
 pub struct InserterWaitList {
-    pub inserters: [Option<Inserter>; 3],
+    pub inserters: [Option<InserterWithBelts>; 3],
 }
 
 const_assert!(std::mem::size_of::<InserterWaitList>() <= 64);
@@ -63,26 +64,28 @@ pub struct Inserter {
 const_assert!(std::mem::size_of::<Option<InserterWithBelts>>() <= 20);
 const_assert!(std::mem::size_of::<InserterWithBelts>() <= 20);
 
-pub struct InserterWithBelts {
-    current_hand: ITEMCOUNTTYPE,
-    max_hand: NonZero<ITEMCOUNTTYPE>,
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct InserterWithBelts {
+    pub(crate) current_hand: ITEMCOUNTTYPE,
+    pub(crate) max_hand: ITEMCOUNTTYPE,
 
-    rest: InserterWithBeltsEnum,
+    pub(crate) rest: InserterWithBeltsEnum,
+    pub(crate) movetime: NonZero<u16>,
 }
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub enum InserterWithBeltsEnum {
+pub(crate) enum InserterWithBeltsEnum {
     StorageStorage {
         // TODO: This is not needed for assemblers, just for chests.
         self_is_source: bool,
-        movetime: NonZero<u16>,
         index: InserterId,
 
         other: FakeUnionStorage,
     },
     BeltStorage {
-        movetime: NonZero<u16>,
+        self_is_source: bool,
         belt_id: u32,
         belt_pos: u16,
     },
@@ -90,24 +93,52 @@ pub enum InserterWithBeltsEnum {
 
 #[derive(Debug)]
 pub struct InserterReinsertionInfo<ItemIdxType: WeakIdxTrait> {
-    pub movetime: u16,
+    pub movetime: NonZero<u16>,
     pub item: Item<ItemIdxType>,
     pub current_hand: ITEMCOUNTTYPE,
     pub max_hand: ITEMCOUNTTYPE,
-    pub(crate) index: InserterId,
-    pub storage_id_in: FakeUnionStorage,
-    pub storage_id_out: FakeUnionStorage,
+
+    pub(crate) conn: Conn,
+}
+
+#[derive(Debug)]
+pub enum Conn {
+    Storage {
+        index: InserterId,
+        storage_id_in: FakeUnionStorage,
+        storage_id_out: FakeUnionStorage,
+    },
+    Belt {
+        belt_id: u32,
+        belt_pos: BeltLenType,
+        self_storage: FakeUnionStorage,
+        self_is_source: bool,
+    },
 }
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone)]
 struct InternalInserterReinsertionInfo {
-    pub movetime: u16,
+    pub movetime: NonZero<u16>,
     pub item: u8,
     pub max_hand: ITEMCOUNTTYPE,
-    pub(crate) index: InserterId,
     pub self_index: u32,
-    pub other: FakeUnionStorage,
+
+    pub(crate) rest: Rest,
+}
+
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone)]
+enum Rest {
+    Storage {
+        index: InserterId,
+        other: FakeUnionStorage,
+    },
+    Belt {
+        belt_id: u32,
+        belt_pos: BeltLenType,
+        self_is_source: bool,
+    },
 }
 
 // FIXME: We store the same slice length n times!
@@ -298,8 +329,10 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         power_list: &[AssemblerInfo],
     ) -> (Watt, u32, u32) {
         // FIXME: This could technically not be enough if enough items are produced in a single tick
-        self.inserter_waitlist_output_vec
-            .reserve((self.len * 4).saturating_sub(self.inserter_waitlist_output_vec.len()));
+        self.inserter_waitlist_output_vec.reserve(
+            (self.len * 4 * (NUM_INGS + NUM_OUTPUTS))
+                .saturating_sub(self.inserter_waitlist_output_vec.len()),
+        );
 
         let (ing_idx, out_idx) = recipe_lookup[self.recipe.id.into()];
 
@@ -489,12 +522,26 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                                         let Ok(()) =
                                             self.inserter_waitlist_output_vec.push_within_capacity(
                                                 InternalInserterReinsertionInfo {
-                                                    movetime: ins.movetime,
+                                                    movetime: ins.movetime.into(),
                                                     item: (NUM_INGS + item) as u8,
                                                     max_hand: ins.max_hand.into(),
-                                                    index: ins.index,
                                                     self_index: final_idx as u32,
-                                                    other: ins.other,
+                                                    rest: match ins.rest {
+                                                        InserterWithBeltsEnum::StorageStorage {
+                                                            self_is_source: _,
+                                                            index,
+                                                            other,
+                                                        } => Rest::Storage { index, other },
+                                                        InserterWithBeltsEnum::BeltStorage {
+                                                            belt_id,
+                                                            belt_pos,
+                                                            self_is_source,
+                                                        } => Rest::Belt {
+                                                            belt_id,
+                                                            belt_pos,
+                                                            self_is_source,
+                                                        },
+                                                    },
                                                 },
                                             )
                                         else {
@@ -550,12 +597,26 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                                         let Ok(()) =
                                             self.inserter_waitlist_output_vec.push_within_capacity(
                                                 InternalInserterReinsertionInfo {
-                                                    movetime: ins.movetime,
+                                                    movetime: ins.movetime.into(),
                                                     item: item as u8,
                                                     max_hand: ins.max_hand.into(),
-                                                    index: ins.index,
                                                     self_index: final_idx as u32,
-                                                    other: ins.other,
+                                                    rest: match ins.rest {
+                                                        InserterWithBeltsEnum::StorageStorage {
+                                                            self_is_source: _,
+                                                            index,
+                                                            other,
+                                                        } => Rest::Storage { index, other },
+                                                        InserterWithBeltsEnum::BeltStorage {
+                                                            belt_id,
+                                                            belt_pos,
+                                                            self_is_source,
+                                                        } => Rest::Belt {
+                                                            belt_id,
+                                                            belt_pos,
+                                                            self_is_source,
+                                                        },
+                                                    },
                                                 },
                                             )
                                         else {
@@ -1307,33 +1368,69 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                         internal.max_hand
                     },
                     max_hand: internal.max_hand,
-                    index: internal.index,
-                    storage_id_in: if (internal.item as usize) < NUM_INGS {
-                        // This is an ingredient inserter
-                        internal.other
-                    } else {
-                        FakeUnionStorage {
-                            index: internal.self_index,
-                            grid_or_static_flag: self.self_fake_union_out
-                                [internal.item as usize - NUM_INGS]
-                                .grid_or_static_flag,
-                            recipe_idx_with_this_item: self.self_fake_union_out
-                                [internal.item as usize - NUM_INGS]
-                                .recipe_idx_with_this_item,
-                        }
-                    },
-                    storage_id_out: if (internal.item as usize) < NUM_INGS {
-                        // This is an ingredient inserter
-                        FakeUnionStorage {
-                            index: internal.self_index,
-                            grid_or_static_flag: self.self_fake_union_ing[internal.item as usize]
-                                .grid_or_static_flag,
-                            recipe_idx_with_this_item: self.self_fake_union_ing
-                                [internal.item as usize]
-                                .recipe_idx_with_this_item,
-                        }
-                    } else {
-                        internal.other
+
+                    conn: match internal.rest {
+                        Rest::Storage { index, other } => Conn::Storage {
+                            index,
+                            storage_id_in: if (internal.item as usize) < NUM_INGS {
+                                // This is an ingredient inserter
+                                other
+                            } else {
+                                FakeUnionStorage {
+                                    index: internal.self_index,
+                                    grid_or_static_flag: self.self_fake_union_out
+                                        [internal.item as usize - NUM_INGS]
+                                        .grid_or_static_flag,
+                                    recipe_idx_with_this_item: self.self_fake_union_out
+                                        [internal.item as usize - NUM_INGS]
+                                        .recipe_idx_with_this_item,
+                                }
+                            },
+                            storage_id_out: if (internal.item as usize) < NUM_INGS {
+                                // This is an ingredient inserter
+                                FakeUnionStorage {
+                                    index: internal.self_index,
+                                    grid_or_static_flag: self.self_fake_union_ing
+                                        [internal.item as usize]
+                                        .grid_or_static_flag,
+                                    recipe_idx_with_this_item: self.self_fake_union_ing
+                                        [internal.item as usize]
+                                        .recipe_idx_with_this_item,
+                                }
+                            } else {
+                                other
+                            },
+                        },
+                        Rest::Belt {
+                            belt_id,
+                            belt_pos,
+                            self_is_source,
+                        } => Conn::Belt {
+                            belt_id,
+                            belt_pos,
+                            self_is_source,
+                            self_storage: if (internal.item as usize) < NUM_INGS {
+                                FakeUnionStorage {
+                                    index: internal.self_index,
+                                    grid_or_static_flag: self.self_fake_union_ing
+                                        [internal.item as usize]
+                                        .grid_or_static_flag,
+                                    recipe_idx_with_this_item: self.self_fake_union_ing
+                                        [internal.item as usize]
+                                        .recipe_idx_with_this_item,
+                                }
+                            } else {
+                                FakeUnionStorage {
+                                    index: internal.self_index,
+                                    grid_or_static_flag: self.self_fake_union_out
+                                        [internal.item as usize - NUM_INGS]
+                                        .grid_or_static_flag,
+                                    recipe_idx_with_this_item: self.self_fake_union_out
+                                        [internal.item as usize - NUM_INGS]
+                                        .recipe_idx_with_this_item,
+                                }
+                            },
+                        },
                     },
                 }),
         )
@@ -1752,7 +1849,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
 
     fn remove_wait_list_inserter<ItemIdxType: IdxTrait>(
         &mut self,
-        index: u32,
+        self_index: u32,
         item: Item<ItemIdxType>,
         id: InserterId,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -1763,57 +1860,107 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             .unwrap();
 
         if item_index < NUM_INGS {
-            let v = self.waitlists_ings[item_index][index as usize]
+            let v = self.waitlists_ings[item_index][self_index as usize]
                 .inserters
                 .iter_mut()
                 .filter(|v| v.is_some())
-                .find(|ins| ins.as_ref().unwrap().index == id)
+                .find(|ins| match ins.as_ref().unwrap().rest {
+                    InserterWithBeltsEnum::StorageStorage { index, .. } => index == id,
+                    InserterWithBeltsEnum::BeltStorage { .. } => false,
+                })
                 .unwrap();
 
             let ins = v.take().unwrap();
 
             InserterReinsertionInfo {
-                movetime: ins.movetime,
+                movetime: ins.movetime.into(),
                 item: item,
                 current_hand: ins.current_hand,
                 max_hand: ins.max_hand.into(),
-                index: ins.index,
-                // This is an ingredient inserter
-                storage_id_in: ins.other,
-                // This is an ingredient inserter
-                storage_id_out: FakeUnionStorage {
-                    index: index,
-                    grid_or_static_flag: self.self_fake_union_ing[item_index].grid_or_static_flag,
-                    recipe_idx_with_this_item: self.self_fake_union_ing[item_index]
-                        .recipe_idx_with_this_item,
+
+                conn: match ins.rest {
+                    InserterWithBeltsEnum::StorageStorage { index, other, .. } => Conn::Storage {
+                        index,
+                        // This is an ingredient inserter
+                        storage_id_in: other,
+                        // This is an ingredient inserter
+                        storage_id_out: FakeUnionStorage {
+                            index: self_index,
+                            grid_or_static_flag: self.self_fake_union_ing[item_index]
+                                .grid_or_static_flag,
+                            recipe_idx_with_this_item: self.self_fake_union_ing[item_index]
+                                .recipe_idx_with_this_item,
+                        },
+                    },
+                    InserterWithBeltsEnum::BeltStorage {
+                        self_is_source,
+                        belt_id,
+                        belt_pos,
+                    } => Conn::Belt {
+                        self_is_source,
+                        belt_id,
+                        belt_pos,
+                        self_storage: FakeUnionStorage {
+                            index: self_index,
+                            grid_or_static_flag: self.self_fake_union_ing[item_index]
+                                .grid_or_static_flag,
+                            recipe_idx_with_this_item: self.self_fake_union_ing[item_index]
+                                .recipe_idx_with_this_item,
+                        },
+                    },
                 },
             }
         } else {
             let item_index = item_index - NUM_INGS;
-            let v = self.waitlists_outputs[item_index][index as usize]
+            let v = self.waitlists_outputs[item_index][self_index as usize]
                 .inserters
                 .iter_mut()
                 .filter(|v| v.is_some())
-                .find(|ins| ins.as_ref().unwrap().index == id)
+                .find(|ins| match ins.as_ref().unwrap().rest {
+                    InserterWithBeltsEnum::StorageStorage { index, .. } => index == id,
+                    InserterWithBeltsEnum::BeltStorage { .. } => false,
+                })
                 .unwrap();
 
             let ins = v.take().unwrap();
 
             InserterReinsertionInfo {
-                movetime: ins.movetime,
+                movetime: ins.movetime.into(),
                 item: item,
                 current_hand: ins.current_hand,
                 max_hand: ins.max_hand.into(),
-                index: ins.index,
-                // This is an output inserter
-                storage_id_in: FakeUnionStorage {
-                    index: index,
-                    grid_or_static_flag: self.self_fake_union_out[item_index].grid_or_static_flag,
-                    recipe_idx_with_this_item: self.self_fake_union_out[item_index]
-                        .recipe_idx_with_this_item,
+
+                conn: match ins.rest {
+                    InserterWithBeltsEnum::StorageStorage { index, other, .. } => Conn::Storage {
+                        index,
+                        // This is an output inserter
+                        storage_id_in: FakeUnionStorage {
+                            index: self_index,
+                            grid_or_static_flag: self.self_fake_union_out[item_index]
+                                .grid_or_static_flag,
+                            recipe_idx_with_this_item: self.self_fake_union_out[item_index]
+                                .recipe_idx_with_this_item,
+                        },
+                        // This is an output inserter
+                        storage_id_out: other,
+                    },
+                    InserterWithBeltsEnum::BeltStorage {
+                        self_is_source,
+                        belt_id,
+                        belt_pos,
+                    } => Conn::Belt {
+                        self_is_source,
+                        belt_id,
+                        belt_pos,
+                        self_storage: FakeUnionStorage {
+                            index: self_index,
+                            grid_or_static_flag: self.self_fake_union_ing[item_index]
+                                .grid_or_static_flag,
+                            recipe_idx_with_this_item: self.self_fake_union_ing[item_index]
+                                .recipe_idx_with_this_item,
+                        },
+                    },
                 },
-                // This is an output inserter
-                storage_id_out: ins.other,
             }
         }
     }
