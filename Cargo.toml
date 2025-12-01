@@ -38,7 +38,7 @@ rand = "0.8.5"
 bitcode = { version = "0.6.6", features = ["serde"] }
 egui = { version = "0.31.1", features = ["bytemuck", "serde"], optional = true }
 flate2 = { version = "1.1.1", features = ["zlib-rs"] }
-rstest = "0.25.0"
+rstest = "0.26.1"
 parking_lot = { version = "0.12.3", features = ["serde", "deadlock_detection"] }
 profiling = { version = "1.0.16" }
 puffin_egui = { version = "0.29", optional = true }
