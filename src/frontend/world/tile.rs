@@ -4098,11 +4098,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         let chunk = self.get_chunk_for_tile(pos);
 
         let floor_color = if (pos.x + pos.y) % 2 == 0 {
-            // hex_color!("#1F1F1F")
-            Color32::CYAN
+            hex_color!("#1F1F1F")
         } else {
-            // hex_color!("#333333")
-            Color32::CYAN
+            hex_color!("#333333")
         };
 
         chunk
