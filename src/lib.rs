@@ -271,6 +271,8 @@ enum GameCreationInfo {
 
     SolarField(Watt, Position),
 
+    TrainRide,
+
     FromBP(PathBuf),
 }
 
@@ -290,7 +292,7 @@ fn run_integrated_server(
     let local_addr = "127.0.0.1:57267";
     let cancel: Arc<AtomicBool> = Default::default();
 
-    // accept_continously(local_addr, connections.clone(), cancel.clone()).unwrap();
+    accept_continously(local_addr, connections.clone(), cancel.clone()).unwrap();
 
     match data_store {
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
@@ -341,6 +343,9 @@ fn run_integrated_server(
                     },
                     GameCreationInfo::LotsOfBelts => {
                         GameState::new_with_lots_of_belts(progress, &data_store)
+                    },
+                    GameCreationInfo::TrainRide => {
+                        GameState::new_with_world_train_ride(progress, &data_store)
                     },
 
                     GameCreationInfo::FromBP(path) => GameState::new_with_bp(&data_store, path),
@@ -469,9 +474,7 @@ fn run_client(remote_addr: SocketAddr) -> (LoadedGame, Arc<AtomicU64>, Sender<In
 
             let game_state = Arc::new(
                 // FIXME: When running in client mode, we should download the gamestate from the server instead of loading it from disk
-                load(PathBuf::new())
-                    .map(|save| save.game_state)
-                    .unwrap_or_else(|| GameState::new(&data_store)),
+                GameState::new(&data_store),
             );
 
             let (ui_sender, ui_recv) = channel();

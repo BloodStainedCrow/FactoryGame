@@ -155,6 +155,7 @@ pub struct MultiChestStore<ItemIdxType: WeakIdxTrait> {
     holes: Vec<usize>,
 
     wait_list: Vec<InserterWaitList>,
+    wait_list_min: Vec<ITEMCOUNTTYPE>,
 
     #[serde(skip)]
     inserter_reinsertion_vec: Vec<InternalInserterReinsertionInfo>,
@@ -174,6 +175,7 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
             max_items: vec![],
 
             wait_list: vec![],
+            wait_list_min: vec![],
 
             holes: vec![],
 
@@ -206,6 +208,7 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
 
             self.max_items[hole] = max_items.saturating_sub(ChestSize::from(ITEMCOUNTTYPE::MAX));
             self.wait_list[hole] = InserterWaitList::default();
+            self.wait_list_min[hole] = ITEMCOUNTTYPE::MAX;
 
             hole.try_into().unwrap()
         } else {
@@ -218,6 +221,7 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
             self.max_items
                 .push(max_items.saturating_sub(ChestSize::from(ITEMCOUNTTYPE::MAX)));
             self.wait_list.push(InserterWaitList::default());
+            self.wait_list_min.push(ITEMCOUNTTYPE::MAX);
             (self.inout.len() - 1).try_into().unwrap()
         }
     }
@@ -235,6 +239,7 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
 
             self.max_items[hole] = max_items.saturating_sub(ChestSize::from(ITEMCOUNTTYPE::MAX));
             self.wait_list[hole] = InserterWaitList::default();
+            self.wait_list_min[hole] = ITEMCOUNTTYPE::MAX;
 
             hole.try_into().unwrap()
         } else {
@@ -247,6 +252,7 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
             self.max_items
                 .push(max_items.saturating_sub(ChestSize::from(ITEMCOUNTTYPE::MAX)));
             self.wait_list.push(InserterWaitList::default());
+            self.wait_list_min.push(ITEMCOUNTTYPE::MAX);
 
             (self.inout.len() - 1).try_into().unwrap()
         }
@@ -265,6 +271,7 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         self.storage[index] = 0;
         self.max_items[index] = 0;
         self.wait_list[index] = InserterWaitList::default();
+        self.wait_list_min[index] = ITEMCOUNTTYPE::MAX;
         items
     }
 
@@ -314,12 +321,15 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         // TODO: Splitting this into large chests and small chests would be better since now a single large chest will make all small chests in the world expensive
         // With wait lists we cannot avoid updating all chests (even small chests)
         // if self.num_large_chests > 0 {
-        for (index, ((((inout, last_inout), (storage, max_items)), wait_list), max_insert)) in self
+        for (
+            index,
+            ((((inout, last_inout), (storage, max_items)), (wait_list, wait_list_min)), max_insert),
+        ) in self
             .inout
             .iter_mut()
             .zip(self.last_inout.iter_mut())
             .zip(self.storage.iter_mut().zip(self.max_items.iter().copied()))
-            .zip(self.wait_list.iter_mut())
+            .zip(self.wait_list.iter_mut().zip(self.wait_list_min.iter_mut()))
             .zip(self.max_insert.iter())
             .enumerate()
         {
@@ -517,7 +527,10 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
             MaxInsertionLimit::PerMachine(self.max_insert.as_slice()),
             self.inout.as_mut_slice(),
             // InserterWaitLists::None,
-            InserterWaitLists::PerMachine(self.wait_list.as_mut_slice()),
+            InserterWaitLists::PerMachine(
+                self.wait_list.as_mut_slice(),
+                self.wait_list_min.as_mut_slice(),
+            ),
         )
     }
 }

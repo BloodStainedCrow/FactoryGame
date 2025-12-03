@@ -1,102 +1,54 @@
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
-use std::cmp::{max, min};
-use std::collections::BTreeMap;
-use std::hash::Hash;
-use std::ops::RangeInclusive;
+use std::{ops::RangeInclusive, path::PathBuf};
 
 pub mod bounding_box_grid;
 // pub mod perfect_grid;
+pub mod dynamic;
+pub mod map_grid;
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SparseGrid<I: PartialEq + Eq + Copy + Ord + Hash, T> {
-    extent: Option<[[I; 2]; 2]>,
-    values: BTreeMap<(I, I), T>,
-}
+const FILE_CHUNK_SIZE: usize = 100_000;
 
-impl<I: PartialEq + Eq + Hash + Copy + Ord, T> SparseGrid<I, T> {
-    pub fn new() -> Self
+pub trait SparseGrid<I, T: 'static> {
+    fn new() -> Self;
+    fn get_extent(&self) -> Option<[RangeInclusive<I>; 2]>;
+    fn get_default(&mut self, x: I, y: I) -> &T
     where
-        I: Default,
-    {
-        Self {
-            extent: None,
-            values: Default::default(),
-        }
-    }
+        T: Default;
 
-    fn include_in_extent(&mut self, x: I, y: I) {
-        if let Some(extent) = &mut self.extent {
-            let [x_range, y_range] = extent;
+    fn get(&self, x: I, y: I) -> Option<&T>;
+    fn get_mut(&mut self, x: I, y: I) -> Option<&mut T>;
+    fn insert(&mut self, x: I, y: I, value: T) -> Option<T>;
 
-            x_range[0] = min(x_range[0], x);
-            x_range[1] = max(x_range[1], x);
-
-            y_range[0] = min(y_range[0], y);
-            y_range[1] = max(y_range[1], y);
-        } else {
-            self.extent = Some([[x, x], [y, y]]);
-        }
-    }
-
-    pub fn get_extent(&self) -> Option<[RangeInclusive<I>; 2]> {
-        self.extent.map(|v| v.map(|[start, end]| start..=end))
-    }
-
-    pub fn get_default(&mut self, x: I, y: I) -> &T
+    fn insert_deduplicate(&mut self, x: I, y: I, value: T) -> Option<T>
     where
-        T: Default,
-    {
-        self.include_in_extent(x, y);
-        self.values.entry((x, y)).or_default()
-    }
+        T: PartialEq + Default;
 
-    pub fn get(&self, x: I, y: I) -> Option<&T> {
-        if let Some(extent) = &self.extent {
-            if x < extent[0][0] || x > extent[0][1] || y < extent[1][0] || y > extent[1][1] {
-                return None;
-            }
-        }
+    fn occupied_entries(&self) -> impl Iterator<Item = ((I, I), &T)>;
+    fn occupied_entries_mut(&mut self) -> impl Iterator<Item = ((I, I), &mut T)>;
 
-        self.values.get(&(x, y))
-    }
-
-    pub fn get_mut(&mut self, x: I, y: I) -> Option<&mut T> {
-        self.values.get_mut(&(x, y))
-    }
-
-    pub fn insert(&mut self, x: I, y: I, value: T) -> Option<T> {
-        self.include_in_extent(x, y);
-        self.values.insert((x, y), value)
-    }
-
-    pub fn insert_deduplicate(&mut self, x: I, y: I, value: T) -> Option<T>
+    fn save_single_thread(&self, base_path: PathBuf)
     where
-        T: PartialEq + Default,
-    {
-        self.include_in_extent(x, y);
-        if value == T::default() {
-            self.values.remove(&(x, y))
-        } else {
-            self.values.insert((x, y), value)
+        T: serde::Serialize,
+        I: serde::Serialize;
+
+    // TODO: Do I want to save None values?
+    fn par_save(&self, base_path: PathBuf)
+    where
+        T: Send + Sync + serde::Serialize,
+        I: Send + Sync + serde::Serialize;
+
+    fn par_load(base_path: PathBuf) -> Self
+    where
+        for<'a> T: Send + serde::Deserialize<'a>,
+        for<'a> I: Send + serde::Deserialize<'a>;
+
+    fn insert_many(
+        &mut self,
+        positions: impl IntoIterator<Item = (I, I)> + Clone,
+        values: impl IntoIterator<Item = T>,
+    ) {
+        for (v, pos) in values.into_iter().zip(positions) {
+            self.insert(pos.0, pos.1, v);
         }
-    }
-
-    pub fn occupied_entries(&self) -> impl Iterator<Item = ((I, I), &T)> {
-        self.values
-            .iter()
-            // .sorted_by_key(|(k, _)| **k)
-            .map(|(a, b)| (*a, b))
-    }
-
-    pub fn occupied_entries_mut(&mut self) -> impl Iterator<Item = ((I, I), &mut T)> {
-        self.values
-            .iter_mut()
-            // .sorted_by_key(|(k, _)| **k)
-            .map(|(a, b)| (*a, b))
     }
 }
 

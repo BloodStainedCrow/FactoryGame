@@ -2297,10 +2297,6 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                 // TODO: Update inserters!
             }
         }
-
-        for current_timer in self.inner.belt_update_timers.iter_mut() {
-            *current_timer %= 120;
-        }
     }
 
     pub fn get_splitter_belt_ids(

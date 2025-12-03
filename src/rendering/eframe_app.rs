@@ -405,7 +405,30 @@ impl eframe::App for App {
                             start_time: Instant::now(),progress,
                             game_state_receiver: recv,
                         };
-                    } else if ui.button("Megabase").clicked() {
+                    }  else if ui.button("Train Ride around the world").clicked() {
+                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
+                        let (send, recv) = channel();
+
+                        let progress_send = progress.clone();
+                        #[cfg(not(target_arch = "wasm32"))]
+                        thread::spawn(move || {
+                            send.send(run_integrated_server(
+                                progress_send,
+                                StartGameInfo::Create(GameCreationInfo::TrainRide),
+                            )).expect("Channel send failed");
+                        });
+
+                        #[cfg(target_arch = "wasm32")]
+                        send.send(run_integrated_server(
+                            progress_send,
+                            StartGameInfo::Create(GameCreationInfo::TrainRide),
+                        ));
+
+                        self.state = AppState::Loading {
+                            start_time: Instant::now(),progress,
+                            game_state_receiver: recv,
+                        };
+                    }  else if ui.button("Megabase").clicked() {
                         let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
                         let (send, recv) = channel();
 

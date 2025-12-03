@@ -743,12 +743,12 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
     ) -> (
         (
             [MaxInsertionLimit<'_>; NUM_INGS],
-            [&mut [ITEMCOUNTTYPE]; NUM_INGS],
-            [&mut [InserterWaitList]; NUM_INGS],
+            [&mut [u8]; NUM_INGS],
+            [(&mut [InserterWaitList], &mut [u8]); NUM_INGS],
         ),
         (
-            [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS],
-            [&mut [InserterWaitList]; NUM_OUTPUTS],
+            [&mut [u8]; NUM_OUTPUTS],
+            [(&mut [InserterWaitList], &mut [u8]); NUM_OUTPUTS],
         ),
     ) {
         // (

@@ -55,28 +55,35 @@ impl<'a> MaxInsertionLimit<'a> {
 
 #[derive(Debug)]
 pub enum InserterWaitLists<'a> {
-    PerMachine(&'a mut [InserterWaitList]),
+    PerMachine(&'a mut [InserterWaitList], &'a mut [ITEMCOUNTTYPE]),
     None,
 }
 
-impl<'a> Index<usize> for InserterWaitLists<'a> {
-    type Output = InserterWaitList;
-    fn index(&self, index: usize) -> &Self::Output {
-        match self {
-            InserterWaitLists::PerMachine(items) => &items[index],
-            InserterWaitLists::None => panic!("No list"),
-        }
-    }
-}
-impl<'a> IndexMut<usize> for InserterWaitLists<'a> {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        self.get_mut(index).unwrap()
-    }
-}
+// impl<'a> Index<usize> for InserterWaitLists<'a> {
+//     type Output = (&'a mut InserterWaitList, &'a mut ITEMCOUNTTYPE);
+//     fn index<'b>(&'b self, index: usize) -> &'b Self::Output {
+//         match self {
+//             InserterWaitLists::PerMachine(items, min_needed) => {
+//                 &(&mut items[index], &mut min_needed[index])
+//             },
+//             InserterWaitLists::None => panic!("No list"),
+//         }
+//     }
+// }
+// impl<'a> IndexMut<usize> for InserterWaitLists<'a> {
+//     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+//         &mut self.get_mut(index).unwrap()
+//     }
+// }
 impl<'a> InserterWaitLists<'a> {
-    fn get_mut(&mut self, index: usize) -> Option<&mut InserterWaitList> {
+    fn get_mut(&mut self, index: usize) -> Option<(&mut InserterWaitList, &mut ITEMCOUNTTYPE)> {
         match self {
-            InserterWaitLists::PerMachine(items) => items.get_mut(index),
+            InserterWaitLists::PerMachine(items, min_needed) => {
+                match (items.get_mut(index), min_needed.get_mut(index)) {
+                    (Some(a), Some(b)) => Some((a, b)),
+                    _ => None,
+                }
+            },
             InserterWaitLists::None => None,
         }
     }
@@ -155,7 +162,7 @@ pub fn index<'a, 'b, RecipeIdxType: IdxTrait>(
 ) -> (
     &'a ITEMCOUNTTYPE,
     &'a mut ITEMCOUNTTYPE,
-    Option<&'a mut InserterWaitList>,
+    Option<(&'a mut InserterWaitList, &'a mut ITEMCOUNTTYPE)>,
 ) {
     let first_grid_offs_in_grids = static_size.div_ceil(grid_size);
 
@@ -208,7 +215,7 @@ pub fn index_fake_union<'a, 'b>(
 ) -> (
     &'a ITEMCOUNTTYPE,
     &'a mut ITEMCOUNTTYPE,
-    Option<&'a mut InserterWaitList>,
+    Option<(&'a mut InserterWaitList, &'a mut ITEMCOUNTTYPE)>,
 ) {
     let (outer, inner) = storage_id.into_inner_and_outer_indices_with_statics_at_zero(grid_size);
 
@@ -1523,7 +1530,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                     ]
                 }),
         )
-        .map(|(a, b, c, d, e)| (a, b, c, d, InserterWaitLists::PerMachine(e)));
+        .map(|(a, b, c, d, e)| (a, b, c, d, InserterWaitLists::PerMachine(e.0, e.1)));
     i
 }
 

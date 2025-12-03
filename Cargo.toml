@@ -28,6 +28,7 @@ hex = "0.4.3"
 postcard = { version = "1.1.1", features = ["use-std"] }
 charts-rs = { version = "0.3.20", features = ["resvg"] }
 strum = { version = "0.27.1", features = ["derive"] }
+# explicitly disable atomic feature, so that bitvecs do not use atomic instructions. very important for performance!
 bitvec = { version = "1.0.1", features = ["alloc", "serde", "std"], default-features = false }
 bimap = { version = "0.6.3", features = ["serde", "std"], default-features = false }
 eframe = { version = "0.31.1", features = ["accesskit", "default_fonts", "wayland", "web_screen_reader", "x11", "wgpu"], optional = true, default-features = false  }

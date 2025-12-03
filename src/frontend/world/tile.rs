@@ -1,3 +1,5 @@
+use crate::frontend::world::sparse_grid::SparseGrid;
+use crate::frontend::world::sparse_grid::dynamic::DynamicGrid;
 use crate::frontend::world::tile::belt_placement::expected_belt_state;
 use crate::mining_drill;
 use crate::mining_drill::AddMinerError;
@@ -106,7 +108,7 @@ const_assert!(CHUNK_SIZE * CHUNK_SIZE - 1 <= u8::MAX as u16);
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
-pub struct Chunk<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+pub struct Chunk<ItemIdxType: WeakIdxTrait = u8, RecipeIdxType: WeakIdxTrait = u8> {
     base_pos: (i32, i32),
     pub floor_tiles: Option<Box<[[FloorTile; CHUNK_SIZE as usize]; CHUNK_SIZE as usize]>>,
     chunk_tile_to_entity_into: Option<Box<[[u8; CHUNK_SIZE as usize]; CHUNK_SIZE as usize]>>,
@@ -173,7 +175,7 @@ pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     // TODO: I don´t think I want FP
     pub players: Vec<PlayerInfo>,
-    chunks: BoundingBoxGrid<i32, Chunk<ItemIdxType, RecipeIdxType>>,
+    pub chunks: DynamicGrid<i32, Chunk<ItemIdxType, RecipeIdxType>>,
 
     belt_lookup: BeltIdLookup<ItemIdxType>,
     belt_recieving_input_directions: HashMap<Position, EnumMap<Dir, bool>>,
@@ -1536,7 +1538,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         );
         save_at_fork(noise, base_path.join("noise"));
         save_at_fork(players, base_path.join("players"));
-        chunks.save_fork(base_path.join("chunks"));
+        chunks.save_single_thread(base_path.join("chunks"));
         save_at_fork(ore_lookup, base_path.join("ore_lookup"));
         save_at_fork(belt_lookup, base_path.join("belt_lookup"));
         save_at_fork(
@@ -1615,7 +1617,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             || load_at(base_path.join("module_slot_dedup_table")),
             || load_at(base_path.join("noise")),
             || load_at(base_path.join("players")),
-            || BoundingBoxGrid::par_load(base_path.join("chunks")),
+            || DynamicGrid::par_load(base_path.join("chunks")),
             || load_at(base_path.join("ore_lookup")),
             || load_at(base_path.join("belt_lookup")),
             || load_at(base_path.join("belt_recieving_input_directions")),
@@ -1644,7 +1646,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
     #[must_use]
     pub fn new_with_starting_area(top_left: Position, bottom_right: Position) -> Self {
-        let grid = BoundingBoxGrid::new_with_filled_grid(
+        let grid = DynamicGrid::new_with_filled_grid(
             Self::get_chunk_pos_for_tile(top_left).into(),
             Self::get_chunk_pos_for_tile(bottom_right).into(),
             |[x, y]| Chunk {
@@ -1684,6 +1686,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
     pub fn new_with_area(top_left: Position, bottom_right: Position) -> Self {
         Self::new_with_starting_area(top_left, bottom_right)
+    }
+
+    pub fn add_chunks(&mut self, chunks: impl IntoIterator<Item = (i32, i32)> + Clone) {
+        self.chunks.insert_many(
+            chunks.clone(),
+            chunks.into_iter().map(|pos| Chunk {
+                base_pos: (pos.0 * i32::from(CHUNK_SIZE), pos.1 * i32::from(CHUNK_SIZE)),
+                floor_tiles: None,
+                chunk_tile_to_entity_into: None,
+                entities: vec![],
+            }),
+        )
     }
 
     pub fn get_ore_type_at_pos(&self, pos: Position) -> Option<Item<ItemIdxType>> {
@@ -4084,9 +4098,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         let chunk = self.get_chunk_for_tile(pos);
 
         let floor_color = if (pos.x + pos.y) % 2 == 0 {
-            hex_color!("#1F1F1F")
+            // hex_color!("#1F1F1F")
+            Color32::CYAN
         } else {
-            hex_color!("#333333")
+            // hex_color!("#333333")
+            Color32::CYAN
         };
 
         chunk

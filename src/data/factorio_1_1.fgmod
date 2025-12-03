@@ -12,10 +12,10 @@
             output: [
                 (
                     item: "factory_game::iron_ore",
-                    amount: 1,
+                    amount: 50,
                 ),
             ],
-            time_to_craft: 1,
+            time_to_craft: 100,
             is_intermediate: false,
         ),
         (
@@ -30,10 +30,10 @@
             output: [
                 (
                     item: "factory_game::copper_ore",
-                    amount: 1,
+                    amount: 50,
                 ),
             ],
-            time_to_craft: 1,
+            time_to_craft: 100,
             is_intermediate: false,
         ),
         (
@@ -48,10 +48,10 @@
             output: [
                 (
                     item: "factory_game::coal",
-                    amount: 1,
+                    amount: 50,
                 ),
             ],
-            time_to_craft: 1,
+            time_to_craft: 100,
             is_intermediate: false,
         ),
         (
@@ -66,10 +66,10 @@
             output: [
                 (
                     item: "factory_game::stone",
-                    amount: 1,
+                    amount: 50,
                 ),
             ],
-            time_to_craft: 1,
+            time_to_craft: 100,
             is_intermediate: false,
         ),
         (

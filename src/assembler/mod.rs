@@ -899,11 +899,11 @@ pub trait MultiAssemblerStore<
         (
             [MaxInsertionLimit<'_>; NUM_INGS],
             [&mut [ITEMCOUNTTYPE]; NUM_INGS],
-            [&mut [InserterWaitList]; NUM_INGS],
+            [(&mut [InserterWaitList], &mut [ITEMCOUNTTYPE]); NUM_INGS],
         ),
         (
             [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS],
-            [&mut [InserterWaitList]; NUM_OUTPUTS],
+            [(&mut [InserterWaitList], &mut [ITEMCOUNTTYPE]); NUM_OUTPUTS],
         ),
     );
 

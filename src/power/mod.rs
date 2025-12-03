@@ -1,4 +1,5 @@
 use crate::inserter::belt_storage_inserter::Dir;
+use crate::inserter::belt_storage_movement_list::FinishedMovingLists;
 use crate::inserter::belt_storage_movement_list::{
     BeltStorageInserterInMovement, List, ReinsertionLists,
 };
@@ -1063,14 +1064,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         inserter_store: &mut StorageStorageInserterStore,
 
         belt_storage_reinsertion_list: &mut [(
-            (
-                List<{ Dir::BeltToStorage }, { Dir::BeltToStorage }>,
-                List<{ Dir::StorageToBelt }, { Dir::BeltToStorage }>,
-            ),
-            (
-                List<{ Dir::BeltToStorage }, { Dir::StorageToBelt }>,
-                List<{ Dir::StorageToBelt }, { Dir::StorageToBelt }>,
-            ),
+            FinishedMovingLists<'_, { Dir::BeltToStorage }, { Dir::BeltToStorage }>,
+            ReinsertionLists<'_, { Dir::StorageToBelt }, { Dir::BeltToStorage }>,
+            ReinsertionLists<'_, { Dir::StorageToBelt }, { Dir::StorageToBelt }>,
+            FinishedMovingLists<'_, { Dir::BeltToStorage }, { Dir::StorageToBelt }>,
         )],
 
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -1153,12 +1150,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                                             self_is_source,
                                             self_storage,
                                         } => {
-                                            let ((_a, belt_storage), (_c, storage_belt)) =
-                                                &mut belt_storage_reinsertion_list
-                                                    [inserter.item.into_usize()];
+                                            let (
+                                                belt_storage_exit_outgoing,
+                                                belt_storage_reinsertion_incoming,
+                                                storage_belt_reinsertion_outgoing,
+                                                storage_belt_exit_incoming,
+                                            ) = &mut belt_storage_reinsertion_list
+                                                [inserter.item.into_usize()];
 
                                             if self_is_source {
-                                                storage_belt.reinsert(
+                                                storage_belt_reinsertion_outgoing.reinsert(
                                                     inserter.movetime,
                                                     BeltStorageInserterInMovement {
                                                         current_hand: inserter.max_hand,
@@ -1173,7 +1174,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                                                     },
                                                 );
                                             } else {
-                                                belt_storage.reinsert(
+                                                belt_storage_reinsertion_incoming.reinsert(
                                                     inserter.movetime,
                                                     BeltStorageInserterInMovement {
                                                         current_hand: 0,

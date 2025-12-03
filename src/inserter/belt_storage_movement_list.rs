@@ -73,14 +73,17 @@ impl<'a, const SWING_DIR: Dir, const ITEM_FLOW_DIR: Dir>
 }
 
 impl<const SWING_DIR: Dir, const ITEM_FLOW_DIR: Dir> List<SWING_DIR, ITEM_FLOW_DIR> {
-    pub fn tick(
+    pub fn tick(&mut self) {
+        self.zero_index += 1;
+        self.zero_index %= self.lists.len();
+    }
+
+    pub fn get(
         &mut self,
     ) -> (
         FinishedMovingLists<'_, SWING_DIR, ITEM_FLOW_DIR>,
         ReinsertionLists<'_, SWING_DIR, ITEM_FLOW_DIR>,
     ) {
-        self.zero_index += 1;
-        self.zero_index %= self.lists.len();
         let (second, rest) = self.lists.split_at_mut(self.zero_index);
 
         let ([finished], first) = rest.split_at_mut(1) else {
@@ -120,8 +123,11 @@ impl<'a> FinishedMovingLists<'a, { Dir::BeltToStorage }, { Dir::BeltToStorage }>
                 reinsertion_list.reinsert(inserter.movetime.into(), *inserter);
                 false
             } else {
-                if let Some(wait_list) = wait_list {
-                    if let Some(empty) = wait_list.inserters.iter_mut().find(|v| v.is_none()) {
+                if let Some((wait_list, wait_list_needed)) = wait_list {
+                    if let Some((pos, empty)) = wait_list.inserters.iter_mut().enumerate().find(|(_i, v)| v.is_none()) {
+                        if pos == 0 {
+                            *wait_list_needed = inserter.current_hand;
+                        }
                         *empty = Some(InserterWithBelts {
                             current_hand: inserter.current_hand,
                             max_hand: inserter.max_hand_size.into(),
@@ -165,8 +171,12 @@ impl<'a> FinishedMovingLists<'a, { Dir::BeltToStorage }, { Dir::StorageToBelt }>
                 reinsertion_list.reinsert(inserter.movetime.into(), *inserter);
                 false
             } else {
-                if let Some(wait_list) = wait_list {
-                    if let Some(empty) = wait_list.inserters.iter_mut().find(|v| v.is_none()) {
+                if let Some((wait_list, wait_list_needed)) = wait_list {
+                    if let Some((pos, empty)) = wait_list.inserters.iter_mut().enumerate().find(|(_i, v)| v.is_none()) {
+                        if pos == 0 {
+                            *wait_list_needed = inserter.max_hand_size - inserter.current_hand;
+
+                        }
                         *empty = Some(InserterWithBelts {
                             current_hand: inserter.current_hand,
                             max_hand: inserter.max_hand_size.into(),

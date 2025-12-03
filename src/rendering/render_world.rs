@@ -3203,6 +3203,8 @@ pub fn render_ui<
                         game_state_ref.simulation_state.factory.belts
                     ));
                 });
+
+                ui.label(&format!("Number of generated chunks: {}", game_state_ref.world.chunks.num_chunks));
         });
 
     Window::new("UPS").default_open(true).show(ctx, |ui| {

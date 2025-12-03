@@ -1,3 +1,4 @@
+use crate::frontend::world::sparse_grid::SparseGrid;
 use crate::saving::{save_at, save_at_fork};
 
 use super::GetGridIndex;
@@ -7,6 +8,7 @@ use rayon::slice::ParallelSlice;
 use std::cmp::{max, min};
 use std::fmt::Debug;
 use std::fs::create_dir_all;
+use std::mem;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 
@@ -27,57 +29,82 @@ pub struct BoundingBoxGrid<I, T> {
 
 // FIXME: currently only for i32 to allow getting the number of slots
 type I = i32;
-impl<T: GetGridIndex<I>> BoundingBoxGrid<I, T> {
-    pub fn new() -> Self {
+impl<T: GetGridIndex<I> + 'static> SparseGrid<I, T> for BoundingBoxGrid<I, T> {
+    fn new() -> Self {
         Self {
             extent: None,
             values: vec![],
         }
     }
 
-    pub fn new_with_filled_grid<F>(top_left: [I; 2], bottom_right: [I; 2], generation_fn: F) -> Self
+    fn get_extent(&self) -> Option<[RangeInclusive<I>; 2]> {
+        self.extent.map(|v| v.map(|[start, end]| start..=end))
+    }
+
+    fn get_default(&mut self, x: I, y: I) -> &T
     where
-        F: Fn([I; 2]) -> T + Sync,
-        T: Send,
+        T: Default,
     {
-        let extent = Some([
-            [top_left[0], bottom_right[0]],
-            [top_left[1], bottom_right[1]],
-        ]);
+        todo!()
+    }
 
-        let width = usize::try_from(bottom_right[0] - top_left[0])
-            .expect("Check bounding box argument order")
-            + 1;
+    fn insert(&mut self, x: I, y: I, value: T) -> Option<T> {
+        self.include_in_extent(x, y);
 
-        let height = usize::try_from(bottom_right[1] - top_left[1])
-            .expect("Check bounding box argument order")
-            + 1;
+        let index = Self::calculate_index(self.extent.as_ref().unwrap(), [x, y]);
+        debug_assert!(self.values[index].is_none());
+        let mut old = Some(value);
+        mem::swap(&mut old, &mut self.values[index]);
+        old
+    }
 
-        let mut values = Vec::with_capacity(width * height);
+    fn insert_deduplicate(&mut self, x: I, y: I, value: T) -> Option<T>
+    where
+        T: PartialEq + Default,
+    {
+        todo!()
+    }
 
-        (0..(width * height))
-            .into_par_iter()
-            .map(|v| (v % width, v / width))
-            .map(|(x_offs, y_offs)| {
-                (
-                    top_left[0]
-                        .checked_add_unsigned(x_offs.try_into().unwrap())
-                        .unwrap(),
-                    top_left[1]
-                        .checked_add_unsigned(y_offs.try_into().unwrap())
-                        .unwrap(),
-                )
-            })
-            .map(|(x, y)| Some(generation_fn([x, y])))
-            .collect_into_vec(&mut values);
+    fn get(&self, x: I, y: I) -> Option<&T> {
+        if let Some(extent) = &self.extent {
+            if x < extent[0][0] || x > extent[0][1] || y < extent[1][0] || y > extent[1][1] {
+                return None;
+            }
+        }
 
-        Self { extent, values }
+        let index = Self::calculate_index(self.extent.as_ref().unwrap(), [x, y]);
+
+        self.values[index].as_ref()
+    }
+
+    fn get_mut(&mut self, x: I, y: I) -> Option<&mut T> {
+        if let Some(extent) = &self.extent {
+            if x < extent[0][0] || x > extent[0][1] || y < extent[1][0] || y > extent[1][1] {
+                return None;
+            }
+        }
+
+        let index = Self::calculate_index(self.extent.as_ref().unwrap(), [x, y]);
+
+        self.values[index].as_mut()
+    }
+
+    fn occupied_entries(&self) -> impl Iterator<Item = ((I, I), &T)> {
+        self.values
+            .iter()
+            .filter_map(|v| v.as_ref().map(|v| (v.get_grid_index(), v)))
+    }
+
+    fn occupied_entries_mut(&mut self) -> impl Iterator<Item = ((I, I), &mut T)> {
+        self.values
+            .iter_mut()
+            .filter_map(|v| v.as_mut().map(|v| (v.get_grid_index(), v)))
     }
 
     // TODO: Do I want to save None values?
-    pub fn save_fork(&self, base_path: PathBuf)
+    fn save_single_thread(&self, base_path: PathBuf)
     where
-        T: Sync + serde::Serialize,
+        T: serde::Serialize,
     {
         create_dir_all(&base_path).expect("Failed to create world dir");
 
@@ -94,7 +121,7 @@ impl<T: GetGridIndex<I>> BoundingBoxGrid<I, T> {
     }
 
     // TODO: Do I want to save None values?
-    pub fn par_save(&self, base_path: PathBuf)
+    fn par_save(&self, base_path: PathBuf)
     where
         T: Sync + serde::Serialize,
     {
@@ -112,7 +139,7 @@ impl<T: GetGridIndex<I>> BoundingBoxGrid<I, T> {
         // todo!("Serialize the rest")
     }
 
-    pub fn par_load(base_path: PathBuf) -> Self
+    fn par_load(base_path: PathBuf) -> Self
     where
         for<'a> T: Send + serde::Deserialize<'a>,
     {
@@ -157,6 +184,88 @@ impl<T: GetGridIndex<I>> BoundingBoxGrid<I, T> {
                 index
             );
         }
+
+        Self { extent, values }
+    }
+
+    fn insert_many(
+        &mut self,
+        positions: impl IntoIterator<Item = (I, I)> + Clone,
+        values: impl IntoIterator<Item = T>,
+    ) {
+        let x_min = positions
+            .clone()
+            .into_iter()
+            .map(|(x, _y)| x)
+            .min()
+            .unwrap();
+        let x_max = positions
+            .clone()
+            .into_iter()
+            .map(|(x, _y)| x)
+            .max()
+            .unwrap();
+
+        let y_min = positions
+            .clone()
+            .into_iter()
+            .map(|(_x, y)| y)
+            .min()
+            .unwrap();
+        let y_max = positions
+            .clone()
+            .into_iter()
+            .map(|(_x, y)| y)
+            .max()
+            .unwrap();
+
+        self.include_in_extent(x_min, y_min);
+        self.include_in_extent(x_max, y_max);
+
+        for (value, (x, y)) in values.into_iter().zip(positions) {
+            let index = Self::calculate_index(self.extent.as_ref().unwrap(), [x, y]);
+            debug_assert!(self.values[index].is_none());
+            self.values[index] = Some(value);
+        }
+    }
+}
+
+impl<T: GetGridIndex<I>> BoundingBoxGrid<I, T> {
+    pub fn new_with_filled_grid<F>(top_left: [I; 2], bottom_right: [I; 2], generation_fn: F) -> Self
+    where
+        F: Fn([I; 2]) -> T + Sync,
+        T: Send,
+    {
+        let extent = Some([
+            [top_left[0], bottom_right[0]],
+            [top_left[1], bottom_right[1]],
+        ]);
+
+        let width = usize::try_from(bottom_right[0] - top_left[0])
+            .expect("Check bounding box argument order")
+            + 1;
+
+        let height = usize::try_from(bottom_right[1] - top_left[1])
+            .expect("Check bounding box argument order")
+            + 1;
+
+        let mut values = Vec::with_capacity(width * height);
+
+        (0..(width * height))
+            .into_par_iter()
+            .map(|v| (v % width, v / width))
+            .map(|(x_offs, y_offs)| {
+                (
+                    top_left[0]
+                        .checked_add_unsigned(x_offs.try_into().unwrap())
+                        .unwrap(),
+                    top_left[1]
+                        .checked_add_unsigned(y_offs.try_into().unwrap())
+                        .unwrap(),
+                )
+            })
+            .map(|(x, y)| Some(generation_fn([x, y])))
+            .collect_into_vec(&mut values);
 
         Self { extent, values }
     }
@@ -215,105 +324,30 @@ impl<T: GetGridIndex<I>> BoundingBoxGrid<I, T> {
         }
     }
 
-    pub fn get_extent(&self) -> Option<[RangeInclusive<I>; 2]> {
-        self.extent.map(|v| v.map(|[start, end]| start..=end))
-    }
+    pub(super) fn get_extent_after_insertion(
+        &self,
+        positions: impl IntoIterator<Item = [I; 2]>,
+    ) -> [RangeInclusive<I>; 2] {
+        let mut positions = positions.into_iter();
+        let [x, y] = positions.next().unwrap();
+        let extent = self.extent.unwrap_or([[x, x], [y, y]]);
+        let [mut x_range, mut y_range] = extent;
 
-    pub fn insert(&mut self, x: I, y: I, value: T) {
-        self.include_in_extent(x, y);
+        for [x, y] in positions {
+            x_range[0] = min(x_range[0], x);
+            x_range[1] = max(x_range[1], x);
 
-        let index = Self::calculate_index(self.extent.as_ref().unwrap(), [x, y]);
-        debug_assert!(self.values[index].is_none());
-        self.values[index] = Some(value);
-    }
-
-    pub fn insert_many(
-        &mut self,
-        positions: impl IntoIterator<Item = (I, I)> + Clone,
-        values: impl IntoIterator<Item = T> + Clone,
-    ) where
-        T: PartialEq + Debug,
-    {
-        let x_min = positions
-            .clone()
-            .into_iter()
-            .map(|(x, _y)| x)
-            .min()
-            .unwrap();
-        let x_max = positions
-            .clone()
-            .into_iter()
-            .map(|(x, _y)| x)
-            .max()
-            .unwrap();
-
-        let y_min = positions
-            .clone()
-            .into_iter()
-            .map(|(_x, y)| y)
-            .min()
-            .unwrap();
-        let y_max = positions
-            .clone()
-            .into_iter()
-            .map(|(_x, y)| y)
-            .max()
-            .unwrap();
-
-        self.include_in_extent(x_min, y_min);
-        self.include_in_extent(x_max, y_max);
-
-        #[cfg(debug_assertions)]
-        {
-            assert!(
-                positions
-                    .clone()
-                    .into_iter()
-                    .zip(values.clone())
-                    .all(|(pos, v)| pos == v.get_grid_index())
-            );
+            y_range[0] = min(y_range[0], y);
+            y_range[1] = max(y_range[1], y);
         }
 
-        for (value, (x, y)) in values.into_iter().zip(positions) {
-            let index = Self::calculate_index(self.extent.as_ref().unwrap(), [x, y]);
-            debug_assert!(self.values[index].is_none());
-            self.values[index] = Some(value);
-        }
+        [x_range[0]..=x_range[1], y_range[0]..=y_range[1]]
     }
 
-    pub fn get(&self, x: I, y: I) -> Option<&T> {
-        if let Some(extent) = &self.extent {
-            if x < extent[0][0] || x > extent[0][1] || y < extent[1][0] || y > extent[1][1] {
-                return None;
-            }
-        }
-
-        let index = Self::calculate_index(self.extent.as_ref().unwrap(), [x, y]);
-
-        self.values[index].as_ref()
-    }
-
-    pub fn get_mut(&mut self, x: I, y: I) -> Option<&mut T> {
-        if let Some(extent) = &self.extent {
-            if x < extent[0][0] || x > extent[0][1] || y < extent[1][0] || y > extent[1][1] {
-                return None;
-            }
-        }
-
-        let index = Self::calculate_index(self.extent.as_ref().unwrap(), [x, y]);
-
-        self.values[index].as_mut()
-    }
-
-    pub fn occupied_entries(&self) -> impl Iterator<Item = ((I, I), &T)> {
+    pub(super) fn into_iter(self) -> impl Iterator<Item = ((I, I), T)> {
         self.values
-            .iter()
-            .filter_map(|v| v.as_ref().map(|v| (v.get_grid_index(), v)))
-    }
-
-    pub fn occupied_entries_mut(&mut self) -> impl Iterator<Item = ((I, I), &mut T)> {
-        self.values
-            .iter_mut()
-            .filter_map(|v| v.as_mut().map(|v| (v.get_grid_index(), v)))
+            .into_iter()
+            .flatten()
+            .map(|chunk| (chunk.get_grid_index(), chunk))
     }
 }

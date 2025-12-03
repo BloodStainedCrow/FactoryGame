@@ -343,9 +343,13 @@ impl BucketedStorageStorageInserterStore {
                 reinsert: true,
             }
         } else {
-            if let Some(wait_list) = wait_list {
-                if let Some(pos) = wait_list.inserters.iter_mut().find(|slot| slot.is_none()) {
-                    *pos = Some(WaitListInserter {
+            if let Some((wait_list, wait_list_needed)) = wait_list {
+                if let Some((pos, empty)) = wait_list.inserters.iter_mut().enumerate().find(|(_i, v)| v.is_none()) {
+                    if pos == 0 {
+                        *wait_list_needed = bucket_data.max_hand_size - bucket_data.current_hand;
+                    }
+
+                    *empty = Some(WaitListInserter {
                         current_hand: bucket_data.current_hand,
                         max_hand: bucket_data.max_hand_size.try_into().unwrap(),
                         movetime: movetime,
@@ -412,9 +416,13 @@ impl BucketedStorageStorageInserterStore {
                 reinsert: true,
             }
         } else {
-            if let Some(wait_list) = wait_list {
-                if let Some(pos) = wait_list.inserters.iter_mut().find(|slot| slot.is_none()) {
-                    *pos = Some(WaitListInserter {
+            if let Some((wait_list, wait_list_needed)) = wait_list {
+                if let Some((pos, empty)) = wait_list.inserters.iter_mut().enumerate().find(|(_i, v)| v.is_none()) {
+                    if pos == 0 {
+                        *wait_list_needed = bucket_data.current_hand;
+                    }
+
+                    *empty = Some(WaitListInserter {
                         current_hand: bucket_data.current_hand,
                         max_hand: bucket_data.max_hand_size.try_into().unwrap(),
                         movetime: movetime,
