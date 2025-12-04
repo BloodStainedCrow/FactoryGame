@@ -322,9 +322,16 @@ pub fn save_with_fork<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         let (send, recv) =
             interprocess::unnamed_pipe::pipe().expect("Failed to create unnamed pipe");
         match fork::fork() {
-            Ok(fork::Fork::Parent(child_pid)) => return Some(recv),
+            Ok(fork::Fork::Parent(child_pid)) => {
+                log::info!("Started saving fork with pid {}", child_pid);
+                return Some(recv);
+            },
             Ok(fork::Fork::Child) => {},
-            Err(e) => panic!("Failed to fork!"),
+            Err(e) => {
+                log::error!("Saving with fork failed: Unable to create fork: {}", e);
+                save_components(world, simulation_state, aux_data, data_store);
+                return None;
+            },
         }
 
         save_components_fork_safe(world, simulation_state, aux_data, data_store, send);
