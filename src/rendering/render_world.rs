@@ -568,6 +568,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                         prod_mod: _,
                                                         power_consumption_mod: _,
                                                         base_power_consumption: _,
+
+                                                        ..
                                                     } = game_state
                                                         .simulation_state
                                                         .factory
@@ -3417,6 +3419,9 @@ pub fn render_ui<
                                     prod_mod,
                                     power_consumption_mod,
                                     base_power_consumption,
+
+                                    #[cfg(feature = "assembler-craft-tracking")]
+                                    times_craft_finished
                                 } = game_state_ref
                                     .simulation_state
                                     .factory
@@ -3474,6 +3479,10 @@ pub fn render_ui<
                                 ui.label(format!("Crafting Speed: {:.2}({:+.0}%)", crafting_speed, speed_mod * 100.0));
                                 ui.label(format!("Productivity: {:.1}%", prod_mod * 100.0));
                                 ui.label(format!("Max Consumption: {}({:+.0}%)", Watt((base_power_consumption.0 as f64 * (1.0 + power_consumption_mod as f64)) as u64), power_consumption_mod * 100.0));
+
+                                
+                                #[cfg(feature = "assembler-craft-tracking")]
+                                ui.label(format!("Crafts finished: {}", times_craft_finished));
 
                             }
                         }

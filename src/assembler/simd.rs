@@ -201,6 +201,10 @@ pub struct MultiAssemblerStore<
     #[serde(with = "arrays")]
     waitlists_outputs_needed: [Box<[ITEMCOUNTTYPE]>; NUM_OUTPUTS],
     holes: Vec<usize>,
+
+    #[cfg(feature = "assembler-craft-tracking")]
+    number_of_crafts_finished: Vec<u32>,
+
     positions: Box<[Position]>,
     types: Box<[u8]>,
     len: usize,
@@ -550,12 +554,21 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 //     );
                 // }
 
-                let has_produced = timer_mask | prod_timer_mask;
-
                 // FIXME: We are missing production if main and prod tick are at the same time!
-                for (i, has_produced) in has_produced.to_array().into_iter().enumerate() {
-                    if has_produced {
+                for (i, (has_produced_base, has_produced_prod)) in timer_mask
+                    .to_array()
+                    .into_iter()
+                    .zip(prod_timer_mask.to_array().into_iter())
+                    .enumerate()
+                {
+                    if has_produced_base || has_produced_prod {
                         let final_idx = index + i;
+                        #[cfg(feature = "assembler-craft-tracking")]
+                        {
+                            self.number_of_crafts_finished[final_idx] +=
+                                u32::from(has_produced_base) + u32::from(has_produced_prod);
+                        }
+
                         let mut items = our_outputs.clone();
 
                         for (item, (out, items_to_distribute)) in self
@@ -862,6 +875,9 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                     .unwrap()
                 })
             },
+
+            #[cfg(feature = "assembler-craft-tracking")]
+            number_of_crafts_finished: vec![],
         }
     }
 
@@ -1015,6 +1031,9 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 * 0.05
                 - 1.0,
             base_power_consumption: power_consumption,
+
+            #[cfg(feature = "assembler-craft-tracking")]
+            times_craft_finished: self.number_of_crafts_finished[index as usize],
         }
     }
 
@@ -1416,6 +1435,13 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                     .unwrap()
                 })
             },
+
+            #[cfg(feature = "assembler-craft-tracking")]
+            number_of_crafts_finished: {
+                self.number_of_crafts_finished
+                    .extend(other.number_of_crafts_finished);
+                self.number_of_crafts_finished
+            },
         };
 
         #[cfg(debug_assertions)]
@@ -1684,6 +1710,12 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
 
             self.types[hole_index] = ty;
             self.positions[hole_index] = position;
+
+            // TODO: Actually pass this
+            #[cfg(feature = "assembler-craft-tracking")]
+            {
+                self.number_of_crafts_finished[hole_index] = 0;
+            }
             return hole_index.try_into().unwrap();
         }
 
@@ -1848,6 +1880,11 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 ty.resize(new_len, u8::MAX);
                 ty.into_boxed_slice()
             });
+
+            #[cfg(feature = "assembler-craft-tracking")]
+            {
+                self.number_of_crafts_finished.resize(new_len, 0);
+            }
         }
 
         for (output, new_val) in self.outputs.iter_mut().zip(out) {
@@ -1897,6 +1934,11 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
 
         self.positions[self.len] = position;
         self.types[self.len] = ty;
+
+        #[cfg(feature = "assembler-craft-tracking")]
+        {
+            self.number_of_crafts_finished[self.len] = 0;
+        }
 
         self.len += 1;
         assert_eq!(self.timers.len() % SIMDTYPE::LEN, 0);

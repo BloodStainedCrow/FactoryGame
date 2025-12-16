@@ -482,6 +482,10 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             base_power_consumption: data_store.assembler_info
                 [self.hot_data[index as usize].ty as usize]
                 .base_power_consumption,
+
+            // FIXME:
+            #[cfg(feature = "assembler-craft-tracking")]
+            times_craft_finished: 0,
         }
     }
 

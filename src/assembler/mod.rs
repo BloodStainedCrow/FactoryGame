@@ -65,6 +65,9 @@ pub struct AssemblerOnclickInfo<ItemIdxType: WeakIdxTrait> {
     pub prod_mod: f32,
     pub power_consumption_mod: f32,
     pub base_power_consumption: Watt,
+
+    #[cfg(feature = "assembler-craft-tracking")]
+    pub times_craft_finished: u32,
 }
 
 impl<
