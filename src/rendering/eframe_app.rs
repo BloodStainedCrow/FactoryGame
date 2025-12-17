@@ -485,7 +485,7 @@ impl eframe::App for App {
                             ui.add(Slider::new(gigabase_size, 1..=1_000).logarithmic(true).update_while_editing(true).text("Number of base copies to build"));
 
                             let single_base_size  = 15.4 / 40.0;
-                            let single_base_usage  = 40.0 / 40.0;
+                            let single_base_usage  = 40.0 / 60.0;
 
                             ui.label(&format!("Est. Memory Usage: ~{:.1}GB", single_base_size * f64::from(*gigabase_size)));
                             ui.label(&format!("Est. Memory Bandwidth for 60 UPS: ~{:.1}GB/s", single_base_usage * f64::from(*gigabase_size)));
