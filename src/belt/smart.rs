@@ -1,5 +1,5 @@
 use std::{
-    iter::repeat,
+    iter::{self, repeat},
     num::NonZero,
     ops::{Deref, DerefMut},
     sync::atomic::AtomicUsize,
@@ -43,12 +43,27 @@ use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
 use get_size2::GetSize;
 
-// #[cfg(debug_assertions)]
+#[cfg(feature = "debug-stat-gathering")]
 pub static NUM_BELT_UPDATES: AtomicUsize = AtomicUsize::new(0);
-// #[cfg(debug_assertions)]
+#[cfg(feature = "debug-stat-gathering")]
 pub static NUM_BELT_FREE_CACHE_HITS: AtomicUsize = AtomicUsize::new(0);
-// #[cfg(debug_assertions)]
+#[cfg(feature = "debug-stat-gathering")]
 pub static NUM_BELT_LOCS_SEARCHED: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(feature = "debug-stat-gathering")]
+pub static NUM_BELT_INSERTER_UPDATES: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "debug-stat-gathering")]
+pub static TIMES_ALL_INCOMING_EARLY_RETURN: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(feature = "debug-stat-gathering")]
+pub static NUM_INSERTER_LOADS_WAITING_FOR_ITEMS: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "debug-stat-gathering")]
+pub static NUM_INSERTER_LOADS_WAITING_FOR_SPACE: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "debug-stat-gathering")]
+pub static NUM_INSERTER_LOADS_WAITING_FOR_SPACE_IN_GUARANTEED_FULL: AtomicUsize =
+    AtomicUsize::new(0);
+#[cfg(feature = "debug-stat-gathering")]
+pub static TIMES_INSERTERS_EXTRACTED: AtomicUsize = AtomicUsize::new(0);
 
 #[allow(clippy::module_name_repetitions)]
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
@@ -71,6 +86,8 @@ pub struct SmartBelt<ItemIdxType: WeakIdxTrait = u8> {
 
     pub(super) input_splitter: Option<(SplitterID, SplitterSide)>,
     pub(super) output_splitter: Option<(SplitterID, SplitterSide)>,
+
+    pub(crate) latest_inserter_pos_if_all_incoming: Option<NonZero<BeltLenType>>,
 }
 
 // FIXME:
@@ -152,6 +169,8 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
             input_splitter: None,
             output_splitter: None,
+
+            latest_inserter_pos_if_all_incoming: None,
         }
     }
 
@@ -189,6 +208,8 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
             input_splitter,
             output_splitter,
+
+            latest_inserter_pos_if_all_incoming: earliest_inserter_pos_if_all_incoming,
         } = self;
 
         SushiBelt {
@@ -457,6 +478,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             "Bounds check {index} >= {}",
             self.locs.len()
         );
+        self.latest_inserter_pos_if_all_incoming = None;
 
         if filter != self.item {
             return Err(InserterAdditionError::ItemMismatch);
@@ -491,6 +513,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             "Bounds check {index} >= {}",
             self.locs.len()
         );
+        self.latest_inserter_pos_if_all_incoming = None;
 
         // We only only return an item mismatch if we know the space is free, so we do not transition to sushi,
         // And then fail anyway
@@ -550,76 +573,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             { Dir::StorageToBelt },
         >,
     ) {
-        if self.get_len() == 0 {
+        let Some(extracted) = self.update_inserters_lazy() else {
             return;
-        }
-
-        let old_first_free = match self.first_free_index {
-            FreeIndex::FreeIndex(idx) => idx,
-            FreeIndex::OldFreeIndex(idx) => idx,
         };
-
-        let mut new_first_free = old_first_free;
-
-        let extracted = self.inserters.inserters.extract_if(.., |ins| {
-            // FIXME: This should not be needed, if we did not incorrectly insert inserters always in the belt
-            if ins.current_hand == 0 && !ins.outgoing {
-                return true;
-            }
-
-            // Taken from VecDeque::wrap_index
-            let logical_index = usize::from(self.zero_index) + usize::from(ins.belt_pos);
-            let loc_idx = if logical_index >= self.locs.len() {
-                logical_index - self.locs.len()
-            } else {
-                logical_index
-            };
-
-            if ins.belt_pos < old_first_free {
-                // We KNOW this position is filled
-                debug_assert!(self.locs[loc_idx]);
-                if ins.outgoing {
-                    ins.current_hand += 1;
-                    self.locs.set(loc_idx, false);
-                    if ins.belt_pos <= new_first_free {
-                        self.first_free_index = FreeIndex::FreeIndex(ins.belt_pos);
-                        new_first_free = ins.belt_pos;
-                    }
-
-                    if ins.current_hand == ins.max_hand_size {
-                        true
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            } else {
-                let mut loc = self.locs.get_mut(loc_idx).unwrap();
-
-                if ins.outgoing && *loc {
-                    *loc = false;
-                    ins.current_hand += 1;
-                    if ins.current_hand == ins.max_hand_size {
-                        true
-                    } else {
-                        false
-                    }
-                } else if !ins.outgoing && !*loc {
-                    *loc = true;
-                    ins.current_hand -= 1;
-
-                    if ins.belt_pos == new_first_free && *loc {
-                        // This was the old first free pos
-                        self.first_free_index = FreeIndex::OldFreeIndex(ins.belt_pos);
-                    }
-
-                    if ins.current_hand == 0 { true } else { false }
-                } else {
-                    false
-                }
-            }
-        });
 
         for ins in extracted {
             let in_movement = BeltStorageInserterInMovement {
@@ -636,6 +592,136 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
                 reinsertion_incoming.reinsert(ins.movetime.into(), in_movement);
             }
         }
+    }
+
+    pub fn update_inserters_lazy(
+        &mut self,
+    ) -> Option<impl IntoIterator<Item = InserterExtractedWhenMoving, IntoIter: Send> + Send> {
+        if self.get_len() == 0 {
+            return None;
+        }
+        #[cfg(feature = "debug-stat-gathering")]
+        NUM_BELT_INSERTER_UPDATES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        let old_first_free = match self.first_free_index {
+            FreeIndex::FreeIndex(idx) => idx,
+            FreeIndex::OldFreeIndex(idx) => idx,
+        };
+
+        if let Some(lastest_pos) = self.latest_inserter_pos_if_all_incoming {
+            // All incoming inserters are incoming and their positions are <= lastest_pos
+
+            if BeltLenType::from(lastest_pos) < old_first_free {
+                // All inserters are incoming AND all inserters are trying to put onto positions, which are fully filled
+                // Thus, nothing will change
+                #[cfg(feature = "debug-stat-gathering")]
+                if !self.inserters.inserters.is_empty() {
+                    TIMES_ALL_INCOMING_EARLY_RETURN
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+
+                return None;
+            }
+        }
+
+        let mut new_first_free = old_first_free;
+
+        let mut min_pos = Some(NonZero::new(1).unwrap());
+
+        let zero_index = &mut self.zero_index;
+        let first_free_index = &mut self.first_free_index;
+        let locs = &mut self.locs;
+        let latest_inserter_pos_if_all_incoming = &mut self.latest_inserter_pos_if_all_incoming;
+
+        let extracted = self.inserters.inserters.extract_if(.., move |ins| {
+            // FIXME: This should not be needed, if we did not incorrectly insert inserters always in the belt
+            if ins.current_hand == 0 && !ins.outgoing {
+                return true;
+            }
+
+            // Taken from VecDeque::wrap_index
+            let logical_index = usize::from(*zero_index) + usize::from(ins.belt_pos);
+            let loc_idx = if logical_index >= locs.len() {
+                logical_index - locs.len()
+            } else {
+                logical_index
+            };
+
+            #[cfg(feature = "debug-stat-gathering")]
+            if ins.outgoing {
+                NUM_INSERTER_LOADS_WAITING_FOR_ITEMS
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            } else {
+                NUM_INSERTER_LOADS_WAITING_FOR_SPACE
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+
+            if ins.outgoing {
+                min_pos = None;
+            } else {
+                if let Some(min_pos) = &mut min_pos {
+                    *min_pos = std::cmp::max(*min_pos, NonZero::new(ins.belt_pos).expect("Currently inserters at belt_pos 0 are unsupported, and should never be generated"));
+                }
+            }
+            *latest_inserter_pos_if_all_incoming = min_pos;
+
+            let extract = if ins.belt_pos < old_first_free {
+                // We KNOW this position is filled
+                debug_assert!(locs[loc_idx]);
+                if ins.outgoing {
+                    ins.current_hand += 1;
+                    locs.set(loc_idx, false);
+                    if ins.belt_pos <= new_first_free {
+                        *first_free_index = FreeIndex::FreeIndex(ins.belt_pos);
+                        new_first_free = ins.belt_pos;
+                    }
+
+                    if ins.current_hand == ins.max_hand_size {
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    #[cfg(feature = "debug-stat-gathering")]
+                    NUM_INSERTER_LOADS_WAITING_FOR_SPACE_IN_GUARANTEED_FULL
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    false
+                }
+            } else {
+                let mut loc = locs.get_mut(loc_idx).unwrap();
+
+                if ins.outgoing && *loc {
+                    *loc = false;
+                    ins.current_hand += 1;
+                    if ins.current_hand == ins.max_hand_size {
+                        true
+                    } else {
+                        false
+                    }
+                } else if !ins.outgoing && !*loc {
+                    *loc = true;
+                    ins.current_hand -= 1;
+
+                    if ins.belt_pos == new_first_free && *loc {
+                        // This was the old first free pos
+                        *first_free_index = FreeIndex::OldFreeIndex(ins.belt_pos);
+                    }
+
+                    if ins.current_hand == 0 { true } else { false }
+                } else {
+                    false
+                }
+            };
+
+            #[cfg(feature = "debug-stat-gathering")]
+            if extract {
+                TIMES_INSERTERS_EXTRACTED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+
+            extract
+        });
+
+        Some(extracted)
     }
 
     fn remove_first_free_pos_maybe(&mut self, now_filled_pos: BeltLenType) {
@@ -909,6 +995,8 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
             input_splitter: None,
             output_splitter,
+
+            latest_inserter_pos_if_all_incoming: _,
         } = front
         else {
             unreachable!()
@@ -930,6 +1018,8 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
             input_splitter,
             output_splitter: None,
+
+            latest_inserter_pos_if_all_incoming: _,
         } = back
         else {
             unreachable!()
@@ -983,6 +1073,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
             input_splitter,
             output_splitter,
+
+            // Since this is just an optimization, and will be rechecked on next update, None is fine
+            latest_inserter_pos_if_all_incoming: None,
         }
     }
 
@@ -1007,6 +1100,8 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
             input_splitter,
             output_splitter,
+
+            latest_inserter_pos_if_all_incoming: earliest_inserter_pos_if_all_incoming,
         } = self;
 
         match side {
@@ -1074,6 +1169,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
             input_splitter,
             output_splitter,
+
+            // Since this is just an optimization, and will be rechecked on next update, None is fine
+            latest_inserter_pos_if_all_incoming: None,
         };
 
         new.find_and_update_real_first_free_index();
@@ -1234,6 +1332,8 @@ impl EmptyBelt {
             last_moving_spot: 0,
             input_splitter: self.input_splitter,
             output_splitter: self.output_splitter,
+
+            latest_inserter_pos_if_all_incoming: None,
         }
     }
 
@@ -1588,7 +1688,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
             },
         }
 
-        #[cfg(debug_assertions)]
+        #[cfg(feature = "debug-stat-gathering")]
         {
             NUM_BELT_UPDATES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             match self.first_free_index {
@@ -1611,7 +1711,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
 
         let Some(first_free_index_real) = first_free_index_real else {
             // All slots are full
-            #[cfg(debug_assertions)]
+            #[cfg(feature = "debug-stat-gathering")]
             {
                 NUM_BELT_LOCS_SEARCHED.fetch_add(
                     (len - old_free) as usize,
@@ -1621,7 +1721,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
             return;
         };
 
-        #[cfg(debug_assertions)]
+        #[cfg(feature = "debug-stat-gathering")]
         {
             NUM_BELT_LOCS_SEARCHED.fetch_add(
                 (first_free_index_real - old_free) as usize,

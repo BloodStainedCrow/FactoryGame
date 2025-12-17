@@ -76,6 +76,7 @@ use itertools::Itertools;
 use log::error;
 use log::{info, trace, warn};
 use petgraph::graph::NodeIndex;
+use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::collections::BTreeMap;
 use std::io::BufReader;
@@ -3014,21 +3015,39 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 "Update Belts",
                                 format!("Count: {}", belt_store.belts.len())
                             );
-                            for (self_index, (belt, ty)) in belt_store
+                            // Belt update in parallel
+                            let reinsertion = belt_store
                                 .belts
-                                .iter_mut()
-                                .zip(&belt_store.belt_ty)
-                                .enumerate()
-                            {
-                                // TODO: Avoid last minute decision making
-                                // If I have a list per type, I can avoid loading belts if they are not updated
-                                if update_timers[usize::from(*ty)] >= 120 {
+                                .par_iter_mut()
+                                .zip(belt_store.belt_ty.par_iter())
+                                .enumerate().filter_map(|(self_index, (belt, ty))| {
+                                    // Only update belts, which have moved according to their timer
+                                    // This is what makes some types of belts different speed from others
+                                    (update_timers[usize::from(*ty)] >= 120).then_some((self_index, belt))
+                                }).map(|(self_index, belt)| {
+                                    // Update a belt
                                     belt.update(sushi_splitters);
-                                    belt.update_inserters(
-                                        self_index.try_into().unwrap(),
-                                        &mut belt_storage_reinsertion_outgoing,
-                                        &mut storage_belt_reinsertion_incoming,
-                                    );
+                                    belt.update_inserters_lazy().into_iter().flatten().zip(iter::repeat(self_index))
+                                }).fold(|| vec![], |mut v, reinsertions| {
+                                    v.extend(reinsertions);
+                                    v
+                                }).collect_vec_list().into_iter().flatten().flatten();
+
+                            // Do the reinsertion sequentially
+                            for (ins, self_index) in reinsertion {
+                                let self_index = self_index as u32;
+                                let in_movement = BeltStorageInserterInMovement {
+                                    movetime: ins.movetime,
+                                    storage: ins.storage,
+                                    belt: self_index,
+                                    belt_pos: ins.belt_pos,
+                                    max_hand_size: ins.max_hand_size,
+                                    current_hand: ins.current_hand,
+                                };
+                                if ins.outgoing {
+                                    belt_storage_reinsertion_outgoing.reinsert(ins.movetime.into(), in_movement);
+                                } else {
+                                    storage_belt_reinsertion_incoming.reinsert(ins.movetime.into(), in_movement);
                                 }
                             }
                         }

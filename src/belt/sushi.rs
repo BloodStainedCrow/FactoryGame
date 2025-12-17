@@ -338,7 +338,9 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             last_moving_spot,
 
             input_splitter,
-            output_splitter
+            output_splitter,
+
+            latest_inserter_pos_if_all_incoming: None,
         }
     }
 

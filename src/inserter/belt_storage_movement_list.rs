@@ -124,7 +124,12 @@ impl<'a> FinishedMovingLists<'a, { Dir::BeltToStorage }, { Dir::BeltToStorage }>
                 false
             } else {
                 if let Some((wait_list, wait_list_needed)) = wait_list {
-                    if let Some((pos, empty)) = wait_list.inserters.iter_mut().enumerate().find(|(_i, v)| v.is_none()) {
+                    if let Some((pos, empty)) = wait_list
+                        .inserters
+                        .iter_mut()
+                        .enumerate()
+                        .find(|(_i, v)| v.is_none())
+                    {
                         if pos == 0 {
                             *wait_list_needed = inserter.current_hand;
                         }
@@ -172,10 +177,14 @@ impl<'a> FinishedMovingLists<'a, { Dir::BeltToStorage }, { Dir::StorageToBelt }>
                 false
             } else {
                 if let Some((wait_list, wait_list_needed)) = wait_list {
-                    if let Some((pos, empty)) = wait_list.inserters.iter_mut().enumerate().find(|(_i, v)| v.is_none()) {
+                    if let Some((pos, empty)) = wait_list
+                        .inserters
+                        .iter_mut()
+                        .enumerate()
+                        .find(|(_i, v)| v.is_none())
+                    {
                         if pos == 0 {
                             *wait_list_needed = inserter.max_hand_size - inserter.current_hand;
-
                         }
                         *empty = Some(InserterWithBelts {
                             current_hand: inserter.current_hand,
@@ -226,6 +235,10 @@ impl<'a> FinishedMovingLists<'a, { Dir::StorageToBelt }, { Dir::StorageToBelt }>
                     max_hand_size: inserter.max_hand_size,
                     current_hand,
                 });
+                // This is an incoming inserter
+                if let Some(latest) = &mut belt.latest_inserter_pos_if_all_incoming {
+                    *latest = std::cmp::max(*latest, NonZero::new(inserter.belt_pos).expect("Currently inserters at belt_pos 0 are unsupported, and should never be generated"))
+                }
                 false
             }
         });
@@ -259,6 +272,8 @@ impl<'a> FinishedMovingLists<'a, { Dir::StorageToBelt }, { Dir::BeltToStorage }>
                     max_hand_size: inserter.max_hand_size,
                     current_hand,
                 });
+                // This is an outgoing inserter
+                belt.latest_inserter_pos_if_all_incoming = None;
                 false
             }
         });

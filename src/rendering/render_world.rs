@@ -1,6 +1,13 @@
 use crate::belt::belt::Belt;
-use crate::belt::smart::{NUM_BELT_FREE_CACHE_HITS, NUM_BELT_UPDATES};
-use crate::belt::smart::{NUM_BELT_LOCS_SEARCHED, SmartBelt};
+#[cfg(feature = "debug-stat-gathering")]
+use crate::belt::smart::{
+    NUM_BELT_FREE_CACHE_HITS, NUM_BELT_INSERTER_UPDATES, NUM_BELT_LOCS_SEARCHED, NUM_BELT_UPDATES,
+    NUM_INSERTER_LOADS_WAITING_FOR_ITEMS, NUM_INSERTER_LOADS_WAITING_FOR_SPACE,
+    NUM_INSERTER_LOADS_WAITING_FOR_SPACE_IN_GUARANTEED_FULL, TIMES_ALL_INCOMING_EARLY_RETURN,
+    TIMES_INSERTERS_EXTRACTED,
+};
+
+use crate::belt::smart::SmartBelt;
 use crate::blueprint::blueprint_string::BlueprintString;
 use crate::chest::ChestSize;
 use crate::frontend::action::action_state_machine::ForkSaveInfo;
@@ -2873,11 +2880,30 @@ pub fn render_ui<
                 'P'
             })));
 
-            let num_locs_searched = NUM_BELT_LOCS_SEARCHED.load(std::sync::atomic::Ordering::Relaxed);
-            let num_cache_hits = NUM_BELT_FREE_CACHE_HITS.load(std::sync::atomic::Ordering::Relaxed);
-            let num_updates = NUM_BELT_UPDATES.load(std::sync::atomic::Ordering::Relaxed);
-            ui.label(&format!("BeltUpdates: {}, BeltCacheHits: {}, Cache ratio: {:.2}%", num_updates, num_cache_hits,num_cache_hits as f64 / num_updates as f64 * 100.0 ));
-            ui.label(&format!("BeltLocsSearched: {}, LocsPerUpdate: {:.2}", num_locs_searched, num_locs_searched as f64 / num_updates as f64 ));
+
+            #[cfg(feature = "debug-stat-gathering")]
+            CollapsingHeader::new("Gathered Debug Stats").show(ui, |ui| {
+                let num_locs_searched = NUM_BELT_LOCS_SEARCHED.load(std::sync::atomic::Ordering::Relaxed);
+                let num_cache_hits = NUM_BELT_FREE_CACHE_HITS.load(std::sync::atomic::Ordering::Relaxed);
+                let num_updates = NUM_BELT_UPDATES.load(std::sync::atomic::Ordering::Relaxed);
+                ui.label(&format!("BeltUpdates: {}, BeltCacheHits: {}, Cache ratio: {:.2}%", num_updates, num_cache_hits,num_cache_hits as f64 / num_updates as f64 * 100.0 ));
+                ui.label(&format!("BeltLocsSearched: {}, LocsPerUpdate: {:.2}", num_locs_searched, num_locs_searched as f64 / num_updates as f64 ));
+
+
+                let inserter_update_calls = NUM_BELT_INSERTER_UPDATES.load(std::sync::atomic::Ordering::Relaxed);
+                let inserter_update_skips = TIMES_ALL_INCOMING_EARLY_RETURN.load(std::sync::atomic::Ordering::Relaxed);
+                let inserter_loads_waiting_for_item = NUM_INSERTER_LOADS_WAITING_FOR_ITEMS.load(std::sync::atomic::Ordering::Relaxed);
+                let inserter_loads_waiting_for_space = NUM_INSERTER_LOADS_WAITING_FOR_SPACE.load(std::sync::atomic::Ordering::Relaxed);
+                let inserter_loads_waiting_for_space_waster = NUM_INSERTER_LOADS_WAITING_FOR_SPACE_IN_GUARANTEED_FULL.load(std::sync::atomic::Ordering::Relaxed);
+                let inserter_extractions = TIMES_INSERTERS_EXTRACTED.load(std::sync::atomic::Ordering::Relaxed);
+                ui.label(&format!("Belts updated: {}, percentage skipped: {:.2}", inserter_update_calls, (inserter_update_skips) as f64 / inserter_update_calls as f64));
+                ui.label(&format!("Total inserter loads: {}, Avg per belt: {:.2}", inserter_loads_waiting_for_item + inserter_loads_waiting_for_space, (inserter_loads_waiting_for_item + inserter_loads_waiting_for_space) as f64 / inserter_update_calls as f64));
+                ui.label(&format!("Loads waiting for item: {}, {:.2}", inserter_loads_waiting_for_item, inserter_loads_waiting_for_item as f64 / (inserter_loads_waiting_for_item + inserter_loads_waiting_for_space) as f64 ));
+                ui.label(&format!("Loads waiting for space: {}, {:.2}", inserter_loads_waiting_for_space, inserter_loads_waiting_for_space as f64 / (inserter_loads_waiting_for_item + inserter_loads_waiting_for_space) as f64 ));
+                ui.label(&format!("Loads waiting for space, while space is guaranteed filled: {}, {:.2}", inserter_loads_waiting_for_space_waster, inserter_loads_waiting_for_space_waster as f64 / (inserter_loads_waiting_for_item + inserter_loads_waiting_for_space) as f64 ));
+                ui.label(&format!("Extractions: {}, Avg ticks before extraction: {:.2}", inserter_extractions, (inserter_loads_waiting_for_item + inserter_loads_waiting_for_space) as f64 / inserter_extractions as f64 ));
+            });
+
 
             if ui.button("Remove Infinity Batteries").clicked() {
                 for entity in game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()) {

@@ -597,7 +597,12 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                                         {
                                             let ins = ins.take().unwrap();
                                             for move_left_idx in idx..WAITLIST_LEN {
-                                                out[final_idx].inserters[move_left_idx] = out[final_idx].inserters.get_mut(move_left_idx + 1).map(|v| v.take()).unwrap_or(None);
+                                                out[final_idx].inserters[move_left_idx] = out
+                                                    [final_idx]
+                                                    .inserters
+                                                    .get_mut(move_left_idx + 1)
+                                                    .map(|v| v.take())
+                                                    .unwrap_or(None);
                                             }
                                             let Ok(()) = self
                                                 .inserter_waitlist_output_vec
@@ -630,9 +635,11 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                                                     self.inserter_waitlist_output_vec.capacity()
                                                 );
                                             };
-                                            self.waitlists_outputs_needed[item][final_idx] = out
-                                                [final_idx]
-                                                .inserters[0].as_ref().map(|ins| ins.max_hand - ins.current_hand).unwrap_or(ITEMCOUNTTYPE::MAX);
+                                            self.waitlists_outputs_needed[item][final_idx] =
+                                                out[final_idx].inserters[0]
+                                                    .as_ref()
+                                                    .map(|ins| ins.max_hand - ins.current_hand)
+                                                    .unwrap_or(ITEMCOUNTTYPE::MAX);
                                         } else {
                                             v.current_hand += amount_taken_by_this_inserter;
                                         }
@@ -685,11 +692,16 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                                     let ins = &mut ing[final_idx].inserters[idx];
                                     if let Some(v) = ins {
                                         let amount_taken_by_this_inserter =
-                                        min(*items_to_drain, v.current_hand);
+                                            min(*items_to_drain, v.current_hand);
                                         if v.current_hand - amount_taken_by_this_inserter == 0 {
                                             let ins = ins.take().unwrap();
                                             for move_left_idx in idx..WAITLIST_LEN {
-                                                ing[final_idx].inserters[move_left_idx] = ing[final_idx].inserters.get_mut(move_left_idx + 1).map(|v| v.take()).unwrap_or(None);
+                                                ing[final_idx].inserters[move_left_idx] = ing
+                                                    [final_idx]
+                                                    .inserters
+                                                    .get_mut(move_left_idx + 1)
+                                                    .map(|v| v.take())
+                                                    .unwrap_or(None);
                                             }
                                             let Ok(()) = self
                                                 .inserter_waitlist_output_vec
@@ -722,9 +734,11 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                                                     self.inserter_waitlist_output_vec.capacity()
                                                 );
                                             };
-                                            self.waitlists_ings_needed[item][final_idx] = ing
-                                                [final_idx]
-                                                .inserters[0].as_ref().map(|ins| ins.current_hand).unwrap_or(ITEMCOUNTTYPE::MAX);
+                                            self.waitlists_ings_needed[item][final_idx] =
+                                                ing[final_idx].inserters[0]
+                                                    .as_ref()
+                                                    .map(|ins| ins.current_hand)
+                                                    .unwrap_or(ITEMCOUNTTYPE::MAX);
                                         } else {
                                             v.current_hand -= amount_taken_by_this_inserter;
                                         }

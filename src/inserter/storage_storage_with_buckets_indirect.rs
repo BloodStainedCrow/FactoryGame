@@ -344,7 +344,12 @@ impl BucketedStorageStorageInserterStore {
             }
         } else {
             if let Some((wait_list, wait_list_needed)) = wait_list {
-                if let Some((pos, empty)) = wait_list.inserters.iter_mut().enumerate().find(|(_i, v)| v.is_none()) {
+                if let Some((pos, empty)) = wait_list
+                    .inserters
+                    .iter_mut()
+                    .enumerate()
+                    .find(|(_i, v)| v.is_none())
+                {
                     if pos == 0 {
                         *wait_list_needed = bucket_data.max_hand_size - bucket_data.current_hand;
                     }
@@ -417,7 +422,12 @@ impl BucketedStorageStorageInserterStore {
             }
         } else {
             if let Some((wait_list, wait_list_needed)) = wait_list {
-                if let Some((pos, empty)) = wait_list.inserters.iter_mut().enumerate().find(|(_i, v)| v.is_none()) {
+                if let Some((pos, empty)) = wait_list
+                    .inserters
+                    .iter_mut()
+                    .enumerate()
+                    .find(|(_i, v)| v.is_none())
+                {
                     if pos == 0 {
                         *wait_list_needed = bucket_data.current_hand;
                     }
