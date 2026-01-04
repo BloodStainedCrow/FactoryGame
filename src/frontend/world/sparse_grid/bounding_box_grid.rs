@@ -45,7 +45,11 @@ impl<T: GetGridIndex<I> + 'static> SparseGrid<I, T> for BoundingBoxGrid<I, T> {
     where
         T: Default,
     {
-        todo!()
+        if self.get(x, y).is_none() {
+            let old = self.insert(x, y, T::default());
+            assert!(old.is_none());
+        }
+        self.get(x, y).unwrap()
     }
 
     fn insert(&mut self, x: I, y: I, value: T) -> Option<T> {
@@ -56,13 +60,6 @@ impl<T: GetGridIndex<I> + 'static> SparseGrid<I, T> for BoundingBoxGrid<I, T> {
         let mut old = Some(value);
         mem::swap(&mut old, &mut self.values[index]);
         old
-    }
-
-    fn insert_deduplicate(&mut self, x: I, y: I, value: T) -> Option<T>
-    where
-        T: PartialEq + Default,
-    {
-        todo!()
     }
 
     fn get(&self, x: I, y: I) -> Option<&T> {

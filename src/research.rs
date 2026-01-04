@@ -141,10 +141,7 @@ impl TechState {
                     data::RepeatableCostScaling::Linear {
                         unit_increase_per_level,
                     } => unit_increase_per_level * u64::from(times_this_tech_was_finished),
-                    data::RepeatableCostScaling::Exponential {
-                        unit_multiplier_per_level_nom,
-                        unit_multiplier_per_level_denom,
-                    } => todo!(),
+                    data::RepeatableCostScaling::Exponential { .. } => todo!(),
                 };
 
                 tech_cost_units += tech_cost_increase;

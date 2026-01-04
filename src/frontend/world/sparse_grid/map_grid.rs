@@ -44,6 +44,7 @@ impl<I: PartialEq + Eq + Hash + Copy + Ord, T: 'static> SparseGrid<I, T> for Btr
     }
 
     fn get(&self, x: I, y: I) -> Option<&T> {
+        // TODO: Why is this commented out?
         // if let Some(extent) = &self.extent {
         //     if x < extent[0][0] || x > extent[0][1] || y < extent[1][0] || y > extent[1][1] {
         //         return None;
@@ -60,18 +61,6 @@ impl<I: PartialEq + Eq + Hash + Copy + Ord, T: 'static> SparseGrid<I, T> for Btr
     fn insert(&mut self, x: I, y: I, value: T) -> Option<T> {
         self.include_in_extent(x, y);
         self.values.insert((x, y), value)
-    }
-
-    fn insert_deduplicate(&mut self, x: I, y: I, value: T) -> Option<T>
-    where
-        T: PartialEq + Default,
-    {
-        self.include_in_extent(x, y);
-        if value == T::default() {
-            self.values.remove(&(x, y))
-        } else {
-            self.values.insert((x, y), value)
-        }
     }
 
     fn occupied_entries(&self) -> impl Iterator<Item = ((I, I), &T)> {

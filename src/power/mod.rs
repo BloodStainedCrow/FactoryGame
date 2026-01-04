@@ -542,7 +542,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
 
                         grid.change_assembler_module_modifiers(id, beacon_update.1, data_store);
                     },
-                    power_grid::BeaconAffectedEntity::Lab { grid, index } => todo!(),
+                    power_grid::BeaconAffectedEntity::Lab { .. } => todo!(),
                 }
             }
         }
@@ -643,7 +643,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                     BeaconAffectedEntity::Assembler { id } => {
                         self.power_grids[id.grid as usize].is_assembler_id_a_hole(*id, data_store)
                     },
-                    BeaconAffectedEntity::Lab { grid, index } => {
+                    BeaconAffectedEntity::Lab { .. } => {
                         // TODO: Check that this is not a lab hole
                         false
                     },
@@ -715,7 +715,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                     BeaconAffectedEntity::Assembler { id } => {
                         self.power_grids[id.grid as usize].is_assembler_id_a_hole(*id, data_store)
                     },
-                    BeaconAffectedEntity::Lab { grid, index } => {
+                    BeaconAffectedEntity::Lab { .. } => {
                         // TODO: Check that this is not a lab hole
                         false
                     },
@@ -855,7 +855,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                             data_store,
                         );
                     },
-                    power_grid::BeaconAffectedEntity::Lab { grid, index } => {
+                    power_grid::BeaconAffectedEntity::Lab { .. } => {
                         // TODO:
                         error!("Ignoring Beacon affect on lab");
                     },
@@ -1228,10 +1228,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                                             self_storage,
                                         } => {
                                             let (
-                                                belt_storage_exit_outgoing,
+                                                _belt_storage_exit_outgoing,
                                                 belt_storage_reinsertion_incoming,
                                                 storage_belt_reinsertion_outgoing,
-                                                storage_belt_exit_incoming,
+                                                _storage_belt_exit_incoming,
                                             ) = &mut belt_storage_reinsertion_list
                                                 [inserter.item.into_usize()];
 

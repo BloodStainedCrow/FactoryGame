@@ -1117,8 +1117,8 @@ impl Blueprint {
                     ty,
                     pos,
                     rotation,
-                    drill_id,
-                    internal_inserter,
+                    drill_id: _,
+                    internal_inserter: _,
                 } => {
                     vec![BlueprintAction::PlaceEntity(
                         BlueprintPlaceEntity::MiningDrill {
@@ -1281,7 +1281,7 @@ impl Blueprint {
                     ty,
                     ..
                 } => {
-                    let mut ret = vec![BlueprintAction::PlaceEntity(
+                    let ret = vec![BlueprintAction::PlaceEntity(
                         BlueprintPlaceEntity::Inserter {
                             pos: Position {
                                 x: pos.x - base_pos.x,
@@ -1315,13 +1315,7 @@ impl Blueprint {
                         ty: data_store.chest_names[*ty as usize].clone(),
                     })]
                 },
-                crate::frontend::world::tile::Entity::Roboport {
-                    ty,
-                    pos,
-                    power_grid,
-                    network,
-                    id,
-                } => todo!(),
+                crate::frontend::world::tile::Entity::Roboport { .. } => todo!(),
                 crate::frontend::world::tile::Entity::SolarPanel { pos, ty, .. } => {
                     vec![BlueprintAction::PlaceEntity(
                         BlueprintPlaceEntity::SolarPanel {

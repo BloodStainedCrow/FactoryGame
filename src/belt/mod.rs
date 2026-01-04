@@ -2079,7 +2079,6 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
     ) {
         if dedup.contains(&tile_id) {
             todo!();
-            return;
         }
 
         let (inserter_item_sources, items_on_belt): (Vec<_>, Vec<_>) = match tile_id {
@@ -3107,8 +3106,8 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         .len()
                             - 1) as u32
                     },
-                    (AnyBelt::Smart(source_belt_id), AnyBelt::Sushi(dest_index)) => todo!(),
-                    (AnyBelt::Sushi(source_index), AnyBelt::Smart(dest_belt_id)) => todo!(),
+                    (AnyBelt::Smart(_source_belt_id), AnyBelt::Sushi(_dest_index)) => todo!(),
+                    (AnyBelt::Sushi(_source_index), AnyBelt::Smart(_dest_belt_id)) => todo!(),
                     (AnyBelt::Sushi(source_index), AnyBelt::Sushi(dest_index)) => {
                         self.inner
                             .belt_belt_inserters
@@ -3190,7 +3189,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     let smart_belt = self.inner.get_smart_mut(*smart_belt_id);
                     smart_belt.change_inserter_movetime(pos, new_movetime);
                 },
-                AnyBelt::Sushi(sushi_belt_id) => {
+                AnyBelt::Sushi(_sushi_belt_id) => {
                     todo!()
                 },
                 AnyBelt::Empty(_) => unimplemented!("Empty belt cannot have inserters"),

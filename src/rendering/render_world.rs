@@ -204,16 +204,16 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     state_machine.current_mouse_pos,
                 );
 
-            // bp.draw(
-            //     (
-            //         x as f32 + num_tiles_across_screen_horizontal / 2.0,
-            //         y as f32 + num_tiles_across_screen_vertical / 2.0,
-            //     ),
-            //     camera_pos,
-            //     &mut entity_overlay_layer,
-            //     texture_atlas,
-            //     data_store,
-            // );
+            bp.draw(
+                (
+                    x as f32 + num_tiles_across_screen_horizontal / 2.0,
+                    y as f32 + num_tiles_across_screen_vertical / 2.0,
+                ),
+                camera_pos,
+                &mut entity_overlay_layer,
+                texture_atlas,
+                data_store,
+            );
         }
 
         mem::drop(state_machine);
@@ -647,7 +647,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             state,
                                         } => {
                                             let mut source_dir = None;
-                                            let (sprite, corner) = {
+                                            let (sprite, _corner) = {
                                                 match state {
                                                     BeltState::Straight => {
                                                         (&texture_atlas.belt[*direction], None::<BeltSide>)
@@ -970,7 +970,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                     item_pos[1] += stack_offset;
                                                 }
                                             },
-                                            crate::frontend::world::tile::AttachedInserter::BeltBelt { item, inserter } => {
+                                            crate::frontend::world::tile::AttachedInserter::BeltBelt { .. } => {
                                                 // TODO:
                                             },
                                             crate::frontend::world::tile::AttachedInserter::StorageStorage { item, inserter } => {
@@ -2203,10 +2203,7 @@ pub fn render_ui<
                         data::RepeatableCostScaling::Linear {
                             unit_increase_per_level,
                         } => unit_increase_per_level * u64::from(times_this_tech_was_finished),
-                        data::RepeatableCostScaling::Exponential {
-                            unit_multiplier_per_level_nom,
-                            unit_multiplier_per_level_denom,
-                        } => todo!(),
+                        data::RepeatableCostScaling::Exponential { .. } => todo!(),
                     };
 
                     tech_cost_units += tech_cost_increase;
@@ -2279,7 +2276,6 @@ pub fn render_ui<
                     .include_y(0.0)
                     .set_margin_fraction([0.0, 0.05].into())
                     .x_grid_spacer(|grid_input| {
-                        let min_step = grid_input.base_step_size;
                         (0..NUM_X_AXIS_TICKS[SCALE])
                             .map(|v| GridMark {
                                 value: v as f64 / (NUM_X_AXIS_TICKS[SCALE] as f64)
@@ -2365,14 +2361,14 @@ pub fn render_ui<
     Window::new("DEBUG USE WITH CARE")
         .default_open(false)
         .show(ctx, |ui| {
-            if ui.button("⚠️DEFRAGMENT GAMESTATE").clicked() {
-                // TODO:
+            // TODO:
+            // if ui.button("⚠️DEFRAGMENT GAMESTATE").clicked() {
                 // let mut new_state = game_state_ref.clone();
 
                 // mem::swap(&mut new_state, &mut *game_state_ref);
 
                 // mem::drop(new_state);
-            }
+            // }
 
             if ui.button("Switch from generation assemblers to miners (inserter_transfer)").clicked() {
                 for entity in game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()) {

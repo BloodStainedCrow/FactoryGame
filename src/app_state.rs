@@ -1365,10 +1365,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         .get_entity_at_mut(*pos, data_store)
                         .map(|e| match e {
                             Entity::Chest {
-                                ty,
-                                pos,
-                                item,
-                                slot_limit,
+                                item, slot_limit, ..
                             } => {
                                 if let Some((item, index)) = item {
                                     let removed_items =
@@ -1418,7 +1415,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                     ),
                                                 );
                                         },
-                                        AttachedInserter::BeltBelt { item, inserter } => todo!(),
+                                        AttachedInserter::BeltBelt { .. } => todo!(),
                                         AttachedInserter::StorageStorage { item, inserter } => {
                                             let old_movetime = user_movetime.unwrap_or(
                                                 data_store.inserter_infos[*ty as usize]
@@ -1472,9 +1469,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                     } => {
                                                                         let removed = game_state.simulation_state.factory.power_grids.power_grids[id.grid as usize].stores.remove_wait_list_inserter(*id, item, inserter.id, data_store);
                                                                         let Conn::Storage {
-                                                                            index,
                                                                             storage_id_in,
                                                                             storage_id_out,
+                                                                            ..
                                                                         } = removed.conn
                                                                         else {
                                                                             unreachable!()
@@ -1896,7 +1893,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                     let new_storage = match storage_update.new_pg_entity {
                                                                         crate::power::power_grid::PowerGridEntity::Assembler { recipe, index, .. } => Storage::Assembler { grid: storage_update.new_grid, recipe_idx_with_this_item: recipe.id, index },
                                                                         crate::power::power_grid::PowerGridEntity::Lab { index, .. } => Storage::Lab { grid: storage_update.new_grid, index },
-                                                                        crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
+                                                                        crate::power::power_grid::PowerGridEntity::LazyPowerProducer { .. } => todo!(),
                                                                         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
@@ -1911,13 +1908,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                         }
                                                     },
                                                 },
-                                                Entity::FluidTank { ty, pos, rotation } => {
+                                                Entity::FluidTank { pos, .. } => {
                                                     let id: FluidSystemId<_> = game_state.simulation_state.factory.fluid_store.fluid_box_pos_to_network_id[pos];
                                                     if let Some(fluid) = id.fluid {
                                                         let storage = match storage_update.old_pg_entity {
-                                                            crate::power::power_grid::PowerGridEntity::Assembler { ty, recipe, index } => Storage::Assembler { grid: storage_update.old_grid, recipe_idx_with_this_item: recipe.id, index },
-                                                            crate::power::power_grid::PowerGridEntity::Lab { ty, index } => Storage::Lab { grid: storage_update.old_grid, index },
-                                                            crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
+                                                            crate::power::power_grid::PowerGridEntity::Assembler { ty: _, recipe, index } => Storage::Assembler { grid: storage_update.old_grid, recipe_idx_with_this_item: recipe.id, index },
+                                                            crate::power::power_grid::PowerGridEntity::Lab { ty: _, index } => Storage::Lab { grid: storage_update.old_grid, index },
+                                                            crate::power::power_grid::PowerGridEntity::LazyPowerProducer { .. } => todo!(),
                                                             crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                             crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                             crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
@@ -1929,7 +1926,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                         let new_storage = match storage_update.new_pg_entity {
                                                             crate::power::power_grid::PowerGridEntity::Assembler { ty, recipe, index } => Storage::Assembler { grid: storage_update.new_grid, recipe_idx_with_this_item: recipe.id, index },
                                                             crate::power::power_grid::PowerGridEntity::Lab { ty, index } => Storage::Lab { grid: storage_update.new_grid, index },
-                                                            crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
+                                                            crate::power::power_grid::PowerGridEntity::LazyPowerProducer { .. } => todo!(),
                                                             crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                             crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                             crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),

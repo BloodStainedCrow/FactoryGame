@@ -246,6 +246,7 @@ impl BucketedStorageStorageInserterStoreFrontend {
             });
         }
 
+        #[allow(non_snake_case)]
         for (i, _) in sizes.into_iter().enumerate().sorted_by_key(|v| v.0) {
             let MOVING_OUT_END: usize = store.list_len();
             let WATING_FOR_SPACE: usize = MOVING_OUT_END;
@@ -1317,8 +1318,8 @@ mod test {
             let mut belt_ids = (0..(NUM_INSERTERS as u32))
                 .map(|v| v % NUM_BELTS as u32)
                 .collect_vec();
-            values.shuffle(&mut rand::thread_rng());
-            belt_ids.shuffle(&mut rand::thread_rng());
+            values.shuffle(&mut rand::rng());
+            belt_ids.shuffle(&mut rand::rng());
             for (storage, belt) in values.into_iter().zip(belt_ids) {
                 if random::<u16>() < 1 {
                     store[item].0.update(

@@ -1031,9 +1031,6 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         // Important, first_free_index must ALWAYS be used using mod len
         let back_zero_index = usize::from(back_zero_index) % back_locs.len();
 
-        let num_front_inserters = front_inserters.inserters.len();
-        let _num_back_inserters = back_inserters.inserters.len();
-
         let mut new_inserters = front_inserters;
         new_inserters
             .inserters
@@ -1115,7 +1112,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
         let old_len = locs.len();
 
-        let (new_empty, new_zero, front_extension_amount) = match side {
+        let (new_empty, new_zero, _front_extension_amount) = match side {
             Side::FRONT => {
                 locs.splice(
                     usize::from(zero_index)..usize::from(zero_index),
@@ -1454,7 +1451,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for EmptyBelt {
         self.len
     }
 
-    fn add_length(&mut self, amount: BeltLenType, side: Side) -> BeltLenType {
+    fn add_length(&mut self, amount: BeltLenType, _side: Side) -> BeltLenType {
         self.len += amount;
         self.len
     }
@@ -1695,7 +1692,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
                 FreeIndex::OldFreeIndex(_) => {},
             }
         }
-        let (old_free, need_to_check) = match self.first_free_index {
+        let (_old_free, need_to_check) = match self.first_free_index {
             FreeIndex::FreeIndex(idx) => (idx, false),
             FreeIndex::OldFreeIndex(idx) => (idx, true),
         };

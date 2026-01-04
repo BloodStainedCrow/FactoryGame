@@ -989,13 +989,13 @@ impl App {
                             },
                         }
                     },
-                    LoadedGame::ItemU8RecipeU16(loaded_game_sized) => {
+                    LoadedGame::ItemU8RecipeU16(_loaded_game_sized) => {
                         todo!("Handle bigger item/recipe counts")
                     },
-                    LoadedGame::ItemU16RecipeU8(loaded_game_sized) => {
+                    LoadedGame::ItemU16RecipeU8(_loaded_game_sized) => {
                         todo!("Handle bigger item/recipe counts")
                     },
-                    LoadedGame::ItemU16RecipeU16(loaded_game_sized) => {
+                    LoadedGame::ItemU16RecipeU16(_loaded_game_sized) => {
                         todo!("Handle bigger item/recipe counts")
                     },
                 };

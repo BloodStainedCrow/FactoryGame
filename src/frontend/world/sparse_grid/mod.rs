@@ -18,10 +18,6 @@ pub trait SparseGrid<I, T: 'static> {
     fn get_mut(&mut self, x: I, y: I) -> Option<&mut T>;
     fn insert(&mut self, x: I, y: I, value: T) -> Option<T>;
 
-    fn insert_deduplicate(&mut self, x: I, y: I, value: T) -> Option<T>
-    where
-        T: PartialEq + Default;
-
     fn occupied_entries(&self) -> impl Iterator<Item = ((I, I), &T)>;
     fn occupied_entries_mut(&mut self) -> impl Iterator<Item = ((I, I), &mut T)>;
 

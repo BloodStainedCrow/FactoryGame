@@ -381,7 +381,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         let (timers, overlap) = self.timers.as_chunks_mut::<{ SIMDTYPE::LEN }>();
 
         // FIXME:
-        // assert!(overlap.is_empty());
+        assert!(overlap.is_empty());
 
         for (
             index,
@@ -683,8 +683,8 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                                     - self.ings[item][final_idx])
                                 >= self.waitlists_ings_needed[item][final_idx]
                             {
-                                *items_to_drain += (self.ings_max_insert[item][final_idx]
-                                    - self.ings[item][final_idx]);
+                                *items_to_drain += self.ings_max_insert[item][final_idx]
+                                    - self.ings[item][final_idx];
                                 self.ings[item][final_idx] = self.ings_max_insert[item][final_idx];
 
                                 for idx in 0..WAITLIST_LEN {
@@ -2194,7 +2194,7 @@ mod test {
             .collect_vec();
 
         let items: Vec<Vec<_>> = vec![
-            rayon::iter::repeat(rand::thread_rng().gen_range(250..=255))
+            rayon::iter::repeat(rand::rng().random_range(250..=255))
                 .flat_map_iter(|v| std::iter::repeat_n(v, 10))
                 .take_any(NUM_ASSEMBLERS)
                 .collect();

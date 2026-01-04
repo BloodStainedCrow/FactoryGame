@@ -332,7 +332,7 @@ impl From<Blueprint> for BlueprintString {
                             pos,
                             direction,
                             ty,
-                            copied_belt_info,
+                            copied_belt_info: _,
                         } => {
                             internal.belts.push(BaseEntity {
                                 pos,
@@ -345,7 +345,7 @@ impl From<Blueprint> for BlueprintString {
                             direction,
                             ty,
                             underground_dir,
-                            copied_belt_info,
+                            copied_belt_info: _,
                         } => {
                             internal.underground_belts.push((
                                 BaseEntity {

@@ -1229,7 +1229,7 @@ mod test {
 
         for item in 0..NUM_ITEMS {
             let mut values = (0..(NUM_INSERTERS as u32)).collect_vec();
-            values.shuffle(&mut rand::thread_rng());
+            values.shuffle(&mut rand::rng());
             for i in values {
                 if random::<u16>() < 1 {
                     store[item].update(
@@ -1324,7 +1324,7 @@ mod test {
         let mut storages_out = vec![0u8; NUM_INSERTERS];
 
         let mut values = (0..(NUM_INSERTERS as u32)).collect_vec();
-        values.shuffle(&mut rand::thread_rng());
+        values.shuffle(&mut rand::rng());
 
         let mut current_time: u32 = 0;
 
@@ -1399,7 +1399,7 @@ mod test {
                 for v in &mut storages_out {
                     *v = 0u8;
                 }
-                values.shuffle(&mut rand::thread_rng());
+                values.shuffle(&mut rand::rng());
                 to_find = (0..(NUM_VISIBLE as u32))
                     .into_iter()
                     .map(|i| InserterIdentifier {
@@ -1448,7 +1448,7 @@ mod test {
         let mut storages_out = vec![0u8; NUM_INSERTERS];
 
         let mut values = (0..(NUM_INSERTERS as u32)).collect_vec();
-        values.shuffle(&mut rand::thread_rng());
+        values.shuffle(&mut rand::rng());
 
         let mut current_time: u32 = 0;
 

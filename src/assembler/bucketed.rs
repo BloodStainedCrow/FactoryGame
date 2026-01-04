@@ -371,8 +371,8 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
 
     fn set_grid_id<ItemIdxType: IdxTrait>(
         &mut self,
-        new_grid_id: PowerGridIdentifier,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        _new_grid_id: PowerGridIdentifier,
+        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         // Do nothing
     }
@@ -600,7 +600,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         recipe_lookup: &[(usize, usize)],
         recipe_ings: &[[ITEMCOUNTTYPE; NUM_INGS]],
         recipe_outputs: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
-        recipe_maximums: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
+        _recipe_maximums: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
         times: &[TIMERTYPE],
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (
@@ -1012,10 +1012,10 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
 
     fn remove_wait_list_inserter<ItemIdxType: IdxTrait>(
         &mut self,
-        index: u32,
-        item: crate::item::Item<ItemIdxType>,
-        id: crate::inserter::storage_storage_with_buckets_indirect::InserterId,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        _index: u32,
+        _item: crate::item::Item<ItemIdxType>,
+        _id: crate::inserter::storage_storage_with_buckets_indirect::InserterId,
+        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> super::simd::InserterReinsertionInfo<ItemIdxType> {
         unreachable!()
     }

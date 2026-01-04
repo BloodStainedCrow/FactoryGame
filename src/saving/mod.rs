@@ -57,7 +57,7 @@ pub fn save_at<V: serde::Serialize + ?Sized>(value: &V, path: PathBuf) {
 }
 
 pub fn save_at_fork<V: serde::Serialize + ?Sized>(value: &V, path: PathBuf) {
-    let mut file = { File::create(path).expect("could not create file") };
+    let file = { File::create(path).expect("could not create file") };
 
     // FIXME: It is technically not okay to allocate here.
     let mut buf_writer = BufWriter::new(file);

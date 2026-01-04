@@ -848,7 +848,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             PowerGridEntity::Lab { index, ty: _ty } => {
                 let residual_items = self.lab_stores.remove_lab(*index);
             },
-            PowerGridEntity::LazyPowerProducer { item, index } => {
+            PowerGridEntity::LazyPowerProducer { .. } => {
                 todo!("Remove LazyPowerProducer (Steam Engine)")
             },
             PowerGridEntity::SolarPanel { ty } => {
@@ -955,7 +955,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
 
                     ret
                 },
-                PowerGridEntity::LazyPowerProducer { item, index } => {
+                PowerGridEntity::LazyPowerProducer { .. } => {
                     todo!("Move LazyPowerProducer (Steam Engine)")
                 },
                 PowerGridEntity::SolarPanel { ty } => {
@@ -2251,7 +2251,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             .zip(discharge_amount_per)
             .zip((1..=data_store.accumulator_info.len()).rev())
             // FIXME: This seems incorrect?
-            .sorted_by_key(|((charge, max_rate), num_left)| *max_rate)
+            .sorted_by_key(|((_charge, max_rate), _num_left)| *max_rate)
         {
             // FIXME: This is integer division, so we lose some power here.
             let discharge_from_here: Joule =
@@ -3055,7 +3055,7 @@ struct MultiLazyPowerProducer {
 }
 
 impl MultiLazyPowerProducer {
-    fn new<ItemIdxType: IdxTrait>(info: &LazyPowerMachineInfo<ItemIdxType>) -> Self {
+    fn new<ItemIdxType: IdxTrait>(_info: &LazyPowerMachineInfo<ItemIdxType>) -> Self {
         Self {
             ingredient: vec![],
             stored_power: vec![],

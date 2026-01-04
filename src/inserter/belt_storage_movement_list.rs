@@ -164,7 +164,7 @@ impl<'a> FinishedMovingLists<'a, { Dir::BeltToStorage }, { Dir::StorageToBelt }>
         storages: SingleItemStorages,
     ) {
         self.list.retain_mut(|inserter| {
-            let (max_insert, data, wait_list) =
+            let (_max_insert, data, wait_list) =
                 index_fake_union(item_id, storages, inserter.storage, grid_size);
 
             let items_moved = min(inserter.max_hand_size - inserter.current_hand, *data);

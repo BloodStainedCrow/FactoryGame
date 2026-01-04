@@ -48,7 +48,7 @@ impl<T: GetGridIndex<I> + 'static> SparseGrid<I, T> for DynamicGrid<I, T> {
         }
     }
 
-    fn get_default(&mut self, x: I, y: I) -> &T
+    fn get_default(&mut self, _x: I, _y: I) -> &T
     where
         T: Default,
     {
@@ -133,13 +133,6 @@ impl<T: GetGridIndex<I> + 'static> SparseGrid<I, T> for DynamicGrid<I, T> {
             },
             Backing::Map(grid) => grid.insert_many(positions, values),
         }
-    }
-
-    fn insert_deduplicate(&mut self, x: I, y: I, value: T) -> Option<T>
-    where
-        T: PartialEq + Default,
-    {
-        unimplemented!()
     }
 
     fn occupied_entries(&self) -> impl Iterator<Item = ((I, I), &T)> {

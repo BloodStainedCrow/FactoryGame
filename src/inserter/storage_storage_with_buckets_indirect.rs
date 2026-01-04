@@ -508,8 +508,8 @@ impl BucketedStorageStorageInserterStore {
         grid_size: usize,
         current_tick: u32,
     ) {
-        #[cfg(debug_assertions)]
-        let old_len: usize = self.get_list_sizes().iter().sum();
+        // #[cfg(debug_assertions)]
+        // let old_len: usize = self.get_list_sizes().iter().sum();
 
         assert!(self.current_tick < self.list_len());
 
@@ -1086,7 +1086,7 @@ mod test {
 
         for item in 0..NUM_ITEMS {
             let mut values = (0..(NUM_INSERTERS as u32)).collect_vec();
-            values.shuffle(&mut rand::thread_rng());
+            values.shuffle(&mut rand::rng());
             for i in values {
                 if random::<u16>() < 1 {
                     store[item].update(

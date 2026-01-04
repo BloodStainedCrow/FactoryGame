@@ -774,14 +774,14 @@ pub fn par_generate<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         data_store,
     );
 
-    let mut chest_store = chest_stage(
+    let chest_store = chest_stage(
         &mut world,
         generation_info.chest_actions,
         positions.iter().copied(),
         data_store,
     );
 
-    let mut storage_storage_store = StorageStorageInserterStore::new(data_store);
+    let storage_storage_store = StorageStorageInserterStore::new(data_store);
     let fluid_store = pipe_stage(
         &mut world,
         generation_info.pipe_actions.fluid_networks,

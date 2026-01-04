@@ -1422,11 +1422,8 @@ impl RawDataStore {
                                     unit_increase_per_level: units_per_level,
                                 }
                             },
-                            InfiniteCostScaling::Quadradic { units_per_level } => todo!(),
-                            InfiniteCostScaling::Exponential {
-                                units_per_level,
-                                exponential_base,
-                            } => todo!(),
+                            InfiniteCostScaling::Quadradic { .. } => todo!(),
+                            InfiniteCostScaling::Exponential { .. } => todo!(),
                         },
                         level_counter_offset: infinite_info.display_level_offset,
                     }

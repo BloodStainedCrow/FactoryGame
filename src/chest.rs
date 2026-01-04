@@ -373,7 +373,6 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
                             || (inserter.current_hand == 0 && !self_is_source)
                         {
                             let removed = ins.take().unwrap();
-                            let is_source = self_is_source;
                             self.inserter_reinsertion_vec
                                 .push_within_capacity(InternalInserterReinsertionInfo {
                                     inserter: removed,

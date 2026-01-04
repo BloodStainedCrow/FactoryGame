@@ -3414,10 +3414,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             info: attached_inserter,
                             ..
                         } => match attached_inserter {
-                            AttachedInserter::BeltStorage { id, belt_pos } => {
+                            AttachedInserter::BeltStorage { .. } => {
                                 // TODO
                             },
-                            AttachedInserter::BeltBelt { item, inserter } => {
+                            AttachedInserter::BeltBelt { .. } => {
                                 // TODO
                             },
                             AttachedInserter::StorageStorage { .. } => todo!(),
@@ -3428,13 +3428,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             *power_grid = Some(new_id);
                         }
                     },
-                    Entity::MiningDrill {
-                        ty,
-                        pos,
-                        rotation,
-                        drill_id,
-                        internal_inserter,
-                    } => todo!(),
+                    Entity::MiningDrill { .. } => todo!(),
                     Entity::Belt { .. }
                     | Entity::Underground { .. }
                     | Entity::Splitter { .. }
@@ -3493,7 +3487,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                 InserterInfo::NotAttached { .. } => true,
                                 InserterInfo::Attached { info, .. } => match info {
                                     AttachedInserter::BeltStorage { id, .. } => *id != old_id,
-                                    AttachedInserter::BeltBelt { item, inserter } => {
+                                    AttachedInserter::BeltBelt { .. } => {
                                         // TODO:
                                         true
                                     },
@@ -3577,7 +3571,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     found_anything = true;
                                 }
                             },
-                            AttachedInserter::BeltBelt { item, inserter } => todo!(),
+                            AttachedInserter::BeltBelt { .. } => todo!(),
                             AttachedInserter::StorageStorage { .. } => {},
                         },
                     },
@@ -3705,7 +3699,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                         }
                                     }
                                 },
-                                AttachedInserter::BeltBelt { item, inserter } => todo!(),
+                                AttachedInserter::BeltBelt { .. } => todo!(),
                                 AttachedInserter::StorageStorage { .. } => {},
                             },
                         },
@@ -3740,10 +3734,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     .belts.get_inserter_positions(id));
                                 };
                         },
-                        AttachedInserter::BeltBelt { item, inserter } => {
+                        AttachedInserter::BeltBelt { .. } => {
                             // TODO:
                         },
-                        AttachedInserter::StorageStorage { item, inserter } => {
+                        AttachedInserter::StorageStorage { .. } => {
                             // TODO:
                         },
                     }
@@ -4857,7 +4851,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         }
                     }
                 },
-                Entity::Splitter { pos, direction, id } => todo!(),
+                Entity::Splitter { .. } => todo!(),
 
                 Entity::Chest { ty, pos, item, .. } => {
                     if let Some((item, index)) = item {
@@ -4872,13 +4866,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         ));
                     }
                 },
-                Entity::Roboport {
-                    ty,
-                    pos,
-                    power_grid,
-                    network,
-                    id,
-                } => todo!(),
+                Entity::Roboport { .. } => todo!(),
 
                 Entity::Inserter {
                     info: InserterInfo::NotAttached { .. },
@@ -4901,23 +4889,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         sim_state.factory.belts.remove_belt_belt_inserter(*inserter);
                     },
                     AttachedInserter::StorageStorage { item, inserter } => {
-                        sim_state.factory.storage_storage_inserters.remove_ins(
-                            *item,
-                            user_movetime
-                                .map(|v| v.into())
-                                .unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks)
-                                .into(),
-                            *inserter,
-                        );
+                        sim_state
+                            .factory
+                            .storage_storage_inserters
+                            .remove_ins(
+                                *item,
+                                user_movetime
+                                    .map(|v| v.into())
+                                    .unwrap_or(
+                                        data_store.inserter_infos[*ty as usize].swing_time_ticks,
+                                    )
+                                    .into(),
+                                *inserter,
+                            )
+                            .expect("Failed Removing Inserter");
                     },
                 },
-                Entity::MiningDrill {
-                    ty,
-                    pos,
-                    rotation,
-                    drill_id,
-                    internal_inserter,
-                } => todo!(),
+                Entity::MiningDrill { .. } => todo!(),
             }
 
             let chunk = self.get_chunk_for_tile_mut(e_pos).unwrap();
@@ -5098,7 +5086,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
         &self,
         pos: Position,
         size: (u16, u16),
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> bool {
         if let Some(arr) = &self.chunk_tile_to_entity_into {
             let x_in_chunk = pos.x.rem_euclid(i32::from(CHUNK_SIZE)) as usize;
@@ -5258,10 +5246,10 @@ impl GetSize for ModuleSlots {
 impl<E: InfoExtractor<Self, Info>, Info: EguiDisplayable> ShowInfo<E, Info> for ModuleSlots {
     fn show_fields<C: egui_show_info::Cache<String, Info>>(
         &self,
-        extractor: &mut E,
-        ui: &mut egui::Ui,
-        path: String,
-        cache: &mut C,
+        _extractor: &mut E,
+        _ui: &mut egui::Ui,
+        _path: String,
+        _cache: &mut C,
     ) {
     }
 }

@@ -23,8 +23,6 @@ use get_size2::GetSize;
 
 pub mod connection_logic;
 
-const FLUID_INSERTER_MOVETIME: u16 = 1;
-
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub struct FluidSystemId<ItemIdxType: WeakIdxTrait> {
@@ -1074,7 +1072,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
 
     fn add_output(
         &mut self,
-        fluid: Item<ItemIdxType>,
+        _fluid: Item<ItemIdxType>,
         source_pipe_position: Position,
         dest: FakeUnionStorage,
         _dest_pos: Position,
@@ -1099,7 +1097,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
 
     fn add_input(
         &mut self,
-        fluid: Item<ItemIdxType>,
+        _fluid: Item<ItemIdxType>,
         dest_pipe_position: Position,
         source: FakeUnionStorage,
         _source_pos: Position,
@@ -1315,10 +1313,10 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
 
                 for conn in other.graph.weak_components_mut() {
                     match conn {
-                        FluidSystemEntity::OutgoingPump { inserter_id } => {
+                        FluidSystemEntity::OutgoingPump { .. } => {
                             todo!()
                         },
-                        FluidSystemEntity::IncomingPump { inserter_id } => {
+                        FluidSystemEntity::IncomingPump { .. } => {
                             todo!()
                         },
                         FluidSystemEntity::Input { inserter_id, .. } => {
@@ -1382,18 +1380,18 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         let mut fluid_distribution = old_fluid_level;
 
         for (weak_index, connection_to_remove) in connections_to_remove.into_iter().collect_vec() {
-            let fluid = old_fluid.expect("If we have any connections we MUST have a fluid set");
+            let _fluid = old_fluid.expect("If we have any connections we MUST have a fluid set");
             match connection_to_remove {
-                FluidSystemEntity::OutgoingPump { inserter_id } => {
+                FluidSystemEntity::OutgoingPump { .. } => {
                     todo!()
                 },
-                FluidSystemEntity::IncomingPump { inserter_id } => {
+                FluidSystemEntity::IncomingPump { .. } => {
                     todo!()
                 },
-                FluidSystemEntity::Input { inserter_id, .. } => {
+                FluidSystemEntity::Input { .. } => {
                     self.remove_input(fluid_box_position, weak_index);
                 },
-                FluidSystemEntity::Output { inserter_id, .. } => {
+                FluidSystemEntity::Output { .. } => {
                     self.remove_output(fluid_box_position, weak_index);
                 },
             }
@@ -1411,19 +1409,19 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
 
                 match new_system.state {
                     FluidSystemState::NoFluid => {},
-                    FluidSystemState::HasFluid { fluid } => {
+                    FluidSystemState::HasFluid { fluid: _ } => {
                         for connection in new_system.graph.weak_components_mut() {
                             match connection {
-                                FluidSystemEntity::OutgoingPump { inserter_id } => {
+                                FluidSystemEntity::OutgoingPump { .. } => {
                                     todo!()
                                 },
-                                FluidSystemEntity::IncomingPump { inserter_id } => {
+                                FluidSystemEntity::IncomingPump { .. } => {
                                     todo!()
                                 },
-                                FluidSystemEntity::Input { inserter_id, .. } => {
+                                FluidSystemEntity::Input { .. } => {
                                     todo!()
                                 },
-                                FluidSystemEntity::Output { inserter_id, .. } => {
+                                FluidSystemEntity::Output { .. } => {
                                     todo!()
                                 },
                             }
@@ -1499,16 +1497,16 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                     FluidSystemState::HasFluid { fluid } => {
                         for connection in new_system.graph.weak_components_mut() {
                             match connection {
-                                FluidSystemEntity::OutgoingPump { inserter_id } => {
+                                FluidSystemEntity::OutgoingPump { .. } => {
                                     todo!()
                                 },
-                                FluidSystemEntity::IncomingPump { inserter_id } => {
+                                FluidSystemEntity::IncomingPump { .. } => {
                                     todo!()
                                 },
-                                FluidSystemEntity::Input { inserter_id, .. } => {
+                                FluidSystemEntity::Input { .. } => {
                                     todo!()
                                 },
-                                FluidSystemEntity::Output { inserter_id, .. } => {
+                                FluidSystemEntity::Output { .. } => {
                                     todo!()
                                 },
                             }
@@ -1535,7 +1533,7 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
 
         match self.state {
             FluidSystemState::NoFluid => {},
-            FluidSystemState::HasFluid { fluid } => {
+            FluidSystemState::HasFluid { fluid: _ } => {
                 assert!(fluid_left_for_us <= self.hot_data.storage_capacity.try_into().unwrap());
                 self.hot_data.current_fluid_level = fluid_left_for_us;
             },
