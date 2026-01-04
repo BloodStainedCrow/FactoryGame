@@ -3,9 +3,7 @@
 #![feature(adt_const_params)]
 #![feature(array_try_map)]
 #![feature(never_type)]
-#![feature(mixed_integer_ops_unsigned_sub)]
 #![feature(int_roundings)]
-#![feature(strict_overflow_ops)]
 #![feature(vec_push_within_capacity)]
 
 extern crate test;
