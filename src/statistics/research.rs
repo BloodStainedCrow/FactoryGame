@@ -1,6 +1,6 @@
 use std::iter;
 
-use crate::{item::IdxTrait, research::ResearchProgress};
+use crate::item::IdxTrait;
 
 use super::IntoSeries;
 

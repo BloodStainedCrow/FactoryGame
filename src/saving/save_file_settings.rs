@@ -2,8 +2,6 @@ use std::{path::PathBuf, time::Duration};
 
 use chrono::Utc;
 
-use crate::scenario::ScenarioInfo;
-
 #[derive(Debug, Clone)]
 pub(crate) struct SaveFileInfo {
     pub(crate) path: PathBuf,

@@ -11,7 +11,6 @@ use std::{
         num::{SimdInt, SimdUint},
     },
     u8,
-    vec::Drain,
 };
 
 use crate::{

@@ -1,8 +1,7 @@
 use std::{
-    iter::{self, repeat},
+    iter::repeat,
     num::NonZero,
     ops::{Deref, DerefMut},
-    sync::atomic::AtomicUsize,
     u8,
 };
 
@@ -27,8 +26,6 @@ use bitvec::{
 use itertools::Either;
 use itertools::Itertools;
 use log::trace;
-use static_assertions::const_assert;
-use std::mem;
 
 use super::{
     FreeIndex, SplitterID,

@@ -1,4 +1,3 @@
-use crate::assembler::simd::Inserter;
 use crate::assembler::simd::InserterReinsertionInfo;
 use crate::frontend::world::tile::ModuleSlots;
 use crate::frontend::world::tile::ModuleTy;

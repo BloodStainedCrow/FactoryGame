@@ -7,7 +7,6 @@ use std::{
     num::NonZero,
 };
 
-use egui::Layout;
 use egui_graphs::{DefaultEdgeShape, DefaultNodeShape, Graph};
 use itertools::Itertools;
 use log::{error, warn};

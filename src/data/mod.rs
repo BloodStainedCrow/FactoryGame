@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::{
     array,
-    cmp::{max, min},
+    cmp::max,
     collections::{BTreeSet, HashMap},
     iter,
 };

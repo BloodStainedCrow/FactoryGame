@@ -1,15 +1,10 @@
 use std::cmp::max;
-use std::num::NonZero;
 use std::{cmp::min, u8};
 
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator};
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
-use static_assertions::const_assert;
 
-use crate::assembler::simd::{
-    Inserter, InserterReinsertionInfo, InserterWaitList, InserterWithBelts,
-};
-use crate::inserter::storage_storage_with_buckets_indirect::InserterId;
+use crate::assembler::simd::{InserterReinsertionInfo, InserterWaitList, InserterWithBelts};
 use crate::inserter::{FakeUnionStorage, StaticID};
 use crate::storage_list::{InserterWaitLists, MaxInsertionLimit};
 use crate::{

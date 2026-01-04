@@ -5,13 +5,10 @@ use super::{
     FakeUnionStorage, InserterStateInfo, storage_storage_with_buckets::LargeInserterState,
 };
 use crate::{
-    assembler::simd::{
-        InserterReinsertionInfo, InserterWaitList, InserterWithBelts as WaitListInserter,
-    },
+    assembler::simd::InserterWithBelts as WaitListInserter,
     inserter::WaitlistSearchSide,
     item::ITEMCOUNTTYPE,
     join_many::join,
-    power::power_grid::PowerGrid,
     storage_list::{SingleItemStorages, index_fake_union},
 };
 use std::cmp::min;

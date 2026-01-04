@@ -8,7 +8,6 @@ use crate::WeakIdxTrait;
 use crate::data::DataStore;
 use crate::item::ITEMCOUNTTYPE;
 use crate::item::IdxTrait;
-use crate::item::Indexable;
 use crate::item::Item;
 use crate::mining_drill::MiningDrillInfo;
 use crate::power::Joule;

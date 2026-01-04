@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, u16};
 
-use crate::item::{ITEMCOUNTTYPE, Indexable};
+use crate::item::ITEMCOUNTTYPE;
 use crate::{
     data::DataStore,
     item::{IdxTrait, Item, Recipe, WeakIdxTrait},

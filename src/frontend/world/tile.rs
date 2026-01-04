@@ -1,7 +1,6 @@
 use crate::frontend::world::sparse_grid::SparseGrid;
 use crate::frontend::world::sparse_grid::dynamic::DynamicGrid;
 use crate::frontend::world::tile::belt_placement::expected_belt_state;
-use crate::mining_drill;
 use crate::mining_drill::AddMinerError;
 use crate::mining_drill::FullOreStore;
 use crate::mining_drill::MiningDrillIdentifier;
@@ -44,7 +43,7 @@ use strum::EnumIter;
 
 use itertools::Itertools;
 
-use noise::{NoiseFn, Simplex};
+use noise::Simplex;
 
 use crate::mining_drill::OreLookup;
 use crate::{
@@ -79,7 +78,6 @@ use noise::Seedable;
 use petgraph::prelude::Bfs;
 
 use super::Position;
-use super::sparse_grid::bounding_box_grid::BoundingBoxGrid;
 use crate::liquid::FluidSystemId;
 
 pub const BELT_LEN_PER_TILE: u16 = 4;
@@ -5752,7 +5750,7 @@ impl Add<Dir> for Position {
 #[cfg(test)]
 mod test {
 
-    use proptest::{prop_assert, prop_assert_eq, proptest};
+    use proptest::proptest;
 
     // use crate::{
     //     DATA_STORE,

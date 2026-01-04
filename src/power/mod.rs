@@ -1,7 +1,7 @@
 use crate::inserter::belt_storage_inserter::Dir;
 use crate::inserter::belt_storage_movement_list::FinishedMovingLists;
 use crate::inserter::belt_storage_movement_list::{
-    BeltStorageInserterInMovement, List, ReinsertionLists,
+    BeltStorageInserterInMovement, ReinsertionLists,
 };
 use crate::inserter::storage_storage_with_buckets_indirect::InserterBucketData;
 use crate::item::Indexable;

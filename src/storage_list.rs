@@ -1,6 +1,6 @@
 use core::panic;
 use std::iter;
-use std::ops::{Index, IndexMut};
+use std::ops::Index;
 use std::u16;
 
 use itertools::Itertools;

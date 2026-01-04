@@ -61,9 +61,7 @@ use crate::{
     statistics::{
         GenStatistics, Timeline, consumption::ConsumptionInfo, production::ProductionInfo,
     },
-    storage_list::{
-        SingleItemStorages, full_to_by_item, grid_size, num_recipes, sizes, storages_by_item,
-    },
+    storage_list::{SingleItemStorages, full_to_by_item, grid_size, sizes, storages_by_item},
 };
 use crate::{
     item::Indexable,
@@ -76,7 +74,7 @@ use flate2::bufread::ZlibDecoder;
 use get_size2::GetSize;
 use itertools::Itertools;
 use log::error;
-use log::{info, trace, warn};
+use log::{info, warn};
 use petgraph::graph::NodeIndex;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
@@ -1102,20 +1100,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                     incoming_storage_to_belt.tick();
                                     let (
                                         belt_storage_exit_outgoing,
-                                        mut belt_storage_reinsertion_outgoing,
+                                        _belt_storage_reinsertion_outgoing,
                                     ) = outgoing_belt_to_storage.get();
                                     let (
-                                        belt_storage_exit_incoming,
+                                        _belt_storage_exit_incoming,
                                         mut belt_storage_reinsertion_incoming,
                                     ) = incoming_belt_to_storage.get();
 
                                     let (
-                                        storage_belt_exit_outgoing,
+                                        _storage_belt_exit_outgoing,
                                         mut storage_belt_reinsertion_outgoing,
                                     ) = outgoing_storage_to_belt.get();
                                     let (
                                         storage_belt_exit_incoming,
-                                        mut storage_belt_reinsertion_incoming,
+                                        _storage_belt_reinsertion_incoming,
                                     ) = incoming_storage_to_belt.get();
 
                                     {

@@ -7,7 +7,7 @@ use strum::IntoEnumIterator;
 use crate::{
     app_state::SimulationState,
     belt::{
-        BeltStore, BeltTileId, SplitterInfo,
+        BeltTileId, SplitterInfo,
         belt::BeltLenType,
         smart::Side,
         splitter::{SPLITTER_BELT_LEN, SplitterDistributionMode, SplitterSide},

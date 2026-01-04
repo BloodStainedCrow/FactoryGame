@@ -1,6 +1,6 @@
 use std::{array, marker::PhantomData, simd::Simd, u8};
 
-use crate::assembler::simd::{Inserter, InserterReinsertionInfo, InserterWaitList};
+use crate::assembler::simd::{InserterReinsertionInfo, InserterWaitList};
 use crate::frontend::world::tile::ModuleTy;
 use crate::inserter::storage_storage_with_buckets_indirect::InserterId;
 use crate::storage_list::MaxInsertionLimit;

@@ -5,14 +5,14 @@ use itertools::Itertools;
 use log::warn;
 
 use crate::assembler::arrays;
-use crate::assembler::simd::{Inserter, InserterReinsertionInfo, InserterWaitList};
+use crate::assembler::simd::{InserterReinsertionInfo, InserterWaitList};
 use crate::assembler::{PowerUsageInfo, TIMERTYPE};
 use crate::data::{DataStore, ItemRecipeDir};
 use crate::frontend::world::Position;
 use crate::item::{ITEMCOUNTTYPE, IdxTrait, Indexable, Recipe};
 use crate::power::Watt;
 use crate::power::power_grid::{IndexUpdateInfo, MAX_POWER_MULT, PowerGridIdentifier};
-use crate::storage_list::{MaxInsertionLimit, PANIC_ON_INSERT};
+use crate::storage_list::MaxInsertionLimit;
 
 use crate::WeakIdxTrait;
 

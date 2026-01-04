@@ -56,9 +56,8 @@ use eframe::egui::{
     self, Align2, Color32, ComboBox, Context, CornerRadius, Label, Layout, ProgressBar, Stroke, Ui,
     Window,
 };
-use egui::{Button, CollapsingHeader, Modal, Rect, RichText, ScrollArea, Sense, Slider};
+use egui::{Button, CollapsingHeader, Modal, RichText, ScrollArea, Sense, Slider};
 use egui_extras::{Column, TableBuilder};
-use egui_graphs::Graph;
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
 use egui_show_info::ShowInfo;
 use flate2::Compression;
