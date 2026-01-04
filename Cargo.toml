@@ -31,34 +31,33 @@ strum = { version = "0.27.1", features = ["derive"] }
 # explicitly disable atomic feature, so that bitvecs do not use atomic instructions. very important for performance!
 bitvec = { version = "1.0.1", features = ["alloc", "serde", "std"], default-features = false }
 bimap = { version = "0.6.3", features = ["serde", "std"], default-features = false }
-eframe = { version = "0.31.1", features = ["accesskit", "default_fonts", "wayland", "web_screen_reader", "x11", "wgpu"], optional = true, default-features = false  }
+eframe = { version = "0.32", features = ["accesskit", "default_fonts", "wayland", "web_screen_reader", "x11", "wgpu"], optional = true, default-features = false  }
 wgpu = { version = "25.0.2", features = ["webgl"] }
-egui_extras = { version = "0.31.1", optional = true }
-egui_plot = { version = "0.32.1", optional = true }
+egui_extras = { version = "0.32", optional = true }
+egui_plot = { version = "0.33", optional = true }
 rand = "0.9.0"
 bitcode = { version = "0.6.6", features = ["serde"] }
-egui = { version = "0.31.1", features = ["bytemuck", "serde"], optional = true }
+egui = { version = "0.32", features = ["bytemuck", "serde"], optional = true }
 flate2 = { version = "1.1.1", features = ["zlib-rs"] }
 rstest = "0.25.0"
 parking_lot = { version = "0.12.3", features = ["serde", "deadlock_detection"] }
 profiling = { version = "1.0.16" }
-puffin_egui = { version = "0.29", optional = true }
-puffin = { version = "0.19", features = ["web"] }
+puffin_egui = { git = "https://github.com/EmbarkStudios/puffin", optional = true }
+puffin = { git = "https://github.com/EmbarkStudios/puffin", features = ["web"] }
 dhat = "0.3.3"
 noise = { version = "0.9.0", features = ["std"] }
 rfd = { version = "0.15.3", optional = true }
-egui_graphs = { version = "0.25.1", optional = true }
+egui_graphs = { version = "0.28", optional = true }
 serde_path_to_error = "0.1.17"
 get-size2 = { version = "0.7.1", features = ["derive"], optional = true }
 
 egui-show-info = { git = "https://github.com/BloodStainedCrow/egui-show-info", features = ["petgraph", "parking_lot", "enum-map", "bimap"], optional = true }
 egui-show-info-derive = { git = "https://github.com/BloodStainedCrow/egui-show-info", optional = true }
 bytemuck = "1.23.1"
-# ph = "0.9.6"
 memoffset = "0.9.1"
 smallvec = { version = "1.15.1", features = ["serde"] }
 
-ecolor = { version = "0.31.1", features = ["color-hex"] }
+ecolor = { version = "0.32", features = ["color-hex"] }
 getrandom = { version = "0.3.3", features = ["wasm_js"] }
 getrandom_old = { version = "0.2.16", features = ["js"], package = "getrandom" }
 wasm-bindgen = "0.2.104"
@@ -88,12 +87,6 @@ winit = "0.30.12"
 proptest = "1.4.0"
 
 [patch.crates-io]
-puffin_egui = { git = "https://github.com/BloodStainedCrow/puffin" }
-puffin = { git = "https://github.com/BloodStainedCrow/puffin" }
-egui = { git = "https://github.com/BloodStainedCrow/egui", rev = "4e11a02" }
-eframe = { git = "https://github.com/BloodStainedCrow/egui", rev = "4e11a02" }
-ecolor = { git = "https://github.com/BloodStainedCrow/egui", rev = "4e11a02" }
-egui-wgpu = { git = "https://github.com/BloodStainedCrow/egui", rev = "4e11a02" }
 egui_graphs = { git = "https://github.com/BloodStainedCrow/egui_graphs", branch = "tree_layout" }
 petgraph = { git = "https://github.com/BloodStainedCrow/petgraph", branch = "stable_graph_node_weights_mut_indexed" }
 

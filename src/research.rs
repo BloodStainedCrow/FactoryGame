@@ -247,6 +247,7 @@ impl TechState {
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Graph<data::Technology<RecipeIdxType>, (), Directed, u16, DefaultNodeShape, DefaultEdgeShape>
     {
+        // TODO: This seems to be called every frame???
         egui_graphs::to_graph_custom::<_, _, _, _, DefaultNodeShape, DefaultEdgeShape>(
             &data_store.technology_tree,
             |node| {
@@ -565,6 +566,7 @@ impl TechState {
 
         let mut view =
             GraphView::<_, _, _, _, _, _, LayoutStateTree, LayoutTree>::new(render_graph)
+                .with_id(Some("Tech Tree".to_string()))
                 .with_navigations(
                     &SettingsNavigation::new()
                         .with_fit_to_screen_enabled(false)

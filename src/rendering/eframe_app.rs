@@ -12,6 +12,7 @@ use std::{
 
 use chrono::Local;
 use egui_extras::{Column, TableBuilder};
+use egui_graphs::LayoutStateTree;
 use url::Url;
 use wasm_timer::Instant;
 
@@ -350,6 +351,14 @@ impl eframe::App for App {
                     self.currently_loaded_game = Some(LoadedGameInfo {
                         state: new_state,
                         tick: current_tick,
+                    });
+                    // FIXME: This is needed to prevent the tech tree from collapsing?
+                    // TODO: Make an issue to investigae why this is needed
+                    Window::new("FIXME").show(ctx, |ui| {
+                        egui_graphs::reset_layout::<LayoutStateTree>(
+                            ui,
+                            Some("Tech Tree".to_string()),
+                        );
                     });
                     self.state = AppState::Ingame;
                 }
@@ -704,7 +713,6 @@ impl eframe::App for App {
                             ui.add(
                                 Slider::new(gigabase_size, 1..=1_000)
                                     .logarithmic(true)
-                                    .update_while_editing(true)
                                     .text("Number of base copies to build"),
                             );
 

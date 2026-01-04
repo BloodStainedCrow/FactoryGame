@@ -604,7 +604,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                                                     .map(|v| v.take())
                                                     .unwrap_or(None);
                                             }
-                                            let Ok(()) = self
+                                            let Ok(_) = self
                                                 .inserter_waitlist_output_vec
                                                 .push_within_capacity(
                                                 InternalInserterReinsertionInfo {
@@ -703,7 +703,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                                                     .map(|v| v.take())
                                                     .unwrap_or(None);
                                             }
-                                            let Ok(()) = self
+                                            let Ok(_) = self
                                                 .inserter_waitlist_output_vec
                                                 .push_within_capacity(
                                                 InternalInserterReinsertionInfo {
