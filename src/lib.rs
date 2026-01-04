@@ -19,6 +19,7 @@ pub mod built_info {
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use eframe::web_sys;
 
+#[cfg(feature = "client")]
 use std::{
     borrow::Borrow,
     net::{SocketAddr, TcpStream},
@@ -76,6 +77,8 @@ pub mod lab;
 pub mod mining_drill;
 pub mod power;
 pub mod research;
+
+pub mod scenario;
 
 mod shopping_list_arena;
 
@@ -253,7 +256,10 @@ pub fn main() {
 enum StartGameInfo {
     Load(PathBuf),
     LoadReadable(PathBuf),
-    Create(GameCreationInfo),
+    Create {
+        name: String,
+        info: GameCreationInfo,
+    },
 }
 
 enum GameCreationInfo {
@@ -280,6 +286,9 @@ enum GameCreationInfo {
 fn run_integrated_server(
     progress: Arc<AtomicU64>,
     start_game_info: StartGameInfo,
+
+    // FIXME: This type is wrong
+    listen_addr: Option<&'static str>,
 ) -> (LoadedGame, Arc<AtomicU64>, Sender<Input>) {
     // TODO: Do mod loading here
     let raw_data = get_raw_data_test();
@@ -289,10 +298,10 @@ fn run_integrated_server(
 
     let connections: Arc<Mutex<Vec<std::net::TcpStream>>> = Arc::default();
 
-    let local_addr = "127.0.0.1:57267";
     let cancel: Arc<AtomicBool> = Default::default();
-
-    accept_continously(local_addr, connections.clone(), cancel.clone()).unwrap();
+    if let Some(listen_addr) = listen_addr {
+        accept_continously(listen_addr, connections.clone(), cancel.clone()).unwrap();
+    }
 
     match data_store {
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
@@ -307,11 +316,10 @@ fn run_integrated_server(
             let game_state = Arc::new(match start_game_info {
                 StartGameInfo::Load(path) => load(path)
                     .map(|sg| {
-                        if sg.checksum != data_store.checksum {
-                            // Try reconciliation
-                            // todo!("Checksum mismatch, try to merge old and new mod state")
-                        } else {
-                        }
+                        assert_eq!(
+                            sg.checksum, data_store.checksum,
+                            "A savegame can only be loaded with the EXACT same mods!"
+                        );
                         sg.game_state
                     })
                     .unwrap(),
@@ -324,33 +332,47 @@ fn run_integrated_server(
                         sg.game_state
                     })
                     .unwrap(),
-                StartGameInfo::Create(info) => match info {
-                    GameCreationInfo::Empty => GameState::new(&data_store),
-                    GameCreationInfo::Megabase(use_solar_field) => {
-                        GameState::new_with_megabase(use_solar_field, progress, &data_store)
-                    },
-                    GameCreationInfo::Gigabase(count) => {
-                        GameState::new_with_gigabase(count, progress, &data_store)
-                    },
-                    GameCreationInfo::SolarField(wattage, base_pos) => {
-                        GameState::new_with_tons_of_solar(
-                            wattage,
-                            base_pos,
-                            None,
-                            progress,
-                            &data_store,
-                        )
-                    },
-                    GameCreationInfo::LotsOfBelts => {
-                        GameState::new_with_lots_of_belts(progress, &data_store)
-                    },
-                    GameCreationInfo::TrainRide => {
-                        GameState::new_with_world_train_ride(progress, &data_store)
-                    },
+                StartGameInfo::Create { name, info } => {
+                    assert!(
+                        name.is_ascii(),
+                        "For now only ASCII game names are allowed, since they are used as the filename"
+                    );
+                    match info {
+                        GameCreationInfo::Empty => GameState::new(name, &data_store),
+                        GameCreationInfo::Megabase(use_solar_field) => {
+                            GameState::new_with_megabase(
+                                name,
+                                use_solar_field,
+                                progress,
+                                &data_store,
+                            )
+                        },
+                        GameCreationInfo::Gigabase(count) => {
+                            GameState::new_with_gigabase(name, count, progress, &data_store)
+                        },
+                        GameCreationInfo::SolarField(wattage, base_pos) => {
+                            GameState::new_with_tons_of_solar(
+                                name,
+                                wattage,
+                                base_pos,
+                                None,
+                                progress,
+                                &data_store,
+                            )
+                        },
+                        GameCreationInfo::LotsOfBelts => {
+                            GameState::new_with_lots_of_belts(name, progress, &data_store)
+                        },
+                        GameCreationInfo::TrainRide => {
+                            GameState::new_with_world_train_ride(name, progress, &data_store)
+                        },
 
-                    GameCreationInfo::FromBP(path) => GameState::new_with_bp(&data_store, path),
+                        GameCreationInfo::FromBP(path) => {
+                            GameState::new_with_bp(name, &data_store, path)
+                        },
 
-                    _ => unimplemented!(),
+                        _ => unimplemented!(),
+                    }
                 },
             });
 
@@ -369,7 +391,9 @@ fn run_integrated_server(
                         // This is a little hack. Our connection accept thread is stuck waiting for connections and will only exit if anything connects.
                         // So we just connect to ourselves :)
                         // See https://stackoverflow.com/questions/56692961/how-do-i-gracefully-exit-tcplistener-incoming
-                        let _ = TcpStream::connect(local_addr);
+                        if let Some(local_addr) = listen_addr {
+                            let _ = TcpStream::connect(local_addr);
+                        }
                     }),
                 },
                 &data_store,
@@ -423,7 +447,7 @@ fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
             let game_state = load(todo!("Add a console argument for the save file path"))
                 .map(|save| save.game_state)
-                .unwrap_or_else(|| GameState::new(&data_store));
+                .unwrap_or_else(|| GameState::new("Server Save".to_string(), &data_store));
 
             let mut game = Game::new(
                 GameInitData::DedicatedServer(
@@ -474,7 +498,7 @@ fn run_client(remote_addr: SocketAddr) -> (LoadedGame, Arc<AtomicU64>, Sender<In
 
             let game_state = Arc::new(
                 // FIXME: When running in client mode, we should download the gamestate from the server instead of loading it from disk
-                GameState::new(&data_store),
+                GameState::new("FIXME".to_string(), &data_store),
             );
 
             let (ui_sender, ui_recv) = channel();
@@ -569,7 +593,7 @@ mod tests {
     fn clone_empty_simulation(b: &mut Bencher) {
         let data_store = get_raw_data_test().process().assume_simple();
 
-        let game_state = GameState::new(&data_store);
+        let game_state = GameState::new("Test World".to_string(), &data_store);
 
         let replay = Replay::new(&game_state, None, Rc::new(data_store));
 
@@ -583,7 +607,7 @@ mod tests {
 
         let data_store = get_raw_data_test().process().assume_simple();
 
-        let game_state = GameState::new(&data_store);
+        let game_state = GameState::new("Test World".to_string(), &data_store);
 
         let mut replay = Replay::new(&game_state, None, Rc::new(data_store));
 
@@ -603,7 +627,7 @@ mod tests {
 
         let data_store = get_raw_data_test().process().assume_simple();
 
-        let game_state = GameState::new(&data_store);
+        let game_state = GameState::new("Test World".to_string(), &data_store);
 
         let mut replay = Replay::new(&game_state, None, Rc::new(data_store));
 

@@ -718,6 +718,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ParGenerateInfo<ItemIdxType
 
 /// Its not very parallel for now, but it does use the fact that we know the generation order to skip a lot of searches
 pub fn par_generate<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    name: String,
     world_size: BoundingBox,
     generation_info: ParGenerateInfo<ItemIdxType, RecipeIdxType>,
     positions: Vec<Position>,
@@ -837,7 +838,7 @@ pub fn par_generate<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     GameState {
         world: Mutex::new(world),
         simulation_state: Mutex::new(sim_state),
-        aux_data: Mutex::new(AuxillaryData::new(data_store)),
+        aux_data: Mutex::new(AuxillaryData::new(name, data_store)),
     }
 }
 

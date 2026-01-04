@@ -29,6 +29,8 @@ use crate::par_generation::ParGenerateInfo;
 use crate::par_generation::par_generate;
 use crate::power::Watt;
 #[cfg(feature = "client")]
+use crate::saving::loading::SaveFileList;
+#[cfg(feature = "client")]
 use crate::{Input, LoadedGame};
 use crate::{
     belt::{BeltBeltInserterInfo, BeltStore},
@@ -102,6 +104,8 @@ use crate::get_size::Mutex;
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct AuxillaryData {
+    pub game_name: String,
+
     pub current_tick: u64,
 
     pub statistics: GenStatistics,
@@ -115,9 +119,11 @@ pub struct AuxillaryData {
 }
 impl AuxillaryData {
     pub fn new<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        name: String,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         AuxillaryData {
+            game_name: name,
             current_tick: 0,
             statistics: GenStatistics::new(data_store),
             update_times: Timeline::new(false, data_store),
@@ -159,15 +165,16 @@ impl<'a> AddAssign<&'a UpdateTime> for UpdateTime {
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, RecipeIdxType> {
     #[must_use]
-    pub fn new(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+    pub fn new(name: String, data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         Self {
             world: Mutex::new(World::default()),
             simulation_state: Mutex::new(SimulationState::new(data_store)),
-            aux_data: Mutex::new(AuxillaryData::new(data_store)),
+            aux_data: Mutex::new(AuxillaryData::new(name, data_store)),
         }
     }
 
     fn new_with_world_area(
+        name: String,
         top_left: Position,
         bottom_right: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -175,12 +182,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         Self {
             world: Mutex::new(World::new_with_area(top_left, bottom_right)),
             simulation_state: Mutex::new(SimulationState::new(data_store)),
-            aux_data: Mutex::new(AuxillaryData::new(data_store)),
+            aux_data: Mutex::new(AuxillaryData::new(name, data_store)),
         }
     }
 
     #[must_use]
     pub fn new_with_megabase(
+        name: String,
         use_solar_field: bool,
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -189,6 +197,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         // TODO: Increase size to fit solar field
         let mut ret = GameState::new_with_world_area(
+            name,
             Position {
                 x: X_OFFS,
                 y: -6_000,
@@ -273,6 +282,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
     #[must_use]
     pub fn new_with_gigabase(
+        name: String,
         count: u16,
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -330,6 +340,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         error!("Done!");
 
         let ret = par_generate(
+            name,
             BoundingBox {
                 top_left: Position { x: 0, y: start },
                 bottom_right: Position {
@@ -353,10 +364,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
     #[must_use]
     pub fn new_with_beacon_belt_production(
+        name: String,
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         let mut ret = GameState::new_with_world_area(
+            name,
             Position { x: 0, y: 0 },
             Position { x: 10000, y: 20000 },
             data_store,
@@ -396,10 +409,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
     #[must_use]
     pub fn new_with_lots_of_belts(
+        name: String,
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         let mut ret = GameState::new_with_world_area(
+            name,
             Position { x: 0, y: 0 },
             Position {
                 x: 1_000,
@@ -439,6 +454,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
     #[must_use]
     pub fn new_with_tons_of_solar(
+        name: String,
         wattage: Watt,
         base_pos: Position,
         height: Option<u64>,
@@ -447,6 +463,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     ) -> Self {
         // TODO: Correct size
         let mut ret = GameState::new_with_world_area(
+            name,
             Position { x: 0, y: 0 },
             Position { x: 60000, y: 60000 },
             data_store,
@@ -459,6 +476,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
     #[must_use]
     pub fn new_with_world_train_ride(
+        name: String,
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
@@ -466,6 +484,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         // TODO: Correct size
         let ret = GameState::new_with_world_area(
+            name,
             Position {
                 x: -1_000_000,
                 y: -1_000_000,
@@ -554,10 +573,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
     #[must_use]
     pub fn new_eight_beacon_factory(
+        name: String,
         _progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        let mut ret = GameState::new(data_store);
+        let mut ret = GameState::new(name, data_store);
 
         let red = File::open("test_blueprints/eight_beacon_red_sci_with_storage.bp").unwrap();
         let red: Blueprint = ron::de::from_reader(red).unwrap();
@@ -573,10 +593,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     }
 
     pub fn new_with_bp(
+        name: String,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
         bp_path: impl AsRef<Path>,
     ) -> Self {
         let mut ret = GameState::new_with_world_area(
+            name,
             Position { x: 0, y: 0 },
             Position {
                 x: 32000,
@@ -1181,9 +1203,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
 }
 
 #[cfg(feature = "client")]
-pub enum AppState {
+pub(crate) enum AppState {
     MainMenu {
         in_ip_box: Option<(String, bool)>,
+    },
+    LoadSaveMenu {
+        save_files: SaveFileList,
+    },
+    NewGameMenu {
+        new_game_name: String,
         gigabase_size: u16,
     },
     Ingame,
@@ -3610,7 +3638,7 @@ mod tests {
         #[test]
         fn test_random_blueprint_does_not_crash(base_pos in random_position(), blueprint in random_blueprint_strategy::<u8, u8>(0..1_000, &DATA_STORE)) {
 
-            let mut game_state = GameState::new(&DATA_STORE);
+            let mut game_state = GameState::new("Test Game".to_string(), &DATA_STORE);
 
             blueprint.apply(false, base_pos, &mut game_state, &DATA_STORE);
 
@@ -3619,7 +3647,7 @@ mod tests {
         #[test]
         fn test_random_blueprint_does_not_crash_after(base_pos in random_position(), blueprint in random_blueprint_strategy::<u8, u8>(0..100, &DATA_STORE), time in 0usize..10) {
 
-            let mut game_state = GameState::new(&DATA_STORE);
+            let mut game_state = GameState::new("Test Game".to_string(), &DATA_STORE);
 
             blueprint.apply(false, base_pos, &mut game_state, &DATA_STORE);
 
@@ -3649,7 +3677,7 @@ mod tests {
             //     ..
             // })));
 
-            let mut game_state = GameState::new(&DATA_STORE);
+            let mut game_state = GameState::new("Test Game".to_string(), &DATA_STORE);
 
             Blueprint { actions: actions.into_iter().map(|a| BlueprintAction::from_with_datastore(&a, &*DATA_STORE)).collect() }.apply(false, Position { x: 0, y: 0 }, &mut game_state, &DATA_STORE);
 
@@ -3729,7 +3757,7 @@ mod tests {
 
     #[bench]
     fn bench_single_inserter(b: &mut Bencher) {
-        let mut game_state = GameState::new(&DATA_STORE);
+        let mut game_state = GameState::new("Test Game".to_string(), &DATA_STORE);
 
         let mut rep = Replay::new(&game_state, None, (*DATA_STORE).clone());
 

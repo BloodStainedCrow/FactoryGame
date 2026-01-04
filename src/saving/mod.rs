@@ -4,6 +4,7 @@ use std::{
     io::{Read, Write},
     marker::PhantomData,
     path::PathBuf,
+    time::Duration,
 };
 
 use bitcode::Encode;
@@ -20,7 +21,11 @@ use crate::{
     item::IdxTrait,
     join_many::join,
     par_generation::Timer,
+    saving::save_file_settings::StoredSaveFileInfo,
 };
+
+pub mod loading;
+mod save_file_settings;
 
 #[derive(Debug, Encode, serde::Deserialize, serde::Serialize)]
 pub struct SaveGame<
@@ -63,23 +68,38 @@ pub fn save_at_fork<V: serde::Serialize + ?Sized>(value: &V, path: PathBuf) {
 }
 
 pub fn load_at<V: for<'a> serde::Deserialize<'a>>(path: PathBuf) -> V {
+    try_load_at(path).expect("Failed to load file")
+}
+
+#[derive(Debug)]
+pub(crate) enum LoadError {
+    CouldNotOpenFile(std::io::Error),
+    DeserializationFailed(bincode::error::DecodeError),
+}
+
+pub fn try_load_at<V: for<'a> serde::Deserialize<'a>>(path: PathBuf) -> Result<V, LoadError> {
     profiling::scope!("Load at", format!("path: {}", path.display()));
     let file = {
         profiling::scope!("Open file");
-        File::open(&path).expect(&format!("could not open file {:?}", &path))
+        File::open(&path).map_err(|err| LoadError::CouldNotOpenFile(err))?
     };
 
     let mut buf_reader = BufReader::new(file);
-    {
+    let loaded = {
         profiling::scope!("Decompressing and deserializing");
         bincode::serde::decode_from_std_read(&mut buf_reader, bincode::config::standard())
-            .expect("Deserialization failed")
-    }
+            .map_err(|err| LoadError::DeserializationFailed(err))?
+    };
+
+    Ok(loaded)
 }
 
 /// # Panics
 /// If File system stuff fails
 pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    name: &str,
+    save_name: Option<&str>,
+
     world: &World<ItemIdxType, RecipeIdxType>,
     simulation_state: &SimulationState<ItemIdxType, RecipeIdxType>,
     aux_data: &AuxillaryData,
@@ -113,7 +133,24 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     // }
 
     let temp_file_dir = dir.data_dir().join("tmp.save");
-    let save_file_dir = dir.data_dir().join("save.save");
+    let save_file_dir = if let Some(name) = save_name {
+        dir.data_dir().join(&name)
+    } else {
+        dir.data_dir().join("autosave.save")
+    };
+
+    let info = StoredSaveFileInfo {
+        name: if save_name.is_some() {
+            name.to_string()
+        } else {
+            format!("[Autosave] {}", name)
+        },
+        saved_at: chrono::offset::Utc::now(),
+        playtime: Duration::from_secs(1) / 60 * aux_data.current_tick as u32,
+        is_autosave: save_name.is_none(),
+        includes_replay: false,
+        preview: None,
+    };
 
     create_dir_all(&temp_file_dir).expect("Could not create temp dir");
 
@@ -136,6 +173,9 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         } = simulation_state;
 
         join!(
+            || {
+                save_at(&info, temp_file_dir.join("save_file_info"));
+            },
             || {
                 save_at(&checksum, temp_file_dir.join("checksum"));
             },
@@ -208,6 +248,9 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 /// # Panics
 /// If File system stuff fails
 pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    name: &str,
+    save_name: Option<&str>,
+
     world: &World<ItemIdxType, RecipeIdxType>,
     simulation_state: &SimulationState<ItemIdxType, RecipeIdxType>,
     aux_data: &AuxillaryData,
@@ -219,8 +262,27 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
     create_dir_all(dir.data_dir()).expect("Could not create data dir");
 
+    // FIXME: Allocation and chrono is prob illegal after a fork
+    let info = StoredSaveFileInfo {
+        name: if save_name.is_some() {
+            name.to_string()
+        } else {
+            format!("[Autosave] {}", name)
+        },
+        saved_at: chrono::offset::Utc::now(),
+        playtime: Duration::from_secs(1) / 60 * aux_data.current_tick as u32,
+
+        is_autosave: save_name.is_none(),
+        includes_replay: false,
+        preview: None,
+    };
+
     let temp_file_dir = dir.data_dir().join("tmp.save");
-    let save_file_dir = dir.data_dir().join("save.save");
+    let save_file_dir = if let Some(name) = save_name {
+        dir.data_dir().join(&name)
+    } else {
+        dir.data_dir().join("autosave.save")
+    };
 
     create_dir_all(&temp_file_dir).expect("Could not create temp dir");
 
@@ -240,6 +302,7 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 },
         } = simulation_state;
 
+        save_at_fork(&info, temp_file_dir.join("save_file_info"));
         send.write(&[0]).expect("Write to pipe failed");
         // send.flush().expect("Flushing pipe failed");
         save_at_fork(checksum, temp_file_dir.join("checksum"));
@@ -312,6 +375,9 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 /// # Panics
 /// If File system stuff fails
 pub fn save_with_fork<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    name: &str,
+    save_name: Option<&str>,
+
     world: &World<ItemIdxType, RecipeIdxType>,
     simulation_state: &SimulationState<ItemIdxType, RecipeIdxType>,
     aux_data: &AuxillaryData,
@@ -329,12 +395,27 @@ pub fn save_with_fork<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             Ok(fork::Fork::Child) => {},
             Err(e) => {
                 log::error!("Saving with fork failed: Unable to create fork: {}", e);
-                save_components(world, simulation_state, aux_data, data_store);
+                save_components(
+                    name,
+                    save_name,
+                    world,
+                    simulation_state,
+                    aux_data,
+                    data_store,
+                );
                 return None;
             },
         }
 
-        save_components_fork_safe(world, simulation_state, aux_data, data_store, send);
+        save_components_fork_safe(
+            name,
+            save_name,
+            world,
+            simulation_state,
+            aux_data,
+            data_store,
+            send,
+        );
 
         unsafe { libc::_exit(0) }
     }
@@ -349,6 +430,9 @@ pub fn save_with_fork<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 /// # Panics
 /// If File system stuff fails
 pub fn save<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    name: &str,
+    save_name: Option<&str>,
+
     game_state: &GameState<ItemIdxType, RecipeIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
@@ -372,7 +456,14 @@ pub fn save<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &*aux_data.lock()
     };
 
-    save_components(world, simulation_state, aux_data, data_store);
+    save_components(
+        name,
+        save_name,
+        world,
+        simulation_state,
+        aux_data,
+        data_store,
+    );
 }
 
 /// # Panics

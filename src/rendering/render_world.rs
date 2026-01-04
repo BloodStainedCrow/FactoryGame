@@ -1916,7 +1916,14 @@ pub fn render_ui<
     if cfg!(target_os = "linux") {
         if tick < state_machine_ref.last_tick_seen_for_autosave {
             if state_machine_ref.current_fork_save_in_progress.is_none() {
-                let recv = save_with_fork(&*world, &*simulation_state, &*aux_data, data_store_ref);
+                let recv = save_with_fork(
+                    &aux_data.game_name,
+                    None,
+                    &*world,
+                    &*simulation_state,
+                    &*aux_data,
+                    data_store_ref,
+                );
                 if let Some(recv) = recv {
                     recv.set_nonblocking(true)
                         .expect("Could not set pipe to nonblocking!");
@@ -1926,7 +1933,14 @@ pub fn render_ui<
                     });
                 } else {
                     error!("Nonblocking save failed to start! Saving in blocking mode");
-                    save_components(&*world, &*simulation_state, &*aux_data, data_store_ref);
+                    save_components(
+                        &aux_data.game_name,
+                        None,
+                        &*world,
+                        &*simulation_state,
+                        &*aux_data,
+                        data_store_ref,
+                    );
                 }
             } else {
                 warn!(
@@ -1940,7 +1954,14 @@ pub fn render_ui<
             let progress = if tick > 1 && tick <= 5 { 1.0 } else { 0.0 };
             if tick < state_machine_ref.last_tick_seen_for_autosave {
                 let _timer = Timer::new("Saving");
-                save_components(&*world, &*simulation_state, &*aux_data, data_store_ref);
+                save_components(
+                    &aux_data.game_name,
+                    None,
+                    &*world,
+                    &*simulation_state,
+                    &*aux_data,
+                    data_store_ref,
+                );
             }
             Window::new("Saving...").default_open(true).show(ctx, |ui| {
                 ui.add(ProgressBar::new(progress).corner_radius(0.0));
@@ -1995,7 +2016,14 @@ pub fn render_ui<
             .show(ctx, |ui| {
                 ui.heading("Paused");
                 if ui.button("Save").clicked() {
-                    save_components(&*world, &*simulation_state, &*aux_data, data_store_ref);
+                    save_components(
+                        &aux_data.game_name,
+                        Some(&format!("{}.save", &aux_data.game_name)),
+                        &*world,
+                        &*simulation_state,
+                        &*aux_data,
+                        data_store_ref,
+                    );
                 }
 
                 if ui
@@ -2011,8 +2039,14 @@ pub fn render_ui<
                     })
                     .clicked()
                 {
-                    let recv =
-                        save_with_fork(&*world, &*simulation_state, &*aux_data, data_store_ref);
+                    let recv = save_with_fork(
+                        &aux_data.game_name,
+                        Some(&format!("{}.save", &aux_data.game_name)),
+                        &*world,
+                        &*simulation_state,
+                        &*aux_data,
+                        data_store_ref,
+                    );
                     if let Some(recv) = recv {
                         recv.set_nonblocking(true)
                             .expect("Could not set pipe to nonblocking!");
@@ -3506,7 +3540,7 @@ pub fn render_ui<
                                 ui.label(format!("Productivity: {:.1}%", prod_mod * 100.0));
                                 ui.label(format!("Max Consumption: {}({:+.0}%)", Watt((base_power_consumption.0 as f64 * (1.0 + power_consumption_mod as f64)) as u64), power_consumption_mod * 100.0));
 
-                                
+
                                 #[cfg(feature = "assembler-craft-tracking")]
                                 ui.label(format!("Crafts finished: {}", times_craft_finished));
 
