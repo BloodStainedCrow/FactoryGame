@@ -1278,7 +1278,7 @@ mod test {
     use crate::{
         belt::smart::SmartBelt,
         inserter::{FakeUnionStorage, belt_storage_inserter::Dir},
-        storage_list::MaxInsertionLimit,
+        storage_list::{InserterWaitLists, MaxInsertionLimit},
     };
 
     use super::*;
@@ -1328,10 +1328,12 @@ mod test {
                             (
                                 MaxInsertionLimit::PerMachine(max_insert.as_slice()),
                                 storages_in[item].as_mut_slice(),
+                                InserterWaitLists::None,
                             ),
                             (
                                 MaxInsertionLimit::PerMachine(max_insert.as_slice()),
                                 storages_out[item].as_mut_slice(),
+                                InserterWaitLists::None,
                             ),
                         ],
                         &mut belts[item],
@@ -1345,10 +1347,12 @@ mod test {
                             (
                                 MaxInsertionLimit::PerMachine(max_insert.as_slice()),
                                 storages_in[item].as_mut_slice(),
+                                InserterWaitLists::None,
                             ),
                             (
                                 MaxInsertionLimit::PerMachine(max_insert.as_slice()),
                                 storages_out[item].as_mut_slice(),
+                                InserterWaitLists::None,
                             ),
                         ],
                         &mut belts[item],
@@ -1424,10 +1428,12 @@ mod test {
                             (
                                 MaxInsertionLimit::PerMachine(max_insert.as_slice()),
                                 storage_in.as_mut_slice(),
+                                InserterWaitLists::None,
                             ),
                             (
                                 MaxInsertionLimit::PerMachine(max_insert.as_slice()),
                                 storage_out.as_mut_slice(),
+                                InserterWaitLists::None,
                             ),
                         ],
                         belts,
@@ -1441,10 +1447,12 @@ mod test {
                             (
                                 MaxInsertionLimit::PerMachine(max_insert.as_slice()),
                                 storage_in.as_mut_slice(),
+                                InserterWaitLists::None,
                             ),
                             (
                                 MaxInsertionLimit::PerMachine(max_insert.as_slice()),
                                 storage_out.as_mut_slice(),
+                                InserterWaitLists::None,
                             ),
                         ],
                         belts,

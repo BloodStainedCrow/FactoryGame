@@ -2,6 +2,7 @@ use crate::assembler::simd::Inserter;
 use crate::assembler::simd::InserterReinsertionInfo;
 use crate::frontend::world::tile::ModuleSlots;
 use crate::frontend::world::tile::ModuleTy;
+use crate::power::calculate_beacon_effect;
 use crate::{
     assembler::{MultiAssemblerStore, simd::MultiAssemblerStore as MultiAssemblerStoreStruct},
     join_many::join,
@@ -739,7 +740,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 .into_iter()
                 .map(|(network, _positions)| {
                     let mut new_network: PowerGrid<ItemIdxType, RecipeIdxType> =
-                        Self::new_from_graph(PowerGridIdentifier::MAX, network, data_store);
+                        // FIXME: Is an Id 0 fine here?
+                        Self::new_from_graph(0, network, data_store);
 
                     let storage_updates: Vec<_> = self
                         .move_connected_entities(&mut new_network, data_store)
@@ -868,13 +870,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         / data_store.beacon_info[usize::from(*ty)].effectiveness.1 as i16,
                 );
 
-                let effect = if self.last_power_mult >= MIN_BEACON_POWER_MULT {
-                    raw_effect
-                } else {
-                    (0, 0, raw_effect.2)
-                };
+                let effect = calculate_beacon_effect(
+                    self.power_mult_at_last_beacon_update,
+                    raw_effect.into(),
+                );
 
-                if effect.0 > 0 || effect.1 > 0 || effect.2 > 0 {
+                if effect[0] > 0 || effect[1] > 0 || effect[2] > 0 {
                     let removed_beacon_affected_entities = self
                         .beacon_affected_entity_map
                         .remove(&(pole_pos, weak_idx))
@@ -882,7 +883,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                     for effected_entity in removed_beacon_affected_entities {
                         let old = self.beacon_affected_entities[&effected_entity];
 
-                        *self.beacon_affected_entities.get_mut(&effected_entity).expect("Beacon affected entities list did not include a beacons affected entity") = (old.0 - effect.0, old.1 - effect.1, old.2 - effect.2);
+                        *self.beacon_affected_entities.get_mut(&effected_entity).expect("Beacon affected entities list did not include a beacons affected entity") = (old.0 - effect[0], old.1 - effect[1], old.2 - effect[2]);
 
                         // The effect on the other grids is already handled in  remove_pole
                     }
@@ -2710,66 +2711,41 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         self.last_power_consumption = power_used.watt_from_tick();
         self.last_produced_power = power_extracted.watt_from_tick();
 
-        // TODO: Factorio just scales the beacon effect linearly
-        // let beacon_updates: Vec<(BeaconAffectedEntity<_>, (_, _, _))> = if next_power_mult
-        //     < MIN_BEACON_POWER_MULT
-        //     && self.last_power_mult >= MIN_BEACON_POWER_MULT
-        // {
-        //     // Disable beacons (But keep power consumption modifier unchanged, to prevent flickering)
-        //     self.beacon_affected_entities
-        //         .iter()
-        //         .map(|(k, v)| (*k, (-v.0, -v.1, -0)))
-        //         .collect()
-        // } else if next_power_mult >= MIN_BEACON_POWER_MULT
-        //     && self.last_power_mult < MIN_BEACON_POWER_MULT
-        // {
-        //     // Enable beacons (But keep power consumption modifier unchanged, to prevent flickering)
-        //     self.beacon_affected_entities
-        //         .iter()
-        //         .map(|(k, v)| (*k, (v.0, v.1, 0)))
-        //         .collect()
-        // } else {
-        //     vec![]
-        // };
-
-        // This is scaling beacon effect linearly
-        // FIXME: For this to be correct, when adding a beacon/adding modules to beacon etc, we need to calculate the effect the same way
-
         // TODO: AFAIK Factorio does not update the effects of beacons every tick but more sparsely (to save UPS)
         // For now I will do the same, and only update the beacon effectiveness every 60 ticks (1/seconds)
         // We are still much more effective than Factorio here since AFAIK, they need to update beacosn even if the power satisfaction (and as such the beacon effect) did not change
         // In that case I can just not do any updates
-        let beacon_updates = if current_tick % 60 == 0 {
-            let ret = if next_power_mult != self.power_mult_at_last_beacon_update {
-                profiling::scope!("Generate Beacon updates");
+        let beacon_updates: Vec<(BeaconAffectedEntity<_>, _)> = if current_tick % 60 == 0 {
+            let updates = if next_power_mult == self.power_mult_at_last_beacon_update {
+                vec![]
+            } else {
                 self.beacon_affected_entities
                     .iter()
-                    .map(|(&entity, &effect)| {
-                        let effect: [i16; 3] = effect.into();
-                        let old_effect = effect.map(|e| {
-                            i32::from(e) * i32::from(self.power_mult_at_last_beacon_update) / 64
-                        });
-                        let new_effect =
-                            effect.map(|e| i32::from(e) * i32::from(next_power_mult) / 64);
+                    .filter_map(|(k, v)| {
+                        let old_effect = calculate_beacon_effect(
+                            self.power_mult_at_last_beacon_update,
+                            (*v).into(),
+                        );
+                        let new_effect = calculate_beacon_effect(next_power_mult, (*v).into());
 
-                        let change = old_effect
-                            .into_iter()
-                            .zip(new_effect)
-                            .map(|(old, new)| new - old)
-                            .map(|v| v.try_into().unwrap())
-                            .collect_array()
-                            .unwrap();
-
-                        (entity, change.into())
+                        if old_effect == new_effect {
+                            None
+                        } else {
+                            Some((
+                                *k,
+                                (
+                                    new_effect[0] - old_effect[0],
+                                    new_effect[1] - old_effect[1],
+                                    new_effect[2] - old_effect[2],
+                                ),
+                            ))
+                        }
                     })
                     .collect()
-            } else {
-                vec![]
             };
 
             self.power_mult_at_last_beacon_update = next_power_mult;
-
-            ret
+            updates
         } else {
             vec![]
         };
@@ -2925,7 +2901,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
 
         let effect: (i16, i16, i16) = module_effects;
 
-        let effect = (
+        let raw_effect = (
             effect.0 * data_store.beacon_info[usize::from(ty)].effectiveness.0 as i16
                 / data_store.beacon_info[usize::from(ty)].effectiveness.1 as i16,
             effect.1 * data_store.beacon_info[usize::from(ty)].effectiveness.0 as i16
@@ -2940,9 +2916,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 .get_mut(affected_entity)
                 .unwrap();
 
-            stored_effect.0 -= effect.0;
-            stored_effect.1 -= effect.1;
-            stored_effect.2 -= effect.2;
+            stored_effect.0 -= raw_effect.0;
+            stored_effect.1 -= raw_effect.1;
+            stored_effect.2 -= raw_effect.2;
 
             if *stored_effect == (0, 0, 0) {
                 let Some((0, 0, 0)) = self.beacon_affected_entities.remove(affected_entity) else {
@@ -2951,11 +2927,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             }
         }
 
-        let now_removed_effect = if self.last_power_mult >= MIN_BEACON_POWER_MULT {
-            (-effect.0, -effect.1, -effect.2)
-        } else {
-            (-0, -0, -effect.2)
-        };
+        let old_effect =
+            calculate_beacon_effect(self.power_mult_at_last_beacon_update, raw_effect.into());
+
+        let now_removed_effect = (-old_effect[0], -old_effect[1], -old_effect[2]);
 
         #[cfg(debug_assertions)]
         {

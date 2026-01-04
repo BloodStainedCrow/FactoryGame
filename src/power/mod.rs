@@ -5,6 +5,7 @@ use crate::inserter::belt_storage_movement_list::{
 };
 use crate::inserter::storage_storage_with_buckets_indirect::InserterBucketData;
 use crate::item::Indexable;
+use crate::power::power_grid::MAX_POWER_MULT;
 use crate::{
     app_state::StorageStorageInserterStore, frontend::world::tile::ModuleSlots, join_many::join,
 };
@@ -301,7 +302,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
     fn add_power_grid(
         &mut self,
         power_grid: PowerGrid<ItemIdxType, RecipeIdxType>,
-        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> PowerGridIdentifier {
         // TODO: This is O(N). Is that a problem?
         let hole_idx = self.power_grids.iter().position(|grid| grid.is_placeholder);
@@ -321,6 +322,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                 PowerGridIdentifier::MAX
             ))
         };
+
+        self.power_grids[id as usize].set_grid_id(id, data_store);
 
         for pole_pos in poles {
             self.pole_pos_to_grid_id.insert(pole_pos, id);
@@ -747,27 +750,98 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         };
 
         let beacon_updates = match (
-            new_power_mult >= MIN_BEACON_POWER_MULT,
-            self.power_grids[usize::from(removed_id)].last_power_mult >= MIN_BEACON_POWER_MULT,
+            new_power_mult
+                == self.power_grids[usize::from(removed_id)].power_mult_at_last_beacon_update,
+            new_power_mult
+                == self.power_grids[usize::from(kept_id)].power_mult_at_last_beacon_update,
         ) {
             (true, true) => vec![],
-            (true, false) => {
-                // Enable the beacons
-                self.power_grids[usize::from(removed_id)]
-                    .beacon_affected_entities
-                    .iter()
-                    .map(|(k, v)| (*k, (v.0, v.1, 0)))
-                    .collect()
-            },
-            (false, true) => {
-                // Disable the beacons
-                self.power_grids[usize::from(removed_id)]
-                    .beacon_affected_entities
-                    .iter()
-                    .map(|(k, v)| (*k, (-v.0, -v.1, -0)))
-                    .collect()
-            },
-            (false, false) => vec![],
+            (true, false) => self.power_grids[usize::from(removed_id)]
+                .beacon_affected_entities
+                .iter()
+                .map(|(k, v)| {
+                    let old_effect = calculate_beacon_effect(
+                        self.power_grids[usize::from(removed_id)].power_mult_at_last_beacon_update,
+                        (*v).into(),
+                    );
+                    let new_effect = calculate_beacon_effect(new_power_mult, (*v).into());
+
+                    (
+                        *k,
+                        old_effect
+                            .into_iter()
+                            .zip(new_effect)
+                            .map(|(old, new)| new - old)
+                            .collect_array()
+                            .unwrap(),
+                    )
+                })
+                .collect(),
+            (false, true) => self.power_grids[usize::from(kept_id)]
+                .beacon_affected_entities
+                .iter()
+                .map(|(k, v)| {
+                    let old_effect = calculate_beacon_effect(
+                        self.power_grids[usize::from(kept_id)].power_mult_at_last_beacon_update,
+                        (*v).into(),
+                    );
+                    let new_effect = calculate_beacon_effect(new_power_mult, (*v).into());
+
+                    (
+                        *k,
+                        old_effect
+                            .into_iter()
+                            .zip(new_effect)
+                            .map(|(old, new)| new - old)
+                            .collect_array()
+                            .unwrap(),
+                    )
+                })
+                .collect(),
+            (false, false) => self.power_grids[usize::from(removed_id)]
+                .beacon_affected_entities
+                .iter()
+                .map(|(k, v)| {
+                    let old_effect = calculate_beacon_effect(
+                        self.power_grids[usize::from(removed_id)].power_mult_at_last_beacon_update,
+                        (*v).into(),
+                    );
+                    let new_effect = calculate_beacon_effect(new_power_mult, (*v).into());
+
+                    (
+                        *k,
+                        old_effect
+                            .into_iter()
+                            .zip(new_effect)
+                            .map(|(old, new)| new - old)
+                            .collect_array()
+                            .unwrap(),
+                    )
+                })
+                .chain(
+                    self.power_grids[usize::from(kept_id)]
+                        .beacon_affected_entities
+                        .iter()
+                        .map(|(k, v)| {
+                            let old_effect = calculate_beacon_effect(
+                                self.power_grids[usize::from(kept_id)]
+                                    .power_mult_at_last_beacon_update,
+                                (*v).into(),
+                            );
+                            let new_effect = calculate_beacon_effect(new_power_mult, (*v).into());
+
+                            (
+                                *k,
+                                old_effect
+                                    .into_iter()
+                                    .zip(new_effect)
+                                    .map(|(old, new)| new - old)
+                                    .collect_array()
+                                    .unwrap(),
+                            )
+                        }),
+                )
+                .collect(),
         };
 
         {
@@ -775,8 +849,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             for update in beacon_updates {
                 match update.0 {
                     power_grid::BeaconAffectedEntity::Assembler { id } => {
-                        self.power_grids[usize::from(id.grid)]
-                            .change_assembler_module_modifiers(id, update.1, data_store);
+                        self.power_grids[usize::from(id.grid)].change_assembler_module_modifiers(
+                            id,
+                            update.1.into(),
+                            data_store,
+                        );
                     },
                     power_grid::BeaconAffectedEntity::Lab { grid, index } => {
                         // TODO:
@@ -1254,26 +1331,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             })
             .reduce(|acc, v| (acc.0 + v.0, acc.1 + v.1, acc.2 + v.2))
             .unwrap_or((0, 0, 0));
-        let effect = if self.power_grids[usize::from(grid)].last_power_mult >= MIN_BEACON_POWER_MULT
-        {
-            // Add the full beacon effect since we are powered
-            (
+        let effect = calculate_beacon_effect(
+            self.power_grids[usize::from(grid)].power_mult_at_last_beacon_update,
+            [
                 effect.0 * data_store.beacon_info[usize::from(ty)].effectiveness.0 as i16
                     / data_store.beacon_info[usize::from(ty)].effectiveness.1 as i16,
                 effect.1 * data_store.beacon_info[usize::from(ty)].effectiveness.0 as i16
                     / data_store.beacon_info[usize::from(ty)].effectiveness.1 as i16,
                 effect.2 * data_store.beacon_info[usize::from(ty)].effectiveness.0 as i16
                     / data_store.beacon_info[usize::from(ty)].effectiveness.1 as i16,
-            )
-        } else {
-            // Not enough power, only add the power_consumption modifier
-            (
-                0,
-                0,
-                effect.2 * data_store.beacon_info[usize::from(ty)].effectiveness.0 as i16
-                    / data_store.beacon_info[usize::from(ty)].effectiveness.1 as i16,
-            )
-        };
+            ],
+        );
 
         let affected_entities: Vec<BeaconAffectedEntity<RecipeIdxType>> =
             affected_entities.into_iter().collect();
@@ -1281,13 +1349,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         for affected_entity in affected_entities.iter() {
             match affected_entity {
                 BeaconAffectedEntity::Assembler { id } => {
-                    self.power_grids[usize::from(id.grid)]
-                        .change_assembler_module_modifiers(*id, effect, data_store);
+                    self.power_grids[usize::from(id.grid)].change_assembler_module_modifiers(
+                        *id,
+                        effect.into(),
+                        data_store,
+                    );
                 },
                 BeaconAffectedEntity::Lab { grid, index } => {
                     self.power_grids[usize::from(*grid)].change_lab_module_modifiers(
                         (*index).try_into().unwrap(),
-                        effect,
+                        effect.into(),
                         data_store,
                     );
                 },
@@ -1437,16 +1508,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                 / data_store.beacon_info[usize::from(ty)].effectiveness.1 as i16,
         );
 
-        let effect = if self.power_grids[usize::from(self.pole_pos_to_grid_id[&beacon_pole_pos])]
-            .last_power_mult
-            >= MIN_BEACON_POWER_MULT
-        {
-            // Add the full beacon effect since we are powered
-            raw_effect
-        } else {
-            // Not enough power, only add the power_consumption modifier
-            (0, 0, raw_effect.2)
-        };
+        let effect = calculate_beacon_effect(
+            self.power_grids[usize::from(self.pole_pos_to_grid_id[&beacon_pole_pos])]
+                .power_mult_at_last_beacon_update,
+            raw_effect.into(),
+        );
 
         let effect_sum = self.power_grids[usize::from(self.pole_pos_to_grid_id[&beacon_pole_pos])]
             .beacon_affected_entities
@@ -1459,13 +1525,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
 
         match entity {
             BeaconAffectedEntity::Assembler { id } => {
-                self.power_grids[usize::from(id.grid)]
-                    .change_assembler_module_modifiers(id, effect, data_store);
+                self.power_grids[usize::from(id.grid)].change_assembler_module_modifiers(
+                    id,
+                    effect.into(),
+                    data_store,
+                );
             },
             BeaconAffectedEntity::Lab { grid, index } => {
                 self.power_grids[usize::from(grid)].change_lab_module_modifiers(
                     index.try_into().unwrap(),
-                    effect,
+                    effect.into(),
                     data_store,
                 );
             },
@@ -1475,4 +1544,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
     pub fn remove_beacon_affected_entity(&mut self, pole_pos: Position, weak_idx: WeakIndex) {
         todo!()
     }
+}
+
+fn calculate_beacon_effect(power_mult: u8, raw_effect: [i16; 3]) -> [i16; 3] {
+    linear_scaling_effect(power_mult, raw_effect)
+}
+
+#[allow(unused)]
+fn switching_effect(power_mult: u8, raw_effect: [i16; 3]) -> [i16; 3] {
+    if power_mult >= MIN_BEACON_POWER_MULT {
+        raw_effect
+    } else {
+        [0, 0, raw_effect[2]]
+    }
+}
+
+fn linear_scaling_effect(power_mult: u8, raw_effect: [i16; 3]) -> [i16; 3] {
+    assert!(power_mult <= MAX_POWER_MULT);
+    raw_effect
+        .map(|e| i32::from(e) * i32::from(power_mult) / i32::from(MAX_POWER_MULT))
+        .map(|v| v.try_into().unwrap())
 }

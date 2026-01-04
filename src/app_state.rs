@@ -3661,7 +3661,7 @@ mod tests {
         }
 
         #[test]
-        fn test_beacons_always_effect(actions in beacon_test_val().prop_shuffle()) {
+        fn test_beacons_always_effect(actions in beacon_test_val().prop_shuffle(), ticks in 60usize..120) {
             prop_assume!(actions.iter().position(|a| matches!(a, ActionType::PlaceEntity(PlaceEntityInfo {
                 force: false,
                 entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler {
@@ -3681,7 +3681,8 @@ mod tests {
 
             Blueprint { actions: actions.into_iter().map(|a| BlueprintAction::from_with_datastore(&a, &*DATA_STORE)).collect() }.apply(false, Position { x: 0, y: 0 }, &mut game_state, &DATA_STORE);
 
-            for _ in 0usize..10 {
+            // Currently Beacons are only able to update every 60 ticks
+            for _ in 0usize..ticks {
                 GameState::update(
                     &mut *game_state.simulation_state.lock(),
                     &mut *game_state.aux_data.lock(),
@@ -3690,20 +3691,25 @@ mod tests {
             }
 
             let world = game_state.world.lock();
-            let Some(Entity::Assembler { info: AssemblerInfo::Powered { id, .. }, .. }) = world.get_entity_at(Position { x: 1600, y: 1600 }, &DATA_STORE) else {
+            let Some(Entity::Assembler { info: AssemblerInfo::Powered { id, .. }, modules, .. }) = world.get_entity_at(Position { x: 1600, y: 1600 }, &DATA_STORE) else {
                 unreachable!("{:?}", game_state.world.lock().get_entity_at(Position { x: 1600, y: 1600 }, &DATA_STORE));
             };
-            let id = *id;
-            std::mem::drop(world);
+            let modules = &world.module_slot_dedup_table[*modules as usize];
 
-            prop_assume!(game_state.simulation_state.lock().factory.power_grids.power_grids[usize::from(id.grid)].last_power_mult == MAX_POWER_MULT);
+            let id = *id;
+            // std::mem::drop(world);
+
+            prop_assert!(game_state.simulation_state.lock().factory.power_grids.power_grids[usize::from(id.grid)].last_power_mult == MAX_POWER_MULT);
 
             let info = game_state.simulation_state.lock().factory.power_grids.power_grids[usize::from(id.grid)].get_assembler_info(id, &DATA_STORE);
 
-            prop_assert!((info.power_consumption_mod - 0.7).abs() < 1.0e-6, "power_consumption_mod: {:?}", info.power_consumption_mod);
+            let module_power_effect = modules.iter().flatten().map(|module| DATA_STORE.module_info[*module as usize].power_mod as f32 / 20.0).sum::<f32>();
+            let module_speed_effect = modules.iter().flatten().map(|module| DATA_STORE.module_info[*module as usize].speed_mod as f32 / 20.0).sum::<f32>();
+            let module_prod_effect = modules.iter().flatten().map(|module| DATA_STORE.module_info[*module as usize].prod_mod as f32 / 100.0).sum::<f32>();
+            prop_assert!((info.power_consumption_mod - (0.7 + module_power_effect)).abs() < 1.0e-6, "power_consumption_mod: {:?}, wanted: {}", info.power_consumption_mod, (0.7 + module_power_effect));
             prop_assert!((info.base_speed - 1.25).abs() < 1.0e-6, "base_speed: {:?}", info.base_speed);
-            prop_assert!((info.prod_mod - 0.0).abs() < 1.0e-6, "prod_mod: {:?}", info.prod_mod);
-            prop_assert!((info.speed_mod - (0.5)).abs() < 1.0e-6, "speed_mod: {:?}", info.speed_mod);
+            prop_assert!((info.prod_mod - (0.0 + module_prod_effect)).abs() < 1.0e-6, "prod_mod: {:?}", info.prod_mod);
+            prop_assert!((info.speed_mod - (0.5 + module_speed_effect)).abs() < 1.0e-6, "speed_mod: {:?}, wanted: {}", info.speed_mod, (0.5 + module_speed_effect));
             prop_assert_eq!(info.base_power_consumption, Watt(375_000), "base_power_consumption: {:?}", info.base_power_consumption);
 
         }
