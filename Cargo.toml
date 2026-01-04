@@ -88,7 +88,7 @@ proptest = "1.4.0"
 
 [patch.crates-io]
 puffin_egui = { git = "https://github.com/EmbarkStudios/puffin", optional = true }
-puffin = { git = "https://github.com/EmbarkStudios/puffin", features = ["web"] }
+puffin = { git = "https://github.com/EmbarkStudios/puffin" }
 egui_graphs = { git = "https://github.com/BloodStainedCrow/egui_graphs", branch = "tree_layout" }
 petgraph = { git = "https://github.com/BloodStainedCrow/petgraph", branch = "stable_graph_node_weights_mut_indexed" }
 

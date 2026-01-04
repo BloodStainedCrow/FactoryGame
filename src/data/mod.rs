@@ -441,6 +441,20 @@ impl SolarPanelOutputFunction {
             },
         }
     }
+
+    pub(crate) fn max(&self) -> Watt {
+        match self {
+            SolarPanelOutputFunction::Constant(watt) => *watt,
+            SolarPanelOutputFunction::Segmented(power_generation_segments) => {
+                power_generation_segments
+                    .iter()
+                    .map(|segment| segment.end_power)
+                    .max()
+                    .unwrap()
+            },
+            SolarPanelOutputFunction::Lookup(watts) => *watts.iter().max().unwrap(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]

@@ -2174,7 +2174,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             amount = amount - charge_here;
         }
 
-        // Due to the integer div, this assert could fail
+        // Due to the integer div, this assert could fail? TODO(Tim): Is that true?
         assert!(amount == Joule(0));
 
         // This is an algorithm for (kindof) handling accumulators with different charge from the "main pack"

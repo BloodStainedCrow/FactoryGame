@@ -3897,13 +3897,36 @@ pub fn render_ui<
                             },
                         }
                     },
-                    Entity::SolarPanel {  .. } => {
-                        // TODO
+                    Entity::SolarPanel {  ty, .. } => {
+                        ui.label(format!("{}", &data_store.solar_panel_info[*ty as usize].display_name));
+
+                        let current = data_store.solar_panel_info[*ty as usize].power_output.get_at_time(aux_data.current_tick as u32);
+                        let max = data_store.solar_panel_info[*ty as usize].power_output.max();
+
+                        let perc = current.0 as f32 / max.0 as f32;
+
+                        ui.add(ProgressBar::new(perc).text(format!("{}/{}", current, max)).corner_radius(0.0));
                     },
-                    Entity::Accumulator {  .. } => {
-                        // TODO
+                    Entity::Accumulator {  ty, pole_position, .. } => {
+                        ui.label(format!("{}", &data_store.accumulator_info[*ty as usize].display_name));
+                        
+                        let max_charge = data_store.accumulator_info[*ty as usize].max_charge;
+                        let charge = if let Some(pole_pos) = pole_position {
+                            let grid = game_state_ref.simulation_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos.0];
+                            let grid = &game_state_ref.simulation_state.factory.power_grids.power_grids[grid as usize];
+                            let charge = grid.main_accumulator_charge[*ty as usize] / grid.main_accumulator_count[*ty as usize];
+
+                            charge
+                        } else {
+                            // FIXME: A unconnected accumulator can still have charge
+                            Joule(0)
+                        };
+
+                        let perc = charge.0 as f32 / max_charge.0 as f32;
+
+                        ui.add(ProgressBar::new(perc).text(format!("{}/{}", charge, max_charge)).corner_radius(0.0));
                     },
-                    Entity::Beacon {   .. } => {
+                    Entity::Beacon { ty, modules, .. } => {
                         // TODO
                     },
                     Entity::FluidTank { ty, pos, rotation } => {
