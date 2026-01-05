@@ -5,16 +5,20 @@ use std::{
     u8,
 };
 
-use crate::inserter::{
-    belt_storage_inserter_non_const_gen::DynInserterState,
-    belt_storage_movement_list::{BeltStorageInserterInMovement, ReinsertionLists},
-};
 use crate::{
     inserter::{
         InserterState, belt_storage_inserter::Dir,
         belt_storage_inserter_non_const_gen::BeltStorageInserterDyn,
     },
     item::{ITEMCOUNTTYPE, IdxTrait, Item, WeakIdxTrait},
+    temp_vec::VecHolder,
+};
+use crate::{
+    inserter::{
+        belt_storage_inserter_non_const_gen::DynInserterState,
+        belt_storage_movement_list::{BeltStorageInserterInMovement, ReinsertionLists},
+    },
+    temp_vec::SmallCapVec,
 };
 use bitvec::{
     access::BitSafeUsize,
@@ -158,7 +162,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             first_free_index: FreeIndex::FreeIndex(0),
             zero_index: 0,
             locs: bitbox![0; len.into()].into(),
-            inserters: InserterStoreDyn { inserters: vec![] },
+            inserters: InserterStoreDyn {
+                inserters: VecHolder::new(),
+            },
 
             item,
 
@@ -221,6 +227,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             zero_index,
             inserters: SushiInserterStoreDyn {
                 inserters: inserters
+                    .into_vec()
                     .into_iter()
                     .map(|ins| {
                         (
@@ -367,51 +374,58 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
     }
 
     pub fn change_inserter_storage_id(&mut self, old: FakeUnionStorage, new: FakeUnionStorage) {
-        for inserter in &mut self.inserters.inserters {
-            if inserter.storage == old {
-                inserter.storage = new;
+        self.inserters.inserters.access_mut(|v| {
+            for inserter in v {
+                if inserter.storage == old {
+                    inserter.storage = new;
+                }
             }
-        }
+        });
     }
 
     pub fn set_inserter_storage_id(&mut self, belt_pos: u16, new: FakeUnionStorage) {
         let mut pos = 0;
 
-        for inserter in self.inserters.inserters.iter_mut() {
-            pos = inserter.belt_pos;
-            if pos == belt_pos {
-                inserter.storage = new;
-                return;
+        let Ok(()) = self.inserters.inserters.access_mut(|v| {
+            for inserter in v {
+                pos = inserter.belt_pos;
+                if pos == belt_pos {
+                    inserter.storage = new;
+                    return Ok(());
+                }
             }
-        }
-        unreachable!(
-            "Tried to set_inserter_storage_id with position {belt_pos}, which does not contain an inserter. {:?}",
-            self.inserters
-        );
+            Err(())
+        }) else {
+            unreachable!(
+                "Tried to set_inserter_storage_id with position {belt_pos}, which does not contain an inserter. {:?}",
+                self.inserters
+            );
+        };
     }
 
     #[must_use]
     pub fn get_inserter_info_at(&self, belt_pos: u16) -> Option<BeltInserterInfo> {
         let mut pos = 0;
 
-        for inserter in self.inserters.inserters.iter() {
-            pos = inserter.belt_pos;
-            if pos == belt_pos {
-                return Some(BeltInserterInfo {
-                    outgoing: inserter.outgoing,
-                    state: if inserter.outgoing {
-                        InserterState::WaitingForSourceItems(inserter.current_hand)
-                    } else {
-                        InserterState::WaitingForSpaceInDestination(inserter.current_hand)
-                    },
-                    connection: inserter.storage,
-                    movetime: inserter.movetime.into(),
-                    hand_size: inserter.max_hand_size,
-                });
+        self.inserters.inserters.access(|v| {
+            for inserter in v {
+                pos = inserter.belt_pos;
+                if pos == belt_pos {
+                    return Some(BeltInserterInfo {
+                        outgoing: inserter.outgoing,
+                        state: if inserter.outgoing {
+                            InserterState::WaitingForSourceItems(inserter.current_hand)
+                        } else {
+                            InserterState::WaitingForSpaceInDestination(inserter.current_hand)
+                        },
+                        connection: inserter.storage,
+                        movetime: inserter.movetime.into(),
+                        hand_size: inserter.max_hand_size,
+                    });
+                }
             }
-        }
-
-        None
+            None
+        })
     }
 
     pub(super) fn change_inserter_movetime(
@@ -448,7 +462,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             .position(|ins| ins.belt_pos == pos)
         {
             Some(idx) => {
-                let removed = self.inserters.inserters.remove(idx);
+                let removed = self.inserters.inserters.access_mut(|v| v.remove(idx));
 
                 Ok(removed.storage)
             },
@@ -481,13 +495,15 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             return Err(InserterAdditionError::ItemMismatch);
         }
 
-        self.inserters.inserters.push(InserterExtractedWhenMoving {
-            storage: storage_id,
-            belt_pos: index,
-            movetime: movetime.try_into().unwrap_or(u8::MAX).try_into().unwrap(),
-            outgoing: true,
-            max_hand_size: hand_size,
-            current_hand: 0,
+        self.inserters.inserters.access_mut(|v| {
+            v.push(InserterExtractedWhenMoving {
+                storage: storage_id,
+                belt_pos: index,
+                movetime: movetime.try_into().unwrap_or(u8::MAX).try_into().unwrap(),
+                outgoing: true,
+                max_hand_size: hand_size,
+                current_hand: 0,
+            });
         });
 
         Ok(())
@@ -517,13 +533,15 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         if filter != self.item {
             return Err(InserterAdditionError::ItemMismatch);
         }
-        self.inserters.inserters.push(InserterExtractedWhenMoving {
-            storage: storage_id,
-            belt_pos: index,
-            movetime: movetime.try_into().unwrap_or(u8::MAX).try_into().unwrap(),
-            outgoing: false,
-            max_hand_size: hand_size,
-            current_hand: 0,
+        self.inserters.inserters.access_mut(|v| {
+            v.push(InserterExtractedWhenMoving {
+                storage: storage_id,
+                belt_pos: index,
+                movetime: movetime.try_into().unwrap_or(u8::MAX).try_into().unwrap(),
+                outgoing: false,
+                max_hand_size: hand_size,
+                current_hand: 0,
+            });
         });
 
         Ok(())
@@ -630,92 +648,97 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         let locs = &mut self.locs;
         let latest_inserter_pos_if_all_incoming = &mut self.latest_inserter_pos_if_all_incoming;
 
-        let extracted = self.inserters.inserters.extract_if(.., move |ins| {
-            // FIXME: This should not be needed, if we did not incorrectly insert inserters always in the belt
-            if ins.current_hand == 0 && !ins.outgoing {
-                return true;
-            }
-
-            // Taken from VecDeque::wrap_index
-            let logical_index = usize::from(*zero_index) + usize::from(ins.belt_pos);
-            let loc_idx = if logical_index >= locs.len() {
-                logical_index - locs.len()
-            } else {
-                logical_index
-            };
-
-            #[cfg(feature = "debug-stat-gathering")]
-            if ins.outgoing {
-                NUM_INSERTER_LOADS_WAITING_FOR_ITEMS
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            } else {
-                NUM_INSERTER_LOADS_WAITING_FOR_SPACE
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            }
-
-            if ins.outgoing {
-                min_pos = None;
-            } else {
-                if let Some(min_pos) = &mut min_pos {
-                    *min_pos = std::cmp::max(*min_pos, NonZero::new(ins.belt_pos).expect("Currently inserters at belt_pos 0 are unsupported, and should never be generated"));
+        let extracted = self.inserters.inserters.access_mut(|v| {
+            v.extract_if(.., move |ins| {
+                // FIXME: This should not be needed, if we did not incorrectly insert inserters always in the belt
+                if ins.current_hand == 0 && !ins.outgoing {
+                    return true;
                 }
-            }
-            *latest_inserter_pos_if_all_incoming = min_pos;
 
-            let extract = if ins.belt_pos < old_first_free {
-                // We KNOW this position is filled
-                debug_assert!(locs[loc_idx]);
+                // Taken from VecDeque::wrap_index
+                let logical_index = usize::from(*zero_index) + usize::from(ins.belt_pos);
+                let loc_idx = if logical_index >= locs.len() {
+                    logical_index - locs.len()
+                } else {
+                    logical_index
+                };
+
+                #[cfg(feature = "debug-stat-gathering")]
                 if ins.outgoing {
-                    ins.current_hand += 1;
-                    locs.set(loc_idx, false);
-                    if ins.belt_pos <= new_first_free {
-                        *first_free_index = FreeIndex::FreeIndex(ins.belt_pos);
-                        new_first_free = ins.belt_pos;
-                    }
-
-                    if ins.current_hand == ins.max_hand_size {
-                        true
-                    } else {
-                        false
-                    }
-                } else {
-                    #[cfg(feature = "debug-stat-gathering")]
-                    NUM_INSERTER_LOADS_WAITING_FOR_SPACE_IN_GUARANTEED_FULL
+                    NUM_INSERTER_LOADS_WAITING_FOR_ITEMS
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    false
+                } else {
+                    NUM_INSERTER_LOADS_WAITING_FOR_SPACE
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
-            } else {
-                let mut loc = locs.get_mut(loc_idx).unwrap();
 
-                if ins.outgoing && *loc {
-                    *loc = false;
-                    ins.current_hand += 1;
-                    if ins.current_hand == ins.max_hand_size {
-                        true
+                if ins.outgoing {
+                    min_pos = None;
+                } else {
+                    if let Some(min_pos) = &mut min_pos {
+                        *min_pos = std::cmp::max(*min_pos, NonZero::new(ins.belt_pos).expect("Currently inserters at belt_pos 0 are unsupported, and should never be generated"));
+                    }
+                }
+                *latest_inserter_pos_if_all_incoming = min_pos;
+
+                let extract = if ins.belt_pos < old_first_free {
+                    // We KNOW this position is filled
+                    debug_assert!(locs[loc_idx]);
+                    if ins.outgoing {
+                        ins.current_hand += 1;
+                        locs.set(loc_idx, false);
+                        if ins.belt_pos <= new_first_free {
+                            *first_free_index = FreeIndex::FreeIndex(ins.belt_pos);
+                            new_first_free = ins.belt_pos;
+                        }
+
+                        if ins.current_hand == ins.max_hand_size {
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        #[cfg(feature = "debug-stat-gathering")]
+                        NUM_INSERTER_LOADS_WAITING_FOR_SPACE_IN_GUARANTEED_FULL
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        false
+                    }
+                } else {
+                    let mut loc = locs.get_mut(loc_idx).unwrap();
+
+                    if ins.outgoing && *loc {
+                        *loc = false;
+                        ins.current_hand += 1;
+                        if ins.current_hand == ins.max_hand_size {
+                            true
+                        } else {
+                            false
+                        }
+                    } else if !ins.outgoing && !*loc {
+                        *loc = true;
+                        ins.current_hand -= 1;
+
+                        if ins.belt_pos == new_first_free && *loc {
+                            // This was the old first free pos
+                            *first_free_index = FreeIndex::OldFreeIndex(ins.belt_pos);
+                        }
+
+                        if ins.current_hand == 0 { true } else { false }
                     } else {
                         false
                     }
-                } else if !ins.outgoing && !*loc {
-                    *loc = true;
-                    ins.current_hand -= 1;
+                };
 
-                    if ins.belt_pos == new_first_free && *loc {
-                        // This was the old first free pos
-                        *first_free_index = FreeIndex::OldFreeIndex(ins.belt_pos);
-                    }
-
-                    if ins.current_hand == 0 { true } else { false }
-                } else {
-                    false
+                #[cfg(feature = "debug-stat-gathering")]
+                if extract {
+                    TIMES_INSERTERS_EXTRACTED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
-            };
 
-            #[cfg(feature = "debug-stat-gathering")]
-            if extract {
-                TIMES_INSERTERS_EXTRACTED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            }
-
-            extract
+                extract
+            })
+            // TODO: When using a SmallCapVec, the we cannot lazily return the extract_if iterator, since the vec no longer exists after the closure returns
+            // This could be fixed using a custom extract_if implementation, but that is very hairy unsafe code I am unwilling to commit to for now 
+            .collect_vec()
         });
 
         Some(extracted)
@@ -1032,15 +1055,17 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         let back_zero_index = usize::from(back_zero_index) % back_locs.len();
 
         let mut new_inserters = front_inserters;
-        new_inserters
-            .inserters
-            .extend(back_inserters.inserters.drain(..).map(|mut back_ins| {
-                back_ins.belt_pos = back_ins
-                    .belt_pos
-                    .checked_add(front_len.try_into().unwrap())
-                    .unwrap();
-                back_ins
-            }));
+        new_inserters.inserters.access_mut(|new| {
+            back_inserters.inserters.access_mut(|back| {
+                new.extend(back.drain(..).map(|mut back_ins| {
+                    back_ins.belt_pos = back_ins
+                        .belt_pos
+                        .checked_add(front_len.try_into().unwrap())
+                        .unwrap();
+                    back_ins
+                }));
+            });
+        });
 
         let mut front_locs_vec = BitBox::from(front_locs).into_bitvec();
 
@@ -1138,12 +1163,14 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         };
 
         if side == Side::FRONT {
-            for ins in &mut inserters.inserters {
-                ins.belt_pos = ins
-                    .belt_pos
-                    .checked_add(len)
-                    .expect("Max length of belt (u16::MAX) reached");
-            }
+            inserters.inserters.access_mut(|v| {
+                for ins in v {
+                    ins.belt_pos = ins
+                        .belt_pos
+                        .checked_add(len)
+                        .expect("Max length of belt (u16::MAX) reached");
+                }
+            });
         }
 
         let mut new = Self {
@@ -1321,7 +1348,9 @@ impl EmptyBelt {
             first_free_index: FreeIndex::FreeIndex(0),
             zero_index: 0,
             locs: bitbox![0; self.len as usize].into(),
-            inserters: InserterStoreDyn { inserters: vec![] },
+            inserters: InserterStoreDyn {
+                inserters: VecHolder::new(),
+            },
             item,
             last_moving_spot: 0,
             input_splitter: self.input_splitter,
@@ -1532,18 +1561,22 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
             locs.into_boxed_bitslice().into()
         });
 
-        self.inserters.inserters.retain(|inserter| {
-            if !kept_range.contains(&inserter.belt_pos) {
-                false
-            } else {
-                true
-            }
+        self.inserters.inserters.access_mut(|v| {
+            v.retain(|inserter| {
+                if !kept_range.contains(&inserter.belt_pos) {
+                    false
+                } else {
+                    true
+                }
+            });
         });
 
         if side == Side::FRONT {
-            for ins in &mut self.inserters.inserters {
-                ins.belt_pos = ins.belt_pos.checked_sub(amount).unwrap();
-            }
+            self.inserters.inserters.access_mut(|v| {
+                for ins in v {
+                    ins.belt_pos = ins.belt_pos.checked_sub(amount).unwrap();
+                }
+            });
         }
 
         self.first_free_index = FreeIndex::OldFreeIndex(0);

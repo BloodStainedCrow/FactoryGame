@@ -330,7 +330,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
                             crate::inserter::InserterState::EmptyAndMovingBack(_) => 0,
                         },
                     }
-                }).collect(),
+                }).collect::<Vec<_>>().try_into().unwrap(),
             },
             item,
 

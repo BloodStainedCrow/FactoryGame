@@ -3039,6 +3039,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 format!("Count: {}", belt_store.belts.len())
                             );
                             // Belt update in parallel
+                            // TODO: This is significantly better in parallel, for reasons I do not fully understand.
+                            //       The profiler indicates that belt updates are not a huge part of update times
                             let reinsertion = belt_store
                                 .belts
                                 .par_iter_mut()
@@ -3051,10 +3053,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     // Update a belt
                                     belt.update(sushi_splitters);
                                     belt.update_inserters_lazy().into_iter().flatten().zip(iter::repeat(self_index))
-                                }).fold(|| vec![], |mut v, reinsertions| {
+                                })
+                                .fold(|| vec![], |mut v, reinsertions| {
                                     v.extend(reinsertions);
                                     v
-                                }).collect_vec_list().into_iter().flatten().flatten();
+                                })
+                                .collect_vec_list().into_iter().flatten().flatten();
 
                             // Do the reinsertion sequentially
                             for (ins, self_index) in reinsertion {

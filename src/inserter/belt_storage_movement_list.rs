@@ -9,6 +9,7 @@ use crate::{
     inserter::{FakeUnionStorage, belt_storage_inserter::Dir},
     item::{ITEMCOUNTTYPE, IdxTrait},
     storage_list::{SingleItemStorages, index_fake_union},
+    temp_vec::VecHolder,
 };
 
 #[cfg(feature = "client")]
@@ -227,13 +228,15 @@ impl<'a> FinishedMovingLists<'a, { Dir::StorageToBelt }, { Dir::StorageToBelt }>
                 reinsertion_list.reinsert(inserter.movetime.into(), *inserter);
                 false
             } else {
-                belt.inserters.inserters.push(InserterExtractedWhenMoving {
-                    storage: inserter.storage,
-                    belt_pos: inserter.belt_pos,
-                    movetime: inserter.movetime,
-                    outgoing: false,
-                    max_hand_size: inserter.max_hand_size,
-                    current_hand,
+                belt.inserters.inserters.access_mut(|v| {
+                    v.push(InserterExtractedWhenMoving {
+                        storage: inserter.storage,
+                        belt_pos: inserter.belt_pos,
+                        movetime: inserter.movetime,
+                        outgoing: false,
+                        max_hand_size: inserter.max_hand_size,
+                        current_hand,
+                    });
                 });
                 // This is an incoming inserter
                 if let Some(latest) = &mut belt.latest_inserter_pos_if_all_incoming {
@@ -264,13 +267,15 @@ impl<'a> FinishedMovingLists<'a, { Dir::StorageToBelt }, { Dir::BeltToStorage }>
                 reinsertion_list.reinsert(inserter.movetime.into(), *inserter);
                 false
             } else {
-                belt.inserters.inserters.push(InserterExtractedWhenMoving {
-                    storage: inserter.storage,
-                    belt_pos: inserter.belt_pos,
-                    movetime: inserter.movetime,
-                    outgoing: true,
-                    max_hand_size: inserter.max_hand_size,
-                    current_hand,
+                belt.inserters.inserters.access_mut(|v| {
+                    v.push(InserterExtractedWhenMoving {
+                        storage: inserter.storage,
+                        belt_pos: inserter.belt_pos,
+                        movetime: inserter.movetime,
+                        outgoing: true,
+                        max_hand_size: inserter.max_hand_size,
+                        current_hand,
+                    });
                 });
                 // This is an outgoing inserter
                 belt.latest_inserter_pos_if_all_incoming = None;

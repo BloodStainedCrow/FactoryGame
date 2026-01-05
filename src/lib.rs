@@ -79,6 +79,7 @@ pub mod research;
 pub mod scenario;
 
 mod shopping_list_arena;
+mod temp_vec;
 
 // This is an experiment. Before I can use it, I need to run it through a miri gauntlet
 // mod small_box_slice;
