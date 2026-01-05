@@ -1692,7 +1692,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
                 FreeIndex::OldFreeIndex(_) => {},
             }
         }
-        let (_old_free, need_to_check) = match self.first_free_index {
+        let (old_free, need_to_check) = match self.first_free_index {
             FreeIndex::FreeIndex(idx) => (idx, false),
             FreeIndex::OldFreeIndex(idx) => (idx, true),
         };

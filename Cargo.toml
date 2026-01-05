@@ -55,7 +55,6 @@ egui-show-info = { git = "https://github.com/BloodStainedCrow/egui-show-info", f
 egui-show-info-derive = { git = "https://github.com/BloodStainedCrow/egui-show-info", optional = true }
 bytemuck = "1.23.1"
 memoffset = "0.9.1"
-smallvec = { version = "1.15.1", features = ["serde"] }
 
 ecolor = { version = "0.32", features = ["color-hex"] }
 getrandom = { version = "0.3.3", features = ["wasm_js"] }
