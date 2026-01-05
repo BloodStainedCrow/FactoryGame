@@ -208,7 +208,7 @@ pub fn index<'a, 'b, RecipeIdxType: IdxTrait>(
 
 #[inline(always)]
 pub fn index_fake_union<'a, 'b>(
-    item_id: usize,
+    item_id: Option<usize>,
     slice: SingleItemStorages<'a, 'b>,
     storage_id: FakeUnionStorage,
     grid_size: usize,
@@ -227,88 +227,112 @@ pub fn index_fake_union<'a, 'b>(
     };
 
     let Some(max_insert) = subslice.0.get(inner) else {
-        let item = Item {
-            id: item_id.try_into().unwrap(),
-        };
-        let static_size: usize = static_size(item, &DATA_STORE);
-        let is_static = (storage_id.grid_or_static_flag as usize) < static_size;
-        let index = storage_id.index;
+        if let Some(item_id) = item_id {
+            let item = Item {
+                id: item_id.try_into().unwrap(),
+            };
+            let static_size: usize = static_size(item, &DATA_STORE);
+            let is_static = (storage_id.grid_or_static_flag as usize) < static_size;
+            let index = storage_id.index;
 
-        if !is_static {
-            let grid_id = storage_id.grid_or_static_flag as usize - static_size;
+            if !is_static {
+                let grid_id = storage_id.grid_or_static_flag as usize - static_size;
 
-            let recipe = DATA_STORE.recipe_to_translated_index.iter().find(
-                |((_recipe, found_item), index)| {
-                    item == *found_item
-                        && u16::from(**index) == storage_id.recipe_idx_with_this_item
-                },
-            );
-
-            if let Some(((r, _), _)) = recipe {
-                // we are a assembler
-                panic!(
-                    "Failed FakeUnion Index for item {} for Assembler in grid {}, with recipe {} and index {}",
-                    &DATA_STORE.item_names[item_id],
-                    grid_id,
-                    DATA_STORE.recipe_names[r.into_usize()],
-                    index
+                let recipe = DATA_STORE.recipe_to_translated_index.iter().find(
+                    |((_recipe, found_item), index)| {
+                        item == *found_item
+                            && u16::from(**index) == storage_id.recipe_idx_with_this_item
+                    },
                 );
+
+                if let Some(((r, _), _)) = recipe {
+                    // we are a assembler
+                    panic!(
+                        "Failed FakeUnion Index for item {} for Assembler in grid {}, with recipe {} and index {}",
+                        &DATA_STORE.item_names[item_id],
+                        grid_id,
+                        DATA_STORE.recipe_names[r.into_usize()],
+                        index
+                    );
+                } else {
+                    // We are a lab
+                    panic!(
+                        "Failed FakeUnion Index for item {} for Lab in grid {}, with index {}",
+                        &DATA_STORE.item_names[item_id], grid_id, index
+                    );
+                }
             } else {
-                // We are a lab
+                let static_id =
+                    StaticID::try_from(storage_id.recipe_idx_with_this_item as u8).unwrap();
+
                 panic!(
-                    "Failed FakeUnion Index for item {} for Lab in grid {}, with index {}",
-                    &DATA_STORE.item_names[item_id], grid_id, index
+                    "Failed FakeUnion Index for item {} for Static {:?}, with index {}",
+                    &DATA_STORE.item_names[item_id], static_id, index
                 );
             }
         } else {
-            let static_id = StaticID::try_from(storage_id.recipe_idx_with_this_item as u8).unwrap();
+            let grid = storage_id.grid_or_static_flag;
+            let rec = storage_id.recipe_idx_with_this_item;
+            let index = storage_id.index;
 
             panic!(
-                "Failed FakeUnion Index for item {} for Static {:?}, with index {}",
-                &DATA_STORE.item_names[item_id], static_id, index
+                "Failed FakeUnion Index in grid_or_static_flag {}, with recipe_idx_with_this_item {} and index {}",
+                grid, rec, index
             );
         }
     };
     let Some(items) = subslice.1.get_mut(inner) else {
-        let item = Item {
-            id: item_id.try_into().unwrap(),
-        };
-        let static_size: usize = static_size(item, &DATA_STORE);
-        let is_static = (storage_id.grid_or_static_flag as usize) < static_size;
-        let index = storage_id.index;
+        if let Some(item_id) = item_id {
+            let item = Item {
+                id: item_id.try_into().unwrap(),
+            };
+            let static_size: usize = static_size(item, &DATA_STORE);
+            let is_static = (storage_id.grid_or_static_flag as usize) < static_size;
+            let index = storage_id.index;
 
-        if !is_static {
-            let grid_id = storage_id.grid_or_static_flag as usize - static_size;
+            if !is_static {
+                let grid_id = storage_id.grid_or_static_flag as usize - static_size;
 
-            let recipe = DATA_STORE.recipe_to_translated_index.iter().find(
-                |((_recipe, found_item), index)| {
-                    item == *found_item
-                        && u16::from(**index) == storage_id.recipe_idx_with_this_item
-                },
-            );
-
-            if let Some(((r, _), _)) = recipe {
-                // we are a assembler
-                panic!(
-                    "Failed FakeUnion Index for item {} for Assembler in grid {}, with recipe {} and index {}",
-                    &DATA_STORE.item_names[item_id],
-                    grid_id,
-                    DATA_STORE.recipe_names[r.into_usize()],
-                    index
+                let recipe = DATA_STORE.recipe_to_translated_index.iter().find(
+                    |((_recipe, found_item), index)| {
+                        item == *found_item
+                            && u16::from(**index) == storage_id.recipe_idx_with_this_item
+                    },
                 );
+
+                if let Some(((r, _), _)) = recipe {
+                    // we are a assembler
+                    panic!(
+                        "Failed FakeUnion Index for item {} for Assembler in grid {}, with recipe {} and index {}",
+                        &DATA_STORE.item_names[item_id],
+                        grid_id,
+                        DATA_STORE.recipe_names[r.into_usize()],
+                        index
+                    );
+                } else {
+                    // We are a lab
+                    panic!(
+                        "Failed FakeUnion Index for item {} for Lab in grid {}, with index {}",
+                        &DATA_STORE.item_names[item_id], grid_id, index
+                    );
+                }
             } else {
-                // We are a lab
+                let static_id =
+                    StaticID::try_from(storage_id.recipe_idx_with_this_item as u8).unwrap();
+
                 panic!(
-                    "Failed FakeUnion Index for item {} for Lab in grid {}, with index {}",
-                    &DATA_STORE.item_names[item_id], grid_id, index
+                    "Failed FakeUnion Index for item {} for Static {:?}, with index {}",
+                    &DATA_STORE.item_names[item_id], static_id, index
                 );
             }
         } else {
-            let static_id = StaticID::try_from(storage_id.recipe_idx_with_this_item as u8).unwrap();
+            let grid = storage_id.grid_or_static_flag;
+            let rec = storage_id.recipe_idx_with_this_item;
+            let index = storage_id.index;
 
             panic!(
-                "Failed FakeUnion Index for item {} for Static {:?}, with index {}",
-                &DATA_STORE.item_names[item_id], static_id, index
+                "Failed FakeUnion Index in grid_or_static_flag {}, with recipe_idx_with_this_item {} and index {}",
+                grid, rec, index
             );
         }
     };

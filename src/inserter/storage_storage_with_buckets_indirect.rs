@@ -316,7 +316,7 @@ impl BucketedStorageStorageInserterStore {
         let storage_id = bucket_data.storage_id_in;
 
         let (_max_insert, old, wait_list) =
-            index_fake_union(item_id, storages, storage_id, grid_size);
+            index_fake_union(Some(item_id), storages, storage_id, grid_size);
 
         let old_val = *old;
         let max_hand_size = bucket_data.max_hand_size;
@@ -395,7 +395,7 @@ impl BucketedStorageStorageInserterStore {
         let storage_id = bucket_data.storage_id_out;
 
         let (max_insert, old, wait_list) =
-            index_fake_union(item_id, storages, storage_id, grid_size);
+            index_fake_union(Some(item_id), storages, storage_id, grid_size);
 
         let old_val = *old;
         let max_insert = *max_insert;

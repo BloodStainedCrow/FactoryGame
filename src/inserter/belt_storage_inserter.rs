@@ -83,7 +83,7 @@ impl BeltStorageInserter<{ Dir::BeltToStorage }> {
             },
             InserterState::WaitingForSpaceInDestination(count) => {
                 let (max_insert, old, _) =
-                    index_fake_union(todo!(), storages, self.storage_id, grid_size);
+                    index_fake_union(None, storages, self.storage_id, grid_size);
                 let to_insert = min(count, *max_insert - *old);
 
                 if to_insert > 0 {
@@ -136,7 +136,7 @@ impl BeltStorageInserter<{ Dir::StorageToBelt }> {
         match self.state {
             InserterState::WaitingForSourceItems(count) => {
                 let (_max_insert, old, _) =
-                    index_fake_union(todo!(), storages, self.storage_id, grid_size);
+                    index_fake_union(None, storages, self.storage_id, grid_size);
 
                 let to_extract = min(max_hand_size - count, *old);
 

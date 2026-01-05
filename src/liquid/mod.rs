@@ -1569,7 +1569,7 @@ pub fn update_fluid_system(
         if hot_data.current_fluid_level == 0 {
             break;
         }
-        let (max, data, _) = index_fake_union(item_id, storages, outgoing_conn, grid_size);
+        let (max, data, _) = index_fake_union(Some(item_id), storages, outgoing_conn, grid_size);
         let amount_wanted = *max - *data;
 
         let amount_extracted = min(
@@ -1595,7 +1595,7 @@ pub fn update_fluid_system(
         if hot_data.current_fluid_level == hot_data.storage_capacity {
             break;
         }
-        let (_max, data, _) = index_fake_union(item_id, storages, incoming_conn, grid_size);
+        let (_max, data, _) = index_fake_union(Some(item_id), storages, incoming_conn, grid_size);
         let amount_wanted = *data;
 
         let amount_extracted = min(

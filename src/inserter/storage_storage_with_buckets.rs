@@ -249,6 +249,7 @@ impl BucketedStorageStorageInserterStoreFrontend {
             );
         }
 
+        #[allow(non_snake_case)]
         for (i, _) in sizes.into_iter().enumerate().sorted_by_key(|v| v.0) {
             let MOVING_OUT_END: usize = store.list_len();
             let WATING_FOR_SPACE: usize = MOVING_OUT_END + 1;
@@ -654,7 +655,7 @@ impl BucketedStorageStorageInserterStore {
         _movetime: u16,
     ) -> bool {
         let (_max_insert, old, _) =
-            index_fake_union(todo!(), storages, inserter.storage_id_in, grid_size);
+            index_fake_union(None, storages, inserter.storage_id_in, grid_size);
 
         let to_extract = min(inserter.max_hand_size - inserter.current_hand, *old);
 
@@ -688,7 +689,7 @@ impl BucketedStorageStorageInserterStore {
         _movetime: u16,
     ) -> bool {
         let (max_insert, old, _) =
-            index_fake_union(todo!(), storages, inserter.storage_id_out, grid_size);
+            index_fake_union(None, storages, inserter.storage_id_out, grid_size);
 
         let to_insert = min(inserter.current_hand, *max_insert - *old);
 
