@@ -1,6 +1,8 @@
 use std::mem::ManuallyDrop;
 
+#[cfg(feature = "client")]
 use egui_show_info::{EguiDisplayable, InfoExtractor, ShowInfo};
+#[cfg(feature = "client")]
 use get_size2::GetSize;
 
 pub(crate) struct SmallCapVec<T> {
@@ -149,12 +151,14 @@ impl<T> VecHolder<T> for Vec<T> {
     }
 }
 
+#[cfg(feature = "client")]
 impl<T: GetSize> GetSize for SmallCapVec<T> {
     fn get_heap_size(&self) -> usize {
         self.access(|v| v.get_heap_size())
     }
 }
 
+#[cfg(feature = "client")]
 impl<T: ShowInfo<E, Info>, E: InfoExtractor<T, Info>, Info: EguiDisplayable> ShowInfo<E, Info>
     for SmallCapVec<T>
 where

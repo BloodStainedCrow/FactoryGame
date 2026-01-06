@@ -47,6 +47,7 @@ pub trait WeakIdxTrait:
     + Hash
     + Ord
     + 'static
+    + Debug
 {
 }
 

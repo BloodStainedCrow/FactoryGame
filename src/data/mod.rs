@@ -742,7 +742,7 @@ impl FluidConnection {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PowerPoleData {
     pub name: Arc<str>,
     pub display_name: String,

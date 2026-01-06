@@ -17,7 +17,6 @@ pub mod built_info {
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use eframe::web_sys;
 
-#[cfg(feature = "client")]
 use std::{
     borrow::Borrow,
     net::{SocketAddr, TcpStream},
@@ -193,7 +192,7 @@ pub fn main() -> Result<(), ()> {
 
     #[cfg(not(feature = "client"))]
     {
-        info!("Running Dedicated server!");
+        log::info!("Running Dedicated server!");
         // let dir = ProjectDirs::from("de", "aschhoff", "factory_game").expect("No Home path found");
         // let save_file_dir = dir.data_dir().join("save.save");
         // run_dedicated_server(StartGameInfo::Load(save_file_dir));

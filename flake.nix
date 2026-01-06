@@ -28,6 +28,23 @@
 
       vulkan-headers vulkan-loader
     ];
+
+    client_package = (pkgs.makeRustPlatform {
+      cargo = rustToolchain;
+      rustc = rustToolchain;
+    }).buildRustPackage {
+      name = "factory";
+      src = ./.;
+      buildInputs = neededPackages;
+      nativeBuildInputs = [ pkgs.pkg-config pkgs.makeWrapper ];
+      cargoHash = "sha256-Wgk3H7hw9yeMt8juVuLVBX+Z8JnNxD1+e9LY0CTQr0E=";
+      # cargoLock.lockFile = ./Cargo.lock;
+      doCheck = false;
+
+      postInstall = ''
+        wrapProgram "$out/bin/factory" --prefix LD_LIBRARY_PATH : "${builtins.toString (pkgs.lib.makeLibraryPath neededPackages)}"
+      '';
+    };
   in {
     devShells."x86_64-linux".codium = pkgs.mkShell {
       buildInputs = with pkgs; [
@@ -57,21 +74,8 @@
       # env.RUST_SRC_PATH = "${rustToolchain.rust-src}";
     };
 
-    packages."x86_64-linux".default = (pkgs.makeRustPlatform {
-      cargo = rustToolchain;
-      rustc = rustToolchain;
-    }).buildRustPackage {
-      name = "factory";
-      src = ./.;
-      buildInputs = neededPackages;
-      nativeBuildInputs = [ pkgs.pkg-config pkgs.makeWrapper ];
-      cargoHash = "sha256-Wgk3H7hw9yeMt8juVuLVBX+Z8JnNxD1+e9LY0CTQr0E=";
-      # cargoLock.lockFile = ./Cargo.lock;
-      doCheck = false;
+    packages."x86_64-linux".default = client_package;
 
-      postInstall = ''
-        wrapProgram "$out/bin/factory" --prefix LD_LIBRARY_PATH : "${builtins.toString (pkgs.lib.makeLibraryPath neededPackages)}"
-      '';
-    };
+    packages."x86_64-linux".dedicated_server = client_package.overrideAttrs ( oldAttrs: { cargoBuildFlags = [ "--no-default-features" ]; });
   };
 }
