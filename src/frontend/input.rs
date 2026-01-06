@@ -72,10 +72,24 @@ impl TryFrom<egui::Event> for Input {
                 modifiers: _modifiers,
             } => match unit {
                 eframe::egui::MouseWheelUnit::Point => {
+                    dbg!(delta);
                     Ok(Input::MouseScoll((delta.x as f64, delta.y as f64)))
                 },
                 eframe::egui::MouseWheelUnit::Line => {
-                    Ok(Input::MouseScoll((delta.x as f64, delta.y as f64)))
+                    dbg!(delta);
+                    // TODO: This is hardcoded to the default of egui
+                    // See InputOptions::default and https://github.com/emilk/egui/issues/461
+                    let units_per_line = if cfg!(all(target_arch = "wasm32", target_os = "unknown"))
+                    {
+                        8.0
+                    } else {
+                        40.0
+                    };
+
+                    Ok(Input::MouseScoll((
+                        delta.x as f64 / units_per_line,
+                        delta.y as f64 / units_per_line,
+                    )))
                 },
                 eframe::egui::MouseWheelUnit::Page => Err(()),
             },

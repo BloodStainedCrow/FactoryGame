@@ -623,7 +623,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     let Position {x: mouse_x, y: mouse_y} = Self::player_mouse_to_tile(self.zoom_level, self.map_view_info.unwrap_or(self.local_player_pos), self.current_mouse_pos);
                     match delta {
                         (_, y) => {
-                            self.zoom_level -=  y as f32 / 10.0 * self.mouse_wheel_sensitivity;
+                            self.zoom_level -=  y as f32 * 4.0 * self.mouse_wheel_sensitivity;
                         },
                     }
                     if let Some(view_center) = &mut self.map_view_info {
