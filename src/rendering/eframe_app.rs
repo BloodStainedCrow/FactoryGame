@@ -186,9 +186,12 @@ impl eframe::App for App {
                                             ));
                                         });
                                         row.col(|ui| {
-                                            let dur =
-                                                chrono::Duration::from_std(file.stored.playtime)
-                                                    .expect("Could not transform playtime to chrono duration");
+                                            let dur = chrono::Duration::from_std(
+                                                file.stored.playtime,
+                                            )
+                                            .expect(
+                                                "Could not transform playtime to chrono duration",
+                                            );
                                             ui.label(format!(
                                                 "{:02}:{:02}:{:02}",
                                                 dur.num_hours(),
@@ -373,7 +376,8 @@ impl eframe::App for App {
                             if crate::built_info::GIT_HEAD_REF == Some("refs/head/master") {
                                 ui.label(crate::built_info::PKG_VERSION);
                             } else {
-                                let version = crate::built_info::GIT_VERSION.unwrap_or("Could not get git version");
+                                let version = crate::built_info::GIT_VERSION
+                                    .unwrap_or("Could not get git version");
                                 ui.label(version);
                             }
                             ui.end_row();
