@@ -2858,6 +2858,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                 ActionType::PlaceOre { pos, ore, amount } => {
                     game_state.world.ore_lookup.add_ore(*pos, *ore, *amount);
+                    game_state
+                        .world
+                        .map_updates
+                        .get_or_insert_default()
+                        .push(*pos);
                 },
             }
 
