@@ -233,7 +233,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     ActionStateMachine<ItemIdxType, RecipeIdxType>
 {
     #[must_use]
-    pub fn new(
+    fn new(
         my_player_id: PLAYERID,
         local_player_pos: (f32, f32),
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -241,6 +241,63 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         Self {
             my_player_id,
             local_player_pos,
+
+            tech_tree_render: None,
+
+            statistics_panel_open: false,
+            technology_panel_open: true,
+            statistics_panel: StatisticsPanel::default(),
+            statistics_panel_locked_scale: false,
+            production_filters: vec![true; data_store.item_display_names.len()],
+            consumption_filters: vec![true; data_store.item_display_names.len()],
+
+            current_mouse_pos: (0.0, 0.0),
+            current_held_keys: HashSet::new(),
+            state: ActionStateMachineState::Idle,
+
+            zoom_level: 1.0,
+            map_view_info: None,
+
+            escape_menu_open: false,
+            debug_view_options: DebugViewOptions {
+                highlight_sushi_belts: false,
+                sushi_belt_len_threshhold: 1,
+
+                sushi_finder_view_lock: None,
+            },
+
+            copy_info: None,
+
+            show_graph_dot_output: false,
+
+            recipe: PhantomData,
+
+            get_size_cache: HashMap::new(),
+
+            mouse_wheel_sensitivity: 1.0,
+
+            current_fork_save_in_progress: None,
+
+            hotbar: Hotbar::new(data_store),
+            hotbar_window_open: true,
+
+            last_tick_seen_for_autosave: 0,
+            autosave_interval: (60 * TICKS_PER_SECOND_LOGIC) as u32,
+        }
+    }
+
+    #[must_use]
+    pub fn new_from_gamestate(
+        my_player_id: PLAYERID,
+        world: &World<ItemIdxType, RecipeIdxType>,
+        sim_state: &SimulationState<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
+        let player_pos = world.players[my_player_id as usize].pos;
+
+        Self {
+            my_player_id,
+            local_player_pos: player_pos,
 
             tech_tree_render: None,
 

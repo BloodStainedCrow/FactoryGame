@@ -305,12 +305,6 @@ fn run_integrated_server(
     match data_store {
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
             let (send, recv) = channel();
-            let state_machine: Arc<Mutex<ActionStateMachine<_, _>>> =
-                Arc::new(Mutex::new(ActionStateMachine::new(
-                    0,
-                    (100.0 * CHUNK_SIZE_FLOAT, 100.0 * CHUNK_SIZE_FLOAT),
-                    &data_store,
-                )));
 
             let game_state = Arc::new(match start_game_info {
                 StartGameInfo::Load(path) => load(path)
@@ -374,6 +368,14 @@ fn run_integrated_server(
                     }
                 },
             });
+
+            let state_machine: Arc<Mutex<ActionStateMachine<_, _>>> =
+                Arc::new(Mutex::new(ActionStateMachine::new_from_gamestate(
+                    0,
+                    &*game_state.world.lock(),
+                    &*game_state.simulation_state.lock(),
+                    &data_store,
+                )));
 
             let (ui_sender, ui_recv) = channel();
 
@@ -488,17 +490,19 @@ fn run_client(remote_addr: SocketAddr) -> (LoadedGame, Arc<AtomicU64>, Sender<In
     match data_store {
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
             let (send, recv) = channel();
-            let state_machine: Arc<Mutex<ActionStateMachine<_, _>>> =
-                Arc::new(Mutex::new(ActionStateMachine::new(
-                    1,
-                    (100.0 * CHUNK_SIZE_FLOAT, 100.0 * CHUNK_SIZE_FLOAT),
-                    &data_store,
-                )));
 
             let game_state = Arc::new(
                 // FIXME: When running in client mode, we should download the gamestate from the server instead of loading it from disk
                 GameState::new("FIXME".to_string(), &data_store),
             );
+
+            let state_machine: Arc<Mutex<ActionStateMachine<_, _>>> =
+                Arc::new(Mutex::new(ActionStateMachine::new_from_gamestate(
+                    1,
+                    &*game_state.world.lock(),
+                    &*game_state.simulation_state.lock(),
+                    &data_store,
+                )));
 
             let (ui_sender, ui_recv) = channel();
 
