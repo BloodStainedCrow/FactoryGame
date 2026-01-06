@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
+    nixpkgs.url = "github:nixos/nixpkgs?ref=91c9a64ce2a84e648d0cf9671274bb9c2fb9ba60";
     fenix = {
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -31,6 +31,7 @@
   in {
     devShells."x86_64-linux".codium = pkgs.mkShell {
       buildInputs = with pkgs; [
+        bashInteractive
         rustToolchain
 
         perf
@@ -47,6 +48,12 @@
         })
       ] ++ neededPackages;
       LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${builtins.toString (pkgs.lib.makeLibraryPath neededPackages)}";
+
+      shellHook = ''
+        export SHELL="${pkgs.bashInteractive}/bin/bash"
+      '';
+      
+
       # env.RUST_SRC_PATH = "${rustToolchain.rust-src}";
     };
 
