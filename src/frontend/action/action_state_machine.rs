@@ -151,6 +151,8 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
 
     pub mouse_wheel_sensitivity: f32,
 
+    // #[serde(skip)]
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     pub current_fork_save_in_progress: Option<ForkSaveInfo>,
 
     pub hotbar: Hotbar<ItemIdxType>,
@@ -160,6 +162,7 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     pub autosave_interval: u32,
 }
 
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 #[derive(Debug)]
 pub struct ForkSaveInfo {
     pub recv: interprocess::unnamed_pipe::Recver,
@@ -276,6 +279,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
             mouse_wheel_sensitivity: 1.0,
 
+            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
             current_fork_save_in_progress: None,
 
             hotbar: Hotbar::new(data_store),
@@ -333,6 +337,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
             mouse_wheel_sensitivity: 1.0,
 
+            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
             current_fork_save_in_progress: None,
 
             hotbar: Hotbar::new(data_store),

@@ -79,7 +79,8 @@ impl TryFrom<egui::Event> for Input {
                     // See InputOptions::default and https://github.com/emilk/egui/issues/461
                     let units_per_line = if cfg!(all(target_arch = "wasm32", target_os = "unknown"))
                     {
-                        8.0
+                        // FIXME: Why does it seem like I need to use 40 here, if egui uses 8 on wasm????
+                        40.0
                     } else {
                         40.0
                     };

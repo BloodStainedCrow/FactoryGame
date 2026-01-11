@@ -1798,3 +1798,23 @@ pub(crate) mod test {
         })
     }
 }
+
+#[macro_export]
+macro_rules! get_const_string {
+    ($path:literal) => {{
+        #[cfg(target_arch = "wasm32")]
+        {
+            include_str!(concat!("../", $path)).to_string()
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let mut s = String::new();
+            let mut file = File::open($path).expect(&format!("Failed to open bp file {}", $path));
+
+            file.read_to_string(&mut s)
+                .expect(&format!("Failed reading from bp file {}", $path));
+            s
+        }
+    }};
+}

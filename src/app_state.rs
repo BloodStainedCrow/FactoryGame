@@ -9,6 +9,7 @@ use crate::frontend::action::place_entity::PlaceEntityInfo;
 use crate::frontend::world::tile::CHUNK_SIZE;
 use crate::frontend::world::tile::ModuleSlots;
 use crate::frontend::world::tile::ModuleTy;
+use crate::get_const_string;
 use crate::inserter::InserterStateInfo;
 use crate::inserter::WaitlistSearchSide;
 use crate::inserter::belt_storage_inserter;
@@ -110,6 +111,7 @@ pub struct AuxillaryData {
 
     pub update_round_trip_times: Timeline<UpdateTime>,
     pub update_times: Timeline<UpdateTime>,
+    #[get_size(ignore)]
     #[serde(skip)]
     last_update_time: Option<Instant>,
 
@@ -206,10 +208,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             },
             data_store,
         );
-        let mut file =
-            File::open("test_blueprints/murphy/megabase_new_blueprint_format.bp").unwrap();
-        let mut s = String::new();
-        file.read_to_string(&mut s).unwrap();
+        let s = get_const_string!("test_blueprints/murphy/megabase_new_blueprint_format.bp");
         let bp: BlueprintString = BlueprintString(s);
         let mut bp: Blueprint = bp.try_into().expect("Blueprint String Invalid");
         bp.optimize();
@@ -361,51 +360,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     }
 
     #[must_use]
-    pub fn new_with_beacon_belt_production(
-        name: String,
-        progress: Arc<AtomicU64>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Self {
-        let mut ret = GameState::new_with_world_area(
-            name,
-            Position { x: 0, y: 0 },
-            Position { x: 10000, y: 20000 },
-            data_store,
-        );
-
-        let file = File::open("test_blueprints/red_sci_with_beacons_and_belts.bp").unwrap();
-        let bp: Blueprint = ron::de::from_reader(file).unwrap();
-        let bp = bp.get_reusable(false, data_store);
-
-        let y_range = (0..20_000).step_by(6_000);
-
-        let total = y_range.size_hint().0;
-
-        let mut current = 0;
-
-        puffin::set_scopes_on(false);
-        for y_start in y_range {
-            progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
-            current += 1;
-            for y_pos in (1590..6000).step_by(10) {
-                for x_pos in (1590..4000).step_by(60) {
-                    bp.apply(
-                        Position {
-                            x: x_pos,
-                            y: y_start + y_pos,
-                        },
-                        &mut ret,
-                        data_store,
-                    );
-                }
-            }
-        }
-        puffin::set_scopes_on(true);
-
-        ret
-    }
-
-    #[must_use]
     pub fn new_with_lots_of_belts(
         name: String,
         progress: Arc<AtomicU64>,
@@ -421,9 +375,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             data_store,
         );
 
-        let mut file = File::open("test_blueprints/iron_generation_test.bp").unwrap();
-        let mut s = String::new();
-        file.read_to_string(&mut s).unwrap();
+        let s = get_const_string!("test_blueprints/iron_generation_test.bp");
         let bp: BlueprintString = BlueprintString(s);
         let mut bp: Blueprint = Blueprint::try_from(bp).unwrap();
         bp.optimize();
@@ -523,9 +475,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        let mut file = File::open("test_blueprints/solar_tile.bp").unwrap();
-        let mut s = String::new();
-        file.read_to_string(&mut s).unwrap();
+        let s = get_const_string!("test_blueprints/solar_tile.bp");
         let bp: BlueprintString = BlueprintString(s);
         let mut bp: Blueprint = Blueprint::try_from(bp).unwrap();
         bp.optimize();

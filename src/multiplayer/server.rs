@@ -1,5 +1,7 @@
 use std::{borrow::Borrow, fs::File, io::Write, marker::PhantomData};
 
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+use crate::saving::save_with_fork;
 use crate::{
     app_state::{GameState, SimulationState},
     data::DataStore,
@@ -71,16 +73,32 @@ impl<
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         let mut simulation_state = game_state.simulation_state.lock();
+        let mut world = game_state.world.lock();
         {
             profiling::scope!("GameState Update");
-            GameState::update(
-                &mut *simulation_state,
-                &mut *game_state.aux_data.lock(),
-                data_store,
-            );
+            let aux_data = &mut *game_state.aux_data.lock();
+
+            // TODO: Autosave interval
+            if aux_data.current_tick % (60 * 60 * 5) == 0 {
+                // Autosave
+                #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                {
+                    profiling::scope!("Autosave");
+                    // TODO: Handle overlapping saves
+                    let _ = save_with_fork(
+                        "dedicated_server_save",
+                        Some("dedicated_server_save.save"),
+                        &world,
+                        &simulation_state,
+                        &aux_data,
+                        data_store,
+                    );
+                }
+            }
+
+            GameState::update(&mut *simulation_state, aux_data, data_store);
         }
 
-        let mut world = game_state.world.lock();
         let current_tick = game_state.aux_data.lock().current_tick;
 
         let actions_iter = {

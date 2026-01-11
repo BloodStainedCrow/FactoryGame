@@ -10,6 +10,7 @@ use crate::belt::smart::{
 use crate::belt::smart::SmartBelt;
 use crate::blueprint::blueprint_string::BlueprintString;
 use crate::chest::ChestSize;
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use crate::frontend::action::action_state_machine::ForkSaveInfo;
 use crate::frontend::action::place_entity::EntityPlaceOptions;
 use crate::frontend::action::place_entity::PlaceEntityInfo;
@@ -23,7 +24,9 @@ use crate::lab::{LabViewInfo, TICKS_PER_SCIENCE};
 use crate::liquid::FluidSystemState;
 use crate::par_generation::{ParGenerateInfo, Timer};
 use crate::rendering::{BeltSide, Corner};
-use crate::saving::{save_components, save_with_fork};
+use crate::saving::save_components;
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+use crate::saving::save_with_fork;
 use crate::statistics::{NUM_DIFFERENT_TIMESCALES, TIMESCALE_NAMES};
 use crate::{
     TICKS_PER_SECOND_LOGIC,
@@ -62,6 +65,8 @@ use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
 use egui_show_info::ShowInfo;
 use flate2::Compression;
 use flate2::write::ZlibEncoder;
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use interprocess::os::unix::unnamed_pipe::UnnamedPipeExt;
 use itertools::Itertools;
 use log::error;
@@ -1912,6 +1917,7 @@ pub fn render_ui<
 
     let tick = (current_tick % u64::from(state_machine_ref.autosave_interval)) as u32;
 
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     if cfg!(target_os = "linux") {
         if tick < state_machine_ref.last_tick_seen_for_autosave {
             if state_machine_ref.current_fork_save_in_progress.is_none() {
@@ -1983,6 +1989,7 @@ pub fn render_ui<
         );
     });
 
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     if let Some(recv) = &mut state_machine_ref.current_fork_save_in_progress {
         const NUM_STATES: u8 = 12;
 
@@ -2025,12 +2032,21 @@ pub fn render_ui<
                     );
                 }
 
-                if ui
-                    .add_enabled(
+                let enabled = {
+                    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+                    {
+                        false
+                    }
+
+                    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                    {
                         cfg!(target_os = "linux")
-                            && state_machine_ref.current_fork_save_in_progress.is_none(),
-                        Button::new("Save with fork"),
-                    )
+                            && state_machine_ref.current_fork_save_in_progress.is_none()
+                    }
+                };
+
+                if ui
+                    .add_enabled(enabled, Button::new("Save with fork"))
                     .on_disabled_hover_text(if !cfg!(target_os = "linux") {
                         "Only available on Linux"
                     } else {
@@ -2038,21 +2054,24 @@ pub fn render_ui<
                     })
                     .clicked()
                 {
-                    let recv = save_with_fork(
-                        &aux_data.game_name,
-                        Some(&format!("{}.save", &aux_data.game_name)),
-                        &*world,
-                        &*simulation_state,
-                        &*aux_data,
-                        data_store_ref,
-                    );
-                    if let Some(recv) = recv {
-                        recv.set_nonblocking(true)
-                            .expect("Could not set pipe to nonblocking!");
-                        state_machine_ref.current_fork_save_in_progress = Some(ForkSaveInfo {
-                            recv,
-                            current_state: 0,
-                        });
+                    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                    {
+                        let recv = save_with_fork(
+                            &aux_data.game_name,
+                            Some(&format!("{}.save", &aux_data.game_name)),
+                            &*world,
+                            &*simulation_state,
+                            &*aux_data,
+                            data_store_ref,
+                        );
+                        if let Some(recv) = recv {
+                            recv.set_nonblocking(true)
+                                .expect("Could not set pipe to nonblocking!");
+                            state_machine_ref.current_fork_save_in_progress = Some(ForkSaveInfo {
+                                recv,
+                                current_state: 0,
+                            });
+                        }
                     }
                 }
                 if ui.button("Main Menu").clicked() {
@@ -3904,7 +3923,7 @@ pub fn render_ui<
                     },
                     Entity::Accumulator {  ty, pole_position, .. } => {
                         ui.label(format!("{}", &data_store.accumulator_info[*ty as usize].display_name));
-                        
+
                         let max_charge = data_store.accumulator_info[*ty as usize].max_charge;
                         let charge = if let Some(pole_pos) = pole_position {
                             let grid = game_state_ref.simulation_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos.0];

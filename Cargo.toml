@@ -66,17 +66,22 @@ bincode = { version = "2.0.1", features = ["serde"] }
 thin-dst = "1.1.0"
 stable-vec = "0.4.1"
 recycle_vec = "1.1.2"
-fork = "0.3.0"
-libc = { version = "0.2.177", default-features = false }
-interprocess = "2.2.3"
 fixed-buffer = "1.0.2"
 base64 = "0.22.1"
 mimalloc = { version = "0.1.48", features = ["v3"] }
 rustc-hash = "2.1.1"
 chrono = { version = "0.4.42", features = ["serde"] }
 rand_xoshiro = "0.7.0"
-open = "5.3.3"
 url = "2.5.7"
+args = "2.2.0"
+console_error_panic_hook = "0.1.7"
+
+# These are all the dependencies which do not work on wasm
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+libc = { version = "0.2.177", default-features = false }
+interprocess = { version = "2.2.3" }
+fork = "0.3.0"
+open = "5.3.3"
 
 [build-dependencies]
 built = {version = "0.8", features= ["git2", "chrono"]}
@@ -105,7 +110,6 @@ match_same_arms = { level = "deny", priority = -1 }
 redundant_closure_for_method_calls = { level = "allow", priority = 1 }
 suboptimal_flops = { level = "allow", priority = 1 }
 module_name_repetitions = { level = "allow", priority = 1 }
-# lto = true
 
 [profile.release-with-debug]
 inherits = "release"

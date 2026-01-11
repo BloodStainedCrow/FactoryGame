@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::app_state::SimulationState;
+use crate::{app_state::SimulationState, frontend::world::Position};
 use log::error;
 use parking_lot::Mutex;
 
@@ -71,10 +71,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         let mut state_machine = self.local_actions.lock();
 
         let mut local_actions: Vec<_> = state_machine
-            .handle_inputs(&self.local_input, world, sim_state, data_store)
+            .handle_inputs(self.local_input.try_iter(), world, sim_state, data_store)
             .into_iter()
             .collect();
+
         local_actions.extend(state_machine.once_per_update_actions(world, data_store));
+
+        local_actions.extend(self.ui_actions.try_iter());
 
         mem::drop(state_machine);
 
@@ -85,9 +88,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         let (recieved_actions, _v): (Vec<_>, _) =
             postcard::from_io((&self.server_connection, &mut buffer)).unwrap();
 
-        recieved_actions
-            .into_iter()
-            .chain(self.ui_actions.try_iter())
+        recieved_actions.into_iter()
     }
 }
 
@@ -163,8 +164,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
                     },
                 }
 
-                dbg!(start.elapsed());
-                dbg!(ret.len());
                 ret
             })
             .collect();
@@ -187,9 +186,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         let actions: Vec<_> = actions.into_iter().collect();
         // Send the actions to the clients
         for conn in self.client_connections.lock().iter() {
-            for action in &actions {
-                postcard::to_io(&action, conn).expect("tcp send failed");
-            }
+            postcard::to_io(&actions, conn).expect("tcp send failed");
         }
     }
 }

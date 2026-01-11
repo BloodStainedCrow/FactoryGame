@@ -27,6 +27,13 @@ use crate::{
 pub mod loading;
 mod save_file_settings;
 
+pub(crate) fn save_folder() -> PathBuf {
+    ProjectDirs::from("de", "aschhoff", "factory_game")
+        .expect("No Home path found")
+        .data_dir()
+        .join("saves")
+}
+
 #[derive(Debug, Encode, serde::Deserialize, serde::Serialize)]
 pub struct SaveGame<
     ItemIdxType: IdxTrait,
@@ -106,9 +113,9 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
     let checksum = data_store.checksum.clone();
-    let dir = ProjectDirs::from("de", "aschhoff", "factory_game").expect("No Home path found");
+    let save_dir = save_folder();
 
-    create_dir_all(dir.data_dir()).expect("Could not create data dir");
+    create_dir_all(&save_dir).expect("Could not create save dir");
 
     // if let Ok(s) = env::var("FACTORY_SAVE_READABLE") {
     //     if s == "true" {
@@ -132,11 +139,11 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     //     }
     // }
 
-    let temp_file_dir = dir.data_dir().join("tmp.save");
+    let temp_file_dir = save_dir.join("tmp.save");
     let save_file_dir = if let Some(name) = save_name {
-        dir.data_dir().join(&name)
+        save_dir.join(&name)
     } else {
-        dir.data_dir().join("autosave.save")
+        save_dir.join("autosave.save")
     };
 
     let info = StoredSaveFileInfo {
@@ -247,6 +254,7 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
 /// # Panics
 /// If File system stuff fails
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     name: &str,
     save_name: Option<&str>,
@@ -258,9 +266,9 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     mut send: interprocess::unnamed_pipe::Sender,
 ) {
     let checksum = &data_store.checksum;
-    let dir = ProjectDirs::from("de", "aschhoff", "factory_game").expect("No Home path found");
+    let save_dir = save_folder();
 
-    create_dir_all(dir.data_dir()).expect("Could not create data dir");
+    create_dir_all(&save_dir).expect("Could not create data dir");
 
     // FIXME: Allocation and chrono is prob illegal after a fork
     let info = StoredSaveFileInfo {
@@ -277,11 +285,11 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         preview: None,
     };
 
-    let temp_file_dir = dir.data_dir().join("tmp.save");
+    let temp_file_dir = save_dir.join("tmp.save");
     let save_file_dir = if let Some(name) = save_name {
-        dir.data_dir().join(&name)
+        save_dir.join(&name)
     } else {
-        dir.data_dir().join("autosave.save")
+        save_dir.join("autosave.save")
     };
 
     create_dir_all(&temp_file_dir).expect("Could not create temp dir");
@@ -374,6 +382,7 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
 /// # Panics
 /// If File system stuff fails
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub fn save_with_fork<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     name: &str,
     save_name: Option<&str>,

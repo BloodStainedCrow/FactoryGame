@@ -16,10 +16,12 @@ use egui_graphs::LayoutStateTree;
 use url::Url;
 use wasm_timer::Instant;
 
-use directories::ProjectDirs;
 use parking_lot::Mutex;
 
-use crate::{GameCreationInfo, run_client, saving::loading::SaveFileList};
+use crate::{
+    GameCreationInfo, example_worlds, run_client,
+    saving::{load, loading::SaveFileList, save_folder},
+};
 use crate::{StartGameInfo, frontend::world::Position};
 use crate::{rendering::render_world::EscapeMenuOptions, run_integrated_server};
 use eframe::{
@@ -56,6 +58,8 @@ pub struct App {
 
     last_rendered_update: u64,
 
+    world_creation_state: example_worlds::WorldValueStore,
+
     pub input_sender: Option<Sender<Input>>,
 
     texture_atlas: Arc<TextureAtlas>,
@@ -77,6 +81,7 @@ impl App {
             }),
             input_sender: None,
             state: AppState::MainMenu { in_ip_box: None },
+            world_creation_state: Default::default(),
             texture_atlas: atlas,
             currently_loaded_game: None,
             last_rendered_update: 0,
@@ -138,14 +143,19 @@ impl eframe::App for App {
                         new_state = Some(AppState::MainMenu { in_ip_box: None });
                     }
 
-                    if ui.button("Open Save File Folder").clicked() {
-                        let uri = Url::from_file_path(
-                            ProjectDirs::from("de", "aschhoff", "factory_game")
-                                .expect("No Home path found")
-                                .data_dir(),
+                    if ui
+                        .add_enabled(
+                            cfg!(not(all(target_arch = "wasm32", target_os = "unknown"))),
+                            Button::new("Open Save File Folder"),
                         )
-                        .expect("Could not generate URI");
-                        open::that(uri.as_str()).expect("Failed to Open Folder");
+                        .clicked()
+                    {
+                        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                        {
+                            let uri =
+                                Url::from_file_path(save_folder()).expect("Could not generate URI");
+                            open::that(uri.as_str()).expect("Failed to Open Folder");
+                        }
                     }
 
                     let mut dirty = false;
@@ -215,7 +225,7 @@ impl eframe::App for App {
                                             }
                                         });
                                         row.col(|ui| {
-                                            if ui.add_enabled(true, Button::new("Load")).clicked() {
+                                            if ui.add_enabled(true, Button::new("Load")).on_disabled_hover_text("Currently WASM does not support saving or loading").clicked() {
                                                 let path = file.path.clone();
                                                 let progress =
                                                     Arc::new(AtomicU64::new(0f64.to_bits()));
@@ -225,7 +235,16 @@ impl eframe::App for App {
                                                 thread::spawn(move || {
                                                     send.send(run_integrated_server(
                                                         progress_send,
-                                                        StartGameInfo::Load(path),
+                                                        |progress, data_store| {
+                                                            load(path).map(|sg| {
+                                                                assert_eq!(
+                                                                    sg.checksum, data_store.checksum,
+                                                                    "A savegame can only be loaded with the EXACT same mods!"
+                                                                );
+                                                                sg.game_state
+                                                            })
+                                                            .unwrap()
+                                                        },
                                                         None,
                                                     ))
                                                     .expect("Channel send failed");
@@ -274,11 +293,7 @@ impl eframe::App for App {
                         });
 
                     if dirty {
-                        *save_files = SaveFileList::generate_from_save_folder(
-                            ProjectDirs::from("de", "aschhoff", "factory_game")
-                                .expect("No Home path found")
-                                .data_dir(),
-                        )
+                        *save_files = SaveFileList::generate_from_save_folder(&save_folder())
                     }
                 });
                 // Borrow checker issue
@@ -465,12 +480,10 @@ impl eframe::App for App {
                             );
                         });
 
-                    if ui.button("Load").clicked() {
+                    if ui.add_enabled(cfg!(not(all(target_arch = "wasm32", target_os = "unknown"))), Button::new("Load")).on_disabled_hover_text("Saving/Loading not yet supported when running the browser").clicked() {
                         self.state = AppState::LoadSaveMenu {
                             save_files: SaveFileList::generate_from_save_folder(
-                                ProjectDirs::from("de", "aschhoff", "factory_game")
-                                    .expect("No Home path found")
-                                    .data_dir(),
+                                &save_folder()
                             ),
                         }
                     }
@@ -478,9 +491,7 @@ impl eframe::App for App {
                     //     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                     //     if let Some(path) = rfd::FileDialog::new()
                     //         .set_directory(
-                    //             ProjectDirs::from("de", "aschhoff", "factory_game")
-                    //                 .expect("No Home path found")
-                    //                 .data_dir(),
+                    //             save_folder(),
                     //         )
                     //         .pick_file()
                     //     {
@@ -530,18 +541,15 @@ impl eframe::App for App {
                 gigabase_size,
                 new_game_name,
             } => {
-                let gigabase_size = *gigabase_size;
-                let mut new_game_name = new_game_name.take();
-
                 CentralPanel::default().show(ctx, |ui| {
                     if ui.button("Back to Main Menu").clicked() {
                         self.state = AppState::MainMenu { in_ip_box: None };
                         return;
                     }
+                    let ret =
+                        example_worlds::list_example_worlds(&mut self.world_creation_state, ui);
 
-                    ui.add(TextEdit::singleline(&mut new_game_name).char_limit(100));
-
-                    if ui.button("Empty World").clicked() {
+                    if let Some(creation_fn) = ret {
                         let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
                         let (send, recv) = channel();
 
@@ -549,11 +557,8 @@ impl eframe::App for App {
                         #[cfg(not(target_arch = "wasm32"))]
                         thread::spawn(move || {
                             send.send(run_integrated_server(
-                                progress_send,
-                                StartGameInfo::Create {
-                                    name: new_game_name,
-                                    info: GameCreationInfo::Empty,
-                                },
+                                progress_send.clone(),
+                                creation_fn,
                                 None,
                             ))
                             .expect("Channel send failed");
@@ -565,6 +570,7 @@ impl eframe::App for App {
                             StartGameInfo::Create {
                                 name: new_game_name,
                                 info: GameCreationInfo::Empty,
+                                allow_overwrite: true,
                             },
                             None,
                         ));
@@ -574,248 +580,6 @@ impl eframe::App for App {
                             progress,
                             game_state_receiver: recv,
                         };
-                    } else if ui.button("Lots of Belts").clicked() {
-                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
-                        let (send, recv) = channel();
-
-                        let progress_send = progress.clone();
-                        #[cfg(not(target_arch = "wasm32"))]
-                        thread::spawn(move || {
-                            send.send(run_integrated_server(
-                                progress_send,
-                                StartGameInfo::Create {
-                                    name: new_game_name,
-                                    info: GameCreationInfo::LotsOfBelts,
-                                },
-                                None,
-                            ))
-                            .expect("Channel send failed");
-                        });
-
-                        #[cfg(target_arch = "wasm32")]
-                        send.send(run_integrated_server(
-                            progress_send,
-                            StartGameInfo::Create {
-                                name: new_game_name,
-                                info: GameCreationInfo::LotsOfBelts,
-                            },
-                            None,
-                        ));
-
-                        self.state = AppState::Loading {
-                            start_time: Instant::now(),
-                            progress,
-                            game_state_receiver: recv,
-                        };
-                    } else if ui.button("Train Ride around the world").clicked() {
-                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
-                        let (send, recv) = channel();
-
-                        let progress_send = progress.clone();
-                        #[cfg(not(target_arch = "wasm32"))]
-                        thread::spawn(move || {
-                            send.send(run_integrated_server(
-                                progress_send,
-                                StartGameInfo::Create {
-                                    info: GameCreationInfo::TrainRide,
-                                    name: new_game_name,
-                                },
-                                None,
-                            ))
-                            .expect("Channel send failed");
-                        });
-
-                        #[cfg(target_arch = "wasm32")]
-                        send.send(run_integrated_server(
-                            progress_send,
-                            StartGameInfo::Create {
-                                info: GameCreationInfo::TrainRide,
-                                name: new_game_name,
-                            },
-                            None,
-                        ));
-
-                        self.state = AppState::Loading {
-                            start_time: Instant::now(),
-                            progress,
-                            game_state_receiver: recv,
-                        };
-                    } else if ui.button("Megabase").clicked() {
-                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
-                        let (send, recv) = channel();
-
-                        let progress_send = progress.clone();
-                        #[cfg(not(target_arch = "wasm32"))]
-                        thread::spawn(move || {
-                            send.send(run_integrated_server(
-                                progress_send,
-                                StartGameInfo::Create {
-                                    info: GameCreationInfo::Megabase(true),
-                                    name: new_game_name,
-                                },
-                                None,
-                            ))
-                            .expect("Channel send failed");
-                        });
-
-                        #[cfg(target_arch = "wasm32")]
-                        send.send(run_integrated_server(
-                            progress_send,
-                            StartGameInfo::Create {
-                                info: GameCreationInfo::Megabase(true),
-                                name: new_game_name,
-                            },
-                            None,
-                        ));
-
-                        self.state = AppState::Loading {
-                            start_time: Instant::now(),
-                            progress,
-                            game_state_receiver: recv,
-                        };
-                    } else if ui.button("Megabase with Infinity Battery").clicked() {
-                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
-                        let (send, recv) = channel();
-
-                        let progress_send = progress.clone();
-                        #[cfg(not(target_arch = "wasm32"))]
-                        thread::spawn(move || {
-                            send.send(run_integrated_server(
-                                progress_send,
-                                StartGameInfo::Create {
-                                    info: GameCreationInfo::Megabase(false),
-                                    name: new_game_name,
-                                },
-                                None,
-                            ))
-                            .expect("Channel send failed");
-                        });
-
-                        #[cfg(target_arch = "wasm32")]
-                        send.send(run_integrated_server(
-                            progress_send,
-                            StartGameInfo::Create {
-                                info: GameCreationInfo::Megabase(false),
-                                name: new_game_name,
-                            },
-                            None,
-                        ));
-
-                        self.state = AppState::Loading {
-                            start_time: Instant::now(),
-                            progress,
-                            game_state_receiver: recv,
-                        };
-                    } else if {
-                        let v = ui.horizontal(|ui| {
-                            let ret = ui.button("Gigabase").clicked();
-
-                            let AppState::NewGameMenu { gigabase_size, .. } = &mut self.state
-                            else {
-                                unreachable!()
-                            };
-
-                            ui.add(
-                                Slider::new(gigabase_size, 1..=1_000)
-                                    .logarithmic(true)
-                                    .text("Number of base copies to build"),
-                            );
-
-                            let single_base_size = 15.4 / 40.0;
-                            let single_base_usage = 40.0 / 60.0;
-
-                            ui.label(&format!(
-                                "Est. Memory Usage: ~{:.1}GB",
-                                single_base_size * f64::from(*gigabase_size)
-                            ));
-                            ui.label(&format!(
-                                "Est. Memory Bandwidth for 60 UPS: ~{:.1}GB/s",
-                                single_base_usage * f64::from(*gigabase_size)
-                            ));
-
-                            ret
-                        });
-
-                        v.inner
-                    } {
-                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
-                        let (send, recv) = channel();
-
-                        let progress_send = progress.clone();
-                        thread::spawn(move || {
-                            send.send(run_integrated_server(
-                                progress_send,
-                                StartGameInfo::Create {
-                                    info: GameCreationInfo::Gigabase(gigabase_size),
-                                    name: new_game_name,
-                                },
-                                None,
-                            ))
-                            .expect("Channel send failed");
-                        });
-
-                        self.state = AppState::Loading {
-                            start_time: Instant::now(),
-                            progress,
-                            game_state_receiver: recv,
-                        };
-                    } else if ui.button("Solar Field").clicked() {
-                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
-                        let (send, recv) = channel();
-
-                        let progress_send = progress.clone();
-                        thread::spawn(move || {
-                            send.send(run_integrated_server(
-                                progress_send,
-                                StartGameInfo::Create {
-                                    info: GameCreationInfo::SolarField(
-                                        crate::power::Watt(1_000),
-                                        Position { x: 1600, y: 1600 },
-                                    ),
-                                    name: new_game_name,
-                                },
-                                None,
-                            ))
-                            .expect("Channel send failed");
-                        });
-
-                        self.state = AppState::Loading {
-                            start_time: Instant::now(),
-                            progress,
-                            game_state_receiver: recv,
-                        };
-                    } else if ui.button("With bp file").clicked() {
-                        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-                        if let Some(path) = rfd::FileDialog::new().pick_file() {
-                            let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
-                            let (send, recv) = channel();
-
-                            let progress_send = progress.clone();
-                            thread::spawn(move || {
-                                send.send(run_integrated_server(
-                                    progress_send,
-                                    StartGameInfo::Create {
-                                        info: GameCreationInfo::FromBP(path),
-                                        name: new_game_name,
-                                    },
-                                    None,
-                                ))
-                                .expect("Channel send failed");
-                            });
-
-                            self.state = AppState::Loading {
-                                start_time: Instant::now(),
-                                progress,
-                                game_state_receiver: recv,
-                            };
-                        }
-                    } else {
-                        if let AppState::NewGameMenu {
-                            new_game_name: ngn, ..
-                        } = &mut self.state
-                        {
-                            *ngn = new_game_name;
-                        }
                     }
                 });
             },
@@ -857,6 +621,9 @@ impl eframe::App for App {
 impl App {
     fn update_ingame(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         let size = ctx.available_rect();
+
+        #[cfg(target_arch = "wasm32")]
+        let mut render_action_vec = vec![];
 
         CentralPanel::default().show(ctx, |ui| {
             if ui.ui_contains_pointer() {
@@ -1087,10 +854,10 @@ impl App {
                         let mut sim_state_lock = state.state.simulation_state.lock();
                         let sim_state = &mut *sim_state_lock;
 
-                        let mut actions: Vec<ActionType<_, _>> = state
+                        let mut actions: Vec<crate::frontend::action::ActionType<_, _>> = state
                             .state_machine
                             .lock()
-                            .handle_inputs(inputs, world, data_store)
+                            .handle_inputs(inputs, world, sim_state, data_store)
                             .collect();
 
                         actions.extend(

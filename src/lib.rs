@@ -8,6 +8,7 @@
 
 extern crate test;
 
+// FIXME: I believe this does not work in nix packages, since build scripts do not work, in order to keep the build reproducable
 // See https://docs.rs/built/latest/built/
 pub mod built_info {
     // The file has been placed there by the build script.
@@ -52,9 +53,6 @@ use rendering::{
     window::{LoadedGame, LoadedGameSized},
 };
 
-#[cfg(not(feature = "client"))]
-use directories::ProjectDirs;
-
 use saving::{load, load_readable};
 use std::path::PathBuf;
 
@@ -76,6 +74,8 @@ pub mod power;
 pub mod research;
 
 pub mod scenario;
+
+mod example_worlds;
 
 mod shopping_list_arena;
 mod temp_vec;
@@ -153,7 +153,7 @@ impl<T: Default> NewWithDataStore for T {
 }
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-pub fn main() -> Result<(), ()> {
+pub fn main(input: &Vec<String>) -> Result<(), args::ArgsError> {
     // use ron::ser::PrettyConfig;
 
     // let raw = crate::data::factorio_1_1::get_raw_data_fn();
@@ -170,6 +170,7 @@ pub fn main() -> Result<(), ()> {
         .env()
         .init()
         .unwrap();
+    log::info!("Welcome to main on native");
 
     #[cfg(feature = "client")]
     {
@@ -192,25 +193,56 @@ pub fn main() -> Result<(), ()> {
 
     #[cfg(not(feature = "client"))]
     {
-        log::info!("Running Dedicated server!");
-        // let dir = ProjectDirs::from("de", "aschhoff", "factory_game").expect("No Home path found");
-        // let save_file_dir = dir.data_dir().join("save.save");
-        // run_dedicated_server(StartGameInfo::Load(save_file_dir));
-        run_dedicated_server(StartGameInfo::Load(
-            "/home/tim/.local/share/factory_game/save.save"
-                .try_into()
-                .unwrap(),
-        ));
+        use crate::saving::save_folder;
+
+        let mut args = args::Args::new("factory", "FactoryGame dedicated server");
+
+        args.flag("h", "help", "Print the usage menu");
+        args.flag("c", "create", "Create a new world");
+        args.flag(
+            "o",
+            "override",
+            "Allows overriding an existing world when creating world",
+        );
+
+        args.parse(input)?;
+
+        let help = args.value_of("help")?;
+        if help {
+            args.full_usage();
+            return Ok(());
+        }
+
+        let create = args.value_of("create")?;
+        let overwrite = args.value_of("override")?;
+
+        log::info!("Running Dedicated server");
+        let save_path = save_folder().join("dedicated_server_save.save");
+        log::info!("Loading Save game from {:?}", &save_path);
+
+        let start_game = if create {
+            StartGameInfo::Create {
+                name: "dedicated_server_save.save".to_string(),
+                info: GameCreationInfo::Empty,
+                allow_overwrite: overwrite,
+            }
+        } else {
+            StartGameInfo::Load(save_path)
+        };
+        run_dedicated_server(start_game);
     }
 }
 
 #[cfg(target_arch = "wasm32")]
-pub fn main() {
+pub fn main(_input: &Vec<String>) -> Result<(), args::ArgsError> {
+    console_error_panic_hook::set_once();
+
     puffin::set_scopes_on(true);
     use eframe::wasm_bindgen::JsCast as _;
 
     // Redirect `log` message to `console.log` and friends:
-    eframe::WebLogger::init(log::LevelFilter::Error).ok();
+    eframe::WebLogger::init(log::LevelFilter::Warn).ok();
+    log::info!("Welcome to main on wasm");
 
     let web_options = eframe::WebOptions::default();
 
@@ -249,6 +281,8 @@ pub fn main() {
             }
         }
     });
+
+    Ok(())
 }
 
 enum StartGameInfo {
@@ -257,6 +291,7 @@ enum StartGameInfo {
     Create {
         name: String,
         info: GameCreationInfo,
+        allow_overwrite: bool,
     },
 }
 
@@ -280,10 +315,84 @@ enum GameCreationInfo {
     FromBP(PathBuf),
 }
 
+// match start_game_info {
+//                 StartGameInfo::Load(path) => load(path)
+//                     .map(|sg| {
+//                         assert_eq!(
+//                             sg.checksum, data_store.checksum,
+//                             "A savegame can only be loaded with the EXACT same mods!"
+//                         );
+//                         sg.game_state
+//                     })
+//                     .unwrap(),
+//                 StartGameInfo::LoadReadable(path) => load_readable(path)
+//                     .map(|sg| {
+//                         assert_eq!(
+//                             sg.checksum, data_store.checksum,
+//                             "A savegame can only be loaded with the EXACT same mods!"
+//                         );
+//                         sg.game_state
+//                     })
+//                     .unwrap(),
+//                 StartGameInfo::Create {
+//                     name,
+//                     info,
+//                     allow_overwrite,
+//                 } => {
+//                     assert!(
+//                         name.is_ascii(),
+//                         "For now only ASCII game names are allowed, since they are used as the filename"
+//                     );
+
+//                     if !allow_overwrite {
+//                         log::error!(
+//                             "Currently allow_overwrite is ignored and overwriting is always allowed!!!!"
+//                         );
+//                     }
+
+//                     match info {
+//                         GameCreationInfo::Empty => GameState::new(name, &data_store),
+//                         GameCreationInfo::Megabase(use_solar_field) => {
+//                             GameState::new_with_megabase(
+//                                 name,
+//                                 use_solar_field,
+//                                 progress,
+//                                 &data_store,
+//                             )
+//                         },
+//                         GameCreationInfo::Gigabase(count) => {
+//                             GameState::new_with_gigabase(name, count, progress, &data_store)
+//                         },
+//                         GameCreationInfo::SolarField(wattage, base_pos) => {
+//                             GameState::new_with_tons_of_solar(
+//                                 name,
+//                                 wattage,
+//                                 base_pos,
+//                                 None,
+//                                 progress,
+//                                 &data_store,
+//                             )
+//                         },
+//                         GameCreationInfo::LotsOfBelts => {
+//                             GameState::new_with_lots_of_belts(name, progress, &data_store)
+//                         },
+//                         GameCreationInfo::TrainRide => {
+//                             GameState::new_with_world_train_ride(name, progress, &data_store)
+//                         },
+
+//                         GameCreationInfo::FromBP(path) => {
+//                             GameState::new_with_bp(name, &data_store, path)
+//                         },
+
+//                         _ => unimplemented!(),
+//                     }
+//                 },
+//             }
+
 #[cfg(feature = "client")]
 fn run_integrated_server(
     progress: Arc<AtomicU64>,
-    start_game_info: StartGameInfo,
+    game_creation_fn: impl FnOnce(Arc<AtomicU64>, &DataStore<u8, u8>) -> GameState<u8, u8>,
 
     // FIXME: This type is wrong
     listen_addr: Option<&'static str>,
@@ -305,68 +414,7 @@ fn run_integrated_server(
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
             let (send, recv) = channel();
 
-            let game_state = Arc::new(match start_game_info {
-                StartGameInfo::Load(path) => load(path)
-                    .map(|sg| {
-                        assert_eq!(
-                            sg.checksum, data_store.checksum,
-                            "A savegame can only be loaded with the EXACT same mods!"
-                        );
-                        sg.game_state
-                    })
-                    .unwrap(),
-                StartGameInfo::LoadReadable(path) => load_readable(path)
-                    .map(|sg| {
-                        assert_eq!(
-                            sg.checksum, data_store.checksum,
-                            "A savegame can only be loaded with the EXACT same mods!"
-                        );
-                        sg.game_state
-                    })
-                    .unwrap(),
-                StartGameInfo::Create { name, info } => {
-                    assert!(
-                        name.is_ascii(),
-                        "For now only ASCII game names are allowed, since they are used as the filename"
-                    );
-                    match info {
-                        GameCreationInfo::Empty => GameState::new(name, &data_store),
-                        GameCreationInfo::Megabase(use_solar_field) => {
-                            GameState::new_with_megabase(
-                                name,
-                                use_solar_field,
-                                progress,
-                                &data_store,
-                            )
-                        },
-                        GameCreationInfo::Gigabase(count) => {
-                            GameState::new_with_gigabase(name, count, progress, &data_store)
-                        },
-                        GameCreationInfo::SolarField(wattage, base_pos) => {
-                            GameState::new_with_tons_of_solar(
-                                name,
-                                wattage,
-                                base_pos,
-                                None,
-                                progress,
-                                &data_store,
-                            )
-                        },
-                        GameCreationInfo::LotsOfBelts => {
-                            GameState::new_with_lots_of_belts(name, progress, &data_store)
-                        },
-                        GameCreationInfo::TrainRide => {
-                            GameState::new_with_world_train_ride(name, progress, &data_store)
-                        },
-
-                        GameCreationInfo::FromBP(path) => {
-                            GameState::new_with_bp(name, &data_store, path)
-                        },
-
-                        _ => unimplemented!(),
-                    }
-                },
-            });
+            let game_state = Arc::new(game_creation_fn(progress, &data_store));
 
             let state_machine: Arc<Mutex<ActionStateMachine<_, _>>> =
                 Arc::new(Mutex::new(ActionStateMachine::new_from_gamestate(
@@ -438,16 +486,32 @@ fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
 
     let connections: Arc<Mutex<Vec<std::net::TcpStream>>> = Arc::default();
 
-    let local_addr = "127.0.0.1:8080";
+    let local_addr = "127.0.0.1:42069";
     let cancel: Arc<AtomicBool> = Default::default();
 
+    log::warn!("Hosting on {}", &local_addr);
     accept_continously(local_addr, connections.clone(), cancel.clone()).unwrap();
 
     match data_store {
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
-            let game_state = load(todo!("Add a console argument for the save file path"))
-                .map(|save| save.game_state)
-                .unwrap_or_else(|| GameState::new("Server Save".to_string(), &data_store));
+            let game_state = match start_game_info {
+                StartGameInfo::Load(path_buf) => load(path_buf)
+                    .map(|save| save.game_state)
+                    .expect("Could not load game"),
+                StartGameInfo::LoadReadable(path_buf) => unimplemented!(),
+                StartGameInfo::Create {
+                    name,
+                    info,
+                    allow_overwrite,
+                } => {
+                    if !allow_overwrite {
+                        log::error!(
+                            "Currently allow_overwrite is ignored and overwriting is always allowed!!!!"
+                        );
+                    }
+                    GameState::new(name, &data_store)
+                },
+            };
 
             let mut game = Game::new(
                 GameInitData::DedicatedServer(
