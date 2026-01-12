@@ -214,6 +214,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
                 );
 
                 log::info!("Sending GameState to new connection");
+                if let Err(err) = new_conn.set_nonblocking(false) {
+                    log::warn!("Failed setting connction to blocking: {:?}", err);
+                }
+
                 let mut compressed =
                     flate2::write::ZlibEncoder::new(&mut new_conn, Compression::best());
 
@@ -239,6 +243,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
                 }
 
                 std::mem::drop(compressed);
+
+                if let Err(err) = new_conn.set_nonblocking(true) {
+                    log::warn!("Failed setting connction to blocking: {:?}", err);
+                }
 
                 self.client_connections.lock().push(new_conn);
             }
