@@ -268,6 +268,15 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     let checksum = &data_store.checksum;
     let save_dir = save_folder();
 
+    // FIXME: This could lock forever
+    let lockfile = loop {
+        if let Ok(lockfile) =
+            lockfile::Lockfile::create_with_parents(save_dir.join("save_in_progress"))
+        {
+            break lockfile;
+        }
+    };
+
     create_dir_all(&save_dir).expect("Could not create data dir");
 
     // FIXME: Allocation and chrono is prob illegal after a fork
@@ -291,6 +300,8 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     } else {
         save_dir.join("autosave.save")
     };
+
+    assert_ne!(temp_file_dir, save_dir);
 
     create_dir_all(&temp_file_dir).expect("Could not create temp dir");
 
@@ -378,6 +389,8 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     // Remove old save if it exists
     let _ = std::fs::remove_dir_all(&save_file_dir);
     std::fs::rename(temp_file_dir, save_file_dir).expect("Could not rename tmp save dir!");
+
+    lockfile.release().expect("Failed to remove lockfile");
 }
 
 /// # Panics

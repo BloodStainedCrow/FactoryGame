@@ -46,7 +46,7 @@ puffin_egui = { git = "https://github.com/EmbarkStudios/puffin", optional = true
 puffin = { git = "https://github.com/EmbarkStudios/puffin", features = ["web"] }
 dhat = "0.3.3"
 noise = { version = "0.9.0", features = ["std"] }
-rfd = { version = "0.15.3", optional = true }
+rfd = { version = "0.17", optional = true }
 egui_graphs = { version = "0.28", optional = true }
 serde_path_to_error = "0.1.17"
 get-size2 = { version = "0.7.1", features = ["derive"], optional = true }
@@ -75,6 +75,7 @@ rand_xoshiro = "0.7.0"
 url = "2.5.7"
 args = "2.2.0"
 console_error_panic_hook = "0.1.7"
+lockfile = "0.4.0"
 
 # These are all the dependencies which do not work on wasm
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]

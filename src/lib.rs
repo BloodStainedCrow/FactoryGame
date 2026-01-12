@@ -315,80 +315,6 @@ enum GameCreationInfo {
     FromBP(PathBuf),
 }
 
-// match start_game_info {
-//                 StartGameInfo::Load(path) => load(path)
-//                     .map(|sg| {
-//                         assert_eq!(
-//                             sg.checksum, data_store.checksum,
-//                             "A savegame can only be loaded with the EXACT same mods!"
-//                         );
-//                         sg.game_state
-//                     })
-//                     .unwrap(),
-//                 StartGameInfo::LoadReadable(path) => load_readable(path)
-//                     .map(|sg| {
-//                         assert_eq!(
-//                             sg.checksum, data_store.checksum,
-//                             "A savegame can only be loaded with the EXACT same mods!"
-//                         );
-//                         sg.game_state
-//                     })
-//                     .unwrap(),
-//                 StartGameInfo::Create {
-//                     name,
-//                     info,
-//                     allow_overwrite,
-//                 } => {
-//                     assert!(
-//                         name.is_ascii(),
-//                         "For now only ASCII game names are allowed, since they are used as the filename"
-//                     );
-
-//                     if !allow_overwrite {
-//                         log::error!(
-//                             "Currently allow_overwrite is ignored and overwriting is always allowed!!!!"
-//                         );
-//                     }
-
-//                     match info {
-//                         GameCreationInfo::Empty => GameState::new(name, &data_store),
-//                         GameCreationInfo::Megabase(use_solar_field) => {
-//                             GameState::new_with_megabase(
-//                                 name,
-//                                 use_solar_field,
-//                                 progress,
-//                                 &data_store,
-//                             )
-//                         },
-//                         GameCreationInfo::Gigabase(count) => {
-//                             GameState::new_with_gigabase(name, count, progress, &data_store)
-//                         },
-//                         GameCreationInfo::SolarField(wattage, base_pos) => {
-//                             GameState::new_with_tons_of_solar(
-//                                 name,
-//                                 wattage,
-//                                 base_pos,
-//                                 None,
-//                                 progress,
-//                                 &data_store,
-//                             )
-//                         },
-//                         GameCreationInfo::LotsOfBelts => {
-//                             GameState::new_with_lots_of_belts(name, progress, &data_store)
-//                         },
-//                         GameCreationInfo::TrainRide => {
-//                             GameState::new_with_world_train_ride(name, progress, &data_store)
-//                         },
-
-//                         GameCreationInfo::FromBP(path) => {
-//                             GameState::new_with_bp(name, &data_store, path)
-//                         },
-
-//                         _ => unimplemented!(),
-//                     }
-//                 },
-//             }
-
 #[cfg(feature = "client")]
 fn run_integrated_server(
     progress: Arc<AtomicU64>,
@@ -403,11 +329,10 @@ fn run_integrated_server(
 
     let tick_counter: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
 
-    let connections: Arc<Mutex<Vec<std::net::TcpStream>>> = Arc::default();
-
+    let (new_conn_send, new_conn_recv) = channel();
     let cancel: Arc<AtomicBool> = Default::default();
     if let Some(listen_addr) = listen_addr {
-        accept_continously(listen_addr, connections.clone(), cancel.clone()).unwrap();
+        accept_continously(listen_addr, new_conn_send, cancel.clone()).unwrap();
     }
 
     match data_store {
@@ -430,7 +355,10 @@ fn run_integrated_server(
                 GameInitData::IntegratedServer {
                     game_state: game_state.clone(),
                     tick_counter: tick_counter.clone(),
-                    info: ServerInfo { connections },
+                    info: ServerInfo {
+                        connections: vec![],
+                        new_connection_recv: new_conn_recv,
+                    },
                     action_state_machine: state_machine.clone(),
                     inputs: recv,
                     ui_actions: ui_recv,
@@ -484,13 +412,14 @@ fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
 
     // let progress = Default::default();
 
-    let connections: Arc<Mutex<Vec<std::net::TcpStream>>> = Arc::default();
-
     let local_addr = "127.0.0.1:42069";
     let cancel: Arc<AtomicBool> = Default::default();
 
     log::warn!("Hosting on {}", &local_addr);
-    accept_continously(local_addr, connections.clone(), cancel.clone()).unwrap();
+
+    let (new_conn_send, new_conn_recv) = channel();
+
+    accept_continously(local_addr, new_conn_send, cancel.clone()).unwrap();
 
     match data_store {
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
@@ -516,7 +445,10 @@ fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
             let mut game = Game::new(
                 GameInitData::DedicatedServer(
                     game_state,
-                    ServerInfo { connections },
+                    ServerInfo {
+                        connections: vec![],
+                        new_connection_recv: new_conn_recv,
+                    },
                     Box::new(move || {
                         cancel.store(true, Ordering::Relaxed);
                         // This is a little hack. Our connection accept thread is stuck waiting for connections and will only exit if anything connects.
@@ -543,7 +475,10 @@ fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
 }
 
 #[cfg(feature = "client")]
-fn run_client(remote_addr: SocketAddr) -> (LoadedGame, Arc<AtomicU64>, Sender<Input>) {
+fn run_client(
+    remote_addr: SocketAddr,
+    game_state_sender: Sender<(LoadedGame, Arc<AtomicU64>, Sender<Input>)>,
+) {
     // TODO: Do mod loading here
     let raw_data = get_raw_data_test();
     let data_store = raw_data.process();
@@ -554,55 +489,44 @@ fn run_client(remote_addr: SocketAddr) -> (LoadedGame, Arc<AtomicU64>, Sender<In
         data::DataStoreOptions::ItemU8RecipeU8(data_store) => {
             let (send, recv) = channel();
 
-            let game_state = Arc::new(
-                // FIXME: When running in client mode, we should download the gamestate from the server instead of loading it from disk
-                GameState::new("FIXME".to_string(), &data_store),
-            );
-
-            let state_machine: Arc<Mutex<ActionStateMachine<_, _>>> =
-                Arc::new(Mutex::new(ActionStateMachine::new_from_gamestate(
-                    1,
-                    &*game_state.world.lock(),
-                    &*game_state.simulation_state.lock(),
-                    &data_store,
-                )));
-
             let (ui_sender, ui_recv) = channel();
+            let stop = Arc::new(AtomicBool::new(false));
+            let m_stop = stop.clone();
 
+            let m_data_store = data_store.clone();
+            let data_store = Arc::new(Mutex::new(data_store));
+            let m_tick_counter = tick_counter.clone();
             let mut game = Game::new(
                 GameInitData::Client {
-                    game_state: game_state.clone(),
-                    action_state_machine: state_machine.clone(),
+                    game_state_start_fun: Box::new(move |game_state, state_machine| {
+                        log::info!("GameState Recieved Successfully");
+
+                        game_state_sender
+                            .send((
+                                LoadedGame::ItemU8RecipeU8(LoadedGameSized {
+                                    state: game_state,
+                                    state_machine,
+                                    data_store,
+                                    ui_action_sender: ui_sender,
+                                    stop_update_thread: stop,
+                                }),
+                                tick_counter,
+                                send,
+                            ))
+                            .unwrap();
+                    }),
                     inputs: recv,
-                    tick_counter: tick_counter.clone(),
+                    tick_counter: m_tick_counter,
                     info: ClientConnectionInfo { addr: remote_addr },
                     ui_actions: ui_recv,
                 },
-                &data_store,
+                &m_data_store,
             )
             .expect("Could not start Game");
 
-            let stop = Arc::new(AtomicBool::new(false));
-
-            let m_data_store = data_store.clone();
-            let m_stop = stop.clone();
             thread::spawn(move || {
                 game.run(m_stop, &m_data_store);
             });
-
-            let data_store = Arc::new(Mutex::new(data_store));
-            return (
-                LoadedGame::ItemU8RecipeU8(LoadedGameSized {
-                    state: game_state,
-                    state_machine,
-                    data_store,
-                    ui_action_sender: ui_sender,
-
-                    stop_update_thread: stop,
-                }),
-                tick_counter,
-                send,
-            );
         },
         _ => todo!(),
     }

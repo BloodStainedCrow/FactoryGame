@@ -4266,7 +4266,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             continue;
                         }
 
-                        info!("Checking other chunk pos: {:?}", next_chunk_pos);
+                        log::trace!("Checking other chunk pos: {:?}", next_chunk_pos);
                         // FIXME: This sucks, but the borrow checker is unhappy otherwise
                         match self.get_entity_at_mut_no_recursion(next_chunk_pos) {
                             Some(e) => {
@@ -4355,7 +4355,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             continue;
                         }
 
-                        info!("Checking other chunk pos: {:?}", next_chunk_pos);
+                        log::trace!("Checking other chunk pos: {:?}", next_chunk_pos);
                         match self.get_entity_at_no_recursion(next_chunk_pos) {
                             Some(e) => {
                                 if pos.contained_in(e.get_pos(), e.get_entity_size(data_store)) {

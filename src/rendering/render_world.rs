@@ -1471,7 +1471,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 animation_frame: 0,
             },
         );
-        info!(
+        log::trace!(
             "Rendering other player {} at {:?}",
             player_id,
             [player.pos.0 - camera_pos.0, player.pos.1 - camera_pos.1,]

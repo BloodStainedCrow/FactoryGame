@@ -175,6 +175,7 @@ impl BlueprintAction {
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         match action {
+            ActionType::SpawnPlayer { .. } => unreachable!(),
             ActionType::PlaceFloorTile(_) => unimplemented!(),
             ActionType::PlaceEntity(place_entity_info) => {
                 match place_entity_info.entities.clone() {

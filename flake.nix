@@ -5,6 +5,8 @@
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # crane.url = "github:ipetkov/crane";
   };
 
   outputs = { self, nixpkgs, fenix }: let
@@ -37,7 +39,7 @@
       src = ./.;
       buildInputs = neededPackages;
       nativeBuildInputs = [ pkgs.pkg-config pkgs.makeWrapper ];
-      cargoHash = "sha256-TV+y1lHUmBJFBlgv2KBjQEXDLVqHNkgZsIXN2P3972k=";
+      cargoHash = "sha256-AQ6UxUS0DGK+v695XvqX81r/5pGfCsQdzLP70kAOcME=";
       # cargoLock.lockFile = ./Cargo.lock;
       doCheck = false;
 
@@ -76,6 +78,18 @@
 
     packages."x86_64-linux".default = client_package;
 
-    packages."x86_64-linux".dedicated_server = client_package.overrideAttrs ( oldAttrs: { cargoBuildFlags = [ "--no-default-features" ]; });
+    "wasm" = client_package.overrideAttrs ( oldAttrs: { 
+      CARGO_BUILD_TARGET = "wasm32-wasi"; 
+      nativeBuildInputs = oldAttrs.nativeBuildInputs ++ [ pkgs.wabt ];
+      postInstall = ''
+        mkdir -p $out/lib
+        ls -lR $out
+        wasm-strip $out/bin/factory -o $out/lib/factory.wasm
+        rm -rf $out/bin
+        wasm-validate $out/lib/factory.wasm
+      '';
+    });
+
+    packages."x86_64-linux".dedicated_server = client_package.overrideAttrs ( oldAttrs: { cargoBuildFlags = [ "--no-default-features" "-F logging" ]; });
   };
 }

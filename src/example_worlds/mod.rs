@@ -3,8 +3,6 @@ use std::{
     sync::{LazyLock, atomic::AtomicU64},
 };
 
-use egui::Button;
-
 use crate::{app_state::GameState, data::DataStore, frontend::world::Position, power::Watt};
 
 pub(crate) struct WorldValueStore {
@@ -32,6 +30,7 @@ impl Default for WorldValueStore {
     }
 }
 
+#[cfg(feature = "client")]
 pub(crate) fn list_example_worlds(
     values: &mut WorldValueStore,
     ui: &mut egui::Ui,
@@ -89,7 +88,7 @@ pub(crate) fn list_example_worlds(
             };
 
             if ui
-                .add_enabled(allowed, Button::new("Create"))
+                .add_enabled(allowed, egui::Button::new("Create"))
                 .on_disabled_hover_text(disabled_str)
                 .clicked()
             {
@@ -243,10 +242,10 @@ const WORLDS: LazyLock<[ExampleWorld; 5]> = LazyLock::new(|| {
                 };
 
                 // Testing said ~100 bytes per solar panel
-                let expected_size = *count * 100 + 1_000_000_000;
+                let expected_size = (*count) as u64 * 100 + 1_000_000_000;
 
-                // Wasm only has 4GB of RAM
-                if expected_size > 4_000_000_000 {
+                // Wasm only has 4GB of RAM so limit to ~3GB
+                if expected_size > 3_000_000_000 {
                     AllowedOnWasm::False(Some(
                         "Generated World Size would exceed maximum memory on WASM, consider reducing panel count",
                     ))

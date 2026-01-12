@@ -72,6 +72,9 @@ pub enum ActionType<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     },
 
     Ping(Position),
+
+    // TODO: Does this need args?
+    SpawnPlayer {},
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, RecipeIdxType> {
@@ -109,6 +112,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, Rec
             ActionType::CheatRelockTechnology { .. } => None,
             ActionType::PlaceOre { pos, .. } => Some(*pos),
             ActionType::Ping(position) => Some(*position),
+            ActionType::SpawnPlayer { .. } => None,
         }
     }
 
@@ -176,6 +180,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, Rec
             ActionType::CheatRelockTechnology { .. } => None,
             ActionType::PlaceOre { .. } => None,
             ActionType::Ping(_) => None,
+
+            ActionType::SpawnPlayer { .. } => None,
         }
     }
 
@@ -200,6 +206,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, Rec
             ActionType::CheatRelockTechnology { .. } => None,
             ActionType::PlaceOre { pos, .. } => Some([1, 1]),
             ActionType::Ping(_) => None,
+
+            ActionType::SpawnPlayer { .. } => None,
         })
     }
 }

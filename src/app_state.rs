@@ -9,6 +9,7 @@ use crate::frontend::action::place_entity::PlaceEntityInfo;
 use crate::frontend::world::tile::CHUNK_SIZE;
 use crate::frontend::world::tile::ModuleSlots;
 use crate::frontend::world::tile::ModuleTy;
+use crate::frontend::world::tile::PlayerInfo;
 use crate::get_const_string;
 use crate::inserter::InserterStateInfo;
 use crate::inserter::WaitlistSearchSide;
@@ -111,7 +112,8 @@ pub struct AuxillaryData {
 
     pub update_round_trip_times: Timeline<UpdateTime>,
     pub update_times: Timeline<UpdateTime>,
-    #[get_size(ignore)]
+
+    #[cfg_attr(feature = "client", get_size(ignore))]
     #[serde(skip)]
     last_update_time: Option<Instant>,
 
@@ -1221,6 +1223,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         for action in actions {
             // FIXME: I just clone for now
             match action.borrow() {
+                ActionType::SpawnPlayer {} => {
+                    log::info!("Player joined");
+                    game_state.world.players.push(PlayerInfo::default());
+                },
+
                 ActionType::SetActiveResearch { tech } => {
                     game_state.simulation_state.tech_state.current_technology = *tech;
                 },

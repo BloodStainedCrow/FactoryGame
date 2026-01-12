@@ -3,7 +3,7 @@ use std::{borrow::Borrow, fs::File, io::Write, marker::PhantomData};
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use crate::saving::save_with_fork;
 use crate::{
-    app_state::{GameState, SimulationState},
+    app_state::{AuxillaryData, GameState, SimulationState},
     data::DataStore,
     frontend::{action::ActionType, world::tile::World},
     item::{IdxTrait, WeakIdxTrait},
@@ -23,11 +23,12 @@ where
 }
 
 pub(super) trait ActionSource<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    fn get<'a, 'b, 'c, 'd>(
+    fn get<'a, 'b, 'c, 'd, 'e>(
         &'a self,
         current_tick: u64,
         world: &'b World<ItemIdxType, RecipeIdxType>,
         sim_state: &'d SimulationState<ItemIdxType, RecipeIdxType>,
+        aux_data: &'e AuxillaryData,
         data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
     + use<'a, 'b, 'c, 'd, Self, ItemIdxType, RecipeIdxType>;
@@ -72,14 +73,16 @@ impl<
         replay: Option<&mut Replay<ItemIdxType, RecipeIdxType, DataStor>>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
+        log::trace!("Start Update");
+
         let mut simulation_state = game_state.simulation_state.lock();
         let mut world = game_state.world.lock();
+        let aux_data = &mut *game_state.aux_data.lock();
         {
             profiling::scope!("GameState Update");
-            let aux_data = &mut *game_state.aux_data.lock();
 
             // TODO: Autosave interval
-            if aux_data.current_tick % (60 * 60 * 5) == 0 {
+            if aux_data.current_tick % (60 * 60 * 1) == 0 {
                 // Autosave
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                 {
@@ -98,14 +101,20 @@ impl<
 
             GameState::update(&mut *simulation_state, aux_data, data_store);
         }
+        log::trace!("Post Autosave");
 
-        let current_tick = game_state.aux_data.lock().current_tick;
+        let current_tick = aux_data.current_tick;
 
         let actions_iter = {
             profiling::scope!("Get Actions");
 
-            self.action_interface
-                .get(current_tick, &world, &simulation_state, data_store)
+            self.action_interface.get(
+                current_tick,
+                &world,
+                &simulation_state,
+                &aux_data,
+                data_store,
+            )
         };
 
         let actions: Vec<_> = actions_iter.into_iter().collect();

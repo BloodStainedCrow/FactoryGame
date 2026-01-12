@@ -453,7 +453,7 @@ impl eframe::App for App {
                         let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
                         let (send, recv) = channel();
 
-                        send.send(run_client(ip)).expect("Channel send failed");
+                        run_client(ip, send);
 
                         self.state = AppState::Loading {
                             start_time: Instant::now(),
@@ -542,6 +542,29 @@ impl eframe::App for App {
                 new_game_name,
             } => {
                 CentralPanel::default().show(ctx, |ui| {
+                    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+                    ui.vertical_centered(|ui|{
+                        ui.label(
+                            egui::RichText::new("Detected running in a browser(WASM). Performance might be significantly degraded, and/or features might not work correctly. Support is on a best effort basis.")
+                                .heading()
+                                .color(egui::Color32::RED),
+                        );
+                        ui.label(
+                            egui::RichText::new("For the best experience run on native.")
+                                .heading()
+                                .color(egui::Color32::RED),
+                        );
+                    });
+
+                    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+                    ui.vertical_centered(|ui|{
+                        ui.label(
+                            egui::RichText::new("Creating a game on WASM might freeze the browser tab for some time. Do not worry if after clicking \'Create\' the tab freezes and your browser warns that \"This page is slowing down your browser\"")
+                                .heading()
+                                .color(egui::Color32::YELLOW),
+                        );
+                    });
+
                     if ui.button("Back to Main Menu").clicked() {
                         self.state = AppState::MainMenu { in_ip_box: None };
                         return;
@@ -565,15 +588,7 @@ impl eframe::App for App {
                         });
 
                         #[cfg(target_arch = "wasm32")]
-                        send.send(run_integrated_server(
-                            progress_send,
-                            StartGameInfo::Create {
-                                name: new_game_name,
-                                info: GameCreationInfo::Empty,
-                                allow_overwrite: true,
-                            },
-                            None,
-                        ));
+                        send.send(run_integrated_server(progress_send, creation_fn, None));
 
                         self.state = AppState::Loading {
                             start_time: Instant::now(),
