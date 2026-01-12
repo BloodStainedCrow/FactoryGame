@@ -412,7 +412,7 @@ fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
 
     // let progress = Default::default();
 
-    let local_addr = "127.0.0.1:42069";
+    let local_addr = "0.0.0.0:42069";
     let cancel: Arc<AtomicBool> = Default::default();
 
     log::warn!("Hosting on {}", &local_addr);
