@@ -79,8 +79,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         //       Or using a rollback feature, by (i.e.) assuming no actions are run
         // Get the actions from what the server sent us
 
-        use postcard::de_flavors::Flavor;
-
         let mut state_machine = self.local_actions.lock();
 
         let mut local_actions: Vec<_> = state_machine
@@ -153,48 +151,53 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         if start.elapsed() > Duration::from_millis(10) {
             error!("buffer {:?}", start.elapsed());
         }
-        let recieved_actions: Vec<ActionType<_, _>> = self
-            .client_connections
-            .lock()
-            .iter()
-            .flat_map(|mut conn| {
-                let start = Instant::now();
-                let mut ret = vec![];
+        let mut recieved_actions: Vec<ActionType<_, _>> = vec![];
 
-                match conn.peek(&mut buffer) {
-                    Ok(len) => {
-                        let mut written_buffer = &buffer[0..len];
+        self.client_connections.lock().retain(|mut conn| {
+            let start = Instant::now();
+            let mut ret = vec![];
 
-                        loop {
-                            if let Ok((v, rest)) = postcard::take_from_bytes(written_buffer) {
-                                let consumed_len = written_buffer.len() - rest.len();
-                                written_buffer = rest;
-                                std::io::copy(
-                                    &mut std::io::Read::by_ref(&mut conn).take(consumed_len as u64),
-                                    &mut std::io::sink(),
-                                )
-                                .expect("Discarding used bytes failed");
-                                ret.push(v);
-                            } else {
-                                if written_buffer.len() == RECV_BUFFER_LEN {
-                                    error!("RECV_BUFFER_LEN exhausted!");
-                                }
-                                break;
+            let keep = match conn.peek(&mut buffer) {
+                Ok(len) => {
+                    let mut written_buffer = &buffer[0..len];
+
+                    loop {
+                        if let Ok((v, rest)) = postcard::take_from_bytes(written_buffer) {
+                            let consumed_len = written_buffer.len() - rest.len();
+                            written_buffer = rest;
+                            std::io::copy(
+                                &mut std::io::Read::by_ref(&mut conn).take(consumed_len as u64),
+                                &mut std::io::sink(),
+                            )
+                            .expect("Discarding used bytes failed");
+                            ret.push(v);
+                        } else {
+                            if written_buffer.len() == RECV_BUFFER_LEN {
+                                error!("RECV_BUFFER_LEN exhausted!");
                             }
+                            break;
                         }
-                    },
-                    Err(e) => match e.kind() {
-                        std::io::ErrorKind::WouldBlock => {
-                            // No data to read
-                        },
+                    }
 
-                        e => todo!("{:?}", e),
+                    true
+                },
+                Err(e) => match e.kind() {
+                    std::io::ErrorKind::WouldBlock => {
+                        // No data to read
+                        true
                     },
-                }
 
-                ret
-            })
-            .collect();
+                    err => {
+                        log::warn!("Dropping Connection: {:?}", err);
+                        false
+                    },
+                },
+            };
+
+            recieved_actions.extend(ret);
+
+            keep
+        });
         if start.elapsed() > Duration::from_millis(10) {
             error!("recieved_actions {:?}", start.elapsed());
         }
@@ -290,14 +293,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         let actions: Vec<_> = actions.into_iter().collect();
         // Send the actions to the clients
         self.client_connections.lock().retain(|mut conn| {
-            let mut keep = postcard::to_io(&actions, conn).is_ok();
+            let mut keep = if let Err(err) = postcard::to_io(&actions, conn) {
+                log::warn!("Dropping Connection: {:?}", err);
+                false
+            } else {
+                true
+            };
             keep &= conn.flush().is_ok();
 
             // let keep = serde_json::to_writer(conn, &actions).is_ok();
-
-            if !keep {
-                log::warn!("Dropping Connection");
-            }
 
             keep
         });
