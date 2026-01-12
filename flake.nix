@@ -39,7 +39,7 @@
       src = ./.;
       buildInputs = neededPackages;
       nativeBuildInputs = [ pkgs.pkg-config pkgs.makeWrapper ];
-      cargoHash = "sha256-AQ6UxUS0DGK+v695XvqX81r/5pGfCsQdzLP70kAOcME=";
+      cargoHash = "sha256-/iACDjmjwgN4pB+2FawgACaToMejl4DIOIrGOWDGnPI=";
       # cargoLock.lockFile = ./Cargo.lock;
       doCheck = false;
 
