@@ -2198,7 +2198,8 @@ pub fn render_ui<
             if let Some(tech) = game_state_ref
                 .simulation_state
                 .tech_state
-                .current_technology
+                .research_queue
+                .first()
             {
                 let (tech_cost_units, _tech_cost_items) =
                     &data_store.technology_costs[tech.id as usize];

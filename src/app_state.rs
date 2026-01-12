@@ -1228,14 +1228,37 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                     game_state.world.players.push(PlayerInfo::default());
                 },
 
-                ActionType::SetActiveResearch { tech } => {
-                    game_state.simulation_state.tech_state.current_technology = *tech;
+                ActionType::AddResearchToQueue { tech } => {
+                    // TODO: Do not allow adding techs which are done?
+                    if !game_state
+                        .simulation_state
+                        .tech_state
+                        .research_queue
+                        .contains(tech)
+                    {
+                        game_state
+                            .simulation_state
+                            .tech_state
+                            .research_queue
+                            .push(*tech);
+
+                        // TODO: Do I want a max length for the queue?
+                    };
+                },
+                ActionType::RemoveResearchFromQueue { tech } => {
+                    game_state
+                        .simulation_state
+                        .tech_state
+                        .research_queue
+                        .retain(|queued_tech| queued_tech != tech);
                 },
 
                 ActionType::CheatUnlockTechnology { tech } => {
-                    if game_state.simulation_state.tech_state.current_technology == Some(*tech) {
-                        game_state.simulation_state.tech_state.current_technology = None;
-                    }
+                    game_state
+                        .simulation_state
+                        .tech_state
+                        .research_queue
+                        .retain(|queued_tech| queued_tech != tech);
                     game_state
                         .simulation_state
                         .tech_state

@@ -44,7 +44,8 @@ pub type ResearchProgress = u16;
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 pub struct TechState {
-    pub current_technology: Option<Technology>,
+    pub research_queue: Vec<Technology>,
+
     // Map from technologies to how many times they were completed
     pub finished_technologies: HashMap<Technology, u32>,
     pub in_progress_technologies: HashMap<Technology, u64>,
@@ -93,7 +94,7 @@ impl TechState {
             .collect();
 
         Self {
-            current_technology: None,
+            research_queue: vec![],
             finished_technologies,
             recipe_active,
 
@@ -120,7 +121,7 @@ impl TechState {
             return;
         }
 
-        if let Some(current) = &self.current_technology {
+        if let Some(current) = self.research_queue.first() {
             let (tech_cost_units, tech_cost_items) =
                 &data_store.technology_costs[current.id as usize];
             let mut tech_cost_units = *tech_cost_units;
@@ -212,7 +213,7 @@ impl TechState {
                 if is_repeating {
                     // Just keep researching the same tech (just one level higher)
                 } else {
-                    self.current_technology = None;
+                    self.research_queue.remove(0);
                 }
 
                 // Since we only check if a tech is finished at the end of each update, it is possible we produced more science progress in this tick, than was required.
@@ -329,6 +330,10 @@ impl TechState {
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
     {
+        use itertools::Itertools;
+
+        debug_assert!(self.research_queue.iter().all_unique());
+
         {
             profiling::scope!("Update Tech Tree colors");
             for tech in 0..data_store.technology_costs.len() {
@@ -395,7 +400,7 @@ impl TechState {
         SidePanel::new(egui::panel::Side::Left, "Current Technology Info Sidepanel").show_inside(
             ui,
             |ui| {
-                if let Some(tech) = &self.current_technology {
+                if let Some(tech) = self.research_queue.first() {
                     let is_repeating = data_store
                         .technology_tree
                         .node_weight(NodeIndex::new(tech.id.into()))
@@ -463,10 +468,44 @@ impl TechState {
                     );
 
                     if ui.button("Cancel").clicked() {
-                        ret.push(ActionType::SetActiveResearch { tech: None });
+                        ret.push(ActionType::RemoveResearchFromQueue { tech: *tech });
                     } else if ui.button("[CHEAT] Unlock Technology").clicked() {
                         ret.push(ActionType::CheatUnlockTechnology { tech: *tech });
                     }
+
+                    ui.separator();
+
+                    use egui_extras::{Column, TableBuilder};
+
+                    TableBuilder::new(ui)
+                        .column(Column::remainder())
+                        .column(Column::auto())
+                        .id_salt("Research Queue")
+                        .body(|body| {
+                            body.rows(1.0, self.research_queue.len() - 1, |mut row| {
+                                let idx = row.index();
+
+                                let tech = &self.research_queue[idx + 1];
+
+                                row.col(|ui| {
+                                    ui.label(
+                                        &data_store
+                                            .technology_tree
+                                            .node_weight(NodeIndex::from(tech.id))
+                                            .unwrap()
+                                            .name,
+                                    );
+                                });
+
+                                row.col(|ui| {
+                                    if ui.button("X").clicked() {
+                                        ret.push(ActionType::RemoveResearchFromQueue {
+                                            tech: *tech,
+                                        });
+                                    }
+                                });
+                            });
+                        });
                 }
             },
         );
@@ -529,10 +568,9 @@ impl TechState {
                                 .unwrap_or(0)
                                 > 0
                         });
-
-                    let is_currently_researching = Some(Technology {
+                    let is_currently_researching = self.research_queue.contains(&Technology {
                         id: selected_node.index().try_into().unwrap(),
-                    }) == self.current_technology;
+                    });
 
                     if ui
                         .add_enabled(
@@ -541,10 +579,10 @@ impl TechState {
                         )
                         .clicked()
                     {
-                        ret.push(ActionType::SetActiveResearch {
-                            tech: Some(Technology {
+                        ret.push(ActionType::AddResearchToQueue {
+                            tech: Technology {
                                 id: selected_node.index().try_into().unwrap(),
-                            }),
+                            },
                         });
                     }
 

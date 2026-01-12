@@ -1302,10 +1302,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         (
             research_progress,
             production_info,
-            tech_state.current_technology.map(|tech| LabTickInfo {
-                times_labs_used_science,
-                tech,
-            }),
+            tech_state
+                .research_queue
+                .first()
+                .copied()
+                .map(|tech| LabTickInfo {
+                    times_labs_used_science,
+                    tech,
+                }),
         )
     }
 

@@ -2652,8 +2652,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 self.lab_stores.update(
                     self.last_power_mult,
                     tech_state
-                        .current_technology
-                        .as_ref()
+                        .research_queue
+                        .first()
                         .map(|tech| &*data_store.technology_costs[tech.id as usize].1),
                 )
             }
