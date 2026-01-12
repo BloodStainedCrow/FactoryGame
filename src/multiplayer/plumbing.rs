@@ -217,24 +217,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
                 let mut compressed =
                     flate2::write::ZlibEncoder::new(&mut new_conn, Compression::best());
 
-                if postcard::to_io(&id_info, &mut compressed).is_err() {
+                if let Err(err) = postcard::to_io(&id_info, &mut compressed) {
                     // Sending failed, do not add this conn
-                    log::warn!("Failed sending id_info");
+                    log::warn!("Failed sending id_info: {:?}", err);
                     continue;
                 }
-                if postcard::to_io(sim_state, &mut compressed).is_err() {
+                if let Err(err) = postcard::to_io(sim_state, &mut compressed) {
                     // Sending failed, do not add this conn
-                    log::warn!("Failed sending sim_state");
+                    log::warn!("Failed sending sim_state: {:?}", err);
                     continue;
                 }
-                if postcard::to_io(world, &mut compressed).is_err() {
+                if let Err(err) = postcard::to_io(world, &mut compressed) {
                     // Sending failed, do not add this conn
-                    log::warn!("Failed sending world,");
+                    log::warn!("Failed sending world: {:?}", err);
                     continue;
                 }
-                if postcard::to_io(aux_data, &mut compressed).is_err() {
+                if let Err(err) = postcard::to_io(aux_data, &mut compressed) {
                     // Sending failed, do not add this conn
-                    log::warn!("Failed sending aux_data");
+                    log::warn!("Failed sending aux_data: {:?}", err);
                     continue;
                 }
 
