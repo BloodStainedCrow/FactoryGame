@@ -1,5 +1,5 @@
 use std::{
-    io::Read,
+    io::{Read, Write},
     marker::PhantomData,
     mem,
     net::TcpStream,
@@ -216,6 +216,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
                 log::info!("Sending GameState to new connection");
                 if let Err(err) = new_conn.set_nonblocking(false) {
                     log::warn!("Failed setting connction to blocking: {:?}", err);
+                    continue;
                 }
 
                 let mut compressed =
@@ -246,6 +247,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
 
                 if let Err(err) = new_conn.set_nonblocking(true) {
                     log::warn!("Failed setting connction to blocking: {:?}", err);
+                    continue;
+                }
+
+                if let Err(err) = new_conn.flush() {
+                    log::warn!("Flushing failed: {:?}", err);
+                    continue;
                 }
 
                 self.client_connections.lock().push(new_conn);
@@ -282,8 +289,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     ) {
         let actions: Vec<_> = actions.into_iter().collect();
         // Send the actions to the clients
-        self.client_connections.lock().retain(|conn| {
-            let keep = postcard::to_io(&actions, conn).is_ok();
+        self.client_connections.lock().retain(|mut conn| {
+            let mut keep = postcard::to_io(&actions, conn).is_ok();
+            keep &= conn.flush().is_ok();
 
             // let keep = serde_json::to_writer(conn, &actions).is_ok();
 
