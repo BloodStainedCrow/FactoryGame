@@ -23,7 +23,7 @@ pub mod recipe;
 pub mod research;
 pub mod time_usage;
 
-pub const NUM_DIFFERENT_TIMESCALES: usize = 5;
+pub const NUM_DIFFERENT_TIMESCALES: usize = 8;
 pub const SAMPLES_FOR_SMOOTHING_BASE: usize = 600;
 
 const SAMPLES_FOR_SMOOTHING: [usize; NUM_DIFFERENT_TIMESCALES] = {
@@ -41,7 +41,8 @@ const SAMPLES_FOR_SMOOTHING: [usize; NUM_DIFFERENT_TIMESCALES] = {
     }
     b
 };
-pub const NUM_SAMPLES_AT_INTERVALS: [usize; NUM_DIFFERENT_TIMESCALES] = [600, 60, 60, 60, 50];
+pub const NUM_SAMPLES_AT_INTERVALS: [usize; NUM_DIFFERENT_TIMESCALES] =
+    [600, 60, 60, 60, 60, 50, 50, 50];
 pub const NUM_SAMPLES_AT_INTERVALS_STORED: [usize; NUM_DIFFERENT_TIMESCALES] = {
     let mut b = [0; NUM_DIFFERENT_TIMESCALES];
     let mut i = 0;
@@ -51,18 +52,29 @@ pub const NUM_SAMPLES_AT_INTERVALS_STORED: [usize; NUM_DIFFERENT_TIMESCALES] = {
     }
     b
 };
-pub const NUM_X_AXIS_TICKS: [usize; NUM_DIFFERENT_TIMESCALES] = [10, 6, 6, 10, 10];
-pub const RELATIVE_INTERVAL_MULTS: [usize; NUM_DIFFERENT_TIMESCALES] = [1, 60, 60, 10, 5];
+pub const NUM_X_AXIS_TICKS: [usize; NUM_DIFFERENT_TIMESCALES] = [10, 6, 10, 6, 10, 10, 10, 10];
+pub const RELATIVE_INTERVAL_MULTS: [usize; NUM_DIFFERENT_TIMESCALES] = [1, 60, 10, 6, 10, 5, 5, 4];
 
-pub const TIMESCALE_NAMES: [&'static str; NUM_DIFFERENT_TIMESCALES] =
-    ["10 seconds", "1 minute", "1 hour", "10 hours", "50 hours"];
+pub const TIMESCALE_NAMES: [&'static str; NUM_DIFFERENT_TIMESCALES] = [
+    "10 seconds",
+    "1 minute",
+    "10 minute",
+    "1 hour",
+    "10 hours",
+    "50 hours",
+    "250 hours",
+    "1000 hours",
+];
 
 pub const TIMESCALE_LEGEND: [fn(f64) -> String; NUM_DIFFERENT_TIMESCALES] = [
     |t| format!("{:.0}s", t / 60.0),
     |t| format!("{:.0}s", t),
+    |t| format!("{:.0}m", t / 6.0),
     |t| format!("{:.0}m", t),
-    |t| format!("{:.0}m", t * 10.0),
+    |t| format!("{:.0}h", t / 60.0),
     |t| format!("{:.0}h", t),
+    |t| format!("{:.0}h", t * 5.0),
+    |t| format!("{:.0}h", t * 20.0),
 ];
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
