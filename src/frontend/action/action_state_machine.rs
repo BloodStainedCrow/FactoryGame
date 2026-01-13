@@ -8,6 +8,7 @@ use std::{
 };
 
 use egui_graphs::{DefaultEdgeShape, DefaultNodeShape, Graph};
+use enum_map::EnumMap;
 use itertools::Itertools;
 use log::{error, warn};
 use petgraph::Directed;
@@ -112,8 +113,6 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     pub local_player_pos: (f32, f32),
     pub my_player_id: PLAYERID,
 
-    pub statistics_panel_open: bool,
-    pub technology_panel_open: bool,
     pub tech_tree_render: Option<
         Graph<
             data::Technology<RecipeIdxType>,
@@ -132,8 +131,6 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     pub current_mouse_pos: (f32, f32),
     current_held_keys: HashSet<Key>,
     pub state: ActionStateMachineState<ItemIdxType>,
-
-    pub escape_menu_open: bool,
 
     pub debug_view_options: DebugViewOptions,
 
@@ -156,10 +153,20 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     pub current_fork_save_in_progress: Option<ForkSaveInfo>,
 
     pub hotbar: Hotbar<ItemIdxType>,
-    pub hotbar_window_open: bool,
 
     pub last_tick_seen_for_autosave: u32,
     pub autosave_interval: u32,
+
+    pub open_windows: EnumMap<Window, bool>,
+}
+
+#[derive(Debug, enum_map::Enum, PartialEq)]
+pub(crate) enum Window {
+    Tip,
+    Technology,
+    Statistics,
+    Hotbar,
+    Escape,
 }
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
@@ -241,14 +248,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         local_player_pos: (f32, f32),
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
+        let open_windows = EnumMap::from_fn(|win| win == Window::Tip);
+
         Self {
             my_player_id,
             local_player_pos,
 
             tech_tree_render: None,
 
-            statistics_panel_open: false,
-            technology_panel_open: true,
             statistics_panel: StatisticsPanel::default(),
             statistics_panel_locked_scale: false,
             production_filters: vec![true; data_store.item_display_names.len()],
@@ -261,7 +268,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             zoom_level: 1.0,
             map_view_info: None,
 
-            escape_menu_open: false,
             debug_view_options: DebugViewOptions {
                 highlight_sushi_belts: false,
                 sushi_belt_len_threshhold: 1,
@@ -283,10 +289,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             current_fork_save_in_progress: None,
 
             hotbar: Hotbar::new(data_store),
-            hotbar_window_open: true,
 
             last_tick_seen_for_autosave: 0,
             autosave_interval: (60 * TICKS_PER_SECOND_LOGIC) as u32,
+
+            open_windows,
         }
     }
 
@@ -298,6 +305,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         let player_pos = world.players[my_player_id as usize].pos;
+        let open_windows = EnumMap::from_fn(|win| win == Window::Tip);
 
         Self {
             my_player_id,
@@ -305,8 +313,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
             tech_tree_render: None,
 
-            statistics_panel_open: false,
-            technology_panel_open: true,
             statistics_panel: StatisticsPanel::default(),
             statistics_panel_locked_scale: false,
             production_filters: vec![true; data_store.item_display_names.len()],
@@ -319,7 +325,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             zoom_level: 1.0,
             map_view_info: None,
 
-            escape_menu_open: false,
             debug_view_options: DebugViewOptions {
                 highlight_sushi_belts: false,
                 sushi_belt_len_threshhold: 1,
@@ -341,10 +346,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             current_fork_save_in_progress: None,
 
             hotbar: Hotbar::new(data_store),
-            hotbar_window_open: true,
 
             last_tick_seen_for_autosave: 0,
             autosave_interval: (60 * TICKS_PER_SECOND_LOGIC) as u32,
+
+            open_windows,
         }
     }
 
@@ -358,7 +364,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
     + use<'a, 'b, 'c, 'd, 'e, ItemIdxType, RecipeIdxType, I> {
         input.into_iter().map(|input| {
-            if self.escape_menu_open && input != Input::KeyPress(Key::Esc) {
+            if self.open_windows[Window::Escape] && input != Input::KeyPress(Key::Esc) {
                 match input {
                     Input::KeyPress(key) => {
                         self.current_held_keys.insert(key);
@@ -930,7 +936,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             },
 
             (_, Key::E) => {
-                self.hotbar_window_open = !self.hotbar_window_open;
+                self.open_windows[Window::Hotbar] = !self.open_windows[Window::Hotbar];
                 vec![]
             },
 
@@ -1117,12 +1123,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             },
 
             (_, Key::P) => {
-                self.statistics_panel_open = !self.statistics_panel_open;
+                self.open_windows[Window::Statistics] = !self.open_windows[Window::Statistics];
                 vec![]
             },
 
             (_, Key::T) => {
-                self.technology_panel_open = !self.technology_panel_open;
+                self.open_windows[Window::Technology] = !self.open_windows[Window::Technology];
                 vec![]
             },
 
@@ -1149,7 +1155,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             },
 
             (_, Key::Esc) => {
-                self.escape_menu_open = !self.escape_menu_open;
+                self.open_windows[Window::Escape] = !self.open_windows[Window::Escape];
                 vec![]
             },
 
@@ -1157,7 +1163,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         };
 
         // Do not send any actions if we are in the escape menu
-        if self.escape_menu_open {
+        if self.open_windows[Window::Escape] {
             vec![].into_iter()
         } else {
             ret.into_iter()

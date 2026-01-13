@@ -10,6 +10,7 @@ use crate::belt::smart::{
 use crate::belt::smart::SmartBelt;
 use crate::blueprint::blueprint_string::BlueprintString;
 use crate::chest::ChestSize;
+use crate::frontend::action::action_state_machine;
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use crate::frontend::action::action_state_machine::ForkSaveInfo;
 use crate::frontend::action::place_entity::EntityPlaceOptions;
@@ -2017,7 +2018,7 @@ pub fn render_ui<
         }
     }
 
-    if state_machine_ref.escape_menu_open {
+    if state_machine_ref.open_windows[action_state_machine::Window::Escape] {
         if let Some(escape_action) = Modal::new("Pause Window".into())
             .show(ctx, |ui| {
                 ui.heading("Paused");
@@ -2073,6 +2074,9 @@ pub fn render_ui<
                             });
                         }
                     }
+                }
+                if ui.button("Reopen Tip Window").clicked() {
+                    state_machine_ref.open_windows[action_state_machine::Window::Tip] = true;
                 }
                 if ui.button("Main Menu").clicked() {
                     return Some(EscapeMenuOptions::BackToMainMenu);
@@ -2132,13 +2136,35 @@ pub fn render_ui<
     });
 
     // TODO: Make this conditional
-    let mut open = state_machine_ref.hotbar_window_open;
+    let mut open = state_machine_ref.open_windows[action_state_machine::Window::Hotbar];
     Window::new("Customize Hotbar")
         .open(&mut open)
         .show(ctx, |ui| {
             state_machine_ref.hotbar_window(ui, data_store_ref);
         });
-    state_machine_ref.hotbar_window_open = open;
+    state_machine_ref.open_windows[action_state_machine::Window::Hotbar] = open;
+
+    let mut open = state_machine_ref.open_windows[action_state_machine::Window::Tip];
+    Window::new("Tip").open(&mut open).show(ctx, |ui| {
+        ui.label("Use Mining Drills to mine Resources, Smelt them in Furnaces and Assemble them into Science Packs. These can then be used in Laboratories to research new technologies.");
+        ui.label("Inserters can pull items out of machines, drop them onto Conveyor Belts, or load them back into different machines.");
+        ui.label("Machines require power to run. Power Poles supply nearby machines and extract power from nearby power sources.");
+
+        ui.separator();
+
+        ui.label("Use [WASD] to move around.");
+        ui.label("Press [E] to open the hotbar customization menu.");
+        ui.label("Press [P] to open your production statistics.");
+        ui.label("Press [T] to open the technology tree.");
+        ui.label("Press [M] to switch to map view.");
+        ui.label("Use the [Scroll Wheel] to zoom in or out.");
+        ui.label("Use [Q] to pipette the entity under your cursor.");
+        ui.label("Use [Left Click] to place a held entity or Blueprint or inspect an entity.");
+        ui.label("Hold [Right Click] to deconstruct an entity.");
+        ui.label("Press [Ctrl + C] and start dragging to copy an area into a Blueprint.");
+    });
+
+    state_machine_ref.open_windows[action_state_machine::Window::Tip] = open;
 
     Window::new("Size")
         .fixed_size(egui::vec2(1920f32, 1080f32))
@@ -2167,26 +2193,6 @@ pub fn render_ui<
                     &mut state_machine_ref.get_size_cache,
                 );
             });
-        });
-
-    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    Window::new("Import BP")
-        .default_open(false)
-        .show(ctx, |ui| {
-            if ui.button("Import").clicked() {
-                if let Some(path) = rfd::FileDialog::new().pick_file() {
-                    if let Ok(mut file) = File::open(path) {
-                        let mut bp_string = BlueprintString(String::new());
-                        file.read_to_string(&mut bp_string.0)
-                            .expect("Failed to read from file");
-
-                        if let Ok(bp) = bp_string.try_into() {
-                            state_machine_ref.state =
-                                ActionStateMachineState::Holding(HeldObject::Blueprint(bp));
-                        }
-                    }
-                }
-            }
         });
 
     let tech_response = Window::new("Tech")
@@ -2375,7 +2381,7 @@ pub fn render_ui<
     }
 
     if tech_response.clicked() {
-        state_machine_ref.technology_panel_open = true;
+        state_machine_ref.open_windows[action_state_machine::Window::Technology] = true;
     }
 
     Window::new("DEBUG USE WITH CARE")
@@ -3345,46 +3351,70 @@ pub fn render_ui<
         });
     });
 
-    Window::new("BP").default_open(false).show(ctx, |ui| {
-        let bp = if let ActionStateMachineState::Holding(HeldObject::Blueprint(bp)) =
-            &state_machine_ref.state
-        {
-            Some(bp)
-        } else {
-            None
-        };
+    Window::new("Blueprint")
+        .default_open(false)
+        .show(ctx, |ui| {
+            let is_wasm = cfg!(target_arch = "wasm32");
 
-        if ui
-            .add_enabled(bp.is_some(), Button::new("Copy Blueprint String"))
-            .clicked()
-        {
-            let s: BlueprintString = bp.cloned().unwrap().into();
-            ctx.copy_text(s.0);
-        }
+            if ui
+                .add_enabled(!is_wasm, Button::new("Import"))
+                .on_disabled_hover_text("Disabled on WASM for now")
+                .clicked()
+            {
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Some(path) = rfd::FileDialog::new().pick_file() {
+                    if let Ok(mut file) = File::open(path) {
+                        let mut bp_string = BlueprintString(String::new());
+                        file.read_to_string(&mut bp_string.0)
+                            .expect("Failed to read from file");
 
-        if ui
-            .add_enabled(bp.is_some(), Button::new("Write Blueprint String to file"))
-            .clicked()
-        {
-            let s: BlueprintString = bp.cloned().unwrap().into();
-            let mut file = File::create("saved.bp").unwrap();
-            file.write(s.0.as_bytes()).unwrap();
-        }
+                        if let Ok(bp) = bp_string.try_into() {
+                            state_machine_ref.state =
+                                ActionStateMachineState::Holding(HeldObject::Blueprint(bp));
+                        }
+                    }
+                }
+            }
 
-        if ui
-            .add_enabled(
-                bp.is_some(),
-                Button::new("Write Blueprint binary data to file"),
-            )
-            .clicked()
-        {
-            let v: Vec<u8> = bitcode::serialize(bp.unwrap()).unwrap();
-            let file = File::create("saved_binary.bp").unwrap();
-            let mut encoder = ZlibEncoder::new(file, Compression::best());
-            encoder.write_all(&v).unwrap();
-            encoder.finish().unwrap();
-        }
-    });
+            let bp = if let ActionStateMachineState::Holding(HeldObject::Blueprint(bp)) =
+                &state_machine_ref.state
+            {
+                Some(bp)
+            } else {
+                None
+            };
+
+            if ui
+                .add_enabled(bp.is_some(), Button::new("Copy Blueprint String"))
+                .clicked()
+            {
+                let s: BlueprintString = bp.cloned().unwrap().into();
+                ctx.copy_text(s.0);
+            }
+
+            if ui
+                .add_enabled(bp.is_some(), Button::new("Write Blueprint String to file"))
+                .clicked()
+            {
+                let s: BlueprintString = bp.cloned().unwrap().into();
+                let mut file = File::create("saved.bp").unwrap();
+                file.write(s.0.as_bytes()).unwrap();
+            }
+
+            if ui
+                .add_enabled(
+                    bp.is_some(),
+                    Button::new("Write Blueprint binary data to file"),
+                )
+                .clicked()
+            {
+                let v: Vec<u8> = bitcode::serialize(bp.unwrap()).unwrap();
+                let file = File::create("saved_binary.bp").unwrap();
+                let mut encoder = ZlibEncoder::new(file, Compression::best());
+                encoder.write_all(&v).unwrap();
+                encoder.finish().unwrap();
+            }
+        });
 
     Window::new("RawData").default_open(false).show(ctx, |ui| {
         let raw = get_raw_data_test();
@@ -4037,7 +4067,7 @@ pub fn render_ui<
 
     Window::new("Technology")
         .collapsible(false)
-        .open(&mut state_machine_ref.technology_panel_open)
+        .open(&mut state_machine_ref.open_windows[action_state_machine::Window::Technology])
         .show(ctx, |ui| {
             let research_actions = game_state_ref
                 .simulation_state
@@ -4058,7 +4088,7 @@ pub fn render_ui<
 
     Window::new("Statistics")
         .collapsible(false)
-        .open(&mut state_machine_ref.statistics_panel_open)
+        .open(&mut state_machine_ref.open_windows[action_state_machine::Window::Statistics])
         .show(ctx, |ui| {
             let time_scale = match &mut state_machine_ref.statistics_panel {
                 StatisticsPanel::Items(timescale) => timescale,
