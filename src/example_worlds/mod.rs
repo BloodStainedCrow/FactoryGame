@@ -1,9 +1,16 @@
 use std::{
+    iter,
     ops::RangeInclusive,
     sync::{LazyLock, atomic::AtomicU64},
 };
 
-use crate::{app_state::GameState, data::DataStore, frontend::world::Position, power::Watt};
+use crate::{
+    app_state::GameState,
+    data::DataStore,
+    frontend::{action::ActionType, world::Position},
+    power::Watt,
+    research::Technology,
+};
 
 pub(crate) struct WorldValueStore {
     name_field: String,
@@ -182,7 +189,38 @@ const WORLDS: LazyLock<[ExampleWorld; 5]> = LazyLock::new(|| {
                     unreachable!();
                 };
 
-                GameState::new_with_megabase(name, *use_solar_field, progress, data_store)
+                let gs = GameState::new_with_megabase(name, *use_solar_field, progress, data_store);
+
+                let techs = 0..data_store.technology_costs.len();
+
+                let cheat_unlocks = techs.map(|id| ActionType::CheatUnlockTechnology {
+                    tech: crate::research::Technology {
+                        id: id.try_into().unwrap(),
+                    },
+                });
+
+                let mining_prod_id = data_store
+                    .technology_tree
+                    .node_indices()
+                    .find_map(|node| {
+                        let tech = data_store.technology_tree.node_weight(node).unwrap();
+
+                        (tech.name == "Mining Productivity").then_some(node.index())
+                    })
+                    .unwrap();
+
+                GameState::apply_actions(
+                    &mut *gs.simulation_state.lock(),
+                    &mut *gs.world.lock(),
+                    cheat_unlocks.chain(iter::once(ActionType::AddResearchToQueue {
+                        tech: Technology {
+                            id: mining_prod_id.try_into().unwrap(),
+                        },
+                    })),
+                    data_store,
+                );
+
+                gs
             },
         },
         ExampleWorld {
@@ -208,12 +246,43 @@ const WORLDS: LazyLock<[ExampleWorld; 5]> = LazyLock::new(|| {
                     unreachable!();
                 };
 
-                GameState::new_with_gigabase(
+                let gs = GameState::new_with_gigabase(
                     name,
                     (*count).try_into().unwrap(),
                     progress,
                     data_store,
-                )
+                );
+
+                let techs = 0..data_store.technology_costs.len();
+
+                let cheat_unlocks = techs.map(|id| ActionType::CheatUnlockTechnology {
+                    tech: crate::research::Technology {
+                        id: id.try_into().unwrap(),
+                    },
+                });
+
+                let mining_prod_id = data_store
+                    .technology_tree
+                    .node_indices()
+                    .find_map(|node| {
+                        let tech = data_store.technology_tree.node_weight(node).unwrap();
+
+                        (tech.name == "Mining Productivity").then_some(node.index())
+                    })
+                    .unwrap();
+
+                GameState::apply_actions(
+                    &mut *gs.simulation_state.lock(),
+                    &mut *gs.world.lock(),
+                    cheat_unlocks.chain(iter::once(ActionType::AddResearchToQueue {
+                        tech: Technology {
+                            id: mining_prod_id.try_into().unwrap(),
+                        },
+                    })),
+                    data_store,
+                );
+
+                gs
             },
         },
         ExampleWorld {
