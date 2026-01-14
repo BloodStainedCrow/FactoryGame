@@ -2022,7 +2022,14 @@ pub fn render_ui<
         if let Some(escape_action) = Modal::new("Pause Window".into())
             .show(ctx, |ui| {
                 ui.heading("Paused");
-                if ui.button("Save").clicked() {
+
+                let in_wasm = cfg!(target_arch = "wasm32");
+
+                if ui
+                    .add_enabled(!in_wasm, Button::new("Save"))
+                    .on_disabled_hover_text("I currently do not support saving in the Browser yet")
+                    .clicked()
+                {
                     save_components(
                         &aux_data.game_name,
                         Some(&format!("{}.save", &aux_data.game_name)),

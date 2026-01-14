@@ -760,6 +760,7 @@ impl App {
                             },
                             Err(escape) => match escape {
                                 EscapeMenuOptions::BackToMainMenu => {
+                                    #[cfg(not(target_arch = "wasm32"))]
                                     save(
                                         "Last Exit",
                                         Some("last_exit.save"),
