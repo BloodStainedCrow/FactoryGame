@@ -14,7 +14,7 @@ use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
 use get_size2::GetSize;
 
-// If more than every 20th chunk is ininhabitat, switch to map
+// If more than every 20th chunk is inhabited, switch to map
 // TODO: Find a good value for this
 const SWITCH_RATIO: usize = 20;
 
