@@ -22,16 +22,23 @@ impl SaveFileList {
         let folder = std::fs::read_dir(save_folder).expect("Could not read save folder");
 
         let mut saves: Vec<_> = folder
-            .map(|save_folder| {
+            .filter_map(|save_folder| {
                 let save = save_folder.unwrap();
+
+                if save.file_name() == "save_in_progress.lockfile" {
+                    return None;
+                }
+
                 let info_path = save.path().join("save_file_info");
                 let info: Result<StoredSaveFileInfo, LoadError> = try_load_at(info_path);
 
-                info.map_err(|err| (save.path(), SaveFileError::LoadError(err)))
-                    .map(|stored| SaveFileInfo {
-                        path: save.path(),
-                        stored,
-                    })
+                Some(
+                    info.map_err(|err| (save.path(), SaveFileError::LoadError(err)))
+                        .map(|stored| SaveFileInfo {
+                            path: save.path(),
+                            stored,
+                        }),
+                )
             })
             .collect();
 

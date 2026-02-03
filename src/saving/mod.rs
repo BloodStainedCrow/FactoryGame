@@ -64,7 +64,12 @@ pub fn save_at<V: serde::Serialize + ?Sized>(value: &V, path: PathBuf) {
 }
 
 pub fn save_at_fork<V: serde::Serialize + ?Sized>(value: &V, path: PathBuf) {
-    let file = { File::create(path).expect("could not create file") };
+    let file = {
+        File::create(&path).expect(&format!(
+            "could not create file, tried to create {}",
+            path.display()
+        ))
+    };
 
     // FIXME: It is technically not okay to allocate here.
     let mut buf_writer = BufWriter::new(file);
@@ -115,6 +120,11 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let checksum = data_store.checksum.clone();
     let save_dir = save_folder();
 
+    let lockfile = crate::lockfile::LockfileUnique::create_blocking(
+        save_dir.join("save_in_progress.lockfile"),
+    )
+    .expect("Locking lockfile failed");
+
     create_dir_all(&save_dir).expect("Could not create save dir");
 
     // if let Ok(s) = env::var("FACTORY_SAVE_READABLE") {
@@ -160,6 +170,7 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     };
 
     create_dir_all(&temp_file_dir).expect("Could not create temp dir");
+    dbg!(&temp_file_dir);
 
     // FIXME: What to do, if the size of the Save in memory + on disk exceeds RAM?
 
@@ -249,7 +260,12 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     // Remove old save if it exists
     let _ = std::fs::remove_dir_all(&save_file_dir);
-    std::fs::rename(temp_file_dir, save_file_dir).expect("Could not rename tmp save dir!");
+    std::fs::rename(&temp_file_dir, save_file_dir).expect(&format!(
+        "Could not rename tmp save dir: {}",
+        temp_file_dir.display()
+    ));
+
+    lockfile.release().expect("Failed to remove lockfile");
 }
 
 /// # Panics
@@ -268,14 +284,10 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     let checksum = &data_store.checksum;
     let save_dir = save_folder();
 
-    // FIXME: This could lock forever
-    let lockfile = loop {
-        if let Ok(lockfile) =
-            lockfile::Lockfile::create_with_parents(save_dir.join("save_in_progress"))
-        {
-            break lockfile;
-        }
-    };
+    let lockfile = crate::lockfile::LockfileUnique::create_blocking(
+        save_dir.join("save_in_progress.lockfile"),
+    )
+    .expect("Locking lockfile failed");
 
     create_dir_all(&save_dir).expect("Could not create data dir");
 
@@ -304,6 +316,7 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     assert_ne!(temp_file_dir, save_dir);
 
     create_dir_all(&temp_file_dir).expect("Could not create temp dir");
+    dbg!(&temp_file_dir);
 
     {
         let SimulationState {

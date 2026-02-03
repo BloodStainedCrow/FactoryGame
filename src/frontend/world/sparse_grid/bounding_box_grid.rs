@@ -87,15 +87,17 @@ impl<T: GetGridIndex<I> + 'static> SparseGrid<I, T> for BoundingBoxGrid<I, T> {
     }
 
     fn occupied_entries(&self) -> impl Iterator<Item = ((I, I), &T)> {
-        self.values
-            .iter()
-            .filter_map(|v| v.as_ref().map(|v| (v.get_grid_index(), v)))
+        self.values.iter().enumerate().filter_map(|(idx, v)| {
+            let [x, y] = Self::calculate_pos(&self.extent.unwrap(), idx);
+            v.as_ref().map(|v| ((x, y), v))
+        })
     }
 
     fn occupied_entries_mut(&mut self) -> impl Iterator<Item = ((I, I), &mut T)> {
-        self.values
-            .iter_mut()
-            .filter_map(|v| v.as_mut().map(|v| (v.get_grid_index(), v)))
+        self.values.iter_mut().enumerate().filter_map(|(idx, v)| {
+            let [x, y] = Self::calculate_pos(&self.extent.unwrap(), idx);
+            v.as_mut().map(|v| ((x, y), v))
+        })
     }
 
     // TODO: Do I want to save None values?
@@ -103,7 +105,9 @@ impl<T: GetGridIndex<I> + 'static> SparseGrid<I, T> for BoundingBoxGrid<I, T> {
     where
         T: serde::Serialize,
     {
-        create_dir_all(&base_path).expect("Failed to create world dir");
+        create_dir_all(&base_path).expect("Failed to create chunk dir");
+
+        save_at_fork(&self.extent, base_path.join("extent"));
 
         // TODO: Choose a chunk size
         self.values
@@ -122,7 +126,9 @@ impl<T: GetGridIndex<I> + 'static> SparseGrid<I, T> for BoundingBoxGrid<I, T> {
     where
         T: Sync + serde::Serialize,
     {
-        create_dir_all(&base_path).expect("Failed to create world dir");
+        create_dir_all(&base_path).expect("Failed to create chunk dir");
+
+        save_at(&self.extent, base_path.join("extent"));
 
         // TODO: Choose a chunk size
         self.values
@@ -140,6 +146,8 @@ impl<T: GetGridIndex<I> + 'static> SparseGrid<I, T> for BoundingBoxGrid<I, T> {
     where
         for<'a> T: Send + serde::Deserialize<'a>,
     {
+        let extent = load_at(base_path.join("extent"));
+
         let values: Vec<_> = (0..)
             .map(|chunk_id| base_path.join(format!("chunk-{chunk_id}")))
             .take_while(|path| {
@@ -152,35 +160,17 @@ impl<T: GetGridIndex<I> + 'static> SparseGrid<I, T> for BoundingBoxGrid<I, T> {
             .flatten()
             .collect();
 
-        let top_left = values
-            .iter()
-            .flatten()
-            .map(|value| value.get_grid_index())
-            .reduce(|a, b| (min(a.0, b.0), min(a.1, b.1)));
-
-        let bottom_right = values
-            .iter()
-            .flatten()
-            .map(|value| value.get_grid_index())
-            .reduce(|a, b| (max(a.0, b.0), max(a.1, b.1)));
-
-        let extent = match (top_left, bottom_right) {
-            (None, None) => None,
-            (Some((min_x, min_y)), Some((max_x, max_y))) => Some([[min_x, max_x], [min_y, max_y]]),
-
-            _ => unreachable!(),
-        };
-
-        for (index, chunk) in values
-            .iter()
-            .enumerate()
-            .filter_map(|(index, chunk)| chunk.as_ref().map(|chunk| (index, chunk)))
-        {
-            assert_eq!(
-                Self::calculate_index(&extent.unwrap(), chunk.get_grid_index().into()),
-                index
-            );
-        }
+        // TODO: This assertion requires storing the pos
+        // for (index, chunk) in values
+        //     .iter()
+        //     .enumerate()
+        //     .filter_map(|(index, chunk)| chunk.as_ref().map(|chunk| (index, chunk)))
+        // {
+        //     assert_eq!(
+        //         Self::calculate_index(&extent.unwrap(), chunk.get_grid_index().into()),
+        //         index
+        //     );
+        // }
 
         Self { extent, values }
     }
@@ -293,6 +283,17 @@ impl<T: GetGridIndex<I>> BoundingBoxGrid<I, T> {
         assert!(height_offs >= 0);
 
         height_offs as usize * width as usize + width_offs as usize
+    }
+
+    fn calculate_pos(extent: &[[I; 2]; 2], idx: usize) -> [I; 2] {
+        let width = extent[0][1] - extent[0][0];
+        let x_offs = idx as i32 % width;
+        let y_offs = idx as i32 / width;
+
+        let x = extent[0][0] + x_offs;
+        let y = extent[1][0] + y_offs;
+
+        [x, y]
     }
 
     fn reorder_for_new_extent(&mut self, new_point: [I; 2]) {

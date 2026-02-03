@@ -19,6 +19,7 @@ use crate::par_generation::BeltKind;
 use petgraph::stable_graph::DefaultIx;
 use std::num::NonZero;
 use std::ops::RangeInclusive;
+use std::u32;
 use std::{
     cell::UnsafeCell,
     collections::{HashMap, HashSet},
@@ -3799,8 +3800,168 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
 
     /// Remove the Splitter from the update list and its connections to belts.
     /// Does NOT remove any length of belt originally associated with a splitter world entity!
-    pub fn remove_splitter(&mut self, tile_id: SplitterTileId) {
-        todo!()
+    pub fn remove_splitter(&mut self, tile_id: SplitterTileId) -> Vec<(Item<ItemIdxType>, u32)> {
+        match tile_id {
+            SplitterTileId::Any(idx) => {
+                self.any_splitter_holes.push(idx);
+
+                let removed_items = match self.any_splitters[idx as usize] {
+                    AnySplitter::Pure(item, idx) => {
+                        let id = SplitterID { index: idx as u32 };
+
+                        let removed_items = self.inner.smart_belts[item.into_usize()]
+                            .belts_mut()
+                            .flat_map(|belt| {
+                                let removed_items_front =
+                                    if let Some((splitter, _)) = belt.input_splitter {
+                                        if splitter == id {
+                                            belt.input_splitter = None;
+                                        }
+
+                                        let (removed_items, _new_len) =
+                                            belt.remove_length(SPLITTER_BELT_LEN, Side::BACK);
+                                        Some(removed_items)
+                                    } else {
+                                        None
+                                    };
+
+                                let removed_items_back =
+                                    if let Some((splitter, _)) = belt.output_splitter {
+                                        if splitter == id {
+                                            belt.output_splitter = None;
+                                        }
+
+                                        let (removed_items, _new_len) =
+                                            belt.remove_length(SPLITTER_BELT_LEN, Side::FRONT);
+                                        Some(removed_items)
+                                    } else {
+                                        None
+                                    };
+
+                                removed_items_front.into_iter().chain(removed_items_back)
+                            })
+                            .collect_vec();
+
+                        assert_eq!(removed_items.len(), 4);
+
+                        removed_items.into_iter().flatten().collect_vec()
+                    },
+                    AnySplitter::Sushi(id) => {
+                        let mut removed_items = self
+                            .inner
+                            .sushi_belts
+                            .iter_mut()
+                            .flat_map(|belt| {
+                                let removed_items_front =
+                                    if let Some((splitter, _)) = belt.input_splitter {
+                                        if splitter == id {
+                                            belt.input_splitter = None;
+                                        }
+
+                                        let (removed_items, _new_len) =
+                                            belt.remove_length(SPLITTER_BELT_LEN, Side::BACK);
+                                        Some(removed_items)
+                                    } else {
+                                        None
+                                    };
+
+                                let removed_items_back =
+                                    if let Some((splitter, _)) = belt.output_splitter {
+                                        if splitter == id {
+                                            belt.output_splitter = None;
+                                        }
+
+                                        let (removed_items, _new_len) =
+                                            belt.remove_length(SPLITTER_BELT_LEN, Side::FRONT);
+                                        Some(removed_items)
+                                    } else {
+                                        None
+                                    };
+
+                                removed_items_front.into_iter().chain(removed_items_back)
+                            })
+                            .collect_vec();
+
+                        removed_items.extend(self.inner.empty_belts.iter_mut().flat_map(|belt| {
+                            let removed_items_front =
+                                if let Some((splitter, _)) = belt.input_splitter {
+                                    if splitter == id {
+                                        belt.input_splitter = None;
+                                    }
+
+                                    let (removed_items, _new_len) =
+                                        belt.remove_length(SPLITTER_BELT_LEN, Side::BACK);
+                                    Some(removed_items)
+                                } else {
+                                    None
+                                };
+
+                            let removed_items_back =
+                                if let Some((splitter, _)) = belt.output_splitter {
+                                    if splitter == id {
+                                        belt.output_splitter = None;
+                                    }
+
+                                    let (removed_items, _new_len) =
+                                        belt.remove_length(SPLITTER_BELT_LEN, Side::FRONT);
+                                    Some(removed_items)
+                                } else {
+                                    None
+                                };
+
+                            removed_items_front.into_iter().chain(removed_items_back)
+                        }));
+
+                        if removed_items.len() < 4 {
+                            removed_items.extend(
+                                self.inner
+                                    .smart_belts
+                                    .iter_mut()
+                                    .flat_map(|store| store.belts_mut())
+                                    .flat_map(|belt| {
+                                        let removed_items_front =
+                                            if let Some((splitter, _)) = belt.input_splitter {
+                                                if splitter == id {
+                                                    belt.input_splitter = None;
+                                                }
+
+                                                let (removed_items, _new_len) = belt
+                                                    .remove_length(SPLITTER_BELT_LEN, Side::BACK);
+                                                Some(removed_items)
+                                            } else {
+                                                None
+                                            };
+
+                                        let removed_items_back =
+                                            if let Some((splitter, _)) = belt.output_splitter {
+                                                if splitter == id {
+                                                    belt.output_splitter = None;
+                                                }
+
+                                                let (removed_items, _new_len) = belt
+                                                    .remove_length(SPLITTER_BELT_LEN, Side::FRONT);
+                                                Some(removed_items)
+                                            } else {
+                                                None
+                                            };
+
+                                        removed_items_front.into_iter().chain(removed_items_back)
+                                    }),
+                            );
+                        }
+
+                        assert_eq!(removed_items.len(), 4);
+
+                        removed_items.into_iter().flatten().collect_vec()
+                    },
+                };
+
+                self.any_splitters[idx as usize] =
+                    AnySplitter::Sushi(SplitterID { index: u32::MAX });
+
+                removed_items
+            },
+        }
     }
 
     pub fn get_len(&self, id: BeltTileId<ItemIdxType>) -> u16 {

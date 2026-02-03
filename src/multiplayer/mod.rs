@@ -290,7 +290,37 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 replay,
                 game_state_update_handler,
                 _cancel_socket,
-            ) => game_state_update_handler.update(game_state, Some(replay), data_store),
+            ) => {
+                {
+                    profiling::scope!("GameState dedicated server autosave");
+                    let simulation_state = game_state.simulation_state.lock();
+                    let world = game_state.world.lock();
+                    let aux_data = &mut *game_state.aux_data.lock();
+
+                    // TODO: Autosave interval
+                    if aux_data.current_tick % (60 * 60 * 1) == 0 {
+                        // Autosave
+                        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                        {
+                            use crate::saving::save_with_fork;
+
+                            profiling::scope!("Autosave");
+                            // TODO: Handle overlapping saves
+                            let _ = save_with_fork(
+                                "dedicated_server_save",
+                                Some("dedicated_server_save.save"),
+                                &world,
+                                &simulation_state,
+                                &aux_data,
+                                data_store,
+                            );
+                        }
+                    }
+                }
+                log::trace!("Post Autosave");
+
+                game_state_update_handler.update(game_state, Some(replay), data_store);
+            },
             #[cfg(feature = "client")]
             Game::IntegratedServer(
                 game_state,

@@ -119,6 +119,8 @@ pub mod liquid;
 
 mod par_generation;
 
+mod lockfile;
+
 impl WeakIdxTrait for u8 {}
 impl WeakIdxTrait for u16 {}
 impl IdxTrait for u8 {}

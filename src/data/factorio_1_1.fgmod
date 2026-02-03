@@ -3364,7 +3364,7 @@
     solar_panels: [
         (
             name: "factory_game::infinity_battery",
-            display_name: "Infinity Battery",
+            display_name: "Infinite Power Source",
             tile_size: (2, 2),
             output: Constant((1000000000000)),
         ),

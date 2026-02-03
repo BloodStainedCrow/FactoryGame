@@ -1750,7 +1750,6 @@ dependencies = [
  "interprocess",
  "itertools",
  "libc",
- "lockfile",
  "log",
  "memoffset",
  "mimalloc",
@@ -2895,12 +2894,6 @@ dependencies = [
  "scopeguard",
  "serde",
 ]
-
-[[package]]
-name = "lockfile"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5be1cf190319c74ba3e45923624626ae2e43fe42ad7e60ff38ded81044c37630"
 
 [[package]]
 name = "log"

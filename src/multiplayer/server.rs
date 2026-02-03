@@ -81,27 +81,9 @@ impl<
         {
             profiling::scope!("GameState Update");
 
-            // TODO: Autosave interval
-            if aux_data.current_tick % (60 * 60 * 1) == 0 {
-                // Autosave
-                #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-                {
-                    profiling::scope!("Autosave");
-                    // TODO: Handle overlapping saves
-                    let _ = save_with_fork(
-                        "dedicated_server_save",
-                        Some("dedicated_server_save.save"),
-                        &world,
-                        &simulation_state,
-                        &aux_data,
-                        data_store,
-                    );
-                }
-            }
-
             GameState::update(&mut *simulation_state, aux_data, data_store);
         }
-        log::trace!("Post Autosave");
+        log::trace!("Post Update");
 
         let current_tick = aux_data.current_tick;
 

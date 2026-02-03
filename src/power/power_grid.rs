@@ -884,7 +884,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
 
                         *self.beacon_affected_entities.get_mut(&effected_entity).expect("Beacon affected entities list did not include a beacons affected entity") = (old.0 - effect[0], old.1 - effect[1], old.2 - effect[2]);
 
-                        // The effect on the other grids is already handled in  remove_pole
+                        // The effect on the other grids is already handled in remove_pole
                     }
                 }
 

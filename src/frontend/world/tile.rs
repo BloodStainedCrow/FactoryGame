@@ -24,6 +24,7 @@ use std::{
     num::NonZero,
     ops::{Add, ControlFlow, Range},
 };
+use strum::IntoEnumIterator;
 
 use crate::frontend::world::sparse_grid::GetGridIndex;
 
@@ -107,7 +108,7 @@ const_assert!(CHUNK_SIZE * CHUNK_SIZE - 1 <= u8::MAX as u16);
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct Chunk<ItemIdxType: WeakIdxTrait = u8, RecipeIdxType: WeakIdxTrait = u8> {
-    base_pos: (i32, i32),
+    // base_pos: (i32, i32),
     pub floor_tiles: Option<Box<[[FloorTile; CHUNK_SIZE as usize]; CHUNK_SIZE as usize]>>,
     chunk_tile_to_entity_into: Option<Box<[[u8; CHUNK_SIZE as usize]; CHUNK_SIZE as usize]>>,
     entities: Vec<Entity<ItemIdxType, RecipeIdxType>>,
@@ -1325,7 +1326,7 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                                 {
                                     match attached_inserter {
                                         AttachedInserter::BeltStorage { id, belt_pos } => {
-                                            sim_state.factory.belts.remove_inserter(*id, *belt_pos);
+                                            let () = sim_state.factory.belts.remove_inserter(*id, *belt_pos);
 
                                             *info = InserterInfo::NotAttached {};
                                         },
@@ -1466,10 +1467,11 @@ impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> GetGridIndex<i32>
     for Chunk<ItemIdxType, RecipeIdxType>
 {
     fn get_grid_index(&self) -> (i32, i32) {
-        (
-            self.base_pos.0.div_floor(i32::from(CHUNK_SIZE)),
-            self.base_pos.1.div_floor(i32::from(CHUNK_SIZE)),
-        )
+        // (
+        //     self.base_pos.0.div_floor(i32::from(CHUNK_SIZE)),
+        //     self.base_pos.1.div_floor(i32::from(CHUNK_SIZE)),
+        // )
+        unimplemented!()
     }
 }
 
@@ -1648,7 +1650,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             Self::get_chunk_pos_for_tile(top_left).into(),
             Self::get_chunk_pos_for_tile(bottom_right).into(),
             |[x, y]| Chunk {
-                base_pos: (x * i32::from(CHUNK_SIZE), y * i32::from(CHUNK_SIZE)),
+                // base_pos: (x * i32::from(CHUNK_SIZE), y * i32::from(CHUNK_SIZE)),
                 floor_tiles: None,
                 chunk_tile_to_entity_into: None,
                 entities: vec![],
@@ -1690,7 +1692,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         self.chunks.insert_many(
             chunks.clone(),
             chunks.into_iter().map(|pos| Chunk {
-                base_pos: (pos.0 * i32::from(CHUNK_SIZE), pos.1 * i32::from(CHUNK_SIZE)),
+                // base_pos: (pos.0 * i32::from(CHUNK_SIZE), pos.1 * i32::from(CHUNK_SIZE)),
                 floor_tiles: None,
                 chunk_tile_to_entity_into: None,
                 entities: vec![],
@@ -4113,6 +4115,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         &'a self,
         pos: Position,
         size: (u16, u16),
+        base_pos: (i32, i32),
         _data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
     ) -> bool {
         let bb_top_left = (pos.x, pos.y);
@@ -4131,11 +4134,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             .cartesian_product(chunk_range_y)
             .filter_map(|(chunk_x, chunk_y)| self.chunks.get(chunk_x, chunk_y))
             .flat_map(|chunk| {
-                let x_start = max(bb_top_left.0 - chunk.base_pos.0, 0);
-                let x_end = min(bb_bottom_right.0 - chunk.base_pos.0, CHUNK_SIZE as i32 - 1);
+                let x_start = max(bb_top_left.0 - base_pos.0, 0);
+                let x_end = min(bb_bottom_right.0 - base_pos.0, CHUNK_SIZE as i32 - 1);
 
-                let y_start = max(bb_top_left.1 - chunk.base_pos.1, 0);
-                let y_end = min(bb_bottom_right.1 - chunk.base_pos.1, CHUNK_SIZE as i32 - 1);
+                let y_start = max(bb_top_left.1 - base_pos.1, 0);
+                let y_end = min(bb_bottom_right.1 - base_pos.1, CHUNK_SIZE as i32 - 1);
 
                 (x_start..x_end)
                     .cartesian_product(y_start..y_end)
@@ -4851,7 +4854,49 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         }
                     }
                 },
-                Entity::Splitter { .. } => todo!(),
+                Entity::Splitter {
+                    pos, direction, id, ..
+                } => {
+                    let removed_items = sim_state.factory.belts.remove_splitter(*id);
+                    // TODO: Handle these removed items
+
+                    // Handle the shortening of the belt due to the removal of the splitter len
+                    // Front
+                    for side in SplitterSide::iter() {
+                        let side_offs = match side {
+                            SplitterSide::Left => (0, 0),
+                            SplitterSide::Right => direction.turn_right().into_offset(),
+                        };
+                        let pos = *pos + *direction;
+
+                        let pos = Position {
+                            x: pos.x + i32::from(side_offs.0),
+                            y: pos.y + i32::from(side_offs.1),
+                        };
+
+                        // FIXME: SIDELOADING MUST BE HANDLED, AND TURNING
+                        if let Some(Entity::Belt { id, .. }) = self.get_entity_at(pos, data_store) {
+                        }
+                    }
+                    // BACK
+                    for side in SplitterSide::iter() {
+                        let side_offs = match side {
+                            SplitterSide::Left => (0, 0),
+                            SplitterSide::Right => direction.turn_right().into_offset(),
+                        };
+                        let pos = *pos + (direction.reverse());
+
+                        let pos = Position {
+                            x: pos.x + i32::from(side_offs.0),
+                            y: pos.y + i32::from(side_offs.1),
+                        };
+
+                        // FIXME: SIDELOADING MUST BE HANDLED, AND TURNING
+                        if let Some(Entity::Belt { id, .. }) = self.get_entity_at(pos, data_store) {
+                            self.modify_belt_pos(*id, true, SPLITTER_BELT_LEN);
+                        }
+                    }
+                },
 
                 Entity::Chest { ty, pos, item, .. } => {
                     if let Some((item, index)) = item {

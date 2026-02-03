@@ -337,10 +337,10 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         power_list: &[AssemblerInfo],
     ) -> (Watt, u32, u32) {
         // FIXME: This could technically not be enough if enough items are produced in a single tick
-        self.inserter_waitlist_output_vec.reserve(
-            (self.len * 4 * (NUM_INGS + NUM_OUTPUTS))
-                .saturating_sub(self.inserter_waitlist_output_vec.len()),
-        );
+        // self.inserter_waitlist_output_vec.reserve(
+        //     (self.len * 4 * (NUM_INGS + NUM_OUTPUTS))
+        //         .saturating_sub(self.inserter_waitlist_output_vec.len()),
+        // );
 
         let (ing_idx, out_idx) = recipe_lookup[self.recipe.id.into()];
 
@@ -603,10 +603,9 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                                                     .map(|v| v.take())
                                                     .unwrap_or(None);
                                             }
-                                            let Ok(_) = self
-                                                .inserter_waitlist_output_vec
-                                                .push_within_capacity(
-                                                InternalInserterReinsertionInfo {
+                                            let () =
+                                                self.inserter_waitlist_output_vec
+                                                    .push(InternalInserterReinsertionInfo {
                                                     movetime: ins.movetime.into(),
                                                     item: (NUM_INGS + item) as u8,
                                                     max_hand: ins.max_hand.into(),
@@ -627,8 +626,8 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                                                             self_is_source,
                                                         },
                                                     },
-                                                },
-                                            ) else {
+                                                })
+                                            else {
                                                 panic!(
                                                     "Not enough space in inserter readdition vec. Capacity is {}",
                                                     self.inserter_waitlist_output_vec.capacity()
@@ -702,10 +701,9 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                                                     .map(|v| v.take())
                                                     .unwrap_or(None);
                                             }
-                                            let Ok(_) = self
-                                                .inserter_waitlist_output_vec
-                                                .push_within_capacity(
-                                                InternalInserterReinsertionInfo {
+                                            let () =
+                                                self.inserter_waitlist_output_vec
+                                                    .push(InternalInserterReinsertionInfo {
                                                     movetime: ins.movetime.into(),
                                                     item: item as u8,
                                                     max_hand: ins.max_hand.into(),
@@ -726,8 +724,8 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                                                             self_is_source,
                                                         },
                                                     },
-                                                },
-                                            ) else {
+                                                })
+                                            else {
                                                 panic!(
                                                     "Not enough space in inserter readdition vec. Capacity is {}.",
                                                     self.inserter_waitlist_output_vec.capacity()

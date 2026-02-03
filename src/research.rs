@@ -210,7 +210,8 @@ impl TechState {
                 {
                     self.recipe_active[recipe.into_usize()] = true;
                 }
-                if is_repeating {
+                // TODO: Do not autorepeat always
+                if is_repeating && self.research_queue.len() == 1 {
                     // Just keep researching the same tech (just one level higher)
                 } else {
                     self.research_queue.remove(0);
