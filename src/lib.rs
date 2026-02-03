@@ -119,6 +119,7 @@ pub mod liquid;
 
 mod par_generation;
 
+mod bucket_store;
 mod lockfile;
 
 impl WeakIdxTrait for u8 {}
