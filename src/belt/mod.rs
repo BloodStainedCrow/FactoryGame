@@ -3151,14 +3151,19 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
         todo!()
     }
 
-    pub fn remove_inserter(&mut self, id: BeltTileId<ItemIdxType>, pos: BeltLenType) {
+    pub fn remove_inserter(
+        &mut self,
+        id: BeltTileId<ItemIdxType>,
+        pos: BeltLenType,
+    ) -> Result<(), (u32, BeltLenType)> {
         match id {
             BeltTileId::AnyBelt(index, _) => match &mut self.any_belts[index as usize] {
                 AnyBelt::Smart(smart_belt_id) => {
                     let smart_belt = self.inner.get_smart_mut(*smart_belt_id);
-                    smart_belt
-                        .remove_inserter(pos)
-                        .expect("Failed to remove inserter from smart belt");
+                    match smart_belt.remove_inserter(pos) {
+                        Ok(FakeUnionStorage { .. }) => Ok(()),
+                        Err(()) => Err((smart_belt_id.index as u32, pos)),
+                    }
                 },
                 AnyBelt::Sushi(sushi_belt_id) => {
                     let sushi_belt = &mut self.inner.sushi_belts[*sushi_belt_id];
@@ -3172,10 +3177,11 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                             info!("Unable to convert belt {id:?} to pure belt");
                         },
                     }
+                    Ok(())
                 },
                 AnyBelt::Empty(_) => unimplemented!("Empty belt cannot have inserters"),
             },
-        };
+        }
     }
 
     pub fn change_inserter_movetime(

@@ -101,6 +101,28 @@ impl<const SWING_DIR: Dir, const ITEM_FLOW_DIR: Dir> List<SWING_DIR, ITEM_FLOW_D
         let index = (usize::from(u16::from(movetime)) + self.zero_index) % self.lists.len();
         self.lists[index].push(ins);
     }
+
+    pub fn remove_inserter(&mut self, belt_id: u32, belt_pos: BeltLenType) -> Result<(), ()> {
+        let index = self
+            .lists
+            .iter()
+            .enumerate()
+            .find_map(|(list_index, list)| {
+                list.iter()
+                    .position(|moving_inserter| {
+                        moving_inserter.belt == belt_id && moving_inserter.belt_pos == belt_pos
+                    })
+                    .map(|v| (list_index, v))
+            });
+
+        if let Some((list_index, index)) = index {
+            // TODO: Swap remove might do weird things to the priority but it should be fine
+            let v = self.lists[list_index].swap_remove(index);
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
 }
 
 impl<'a> FinishedMovingLists<'a, { Dir::BeltToStorage }, { Dir::BeltToStorage }> {

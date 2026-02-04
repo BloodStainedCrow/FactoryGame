@@ -1377,170 +1377,165 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 pos: inserter_pos,
                                 direction,
                                 ..
-                            } => {
-                                match info {
-                                    InserterInfo::NotAttached {} => {},
-                                    InserterInfo::Attached { info } => match info {
-                                        AttachedInserter::BeltStorage { id, belt_pos } => {
-                                            game_state
-                                                .simulation_state
-                                                .factory
-                                                .belts
-                                                .change_inserter_movetime(
-                                                    *id,
-                                                    *belt_pos,
-                                                    new_movetime.map(|v| v.into()).unwrap_or(
-                                                        data_store.inserter_infos[*ty as usize]
-                                                            .swing_time_ticks,
-                                                    ),
-                                                );
-                                        },
-                                        AttachedInserter::BeltBelt { .. } => todo!(),
-                                        AttachedInserter::StorageStorage { item, inserter } => {
-                                            let old_movetime = user_movetime.unwrap_or(
+                            } => match info {
+                                InserterInfo::NotAttached {} => {},
+                                InserterInfo::Attached { info } => match info {
+                                    AttachedInserter::BeltStorage { id, belt_pos } => {
+                                        game_state
+                                            .simulation_state
+                                            .factory
+                                            .belts
+                                            .change_inserter_movetime(
+                                                *id,
+                                                *belt_pos,
+                                                new_movetime.map(|v| v.into()).unwrap_or(
+                                                    data_store.inserter_infos[*ty as usize]
+                                                        .swing_time_ticks,
+                                                ),
+                                            );
+                                    },
+                                    AttachedInserter::BeltBelt { .. } => todo!(),
+                                    AttachedInserter::StorageStorage { item, inserter } => {
+                                        let old_movetime = user_movetime.unwrap_or(
+                                            data_store.inserter_infos[*ty as usize]
+                                                .swing_time_ticks,
+                                        );
+
+                                        let new_movetime =
+                                            new_movetime.map(|v| v.into()).unwrap_or(
                                                 data_store.inserter_infos[*ty as usize]
                                                     .swing_time_ticks,
                                             );
 
-                                            let new_movetime =
-                                                new_movetime.map(|v| v.into()).unwrap_or(
-                                                    data_store.inserter_infos[*ty as usize]
-                                                        .swing_time_ticks,
-                                                );
+                                        if old_movetime != new_movetime {
+                                            let new_id = match game_state
+                                                .simulation_state
+                                                .factory
+                                                .storage_storage_inserters
+                                                .change_movetime(
+                                                    *item,
+                                                    old_movetime.into(),
+                                                    new_movetime.into(),
+                                                    *inserter,
+                                                ) {
+                                                Ok(new_id) => new_id,
+                                                Err((search_side, mut handle_fn)) => {
+                                                    match search_side {
+                                                        WaitlistSearchSide::Source => {
+                                                            let start_pos = data_store
+                                                                .inserter_start_pos(
+                                                                    *ty,
+                                                                    *inserter_pos,
+                                                                    *direction,
+                                                                );
 
-                                            if old_movetime != new_movetime {
-                                                let new_id = match game_state
-                                                    .simulation_state
-                                                    .factory
-                                                    .storage_storage_inserters
-                                                    .change_movetime(
-                                                        *item,
-                                                        old_movetime.into(),
-                                                        new_movetime.into(),
-                                                        *inserter,
-                                                    ) {
-                                                    Ok(new_id) => new_id,
-                                                    Err((search_side, mut handle_fn)) => {
-                                                        match search_side {
-                                                            WaitlistSearchSide::Source => {
-                                                                let start_pos = data_store
-                                                                    .inserter_start_pos(
-                                                                        *ty,
-                                                                        *inserter_pos,
-                                                                        *direction,
-                                                                    );
-
-                                                                let item = *item;
-                                                                let inserter = *inserter;
-                                                                match game_state
-                                                                    .world
-                                                                    .get_entity_at(
-                                                                        start_pos, data_store,
-                                                                    )
-                                                                    .unwrap()
-                                                                {
-                                                                    Entity::Assembler {
-                                                                        info:
-                                                                            AssemblerInfo::Powered {
-                                                                                id,
-                                                                                ..
-                                                                            },
-                                                                        ..
-                                                                    } => {
-                                                                        let removed = 
+                                                            let item = *item;
+                                                            let inserter = *inserter;
+                                                            match game_state
+                                                                .world
+                                                                .get_entity_at(
+                                                                    start_pos, data_store,
+                                                                )
+                                                                .unwrap()
+                                                            {
+                                                                Entity::Assembler {
+                                                                    info:
+                                                                        AssemblerInfo::Powered {
+                                                                            id,
+                                                                            ..
+                                                                        },
+                                                                    ..
+                                                                } => {
+                                                                    let removed =
                                                                             game_state.simulation_state.factory.power_grids.power_grids[id.grid as usize].stores
                                                                                 .remove_wait_list_inserter(*id, item, crate::chest::WaitingInserterRemovalInfo::StorageStorage { inserter_id: inserter.id }, data_store);
-                                                                        let Conn::Storage {
-                                                                            storage_id_in,
-                                                                            storage_id_out,
-                                                                            ..
-                                                                        } = removed.conn
-                                                                        else {
-                                                                            unreachable!()
-                                                                        };
-                                                                        handle_fn(
-                                                                            storage_id_in,
-                                                                            storage_id_out,
-                                                                            removed.max_hand.into(),
-                                                                        )
-                                                                    },
-
-                                                                    e => unreachable!("{e:?}"),
-                                                                }
-                                                            },
-                                                            WaitlistSearchSide::Dest => {
-                                                                let end_pos = data_store
-                                                                    .inserter_end_pos(
-                                                                        *ty,
-                                                                        *inserter_pos,
-                                                                        *direction,
-                                                                    );
-
-                                                                let item = *item;
-                                                                let inserter = *inserter;
-                                                                match game_state
-                                                                    .world
-                                                                    .get_entity_at(
-                                                                        end_pos, data_store,
-                                                                    )
-                                                                    .unwrap()
-                                                                {
-                                                                    Entity::Assembler {
-                                                                        info:
-                                                                            AssemblerInfo::Powered {
-                                                                                id,
-                                                                                ..
-                                                                            },
+                                                                    let Conn::Storage {
+                                                                        storage_id_in,
+                                                                        storage_id_out,
                                                                         ..
-                                                                    } => {
-                                                                        let removed = game_state.simulation_state.factory.power_grids.power_grids[id.grid as usize].stores
-                                                                                .remove_wait_list_inserter(*id, item, crate::chest::WaitingInserterRemovalInfo::StorageStorage { inserter_id: inserter.id }, data_store);
-                                                                        let Conn::Storage {
-                                                                            index,
-                                                                            storage_id_in,
-                                                                            storage_id_out,
-                                                                        } = removed.conn
-                                                                        else {
-                                                                            unreachable!()
-                                                                        };
-                                                                        handle_fn(
-                                                                            storage_id_in,
-                                                                            storage_id_out,
-                                                                            removed.max_hand.into(),
-                                                                        )
-                                                                    },
-
-                                                                    e => unreachable!("{e:?}"),
-                                                                }
-                                                            },
-                                                        }
-                                                    },
-                                                };
-
-                                                let Some(Entity::Inserter {
-                                                    user_movetime,
-                                                    info:
-                                                        InserterInfo::Attached {
-                                                            info:
-                                                                AttachedInserter::StorageStorage {
-                                                                    inserter,
-                                                                    ..
+                                                                    } = removed.conn
+                                                                    else {
+                                                                        unreachable!()
+                                                                    };
+                                                                    handle_fn(
+                                                                        storage_id_in,
+                                                                        storage_id_out,
+                                                                        removed.max_hand.into(),
+                                                                    )
                                                                 },
+
+                                                                e => unreachable!("{e:?}"),
+                                                            }
                                                         },
-                                                    ..
-                                                }) = game_state
-                                                    .world
-                                                    .get_entity_at_mut(*pos, data_store)
-                                                else {
-                                                    unreachable!();
-                                                };
-                                                *user_movetime =
-                                                    Some(new_movetime.try_into().unwrap());
-                                                *inserter = new_id;
-                                            }
-                                        },
+                                                        WaitlistSearchSide::Dest => {
+                                                            let end_pos = data_store
+                                                                .inserter_end_pos(
+                                                                    *ty,
+                                                                    *inserter_pos,
+                                                                    *direction,
+                                                                );
+
+                                                            let item = *item;
+                                                            let inserter = *inserter;
+                                                            match game_state
+                                                                .world
+                                                                .get_entity_at(end_pos, data_store)
+                                                                .unwrap()
+                                                            {
+                                                                Entity::Assembler {
+                                                                    info:
+                                                                        AssemblerInfo::Powered {
+                                                                            id,
+                                                                            ..
+                                                                        },
+                                                                    ..
+                                                                } => {
+                                                                    let removed = game_state.simulation_state.factory.power_grids.power_grids[id.grid as usize].stores
+                                                                                .remove_wait_list_inserter(*id, item, crate::chest::WaitingInserterRemovalInfo::StorageStorage { inserter_id: inserter.id }, data_store);
+                                                                    let Conn::Storage {
+                                                                        index,
+                                                                        storage_id_in,
+                                                                        storage_id_out,
+                                                                    } = removed.conn
+                                                                    else {
+                                                                        unreachable!()
+                                                                    };
+                                                                    handle_fn(
+                                                                        storage_id_in,
+                                                                        storage_id_out,
+                                                                        removed.max_hand.into(),
+                                                                    )
+                                                                },
+
+                                                                e => unreachable!("{e:?}"),
+                                                            }
+                                                        },
+                                                    }
+                                                },
+                                            };
+
+                                            let Some(Entity::Inserter {
+                                                user_movetime,
+                                                info:
+                                                    InserterInfo::Attached {
+                                                        info:
+                                                            AttachedInserter::StorageStorage {
+                                                                inserter,
+                                                                ..
+                                                            },
+                                                    },
+                                                ..
+                                            }) = game_state
+                                                .world
+                                                .get_entity_at_mut(*pos, data_store)
+                                            else {
+                                                unreachable!();
+                                            };
+                                            *user_movetime = Some(new_movetime.try_into().unwrap());
+                                            *inserter = new_id;
+                                        }
                                     },
-                                }
+                                },
                             },
                             _ => {
                                 warn!("Tried to set Inserter Settings on non inserter");

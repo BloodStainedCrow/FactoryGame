@@ -1326,7 +1326,10 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                                 {
                                     match attached_inserter {
                                         AttachedInserter::BeltStorage { id, belt_pos } => {
-                                            let () = sim_state.factory.belts.remove_inserter(*id, *belt_pos);
+                                            match sim_state.factory.belts.remove_inserter(*id, *belt_pos) {
+                                                Ok(()) => {},
+                                                Err((belt_id, belt_pos)) => todo!(),
+                                            }
 
                                             *info = InserterInfo::NotAttached {};
                                         },
@@ -4929,8 +4932,108 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         },
                     ..
                 } => match attached_inserter {
-                    AttachedInserter::BeltStorage { id, belt_pos } => {
-                        sim_state.factory.belts.remove_inserter(*id, *belt_pos);
+                    AttachedInserter::BeltStorage { id, belt_pos } => 'remove: {
+                        match sim_state.factory.belts.remove_inserter(*id, *belt_pos) {
+                            Ok(()) => {
+                                log::trace!(
+                                    "Successfully removed belt storage inserter from sim_state.factory.belts"
+                                );
+                            },
+                            Err((belt_id, belt_pos)) => {
+                                let item = sim_state
+                                    .factory
+                                    .belts
+                                    .get_pure_item(*id)
+                                    .expect("Sushi belts do not currently use waitlists");
+                                let start_pos =
+                                    data_store.inserter_start_pos(*ty, *pos, *direction);
+
+                                let (belt_to_storage, storage_to_belt) = &mut sim_state
+                                    .factory
+                                    .belt_storage_inserters[item.into_usize()];
+
+                                let start_at_belt = match self.get_entity_at(start_pos, data_store).expect("Since this inserter is attached, there should be an entity there") {
+                                    Entity::Belt { .. } => {true},
+                                    Entity::Underground { ..} => {true},
+                                    Entity::Splitter { .. } => {true},
+                                    _ => false
+                                };
+
+                                if start_at_belt {
+                                    if belt_to_storage.0.remove_inserter(belt_id, belt_pos).is_ok()
+                                    {
+                                        break 'remove;
+                                    }
+                                    if belt_to_storage.1.remove_inserter(belt_id, belt_pos).is_ok()
+                                    {
+                                        break 'remove;
+                                    }
+                                } else {
+                                    if storage_to_belt.0.remove_inserter(belt_id, belt_pos).is_ok()
+                                    {
+                                        break 'remove;
+                                    }
+                                    if storage_to_belt.1.remove_inserter(belt_id, belt_pos).is_ok()
+                                    {
+                                        break 'remove;
+                                    }
+                                }
+
+                                let removed_stuff = match self.get_entity_at(start_pos, data_store).expect("Since this inserter is attached, there should be an entity there") {
+                                    Entity::Assembler { info, .. } => {
+                                        let AssemblerInfo::Powered { id, pole_position, .. } = info else {
+                                            unreachable!("If an inserter is attached, the assembler must be powered with a recipe")
+                                        };
+                                        sim_state.factory.power_grids.power_grids[sim_state.factory.power_grids.pole_pos_to_grid_id[pole_position] as usize]
+                                            .remove_waiting_inserter(*id, item, crate::chest::WaitingInserterRemovalInfo::BeltStorage { belt_id,  belt_pos }, data_store);
+                                        true
+                                    },
+                                    Entity::Belt { .. } => {false},
+                                    Entity::Underground { ..} => {false},
+                                    Entity::Splitter { .. } => {false},
+                                    Entity::Chest { item: chest_item, .. } => {
+                                        let (chest_item, chest_id) = chest_item.expect("If a chest has an inserter it must havbe an item");
+                                        assert_eq!(chest_item, item);
+                                        sim_state.factory.chests.stores[item.into_usize()]
+                                            .remove_inserter_from_waitlist(chest_id, crate::chest::WaitingInserterRemovalInfo::BeltStorage { belt_id,  belt_pos });
+                                        true
+                                    },
+                                    Entity::Roboport { .. } => todo!(),
+                                    Entity::Lab { .. } => unreachable!("Labs currently do not have waitlists"),
+                                    Entity::MiningDrill { .. } => unreachable!("Drills currently do not have waitlists"),
+
+                                    _ => unreachable!()
+                                };
+
+                                if !removed_stuff {
+                                    let end_pos =
+                                        data_store.inserter_end_pos(*ty, *pos, *direction);
+                                    match self.get_entity_at(end_pos, data_store).expect("Since this inserter is attached, there should be an entity there") {
+                                    Entity::Assembler {  info, .. } => {
+                                        let AssemblerInfo::Powered { id, pole_position, .. } = info else {
+                                            unreachable!("If an inserter is attached, the assembler must be powered with a recipe")
+                                        };
+                                        sim_state.factory.power_grids.power_grids[sim_state.factory.power_grids.pole_pos_to_grid_id[pole_position] as usize]
+                                            .remove_waiting_inserter(*id, item, crate::chest::WaitingInserterRemovalInfo::BeltStorage { belt_id,  belt_pos }, data_store);
+                                    },
+                                    Entity::Belt { .. } => unreachable!("There should be a non belt on start or end"),
+                                    Entity::Underground { .. } => unreachable!("There should be a non belt on start or end"),
+                                    Entity::Splitter { .. } => unreachable!("There should be a non belt on start or end"),
+                                    Entity::Chest { item: chest_item, .. } => {
+                                        let (chest_item, chest_id) = chest_item.expect("If a chest has an inserter it must havbe an item");
+                                        assert_eq!(chest_item, item);
+                                        sim_state.factory.chests.stores[item.into_usize()]
+                                            .remove_inserter_from_waitlist(chest_id, crate::chest::WaitingInserterRemovalInfo::BeltStorage { belt_id,  belt_pos });
+                                    },
+                                    Entity::Roboport { .. } => todo!(),
+                                    Entity::Lab { .. } => unreachable!("Labs currently do not have waitlists"),
+                                    Entity::MiningDrill { .. } => unreachable!("Drills currently do not have waitlists"),
+
+                                    _ => unreachable!()
+                                }
+                                }
+                            },
+                        }
                     },
                     AttachedInserter::BeltBelt { inserter, .. } => {
                         sim_state.factory.belts.remove_belt_belt_inserter(*inserter);

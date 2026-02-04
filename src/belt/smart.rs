@@ -452,7 +452,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
     pub fn remove_inserter(&mut self, pos: BeltLenType) -> Result<FakeUnionStorage, ()> {
         if usize::from(pos) >= self.locs.len() {
-            return Err(());
+            unreachable!("Len out of range");
         }
 
         match self

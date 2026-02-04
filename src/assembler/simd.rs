@@ -2066,7 +2066,8 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             .unwrap();
 
         if item_index < NUM_INGS {
-            let v = self.waitlists_ings[item_index][self_index as usize]
+            let our_waitlist = &mut self.waitlists_ings[item_index][self_index as usize];
+            let v = our_waitlist
                 .inserters
                 .iter_mut()
                 .filter(|v| v.is_some())
@@ -2129,8 +2130,10 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 },
             }
         } else {
+            // This is an output inserter
             let item_index = item_index - NUM_INGS;
-            let v = self.waitlists_outputs[item_index][self_index as usize]
+            let our_waitlist = &mut self.waitlists_outputs[item_index][self_index as usize];
+            let v = our_waitlist
                 .inserters
                 .iter_mut()
                 .filter(|v| v.is_some())
@@ -2184,9 +2187,9 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                         belt_pos,
                         self_storage: FakeUnionStorage {
                             index: self_index,
-                            grid_or_static_flag: self.self_fake_union_ing[item_index]
+                            grid_or_static_flag: self.self_fake_union_out[item_index]
                                 .grid_or_static_flag,
-                            recipe_idx_with_this_item: self.self_fake_union_ing[item_index]
+                            recipe_idx_with_this_item: self.self_fake_union_out[item_index]
                                 .recipe_idx_with_this_item,
                         },
                     },
