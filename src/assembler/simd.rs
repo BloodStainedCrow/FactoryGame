@@ -2057,7 +2057,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         &mut self,
         self_index: u32,
         item: Item<ItemIdxType>,
-        id: InserterId,
+        info: crate::chest::WaitingInserterRemovalInfo,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> self::InserterReinsertionInfo<ItemIdxType> {
         let item_index = data_store.recipe_item_index_to_item[self.recipe.into_usize()]
@@ -2070,9 +2070,21 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .inserters
                 .iter_mut()
                 .filter(|v| v.is_some())
-                .find(|ins| match ins.as_ref().unwrap().rest {
-                    InserterWithBeltsEnum::StorageStorage { index, .. } => index == id,
-                    InserterWithBeltsEnum::BeltStorage { .. } => false,
+                .find(|ins| match (&ins.as_ref().unwrap().rest, info) {
+                    (
+                        InserterWithBeltsEnum::StorageStorage { index, .. },
+                        crate::chest::WaitingInserterRemovalInfo::StorageStorage { inserter_id },
+                    ) => inserter_id == *index,
+                    (
+                        InserterWithBeltsEnum::BeltStorage {
+                            belt_id: ins_belt_id,
+                            belt_pos: ins_belt_pos,
+                            ..
+                        },
+                        crate::chest::WaitingInserterRemovalInfo::BeltStorage { belt_id, belt_pos },
+                    ) => *ins_belt_id == belt_id && *ins_belt_pos == belt_pos,
+
+                    _ => false,
                 })
                 .unwrap();
 
@@ -2122,9 +2134,21 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .inserters
                 .iter_mut()
                 .filter(|v| v.is_some())
-                .find(|ins| match ins.as_ref().unwrap().rest {
-                    InserterWithBeltsEnum::StorageStorage { index, .. } => index == id,
-                    InserterWithBeltsEnum::BeltStorage { .. } => false,
+                .find(|ins| match (&ins.as_ref().unwrap().rest, info) {
+                    (
+                        InserterWithBeltsEnum::StorageStorage { index, .. },
+                        crate::chest::WaitingInserterRemovalInfo::StorageStorage { inserter_id },
+                    ) => inserter_id == *index,
+                    (
+                        InserterWithBeltsEnum::BeltStorage {
+                            belt_id: ins_belt_id,
+                            belt_pos: ins_belt_pos,
+                            ..
+                        },
+                        crate::chest::WaitingInserterRemovalInfo::BeltStorage { belt_id, belt_pos },
+                    ) => *ins_belt_id == belt_id && *ins_belt_pos == belt_pos,
+
+                    _ => false,
                 })
                 .unwrap();
 

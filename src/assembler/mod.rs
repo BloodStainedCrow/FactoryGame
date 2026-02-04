@@ -567,7 +567,7 @@ impl<
         &mut self,
         assembler_id: AssemblerID<RecipeIdxType>,
         item: Item<ItemIdxType>,
-        inserter_id: InserterId,
+        info: crate::chest::WaitingInserterRemovalInfo,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> simd::InserterReinsertionInfo<ItemIdxType> {
         let recipe_id = assembler_id.recipe.id.into();
@@ -584,12 +584,7 @@ impl<
                 );
 
                 self.assemblers_0_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                    .remove_wait_list_inserter(
-                        assembler_id.assembler_index,
-                        item,
-                        inserter_id,
-                        data_store,
-                    )
+                    .remove_wait_list_inserter(assembler_id.assembler_index, item, info, data_store)
             },
             (1, 1) => {
                 assert_eq!(
@@ -599,12 +594,7 @@ impl<
                 );
 
                 self.assemblers_1_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                    .remove_wait_list_inserter(
-                        assembler_id.assembler_index,
-                        item,
-                        inserter_id,
-                        data_store,
-                    )
+                    .remove_wait_list_inserter(assembler_id.assembler_index, item, info, data_store)
             },
             (2, 1) => {
                 assert_eq!(
@@ -614,12 +604,7 @@ impl<
                 );
 
                 self.assemblers_2_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                    .remove_wait_list_inserter(
-                        assembler_id.assembler_index,
-                        item,
-                        inserter_id,
-                        data_store,
-                    )
+                    .remove_wait_list_inserter(assembler_id.assembler_index, item, info, data_store)
             },
 
             (2, 2) => {
@@ -630,12 +615,7 @@ impl<
                 );
 
                 self.assemblers_2_2[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                    .remove_wait_list_inserter(
-                        assembler_id.assembler_index,
-                        item,
-                        inserter_id,
-                        data_store,
-                    )
+                    .remove_wait_list_inserter(assembler_id.assembler_index, item, info, data_store)
             },
 
             (2, 3) => {
@@ -646,12 +626,7 @@ impl<
                 );
 
                 self.assemblers_2_3[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                    .remove_wait_list_inserter(
-                        assembler_id.assembler_index,
-                        item,
-                        inserter_id,
-                        data_store,
-                    )
+                    .remove_wait_list_inserter(assembler_id.assembler_index, item, info, data_store)
             },
 
             (3, 1) => {
@@ -662,12 +637,7 @@ impl<
                 );
 
                 self.assemblers_3_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                    .remove_wait_list_inserter(
-                        assembler_id.assembler_index,
-                        item,
-                        inserter_id,
-                        data_store,
-                    )
+                    .remove_wait_list_inserter(assembler_id.assembler_index, item, info, data_store)
             },
 
             (4, 1) => {
@@ -678,12 +648,7 @@ impl<
                 );
 
                 self.assemblers_4_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                    .remove_wait_list_inserter(
-                        assembler_id.assembler_index,
-                        item,
-                        inserter_id,
-                        data_store,
-                    )
+                    .remove_wait_list_inserter(assembler_id.assembler_index, item, info, data_store)
             },
 
             (5, 1) => {
@@ -694,12 +659,7 @@ impl<
                 );
 
                 self.assemblers_5_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                    .remove_wait_list_inserter(
-                        assembler_id.assembler_index,
-                        item,
-                        inserter_id,
-                        data_store,
-                    )
+                    .remove_wait_list_inserter(assembler_id.assembler_index, item, info, data_store)
             },
 
             (6, 1) => {
@@ -710,12 +670,7 @@ impl<
                 );
 
                 self.assemblers_6_1[data_store.recipe_to_ing_out_combo_idx[recipe_id]]
-                    .remove_wait_list_inserter(
-                        assembler_id.assembler_index,
-                        item,
-                        inserter_id,
-                        data_store,
-                    )
+                    .remove_wait_list_inserter(assembler_id.assembler_index, item, info, data_store)
             },
 
             _ => unreachable!(),
@@ -1090,7 +1045,7 @@ pub trait MultiAssemblerStore<
         &mut self,
         index: u32,
         item: Item<ItemIdxType>,
-        id: InserterId,
+        info: crate::chest::WaitingInserterRemovalInfo,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> simd::InserterReinsertionInfo<ItemIdxType>;
 }

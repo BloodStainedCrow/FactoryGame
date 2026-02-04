@@ -1447,7 +1447,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                             },
                                                                         ..
                                                                     } => {
-                                                                        let removed = game_state.simulation_state.factory.power_grids.power_grids[id.grid as usize].stores.remove_wait_list_inserter(*id, item, inserter.id, data_store);
+                                                                        let removed = 
+                                                                            game_state.simulation_state.factory.power_grids.power_grids[id.grid as usize].stores
+                                                                                .remove_wait_list_inserter(*id, item, crate::chest::WaitingInserterRemovalInfo::StorageStorage { inserter_id: inserter.id }, data_store);
                                                                         let Conn::Storage {
                                                                             storage_id_in,
                                                                             storage_id_out,
@@ -1491,7 +1493,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                             },
                                                                         ..
                                                                     } => {
-                                                                        let removed = game_state.simulation_state.factory.power_grids.power_grids[id.grid as usize].stores.remove_wait_list_inserter(*id, item, inserter.id, data_store);
+                                                                        let removed = game_state.simulation_state.factory.power_grids.power_grids[id.grid as usize].stores
+                                                                                .remove_wait_list_inserter(*id, item, crate::chest::WaitingInserterRemovalInfo::StorageStorage { inserter_id: inserter.id }, data_store);
                                                                         let Conn::Storage {
                                                                             index,
                                                                             storage_id_in,

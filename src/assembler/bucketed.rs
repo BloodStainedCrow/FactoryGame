@@ -1014,7 +1014,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         &mut self,
         _index: u32,
         _item: crate::item::Item<ItemIdxType>,
-        _id: crate::inserter::storage_storage_with_buckets_indirect::InserterId,
+        _info: crate::chest::WaitingInserterRemovalInfo,
         _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> super::simd::InserterReinsertionInfo<ItemIdxType> {
         unreachable!()

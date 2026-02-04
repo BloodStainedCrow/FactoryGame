@@ -543,6 +543,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         self.stores.is_hole(assembler_id, data_store)
     }
 
+    pub fn remove_waiting_inserter(
+        &mut self,
+        assembler_id: AssemblerID<RecipeIdxType>,
+        inserter_item: Item<ItemIdxType>,
+        info: crate::chest::WaitingInserterRemovalInfo,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        // FIXME: Do I want to return something here?
+        self.stores
+            .remove_wait_list_inserter(assembler_id, inserter_item, info, data_store);
+    }
+
     pub fn add_solar_panel(
         &mut self,
         panel_position: Position,

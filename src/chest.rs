@@ -5,6 +5,8 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelIterator};
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
 use crate::assembler::simd::{InserterReinsertionInfo, InserterWaitList, InserterWithBelts};
+use crate::belt::belt::BeltLenType;
+use crate::inserter::storage_storage_with_buckets_indirect::InserterId;
 use crate::inserter::{FakeUnionStorage, StaticID};
 use crate::storage_list::{InserterWaitLists, MaxInsertionLimit};
 use crate::{
@@ -158,6 +160,12 @@ pub struct MultiChestStore<ItemIdxType: WeakIdxTrait> {
     num_large_chests: usize,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum WaitingInserterRemovalInfo {
+    StorageStorage { inserter_id: InserterId },
+    BeltStorage { belt_id: u32, belt_pos: BeltLenType },
+}
+
 impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
     #[must_use]
     pub fn new(item: Item<ItemIdxType>) -> Self {
@@ -218,6 +226,49 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
             self.wait_list.push(InserterWaitList::default());
             self.wait_list_min.push(ITEMCOUNTTYPE::MAX);
             (self.inout.len() - 1).try_into().unwrap()
+        }
+    }
+
+    pub(crate) fn remove_inserter_from_waitlist(
+        &mut self,
+        id: u32,
+        inserter_info: WaitingInserterRemovalInfo,
+    ) {
+        for wait_slot in &mut self.wait_list[id as usize].inserters {
+            if let Some(inserter) = wait_slot {
+                match (&inserter_info, &inserter.rest) {
+                    (
+                        WaitingInserterRemovalInfo::StorageStorage { inserter_id },
+                        crate::assembler::simd::InserterWithBeltsEnum::StorageStorage {
+                            self_is_source,
+                            index,
+                            other,
+                        },
+                    ) => {
+                        if *index == *inserter_id {
+                            let removed = wait_slot.take().unwrap();
+                            // TODO: What do I want to return
+                            return;
+                        }
+                    },
+                    (
+                        WaitingInserterRemovalInfo::BeltStorage { belt_id, belt_pos },
+                        crate::assembler::simd::InserterWithBeltsEnum::BeltStorage {
+                            self_is_source,
+                            belt_id: ins_belt_id,
+                            belt_pos: ins_belt_pos,
+                        },
+                    ) => {
+                        if *belt_id == *ins_belt_id && *ins_belt_pos == *belt_pos {
+                            let removed = wait_slot.take().unwrap();
+                            // TODO: What do I want to return
+                            return;
+                        }
+                    },
+
+                    _ => {},
+                }
+            }
         }
     }
 

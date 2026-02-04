@@ -4919,6 +4919,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 } => {},
                 Entity::Inserter {
                     ty,
+                    pos,
+                    direction,
                     user_movetime,
                     info:
                         InserterInfo::Attached {
@@ -4934,20 +4936,59 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         sim_state.factory.belts.remove_belt_belt_inserter(*inserter);
                     },
                     AttachedInserter::StorageStorage { item, inserter } => {
-                        sim_state
-                            .factory
-                            .storage_storage_inserters
-                            .remove_ins(
-                                *item,
-                                user_movetime
-                                    .map(|v| v.into())
-                                    .unwrap_or(
-                                        data_store.inserter_infos[*ty as usize].swing_time_ticks,
-                                    )
-                                    .into(),
-                                *inserter,
-                            )
-                            .expect("Failed Removing Inserter");
+                        match sim_state.factory.storage_storage_inserters.remove_ins(
+                            *item,
+                            user_movetime
+                                .map(|v| v.into())
+                                .unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks)
+                                .into(),
+                            *inserter,
+                        ) {
+                            Ok(()) => {
+                                log::trace!(
+                                    "Successfully removed storage storage inserter from sim_state.factory.storage_storage_inserters"
+                                );
+                            },
+                            Err(side) => {
+                                log::trace!(
+                                    "Failed removing storage storage inserter from sim_state.factory.storage_storage_inserters, need to look at {:?}",
+                                    side
+                                );
+
+                                let search_pos = match side {
+                                    crate::inserter::WaitlistSearchSide::Source => {
+                                        data_store.inserter_start_pos(*ty, *pos, *direction)
+                                    },
+                                    crate::inserter::WaitlistSearchSide::Dest => {
+                                        data_store.inserter_end_pos(*ty, *pos, *direction)
+                                    },
+                                };
+
+                                match self.get_entity_at(search_pos, data_store).expect("The inserter is supposed to be in the waitlist of this entity so it should exist") {
+                                    Entity::Assembler { info, .. } => {
+                                        let AssemblerInfo::Powered { id, pole_position, .. } = info else {
+                                            unreachable!("If an inserter is attached, the assembler must be powered with a recipe")
+                                        };
+                                        sim_state.factory.power_grids.power_grids[sim_state.factory.power_grids.pole_pos_to_grid_id[pole_position] as usize]
+                                            .remove_waiting_inserter(*id, *item, crate::chest::WaitingInserterRemovalInfo::StorageStorage { inserter_id: inserter.id }, data_store);
+                                    },
+                                    Entity::Chest { item: chest_item, .. } => {
+                                        let (chest_item, chest_id) = chest_item.expect("If a chest has an inserter it must havbe an item");
+                                        assert_eq!(chest_item, *item);
+                                        sim_state.factory.chests.stores[item.into_usize()].remove_inserter_from_waitlist(chest_id, crate::chest::WaitingInserterRemovalInfo::StorageStorage { inserter_id: inserter.id });
+                                    },
+                                    Entity::Roboport { .. } => todo!(),
+                                    Entity::Lab { .. } => unreachable!("Currently Labs do not have a waitlist implementation"),
+                                    Entity::MiningDrill { .. } => unreachable!("Currently Drills do not have a waitlist implementation"),
+
+                                    e => unreachable!("A storage_storage inserter cannot attach to a {e:?}")
+                                }
+
+                                log::trace!(
+                                    "Successfully removed storage storage inserter from waitlist"
+                                );
+                            },
+                        }
                     },
                 },
                 Entity::MiningDrill { .. } => todo!(),
