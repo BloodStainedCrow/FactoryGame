@@ -255,13 +255,20 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 },
                 num_tiles_across_screen_horizontal as u32,
                 num_tiles_across_screen_vertical as u32,
-                // Only allow incremental map_view building for the last view level
-                map_view::MIN_WIDTH
-                    .iter()
-                    .all(|&v| v < num_tiles_across_screen_horizontal as u32)
-                    .then_some(Duration::from_millis(15)),
-                // Some(Duration::from_millis(15)),
-                // None,
+                None,
+                data_store,
+            );
+        }
+
+        {
+            profiling::scope!("Create Map Textures Preemptively");
+            create_map_textures_if_needed(
+                &world,
+                renderer,
+                Position { x: 0, y: 0 },
+                2_000_000,
+                2_000_000,
+                Some(Duration::from_millis(1)),
                 data_store,
             );
         }
@@ -1895,6 +1902,7 @@ pub enum EscapeMenuOptions {
     BackToMainMenu,
 }
 
+#[profiling::function]
 pub fn render_ui<
     ItemIdxType: IdxTrait + ShowInfo<RAMExtractor, RamUsage>,
     RecipeIdxType: IdxTrait + ShowInfo<RAMExtractor, RamUsage>,
