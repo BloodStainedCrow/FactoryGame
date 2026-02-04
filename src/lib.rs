@@ -198,6 +198,7 @@ pub fn main(input: &Vec<String>) -> Result<(), args::ArgsError> {
     {
         use crate::saving::save_folder;
 
+        log::info!("This is the dedicated server");
         let mut args = args::Args::new("factory", "FactoryGame dedicated server");
 
         args.flag("h", "help", "Print the usage menu");
@@ -209,10 +210,11 @@ pub fn main(input: &Vec<String>) -> Result<(), args::ArgsError> {
         );
 
         args.parse(input)?;
+        log::trace!("Parsed input");
 
         let help = args.value_of("help")?;
         if help {
-            args.full_usage();
+            println!("{}", args.full_usage());
             return Ok(());
         }
 
