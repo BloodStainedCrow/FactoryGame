@@ -262,7 +262,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                     false
                 }
             };
-            if !env::var("ZOOM").is_ok() && !is_client {
+            if !env::var("ZOOM").is_ok() {
                 profiling::scope!("Wait");
                 update_interval.tick();
             }
