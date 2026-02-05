@@ -1,6 +1,6 @@
 use std::{borrow::Borrow, fs::File, io::Write, marker::PhantomData};
 
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+#[cfg(not(target_arch = "wasm32"))]
 use crate::saving::save_with_fork;
 use crate::{
     app_state::{AuxillaryData, GameState, SimulationState},

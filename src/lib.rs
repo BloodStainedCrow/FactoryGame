@@ -36,7 +36,7 @@ use parking_lot::Mutex;
 use app_state::GameState;
 use data::{DataStore, factorio_1_1::get_raw_data_test};
 #[cfg(feature = "client")]
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+#[cfg(not(target_arch = "wasm32"))]
 use eframe::NativeOptions;
 use frontend::world::{Position, tile::CHUNK_SIZE_FLOAT};
 #[cfg(feature = "client")]
@@ -155,7 +155,7 @@ impl<T: Default> NewWithDataStore for T {
     }
 }
 
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+#[cfg(not(target_arch = "wasm32"))]
 pub fn main(input: &Vec<String>) -> Result<(), args::ArgsError> {
     // use ron::ser::PrettyConfig;
 

@@ -145,12 +145,12 @@ impl eframe::App for App {
 
                     if ui
                         .add_enabled(
-                            cfg!(not(all(target_arch = "wasm32", target_os = "unknown"))),
+                            cfg!(not(target_arch = "wasm32")),
                             Button::new("Open Save File Folder"),
                         )
                         .clicked()
                     {
-                        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                        #[cfg(not(target_arch = "wasm32"))]
                         {
                             let uri =
                                 Url::from_file_path(save_folder()).expect("Could not generate URI");
@@ -480,7 +480,7 @@ impl eframe::App for App {
                             );
                         });
 
-                    if ui.add_enabled(cfg!(not(all(target_arch = "wasm32", target_os = "unknown"))), Button::new("Load")).on_disabled_hover_text("Saving/Loading not yet supported when running the browser").clicked() {
+                    if ui.add_enabled(cfg!(not(target_arch = "wasm32")), Button::new("Load")).on_disabled_hover_text("Saving/Loading not yet supported when running the browser").clicked() {
                         self.state = AppState::LoadSaveMenu {
                             save_files: SaveFileList::generate_from_save_folder(
                                 &save_folder()
@@ -488,7 +488,7 @@ impl eframe::App for App {
                         }
                     }
                     // else if ui.button("Load Debug Save").clicked() {
-                    //     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                    //     #[cfg(not(target_arch = "wasm32"))]
                     //     if let Some(path) = rfd::FileDialog::new()
                     //         .set_directory(
                     //             save_folder(),
@@ -659,142 +659,149 @@ impl App {
                 let wants_pointer = ctx.wants_pointer_input();
                 let wants_keyboard = ctx.wants_keyboard_input();
 
-                #[cfg(not(target_arch = "wasm32"))]
-                ui.input(|input_state| {
-                    for event in &input_state.events {
-                        match event {
-                            Event::Copy
-                            | Event::Cut
-                            | Event::Paste(_)
-                            | Event::Text(_)
-                            | Event::Key { .. } => {
-                                if wants_keyboard {
-                                    continue;
-                                }
-                            },
-                            Event::PointerMoved(_)
-                            | Event::MouseMoved(_)
-                            | Event::PointerButton { .. }
-                            | Event::PointerGone
-                            | Event::Zoom(_)
-                            | Event::Touch { .. }
-                            | Event::MouseWheel { .. } => {
-                                if wants_pointer {
-                                    continue;
-                                }
-                            },
-                            _ => {},
-                        }
-                        let input = if let Event::PointerMoved(dest) = event {
-                            let pos_normalized = [dest.x / size.width(), dest.y / size.height()];
-
-                            let ar = size.width() / size.height();
-
-                            if pos_normalized[0] < 0.0
-                                || pos_normalized[0] > 1.0
-                                || pos_normalized[1] < 0.0
-                                || pos_normalized[1] > 1.0
-                            {
-                                continue;
-                            }
-
-                            Ok(Input::MouseMove(
-                                pos_normalized[0] - 0.5,
-                                (pos_normalized[1] - 0.5) / ar,
-                            ))
-                        } else {
-                            event.clone().try_into()
-                        };
-
-                        if let Ok(input) = input {
-                            if self.input_sender.as_mut().unwrap().send(input).is_err() {
-                                #[cfg(not(test))]
-                                panic!("Could not send input");
-                                #[allow(unreachable_code)]
-                                {
-                                    error!("Could not send input");
-                                }
-                            }
-                        }
-                    }
-                });
-
-                match &game.state {
-                    LoadedGame::ItemU8RecipeU8(loaded_game_sized) => {
-                        let cb = Callback {
-                            raw_renderer: self
-                                .raw_renderer
-                                .clone()
-                                .expect("Tried to Load a game without a renderer ready"),
-                            texture_atlas: self.texture_atlas.clone(),
-                            state_machine: loaded_game_sized.state_machine.clone(),
-                            game_state: loaded_game_sized.state.clone(),
-                            data_store: loaded_game_sized.data_store.clone(),
-                        };
-                        painter.add(Shape::Callback(egui_wgpu::Callback::new_paint_callback(
-                            size, cb,
-                        )));
-
-                        let simulation_state = loaded_game_sized.state.simulation_state.lock();
-                        let world = loaded_game_sized.state.world.lock();
-                        let aux_data = loaded_game_sized.state.aux_data.lock();
-                        let state_machine = loaded_game_sized.state_machine.lock();
-                        let data_store = loaded_game_sized.data_store.lock();
-
-                        let tick = game.tick.load(std::sync::atomic::Ordering::Relaxed);
-
-                        self.last_rendered_update = tick;
-
-                        match render_ui(
-                            ctx,
-                            ui,
-                            state_machine,
-                            simulation_state,
-                            world,
-                            aux_data,
-                            data_store,
-                        ) {
-                            Ok(render_actions) => {
-                                for action in render_actions {
-                                    #[cfg(not(target_arch = "wasm32"))]
-                                    loaded_game_sized
-                                        .ui_action_sender
-                                        .send(action)
-                                        .expect("Ui action channel died");
-
-                                    #[cfg(target_arch = "wasm32")]
-                                    render_action_vec.push(action);
-                                }
-                            },
-                            Err(escape) => match escape {
-                                EscapeMenuOptions::BackToMainMenu => {
-                                    #[cfg(not(target_arch = "wasm32"))]
-                                    save(
-                                        "Last Exit",
-                                        Some("last_exit.save"),
-                                        &loaded_game_sized.state,
-                                        &loaded_game_sized.data_store.lock(),
-                                    );
-
-                                    self.state = AppState::MainMenu { in_ip_box: None };
-                                    self.last_rendered_update = 0;
-                                    self.input_sender = None;
-
-                                    self.currently_loaded_game = None;
+                {
+                    profiling::scope!("Inputs");
+                    #[cfg(not(target_arch = "wasm32"))]
+                    ui.input(|input_state| {
+                        for event in &input_state.events {
+                            match event {
+                                Event::Copy
+                                | Event::Cut
+                                | Event::Paste(_)
+                                | Event::Text(_)
+                                | Event::Key { .. } => {
+                                    if wants_keyboard {
+                                        continue;
+                                    }
                                 },
-                            },
+                                Event::PointerMoved(_)
+                                | Event::MouseMoved(_)
+                                | Event::PointerButton { .. }
+                                | Event::PointerGone
+                                | Event::Zoom(_)
+                                | Event::Touch { .. }
+                                | Event::MouseWheel { .. } => {
+                                    if wants_pointer {
+                                        continue;
+                                    }
+                                },
+                                _ => {},
+                            }
+                            let input = if let Event::PointerMoved(dest) = event {
+                                let pos_normalized =
+                                    [dest.x / size.width(), dest.y / size.height()];
+
+                                let ar = size.width() / size.height();
+
+                                if pos_normalized[0] < 0.0
+                                    || pos_normalized[0] > 1.0
+                                    || pos_normalized[1] < 0.0
+                                    || pos_normalized[1] > 1.0
+                                {
+                                    continue;
+                                }
+
+                                Ok(Input::MouseMove(
+                                    pos_normalized[0] - 0.5,
+                                    (pos_normalized[1] - 0.5) / ar,
+                                ))
+                            } else {
+                                event.clone().try_into()
+                            };
+
+                            if let Ok(input) = input {
+                                if self.input_sender.as_mut().unwrap().send(input).is_err() {
+                                    #[cfg(not(test))]
+                                    panic!("Could not send input");
+                                    #[allow(unreachable_code)]
+                                    {
+                                        error!("Could not send input");
+                                    }
+                                }
+                            }
                         }
-                    },
-                    LoadedGame::ItemU8RecipeU16(_loaded_game_sized) => {
-                        todo!("Handle bigger item/recipe counts")
-                    },
-                    LoadedGame::ItemU16RecipeU8(_loaded_game_sized) => {
-                        todo!("Handle bigger item/recipe counts")
-                    },
-                    LoadedGame::ItemU16RecipeU16(_loaded_game_sized) => {
-                        todo!("Handle bigger item/recipe counts")
-                    },
-                };
+                    });
+                }
+
+                {
+                    profiling::scope!("Render UI");
+                    match &game.state {
+                        LoadedGame::ItemU8RecipeU8(loaded_game_sized) => {
+                            let cb = Callback {
+                                raw_renderer: self
+                                    .raw_renderer
+                                    .clone()
+                                    .expect("Tried to Load a game without a renderer ready"),
+                                texture_atlas: self.texture_atlas.clone(),
+                                state_machine: loaded_game_sized.state_machine.clone(),
+                                game_state: loaded_game_sized.state.clone(),
+                                data_store: loaded_game_sized.data_store.clone(),
+                            };
+                            painter.add(Shape::Callback(egui_wgpu::Callback::new_paint_callback(
+                                size, cb,
+                            )));
+
+                            let simulation_state = loaded_game_sized.state.simulation_state.lock();
+                            let world = loaded_game_sized.state.world.lock();
+                            let aux_data = loaded_game_sized.state.aux_data.lock();
+                            let state_machine = loaded_game_sized.state_machine.lock();
+                            let data_store = loaded_game_sized.data_store.lock();
+
+                            let tick = game.tick.load(std::sync::atomic::Ordering::Relaxed);
+
+                            self.last_rendered_update = tick;
+
+                            match render_ui(
+                                ctx,
+                                ui,
+                                state_machine,
+                                simulation_state,
+                                world,
+                                aux_data,
+                                data_store,
+                            ) {
+                                Ok(render_actions) => {
+                                    for action in render_actions {
+                                        #[cfg(not(target_arch = "wasm32"))]
+                                        loaded_game_sized
+                                            .ui_action_sender
+                                            .send(action)
+                                            .expect("Ui action channel died");
+
+                                        #[cfg(target_arch = "wasm32")]
+                                        render_action_vec.push(action);
+                                    }
+                                },
+                                Err(escape) => match escape {
+                                    EscapeMenuOptions::BackToMainMenu => {
+                                        #[cfg(not(target_arch = "wasm32"))]
+                                        save(
+                                            "Last Exit",
+                                            Some("last_exit.save"),
+                                            &loaded_game_sized.state,
+                                            &loaded_game_sized.data_store.lock(),
+                                        );
+
+                                        self.state = AppState::MainMenu { in_ip_box: None };
+                                        self.last_rendered_update = 0;
+                                        self.input_sender = None;
+
+                                        self.currently_loaded_game = None;
+                                    },
+                                },
+                            }
+                        },
+                        LoadedGame::ItemU8RecipeU16(_loaded_game_sized) => {
+                            todo!("Handle bigger item/recipe counts")
+                        },
+                        LoadedGame::ItemU16RecipeU8(_loaded_game_sized) => {
+                            todo!("Handle bigger item/recipe counts")
+                        },
+                        LoadedGame::ItemU16RecipeU16(_loaded_game_sized) => {
+                            todo!("Handle bigger item/recipe counts")
+                        },
+                    };
+                }
             } else {
                 warn!("No Game loaded!");
             }

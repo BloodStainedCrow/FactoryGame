@@ -300,7 +300,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                     // TODO: Autosave interval
                     if aux_data.current_tick % (60 * 60 * 1) == 0 {
                         // Autosave
-                        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                        #[cfg(not(target_arch = "wasm32"))]
                         {
                             use crate::saving::save_with_fork;
 

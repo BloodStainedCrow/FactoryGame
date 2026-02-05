@@ -270,7 +270,7 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
 /// # Panics
 /// If File system stuff fails
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+#[cfg(not(target_arch = "wasm32"))]
 pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     name: &str,
     save_name: Option<&str>,
@@ -408,7 +408,7 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
 /// # Panics
 /// If File system stuff fails
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+#[cfg(not(target_arch = "wasm32"))]
 pub fn save_with_fork<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     name: &str,
     save_name: Option<&str>,

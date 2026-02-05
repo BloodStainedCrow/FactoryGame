@@ -149,7 +149,7 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     pub mouse_wheel_sensitivity: f32,
 
     // #[serde(skip)]
-    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    #[cfg(not(target_arch = "wasm32"))]
     pub current_fork_save_in_progress: Option<ForkSaveInfo>,
 
     pub hotbar: Hotbar<ItemIdxType>,
@@ -169,7 +169,7 @@ pub(crate) enum Window {
     Escape,
 }
 
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug)]
 pub struct ForkSaveInfo {
     pub recv: interprocess::unnamed_pipe::Recver,
@@ -285,7 +285,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
             mouse_wheel_sensitivity: 1.0,
 
-            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+            #[cfg(not(target_arch = "wasm32"))]
             current_fork_save_in_progress: None,
 
             hotbar: Hotbar::new(data_store),
@@ -342,7 +342,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
             mouse_wheel_sensitivity: 1.0,
 
-            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+            #[cfg(not(target_arch = "wasm32"))]
             current_fork_save_in_progress: None,
 
             hotbar: Hotbar::new(data_store),
