@@ -60,8 +60,13 @@ struct BlueprintStringInternal {
     modules: Vec<(Position, usize)>,
 }
 
+#[derive(Debug)]
+pub enum BlueprintImportError {
+    BlueprintStringInvalid(BlueprintString),
+}
+
 impl TryFrom<BlueprintString> for Blueprint {
-    type Error = ();
+    type Error = BlueprintImportError;
     fn try_from(value: BlueprintString) -> Result<Self, Self::Error> {
         let raw_str = value.0;
 
@@ -71,7 +76,9 @@ impl TryFrom<BlueprintString> for Blueprint {
         let Ok(internal) = bincode::serde::decode_from_reader(dec, bincode::config::standard())
         else {
             error!("Blueprint failed to deserialize!");
-            return Err(());
+            return Err(BlueprintImportError::BlueprintStringInvalid(
+                BlueprintString(raw_str),
+            ));
         };
 
         let BlueprintStringInternal {
