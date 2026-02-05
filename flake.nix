@@ -8,6 +8,7 @@
     crane.url = "github:ipetkov/crane";
   };
 
+  inputs.self.lfs = true;
   outputs = { self, nixpkgs, fenix, crane }: let
     inherit (nixpkgs) lib;
     pkgs = nixpkgs.legacyPackages."x86_64-linux";
@@ -66,7 +67,6 @@
 
     client_package = client_package_for_target { target = "x86_64-unknown-linux-gnu"; toolchain = rustToolchain; };
   in {
-    inputs.self.lfs = true;
 
   
     devShells."x86_64-linux".codium = pkgs.mkShell {
