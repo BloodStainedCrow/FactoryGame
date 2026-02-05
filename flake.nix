@@ -66,6 +66,9 @@
 
     client_package = client_package_for_target { target = "x86_64-unknown-linux-gnu"; toolchain = rustToolchain; };
   in {
+    inputs.self.lfs = true;
+
+  
     devShells."x86_64-linux".codium = pkgs.mkShell {
       buildInputs = with pkgs; [
         bashInteractive
