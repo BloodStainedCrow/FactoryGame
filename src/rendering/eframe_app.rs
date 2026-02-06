@@ -392,15 +392,15 @@ impl eframe::App for App {
                                 ui.label(crate::built_info::PKG_VERSION);
                             } else {
                                 let version = crate::built_info::GIT_VERSION
-                                    .unwrap_or("Could not get git version");
+                                    .unwrap_or(crate::built_info::GIT_COMMIT_HASH_SHORT.unwrap_or("Could not get git version"));
                                 ui.label(version);
                             }
                             ui.end_row();
 
                             // TODO: This does not work because of nixos :/
-                            // ui.label("Built at:");
-                            // ui.label(crate::built_info::BUILT_TIME_UTC);
-                            // ui.end_row();
+                            ui.label("Built at:");
+                            ui.label(crate::built_info::BUILT_TIME_UTC);
+                            ui.end_row();
                         })
                     });
 

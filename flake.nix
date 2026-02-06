@@ -46,6 +46,14 @@
       target, toolchain
     }: ((crane.mkLib nixpkgs.legacyPackages.${pkgs.system}).overrideToolchain toolchain).buildPackage {
       name = "factory";
+
+      # info for built
+      # BUILT_OVERRIDE_factory_GIT_DIRTY = if self.revDirty then "true" else "false";
+      BUILT_OVERRIDE_factory_GIT_HEAD_REF = self.ref or null;
+      BUILT_OVERRIDE_factory_GIT_COMMIT_HASH = self.rev or null;
+      BUILT_OVERRIDE_factory_GIT_COMMIT_HASH_SHORT = self.revShort or null;
+      SOURCE_DATE_EPOCH = self.lastModified;
+
       CARGO_BUILD_TARGET = target;
       meta = {
         homepage = "https://www.github.com/BloodStainedCrow/FactoryGame/";
