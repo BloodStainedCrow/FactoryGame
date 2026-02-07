@@ -42,17 +42,21 @@
       vulkan-headers vulkan-loader
     ];
 
-    client_package_for_target = {
-      target, toolchain
-    }: ((crane.mkLib nixpkgs.legacyPackages.${pkgs.system}).overrideToolchain toolchain).buildPackage {
-      name = "factory";
-
+    built_overrides = {
       # info for built
       # BUILT_OVERRIDE_factory_GIT_DIRTY = if self.revDirty then "true" else "false";
       BUILT_OVERRIDE_factory_GIT_HEAD_REF = self.ref or null;
       BUILT_OVERRIDE_factory_GIT_COMMIT_HASH = self.rev or null;
       BUILT_OVERRIDE_factory_GIT_COMMIT_HASH_SHORT = self.revShort or null;
       SOURCE_DATE_EPOCH = self.lastModified;
+    };
+
+    client_package_for_target = {
+      target, toolchain
+    }: ((crane.mkLib nixpkgs.legacyPackages.${pkgs.system}).overrideToolchain toolchain).buildPackage ({
+      name = "factory";
+
+      BUILT_OVERRIDE_factory_GIT_COMMIT_HASH_SHORT = "BLUB";
 
       CARGO_BUILD_TARGET = target;
       meta = {
@@ -71,7 +75,7 @@
       postInstall = ''
         wrapProgram "$out/bin/factory" --prefix LD_LIBRARY_PATH : "${builtins.toString (pkgs.lib.makeLibraryPath neededPackages)}"
       '';
-    };
+    } // built_overrides);
 
     client_package = client_package_for_target { target = "x86_64-unknown-linux-gnu"; toolchain = rustToolchain; };
   in {
@@ -124,7 +128,7 @@
       doCheck = false;
     });
 
-    "trunk" = ((crane.mkLib nixpkgs.legacyPackages.${pkgs.system}).overrideToolchain wasmToolchain).buildTrunkPackage {
+    "trunk" = ((crane.mkLib nixpkgs.legacyPackages.${pkgs.system}).overrideToolchain wasmToolchain).buildTrunkPackage ({
       nativeBuildInputs = [ pkgs.lld ];
       CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
       src = ./.;
@@ -144,7 +148,7 @@
           # hash = lib.fakeHash;
         };
       };
-    };
+    } // built_overrides);
 
   };
 }
