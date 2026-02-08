@@ -1,6 +1,7 @@
 {
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs?ref=91c9a64ce2a84e648d0cf9671274bb9c2fb9ba60";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    nixpkgs-codium.url = "github:nixos/nixpkgs?ref=91c9a64ce2a84e648d0cf9671274bb9c2fb9ba60";
     fenix = {
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -9,9 +10,10 @@
   };
 
   inputs.self.lfs = true;
-  outputs = { self, nixpkgs, fenix, crane }: let
+  outputs = { self, nixpkgs, nixpkgs-codium, fenix, crane }: let
     inherit (nixpkgs) lib;
     pkgs = nixpkgs.legacyPackages."x86_64-linux";
+    pkgs-codium = nixpkgs-codium.legacyPackages."x86_64-linux";
     fenixLib = fenix.packages."x86_64-linux";
 
     toolchain_sha = "sha256-dXoddWaPL6UtPscTpxMUMBDL83jFtqeDtmH/+bXBs3E=";
@@ -90,8 +92,8 @@
         bacon
 
         (vscode-with-extensions.override {
-          vscode = vscodium;
-          vscodeExtensions = with vscode-extensions; [
+          vscode = pkgs-codium.vscodium;
+          vscodeExtensions = with pkgs-codium.vscode-extensions; [
             rust-lang.rust-analyzer
             vadimcn.vscode-lldb
             gruntfuggly.todo-tree
