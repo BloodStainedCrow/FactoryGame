@@ -1,15 +1,9 @@
 use std::{array, ops::AddAssign};
 
-use charts_rs::{LineChart, Series};
 use consumption::ConsumptionInfo;
 use production::ProductionInfo;
 
-use crate::{
-    NewWithDataStore,
-    data::DataStore,
-    item::{IdxTrait, Item},
-    research::ResearchProgress,
-};
+use crate::{NewWithDataStore, data::DataStore, item::IdxTrait, research::ResearchProgress};
 
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
@@ -77,6 +71,21 @@ pub const TIMESCALE_LEGEND: [fn(f64) -> String; NUM_DIFFERENT_TIMESCALES] = [
     |t| format!("{:.0}h", t * 20.0),
 ];
 
+#[derive(Debug)]
+pub(crate) struct Series {
+    pub name: String,
+    pub data: Vec<f32>,
+}
+
+impl From<(&str, Vec<f32>)> for Series {
+    fn from((name, data): (&str, Vec<f32>)) -> Self {
+        Self {
+            name: name.into(),
+            data: data,
+        }
+    }
+}
+
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct GenStatistics {
@@ -104,25 +113,6 @@ impl GenStatistics {
         self.production.append_single_set_of_samples(samples.0);
         self.consumption.append_single_set_of_samples(samples.1);
         self.research.append_single_set_of_samples(samples.2 as u64);
-    }
-
-    pub fn get_chart<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-        &self,
-        timescale: usize,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-        filter: Option<impl Fn(Item<ItemIdxType>) -> bool>,
-    ) -> LineChart {
-        let prod_values: Vec<Series> = self
-            .production
-            .get_series(timescale, data_store, filter)
-            .into_iter()
-            .map(|v| v.1)
-            .collect();
-
-        LineChart::new(
-            prod_values,
-            vec![".".to_string(); NUM_SAMPLES_AT_INTERVALS[timescale]],
-        )
     }
 }
 

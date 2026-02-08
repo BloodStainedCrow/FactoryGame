@@ -1,10 +1,9 @@
 use std::iter;
 
-use charts_rs::Series;
-
 use crate::{
     data::DataStore,
     item::{IdxTrait, Item},
+    statistics::Series,
 };
 
 use super::IntoSeries;

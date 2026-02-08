@@ -26,8 +26,6 @@ petgraph = { version = "0.8.2", features = ["rayon", "serde", "serde-1", "serde_
 sha2 = "0.10.8"
 hex = "0.4.3"
 postcard = { version = "1.1.1", features = ["use-std"] }
-# Remove this. I no longer use this as the charts are ingame, and it just makes the code awful
-charts-rs = { version = "0.3.20", features = ["resvg"] }
 strum = { version = "0.27.1", features = ["derive"] }
 # explicitly disable atomic feature, so that bitvecs do not use atomic instructions. very important for performance!
 bitvec = { version = "1.0.1", features = ["alloc", "serde", "std"], default-features = false }
@@ -132,7 +130,7 @@ incremental = true
 
 [features]
 default = ["profiler", "graphics", "client", "logging"]
-# Use Krastorio2 graphics. Since I have not properly added licensing information, I currently do not push them, therefore this feature is broken
+# Use Krastorio2 graphics.
 graphics = []
 # dhat-rs memory profiling (https://docs.rs/dhat/latest/dhat/)
 dhat-heap = [ "dhat" ]

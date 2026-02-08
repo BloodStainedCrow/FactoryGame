@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use crate::item::IdxTrait;
+use crate::{item::IdxTrait, statistics::Series};
 
 use super::IntoSeries;
 
@@ -45,7 +45,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> IntoSeries<(), ItemIdxType,
         smoothing_window: usize,
         _filter: Option<impl Fn(()) -> bool>,
         _data_store: &crate::data::DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl Iterator<Item = (usize, charts_rs::Series)> {
+    ) -> impl Iterator<Item = (usize, Series)> {
         BTreeMap::from_iter(
             values
                 .windows(smoothing_window)

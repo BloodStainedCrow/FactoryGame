@@ -4,13 +4,13 @@ use std::{
     ops::{Add, AddAssign},
 };
 
-use charts_rs::Series;
 use itertools::Itertools;
 
 use crate::{
     NewWithDataStore,
     data::DataStore,
     item::{IdxTrait, Item},
+    statistics::Series,
 };
 
 use super::{IntoSeries, recipe::RecipeTickInfo};
