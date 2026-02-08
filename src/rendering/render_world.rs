@@ -3987,7 +3987,23 @@ pub fn render_ui<
                         ui.add(ProgressBar::new(perc).text(format!("{}/{}", charge, max_charge)).corner_radius(0.0));
                     },
                     Entity::Beacon { ty, modules, .. } => {
-                        // TODO
+                        ui.label(&data_store.beacon_info[*ty as usize].display_name);
+
+                        // Render module slots
+                        let modules = &game_state_ref.world.module_slot_dedup_table[*modules as usize];
+                        TableBuilder::new(ui).id_salt("Module Slots").columns(Column::auto(), modules.len()).body(|mut body| {
+                            body.row(1.0, |mut row| {
+                                for module in modules.iter() {
+                                    row.col(|ui| {
+                                        if let Some(module_id) = module {
+                                            ui.label(&data_store_ref.module_info[*module_id as usize].display_name);
+                                        } else {
+                                            ui.label("Empty Module Slot");
+                                        }
+                                    });
+                                }
+                            });
+                        });
                     },
                     Entity::FluidTank { ty, pos, rotation } => {
                         let id = game_state_ref.simulation_state.factory.fluid_store.fluid_box_pos_to_network_id[pos];
