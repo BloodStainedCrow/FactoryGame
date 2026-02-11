@@ -3,7 +3,6 @@
 name = "factory"
 version = "0.2.1"
 edition = "2024"
-rust-version = "1.85"
 build = "build.rs"
 
 
