@@ -703,7 +703,7 @@ fn instantiate_inserter_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     }
                 },
                 Err(e) => {
-                    info!(
+                    log::trace!(
                         "try_instantiate_inserter failed at {:?}, with {e:?}",
                         new_instantiate_pos
                     );
@@ -3515,7 +3515,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 .collect()
         };
 
-        info!("Checking {} chunks to change belt_id", old_chunks.len());
+        log::debug!("Checking {} chunks to change belt_id", old_chunks.len());
         if old_chunks.len() > 150 {
             warn!("Having to check a lot of chunks: {}", old_chunks.len());
         }
@@ -3624,7 +3624,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         let chunks = self.belt_lookup.belt_id_to_chunks.get_mut(&id_to_change);
 
         let num_chunks = chunks.as_ref().map(|v| v.len()).unwrap_or(0);
-        info!("Checking {} chunks to modify pos", num_chunks);
+        log::debug!("Checking {} chunks to modify pos", num_chunks);
         if num_chunks > 150 {
             warn!("Having to check a lot of chunks: {}", num_chunks);
         }

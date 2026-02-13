@@ -325,7 +325,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let x_range = (0..width).map(|x| i32::from(x) * MEGABASE_WIDTH);
         let y_range = (0..full_height).map(|y| i32::from(y) * MEGABASE_HEIGHT);
 
-        error!("Loading Generation Info...");
+        log::info!("Loading Generation Info...");
         let file = {
             File::open("./test_blueprints/par_generation_info")
                 .expect(&format!("could not open file"))
@@ -336,7 +336,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             bincode::serde::decode_from_std_read(&mut e, bincode::config::standard())
                 .expect("Deserialization failed")
         };
-        error!("Done!");
+        log::info!("Done!");
 
         let ret = par_generate(
             name,

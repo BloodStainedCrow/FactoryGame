@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use itertools::{Itertools, assert_equal};
-use log::warn;
+use log::info;
 
 use crate::frontend::world::tile::BeltState;
 use crate::inserter::FakeUnionStorage;
@@ -725,7 +725,7 @@ pub fn par_generate<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> GameState<ItemIdxType, RecipeIdxType> {
     let _timer = Timer::new("par_generate");
-    warn!("par_generate");
+    info!("par_generate");
     let mut world = World::new_with_area(world_size.top_left, world_size.bottom_right);
 
     world.set_module_combinations_trusted(generation_info.module_combinations.clone());
@@ -803,7 +803,7 @@ pub fn par_generate<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     {
         let _timer = Timer::new("belt_placement_stage");
-        warn!("belt_placement_stage");
+        info!("belt_placement_stage");
         for ent in belt_entities {
             world.add_belt_entity_trusted(ent, data_store);
         }
@@ -813,7 +813,7 @@ pub fn par_generate<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     {
         let _timer = Timer::new("misc_stage");
-        warn!("misc_stage");
+        info!("misc_stage");
         for base_pos in positions.iter().copied() {
             GameState::apply_actions(
                 &mut sim_state,
@@ -857,7 +857,7 @@ fn power_pole_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> PowerGridStorage<ItemIdxType, RecipeIdxType> {
     let _timer = Timer::new("power_pole_stage");
-    warn!("power_pole_stage");
+    info!("power_pole_stage");
     let TrustedPowerPoleStageInfo { num_grids, poles } = pole_pole_stage_info;
 
     let mut store = PowerGridStorage::new();
@@ -921,7 +921,7 @@ fn belt_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         * base_positions.len();
 
     let _timer = Timer::new(format!("Placed {} belts", belt_count));
-    warn!("belt_stage");
+    info!("belt_stage");
     let mut store = BeltStore::new(data_store);
 
     let mut ret = vec![];
@@ -993,7 +993,7 @@ fn assembler_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     let _timer = Timer::new(format!("Placed {} assemblers", count));
 
-    warn!("assembler_stage");
+    info!("assembler_stage");
     let mut ret = vec![];
 
     for (i, &base_pos) in base_positions.into_iter().enumerate() {
@@ -1088,7 +1088,7 @@ fn lab_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let count: usize = lab_actions.len() * base_positions.len();
 
     let _timer = Timer::new(format!("Placed {} labs", count));
-    warn!("lab_stage");
+    info!("lab_stage");
     for (i, &base_pos) in base_positions.into_iter().enumerate() {
         for action in lab_actions.iter().copied() {
             let TrustedLabPlacement {
@@ -1152,7 +1152,7 @@ fn beacon_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     let _timer = Timer::new(format!("Placed {} beacons", count));
     let _timer = Timer::new("beacon_stage");
-    warn!("beacon_stage");
+    info!("beacon_stage");
     for (i, &base_pos) in base_positions.into_iter().enumerate() {
         for action in beacon_actions.iter().copied() {
             let TrustedBeaconPlacement {
@@ -1260,7 +1260,7 @@ fn inserter_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     let _timer = Timer::new(format!("Placed {} inserters", count));
     let _timer = Timer::new("inserter_stage");
-    warn!("inserter_stage");
+    info!("inserter_stage");
     inserter_actions.sort_by_key(|a| a.get_pos());
     for action in inserter_actions {
         for &base_pos in base_positions {
@@ -1310,7 +1310,7 @@ fn chest_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> FullChestStore<ItemIdxType> {
     let _timer = Timer::new("chest_stage");
-    warn!("chest_stage");
+    info!("chest_stage");
     let mut store = FullChestStore {
         stores: (0..data_store.item_display_names.len())
             .map(|id| Item {
@@ -1371,7 +1371,7 @@ fn pipe_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> FluidSystemStore<ItemIdxType> {
     let _timer = Timer::new("pipe_stage");
-    warn!("pipe_stage");
+    info!("pipe_stage");
     let mut store: FluidSystemStore<ItemIdxType> = FluidSystemStore::new(data_store);
 
     for base_pos in base_positions {
@@ -1457,7 +1457,7 @@ fn pipe_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 //     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 // ) {
 //     let _timer = Timer::new("pipe_stage");
-//     warn!("pipe_stage");
+//     info!("pipe_stage");
 //     pipe_actions.sort_by_key(|a| a.get_pos());
 //     for base_pos in base_positions {
 //         for mut action in pipe_actions.iter().cloned() {
@@ -1496,6 +1496,6 @@ impl<B: Borrow<str>> Timer<B> {
 impl<B: Borrow<str>> Drop for Timer<B> {
     fn drop(&mut self) {
         let dur = self.start.elapsed();
-        warn!("[{}]: {:?}", self.text.borrow(), dur);
+        info!("[{}]: {:?}", self.text.borrow(), dur);
     }
 }
