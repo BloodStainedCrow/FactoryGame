@@ -180,7 +180,6 @@ pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     belt_lookup: BeltIdLookup<ItemIdxType>,
     belt_recieving_input_directions: HashMap<Position, EnumMap<Dir, bool>>,
-    power_grid_lookup: PowerGridConnectedDevicesLookup,
 
     pub ore_lookup: OreLookup<ItemIdxType>,
 
@@ -255,12 +254,6 @@ impl<'de> serde::Deserialize<'de> for SerializableSimplex {
 enum WorldUpdate {
     EntityNewlyPowered { pos: Position },
     NewEntity { pos: Position },
-}
-
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-struct PowerGridConnectedDevicesLookup {
-    grid_to_chunks: BTreeMap<PowerGridIdentifier, BTreeSet<(i32, i32)>>,
 }
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
@@ -1538,7 +1531,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             ore_lookup,
             belt_lookup,
             belt_recieving_input_directions,
-            power_grid_lookup,
             remaining_updates,
             to_instantiate,
             to_instantiate_by_belt,
@@ -1561,7 +1553,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             belt_recieving_input_directions,
             base_path.join("belt_recieving_input_directions"),
         );
-        save_at_fork(power_grid_lookup, base_path.join("power_grid_lookup"));
         save_at_fork(remaining_updates, base_path.join("remaining_updates"));
         save_at_fork(to_instantiate, base_path.join("to_instantiate"));
         save_at_fork(
@@ -1582,7 +1573,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             ore_lookup,
             belt_lookup,
             belt_recieving_input_directions,
-            power_grid_lookup,
             remaining_updates,
             to_instantiate,
             to_instantiate_by_belt,
@@ -1606,7 +1596,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 belt_recieving_input_directions,
                 base_path.join("belt_recieving_input_directions")
             ),
-            || save_at(power_grid_lookup, base_path.join("power_grid_lookup")),
             || save_at(remaining_updates, base_path.join("remaining_updates")),
             || save_at(to_instantiate, base_path.join("to_instantiate")),
             || save_at(
@@ -1625,7 +1614,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             ore_lookup,
             belt_lookup,
             belt_recieving_input_directions,
-            power_grid_lookup,
             remaining_updates,
             to_instantiate,
             to_instantiate_by_belt,
@@ -1637,7 +1625,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             || load_at(base_path.join("ore_lookup")),
             || load_at(base_path.join("belt_lookup")),
             || load_at(base_path.join("belt_recieving_input_directions")),
-            || load_at(base_path.join("power_grid_lookup")),
             || load_at(base_path.join("remaining_updates")),
             || load_at(base_path.join("to_instantiate")),
             || load_at(base_path.join("to_instantiate_by_belt"))
@@ -1652,7 +1639,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             ore_lookup,
             belt_lookup,
             belt_recieving_input_directions,
-            power_grid_lookup,
             remaining_updates,
             to_instantiate,
             to_instantiate_by_belt,
@@ -1687,9 +1673,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 belt_id_to_chunks: BTreeMap::new(),
             },
             belt_recieving_input_directions: HashMap::new(),
-            power_grid_lookup: PowerGridConnectedDevicesLookup {
-                grid_to_chunks: BTreeMap::new(),
-            },
 
             remaining_updates: vec![],
 
@@ -2249,72 +2232,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             Entity::Lab {
                 pos, pole_position, ..
             } => {
-                if let Some((pole_pos, _, _)) = pole_position {
-                    let grid = sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos];
-                    self.power_grid_lookup
-                        .grid_to_chunks
-                        .entry(grid)
-                        .or_default()
-                        .insert(chunk_pos);
-                }
-
                 cascading_updates.push(new_lab_cascade(pos, data_store));
             },
-            Entity::SolarPanel { pole_position, .. } => {
-                if let Some((pole_pos, _)) = pole_position {
-                    let grid = sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos];
-                    self.power_grid_lookup
-                        .grid_to_chunks
-                        .entry(grid)
-                        .or_default()
-                        .insert(chunk_pos);
-                }
-            },
-            Entity::Accumulator { pole_position, .. } => {
-                if let Some((pole_pos, _)) = pole_position {
-                    let grid = sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos];
-                    self.power_grid_lookup
-                        .grid_to_chunks
-                        .entry(grid)
-                        .or_default()
-                        .insert(chunk_pos);
-                }
-            },
+            Entity::SolarPanel { pole_position, .. } => {},
+            Entity::Accumulator { pole_position, .. } => {},
             Entity::Assembler { info, .. } => match info {
                 AssemblerInfo::UnpoweredNoRecipe | AssemblerInfo::Unpowered(_) => {},
-                AssemblerInfo::PoweredNoRecipe(pole_position) => {
-                    let grid = sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_position];
-                    self.power_grid_lookup
-                        .grid_to_chunks
-                        .entry(grid)
-                        .or_default()
-                        .insert(chunk_pos);
-                },
+                AssemblerInfo::PoweredNoRecipe(pole_position) => {},
                 AssemblerInfo::Powered {
                     id: AssemblerID { grid, .. },
                     pole_position,
                     ..
                 } => {
-                    let lookup_grid =
-                        sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_position];
-                    assert_eq!(grid, lookup_grid);
-                    self.power_grid_lookup
-                        .grid_to_chunks
-                        .entry(grid)
-                        .or_default()
-                        .insert(chunk_pos);
-
                     cascading_updates.push(newly_working_assembler(pos, data_store));
                 },
             },
             Entity::PowerPole { pos: pole_pos, .. } => {
-                let grid = sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos];
-                self.power_grid_lookup
-                    .grid_to_chunks
-                    .entry(grid)
-                    .or_default()
-                    .insert(chunk_pos);
-
                 // Handle Entities that are newly powered
                 cascading_updates.push(new_power_pole(pole_pos, data_store));
             },
@@ -3364,104 +3297,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 }
             },
         }
-    }
-
-    pub fn update_power_grid_id(
-        &mut self,
-        sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
-        old_id: PowerGridIdentifier,
-        new_id: PowerGridIdentifier,
-    ) {
-        let old_chunks = self.power_grid_lookup.grid_to_chunks.remove(&old_id);
-
-        for chunk_pos in old_chunks.iter().flatten() {
-            let chunk = self
-                .chunks
-                .get_mut(chunk_pos.0, chunk_pos.1)
-                .expect("Ungenerated chunk in belt map!");
-
-            for entity in &mut chunk.entities {
-                match entity {
-                    Entity::SolarPanel {
-                        pole_position: None,
-                        ..
-                    } => {},
-                    Entity::SolarPanel {
-                        pole_position: Some(_),
-                        ..
-                    } => todo!(),
-                    Entity::Accumulator {
-                        pole_position: None,
-                        ..
-                    } => {},
-                    Entity::Accumulator {
-                        pole_position: Some(_),
-                        ..
-                    } => todo!(),
-                    Entity::Lab {
-                        pole_position: None,
-                        ..
-                    } => {},
-                    Entity::Lab {
-                        pole_position: Some(_),
-                        ..
-                    } => todo!(),
-                    Entity::Assembler { info, .. } => match info {
-                        AssemblerInfo::UnpoweredNoRecipe | AssemblerInfo::Unpowered(_) => {},
-                        AssemblerInfo::PoweredNoRecipe(_) => {},
-                        AssemblerInfo::Powered {
-                            id:
-                                AssemblerID {
-                                    grid: grid_in_id, ..
-                                },
-                            pole_position,
-                            ..
-                        } => {
-                            let grid =
-                                sim_state.factory.power_grids.pole_pos_to_grid_id[pole_position];
-                            assert_eq!(grid, new_id);
-                            if *grid_in_id == old_id {
-                                *grid_in_id = new_id;
-                            }
-                        },
-                    },
-                    Entity::PowerPole { .. } => {},
-                    Entity::Inserter { info, .. } => match info {
-                        InserterInfo::NotAttached { .. } => {},
-                        InserterInfo::Attached {
-                            info: attached_inserter,
-                            ..
-                        } => match attached_inserter {
-                            AttachedInserter::BeltStorage { .. } => {
-                                // TODO
-                            },
-                            AttachedInserter::BeltBelt { .. } => {
-                                // TODO
-                            },
-                            AttachedInserter::StorageStorage { .. } => todo!(),
-                        },
-                    },
-                    Entity::Roboport { power_grid, .. } => {
-                        if *power_grid == Some(old_id) {
-                            *power_grid = Some(new_id);
-                        }
-                    },
-                    Entity::MiningDrill { .. } => todo!(),
-                    Entity::Belt { .. }
-                    | Entity::Underground { .. }
-                    | Entity::Splitter { .. }
-                    | Entity::Chest { .. }
-                    | Entity::Beacon { .. }
-                    | Entity::FluidTank { .. } => {},
-                }
-            }
-        }
-
-        self.power_grid_lookup
-            .grid_to_chunks
-            .entry(new_id)
-            .or_default()
-            .extend(old_chunks.into_iter().flatten());
     }
 
     pub fn update_belt_id_after(
