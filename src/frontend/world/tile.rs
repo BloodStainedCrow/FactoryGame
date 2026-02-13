@@ -3475,9 +3475,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         if old_id == new_id {
             return;
         }
-        info!(
+        log::debug!(
             "Change belt_id at >= {} {:?} to {:?}",
-            belt_pos_earliest, old_id, new_id
+            belt_pos_earliest,
+            old_id,
+            new_id
         );
         if belt_pos_earliest != 0 {
             if let Some(waiting) = self.to_instantiate_by_belt.get(&old_id) {
@@ -3621,7 +3623,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         new_id: BeltTileId<ItemIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        info!("Change belt_id {:?} to {:?}", old_id, new_id);
+        log::debug!("Change belt_id {:?} to {:?}", old_id, new_id);
         if let Some(waiting) = self.to_instantiate_by_belt.remove(&old_id) {
             self.to_instantiate_by_belt
                 .entry(new_id)
@@ -5270,12 +5272,26 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
         pos: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Option<&Entity<ItemIdxType, RecipeIdxType>> {
-        self.entities.iter().find(|e| {
-            let e_pos = e.get_pos();
-            let e_size = e.get_entity_size(data_store);
+        let x = usize::try_from(pos.x.rem_euclid(i32::from(CHUNK_SIZE))).unwrap();
+        let y = usize::try_from(pos.y.rem_euclid(i32::from(CHUNK_SIZE))).unwrap();
 
-            pos.contained_in(e_pos, (e_size.0.into(), e_size.1.into()))
-        })
+        if let Some(arr) = &self.chunk_tile_to_entity_into {
+            match arr_val_to_state(self.entities.len(), arr[x][y]) {
+                ChunkTileState::Index(idx) => return Some(&self.entities[idx]),
+                ChunkTileState::Empty => return None,
+                ChunkTileState::OtherChunk => return None,
+                ChunkTileState::EmptyOrOtherChunk => return None,
+            }
+        } else {
+            None
+        }
+
+        // self.entities.iter().find(|e| {
+        //     let e_pos = e.get_pos();
+        //     let e_size = e.get_entity_size(data_store);
+
+        //     pos.contained_in(e_pos, (e_size.0.into(), e_size.1.into()))
+        // })
     }
 
     pub fn get_entity_at_mut(
@@ -5283,12 +5299,26 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
         pos: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Option<&mut Entity<ItemIdxType, RecipeIdxType>> {
-        self.entities.iter_mut().find(|e| {
-            let e_pos = e.get_pos();
-            let e_size = e.get_entity_size(data_store);
+        let x = usize::try_from(pos.x.rem_euclid(i32::from(CHUNK_SIZE))).unwrap();
+        let y = usize::try_from(pos.y.rem_euclid(i32::from(CHUNK_SIZE))).unwrap();
 
-            pos.contained_in(e_pos, (e_size.0.into(), e_size.1.into()))
-        })
+        if let Some(arr) = &self.chunk_tile_to_entity_into {
+            match arr_val_to_state(self.entities.len(), arr[x][y]) {
+                ChunkTileState::Index(idx) => return Some(&mut self.entities[idx]),
+                ChunkTileState::Empty => return None,
+                ChunkTileState::OtherChunk => return None,
+                ChunkTileState::EmptyOrOtherChunk => return None,
+            }
+        } else {
+            None
+        }
+
+        // self.entities.iter_mut().find(|e| {
+        //     let e_pos = e.get_pos();
+        //     let e_size = e.get_entity_size(data_store);
+
+        //     pos.contained_in(e_pos, (e_size.0.into(), e_size.1.into()))
+        // })
     }
 
     #[must_use]
