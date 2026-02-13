@@ -57,6 +57,8 @@ use saving::{load, load_readable};
 use std::path::PathBuf;
 
 use crate::item::Indexable;
+#[cfg(feature = "client")]
+use crate::progress_info::ProgressInfo;
 
 const TICKS_PER_SECOND_LOGIC: u64 = 60;
 
@@ -71,10 +73,12 @@ pub mod item;
 pub mod lab;
 pub mod mining_drill;
 pub mod power;
+pub mod progress_info;
 pub mod research;
 
 pub mod scenario;
 
+#[cfg(feature = "client")]
 mod example_worlds;
 
 mod shopping_list_arena;
@@ -322,8 +326,8 @@ enum GameCreationInfo {
 
 #[cfg(feature = "client")]
 fn run_integrated_server(
-    progress: Arc<AtomicU64>,
-    game_creation_fn: impl FnOnce(Arc<AtomicU64>, &DataStore<u8, u8>) -> GameState<u8, u8>,
+    progress: ProgressInfo,
+    game_creation_fn: impl FnOnce(ProgressInfo, &DataStore<u8, u8>) -> GameState<u8, u8>,
 
     // FIXME: This type is wrong
     listen_addr: Option<&'static str>,

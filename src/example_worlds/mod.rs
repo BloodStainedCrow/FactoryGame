@@ -1,9 +1,7 @@
-use std::{
-    iter,
-    ops::RangeInclusive,
-    sync::{LazyLock, atomic::AtomicU64},
-};
+use std::{iter, ops::RangeInclusive, sync::LazyLock};
 
+#[cfg(feature = "client")]
+use crate::progress_info::ProgressInfo;
 use crate::{
     app_state::GameState,
     data::DataStore,
@@ -41,8 +39,7 @@ impl Default for WorldValueStore {
 pub(crate) fn list_example_worlds(
     values: &mut WorldValueStore,
     ui: &mut egui::Ui,
-) -> Option<impl FnOnce(std::sync::Arc<AtomicU64>, &DataStore<u8, u8>) -> GameState<u8, u8> + 'static>
-{
+) -> Option<impl FnOnce(ProgressInfo, &DataStore<u8, u8>) -> GameState<u8, u8> + 'static> {
     ui.horizontal(|ui| {
         ui.label("World Name:");
         ui.text_edit_singleline(&mut values.name_field);
@@ -127,12 +124,7 @@ struct ExampleWorld {
 
     // TODO: I might want to change this to depend on the values
     allowed_on_wasm: fn(&[ValueValue]) -> AllowedOnWasm,
-    creation_fn: fn(
-        String,
-        std::sync::Arc<AtomicU64>,
-        &[ValueValue],
-        &DataStore<u8, u8>,
-    ) -> GameState<u8, u8>,
+    creation_fn: fn(String, ProgressInfo, &[ValueValue], &DataStore<u8, u8>) -> GameState<u8, u8>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -175,7 +167,7 @@ const WORLDS: LazyLock<[ExampleWorld; 5]> = LazyLock::new(|| {
         },
         ExampleWorld {
             name: "Megabase",
-            description: "A world consisting of a 40k SPM Megabase designed by Smurphy",
+            description: "A world consisting of a single 40k SPM Megabase designed by Smurphy",
             values: vec![WorldValue {
                 name: "Generate Solar Field",
                 kind: ValueKind::Toggle {},
@@ -237,7 +229,7 @@ const WORLDS: LazyLock<[ExampleWorld; 5]> = LazyLock::new(|| {
 
             allowed_on_wasm: |_| {
                 AllowedOnWasm::False(Some(
-                    "WASM does not support enough memory to run a gigabase",
+                    "WASM does not support enough memory to run a gigabase, consider switching to native",
                 ))
             },
 

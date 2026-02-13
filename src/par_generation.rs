@@ -5,6 +5,7 @@ use log::info;
 
 use crate::frontend::world::tile::BeltState;
 use crate::inserter::FakeUnionStorage;
+use crate::progress_info::ProgressInfo;
 use crate::{
     DataStore, GameState, Position, WeakIdxTrait,
     app_state::{AuxillaryData, Factory, SimulationState, StorageStorageInserterStore},
@@ -716,29 +717,47 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ParGenerateInfo<ItemIdxType
     }
 }
 
+const NUM_STAGES: u16 = 10;
 /// Its not very parallel for now, but it does use the fact that we know the generation order to skip a lot of searches
 pub fn par_generate<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     name: String,
     world_size: BoundingBox,
     generation_info: ParGenerateInfo<ItemIdxType, RecipeIdxType>,
     positions: Vec<Position>,
+
+    progress: ProgressInfo,
+
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> GameState<ItemIdxType, RecipeIdxType> {
     let _timer = Timer::new("par_generate");
     info!("par_generate");
+    progress.push_stage(1.0 / NUM_STAGES as f64, Some("Generate Chunks".to_string()));
     let mut world = World::new_with_area(world_size.top_left, world_size.bottom_right);
+    progress.pop_stage();
 
     world.set_module_combinations_trusted(generation_info.module_combinations.clone());
 
     let num_grids = generation_info.power_pole_actions.num_grids;
 
+    progress.push_stage(
+        1.0 / NUM_STAGES as f64,
+        Some(format!(
+            "Placing {} Power Poles",
+            generation_info.power_pole_actions.poles.len() * positions.len()
+        )),
+    );
     let mut grid_store = power_pole_stage(
         generation_info.power_pole_actions,
         &mut world,
         positions.iter().copied(),
         data_store,
     );
+    progress.pop_stage();
 
+    progress.push_stage(
+        1.0 / NUM_STAGES as f64,
+        Some("Generating Assembler and belt layouts".to_string()),
+    );
     let (assembler_entities, (belt_store, belt_entities)) = join!(
         || assembler_stage(
             &generation_info.module_combinations,
@@ -750,11 +769,21 @@ pub fn par_generate<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         ),
         || belt_stage(generation_info.belt_actions, &positions, data_store,)
     );
+    progress.pop_stage();
 
+    progress.push_stage(
+        1.0 / NUM_STAGES as f64,
+        Some(format!(
+            "Placing {} Assembler Entities",
+            assembler_entities.len()
+        )),
+    );
     for ent in assembler_entities {
         world.add_entity_trusted(ent, data_store);
     }
+    progress.pop_stage();
 
+    progress.push_stage(1.0 / NUM_STAGES as f64, Some("Placing Labs".to_string()));
     lab_stage(
         &mut world,
         &generation_info.module_combinations,
@@ -764,15 +793,25 @@ pub fn par_generate<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &positions,
         data_store,
     );
+    progress.pop_stage();
 
+    progress.push_stage(
+        1.0 / NUM_STAGES as f64,
+        Some(format!(
+            "Placing {} Beacons",
+            generation_info.beacon_actions.len() * positions.len()
+        )),
+    );
     beacon_stage(
         &mut world,
         &mut grid_store,
         generation_info.beacon_actions,
         num_grids,
         &positions,
+        progress.clone(),
         data_store,
     );
+    progress.pop_stage();
 
     let chest_store = chest_stage(
         &mut world,
@@ -781,6 +820,19 @@ pub fn par_generate<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         data_store,
     );
 
+    progress.push_stage(
+        1.0 / NUM_STAGES as f64,
+        Some(format!(
+            "Placing {} Pipes",
+            generation_info
+                .pipe_actions
+                .fluid_networks
+                .iter()
+                .map(|network| network.tanks.len())
+                .sum::<usize>()
+                * positions.len()
+        )),
+    );
     let storage_storage_store = StorageStorageInserterStore::new(data_store);
     let fluid_store = pipe_stage(
         &mut world,
@@ -788,6 +840,7 @@ pub fn par_generate<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         positions.iter().copied(),
         data_store,
     );
+    progress.pop_stage();
 
     let mut sim_state = SimulationState {
         factory: Factory {
@@ -801,6 +854,10 @@ pub fn par_generate<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         ..SimulationState::new(data_store)
     };
 
+    progress.push_stage(
+        1.0 / NUM_STAGES as f64,
+        Some("Placing Belt Entities".to_string()),
+    );
     {
         let _timer = Timer::new("belt_placement_stage");
         info!("belt_placement_stage");
@@ -808,12 +865,18 @@ pub fn par_generate<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             world.add_belt_entity_trusted(ent, data_store);
         }
     }
+    progress.pop_stage();
 
     // splitter_stage();
 
+    progress.push_stage(
+        1.0 / NUM_STAGES as f64,
+        Some("Placing Splitters".to_string()),
+    );
     {
         let _timer = Timer::new("misc_stage");
         info!("misc_stage");
+        let num_positions = positions.len();
         for base_pos in positions.iter().copied() {
             GameState::apply_actions(
                 &mut sim_state,
@@ -824,16 +887,27 @@ pub fn par_generate<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     .map(|action| ReusableBlueprint::set_base_pos(action, base_pos)),
                 data_store,
             );
+            progress.add_progress(1.0 / num_positions as f64);
         }
     }
+    progress.pop_stage();
 
+    progress.push_stage(
+        1.0 / NUM_STAGES as f64,
+        Some(format!(
+            "Placing {} Inserters",
+            generation_info.inserter_actions.len() * positions.len()
+        )),
+    );
     inserter_stage(
         &mut world,
         &mut sim_state,
         generation_info.inserter_actions,
         &positions,
+        progress.clone(),
         data_store,
     );
+    progress.pop_stage();
 
     GameState {
         world: Mutex::new(world),
@@ -1146,6 +1220,7 @@ fn beacon_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     beacon_actions: Vec<TrustedBeaconPlacement>,
     num_grids: usize,
     base_positions: &[Position],
+    progress: ProgressInfo,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
     let count: usize = beacon_actions.len() * base_positions.len();
@@ -1153,7 +1228,9 @@ fn beacon_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let _timer = Timer::new(format!("Placed {} beacons", count));
     let _timer = Timer::new("beacon_stage");
     info!("beacon_stage");
+    let num_positions = base_positions.len();
     for (i, &base_pos) in base_positions.into_iter().enumerate() {
+        progress.add_progress(1.0 / num_positions as f64);
         for action in beacon_actions.iter().copied() {
             let TrustedBeaconPlacement {
                 ty,
@@ -1254,6 +1331,9 @@ fn inserter_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
     mut inserter_actions: Vec<ActionType<ItemIdxType, RecipeIdxType>>,
     base_positions: &[Position],
+
+    progress: ProgressInfo,
+
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
     let count: usize = inserter_actions.len() * base_positions.len();
@@ -1262,7 +1342,11 @@ fn inserter_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let _timer = Timer::new("inserter_stage");
     info!("inserter_stage");
     inserter_actions.sort_by_key(|a| a.get_pos());
-    for action in inserter_actions {
+    let action_count = inserter_actions.len();
+    for (i, action) in inserter_actions.into_iter().enumerate() {
+        if i % 1000 == 999 {
+            progress.add_progress(1.0 / (action_count / 1000) as f64);
+        }
         for &base_pos in base_positions {
             match action {
                 ActionType::PlaceEntity(PlaceEntityInfo {

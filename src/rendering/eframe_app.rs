@@ -3,7 +3,6 @@ use std::{
     net::ToSocketAddrs,
     sync::{
         Arc,
-        atomic::{AtomicU64, Ordering},
         mpsc::{Sender, channel},
     },
     thread,
@@ -19,18 +18,18 @@ use wasm_timer::Instant;
 use parking_lot::Mutex;
 
 use crate::{
-    GameCreationInfo, example_worlds, run_client,
+    example_worlds,
+    progress_info::ProgressInfo,
+    run_client,
     saving::{load, loading::SaveFileList, save_folder},
 };
-use crate::{StartGameInfo, frontend::world::Position};
 use crate::{rendering::render_world::EscapeMenuOptions, run_integrated_server};
 use eframe::{
     egui::{CentralPanel, Event, PaintCallbackInfo, Shape},
     egui_wgpu::{self, CallbackTrait},
 };
 use egui::{
-    Align2, Button, Color32, CursorIcon, Grid, Modal, ProgressBar, RichText, Slider, TextBuffer,
-    TextEdit, Window,
+    Align2, Button, Color32, CursorIcon, Grid, Modal, ProgressBar, RichText, TextEdit, Window,
 };
 use log::{error, warn};
 use tilelib::types::RawRenderer;
@@ -228,7 +227,7 @@ impl eframe::App for App {
                                             if ui.add_enabled(true, Button::new("Load")).on_disabled_hover_text("Currently WASM does not support saving or loading").clicked() {
                                                 let path = file.path.clone();
                                                 let progress =
-                                                    Arc::new(AtomicU64::new(0f64.to_bits()));
+                                                    ProgressInfo::new();
                                                 let (send, recv) = channel();
 
                                                 let progress_send = progress.clone();
@@ -253,6 +252,7 @@ impl eframe::App for App {
                                                     start_time: Instant::now(),
                                                     progress,
                                                     game_state_receiver: recv,
+                                                    current_message: "Loading savegame".to_string(),
                                                 });
                                             }
                                         });
@@ -306,8 +306,12 @@ impl eframe::App for App {
                 start_time,
                 progress,
                 game_state_receiver,
+                current_message,
             } => {
-                let progress = f64::from_bits(progress.load(Ordering::Relaxed));
+                if let Some(new_message) = progress.get_message() {
+                    *current_message = new_message;
+                }
+                let progress = progress.get_progress();
 
                 CentralPanel::default().show(ctx, |ui| {
                     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
@@ -328,7 +332,7 @@ impl eframe::App for App {
                         .default_pos((0.5, 0.5))
                         .show(ctx, |ui| {
                             let mul: f64 = 1.0 / progress;
-                            let text = if mul.is_infinite() {
+                            let time_text = if mul.is_infinite() {
                                 format!("Calculating Remaining Time...")
                             } else {
                                 if mul >= 1.0 {
@@ -341,15 +345,21 @@ impl eframe::App for App {
                                             .div_ceil(60)
                                     )
                                 } else {
-                                    error!("mul out of range 1.0..: {}", mul);
-                                    format!("Calculating Remaining Time...")
+                                    if mul < 0.99 {
+                                        error!("mul out of range 1.0..: {}", mul);
+                                        format!("Calculating Remaining Time...")
+                                    } else {
+                                        // Lets assume this is just floating point rounding crap
+                                        format!("Est Remaining 1 min")
+                                    }
                                 }
                             };
                             ui.add(
                                 ProgressBar::new(progress as f32)
                                     .corner_radius(0)
-                                    .text(text),
+                                    .text(current_message.as_str()),
                             );
+                            ui.label(time_text);
                             if mul.is_finite() {
                                 ui.label(format!(
                                     "Est Full Time: {:?} min",
@@ -391,8 +401,10 @@ impl eframe::App for App {
                             if crate::built_info::GIT_HEAD_REF == Some("refs/head/master") {
                                 ui.label(crate::built_info::PKG_VERSION);
                             } else {
-                                let version = crate::built_info::GIT_VERSION
-                                    .unwrap_or(crate::built_info::GIT_COMMIT_HASH_SHORT.unwrap_or("Could not get git version"));
+                                let version = crate::built_info::GIT_VERSION.unwrap_or(
+                                    crate::built_info::GIT_COMMIT_HASH_SHORT
+                                        .unwrap_or("Could not get git version"),
+                                );
                                 ui.label(version);
                             }
                             ui.end_row();
@@ -450,7 +462,7 @@ impl eframe::App for App {
                         })
                         .inner
                     {
-                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
+                        let progress = ProgressInfo::new();
                         let (send, recv) = channel();
 
                         run_client(ip, send);
@@ -459,6 +471,7 @@ impl eframe::App for App {
                             start_time: Instant::now(),
                             progress,
                             game_state_receiver: recv,
+                            current_message: "Fetching gamestate from server".to_string(),
                         };
 
                         return;
@@ -573,7 +586,7 @@ impl eframe::App for App {
                         example_worlds::list_example_worlds(&mut self.world_creation_state, ui);
 
                     if let Some(creation_fn) = ret {
-                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
+                        let progress = ProgressInfo::new();
                         let (send, recv) = channel();
 
                         let progress_send = progress.clone();
@@ -594,6 +607,7 @@ impl eframe::App for App {
                             start_time: Instant::now(),
                             progress,
                             game_state_receiver: recv,
+                            current_message: "Creating world".to_string()
                         };
                     }
                 });

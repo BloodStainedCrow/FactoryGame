@@ -30,6 +30,7 @@ use crate::par_generation::BoundingBox;
 use crate::par_generation::ParGenerateInfo;
 use crate::par_generation::par_generate;
 use crate::power::Watt;
+use crate::progress_info::ProgressInfo;
 #[cfg(feature = "client")]
 use crate::saving::loading::SaveFileList;
 #[cfg(feature = "client")]
@@ -192,7 +193,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     pub fn new_with_megabase(
         name: String,
         use_solar_field: bool,
-        progress: Arc<AtomicU64>,
+        progress: ProgressInfo,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         const X_OFFS: i32 = -1_800;
@@ -221,6 +222,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         puffin::set_scopes_on(false);
         if use_solar_field {
+            progress.push_stage(0.5, Some("Populate Solar Field".to_string()));
             ret.add_solar_field(
                 Position {
                     x: 4503 + X_OFFS,
@@ -231,6 +233,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 progress.clone(),
                 data_store,
             );
+            progress.pop_stage();
         } else {
             GameState::apply_actions(
                 &mut *ret.simulation_state.lock(),
@@ -257,6 +260,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             );
         }
 
+        progress.push_stage(0.5, Some("Placing Megabase".to_string()));
         bp.apply_at_positions(
             iter::once(Position {
                 x: 1600 + X_OFFS,
@@ -265,14 +269,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             false,
             &mut ret,
             || {
-                progress.store(
-                    (current as f64 / num_calls as f64).to_bits(),
-                    Ordering::Relaxed,
-                );
+                progress.add_progress(1.0 / num_calls as f64);
                 current += 1;
             },
             data_store,
         );
+        progress.pop_stage();
 
         puffin::set_scopes_on(true);
 
@@ -283,7 +285,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     pub fn new_with_gigabase(
         name: String,
         count: u16,
-        progress: Arc<AtomicU64>,
+        progress: ProgressInfo,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         let width = count.isqrt();
@@ -353,6 +355,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 .map(|(y, x)| Position { x, y: y + start })
                 .take(count as usize)
                 .collect(),
+            progress,
             data_store,
         );
 
@@ -410,7 +413,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         wattage: Watt,
         base_pos: Position,
         height: Option<u64>,
-        progress: Arc<AtomicU64>,
+        progress: ProgressInfo,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         // TODO: Correct size
@@ -429,7 +432,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     #[must_use]
     pub fn new_with_world_train_ride(
         name: String,
-        progress: Arc<AtomicU64>,
+        progress: ProgressInfo,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         const CHUNK_THICKNESS: i32 = 150;
@@ -474,7 +477,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         pos: Position,
         amount: Watt,
         height_in_tiles: Option<u64>,
-        progress: Arc<AtomicU64>,
+        progress: ProgressInfo,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         let s = get_const_string!("test_blueprints/solar_tile.bp");
@@ -495,15 +498,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         // let total = bp.action_count();
         let total = y_positions.clone().count() * x_positions.clone().count();
 
-        let mut current = 0;
+        progress.push_stage(
+            1.0,
+            Some(format!(
+                "Placing {} Solar Panels and Accumulators",
+                total * 104
+            )),
+        );
 
         puffin::set_scopes_on(false);
         for pos in x_positions
             .cartesian_product(y_positions)
             .map(|(x_pos, y_pos)| Position { x: x_pos, y: y_pos })
         {
-            progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
-            current += 1;
+            progress.add_progress(1.0 / total as f64);
             bp.apply(pos, self, data_store);
         }
         // bp.apply_at_positions(
@@ -514,7 +522,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         //     self,
         //     || {
         //         progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
-        //         current += 1;
         //     },
         //     data_store,
         // );
@@ -1167,9 +1174,9 @@ pub(crate) enum AppState {
     Ingame,
     Loading {
         start_time: Instant,
-        /// WARNING: This is a f64!
-        progress: Arc<AtomicU64>,
+        progress: ProgressInfo,
         game_state_receiver: Receiver<(LoadedGame, Arc<AtomicU64>, Sender<Input>)>,
+        current_message: String,
     },
 }
 
