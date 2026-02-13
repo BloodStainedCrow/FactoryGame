@@ -2449,7 +2449,7 @@ pub fn render_ui<
                                             }
                                         }
 
-                                        let inserter_rotation =  game_state_ref.world.get_entities_colliding_with(Position {
+                                        let inserter_rotation =  game_state_ref.world.get_entities_in_chunks_colliding_with(Position {
                                             x: assembler_pos.x - i32::from(data_store.max_inserter_search_range),
                                             y: assembler_pos.y - i32::from(data_store.max_inserter_search_range),
                                         }, (assembler_size.0 + 2 * u16::from(data_store.max_inserter_search_range), assembler_size.1 + 2 * u16::from(data_store.max_inserter_search_range)), data_store_ref).into_iter().find_map(|inserter_entity| {
@@ -2513,7 +2513,7 @@ pub fn render_ui<
                                         let assembler_pos = entity.get_pos();
                                         let assembler_size = entity.get_entity_size(data_store_ref);
 
-                                        for inserter_entity in  game_state_ref.world.get_entities_colliding_with(Position {
+                                        for inserter_entity in  game_state_ref.world.get_entities_in_chunks_colliding_with(Position {
                                             x: assembler_pos.x - i32::from(data_store.max_inserter_search_range),
                                             y: assembler_pos.y - i32::from(data_store.max_inserter_search_range),
                                         }, (assembler_size.0 + 2 * u16::from(data_store.max_inserter_search_range), assembler_size.1 + 2 * u16::from(data_store.max_inserter_search_range)), data_store_ref) {
@@ -2645,7 +2645,7 @@ pub fn render_ui<
                                             .filter(|(dir, _, _)| *dir == data::ItemRecipeDir::Out).map(|(_, item ,amount_in_recipe)| (*item, *amount_in_recipe, 0.0))
                                             .collect_vec();
 
-                                        let inserters = game_state_ref.world.get_entities_colliding_with(Position {
+                                        let inserters = game_state_ref.world.get_entities_in_chunks_colliding_with(Position {
                                             x: assembler_pos.x - i32::from(data_store_ref.max_inserter_search_range),
                                             y: assembler_pos.y - i32::from(data_store_ref.max_inserter_search_range),
                                         }, [
@@ -2725,7 +2725,7 @@ pub fn render_ui<
                             },
 
                             Entity::Chest { ty: chest_ty, pos: chest_pos, item, slot_limit } => {
-                                let inserters = game_state_ref.world.get_entities_colliding_with(Position {
+                                let inserters = game_state_ref.world.get_entities_in_chunks_colliding_with(Position {
                                     x: chest_pos.x - i32::from(data_store_ref.max_inserter_search_range),
                                     y: chest_pos.y - i32::from(data_store_ref.max_inserter_search_range),
                                 }, [
@@ -2801,7 +2801,7 @@ pub fn render_ui<
                                             .filter(|(dir, _, _)| *dir == data::ItemRecipeDir::Out).map(|(_, item ,amount_in_recipe)| (*item, *amount_in_recipe, 0.0))
                                             .collect_vec();
 
-                                        let inserters = game_state_ref.world.get_entities_colliding_with(Position {
+                                        let inserters = game_state_ref.world.get_entities_in_chunks_colliding_with(Position {
                                             x: assembler_pos.x - i32::from(data_store_ref.max_inserter_search_range),
                                             y: assembler_pos.y - i32::from(data_store_ref.max_inserter_search_range),
                                         }, [

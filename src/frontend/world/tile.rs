@@ -928,7 +928,7 @@ fn new_lab_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 2 * data_store.max_beacon_range.1 as u16 + size.1,
             );
 
-            for entity in world.get_entities_colliding_with(
+            for entity in world.get_entities_in_chunks_colliding_with(
                 beacon_search_start_pos,
                 beacon_search_size,
                 data_store,
@@ -1241,7 +1241,7 @@ fn newly_working_assembler<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 2 * data_store.max_beacon_range.1 as u16 + size.1,
             );
 
-            for entity in world.get_entities_colliding_with(
+            for entity in world.get_entities_in_chunks_colliding_with(
                 beacon_search_start_pos,
                 beacon_search_size,
                 data_store,
@@ -3635,7 +3635,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         entity_size: (u16, u16),
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Option<Position> {
-        self.get_entities_colliding_with(
+        // We can use *_in_chunks_* here, since we do a overlaps test later anyway. This way we do not have to check twice
+        self.get_entities_in_chunks_colliding_with(
             Position {
                 x: entity_pos.x - i32::from(data_store.max_power_search_range),
                 y: entity_pos.y - i32::from(data_store.max_power_search_range),
@@ -4027,6 +4028,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl IntoIterator<Item = &'a Entity<ItemIdxType, RecipeIdxType>, IntoIter: Clone>
     + use<'a, 'b, ItemIdxType, RecipeIdxType> {
+        self.get_entities_in_chunks_colliding_with(pos, size, data_store)
+            .into_iter()
+            .filter(move |e| {
+                let e_pos = e.get_pos();
+                let e_size = e.get_entity_size(data_store);
+
+                pos.overlap(size, e_pos, (e_size.0.into(), e_size.1.into()))
+            })
+    }
+
+    pub fn get_entities_in_chunks_colliding_with<'a, 'b>(
+        &'a self,
+        pos: Position,
+        size: (u16, u16),
+        data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl IntoIterator<Item = &'a Entity<ItemIdxType, RecipeIdxType>, IntoIter: Clone>
+    + use<'a, 'b, ItemIdxType, RecipeIdxType> {
         let max_size = data_store.max_entity_size;
 
         let bb_top_left = (pos.x - i32::from(max_size.0), pos.y - i32::from(max_size.1));
@@ -4045,12 +4063,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             .cartesian_product(chunk_range_y)
             .filter_map(|(chunk_x, chunk_y)| self.chunks.get(chunk_x, chunk_y))
             .flat_map(move |chunk| chunk.entities.iter())
-            .filter(move |e| {
-                let e_pos = e.get_pos();
-                let e_size = e.get_entity_size(data_store);
-
-                pos.overlap(size, e_pos, (e_size.0.into(), e_size.1.into()))
-            })
     }
 
     pub fn get_entity_at_mut(
