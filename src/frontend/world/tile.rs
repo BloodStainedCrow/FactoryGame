@@ -5062,19 +5062,37 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     ) -> impl IntoIterator<Item = &'a Entity<ItemIdxType, RecipeIdxType>, IntoIter: Clone>
     + Clone
     + use<'a, 'b, ItemIdxType, RecipeIdxType> {
-        self.get_entities_colliding_with(
+        self.get_entities_in_chunks_colliding_with(
             Position {
                 x: pole_pos.x - i32::from(connection_range),
                 y: pole_pos.y - i32::from(connection_range),
             },
             (
-                2 * connection_range as u16 + pole_size.0 as u16,
-                2 * connection_range as u16 + pole_size.1 as u16,
+                2 * connection_range as u16 + pole_size.0,
+                2 * connection_range as u16 + pole_size.1,
             ),
             data_store,
         )
         .into_iter()
-        .filter(|e| matches!(e, Entity::PowerPole { .. }))
+        .filter(move |e| match e {
+            Entity::PowerPole { ty, pos } => {
+                let other_range = data_store.power_pole_data[*ty as usize].connection_range;
+                let other_size = data_store.power_pole_data[*ty as usize].size;
+
+                pole_pos.overlap(
+                    pole_size,
+                    Position {
+                        x: pos.x - other_range as i32,
+                        y: pos.y - other_range as i32,
+                    },
+                    (
+                        2 * other_range as u16 + other_size.0,
+                        2 * other_range as u16 + other_size.1,
+                    ),
+                )
+            },
+            _ => false,
+        })
     }
 
     fn get_power_pole_range(
