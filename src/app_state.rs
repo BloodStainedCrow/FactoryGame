@@ -1735,7 +1735,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 }
 
                                 // Check which poles are in range to connect to
-                                let connection_candidates: Vec<_> = game_state
+                                let connection_candidates = game_state
                                     .world
                                     .get_power_poles_which_could_connect_to_pole_at(
                                         pole_pos,
@@ -1745,14 +1745,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         data_store,
                                     )
                                     .into_iter()
-                                    .map(|e| e.get_pos())
-                                    .collect();
+                                    .map(|e| e.get_pos());
 
-                                match game_state.simulation_state.factory.power_grids.add_pole(
+                                let res = game_state.simulation_state.factory.power_grids.add_pole(
                                     pole_pos,
-                                    connection_candidates.iter().copied(),
+                                    connection_candidates,
                                     data_store,
-                                ) {
+                                );
+                                match res {
                                     Some(storage_updates) => {
                                         // Handle storage updates
                                         for storage_update in storage_updates {

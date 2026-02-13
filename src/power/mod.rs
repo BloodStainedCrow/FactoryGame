@@ -341,6 +341,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Option<
         impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>
+        // Asserting this is static means it does not capture the input lifetime of the connected_pole iter
+        + 'static
         + use<ItemIdxType, RecipeIdxType, T>,
     > {
         #[cfg(debug_assertions)]
