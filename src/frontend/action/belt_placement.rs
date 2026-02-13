@@ -395,11 +395,9 @@ pub fn handle_underground_removal<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
             {
                 if *ty == underground_belt_ty && *direction == underground_belt_dir {
                     let self_len = i as u16 * BELT_LEN_PER_TILE;
-                    assert_ne!(
-                        *underground_dir, underground_belt_kind,
-                        "The underground we are removing seems to be attached through another {:?} underground",
-                        underground_belt_kind
-                    );
+                    if *underground_dir == underground_belt_kind {
+                        break 'self_len 0;
+                    }
                     assert_eq!(*id, our_belt_id);
 
                     break 'self_len self_len;
