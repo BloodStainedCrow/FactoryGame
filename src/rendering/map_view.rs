@@ -25,9 +25,9 @@ pub struct MapViewUpdate {
 
 // FIXME: It seems we are rendering one map tile to much in the positive directions
 
-const NUM_MAP_TILE_SIZES: usize = 4;
+const NUM_MAP_TILE_SIZES: usize = 5;
 // TODO: Figure out a good tilesize. 1024 seems to work fine, but is larger or smaller better?
-const TILE_SIZE_PIXELS: [u32; NUM_MAP_TILE_SIZES] = [1024, 1024, 1024, 4000];
+const TILE_SIZE_PIXELS: [u32; NUM_MAP_TILE_SIZES] = [1024, 1024, 1024, 1024, 4000];
 // TODO: Since array::map is not const, we hack it like this
 const NUM_TILES_PER_AXIS: [u32; NUM_MAP_TILE_SIZES] = {
     let mut b = [0; NUM_MAP_TILE_SIZES];
@@ -38,8 +38,8 @@ const NUM_TILES_PER_AXIS: [u32; NUM_MAP_TILE_SIZES] = {
     }
     b
 };
-const TILE_PIXEL_TO_WORLD_TILE: [u32; NUM_MAP_TILE_SIZES] = [1, 4, 16, 64];
-pub const MIN_WIDTH: [u32; NUM_MAP_TILE_SIZES] = [0, 5_000, 10_000, 50_000];
+const TILE_PIXEL_TO_WORLD_TILE: [u32; NUM_MAP_TILE_SIZES] = [1, 4, 16, 64, 256];
+pub const MIN_WIDTH: [u32; NUM_MAP_TILE_SIZES] = [0, 10_000, 40_000, 100_000, 300_000];
 
 #[profiling::function]
 pub fn create_map_textures_if_needed<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
