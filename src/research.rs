@@ -525,8 +525,14 @@ impl TechState {
                 }
 
                 if !render_graph.selected_nodes().is_empty() {
+                    use crate::data::TechnologyEffect;
+
                     let [selected_node] = render_graph.selected_nodes() else {
                         unreachable!("We only allow selecting a single node!");
+                    };
+
+                    let selected_tech = Technology {
+                        id: selected_node.index().try_into().unwrap(),
                     };
 
                     ui.label(
@@ -549,9 +555,7 @@ impl TechState {
                         false
                     } else {
                         self.finished_technologies
-                            .get(&Technology {
-                                id: selected_node.index().try_into().unwrap(),
-                            })
+                            .get(&selected_tech)
                             .copied()
                             .unwrap_or(0)
                             > 0
@@ -569,9 +573,7 @@ impl TechState {
                                 .unwrap_or(0)
                                 > 0
                         });
-                    let is_currently_researching = self.research_queue.contains(&Technology {
-                        id: selected_node.index().try_into().unwrap(),
-                    });
+                    let is_currently_researching = self.research_queue.contains(&selected_tech);
 
                     if ui
                         .add_enabled(
@@ -581,19 +583,30 @@ impl TechState {
                         .clicked()
                     {
                         ret.push(ActionType::AddResearchToQueue {
-                            tech: Technology {
-                                id: selected_node.index().try_into().unwrap(),
-                            },
+                            tech: selected_tech,
                         });
                     }
 
                     if is_done {
                         if ui.button("[CHEAT] Undo Technology").clicked() {
                             ret.push(ActionType::CheatRelockTechnology {
-                                tech: Technology {
-                                    id: selected_node.index().try_into().unwrap(),
-                                },
+                                tech: selected_tech,
                             });
+                        }
+                    }
+
+                    // Render Tech Effect
+                    let TechnologyEffect { unlocked_recipes } = &data_store
+                        .technology_tree
+                        .node_weight(NodeIndex::from(selected_tech.id))
+                        .unwrap()
+                        .effect;
+
+                    // Unlocked Recipes
+                    if !unlocked_recipes.is_empty() {
+                        ui.label("Unlocks Recipes:");
+                        for recipe in unlocked_recipes {
+                            ui.label(&data_store.recipe_display_names[recipe.into_usize()]);
                         }
                     }
                 }
