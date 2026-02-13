@@ -628,7 +628,7 @@
         ),
         (
            name: "factory_game::light_oil_cracking",
-           display_name: "Heavy Oil Cracking",
+           display_name: "Light Oil Cracking",
            possible_machines: [
                "factory_game::chemical_plant",
            ],
@@ -2268,9 +2268,6 @@
                 RecipeUnlock("factory_game::raw_oil_generation"),
                 RecipeUnlock("factory_game::water_generation"),
                 RecipeUnlock("factory_game::stone_generation"),
-
-                // TODO:
-                RecipeUnlock("factory_game::solid_fuel_from_light_oil"),
             ],
         ),
         (
@@ -2949,6 +2946,7 @@
                 RecipeUnlock("factory_game::advanced_oil_processing"),
                 RecipeUnlock("factory_game::heavy_oil_cracking"),
                 RecipeUnlock("factory_game::light_oil_cracking"),
+                RecipeUnlock("factory_game::solid_fuel_from_light_oil"),
             ],
         ),
         (
