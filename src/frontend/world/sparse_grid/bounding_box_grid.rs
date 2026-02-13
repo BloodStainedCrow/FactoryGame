@@ -299,6 +299,8 @@ impl<T: GetGridIndex<I>> BoundingBoxGrid<I, T> {
     fn reorder_for_new_extent(&mut self, new_point: [I; 2]) {
         let [x, y] = new_point;
 
+        let old_extent = self.extent.unwrap_or([[x, x], [y, y]]);
+
         let extent = self.extent.get_or_insert([[x, x], [y, y]]);
         let [x_range, y_range] = extent;
 
@@ -315,8 +317,8 @@ impl<T: GetGridIndex<I>> BoundingBoxGrid<I, T> {
 
         self.values.resize_with(new_size, || None);
 
-        for old_val in values {
-            let pos = old_val.get_grid_index();
+        for (idx, old_val) in values.into_iter().enumerate() {
+            let pos = Self::calculate_pos(&old_extent, idx);
             let index = Self::calculate_index(extent, pos.into());
             self.values[index] = Some(old_val);
         }
@@ -345,7 +347,19 @@ impl<T: GetGridIndex<I>> BoundingBoxGrid<I, T> {
     pub(super) fn into_iter(self) -> impl Iterator<Item = ((I, I), T)> {
         self.values
             .into_iter()
-            .flatten()
-            .map(|chunk| (chunk.get_grid_index(), chunk))
+            .enumerate()
+            .filter_map(|(idx, v)| v.map(|v| (idx, v)))
+            .map(move |(idx, chunk)| {
+                (
+                    Self::calculate_pos(
+                        &self
+                            .extent
+                            .expect("Since we have any chunks, we must have an extent"),
+                        idx,
+                    )
+                    .into(),
+                    chunk,
+                )
+            })
     }
 }

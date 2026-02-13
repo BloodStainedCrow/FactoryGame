@@ -435,7 +435,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         progress: ProgressInfo,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        const CHUNK_THICKNESS: i32 = 150;
+        // This is the maximum thickness the player can generate while at the edge of the world
+        // Factorio uses 20 chunks, but their chunks are twice as large in each dimension
+        const CHUNK_THICKNESS: i32 = 40;
 
         // TODO: Correct size
         let ret = GameState::new_with_world_area(
