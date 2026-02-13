@@ -2089,39 +2089,45 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             todo!();
         }
 
-        let (inserter_item_sources, items_on_belt): (Vec<_>, Vec<_>) = match tile_id {
+        if let Some(_pre_calc) = done.get(&tile_id) {
+            return;
+        }
+
+        let mut items_on_belt_or_from_inserters: Vec<_> = match tile_id {
             BeltTileId::AnyBelt(index, _) => match self.any_belts[index as usize] {
                 AnyBelt::Smart(belt_id) => {
                     let belt = self.inner.get_smart(belt_id);
-                    let items_all_empty = belt.items().all(|loc| loc.is_none());
-                    match (belt.inserters.inserters.is_empty(), items_all_empty) {
-                        (true, true) => (vec![], vec![]),
-                        (true, false) => (vec![], vec![belt_id.item]),
-                        (false, true) => (vec![belt_id.item], vec![]),
-                        (false, false) => (vec![belt_id.item], vec![belt_id.item]),
+                    if belt.inserters.inserters.is_empty() {
+                        let items_all_empty = belt.items().all(|loc| loc.is_none());
+
+                        if items_all_empty {
+                            vec![]
+                        } else {
+                            vec![belt_id.item]
+                        }
+                    } else {
+                        vec![belt_id.item]
                     }
                 },
                 AnyBelt::Sushi(sushi_idx) => {
                     let belt = self.inner.get_sushi(sushi_idx);
 
-                    (
-                        belt.inserters
-                            .inserters
-                            .iter()
-                            .filter_map(|(ins, item, _movetime, _hand_size)| {
-                                let (dir, _state) = ins.state.into();
-                                (dir == Dir::StorageToBelt).then_some(*item)
-                            })
-                            .dedup()
-                            .collect(),
-                        belt.items().into_iter().flatten().dedup().collect(),
-                    )
+                    belt.inserters
+                        .inserters
+                        .iter()
+                        .filter_map(|(ins, item, _movetime, _hand_size)| {
+                            let (dir, _state) = ins.state.into();
+                            (dir == Dir::StorageToBelt).then_some(*item)
+                        })
+                        .chain(belt.items().into_iter().flatten())
+                        .dedup()
+                        .collect()
                 },
-                AnyBelt::Empty(_empty_idx) => (vec![], vec![]),
+                AnyBelt::Empty(_empty_idx) => vec![],
             },
         };
 
-        let incoming_belts: Vec<_> = self
+        let incoming_belts = self
             .belt_graph
             .edges_directed(
                 *self.belt_graph_lookup[&tile_id],
@@ -2132,10 +2138,9 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     self.belt_graph.node_weight(edge.source()).unwrap(),
                     *edge.weight(),
                 )
-            })
-            .collect();
+            });
 
-        let incoming_belt_items: Vec<_> = incoming_belts
+        let incoming_belt_items = incoming_belts
             .into_iter()
             .flat_map(|(belt, connection)| match connection {
                 BeltGraphConnection::Sideload { dest_belt_pos: _ }
@@ -2156,17 +2161,10 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     filter,
                 } => once(filter).collect(),
             })
-            .dedup()
-            .collect();
+            .dedup();
+        items_on_belt_or_from_inserters.extend(incoming_belt_items);
 
-        done.insert(
-            tile_id,
-            items_on_belt
-                .into_iter()
-                .chain(inserter_item_sources)
-                .chain(incoming_belt_items)
-                .collect(),
-        );
+        done.insert(tile_id, items_on_belt_or_from_inserters);
     }
 
     #[profiling::function]
