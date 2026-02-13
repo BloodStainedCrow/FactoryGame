@@ -9,6 +9,7 @@ use egui::Color32;
 #[cfg(feature = "client")]
 use egui_show_info::{EguiDisplayable, InfoExtractor, ShowInfo};
 use log::error;
+use petgraph::visit::NodeIndexable;
 use petgraph::visit::VisitMap;
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::ParallelIterator;
@@ -462,21 +463,13 @@ fn try_instantiating_inserters_for_belt_cascade<ItemIdxType: IdxTrait, RecipeIdx
     CascadingUpdate {
         update: Box::new(move |_world, sim_state, updates, data_store| {
             profiling::scope!("try_instantiating_inserters_for_belt_cascade");
-            if sim_state.factory.belts.belt_graph_bfs.discovered.len()
-                != sim_state.factory.belts.belt_graph.node_count()
-            {
-                sim_state.factory.belts.belt_graph_bfs = crate::get_size::Bfs {
-                    bfs: Bfs::new(
-                        &*sim_state.factory.belts.belt_graph,
-                        *sim_state.factory.belts.belt_graph_lookup[&belt_id],
-                    ),
-                };
-            }
-
             let reachable = &mut *sim_state.factory.belts.belt_graph_bfs;
 
-            // Reset the BFS. We reusethe bfs here since otherwise 10% of time is used to just allocated the bitmap for the discovered set.
+            // Reset the BFS. We reuse the bfs here since otherwise 10% of time is used to just allocated the bitmap for the discovered set.
 
+            reachable
+                .discovered
+                .grow(sim_state.factory.belts.belt_graph.node_bound());
             // FIXME: This memset is sloooow, if the factory is large
             reachable.discovered.clear();
             reachable
@@ -5183,24 +5176,32 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         //     !self.any_entity_colliding_with(pos, size, data_store)
         // );
 
-        // let chunk_range_x = (pos.x .div_floor( i32::from(CHUNK_SIZE)))
-        //     ..=((pos.x + i32::from(size.0) - 1) .div_floor( i32::from(CHUNK_SIZE)));
-        // let chunk_range_y = (pos.y .div_floor( i32::from(CHUNK_SIZE)))
-        //     ..=((pos.y + i32::from(size.1) - 1) .div_floor( i32::from(CHUNK_SIZE)));
+        let chunk_range_x = (pos.x.div_floor(i32::from(CHUNK_SIZE)))
+            ..=((pos.x + i32::from(size.0) - 1).div_floor(i32::from(CHUNK_SIZE)));
+        let chunk_range_y = (pos.y.div_floor(i32::from(CHUNK_SIZE)))
+            ..=((pos.y + i32::from(size.1) - 1).div_floor(i32::from(CHUNK_SIZE)));
 
-        // chunk_range_x
-        //     .cartesian_product(chunk_range_y)
-        //     .all(
-        //         |(chunk_x, chunk_y)| match self.get_chunk(chunk_x, chunk_y) {
-        //             Some(chunk) => chunk.can_fit(pos, size, data_store),
-        //             None => false,
-        //         },
-        //     )
+        chunk_range_x
+            .cartesian_product(chunk_range_y)
+            .all(
+                |(chunk_x, chunk_y)| match self.get_chunk(chunk_x, chunk_y) {
+                    Some(chunk) => chunk.can_fit(
+                        pos,
+                        size,
+                        Position {
+                            x: chunk_x * i32::from(CHUNK_SIZE),
+                            y: chunk_y * i32::from(CHUNK_SIZE),
+                        },
+                        data_store,
+                    ),
+                    None => false,
+                },
+            )
         // !self.any_entity_colliding_with(pos, size, data_store)
-        self.get_entities_colliding_with(pos, size, data_store)
-            .into_iter()
-            .next()
-            .is_none()
+        // self.get_entities_colliding_with(pos, size, data_store)
+        //     .into_iter()
+        //     .next()
+        //     .is_none()
     }
 
     pub fn get_power_poles_which_could_connect_to_pole_at<'a, 'b>(
@@ -5295,23 +5296,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
         &self,
         pos: Position,
         size: (u16, u16),
+        chunk_top_left: Position,
         _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> bool {
         if let Some(arr) = &self.chunk_tile_to_entity_into {
-            let x_in_chunk = pos.x.rem_euclid(i32::from(CHUNK_SIZE)) as usize;
-            let y_in_chunk = pos.y.rem_euclid(i32::from(CHUNK_SIZE)) as usize;
-            for x in x_in_chunk
-                ..min(
-                    x_in_chunk + usize::from(size.0),
-                    usize::from(CHUNK_SIZE) - 1,
-                )
-            {
-                for y in y_in_chunk
-                    ..min(
-                        y_in_chunk + usize::from(size.1),
-                        usize::from(CHUNK_SIZE) - 1,
-                    )
-                {
+            let x_start = max(pos.x - chunk_top_left.x, 0) as usize;
+            let y_start = max(pos.y - chunk_top_left.y, 0) as usize;
+
+            let x_end = min(
+                (pos.x + size.0 as i32) - chunk_top_left.x,
+                CHUNK_SIZE as i32,
+            ) as usize;
+            let y_end = min(
+                (pos.y + size.1 as i32) - chunk_top_left.y,
+                CHUNK_SIZE as i32,
+            ) as usize;
+
+            for x in x_start..x_end {
+                for y in y_start..y_end {
                     match arr_val_to_state(self.entities.len(), arr[x][y]) {
                         ChunkTileState::Index(_) => return false,
                         ChunkTileState::Empty => {},

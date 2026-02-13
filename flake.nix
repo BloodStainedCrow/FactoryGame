@@ -89,6 +89,7 @@
         rustToolchain
 
         perf
+        samply
         bacon
 
         (vscode-with-extensions.override {
