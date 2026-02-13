@@ -9,6 +9,7 @@ use egui::Color32;
 #[cfg(feature = "client")]
 use egui_show_info::{EguiDisplayable, InfoExtractor, ShowInfo};
 use log::error;
+use petgraph::visit::VisitMap;
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::ParallelIterator;
 use rayon::prelude::ParallelSliceMut;
@@ -461,17 +462,36 @@ fn try_instantiating_inserters_for_belt_cascade<ItemIdxType: IdxTrait, RecipeIdx
     CascadingUpdate {
         update: Box::new(move |_world, sim_state, updates, data_store| {
             profiling::scope!("try_instantiating_inserters_for_belt_cascade");
-            let mut reachable = Bfs::new(
-                &*sim_state.factory.belts.belt_graph,
-                *sim_state.factory.belts.belt_graph_lookup[&belt_id],
-            );
+            if sim_state.factory.belts.belt_graph_bfs.discovered.len()
+                != sim_state.factory.belts.belt_graph.node_count()
+            {
+                sim_state.factory.belts.belt_graph_bfs = crate::get_size::Bfs {
+                    bfs: Bfs::new(
+                        &*sim_state.factory.belts.belt_graph,
+                        *sim_state.factory.belts.belt_graph_lookup[&belt_id],
+                    ),
+                };
+            }
+
+            let reachable = &mut *sim_state.factory.belts.belt_graph_bfs;
+
+            // Reset the BFS. We reusethe bfs here since otherwise 10% of time is used to just allocated the bitmap for the discovered set.
+
+            // FIXME: This memset is sloooow, if the factory is large
+            reachable.discovered.clear();
+            reachable
+                .discovered
+                .visit(*sim_state.factory.belts.belt_graph_lookup[&belt_id]);
+            reachable.stack.clear();
+            reachable
+                .stack
+                .push_front(*sim_state.factory.belts.belt_graph_lookup[&belt_id]);
+
             while let Some(idx) = reachable.next(&*sim_state.factory.belts.belt_graph) {
                 let belt = sim_state.factory.belts.belt_graph.node_weight(idx).unwrap();
                 // FIXME: What if the graph contains cycles???
                 updates.push(try_instantiating_inserters_for_belt(*belt));
             }
-            // // In order to avoid problems wit
-            // updates.push(try_instantiating_all_inserters_cascade());
         }),
     }
 }

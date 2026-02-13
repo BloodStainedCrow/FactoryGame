@@ -1,5 +1,6 @@
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
+use fixedbitset::FixedBitSet;
 #[cfg(feature = "client")]
 use get_size2::GetSize;
 
@@ -13,7 +14,7 @@ pub mod splitter;
 mod sushi;
 
 use crate::belt::smart::EmptyBelt;
-use crate::get_size::{Mutex, StableGraph};
+use crate::get_size::{self, Mutex, StableGraph};
 use crate::item::ITEMCOUNTTYPE;
 use crate::par_generation::BeltKind;
 use petgraph::stable_graph::DefaultIx;
@@ -119,6 +120,8 @@ pub struct BeltStore<ItemIdxType: WeakIdxTrait> {
 
     pub belt_graph:
         StableGraph<BeltTileId<ItemIdxType>, BeltGraphConnection<ItemIdxType>, Directed, DefaultIx>,
+    #[serde(skip)]
+    pub belt_graph_bfs: get_size::Bfs<petgraph::stable_graph::NodeIndex, FixedBitSet>,
     pub belt_graph_lookup: HashMap<BeltTileId<ItemIdxType>, NodeIndex>,
 }
 
@@ -1525,6 +1528,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             any_splitter_holes: vec![],
 
             belt_graph: StableGraph::default(),
+            belt_graph_bfs: get_size::Bfs::default(),
             belt_graph_lookup: HashMap::default(),
         }
     }
@@ -2049,6 +2053,9 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         },
                         Err(None) => {
                             // The belt is empty, nothing to do
+
+                            // Since we are an empty belt, nothing to propagate
+                            return;
                         },
                         Err(Some(_)) => {
                             // This needs to be sushi

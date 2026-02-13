@@ -69,6 +69,7 @@ rand_xoshiro = "0.7.0"
 url = "2.5.7"
 args = "2.2.0"
 console_error_panic_hook = "0.1.7"
+fixedbitset = "0.5.7"
 
 # These are all the dependencies which do not work on wasm
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

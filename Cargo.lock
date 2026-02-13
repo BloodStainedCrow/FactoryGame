@@ -1669,6 +1669,7 @@ dependencies = [
  "egui_graphs",
  "egui_plot",
  "enum-map",
+ "fixedbitset",
  "flate2",
  "fork",
  "genawaiter",
