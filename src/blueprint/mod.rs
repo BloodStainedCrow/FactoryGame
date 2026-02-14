@@ -1061,24 +1061,6 @@ impl Blueprint {
         );
     }
 
-    pub fn from_replay<
-        ItemIdxType: IdxTrait,
-        RecipeIdxType: IdxTrait,
-        DS: Borrow<DataStore<ItemIdxType, RecipeIdxType>>,
-    >(
-        replay: &Replay<ItemIdxType, RecipeIdxType, DS>,
-    ) -> Self {
-        Self {
-            actions: replay
-                .actions
-                .iter()
-                .map(|ra| {
-                    BlueprintAction::from_with_datastore(&ra.action, replay.data_store.borrow())
-                })
-                .collect(),
-        }
-    }
-
     pub fn from_area<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         world: &World<ItemIdxType, RecipeIdxType>,
         sim_state: &SimulationState<ItemIdxType, RecipeIdxType>,

@@ -31,6 +31,8 @@ use crate::par_generation::ParGenerateInfo;
 use crate::par_generation::par_generate;
 use crate::power::Watt;
 use crate::progress_info::ProgressInfo;
+use crate::replays::GenerationInformation;
+use crate::replays::ProgramInformation;
 #[cfg(feature = "client")]
 use crate::saving::loading::SaveFileList;
 #[cfg(feature = "client")]
@@ -106,6 +108,7 @@ use crate::get_size::Mutex;
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct AuxillaryData {
     pub game_name: String,
+    pub gen_info: (ProgramInformation, GenerationInformation),
 
     pub current_tick: u64,
 
@@ -123,10 +126,12 @@ pub struct AuxillaryData {
 impl AuxillaryData {
     pub fn new<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         name: String,
+        gen_info: GenerationInformation,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         AuxillaryData {
             game_name: name,
+            gen_info: (ProgramInformation::new(data_store), gen_info),
             current_tick: 0,
             statistics: GenStatistics::new(data_store),
             update_times: Timeline::new(false, data_store),
@@ -168,16 +173,21 @@ impl<'a> AddAssign<&'a UpdateTime> for UpdateTime {
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, RecipeIdxType> {
     #[must_use]
-    pub fn new(name: String, data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+    pub fn new(
+        name: String,
+        gen_info: GenerationInformation,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
         Self {
             world: Mutex::new(World::default()),
             simulation_state: Mutex::new(SimulationState::new(data_store)),
-            aux_data: Mutex::new(AuxillaryData::new(name, data_store)),
+            aux_data: Mutex::new(AuxillaryData::new(name, gen_info, data_store)),
         }
     }
 
     fn new_with_world_area(
         name: String,
+        gen_info: GenerationInformation,
         top_left: Position,
         bottom_right: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -185,13 +195,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         Self {
             world: Mutex::new(World::new_with_area(top_left, bottom_right)),
             simulation_state: Mutex::new(SimulationState::new(data_store)),
-            aux_data: Mutex::new(AuxillaryData::new(name, data_store)),
+            aux_data: Mutex::new(AuxillaryData::new(name, gen_info, data_store)),
         }
     }
 
     #[must_use]
     pub fn new_with_megabase(
         name: String,
+        gen_info: GenerationInformation,
         use_solar_field: bool,
         progress: ProgressInfo,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -201,6 +212,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         // TODO: Increase size to fit solar field
         let mut ret = GameState::new_with_world_area(
             name,
+            gen_info,
             Position {
                 x: X_OFFS,
                 y: -6_000,
@@ -260,7 +272,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             );
         }
 
-        progress.push_stage(0.5, Some("Placing Megabase".to_string()));
+        progress.push_stage(
+            if use_solar_field { 0.5 } else { 1.0 },
+            Some("Placing Megabase".to_string()),
+        );
         bp.apply_at_positions(
             iter::once(Position {
                 x: 1600 + X_OFFS,
@@ -284,6 +299,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     #[must_use]
     pub fn new_with_gigabase(
         name: String,
+        gen_info: GenerationInformation,
         count: u16,
         progress: ProgressInfo,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -342,6 +358,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         let ret = par_generate(
             name,
+            gen_info,
             BoundingBox {
                 top_left: Position { x: 0, y: start },
                 bottom_right: Position {
@@ -367,11 +384,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     #[must_use]
     pub fn new_with_lots_of_belts(
         name: String,
+        gen_info: GenerationInformation,
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         let mut ret = GameState::new_with_world_area(
             name,
+            gen_info,
             Position { x: 0, y: 0 },
             Position {
                 x: 1_000,
@@ -410,6 +429,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     #[must_use]
     pub fn new_with_tons_of_solar(
         name: String,
+        gen_info: GenerationInformation,
         wattage: Watt,
         base_pos: Position,
         height: Option<u64>,
@@ -419,6 +439,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         // TODO: Correct size
         let mut ret = GameState::new_with_world_area(
             name,
+            gen_info,
             Position { x: 0, y: 0 },
             Position { x: 60000, y: 60000 },
             data_store,
@@ -432,6 +453,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     #[must_use]
     pub fn new_with_world_train_ride(
         name: String,
+        gen_info: GenerationInformation,
         progress: ProgressInfo,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
@@ -442,6 +464,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         // TODO: Correct size
         let ret = GameState::new_with_world_area(
             name,
+            gen_info,
             Position {
                 x: -1_000_000,
                 y: -1_000_000,
@@ -533,10 +556,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     #[must_use]
     pub fn new_eight_beacon_factory(
         name: String,
+        gen_info: GenerationInformation,
         _progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        let mut ret = GameState::new(name, data_store);
+        let mut ret = GameState::new(name, gen_info, data_store);
 
         let red = File::open("test_blueprints/eight_beacon_red_sci_with_storage.bp").unwrap();
         let red: Blueprint = ron::de::from_reader(red).unwrap();
@@ -553,11 +577,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
     pub fn new_with_bp(
         name: String,
+        gen_info: GenerationInformation,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
         bp_path: impl AsRef<Path>,
     ) -> Self {
         let mut ret = GameState::new_with_world_area(
             name,
+            gen_info,
             Position { x: 0, y: 0 },
             Position {
                 x: 32000,
@@ -1162,7 +1188,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
 }
 
 #[cfg(feature = "client")]
-pub(crate) enum AppState {
+#[derive(Debug)]
+pub enum AppState {
     MainMenu {
         in_ip_box: Option<(String, bool)>,
     },
@@ -3534,6 +3561,7 @@ mod tests {
 
     use crate::blueprint::BlueprintAction;
 
+    use crate::replays::GenerationInformation;
     use crate::{
         DATA_STORE,
         app_state::GameState,
@@ -3629,7 +3657,7 @@ mod tests {
         #[test]
         fn test_random_blueprint_does_not_crash(base_pos in random_position(), blueprint in random_blueprint_strategy::<u8, u8>(0..1_000, &DATA_STORE)) {
 
-            let mut game_state = GameState::new("Test Game".to_string(), &DATA_STORE);
+            let mut game_state = GameState::new("Test Game".to_string(), GenerationInformation::default(), &DATA_STORE);
 
             blueprint.apply(false, base_pos, &mut game_state, &DATA_STORE);
 
@@ -3638,7 +3666,7 @@ mod tests {
         #[test]
         fn test_random_blueprint_does_not_crash_after(base_pos in random_position(), blueprint in random_blueprint_strategy::<u8, u8>(0..100, &DATA_STORE), time in 0usize..10) {
 
-            let mut game_state = GameState::new("Test Game".to_string(), &DATA_STORE);
+            let mut game_state = GameState::new("Test Game".to_string(), GenerationInformation::default(), &DATA_STORE);
 
             blueprint.apply(false, base_pos, &mut game_state, &DATA_STORE);
 
@@ -3668,7 +3696,7 @@ mod tests {
             //     ..
             // })));
 
-            let mut game_state = GameState::new("Test Game".to_string(), &DATA_STORE);
+            let mut game_state = GameState::new("Test Game".to_string(), GenerationInformation::default(), &DATA_STORE);
 
             Blueprint { actions: actions.into_iter().map(|a| BlueprintAction::from_with_datastore(&a, &*DATA_STORE)).collect() }.apply(false, Position { x: 0, y: 0 }, &mut game_state, &DATA_STORE);
 
@@ -3752,132 +3780,132 @@ mod tests {
         // }
     }
 
-    #[bench]
-    fn bench_single_inserter(b: &mut Bencher) {
-        let mut game_state = GameState::new("Test Game".to_string(), &DATA_STORE);
+    // #[bench]
+    // fn bench_single_inserter(b: &mut Bencher) {
+    //     let mut game_state = GameState::new("Test Game".to_string(), &DATA_STORE);
 
-        let mut rep = Replay::new(&game_state, None, (*DATA_STORE).clone());
+    //     let mut rep = Replay::new(&game_state, None, (*DATA_STORE).clone());
 
-        rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
-            force: false,
-            entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
-                crate::frontend::world::tile::PlaceEntityType::PowerPole {
-                    pos: Position { x: 0, y: 5 },
-                    ty: 0,
-                },
-            ),
-        })]);
+    //     rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
+    //         force: false,
+    //         entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
+    //             crate::frontend::world::tile::PlaceEntityType::PowerPole {
+    //                 pos: Position { x: 0, y: 5 },
+    //                 ty: 0,
+    //             },
+    //         ),
+    //     })]);
 
-        rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
-            force: false,
-            entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
-                crate::frontend::world::tile::PlaceEntityType::SolarPanel {
-                    pos: Position { x: 0, y: 2 },
-                    ty: 0,
-                },
-            ),
-        })]);
+    //     rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
+    //         force: false,
+    //         entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
+    //             crate::frontend::world::tile::PlaceEntityType::SolarPanel {
+    //                 pos: Position { x: 0, y: 2 },
+    //                 ty: 0,
+    //             },
+    //         ),
+    //     })]);
 
-        rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
-            force: false,
-            entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
-                crate::frontend::world::tile::PlaceEntityType::Assembler {
-                    pos: Position { x: 0, y: 6 },
-                    ty: 0,
-                    rotation: Dir::North,
-                },
-            ),
-        })]);
+    //     rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
+    //         force: false,
+    //         entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
+    //             crate::frontend::world::tile::PlaceEntityType::Assembler {
+    //                 pos: Position { x: 0, y: 6 },
+    //                 ty: 0,
+    //                 rotation: Dir::North,
+    //             },
+    //         ),
+    //     })]);
 
-        rep.append_actions(vec![ActionType::SetRecipe(
-            crate::frontend::action::set_recipe::SetRecipeInfo {
-                pos: Position { x: 0, y: 6 },
-                recipe: Recipe { id: 0 },
-            },
-        )]);
+    //     rep.append_actions(vec![ActionType::SetRecipe(
+    //         crate::frontend::action::set_recipe::SetRecipeInfo {
+    //             pos: Position { x: 0, y: 6 },
+    //             recipe: Recipe { id: 0 },
+    //         },
+    //     )]);
 
-        rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
-            force: false,
-            entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
-                crate::frontend::world::tile::PlaceEntityType::Belt {
-                    pos: Position { x: 1, y: 4 },
-                    direction: crate::frontend::world::tile::Dir::East,
-                    ty: 0,
-                },
-            ),
-        })]);
+    //     rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
+    //         force: false,
+    //         entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
+    //             crate::frontend::world::tile::PlaceEntityType::Belt {
+    //                 pos: Position { x: 1, y: 4 },
+    //                 direction: crate::frontend::world::tile::Dir::East,
+    //                 ty: 0,
+    //             },
+    //         ),
+    //     })]);
 
-        rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
-            force: false,
-            entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
-                crate::frontend::world::tile::PlaceEntityType::Belt {
-                    pos: Position { x: 2, y: 4 },
-                    direction: crate::frontend::world::tile::Dir::East,
-                    ty: 0,
-                },
-            ),
-        })]);
+    //     rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
+    //         force: false,
+    //         entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
+    //             crate::frontend::world::tile::PlaceEntityType::Belt {
+    //                 pos: Position { x: 2, y: 4 },
+    //                 direction: crate::frontend::world::tile::Dir::East,
+    //                 ty: 0,
+    //             },
+    //         ),
+    //     })]);
 
-        rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
-            force: false,
-            entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
-                crate::frontend::world::tile::PlaceEntityType::Inserter {
-                    ty: 0,
-                    pos: Position { x: 1, y: 5 },
-                    dir: crate::frontend::world::tile::Dir::North,
-                    filter: None,
-                    user_movetime: None,
-                },
-            ),
-        })]);
+    //     rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
+    //         force: false,
+    //         entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
+    //             crate::frontend::world::tile::PlaceEntityType::Inserter {
+    //                 ty: 0,
+    //                 pos: Position { x: 1, y: 5 },
+    //                 dir: crate::frontend::world::tile::Dir::North,
+    //                 filter: None,
+    //                 user_movetime: None,
+    //             },
+    //         ),
+    //     })]);
 
-        let blueprint = Blueprint::from_replay(&rep);
+    //     let blueprint = Blueprint::from_replay(&rep);
 
-        blueprint.apply(
-            false,
-            Position { x: 1600, y: 1600 },
-            &mut game_state,
-            &DATA_STORE,
-        );
+    //     blueprint.apply(
+    //         false,
+    //         Position { x: 1600, y: 1600 },
+    //         &mut game_state,
+    //         &DATA_STORE,
+    //     );
 
-        dbg!(
-            &game_state
-                .world
-                .lock()
-                .get_chunk_for_tile(Position { x: 1600, y: 1600 })
-        );
+    //     dbg!(
+    //         &game_state
+    //             .world
+    //             .lock()
+    //             .get_chunk_for_tile(Position { x: 1600, y: 1600 })
+    //     );
 
-        dbg!(game_state.aux_data.lock().current_tick);
+    //     dbg!(game_state.aux_data.lock().current_tick);
 
-        for _ in 0..600 {
-            GameState::update(
-                &mut *game_state.simulation_state.lock(),
-                &mut *game_state.aux_data.lock(),
-                &DATA_STORE,
-            );
-        }
+    //     for _ in 0..600 {
+    //         GameState::update(
+    //             &mut *game_state.simulation_state.lock(),
+    //             &mut *game_state.aux_data.lock(),
+    //             &DATA_STORE,
+    //         );
+    //     }
 
-        b.iter(|| {
-            GameState::update(
-                &mut *game_state.simulation_state.lock(),
-                &mut *game_state.aux_data.lock(),
-                &DATA_STORE,
-            );
-        });
+    //     b.iter(|| {
+    //         GameState::update(
+    //             &mut *game_state.simulation_state.lock(),
+    //             &mut *game_state.aux_data.lock(),
+    //             &DATA_STORE,
+    //         );
+    //     });
 
-        dbg!(game_state.aux_data.lock().current_tick);
+    //     dbg!(game_state.aux_data.lock().current_tick);
 
-        assert!(
-            game_state
-                .aux_data
-                .lock()
-                .statistics
-                .production
-                .total
-                .as_ref()
-                .unwrap()
-                .items_produced[0]
-                > 0
-        );
-    }
+    //     assert!(
+    //         game_state
+    //             .aux_data
+    //             .lock()
+    //             .statistics
+    //             .production
+    //             .total
+    //             .as_ref()
+    //             .unwrap()
+    //             .items_produced[0]
+    //             > 0
+    //     );
+    // }
 }

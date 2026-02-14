@@ -396,6 +396,8 @@ pub fn handle_underground_removal<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                 if *ty == underground_belt_ty && *direction == underground_belt_dir {
                     let self_len = i as u16 * BELT_LEN_PER_TILE;
                     if *underground_dir == underground_belt_kind {
+                        // FIXME: We need to handle if us being gone allows two other undergrounds to connect (crashing replay 004)
+
                         break 'self_len 0;
                     }
                     assert_eq!(*id, our_belt_id);

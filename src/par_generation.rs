@@ -6,6 +6,7 @@ use log::info;
 use crate::frontend::world::tile::BeltState;
 use crate::inserter::FakeUnionStorage;
 use crate::progress_info::ProgressInfo;
+use crate::replays::GenerationInformation;
 use crate::{
     DataStore, GameState, Position, WeakIdxTrait,
     app_state::{AuxillaryData, Factory, SimulationState, StorageStorageInserterStore},
@@ -721,6 +722,7 @@ const NUM_STAGES: u16 = 10;
 /// Its not very parallel for now, but it does use the fact that we know the generation order to skip a lot of searches
 pub fn par_generate<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     name: String,
+    gen_info: GenerationInformation,
     world_size: BoundingBox,
     generation_info: ParGenerateInfo<ItemIdxType, RecipeIdxType>,
     positions: Vec<Position>,
@@ -912,7 +914,7 @@ pub fn par_generate<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     GameState {
         world: Mutex::new(world),
         simulation_state: Mutex::new(sim_state),
-        aux_data: Mutex::new(AuxillaryData::new(name, data_store)),
+        aux_data: Mutex::new(AuxillaryData::new(name, gen_info, data_store)),
     }
 }
 

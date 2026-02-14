@@ -268,6 +268,7 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     lockfile.release().expect("Failed to remove lockfile");
 }
 
+pub const FORK_SAVE_STAGES: usize = 13;
 /// # Panics
 /// If File system stuff fails
 #[cfg(not(target_arch = "wasm32"))]

@@ -1,7 +1,5 @@
-use std::{borrow::Borrow, fs::File, io::Write, marker::PhantomData};
+use std::{fs::File, io::Write, marker::PhantomData};
 
-#[cfg(not(target_arch = "wasm32"))]
-use crate::saving::save_with_fork;
 use crate::{
     app_state::{AuxillaryData, GameState, SimulationState},
     data::DataStore,
@@ -67,10 +65,10 @@ impl<
         }
     }
 
-    pub fn update<DataStor: Borrow<DataStore<ItemIdxType, RecipeIdxType>> + serde::Serialize>(
+    pub fn update(
         &mut self,
         game_state: &GameState<ItemIdxType, RecipeIdxType>,
-        replay: Option<&mut Replay<ItemIdxType, RecipeIdxType, DataStor>>,
+        replay: Option<&mut Replay>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         log::trace!("Start Update");
@@ -101,19 +99,21 @@ impl<
 
         let actions: Vec<_> = actions_iter.into_iter().collect();
 
+        #[cfg(feature = "replay")]
         {
             profiling::scope!("Update Replay");
             if let Some(replay) = replay {
-                replay.append_actions(actions.iter().cloned());
+                replay.append_actions(actions.iter().cloned(), data_store);
                 replay.tick();
 
-                #[cfg(debug_assertions)]
                 {
+                    use ron::ser::PrettyConfig;
+
                     profiling::scope!("Serialize Replay to disk");
                     // If we are in debug mode, save the replay to a file
                     let mut file = File::create("./last_replay.rep").expect("Could not open file");
-                    let ser = bitcode::serialize(replay).unwrap();
-                    file.write_all(ser.as_slice())
+                    let ser = ron::ser::to_string_pretty(replay, PrettyConfig::default()).unwrap();
+                    file.write_all(ser.as_bytes())
                         .expect("Could not write to file");
                 }
             }

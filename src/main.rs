@@ -26,7 +26,7 @@ fn main() -> Result<(), ()> {
             Ok(())
         },
         Err(e) => {
-            println!("{e}");
+            eprintln!("{e}");
             Err(())
         },
     };

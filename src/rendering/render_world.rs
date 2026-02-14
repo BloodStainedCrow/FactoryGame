@@ -2000,8 +2000,6 @@ pub fn render_ui<
 
     #[cfg(not(target_arch = "wasm32"))]
     if let Some(recv) = &mut state_machine_ref.current_fork_save_in_progress {
-        const NUM_STATES: u8 = 12;
-
         let mut v = [0];
         if let Err(e) = recv.recv.read_exact(&mut v) {
             if e.kind() != std::io::ErrorKind::WouldBlock {
@@ -2011,7 +2009,7 @@ pub fn render_ui<
         } else {
             if let Some(current_state) = v.last() {
                 recv.current_state = *current_state;
-                if recv.current_state == NUM_STATES {
+                if recv.current_state == crate::saving::FORK_SAVE_STAGES as u8 {
                     state_machine_ref.current_fork_save_in_progress = None;
                 }
             }
@@ -2019,8 +2017,10 @@ pub fn render_ui<
         if let Some(recv) = &state_machine_ref.current_fork_save_in_progress {
             Window::new("Saving...").default_open(true).show(ctx, |ui| {
                 ui.add(
-                    ProgressBar::new(recv.current_state as f32 / NUM_STATES as f32)
-                        .corner_radius(0.0),
+                    ProgressBar::new(
+                        recv.current_state as f32 / crate::saving::FORK_SAVE_STAGES as f32,
+                    )
+                    .corner_radius(0.0),
                 );
             });
         }

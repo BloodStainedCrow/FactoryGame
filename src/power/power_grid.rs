@@ -2867,6 +2867,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             ),
         );
 
+        // FIXME: This should not use the entry API since if there was something already in that slot we have a bug
         self.beacon_affected_entity_map
             .entry((pole_pos, idx))
             .or_default()

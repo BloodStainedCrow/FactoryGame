@@ -2097,7 +2097,10 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             BeltTileId::AnyBelt(index, _) => match self.any_belts[index as usize] {
                 AnyBelt::Smart(belt_id) => {
                     let belt = self.inner.get_smart(belt_id);
-                    if belt.inserters.inserters.is_empty() {
+                    // FIXME: This gives incorrect results when using extracted inserters
+                    // if belt.inserters.inserters.is_empty() {
+                    // FIXME: To "fix" this, I will assume each belt has an incoming inserter
+                    if false {
                         let items_all_empty = belt.items().all(|loc| loc.is_none());
 
                         if items_all_empty {

@@ -18,7 +18,7 @@ use wasm_timer::Instant;
 use parking_lot::Mutex;
 
 use crate::{
-    example_worlds,
+    example_worlds, get_version,
     progress_info::ProgressInfo,
     run_client,
     saving::{load, loading::SaveFileList, save_folder},
@@ -52,7 +52,7 @@ use crate::saving::save;
 
 pub struct App {
     raw_renderer: Option<RawRenderer>,
-    pub(crate) state: AppState,
+    pub state: AppState,
     pub currently_loaded_game: Option<LoadedGameInfo>,
 
     last_rendered_update: u64,
@@ -398,15 +398,7 @@ impl eframe::App for App {
                     .show(ctx, |ui| {
                         Grid::new("version_grid").num_columns(2).show(ui, |ui| {
                             ui.label("Version:");
-                            if crate::built_info::GIT_HEAD_REF == Some("refs/head/master") {
-                                ui.label(crate::built_info::PKG_VERSION);
-                            } else {
-                                let version = crate::built_info::GIT_VERSION.unwrap_or(
-                                    crate::built_info::GIT_COMMIT_HASH_SHORT
-                                        .unwrap_or("Could not get git version"),
-                                );
-                                ui.label(version);
-                            }
+                            ui.label(get_version());
                             ui.end_row();
 
                             // TODO: This does not work because of nixos :/
@@ -755,11 +747,17 @@ impl App {
                                 size, cb,
                             )));
 
+                            // dbg!("pre simulation_state");
                             let simulation_state = loaded_game_sized.state.simulation_state.lock();
+                            // dbg!("pre world");
                             let world = loaded_game_sized.state.world.lock();
+                            // dbg!("pre aux_data");
                             let aux_data = loaded_game_sized.state.aux_data.lock();
+                            // dbg!("pre state_machine");
                             let state_machine = loaded_game_sized.state_machine.lock();
+                            // dbg!("pre data_store");
                             let data_store = loaded_game_sized.data_store.lock();
+                            // dbg!("post data_store");
 
                             let tick = game.tick.load(std::sync::atomic::Ordering::Relaxed);
 

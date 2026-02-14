@@ -1,3 +1,8 @@
+#[cfg(feature = "client")]
+use egui_show_info_derive::ShowInfo;
+#[cfg(feature = "client")]
+use get_size2::GetSize;
+
 use std::{iter, ops::RangeInclusive, sync::LazyLock};
 
 #[cfg(feature = "client")]
@@ -7,6 +12,7 @@ use crate::{
     data::DataStore,
     frontend::{action::ActionType, world::Position},
     power::Watt,
+    replays::GenerationInformation,
     research::Technology,
 };
 
@@ -45,7 +51,7 @@ pub(crate) fn list_example_worlds(
         ui.text_edit_singleline(&mut values.name_field);
     });
 
-    for (world, world_values) in WORLDS.iter().zip(values.worlds.iter_mut()) {
+    for (idx, (world, world_values)) in WORLDS.iter().zip(values.worlds.iter_mut()).enumerate() {
         let v = ui.horizontal(|ui| {
             ui.label(world.name);
             ui.label(world.description);
@@ -100,7 +106,15 @@ pub(crate) fn list_example_worlds(
                 let name = values.name_field.clone();
                 let fun = world.creation_fn;
                 Some(move |progress, data_store: &'_ DataStore<u8, u8>| {
-                    (fun)(name, progress, &world_values, data_store)
+                    (fun)(
+                        name,
+                        progress,
+                        GenerationInformation {
+                            example_idx: idx,
+                            example_settings: world_values,
+                        },
+                        data_store,
+                    )
                 })
             } else {
                 None
@@ -117,6 +131,28 @@ pub(crate) fn list_example_worlds(
     None
 }
 
+pub(crate) fn get_builder(
+    name: String,
+    idx: usize,
+    values: Vec<ValueValue>,
+) -> impl FnOnce(ProgressInfo, &DataStore<u8, u8>) -> GameState<u8, u8> + 'static {
+    let fun = WORLDS
+        .get(idx)
+        .expect("Example World index out of bounds")
+        .creation_fn;
+    move |progress, data_store: &'_ DataStore<u8, u8>| {
+        (fun)(
+            name,
+            progress,
+            GenerationInformation {
+                example_idx: idx,
+                example_settings: values,
+            },
+            data_store,
+        )
+    }
+}
+
 struct ExampleWorld {
     name: &'static str,
     description: &'static str,
@@ -124,7 +160,8 @@ struct ExampleWorld {
 
     // TODO: I might want to change this to depend on the values
     allowed_on_wasm: fn(&[ValueValue]) -> AllowedOnWasm,
-    creation_fn: fn(String, ProgressInfo, &[ValueValue], &DataStore<u8, u8>) -> GameState<u8, u8>,
+    creation_fn:
+        fn(String, ProgressInfo, GenerationInformation, &DataStore<u8, u8>) -> GameState<u8, u8>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -148,8 +185,9 @@ enum ValueKind {
 }
 
 // FIXME: Naming???
-#[derive(Clone)]
-enum ValueValue {
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) enum ValueValue {
     Range(usize),
     Toggle(bool),
 }
@@ -163,7 +201,7 @@ const WORLDS: LazyLock<[ExampleWorld; 5]> = LazyLock::new(|| {
 
             allowed_on_wasm: |_| AllowedOnWasm::True,
 
-            creation_fn: |name, _, _, data_store| GameState::new(name, data_store),
+            creation_fn: |name, _, gen_info, data_store| GameState::new(name, gen_info, data_store),
         },
         ExampleWorld {
             name: "Megabase",
@@ -176,12 +214,18 @@ const WORLDS: LazyLock<[ExampleWorld; 5]> = LazyLock::new(|| {
 
             allowed_on_wasm: |_| AllowedOnWasm::True,
 
-            creation_fn: |name, progress, values, data_store| {
-                let [ValueValue::Toggle(use_solar_field)] = values else {
+            creation_fn: |name, progress, gen_info, data_store| {
+                let &[ValueValue::Toggle(use_solar_field)] = &gen_info.example_settings[..] else {
                     unreachable!();
                 };
 
-                let gs = GameState::new_with_megabase(name, *use_solar_field, progress, data_store);
+                let gs = GameState::new_with_megabase(
+                    name,
+                    gen_info,
+                    use_solar_field,
+                    progress,
+                    data_store,
+                );
 
                 let techs = 0..data_store.technology_costs.len();
 
@@ -233,14 +277,15 @@ const WORLDS: LazyLock<[ExampleWorld; 5]> = LazyLock::new(|| {
                 ))
             },
 
-            creation_fn: |name, progress, values, data_store| {
-                let [ValueValue::Range(count)] = values else {
+            creation_fn: |name, progress, gen_info, data_store| {
+                let &[ValueValue::Range(count)] = &gen_info.example_settings[..] else {
                     unreachable!();
                 };
 
                 let gs = GameState::new_with_gigabase(
                     name,
-                    (*count).try_into().unwrap(),
+                    gen_info,
+                    count.try_into().unwrap(),
                     progress,
                     data_store,
                 );
@@ -282,8 +327,8 @@ const WORLDS: LazyLock<[ExampleWorld; 5]> = LazyLock::new(|| {
             description: "A small ring around the world",
             values: vec![],
             allowed_on_wasm: |_| AllowedOnWasm::True,
-            creation_fn: |name, progress, _values, data_store| {
-                GameState::new_with_world_train_ride(name, progress, data_store)
+            creation_fn: |name, progress, gen_info, data_store| {
+                GameState::new_with_world_train_ride(name, gen_info, progress, data_store)
             },
         },
         ExampleWorld {
@@ -314,14 +359,15 @@ const WORLDS: LazyLock<[ExampleWorld; 5]> = LazyLock::new(|| {
                     AllowedOnWasm::True
                 }
             },
-            creation_fn: |name, progress, values, data_store| {
-                let [ValueValue::Range(count)] = values else {
+            creation_fn: |name, progress, gen_info, data_store| {
+                let &[ValueValue::Range(count)] = &gen_info.example_settings[..] else {
                     unreachable!();
                 };
 
                 GameState::new_with_tons_of_solar(
                     name,
-                    Watt(42_000) * (*count) as u64,
+                    gen_info,
+                    Watt(42_000) * count as u64,
                     Position { x: 1_600, y: 1_600 },
                     None,
                     progress,

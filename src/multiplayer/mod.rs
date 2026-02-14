@@ -44,7 +44,7 @@ pub(crate) enum Game<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
     ),
     DedicatedServer(
         GameState<ItemIdxType, RecipeIdxType>,
-        Replay<ItemIdxType, RecipeIdxType, DataStore<ItemIdxType, RecipeIdxType>>,
+        Replay,
         GameStateUpdateHandler<ItemIdxType, RecipeIdxType, Server<ItemIdxType, RecipeIdxType>>,
         Box<dyn FnMut() + Send + Sync>,
     ),
@@ -52,7 +52,7 @@ pub(crate) enum Game<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> {
     #[cfg(feature = "client")]
     IntegratedServer(
         Arc<GameState<ItemIdxType, RecipeIdxType>>,
-        Replay<ItemIdxType, RecipeIdxType, DataStore<ItemIdxType, RecipeIdxType>>,
+        Replay,
         GameStateUpdateHandler<
             ItemIdxType,
             RecipeIdxType,
@@ -194,10 +194,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 ))
             },
             GameInitData::DedicatedServer(game_state, info, cancel_socket) => {
-                #[cfg(debug_assertions)]
-                let replay = Replay::new(&game_state, None, data_store.clone());
-                #[cfg(not(debug_assertions))]
-                let replay = Replay::new_dummy(data_store.clone());
+                let replay = Replay::new(game_state.aux_data.lock().gen_info.1.clone(), data_store);
                 Ok(Self::DedicatedServer(
                     game_state,
                     replay,
@@ -215,10 +212,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 ui_actions,
                 cancel_socket,
             } => {
-                #[cfg(debug_assertions)]
-                let replay = Replay::new(&game_state, None, data_store.clone());
-                #[cfg(not(debug_assertions))]
-                let replay = Replay::new_dummy(data_store.clone());
+                let replay = Replay::new(game_state.aux_data.lock().gen_info.1.clone(), data_store);
                 Ok(Self::IntegratedServer(
                     game_state,
                     replay,
@@ -278,11 +272,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
         match self {
             #[cfg(feature = "client")]
             Game::Client(game_state, game_state_update_handler, tick_counter) => {
-                game_state_update_handler.update::<&DataStore<ItemIdxType, RecipeIdxType>>(
-                    &game_state,
-                    None,
-                    data_store,
-                );
+                game_state_update_handler.update(&game_state, None, data_store);
                 tick_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             },
             Game::DedicatedServer(
