@@ -663,6 +663,151 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 },
                 Input::MouseMove(x, y) => {
                     self.current_mouse_pos = (x, y);
+                    
+                    match &mut self.state {
+            ActionStateMachineState::CtrlCPressed
+            | ActionStateMachineState::CopyDragInProgress { start_pos: _ } => {},
+            ActionStateMachineState::DelPressed
+            | ActionStateMachineState::DeleteDragInProgress { start_pos: _ } => {},
+
+            ActionStateMachineState::Idle | ActionStateMachineState::Viewing(_) => {},
+            ActionStateMachineState::Holding(held_object) => match held_object {
+                HeldObject::Blueprint(_) => {},
+
+                HeldObject::Tile(_floor_tile) => {},
+                HeldObject::Entity(place_entity_type) => match place_entity_type {
+                    PlaceEntityType::Assembler {
+                        pos: position,
+                        ty: _,
+                        rotation: _,
+                        ..
+                    } => {
+                        *position = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Inserter {
+                        pos,
+                        dir: _,
+                        filter: _,
+                        ty: _,
+                        ..
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Belt {
+                        pos,
+                        ty: _,
+                        direction: _,
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Underground {
+                        pos,
+                        ty: _,
+                        direction: _,
+                        underground_dir: _,
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::PowerPole { pos, ty: _ } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Splitter {
+                        pos,
+                        direction: _,
+                        ty: _,
+                        in_mode: _,
+                        out_mode: _,
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Chest { pos, .. } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::SolarPanel { pos, ty: _ } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Accumulator { pos, ty: _ } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Lab { pos, ty: _, .. } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Beacon { ty: _, pos, .. } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::FluidTank {
+                        ty: _,
+                        pos,
+                        rotation: _,
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::MiningDrill {
+                        ty: _,
+                        pos,
+                        rotation: _,
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                },
+                HeldObject::OrePlacement { .. } => {},
+            },
+            ActionStateMachineState::Deconstructing(position, timer) => {
+                //todo!("Check if we are still over the same thing")
+            },
+        }
 
                     vec![]
                 },
