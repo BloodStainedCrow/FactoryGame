@@ -79,6 +79,9 @@ pub mod research;
 
 pub mod scenario;
 
+#[cfg(test)]
+pub mod test_world_harness;
+
 #[cfg(feature = "client")]
 mod example_worlds;
 
