@@ -3665,7 +3665,7 @@ pub fn render_ui<
                         });
 
                         TableBuilder::new(ui).columns(Column::auto(), 2).body(|body| {
-                            body.rows(1.0, pg.num_assemblers_of_type.len() + pg.num_solar_panels_of_type.len() + pg.num_beacons_of_type.len()+ pg.num_labs_of_type.len(), |mut row| {
+                            body.rows(1.0, pg.num_assemblers_of_type.len() + pg.num_solar_panels_of_type.len() + pg.num_beacons_of_type.len()+ pg.num_labs_of_type.len()+ pg.main_accumulator_count.len(), |mut row| {
                                 let i = row.index();
 
                                 if i < pg.num_assemblers_of_type.len() {
@@ -3688,8 +3688,15 @@ pub fn render_ui<
 
                                     });
                                     row.col(|ui| {ui.add(Label::new(format!("{}", pg.num_beacons_of_type[i])).extend());});
-                                } else {
+                                } else if i < pg.num_assemblers_of_type.len() +  pg.num_solar_panels_of_type.len() + pg.num_beacons_of_type.len() + pg.main_accumulator_count.len()  {
                                     let i = i - (pg.num_assemblers_of_type.len() +  pg.num_solar_panels_of_type.len() + pg.num_beacons_of_type.len());
+                                    row.col(|ui| {
+                                        ui.add(Label::new(&data_store_ref.accumulator_info[i].display_name).extend());
+
+                                    });
+                                    row.col(|ui| {ui.add(Label::new(format!("{}", pg.main_accumulator_count[i])).extend());});
+                                } else {
+                                    let i = i - (pg.num_assemblers_of_type.len() +  pg.num_solar_panels_of_type.len() + pg.num_beacons_of_type.len() + pg.main_accumulator_count.len());
                                     row.col(|ui| {
                                         ui.add(Label::new(&data_store_ref.lab_info[i].display_name).extend());
 
