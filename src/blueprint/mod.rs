@@ -946,7 +946,7 @@ impl Blueprint {
 
     pub fn optimize(&mut self) {
         info!("Optimizing Blueprint");
-        self.actions.par_sort_unstable_by_key(|v| match v {
+        self.actions.par_sort_by_key(|v| match v {
             BlueprintAction::PlaceEntity(e) => match e {
                 BlueprintPlaceEntity::Assembler { pos, .. } => {
                     (1, 3, (BeltId::Pure(0), 0), *pos, 0)

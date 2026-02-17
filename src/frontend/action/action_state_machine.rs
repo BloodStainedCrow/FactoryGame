@@ -471,7 +471,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
                                 match held_object {
                                     HeldObject::Blueprint(bp) => {
-                                        bp.get_reusable(force, data_store).actions_with_base_pos(Self::player_mouse_to_tile(
+                                        bp.get_reusable(force, data_store).optimize().actions_with_base_pos(Self::player_mouse_to_tile(
                                             self.zoom_level,
                                             self.map_view_info.unwrap_or(self.local_player_pos),
                                             self.current_mouse_pos,
@@ -635,7 +635,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             let x_range = min(start_pos.x, end_pos.x)..(max(start_pos.x, end_pos.x) + 1);
                             let y_range = min(start_pos.y, end_pos.y)..(max(start_pos.y, end_pos.y) + 1);
 
-                            self.state = ActionStateMachineState::Holding(HeldObject::Blueprint(Blueprint::from_area(world, sim_state, [x_range, y_range], data_store)));
+                            let mut bp = Blueprint::from_area(world, sim_state, [x_range, y_range], data_store);
+                            bp.optimize();
+
+                            self.state = ActionStateMachineState::Holding(HeldObject::Blueprint(bp));
                     vec![]
                 },
                         ActionStateMachineState::DeleteDragInProgress { start_pos } => {

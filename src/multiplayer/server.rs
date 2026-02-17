@@ -106,6 +106,7 @@ impl<
                 replay.append_actions(actions.iter().cloned(), data_store);
                 replay.tick();
 
+                #[cfg(debug_assertions)]
                 {
                     use ron::ser::PrettyConfig;
 
