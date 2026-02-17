@@ -115,7 +115,6 @@ pub struct PowerGrid<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         Network<Position, (), (Position, PowerGridEntity<ItemIdxType, RecipeIdxType>)>,
     steam_power_producers: SteamPowerProducerStore,
 
-    // TODO: Currently there can only be a single type of solar panel and accumulator
     pub num_solar_panels_of_type: Box<[u64]>,
     pub main_accumulator_count: Box<[u64]>,
     pub main_accumulator_charge: Box<[Joule]>,

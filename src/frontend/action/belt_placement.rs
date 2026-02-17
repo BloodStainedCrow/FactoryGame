@@ -397,7 +397,7 @@ pub fn handle_underground_removal<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                     let self_len = i as u16 * BELT_LEN_PER_TILE;
                     if *underground_dir == underground_belt_kind {
                         // FIXME: We need to handle if us being gone allows two other undergrounds to connect (crashing replay 004)
-
+                        todo!();
                         break 'self_len 0;
                     }
                     assert_eq!(*id, our_belt_id);
@@ -1876,242 +1876,316 @@ pub fn expected_belt_state(
     }
 }
 
-// #[cfg(test)]
-// mod test {
-//     use proptest::prelude::{Just, Strategy};
-//     use proptest::{prop_assert, prop_assume, proptest};
-
-//     use crate::DATA_STORE;
-//     use crate::app_state::GameState;
-//     use crate::blueprint::Blueprint;
-//     use crate::frontend::action::ActionType;
-//     use crate::frontend::action::set_recipe::SetRecipeInfo;
-//     use crate::frontend::world::Position;
-//     use crate::frontend::world::tile::{AssemblerInfo, Dir, Entity, InserterInfo, PlaceEntityType};
-//     use crate::item::Recipe;
-
-//     fn chest_onto_belt() -> impl Strategy<Value = Vec<ActionType<u8, u8>>> {
-//         Just(vec![
-//             place(PlaceEntityType::Assembler {
-//                 pos: Position { x: 0, y: 3 },
-//                 ty: 0,
-//                 rotation: Dir::North,
-//             }),
-//             ActionType::SetRecipe(SetRecipeInfo {
-//                 pos: Position { x: 0, y: 3 },
-//                 recipe: Recipe { id: 0 },
-//             }),
-//             place(PlaceEntityType::Inserter {
-//                 pos: Position { x: 2, y: 2 },
-//                 dir: crate::frontend::world::tile::Dir::North,
-//                 filter: None,
-//                 ty: 0,
-//                 user_movetime: None,
-//             }),
-//             place(PlaceEntityType::Belt {
-//                 pos: Position { x: 2, y: 1 },
-//                 direction: crate::frontend::world::tile::Dir::East,
-//                 ty: 0,
-//             }),
-//             place(PlaceEntityType::PowerPole {
-//                 pos: Position { x: 0, y: 2 },
-//                 ty: 0,
-//             }),
-//             place(PlaceEntityType::PowerPole {
-//                 pos: Position { x: 5, y: 0 },
-//                 ty: 0,
-//             }),
-//             place(PlaceEntityType::SolarPanel {
-//                 pos: Position { x: 6, y: 0 },
-//                 ty: 0,
-//             }),
-//         ])
-//     }
-
-//     fn belts_into_sideload() -> impl Strategy<Value = Vec<ActionType<u8, u8>>> {
-//         Just(vec![
-//             place(PlaceEntityType::Belt {
-//                 pos: Position { x: 3, y: 1 },
-//                 direction: crate::frontend::world::tile::Dir::East,
-//                 ty: 0,
-//             }),
-//             place(PlaceEntityType::Belt {
-//                 pos: Position { x: 4, y: 0 },
-//                 direction: crate::frontend::world::tile::Dir::South,
-//                 ty: 0,
-//             }),
-//             place(PlaceEntityType::Belt {
-//                 pos: Position { x: 4, y: 1 },
-//                 direction: crate::frontend::world::tile::Dir::South,
-//                 ty: 0,
-//             }),
-//             place(PlaceEntityType::Belt {
-//                 pos: Position { x: 4, y: 2 },
-//                 direction: crate::frontend::world::tile::Dir::South,
-//                 ty: 0,
-//             }),
-//         ])
-//     }
-
-//     fn sideload_items() -> impl Strategy<Value = Vec<ActionType<u8, u8>>> {
-//         (chest_onto_belt(), belts_into_sideload()).prop_map(|(mut a, b)| {
-//             a.extend(b.into_iter());
-//             a
-//         })
-//     }
-
-//     fn place(ty: PlaceEntityType<u8>) -> ActionType<u8, u8> {
-//         ActionType::PlaceEntity(crate::frontend::action::place_entity::PlaceEntityInfo {
-//             entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(ty),
-//             force: false,
-//         })
-//     }
-
-//     proptest! {
-
-//         #[test]
-//         fn inserter_always_attaches(actions in chest_onto_belt().prop_shuffle()) {
-//             let mut state = GameState::new( &DATA_STORE);
+#[cfg(test)]
+mod test {
+    use crate::{
+        frontend::{
+            action::action_state_machine::{ActionStateMachineState, HeldObject},
+            world::{
+                Position,
+                tile::{Dir, PlaceEntityType, UndergroundDir},
+            },
+        },
+        test_world_harness::*,
+    };
+
+    #[test]
+    fn underground_blocking_crash() {
+        let mut test = Test::default();
+
+        test.hold_bad(HeldObject::Entity(PlaceEntityType::Underground {
+            pos: Position::default(),
+            direction: Dir::default(),
+            ty: 0,
+            underground_dir: UndergroundDir::Entrance,
+        }));
+        test.rotate_holding(Dir::East);
+        // Place outer pair of undergrounds
+        test.place((0, 0));
+        test.place((5, 0));
+
+        // // Place inner pair of undergrounds
+        test.place((2, 0));
+        test.place((3, 0));
+
+        test.clear_hand();
+        test.assert_tile_occupied((2, 0));
+
+        // Remove left of inner pair of undergrounds
+        test.mouse_to((2, 0));
+        test.right_mouse_down();
+        test.tick_many(35);
+
+        test.assert_tile_occupied((0, 0));
+        test.assert_tile_occupied((5, 0));
+        test.assert_tile_empty((2, 0));
+        test.assert_tile_occupied((3, 0));
+
+        // Remove right of inner pair of undergrounds
+        test.mouse_to((3, 0));
+        test.right_mouse_down();
+        test.tick_many(35);
+
+        test.assert_tile_occupied((0, 0));
+        test.assert_tile_occupied((5, 0));
+        test.assert_tile_empty((2, 0));
+        test.assert_tile_empty((3, 0));
+    }
+
+    #[test]
+    fn place_underground() {
+        let mut test = Test::default();
+
+        test.hold_bad(HeldObject::Entity(PlaceEntityType::Underground {
+            pos: Position::default(),
+            direction: Dir::default(),
+            ty: 0,
+            underground_dir: UndergroundDir::Entrance,
+        }));
+        test.rotate_holding(Dir::East);
+        test.place((0, 0));
+        test.place((5, 0));
+
+        test.clear_hand();
+
+        test.assert_tile_occupied((0, 0));
+        test.assert_tile_occupied((5, 0));
+    }
+
+    //     use proptest::prelude::{Just, Strategy};
+    //     use proptest::{prop_assert, prop_assume, proptest};
+
+    //     use crate::DATA_STORE;
+    //     use crate::app_state::GameState;
+    //     use crate::blueprint::Blueprint;
+    //     use crate::frontend::action::ActionType;
+    //     use crate::frontend::action::set_recipe::SetRecipeInfo;
+    //     use crate::frontend::world::Position;
+    //     use crate::frontend::world::tile::{AssemblerInfo, Dir, Entity, InserterInfo, PlaceEntityType};
+    //     use crate::item::Recipe;
+
+    //     fn chest_onto_belt() -> impl Strategy<Value = Vec<ActionType<u8, u8>>> {
+    //         Just(vec![
+    //             place(PlaceEntityType::Assembler {
+    //                 pos: Position { x: 0, y: 3 },
+    //                 ty: 0,
+    //                 rotation: Dir::North,
+    //             }),
+    //             ActionType::SetRecipe(SetRecipeInfo {
+    //                 pos: Position { x: 0, y: 3 },
+    //                 recipe: Recipe { id: 0 },
+    //             }),
+    //             place(PlaceEntityType::Inserter {
+    //                 pos: Position { x: 2, y: 2 },
+    //                 dir: crate::frontend::world::tile::Dir::North,
+    //                 filter: None,
+    //                 ty: 0,
+    //                 user_movetime: None,
+    //             }),
+    //             place(PlaceEntityType::Belt {
+    //                 pos: Position { x: 2, y: 1 },
+    //                 direction: crate::frontend::world::tile::Dir::East,
+    //                 ty: 0,
+    //             }),
+    //             place(PlaceEntityType::PowerPole {
+    //                 pos: Position { x: 0, y: 2 },
+    //                 ty: 0,
+    //             }),
+    //             place(PlaceEntityType::PowerPole {
+    //                 pos: Position { x: 5, y: 0 },
+    //                 ty: 0,
+    //             }),
+    //             place(PlaceEntityType::SolarPanel {
+    //                 pos: Position { x: 6, y: 0 },
+    //                 ty: 0,
+    //             }),
+    //         ])
+    //     }
+
+    //     fn belts_into_sideload() -> impl Strategy<Value = Vec<ActionType<u8, u8>>> {
+    //         Just(vec![
+    //             place(PlaceEntityType::Belt {
+    //                 pos: Position { x: 3, y: 1 },
+    //                 direction: crate::frontend::world::tile::Dir::East,
+    //                 ty: 0,
+    //             }),
+    //             place(PlaceEntityType::Belt {
+    //                 pos: Position { x: 4, y: 0 },
+    //                 direction: crate::frontend::world::tile::Dir::South,
+    //                 ty: 0,
+    //             }),
+    //             place(PlaceEntityType::Belt {
+    //                 pos: Position { x: 4, y: 1 },
+    //                 direction: crate::frontend::world::tile::Dir::South,
+    //                 ty: 0,
+    //             }),
+    //             place(PlaceEntityType::Belt {
+    //                 pos: Position { x: 4, y: 2 },
+    //                 direction: crate::frontend::world::tile::Dir::South,
+    //                 ty: 0,
+    //             }),
+    //         ])
+    //     }
 
-//             let bp = Blueprint { actions };
-
-//             bp.apply(false, Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
+    //     fn sideload_items() -> impl Strategy<Value = Vec<ActionType<u8, u8>>> {
+    //         (chest_onto_belt(), belts_into_sideload()).prop_map(|(mut a, b)| {
+    //             a.extend(b.into_iter());
+    //             a
+    //         })
+    //     }
 
-//             let ent = state.world.get_entity_at(Position { x: 1600, y: 1603 }, &DATA_STORE).unwrap();
+    //     fn place(ty: PlaceEntityType<u8>) -> ActionType<u8, u8> {
+    //         ActionType::PlaceEntity(crate::frontend::action::place_entity::PlaceEntityInfo {
+    //             entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(ty),
+    //             force: false,
+    //         })
+    //     }
 
-//             let assembler_powered = matches!(ent, Entity::Assembler { info: AssemblerInfo::Powered { .. } |  AssemblerInfo::PoweredNoRecipe { .. }, .. });
+    //     proptest! {
 
-//             prop_assert!(assembler_powered);
+    //         #[test]
+    //         fn inserter_always_attaches(actions in chest_onto_belt().prop_shuffle()) {
+    //             let mut state = GameState::new("TEST_GAMESTATE".to_string(), GenerationInformation::default(), &DATA_STORE);
 
-//             let assembler_working = matches!(ent, Entity::Assembler { info: AssemblerInfo::Powered { .. }, .. });
+    //             let bp = Blueprint { actions };
 
-//             prop_assume!(assembler_working, "{:?}", ent);
+    //             bp.apply(false, Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
 
-//             let ent = state.world.get_entity_at(Position { x: 1602, y: 1602 }, &DATA_STORE).unwrap();
+    //             let ent = state.world.get_entity_at(Position { x: 1600, y: 1603 }, &DATA_STORE).unwrap();
 
-//             let inserter_attached = matches!(ent, Entity::Inserter { info: InserterInfo::Attached { .. }, .. });
+    //             let assembler_powered = matches!(ent, Entity::Assembler { info: AssemblerInfo::Powered { .. } |  AssemblerInfo::PoweredNoRecipe { .. }, .. });
 
-//             prop_assert!(inserter_attached, "{:?}", ent);
-//         }
+    //             prop_assert!(assembler_powered);
 
-//         #[test]
-//         fn inserter_always_attaches_full_bp(actions in sideload_items().prop_shuffle()) {
-//             let mut state = GameState::new(&DATA_STORE);
+    //             let assembler_working = matches!(ent, Entity::Assembler { info: AssemblerInfo::Powered { .. }, .. });
 
-//             let bp = Blueprint { actions };
+    //             prop_assume!(assembler_working, "{:?}", ent);
 
-//             bp.apply(false, Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
+    //             let ent = state.world.get_entity_at(Position { x: 1602, y: 1602 }, &DATA_STORE).unwrap();
 
-//             let ent = state.world.get_entity_at(Position { x: 1600, y: 1603 }, &DATA_STORE).unwrap();
+    //             let inserter_attached = matches!(ent, Entity::Inserter { info: InserterInfo::Attached { .. }, .. });
 
-//             let assembler_powered = matches!(ent, Entity::Assembler { info: AssemblerInfo::Powered { .. } |  AssemblerInfo::PoweredNoRecipe { .. }, .. });
+    //             prop_assert!(inserter_attached, "{:?}", ent);
+    //         }
 
-//             prop_assert!(assembler_powered);
+    //         #[test]
+    //         fn inserter_always_attaches_full_bp(actions in sideload_items().prop_shuffle()) {
+    //             let mut state = GameState::new("TEST_GAMESTATE".to_string(), GenerationInformation::default(), &DATA_STORE);
 
-//             let assembler_working = matches!(ent, Entity::Assembler { info: AssemblerInfo::Powered { .. }, .. });
+    //             let bp = Blueprint { actions };
 
-//             prop_assume!(assembler_working, "{:?}", ent);
+    //             bp.apply(false, Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
 
-//             let ent = state.world.get_entity_at(Position { x: 1602, y: 1602 }, &DATA_STORE).unwrap();
+    //             let ent = state.world.get_entity_at(Position { x: 1600, y: 1603 }, &DATA_STORE).unwrap();
 
-//             let inserter_attached = matches!(ent, Entity::Inserter { info: InserterInfo::Attached { .. }, .. });
+    //             let assembler_powered = matches!(ent, Entity::Assembler { info: AssemblerInfo::Powered { .. } |  AssemblerInfo::PoweredNoRecipe { .. }, .. });
 
-//             prop_assert!(inserter_attached, "{:?}", ent);
-//         }
+    //             prop_assert!(assembler_powered);
 
-//         #[test]
-//         fn sideload_empty_does_not_crash(actions in belts_into_sideload().prop_shuffle()) {
-//             let mut state = GameState::new(&DATA_STORE);
+    //             let assembler_working = matches!(ent, Entity::Assembler { info: AssemblerInfo::Powered { .. }, .. });
 
-//             let bp = Blueprint { actions };
+    //             prop_assume!(assembler_working, "{:?}", ent);
 
-//             bp.apply(false, Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
-//         }
+    //             let ent = state.world.get_entity_at(Position { x: 1602, y: 1602 }, &DATA_STORE).unwrap();
 
-//         #[test]
-//         fn sideload_with_items_at_source_does_not_crash(actions in sideload_items().prop_shuffle()) {
-//             let mut state = GameState::new(&DATA_STORE);
+    //             let inserter_attached = matches!(ent, Entity::Inserter { info: InserterInfo::Attached { .. }, .. });
 
-//             let bp = Blueprint { actions };
+    //             prop_assert!(inserter_attached, "{:?}", ent);
+    //         }
 
-//             bp.apply(false, Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
-//         }
+    //         #[test]
+    //         fn sideload_empty_does_not_crash(actions in belts_into_sideload().prop_shuffle()) {
+    //             let mut state = GameState::new("TEST_GAMESTATE".to_string(), GenerationInformation::default(), &DATA_STORE);
 
-//         #[test]
-//         fn sideload_with_items_at_source_items_reach_the_intersection(actions in chest_onto_belt().prop_shuffle()) {
-//             let mut state = GameState::new( &DATA_STORE);
+    //             let bp = Blueprint { actions };
 
-//             let bp = Blueprint { actions };
+    //             bp.apply(false, Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
+    //         }
 
-//             bp.apply(false, Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
+    //         #[test]
+    //         fn sideload_with_items_at_source_does_not_crash(actions in sideload_items().prop_shuffle()) {
+    //             let mut state = GameState::new("TEST_GAMESTATE".to_string(), GenerationInformation::default(), &DATA_STORE);
 
-//             let assembler = state.world.get_entity_at(Position { x: 1600, y: 1603 }, &DATA_STORE).unwrap();
+    //             let bp = Blueprint { actions };
 
-//             let assembler_working = matches!(assembler, Entity::Assembler { info: AssemblerInfo::Powered { .. }, .. });
+    //             bp.apply(false, Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
+    //         }
 
-//             prop_assume!(assembler_working, "{:?}", assembler);
+    //         #[test]
+    //         fn sideload_with_items_at_source_items_reach_the_intersection(actions in chest_onto_belt().prop_shuffle()) {
+    //             let mut state = GameState::new("TEST_GAMESTATE".to_string(), GenerationInformation::default(), &DATA_STORE);
 
-//             let ent = state.world.get_entity_at(Position { x: 1602, y: 1602 }, &DATA_STORE).unwrap();
+    //             let bp = Blueprint { actions };
 
-//             let inserter_attached = matches!(ent, Entity::Inserter { info: InserterInfo::Attached { .. }, .. });
+    //             bp.apply(false, Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
 
-//             prop_assume!(inserter_attached, "{:?}", ent);
+    //             let assembler = state.world.get_entity_at(Position { x: 1600, y: 1603 }, &DATA_STORE).unwrap();
 
-//             for _ in 0..200 {
-//                 state.update(&DATA_STORE);
-//             }
+    //             let assembler_working = matches!(assembler, Entity::Assembler { info: AssemblerInfo::Powered { .. }, .. });
 
-//             let Some(Entity::Belt { id, .. }) = state.world.get_entity_at(Position { x: 1602, y: 1601 }, &DATA_STORE) else {
-//                 unreachable!()
-//             };
+    //             prop_assume!(assembler_working, "{:?}", assembler);
 
-//             let items_at_intersection = state.simulation_state.factory.belts.get_item_iter(*id).into_iter().next().expect(&format!("{:?}", state.simulation_state.factory.belts.get_item_iter(*id).into_iter().collect::<Vec<_>>())).is_some();
+    //             let ent = state.world.get_entity_at(Position { x: 1602, y: 1602 }, &DATA_STORE).unwrap();
 
-//             prop_assert!(state.statistics.production.total.unwrap().items_produced.iter().copied().sum::<u64>() > 0);
+    //             let inserter_attached = matches!(ent, Entity::Inserter { info: InserterInfo::Attached { .. }, .. });
 
-//             prop_assert!(items_at_intersection, "{:?}, \n{:?}", state.simulation_state.factory.belts, state.simulation_state.factory.belts.get_item_iter(*id).into_iter().collect::<Vec<_>>());
-//         }
+    //             prop_assume!(inserter_attached, "{:?}", ent);
 
-//         #[test]
-//         fn sideload_with_items_at_source_items_actually_reach(actions in sideload_items().prop_shuffle()) {
-//             let mut state = GameState::new(&DATA_STORE);
+    //             for _ in 0..200 {
+    //                 state.update(&DATA_STORE);
+    //             }
 
-//             let bp = Blueprint { actions };
+    //             let Some(Entity::Belt { id, .. }) = state.world.get_entity_at(Position { x: 1602, y: 1601 }, &DATA_STORE) else {
+    //                 unreachable!()
+    //             };
 
-//             bp.apply(false, Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
+    //             let items_at_intersection = state.simulation_state.factory.belts.get_item_iter(*id).into_iter().next().expect(&format!("{:?}", state.simulation_state.factory.belts.get_item_iter(*id).into_iter().collect::<Vec<_>>())).is_some();
 
-//             let ent = state.world.get_entity_at(Position { x: 1600, y: 1603 }, &DATA_STORE).unwrap();
+    //             prop_assert!(state.statistics.production.total.unwrap().items_produced.iter().copied().sum::<u64>() > 0);
 
-//             let assembler_powered = matches!(ent, Entity::Assembler { info: AssemblerInfo::Powered { .. } |  AssemblerInfo::PoweredNoRecipe { .. }, .. });
+    //             prop_assert!(items_at_intersection, "{:?}, \n{:?}", state.simulation_state.factory.belts, state.simulation_state.factory.belts.get_item_iter(*id).into_iter().collect::<Vec<_>>());
+    //         }
 
-//             prop_assume!(assembler_powered);
+    //         #[test]
+    //         fn sideload_with_items_at_source_items_actually_reach(actions in sideload_items().prop_shuffle()) {
+    //             let mut state = GameState::new("TEST_GAMESTATE".to_string(), GenerationInformation::default(), &DATA_STORE);
 
-//             let assembler_working = matches!(ent, Entity::Assembler { info: AssemblerInfo::Powered { .. }, .. });
+    //             let bp = Blueprint { actions };
 
-//             prop_assume!(assembler_working, "{:?}", ent);
+    //             bp.apply(false, Position { x: 1600, y: 1600 }, &mut state, &DATA_STORE);
 
-//             let inserter_attached = matches!(state.world.get_entity_at(Position { x: 1602, y: 1602 }, &DATA_STORE).unwrap(), Entity::Inserter { info: InserterInfo::Attached { .. }, .. });
+    //             let ent = state.world.get_entity_at(Position { x: 1600, y: 1603 }, &DATA_STORE).unwrap();
 
-//             prop_assume!(inserter_attached);
+    //             let assembler_powered = matches!(ent, Entity::Assembler { info: AssemblerInfo::Powered { .. } |  AssemblerInfo::PoweredNoRecipe { .. }, .. });
 
-//             for _ in 0..2000 {
-//                 state.update(&DATA_STORE);
-//             }
+    //             prop_assume!(assembler_powered);
 
-//             let Some(Entity::Belt { id: id_going_right, .. }) = state.world.get_entity_at(Position { x: 1602, y: 1601 }, &DATA_STORE) else {
-//                 unreachable!()
-//             };
+    //             let assembler_working = matches!(ent, Entity::Assembler { info: AssemblerInfo::Powered { .. }, .. });
 
-//             let Some(Entity::Belt { id: id_going_down, .. }) = state.world.get_entity_at(Position { x: 1604, y: 1602 }, &DATA_STORE) else {
-//                 unreachable!()
-//             };
+    //             prop_assume!(assembler_working, "{:?}", ent);
 
-//             let produced = state.statistics.production.total.unwrap().items_produced.iter().copied().sum::<u64>();
+    //             let inserter_attached = matches!(state.world.get_entity_at(Position { x: 1602, y: 1602 }, &DATA_STORE).unwrap(), Entity::Inserter { info: InserterInfo::Attached { .. }, .. });
 
-//             prop_assume!(produced > 0, "{:?}", produced);
+    //             prop_assume!(inserter_attached);
 
-//             prop_assert!(dbg!(state.simulation_state.factory.belts.get_item_iter(*id_going_down).into_iter().next().unwrap()).is_some(),"down: {:?}\n, right:{:?}", state.simulation_state.factory.belts.get_item_iter(*id_going_down).into_iter().collect::<Vec<_>>(), state.simulation_state.factory.belts.get_item_iter(*id_going_right).into_iter().collect::<Vec<_>>());
-//         }
+    //             for _ in 0..2000 {
+    //                 state.update(&DATA_STORE);
+    //             }
 
-//     }
-// }
+    //             let Some(Entity::Belt { id: id_going_right, .. }) = state.world.get_entity_at(Position { x: 1602, y: 1601 }, &DATA_STORE) else {
+    //                 unreachable!()
+    //             };
+
+    //             let Some(Entity::Belt { id: id_going_down, .. }) = state.world.get_entity_at(Position { x: 1604, y: 1602 }, &DATA_STORE) else {
+    //                 unreachable!()
+    //             };
+
+    //             let produced = state.statistics.production.total.unwrap().items_produced.iter().copied().sum::<u64>();
+
+    //             prop_assume!(produced > 0, "{:?}", produced);
+
+    //             prop_assert!(dbg!(state.simulation_state.factory.belts.get_item_iter(*id_going_down).into_iter().next().unwrap()).is_some(),"down: {:?}\n, right:{:?}", state.simulation_state.factory.belts.get_item_iter(*id_going_down).into_iter().collect::<Vec<_>>(), state.simulation_state.factory.belts.get_item_iter(*id_going_right).into_iter().collect::<Vec<_>>());
+    //         }
+
+    //     }
+}
