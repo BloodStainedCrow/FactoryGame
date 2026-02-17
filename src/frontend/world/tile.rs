@@ -1060,6 +1060,17 @@ fn new_power_pole<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                                 *pole_position = Some((pole_pos, weak_index));
                             },
+                            Entity::Accumulator {
+                                pos,
+                                ty,
+                                pole_position: pole_position @ None,
+                            } => {
+                                let weak_index = sim_state.factory.power_grids.power_grids
+                                    [usize::from(grid_id)]
+                                .add_accumulator(*pos, *ty, pole_pos, data_store);
+
+                                *pole_position = Some((pole_pos, weak_index));
+                            },
                             Entity::Lab {
                                 pos,
                                 ty,
@@ -1850,7 +1861,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         dedup.len() - 1
                     };
 
-                    *modules = new_module_index as u32;
+                    *modules = new_module_index as ModuleSlotDedupIndex;
 
                     if id.recipe == new_recipe {
                         return ControlFlow::Break(());
@@ -1905,7 +1916,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         dedup.len() - 1
                     };
 
-                    *modules = new_module_index as u32;
+                    *modules = new_module_index as ModuleSlotDedupIndex;
 
                     let AssemblerInfo::PoweredNoRecipe(pole_position) = info else {
                         unreachable!();
@@ -1951,7 +1962,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         dedup.len() - 1
                     };
 
-                    *modules = new_module_index as u32;
+                    *modules = new_module_index as ModuleSlotDedupIndex;
 
                     *recipe = new_recipe;
                 },
@@ -1977,7 +1988,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         dedup.len() - 1
                     };
 
-                    *modules = new_module_index as u32;
+                    *modules = new_module_index as ModuleSlotDedupIndex;
                     *info = AssemblerInfo::Unpowered(new_recipe);
                 },
                 e => unreachable!("Called change recipe on non assembler: {e:?}"),
@@ -4059,6 +4070,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         debug_assert!(chunk_range_x.clone().count() >= 1);
         debug_assert!(chunk_range_y.clone().count() >= 1);
 
+        // dbg!(
+        //     chunk_range_x
+        //         .clone()
+        //         .cartesian_product(chunk_range_y.clone())
+        //         .count()
+        // );
+
         chunk_range_x
             .cartesian_product(chunk_range_y)
             .filter_map(|(chunk_x, chunk_y)| self.chunks.get(chunk_x, chunk_y))
@@ -5319,7 +5337,7 @@ pub type ModuleTy = u8;
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleSlots(pub thin_dst::ThinBox<(), Option<ModuleTy>>);
 
-pub type ModuleSlotDedupIndex = u32;
+pub type ModuleSlotDedupIndex = u16;
 
 impl serde::Serialize for ModuleSlots {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
