@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use itertools::{Itertools, assert_equal};
 use log::info;
 
-use crate::frontend::world::tile::BeltState;
+use crate::frontend::world::tile::{BeltState, ModuleSlotDedupIndex};
 use crate::inserter::FakeUnionStorage;
 use crate::progress_info::ProgressInfo;
 use crate::replays::GenerationInformation;
@@ -1123,7 +1123,7 @@ fn assembler_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             let ent = Entity::Assembler {
                 ty,
                 pos,
-                modules: modules as u32,
+                modules: modules as ModuleSlotDedupIndex,
                 info: match info {
                     Some((pole_pos, id, weak_idx)) => {
                         crate::frontend::world::tile::AssemblerInfo::Powered {
@@ -1207,7 +1207,7 @@ fn lab_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             let ent = Entity::Lab {
                 pos,
                 ty,
-                modules: modules as u32,
+                modules: modules as ModuleSlotDedupIndex,
                 pole_position: pole_pos,
             };
 
@@ -1319,7 +1319,7 @@ fn beacon_stage<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             let ent = Entity::Beacon {
                 pos,
                 ty,
-                modules: modules as u32,
+                modules: modules as ModuleSlotDedupIndex,
                 pole_position: pole_pos,
             };
 

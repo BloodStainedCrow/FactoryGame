@@ -92,7 +92,7 @@ enum BeltId {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-enum BlueprintPlaceEntity {
+pub(crate) enum BlueprintPlaceEntity {
     Assembler {
         pos: Position,
         ty: Arc<str>,
@@ -936,6 +936,14 @@ impl Blueprint {
         self.actions.len()
     }
 
+    pub fn extract_if(&mut self, filter: impl Fn(&BlueprintAction) -> bool) -> Self {
+        let extracted = self.actions.extract_if(.., |action| (filter)(action));
+
+        Self {
+            actions: extracted.collect(),
+        }
+    }
+
     pub fn optimize(&mut self) {
         info!("Optimizing Blueprint");
         self.actions.par_sort_unstable_by_key(|v| match v {
@@ -982,6 +990,7 @@ impl Blueprint {
                 BlueprintPlaceEntity::FluidTank { pos, .. } => {
                     (1, 2, (BeltId::Pure(0), 0), *pos, 0)
                 },
+
                 BlueprintPlaceEntity::MiningDrill { pos, .. } => {
                     (1, 3, (BeltId::Pure(0), 0), *pos, 0)
                 },

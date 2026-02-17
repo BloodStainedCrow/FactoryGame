@@ -1,12 +1,15 @@
 use crate::assembler::simd::Conn;
 use crate::belt::BeltTileId;
 use crate::belt::belt::Belt;
+use crate::blueprint::BlueprintAction;
+use crate::blueprint::BlueprintPlaceEntity;
 use crate::blueprint::blueprint_string::BlueprintString;
 use crate::chest::ChestSize;
 use crate::data::AllowedFluidDirection;
 use crate::frontend::action::belt_placement::FakeGameState;
 use crate::frontend::action::place_entity::PlaceEntityInfo;
 use crate::frontend::world::tile::CHUNK_SIZE;
+use crate::frontend::world::tile::ModuleSlotDedupIndex;
 use crate::frontend::world::tile::ModuleSlots;
 use crate::frontend::world::tile::ModuleTy;
 use crate::frontend::world::tile::PlayerInfo;
@@ -508,9 +511,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let s = get_const_string!("test_blueprints/solar_tile.bp");
         let bp: BlueprintString = BlueprintString(s);
         let mut bp: Blueprint = Blueprint::try_from(bp).unwrap();
-        bp.optimize();
-        let bp = bp.get_reusable(false, data_store);
-        let bp = bp.optimize();
+        let poles = bp.extract_if(|action| {
+            matches!(
+                action,
+                BlueprintAction::PlaceEntity(BlueprintPlaceEntity::PowerPole { .. })
+            )
+        });
+        let rest = bp;
 
         let bp_count = amount.0.div_ceil((Watt(42_000) * 104).0);
 
@@ -523,33 +530,33 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         // let total = bp.action_count();
         let total = y_positions.clone().count() * x_positions.clone().count();
 
+        puffin::set_scopes_on(false);
         progress.push_stage(
-            1.0,
+            0.5,
             Some(format!(
                 "Placing {} Solar Panels and Accumulators",
                 total * 104
             )),
         );
-
-        puffin::set_scopes_on(false);
         for pos in x_positions
-            .cartesian_product(y_positions)
+            .clone()
+            .cartesian_product(y_positions.clone())
             .map(|(x_pos, y_pos)| Position { x: x_pos, y: y_pos })
         {
             progress.add_progress(1.0 / total as f64);
-            bp.apply(pos, self, data_store);
+            rest.apply(false, pos, self, data_store);
         }
-        // bp.apply_at_positions(
-        //     x_positions
-        //         .cartesian_product(y_positions)
-        //         .map(|(x, y)| Position { x, y }),
-        //     false,
-        //     self,
-        //     || {
-        //         progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
-        //     },
-        //     data_store,
-        // );
+        progress.pop_stage();
+        progress.push_stage(0.5, Some(format!("Placing {} Substations", total * 4)));
+        for pos in x_positions
+            .clone()
+            .cartesian_product(y_positions.clone())
+            .map(|(x_pos, y_pos)| Position { x: x_pos, y: y_pos })
+        {
+            progress.add_progress(1.0 / total as f64);
+            poles.apply(false, pos, self, data_store);
+        }
+        progress.pop_stage();
         puffin::set_scopes_on(true);
     }
 
@@ -1630,7 +1637,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                 && slots.iter().all(|v| v.is_none())
                                         },
                                     ) {
-                                    found_idx as u32
+                                    found_idx as ModuleSlotDedupIndex
                                 } else {
                                     game_state.world.module_slot_dedup_table.push(
                                         vec![
@@ -1642,7 +1649,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         .into_boxed_slice()
                                         .into(),
                                     );
-                                    (game_state.world.module_slot_dedup_table.len() - 1) as u32
+                                    (game_state.world.module_slot_dedup_table.len() - 1)
+                                        as ModuleSlotDedupIndex
                                 };
 
                                 if let Some(pole_position) = powered_by {
@@ -2232,10 +2240,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     .iter()
                                     .position(|slots| *slots == modules)
                                 {
-                                    idx as u32
+                                    idx as ModuleSlotDedupIndex
                                 } else {
                                     game_state.world.module_slot_dedup_table.push(modules);
-                                    (game_state.world.module_slot_dedup_table.len() - 1) as u32
+                                    (game_state.world.module_slot_dedup_table.len() - 1)
+                                        as ModuleSlotDedupIndex
                                 };
 
                                 if let Err(e) = game_state.world.add_entity(
@@ -2289,10 +2298,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     .iter()
                                     .position(|slots| *slots == modules)
                                 {
-                                    idx as u32
+                                    idx as ModuleSlotDedupIndex
                                 } else {
                                     game_state.world.module_slot_dedup_table.push(modules);
-                                    (game_state.world.module_slot_dedup_table.len() - 1) as u32
+                                    (game_state.world.module_slot_dedup_table.len() - 1)
+                                        as ModuleSlotDedupIndex
                                 };
 
                                 if let Err(e) = game_state.world.add_entity(
@@ -2684,10 +2694,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         if let Some(idx) =
                                             dedup.iter().position(|slots| *slots == modules_cloned)
                                         {
-                                            *modules = idx as u32;
+                                            *modules = idx as ModuleSlotDedupIndex;
                                         } else {
                                             dedup.push(modules_cloned);
-                                            *modules = (dedup.len() - 1) as u32;
+                                            *modules = (dedup.len() - 1) as ModuleSlotDedupIndex;
                                         }
 
                                         match info {
@@ -2741,10 +2751,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         if let Some(idx) =
                                             dedup.iter().position(|slots| *slots == modules_cloned)
                                         {
-                                            *modules = idx as u32;
+                                            *modules = idx as ModuleSlotDedupIndex;
                                         } else {
                                             dedup.push(modules_cloned);
-                                            *modules = (dedup.len() - 1) as u32;
+                                            *modules = (dedup.len() - 1) as ModuleSlotDedupIndex;
                                         }
 
                                         match pole_position {
@@ -2854,10 +2864,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         if let Some(idx) =
                                             dedup.iter().position(|slots| *slots == modules_clone)
                                         {
-                                            *modules = idx as u32;
+                                            *modules = idx as ModuleSlotDedupIndex;
                                         } else {
                                             dedup.push(modules_clone);
-                                            *modules = (dedup.len() - 1) as u32;
+                                            *modules = (dedup.len() - 1) as ModuleSlotDedupIndex;
                                         }
                                     }
                                 },
