@@ -17,6 +17,7 @@ use sha2::{Digest, Sha256};
 use strum::IntoEnumIterator;
 
 pub mod factorio_1_1;
+pub mod pedia;
 
 use crate::{
     assembler::TIMERTYPE,

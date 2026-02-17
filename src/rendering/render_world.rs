@@ -2178,8 +2178,13 @@ pub fn render_ui<
         ui.label("Hold [Right Click] to deconstruct an entity.");
         ui.label("Press [Ctrl + C] and start dragging to copy an area into a Blueprint.");
     });
-
     state_machine_ref.open_windows[action_state_machine::Window::Tip] = open;
+
+    let mut open = state_machine_ref.open_windows[action_state_machine::Window::Datapedia];
+    state_machine_ref
+        .datapedia
+        .show_window(&mut open, ctx, data_store_ref);
+    state_machine_ref.open_windows[action_state_machine::Window::Datapedia] = open;
 
     Window::new("Size")
         .fixed_size(egui::vec2(1920f32, 1080f32))

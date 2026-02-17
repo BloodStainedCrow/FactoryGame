@@ -18,7 +18,7 @@ use crate::{
     app_state::SimulationState,
     belt::splitter::SplitterDistributionMode,
     blueprint::Blueprint,
-    data::{self, DataStore},
+    data::{self, DataStore, pedia::Pedia},
     frontend::{
         action::{
             place_entity::{EntityPlaceOptions, PlaceEntityInfo},
@@ -158,6 +158,8 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     pub autosave_interval: u32,
 
     pub open_windows: EnumMap<Window, bool>,
+
+    pub datapedia: Pedia<ItemIdxType, RecipeIdxType>,
 }
 
 #[derive(Debug, enum_map::Enum, PartialEq)]
@@ -167,6 +169,7 @@ pub(crate) enum Window {
     Statistics,
     Hotbar,
     Escape,
+    Datapedia,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -248,7 +251,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         local_player_pos: (f32, f32),
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        let open_windows = EnumMap::from_fn(|win| win == Window::Tip);
+        //FIXME: REMOVE Datapedia
+        let open_windows = EnumMap::from_fn(|win| win == Window::Tip || win == Window::Datapedia);
 
         Self {
             my_player_id,
@@ -294,6 +298,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             autosave_interval: (60 * TICKS_PER_SECOND_LOGIC) as u32,
 
             open_windows,
+            datapedia: Pedia::new(data_store),  
         }
     }
 
@@ -305,7 +310,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         let player_pos = world.players[my_player_id as usize].pos;
-        let open_windows = EnumMap::from_fn(|win| win == Window::Tip);
+        //FIXME: REMOVE Datapedia
+        let open_windows = EnumMap::from_fn(|win| win == Window::Tip || win == Window::Datapedia);
 
         Self {
             my_player_id,
@@ -351,6 +357,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             autosave_interval: (60 * TICKS_PER_SECOND_LOGIC) as u32,
 
             open_windows,
+            datapedia: Pedia::new(data_store),  
         }
     }
 
