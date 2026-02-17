@@ -2949,6 +2949,15 @@ pub fn render_ui<
             } else {
                 'P'
             })));
+            if ui.button("Find additional Grid").clicked() {
+                let id = game_state_ref.simulation_state.factory.power_grids.power_grids.iter().enumerate().filter(|(_id, grid)| !grid.is_placeholder).nth(1);
+
+                if let Some((id, _grid)) = id {
+                    let pole_pos = game_state_ref.simulation_state.factory.power_grids.pole_pos_to_grid_id.iter().find(|(k, v)| **v as usize == id).unwrap().0;
+
+                    state_machine_ref.local_player_pos = (pole_pos.x as f32, pole_pos.y as f32);
+                }
+            }
 
 
             #[cfg(feature = "debug-stat-gathering")]
