@@ -32,7 +32,6 @@ use crate::{
         },
     },
     item::{IdxTrait, Item, Recipe},
-    replays::Replay,
 };
 
 pub mod blueprint_string;
@@ -40,7 +39,7 @@ pub mod blueprint_string;
 // For now blueprint will just be a list of actions
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Blueprint {
-    pub actions: Vec<BlueprintAction>,
+    pub(crate) actions: Vec<BlueprintAction>,
 }
 
 #[derive(Debug, Clone)]
@@ -49,7 +48,7 @@ pub struct ReusableBlueprint<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTr
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub enum BlueprintAction {
+pub(crate) enum BlueprintAction {
     PlaceEntity(BlueprintPlaceEntity),
 
     SetRecipe {
@@ -86,13 +85,13 @@ fn default_inserter() -> Arc<str> {
 #[derive(
     Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize, serde::Serialize,
 )]
-enum BeltId {
+pub(crate) enum BeltId {
     Sushi(usize),
     Pure(usize),
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-enum BlueprintPlaceEntity {
+pub(crate) enum BlueprintPlaceEntity {
     Assembler {
         pos: Position,
         ty: Arc<str>,
@@ -104,6 +103,8 @@ enum BlueprintPlaceEntity {
         dir: Dir,
         /// The Item the inserter will move, must fit both the in and output side
         filter: Option<Arc<str>>,
+
+        movetime: Option<NonZero<u16>>,
 
         #[serde(default = "default_inserter")]
         ty: Arc<str>,
@@ -173,6 +174,7 @@ impl BlueprintAction {
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         match action {
+            ActionType::SpawnPlayer { .. } => unreachable!(),
             ActionType::PlaceFloorTile(_) => unimplemented!(),
             ActionType::PlaceEntity(place_entity_info) => {
                 match place_entity_info.entities.clone() {
@@ -190,13 +192,15 @@ impl BlueprintAction {
                                 dir,
                                 filter,
                                 ty,
-                                user_movetime: _,
+                                user_movetime,
                             } => BlueprintPlaceEntity::Inserter {
                                 pos,
                                 dir,
                                 filter: filter
                                     .map(|item| data_store.item_names[item.into_usize()].clone()),
                                 ty: data_store.inserter_infos[ty as usize].name.clone(),
+
+                                movetime: user_movetime,
                             },
                             PlaceEntityType::Belt { pos, direction, ty } => {
                                 BlueprintPlaceEntity::Belt {
@@ -310,7 +314,8 @@ impl BlueprintAction {
                 amount: *amount,
             },
             ActionType::Remove(_) => unimplemented!(),
-            ActionType::SetActiveResearch { .. } => unimplemented!(),
+            ActionType::AddResearchToQueue { .. } => unimplemented!(),
+            ActionType::RemoveResearchFromQueue { .. } => unimplemented!(),
             ActionType::CheatUnlockTechnology { .. } => unimplemented!(),
             ActionType::CheatRelockTechnology { .. } => unimplemented!(),
             ActionType::Ping(_) => unimplemented!(),
@@ -342,6 +347,7 @@ impl BlueprintAction {
                         dir,
                         filter,
                         ty,
+                        movetime,
                     } => PlaceEntityType::Inserter {
                         pos: *pos,
                         dir: *dir,
@@ -365,7 +371,7 @@ impl BlueprintAction {
                             .position(|info| info.name == *ty)
                             .expect("No inserter for name") as u8,
 
-                        user_movetime: None,
+                        user_movetime: *movetime,
                     },
                     BlueprintPlaceEntity::Belt {
                         pos,
@@ -929,9 +935,17 @@ impl Blueprint {
         self.actions.len()
     }
 
+    pub(crate) fn extract_if(&mut self, filter: impl Fn(&BlueprintAction) -> bool) -> Self {
+        let extracted = self.actions.extract_if(.., |action| (filter)(action));
+
+        Self {
+            actions: extracted.collect(),
+        }
+    }
+
     pub fn optimize(&mut self) {
         info!("Optimizing Blueprint");
-        self.actions.par_sort_unstable_by_key(|v| match v {
+        self.actions.par_sort_by_key(|v| match v {
             BlueprintAction::PlaceEntity(e) => match e {
                 BlueprintPlaceEntity::Assembler { pos, .. } => {
                     (1, 3, (BeltId::Pure(0), 0), *pos, 0)
@@ -975,13 +989,14 @@ impl Blueprint {
                 BlueprintPlaceEntity::FluidTank { pos, .. } => {
                     (1, 2, (BeltId::Pure(0), 0), *pos, 0)
                 },
+
                 BlueprintPlaceEntity::MiningDrill { pos, .. } => {
                     (1, 3, (BeltId::Pure(0), 0), *pos, 0)
                 },
             },
             BlueprintAction::SetRecipe { pos, .. } => (1, 3, (BeltId::Pure(0), 0), *pos, 1),
             BlueprintAction::OverrideInserterMovetime { pos, .. } => {
-                (1, 5, (BeltId::Pure(0), 0), *pos, 1)
+                (1, 6, (BeltId::Pure(0), 0), *pos, 1)
             },
             BlueprintAction::AddModules { pos, .. } => (1, 3, (BeltId::Pure(0), 0), *pos, 1),
             BlueprintAction::SetChestSlotLimit { pos, .. } => (1, 3, (BeltId::Pure(0), 0), *pos, 1),
@@ -1054,24 +1069,6 @@ impl Blueprint {
         );
     }
 
-    pub fn from_replay<
-        ItemIdxType: IdxTrait,
-        RecipeIdxType: IdxTrait,
-        DS: Borrow<DataStore<ItemIdxType, RecipeIdxType>>,
-    >(
-        replay: &Replay<ItemIdxType, RecipeIdxType, DS>,
-    ) -> Self {
-        Self {
-            actions: replay
-                .actions
-                .iter()
-                .map(|ra| {
-                    BlueprintAction::from_with_datastore(&ra.action, replay.data_store.borrow())
-                })
-                .collect(),
-        }
-    }
-
     pub fn from_area<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         world: &World<ItemIdxType, RecipeIdxType>,
         sim_state: &SimulationState<ItemIdxType, RecipeIdxType>,
@@ -1112,8 +1109,8 @@ impl Blueprint {
                     ty,
                     pos,
                     rotation,
-                    drill_id,
-                    internal_inserter,
+                    drill_id: _,
+                    internal_inserter: _,
                 } => {
                     vec![BlueprintAction::PlaceEntity(
                         BlueprintPlaceEntity::MiningDrill {
@@ -1276,7 +1273,7 @@ impl Blueprint {
                     ty,
                     ..
                 } => {
-                    let mut ret = vec![BlueprintAction::PlaceEntity(
+                    let ret = vec![BlueprintAction::PlaceEntity(
                         BlueprintPlaceEntity::Inserter {
                             pos: Position {
                                 x: pos.x - base_pos.x,
@@ -1285,18 +1282,19 @@ impl Blueprint {
                             dir: *direction,
                             filter: None,
                             ty: data_store.inserter_infos[*ty as usize].name.clone(),
+                            movetime: *user_movetime,
                         },
                     )];
 
-                    if let Some(user_movetime) = *user_movetime {
-                        ret.push(BlueprintAction::OverrideInserterMovetime {
-                            pos: Position {
-                                x: pos.x - base_pos.x,
-                                y: pos.y - base_pos.y,
-                            },
-                            new_movetime: Some(user_movetime),
-                        });
-                    }
+                    // if let Some(user_movetime) = *user_movetime {
+                    //     ret.push(BlueprintAction::OverrideInserterMovetime {
+                    //         pos: Position {
+                    //             x: pos.x - base_pos.x,
+                    //             y: pos.y - base_pos.y,
+                    //         },
+                    //         new_movetime: Some(user_movetime),
+                    //     });
+                    // }
 
                     ret
                 },
@@ -1309,13 +1307,7 @@ impl Blueprint {
                         ty: data_store.chest_names[*ty as usize].clone(),
                     })]
                 },
-                crate::frontend::world::tile::Entity::Roboport {
-                    ty,
-                    pos,
-                    power_grid,
-                    network,
-                    id,
-                } => todo!(),
+                crate::frontend::world::tile::Entity::Roboport { .. } => todo!(),
                 crate::frontend::world::tile::Entity::SolarPanel { pos, ty, .. } => {
                     vec![BlueprintAction::PlaceEntity(
                         BlueprintPlaceEntity::SolarPanel {
@@ -1797,4 +1789,24 @@ pub(crate) mod test {
             y: y as i32,
         })
     }
+}
+
+#[macro_export]
+macro_rules! get_const_string {
+    ($path:literal) => {{
+        #[cfg(target_arch = "wasm32")]
+        {
+            include_str!(concat!("../", $path)).to_string()
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let mut s = String::new();
+            let mut file = File::open($path).expect(&format!("Failed to open bp file {}", $path));
+
+            file.read_to_string(&mut s)
+                .expect(&format!("Failed reading from bp file {}", $path));
+            s
+        }
+    }};
 }

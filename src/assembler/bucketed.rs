@@ -1,17 +1,18 @@
 use std::cmp::{max, min};
-use std::{array, iter, u8};
+use std::{array, iter, u8, u16};
 
 use itertools::Itertools;
 use log::warn;
 
+use crate::assembler::arrays;
+use crate::assembler::simd::{InserterReinsertionInfo, InserterWaitList};
 use crate::assembler::{PowerUsageInfo, TIMERTYPE};
 use crate::data::{DataStore, ItemRecipeDir};
 use crate::frontend::world::Position;
 use crate::item::{ITEMCOUNTTYPE, IdxTrait, Indexable, Recipe};
 use crate::power::Watt;
 use crate::power::power_grid::{IndexUpdateInfo, MAX_POWER_MULT, PowerGridIdentifier};
-
-use crate::assembler::arrays;
+use crate::storage_list::MaxInsertionLimit;
 
 use crate::WeakIdxTrait;
 
@@ -29,6 +30,7 @@ pub struct MultiAssemblerStore<
     const NUM_INGS: usize,
     const NUM_OUTPUTS: usize,
 > {
+    current_power_tick: u32,
     recipe: Recipe<RecipeIdxType>,
 
     num_by_types: Vec<u32>,
@@ -81,21 +83,14 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         recipe_outs: &[ITEMCOUNTTYPE; NUM_OUTPUTS],
         power_subticks_per_craft: TIMERTYPE,
 
-        power_subtick_overshoot: u8,
+        ticks_passed: u16,
     ) -> (NextUpdateInfo, bool, bool, bool) {
-        let ticks_per_main: u16 =
-            power_subticks_per_craft * 20 / u16::from(data.combined_speed_mod);
+        let ticks_per_main: u16 = (power_subticks_per_craft as u32 * 20
+            / u32::from(data.combined_speed_mod))
+        .try_into()
+        .unwrap();
 
-        let tick_till_main_done: u16 = ticks_per_main - data.timer;
-
-        let power_subticks_passed = if data.bonus_productivity > 0 {
-            let ticks_per_prod: u16 = ticks_per_main * 100 / u16::from(data.bonus_productivity);
-            let tick_till_prod_done: u16 = ticks_per_prod - data.prod_timer;
-
-            min(tick_till_main_done, tick_till_prod_done) + u16::from(power_subtick_overshoot)
-        } else {
-            tick_till_main_done + u16::from(power_subtick_overshoot)
-        };
+        let power_subticks_passed = ticks_passed;
 
         let (is_idle, main_produced, prod_produced) = Self::apply_subticks(
             &mut ings,
@@ -108,7 +103,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         );
 
         let next_update = if !is_idle {
-            Self::get_next_update_info_running(power_subticks_per_craft, data)
+            Self::get_next_update_info_running(ticks_per_main, data)
         } else {
             // We are waiting for ingredients or space
             // Check again next tick
@@ -129,8 +124,10 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         power_subticks_per_craft: TIMERTYPE,
         num_subticks: TIMERTYPE,
     ) -> (bool, bool, bool) {
-        let ticks_per_main: u16 =
-            power_subticks_per_craft * 20 / u16::from(data.combined_speed_mod);
+        let ticks_per_main: u16 = (power_subticks_per_craft as u32 * 20
+            / u32::from(data.combined_speed_mod))
+        .try_into()
+        .unwrap();
 
         if ings
             .into_iter()
@@ -145,10 +142,13 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         data.prod_timer += num_subticks;
 
         let (main_done, prod_done) = (
-            (data.timer >= ticks_per_main).then_some(data.timer - ticks_per_main),
+            data.timer.checked_sub(ticks_per_main),
             if data.bonus_productivity > 0 {
-                let ticks_per_prod: u16 = ticks_per_main * 100 / u16::from(data.bonus_productivity);
-                (data.prod_timer >= ticks_per_prod).then_some(data.prod_timer - ticks_per_prod)
+                let ticks_per_prod: u16 = (u32::from(ticks_per_main) * 100
+                    / u32::from(data.bonus_productivity))
+                .try_into()
+                .unwrap();
+                data.prod_timer.checked_sub(ticks_per_prod)
             } else {
                 None
             },
@@ -163,8 +163,8 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 for (ing, recipe) in ings.into_iter().zip(recipe_ings.iter()) {
                     debug_assert!(**ing >= *recipe);
                 }
-                data.timer += num_subticks;
-                data.prod_timer += num_subticks;
+                // data.timer += num_subticks;
+                // data.prod_timer += num_subticks;
                 (true, false, false)
             },
             (None, Some(prod_overshoot)) => {
@@ -175,13 +175,14 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                     }
 
                     data.prod_timer = prod_overshoot;
-                    data.timer += num_subticks;
+                    // data.timer += num_subticks;
 
                     (true, false, true)
                 } else {
                     // No space (The last tick, the timer will not increase)
-                    data.timer += num_subticks - prod_overshoot - 1;
-                    data.prod_timer += num_subticks - prod_overshoot - 1;
+                    // data.timer += num_subticks - prod_overshoot - 1;
+                    // data.prod_timer += num_subticks - prod_overshoot - 1;
+                    data.prod_timer -= prod_overshoot + 1;
 
                     // Since prod_timer is right below ticks_per_prod we will check again next tick by get_next_update_info_running
 
@@ -202,13 +203,15 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                     }
 
                     data.timer = main_overshoot;
-                    data.prod_timer += num_subticks;
+                    // data.prod_timer += num_subticks;
 
                     (true, true, false)
                 } else {
                     // No space (The last tick, the timer will not increase)
-                    data.timer += num_subticks - main_overshoot - 1;
-                    data.prod_timer = num_subticks - main_overshoot - 1;
+                    // data.timer += num_subticks - main_overshoot - 1;
+                    // data.prod_timer = num_subticks - main_overshoot - 1;
+                    data.timer -= main_overshoot + 1;
+                    data.prod_timer -= main_overshoot + 1;
 
                     // Since prod_timer is right below ticks_per_prod we will check again next tick by get_next_update_info_running
 
@@ -217,38 +220,57 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 }
             },
             (Some(main_overshoot), Some(prod_overshoot)) => {
-                let first_overshoot = max(main_overshoot, prod_overshoot);
+                let main_is_first_done = main_overshoot < prod_overshoot;
 
-                let (idle, main_done, prod_done) = Self::apply_subticks(
-                    ings,
-                    outs,
-                    data,
-                    recipe_ings,
-                    recipe_outs,
-                    power_subticks_per_craft,
-                    num_subticks - first_overshoot,
-                );
+                if check_space(outs) {
+                    for (out, recipe) in outs.into_iter().zip(recipe_outs) {
+                        **out += *recipe;
+                    }
+                    if main_is_first_done {
+                        for (ing, recipe) in ings.into_iter().zip(recipe_ings.iter()) {
+                            debug_assert!(**ing >= *recipe);
+                            **ing -= *recipe;
+                        }
+                    }
+                    if check_space(outs) {
+                        for (out, recipe) in outs.into_iter().zip(recipe_outs) {
+                            **out += *recipe;
+                        }
+                        if !main_is_first_done {
+                            for (ing, recipe) in ings.into_iter().zip(recipe_ings.iter()) {
+                                debug_assert!(**ing >= *recipe);
+                                **ing -= *recipe;
+                            }
+                        }
 
-                let rest = min(main_overshoot, prod_overshoot);
+                        data.timer = main_overshoot;
+                        data.prod_timer = prod_overshoot;
 
-                let (second_idle, second_main_done, second_prod_done) = Self::apply_subticks(
-                    ings,
-                    outs,
-                    data,
-                    recipe_ings,
-                    recipe_outs,
-                    power_subticks_per_craft,
-                    rest,
-                );
+                        (true, true, true)
+                    } else {
+                        if main_is_first_done {
+                            data.timer = main_overshoot;
+                            data.prod_timer -= (prod_overshoot - main_overshoot) + 1;
+                        } else {
+                            data.prod_timer = prod_overshoot;
+                            data.timer -= (main_overshoot - prod_overshoot) + 1;
+                        }
 
-                debug_assert!(!(main_done && second_main_done));
-                debug_assert!(!(prod_done && second_prod_done));
+                        (false, main_is_first_done, !main_is_first_done)
+                    }
+                } else {
+                    let overshoot = max(main_overshoot, prod_overshoot);
+                    data.timer -= overshoot + 1;
+                    data.prod_timer -= overshoot + 1;
 
-                (
-                    !idle || !second_idle,
-                    main_done && second_main_done,
-                    prod_done && second_prod_done,
-                )
+                    (false, false, false)
+                }
+
+                // (
+                //     !idle || !second_idle,
+                //     main_done && second_main_done,
+                //     prod_done && second_prod_done,
+                // )
             },
         };
 
@@ -259,12 +281,14 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         power_subticks_per_main: u16,
         data: &AssemblerDataStruct,
     ) -> NextUpdateInfo {
-        let tick_till_main_done: u16 = power_subticks_per_main - data.timer;
+        let tick_till_main_done: u16 = power_subticks_per_main.checked_sub(data.timer).unwrap();
 
         let when = if data.bonus_productivity > 0 {
-            let subticks_per_prod: u16 =
-                power_subticks_per_main * 100 / u16::from(data.bonus_productivity);
-            let tick_till_prod_done: u16 = subticks_per_prod - data.prod_timer;
+            let subticks_per_prod: u16 = (u32::from(power_subticks_per_main) * 100
+                / u32::from(data.bonus_productivity))
+            .try_into()
+            .unwrap();
+            let tick_till_prod_done: u16 = subticks_per_prod.checked_sub(data.prod_timer).unwrap();
 
             min(tick_till_main_done, tick_till_prod_done)
         } else {
@@ -272,6 +296,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         };
 
         NextUpdateInfo { when }
+        // NextUpdateInfo { when: 1 }
     }
 }
 
@@ -286,6 +311,8 @@ struct AssemblerDataStruct {
     bonus_productivity: u8,
     combined_speed_mod: u8,
     ty: u8,
+
+    last_update_time: u32,
 }
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
@@ -303,6 +330,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
 {
     fn new<ItemIdxType: IdxTrait>(
         recipe: Recipe<RecipeIdxType>,
+        _grid: PowerGridIdentifier,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         let ticks_per_craft = data_store.recipe_timers[recipe.into_usize()];
@@ -319,12 +347,13 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
 
         Self {
             recipe,
+            current_power_tick: 0,
             num_by_types: vec![0; data_store.assembler_info.len()],
 
             buckets: BucketStore {
                 waiting_for_update: vec![
                     vec![];
-                    usize::from(power_subticks_per_craft)
+                    usize::from(power_subticks_per_craft) * 2
                         + usize::from(MAX_POWER_MULT)
                 ]
                 .into_boxed_slice(),
@@ -336,6 +365,14 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             cold_data: vec![],
             holes: vec![],
         }
+    }
+
+    fn set_grid_id<ItemIdxType: IdxTrait>(
+        &mut self,
+        _new_grid_id: PowerGridIdentifier,
+        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        // Do nothing
     }
 
     fn get_recipe(&self) -> Recipe<RecipeIdxType> {
@@ -357,6 +394,41 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             .recipe_to_items
             .get(self.recipe.into_usize())
             .unwrap();
+
+        let ticks_per_craft = data_store.recipe_timers[self.recipe.into_usize()];
+        let power_subticks_per_craft =
+            if let Some(v) = ticks_per_craft.checked_mul(TIMERTYPE::from(MAX_POWER_MULT)) {
+                v
+            } else {
+                warn!(
+                    "Time (in power subticks) for recipe {} exceeds TIMERTYPE::MAX",
+                    data_store.recipe_names[self.recipe.into_usize()]
+                );
+                TIMERTYPE::MAX
+            };
+
+        let ticks_per_main: u16 = (power_subticks_per_craft as u32 * 20
+            / u32::from(self.hot_data[index as usize].combined_speed_mod))
+        .try_into()
+        .unwrap();
+
+        let ticks_passed =
+            (self.current_power_tick - self.hot_data[index as usize].last_update_time) as u16;
+
+        let prod_timer_percentage: f32 = if self.hot_data[index as usize].bonus_productivity > 0 {
+            if let Ok(ticks_per_prod) = u16::try_from(
+                ticks_per_main as u32 * 100
+                    / u32::from(self.hot_data[index as usize].bonus_productivity),
+            ) {
+                f32::from(self.hot_data[index as usize].prod_timer + ticks_passed)
+                    / f32::from(ticks_per_prod)
+            } else {
+                // TODO: This is bad, since productivity no longer works here
+                0.0
+            }
+        } else {
+            0.0
+        };
 
         super::AssemblerOnclickInfo {
             inputs: self
@@ -393,10 +465,9 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                     )
                 })
                 .collect(),
-            timer_percentage: f32::from(self.hot_data[index as usize].timer)
-                / f32::from(TIMERTYPE::MAX),
-            prod_timer_percentage: f32::from(self.hot_data[index as usize].prod_timer)
-                / f32::from(TIMERTYPE::MAX),
+            timer_percentage: f32::from(self.hot_data[index as usize].timer + ticks_passed)
+                / f32::from(ticks_per_main),
+            prod_timer_percentage,
             base_speed: f32::from(
                 data_store.assembler_info[self.hot_data[index as usize].ty as usize].base_speed,
             ) * 0.05,
@@ -409,6 +480,10 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             base_power_consumption: data_store.assembler_info
                 [self.hot_data[index as usize].ty as usize]
                 .base_power_consumption,
+
+            // FIXME:
+            #[cfg(feature = "assembler-craft-tracking")]
+            times_craft_finished: 0,
         }
     }
 
@@ -424,6 +499,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
     ) {
         let Self {
             recipe,
+            current_power_tick,
             mut num_by_types,
             mut buckets,
             mut hot_data,
@@ -436,6 +512,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
 
         let Self {
             recipe: other_recipe,
+            current_power_tick: other_current_power_tick,
             num_by_types: other_num_by_types,
             buckets: other_buckets,
             hot_data: other_hot_data,
@@ -476,6 +553,11 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
 
         let new = Self {
             recipe,
+            current_power_tick: if current_power_tick == other_current_power_tick {
+                current_power_tick
+            } else {
+                todo!()
+            },
             num_by_types,
             buckets,
             hot_data,
@@ -516,36 +598,42 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         recipe_lookup: &[(usize, usize)],
         recipe_ings: &[[ITEMCOUNTTYPE; NUM_INGS]],
         recipe_outputs: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
-        recipe_maximums: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
+        _recipe_maximums: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
         times: &[TIMERTYPE],
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> (PowerUsageInfo, u32, u32)
+    ) -> (
+        PowerUsageInfo,
+        u32,
+        u32,
+        impl Iterator<Item = InserterReinsertionInfo<ItemIdxType>>,
+    )
     where
         RecipeIdxType: IdxTrait,
     {
+        self.current_power_tick += u32::from(power_mult);
         let recipe = self.get_recipe();
         assert!(power_mult <= MAX_POWER_MULT);
 
-        #[cfg(debug_assertions)]
-        {
-            assert!(
-                self.buckets
-                    .waiting_for_update
-                    .iter()
-                    .flat_map(|v| v.iter())
-                    .all_unique(),
-                "Some Assembler in multiple update buckets"
-            );
-            assert_eq!(
-                self.hot_data.len(),
-                self.buckets
-                    .waiting_for_update
-                    .iter()
-                    .map(|v| v.len())
-                    .sum::<usize>(),
-                "Some Assembler are not being updated!"
-            );
-        }
+        // #[cfg(debug_assertions)]
+        // {
+        //     assert!(
+        //         self.buckets
+        //             .waiting_for_update
+        //             .iter()
+        //             .flat_map(|v| v.iter())
+        //             .all_unique(),
+        //         "Some Assembler in multiple update buckets"
+        //     );
+        //     assert_eq!(
+        //         self.hot_data.len(),
+        //         self.buckets
+        //             .waiting_for_update
+        //             .iter()
+        //             .map(|v| v.len())
+        //             .sum::<usize>(),
+        //         "Some Assembler are not being updated!"
+        //     );
+        // }
 
         let (ing_idx, out_idx) = recipe_lookup[recipe.into_usize()];
 
@@ -553,7 +641,9 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         let our_outputs: &[ITEMCOUNTTYPE; NUM_OUTPUTS] = &recipe_outputs[out_idx];
 
         let ticks_per_craft = times[recipe.into_usize()];
-        let power_subticks_per_craft = ticks_per_craft * TIMERTYPE::from(MAX_POWER_MULT);
+        let power_subticks_per_craft = ticks_per_craft
+            .checked_mul(TIMERTYPE::from(MAX_POWER_MULT))
+            .unwrap_or(u16::MAX);
 
         let (now_empty_buckets, all_other_buckets) = self
             .buckets
@@ -564,6 +654,8 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         // We start off by assuming all assemblers are running
         // Since we update all NON-running assemblers every tick, we will encounter them during this frames update
         // Whenever we find an assembler, which is not running we subtract its power consumption from the total
+
+        // FIXME: We need to get power if the power_mult is 0!
         let mut power_used = self.num_by_types.clone();
         let mut times_ing_used = 0;
         let mut times_main_timer_done = 0;
@@ -578,6 +670,9 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 v.drain(..).zip(iter::repeat(overshoot))
             })
             .map(|(update, overshoot)| {
+                let ticks_passed = self.current_power_tick
+                    - self.hot_data[update.assembler as usize].last_update_time;
+                self.hot_data[update.assembler as usize].last_update_time = self.current_power_tick;
                 let (update_info, is_idle, produced_main, produced_prod) =
                     Self::do_single_assembler_update(
                         self.ings
@@ -590,7 +685,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                         our_ings,
                         our_outputs,
                         power_subticks_per_craft,
-                        overshoot,
+                        u16::try_from(ticks_passed).unwrap() + u16::from(overshoot),
                     );
 
                 if is_idle {
@@ -609,9 +704,25 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         for (time, update) in new_updates {
             all_other_buckets[usize::from(time.when) - 1].push(update);
         }
+        // #[cfg(debug_assertions)]
+        // {
+        //     assert!(
+        //         self.buckets.waiting_for_update[..(power_mult as usize)]
+        //             .iter()
+        //             .all(|v| v.is_empty())
+        //     );
+        // }
 
-        // TODO: Maybe use ringbuffer
-        self.buckets.waiting_for_update.rotate_left(1);
+        {
+            profiling::scope!("Rotate List");
+            self.buckets
+                .waiting_for_update
+                .rotate_left(power_mult.into());
+        }
+
+        if self.num_assemblers() > 0 {
+            // dbg!(&power_used);
+        }
 
         (
             PowerUsageInfo::ByType(
@@ -625,6 +736,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             ),
             times_ing_used,
             times_main_timer_done + times_prod_timer_done,
+            iter::empty(),
         )
     }
 
@@ -632,18 +744,26 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         &mut self,
     ) -> (
         (
-            [&[ITEMCOUNTTYPE]; NUM_INGS],
-            [&mut [ITEMCOUNTTYPE]; NUM_INGS],
+            [MaxInsertionLimit<'_>; NUM_INGS],
+            [&mut [u8]; NUM_INGS],
+            [(&mut [InserterWaitList], &mut [u8]); NUM_INGS],
         ),
-        [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS],
-    ) {
         (
-            (
-                self.ings_max_insert.each_mut().map(|b| &**b),
-                self.ings.each_mut().map(|b| &mut **b),
-            ),
-            self.outputs.each_mut().map(|b| &mut **b),
-        )
+            [&mut [u8]; NUM_OUTPUTS],
+            [(&mut [InserterWaitList], &mut [u8]); NUM_OUTPUTS],
+        ),
+    ) {
+        // (
+        //     (
+        //         self.ings_max_insert.each_mut().map(|b| match b.get(0) {
+        //             Some(v) => MaxInsertionLimit::Global(*v),
+        //             None => PANIC_ON_INSERT,
+        //         }),
+        //         self.ings.each_mut().map(|b| &mut **b),
+        //     ),
+        //     self.outputs.each_mut().map(|b| &mut **b),
+        // )
+        todo!()
     }
 
     fn modify_modifiers<ItemIdxType: IdxTrait>(
@@ -726,6 +846,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 bonus_productivity: 0,
                 combined_speed_mod: 0,
                 ty: u8::MAX,
+                last_update_time: self.current_power_tick,
             });
             self.cold_data.push(ColdAssemblerData {
                 raw_speed_mod: 0,
@@ -762,6 +883,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             bonus_productivity,
             combined_speed_mod,
             ty,
+            last_update_time,
         } = &mut self.hot_data[index];
         let ColdAssemblerData {
             raw_speed_mod,
@@ -773,6 +895,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         *timer = new_timer;
         *prod_timer = new_prod_timer;
         *ty = new_ty;
+        *last_update_time = self.current_power_tick;
 
         *power_consumption_modifier = (new_power_consumption_modifier + 20)
             .clamp(data_store.min_power_mod.into(), u8::MAX.into())
@@ -801,6 +924,8 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             ticks_wanted: 1,
         });
 
+        self.num_by_types[usize::from(new_ty)] += 1;
+
         index.try_into().unwrap()
     }
 
@@ -823,6 +948,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         Position,
     ) {
         let index = index as usize;
+        self.num_by_types[self.hot_data[index].ty as usize] -= 1;
         debug_assert!(!self.holes.contains(&index));
         self.holes.push(index);
 
@@ -876,5 +1002,19 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             data.10.into(),
             data.11.into(),
         )
+    }
+
+    fn num_assemblers(&self) -> usize {
+        self.hot_data.len() - self.holes.len()
+    }
+
+    fn remove_wait_list_inserter<ItemIdxType: IdxTrait>(
+        &mut self,
+        _index: u32,
+        _item: crate::item::Item<ItemIdxType>,
+        _info: crate::chest::WaitingInserterRemovalInfo,
+        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> super::simd::InserterReinsertionInfo<ItemIdxType> {
+        unreachable!()
     }
 }

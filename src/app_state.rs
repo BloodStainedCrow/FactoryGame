@@ -1,14 +1,26 @@
+use crate::assembler::simd::Conn;
 use crate::belt::BeltTileId;
 use crate::belt::belt::Belt;
+use crate::blueprint::BlueprintAction;
+use crate::blueprint::BlueprintPlaceEntity;
 use crate::blueprint::blueprint_string::BlueprintString;
 use crate::chest::ChestSize;
 use crate::data::AllowedFluidDirection;
 use crate::frontend::action::belt_placement::FakeGameState;
 use crate::frontend::action::place_entity::PlaceEntityInfo;
+use crate::frontend::world::tile::CHUNK_SIZE;
+use crate::frontend::world::tile::ModuleSlotDedupIndex;
 use crate::frontend::world::tile::ModuleSlots;
 use crate::frontend::world::tile::ModuleTy;
+use crate::frontend::world::tile::PlayerInfo;
+use crate::get_const_string;
 use crate::inserter::InserterStateInfo;
+use crate::inserter::WaitlistSearchSide;
+use crate::inserter::belt_storage_inserter;
+use crate::inserter::belt_storage_movement_list::BeltStorageInserterInMovement;
+use crate::inserter::belt_storage_movement_list::List;
 use crate::inserter::storage_storage_with_buckets_indirect::BucketedStorageStorageInserterStore;
+use crate::inserter::storage_storage_with_buckets_indirect::InserterBucketData;
 use crate::inserter::storage_storage_with_buckets_indirect::InserterIdentifier;
 use crate::item::ITEMCOUNTTYPE;
 use crate::join_many::join;
@@ -21,6 +33,11 @@ use crate::par_generation::BoundingBox;
 use crate::par_generation::ParGenerateInfo;
 use crate::par_generation::par_generate;
 use crate::power::Watt;
+use crate::progress_info::ProgressInfo;
+use crate::replays::GenerationInformation;
+use crate::replays::ProgramInformation;
+#[cfg(feature = "client")]
+use crate::saving::loading::SaveFileList;
 #[cfg(feature = "client")]
 use crate::{Input, LoadedGame};
 use crate::{
@@ -52,9 +69,7 @@ use crate::{
     statistics::{
         GenStatistics, Timeline, consumption::ConsumptionInfo, production::ProductionInfo,
     },
-    storage_list::{
-        SingleItemStorages, full_to_by_item, grid_size, num_recipes, sizes, storages_by_item,
-    },
+    storage_list::{SingleItemStorages, full_to_by_item, grid_size, sizes, storages_by_item},
 };
 use crate::{
     item::Indexable,
@@ -67,8 +82,9 @@ use flate2::bufread::ZlibDecoder;
 use get_size2::GetSize;
 use itertools::Itertools;
 use log::error;
-use log::{info, trace, warn};
+use log::{info, warn};
 use petgraph::graph::NodeIndex;
+use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::collections::BTreeMap;
 use std::io::BufReader;
@@ -94,12 +110,17 @@ use crate::get_size::Mutex;
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct AuxillaryData {
+    pub game_name: String,
+    pub(crate) gen_info: (ProgramInformation, GenerationInformation),
+
     pub current_tick: u64,
 
     pub statistics: GenStatistics,
 
     pub update_round_trip_times: Timeline<UpdateTime>,
     pub update_times: Timeline<UpdateTime>,
+
+    #[cfg_attr(feature = "client", get_size(ignore))]
     #[serde(skip)]
     last_update_time: Option<Instant>,
 
@@ -107,9 +128,13 @@ pub struct AuxillaryData {
 }
 impl AuxillaryData {
     pub fn new<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        name: String,
+        gen_info: GenerationInformation,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         AuxillaryData {
+            game_name: name,
+            gen_info: (ProgramInformation::new(data_store), gen_info),
             current_tick: 0,
             statistics: GenStatistics::new(data_store),
             update_times: Timeline::new(false, data_store),
@@ -123,7 +148,7 @@ impl AuxillaryData {
 }
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct GameState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub world: Mutex<World<ItemIdxType, RecipeIdxType>>,
     pub simulation_state: Mutex<SimulationState<ItemIdxType, RecipeIdxType>>,
@@ -151,15 +176,21 @@ impl<'a> AddAssign<&'a UpdateTime> for UpdateTime {
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, RecipeIdxType> {
     #[must_use]
-    pub fn new(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+    pub fn new(
+        name: String,
+        gen_info: GenerationInformation,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
         Self {
             world: Mutex::new(World::default()),
             simulation_state: Mutex::new(SimulationState::new(data_store)),
-            aux_data: Mutex::new(AuxillaryData::new(data_store)),
+            aux_data: Mutex::new(AuxillaryData::new(name, gen_info, data_store)),
         }
     }
 
     fn new_with_world_area(
+        name: String,
+        gen_info: GenerationInformation,
         top_left: Position,
         bottom_right: Position,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -167,67 +198,35 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         Self {
             world: Mutex::new(World::new_with_area(top_left, bottom_right)),
             simulation_state: Mutex::new(SimulationState::new(data_store)),
-            aux_data: Mutex::new(AuxillaryData::new(data_store)),
+            aux_data: Mutex::new(AuxillaryData::new(name, gen_info, data_store)),
         }
-    }
-
-    #[must_use]
-    pub fn new_with_production(
-        progress: Arc<AtomicU64>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Self {
-        let mut ret = GameState::new_with_world_area(
-            Position { x: 0, y: 0 },
-            Position { x: 3500, y: 31000 },
-            data_store,
-        );
-
-        const BP_STRING: &'static str = include_str!("../test_blueprints/red_sci.bp");
-        let bp: Blueprint = ron::de::from_str(BP_STRING).unwrap();
-        // let file = File::open("test_blueprints/red_sci.bp").unwrap();
-        // let bp: Blueprint = ron::de::from_reader(file).unwrap();
-        let bp = bp.get_reusable(false, data_store);
-
-        puffin::set_scopes_on(false);
-        let y_range = (1590..3000).step_by(7);
-        let x_range = (1590..3000).step_by(20);
-
-        let total = y_range.size_hint().0 * x_range.size_hint().0;
-
-        let mut current = 0;
-
-        for y_pos in y_range {
-            for x_pos in x_range.clone() {
-                progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
-                current += 1;
-
-                bp.apply(Position { x: x_pos, y: y_pos }, &mut ret, data_store);
-            }
-        }
-        puffin::set_scopes_on(true);
-
-        ret
     }
 
     #[must_use]
     pub fn new_with_megabase(
+        name: String,
+        gen_info: GenerationInformation,
         use_solar_field: bool,
-        progress: Arc<AtomicU64>,
+        progress: ProgressInfo,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
+        const X_OFFS: i32 = -1_800;
+
         // TODO: Increase size to fit solar field
         let mut ret = GameState::new_with_world_area(
-            Position { x: 0, y: 0 },
+            name,
+            gen_info,
             Position {
-                x: 16_000,
-                y: 12_000,
+                x: X_OFFS,
+                y: -6_000,
+            },
+            Position {
+                x: 17_000 + X_OFFS,
+                y: 6_000,
             },
             data_store,
         );
-        let mut file =
-            File::open("test_blueprints/murphy/megabase_new_blueprint_format.bp").unwrap();
-        let mut s = String::new();
-        file.read_to_string(&mut s).unwrap();
+        let s = get_const_string!("test_blueprints/murphy/megabase_new_blueprint_format.bp");
         let bp: BlueprintString = BlueprintString(s);
         let mut bp: Blueprint = bp.try_into().expect("Blueprint String Invalid");
         bp.optimize();
@@ -238,13 +237,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
         puffin::set_scopes_on(false);
         if use_solar_field {
+            progress.push_stage(0.5, Some("Populate Solar Field".to_string()));
             ret.add_solar_field(
-                Position { x: 4503, y: 2454 },
-                Watt(325_000_000_000),
+                Position {
+                    x: 4503 + X_OFFS,
+                    y: 2454 - 6_000,
+                },
+                Watt(360_000_000_000),
                 Some(9_000),
                 progress.clone(),
                 data_store,
             );
+            progress.pop_stage();
         } else {
             GameState::apply_actions(
                 &mut *ret.simulation_state.lock(),
@@ -252,7 +256,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 vec![ActionType::PlaceEntity(PlaceEntityInfo {
                     entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
                         crate::frontend::world::tile::PlaceEntityType::SolarPanel {
-                            pos: Position { x: 4502, y: 2454 },
+                            pos: Position {
+                                x: 4502 + X_OFFS,
+                                y: 2454 - 6_000,
+                            },
                             ty: data_store
                                 .solar_panel_info
                                 .iter()
@@ -268,19 +275,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             );
         }
 
+        progress.push_stage(
+            if use_solar_field { 0.5 } else { 1.0 },
+            Some("Placing Megabase".to_string()),
+        );
         bp.apply_at_positions(
-            iter::once(Position { x: 1600, y: 1600 }),
+            iter::once(Position {
+                x: 1600 + X_OFFS,
+                y: 1600 - 6_000,
+            }),
             false,
             &mut ret,
             || {
-                progress.store(
-                    (current as f64 / num_calls as f64).to_bits(),
-                    Ordering::Relaxed,
-                );
+                progress.add_progress(1.0 / num_calls as f64);
                 current += 1;
             },
             data_store,
         );
+        progress.pop_stage();
 
         puffin::set_scopes_on(true);
 
@@ -289,8 +301,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
     #[must_use]
     pub fn new_with_gigabase(
+        name: String,
+        gen_info: GenerationInformation,
         count: u16,
-        progress: Arc<AtomicU64>,
+        progress: ProgressInfo,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         let width = count.isqrt();
@@ -332,7 +346,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let x_range = (0..width).map(|x| i32::from(x) * MEGABASE_WIDTH);
         let y_range = (0..full_height).map(|y| i32::from(y) * MEGABASE_HEIGHT);
 
-        error!("Loading Generation Info...");
+        log::info!("Loading Generation Info...");
         let file = {
             File::open("./test_blueprints/par_generation_info")
                 .expect(&format!("could not open file"))
@@ -343,9 +357,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             bincode::serde::decode_from_std_read(&mut e, bincode::config::standard())
                 .expect("Deserialization failed")
         };
-        error!("Done!");
+        log::info!("Done!");
 
         let ret = par_generate(
+            name,
+            gen_info,
             BoundingBox {
                 top_left: Position { x: 0, y: start },
                 bottom_right: Position {
@@ -359,109 +375,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 .map(|(y, x)| Position { x, y: y + start })
                 .take(count as usize)
                 .collect(),
+            progress,
             data_store,
         );
 
-        puffin::set_scopes_on(true);
-
-        ret
-    }
-
-    #[must_use]
-    pub fn new_with_beacon_production(
-        progress: Arc<AtomicU64>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Self {
-        Self::new_with_beacon_red_green_production_many_grids(progress, data_store)
-    }
-
-    #[must_use]
-    pub fn new_with_beacon_red_green_production_many_grids(
-        progress: Arc<AtomicU64>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Self {
-        let mut ret = GameState::new_with_world_area(
-            Position { x: 0, y: 0 },
-            Position { x: 44000, y: 44000 },
-            data_store,
-        );
-
-        const BP_STRING: &'static str =
-            include_str!("../test_blueprints/red_and_green_with_clocking.bp");
-        let bp: Blueprint = ron::de::from_str(BP_STRING).unwrap();
-        // let file = File::open("test_blueprints/red_and_green_with_clocking.bp").unwrap();
-        // let bp: Blueprint = ron::de::from_reader(file).unwrap();
-        let bp = bp.get_reusable(false, data_store);
-
-        puffin::set_scopes_on(false);
-        let y_range = (0..40_000).step_by(4_000);
-        let x_range = (0..40_000).step_by(4_000);
-
-        let total = y_range.size_hint().0 * x_range.size_hint().0;
-
-        let mut current = 0;
-
-        for y_start in y_range {
-            for x_start in x_range.clone() {
-                progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
-                current += 1;
-                for y_pos in (1590..4000).step_by(40) {
-                    for x_pos in (1590..4000).step_by(50) {
-                        bp.apply(
-                            Position {
-                                x: x_start + x_pos,
-                                y: y_start + y_pos,
-                            },
-                            &mut ret,
-                            data_store,
-                        );
-                    }
-                }
-            }
-        }
-        puffin::set_scopes_on(true);
-
-        ret
-    }
-
-    #[must_use]
-    pub fn new_with_beacon_belt_production(
-        progress: Arc<AtomicU64>,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Self {
-        let mut ret = GameState::new_with_world_area(
-            Position { x: 0, y: 0 },
-            Position { x: 10000, y: 20000 },
-            data_store,
-        );
-
-        let file = File::open("test_blueprints/red_sci_with_beacons_and_belts.bp").unwrap();
-        let bp: Blueprint = ron::de::from_reader(file).unwrap();
-        let bp = bp.get_reusable(false, data_store);
-
-        let y_range = (0..20_000).step_by(6_000);
-
-        let total = y_range.size_hint().0;
-
-        let mut current = 0;
-
-        puffin::set_scopes_on(false);
-        for y_start in y_range {
-            progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
-            current += 1;
-            for y_pos in (1590..6000).step_by(10) {
-                for x_pos in (1590..4000).step_by(60) {
-                    bp.apply(
-                        Position {
-                            x: x_pos,
-                            y: y_start + y_pos,
-                        },
-                        &mut ret,
-                        data_store,
-                    );
-                }
-            }
-        }
         puffin::set_scopes_on(true);
 
         ret
@@ -469,21 +386,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
     #[must_use]
     pub fn new_with_lots_of_belts(
+        name: String,
+        gen_info: GenerationInformation,
         progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         let mut ret = GameState::new_with_world_area(
+            name,
+            gen_info,
             Position { x: 0, y: 0 },
             Position {
-                x: 5_000,
-                y: 250_000,
+                x: 1_000,
+                y: 250_000_00,
             },
             data_store,
         );
 
-        let mut file = File::open("test_blueprints/lots_of_belts.bp").unwrap();
-        let mut s = String::new();
-        file.read_to_string(&mut s).unwrap();
+        let s = get_const_string!("test_blueprints/iron_generation_test.bp");
         let bp: BlueprintString = BlueprintString(s);
         let mut bp: Blueprint = Blueprint::try_from(bp).unwrap();
         bp.optimize();
@@ -492,9 +411,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         let mut current = 0;
 
         puffin::set_scopes_on(false);
-        let positions = (1600..250_000)
+        let positions = (1600..250_000_00)
             .step_by(3)
-            .map(|y_pos| Position { x: 1600, y: y_pos });
+            .map(|y_pos| Position { x: 600, y: y_pos });
         bp.apply_at_positions(
             positions,
             false,
@@ -512,14 +431,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
     #[must_use]
     pub fn new_with_tons_of_solar(
+        name: String,
+        gen_info: GenerationInformation,
         wattage: Watt,
         base_pos: Position,
         height: Option<u64>,
-        progress: Arc<AtomicU64>,
+        progress: ProgressInfo,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         // TODO: Correct size
         let mut ret = GameState::new_with_world_area(
+            name,
+            gen_info,
             Position { x: 0, y: 0 },
             Position { x: 60000, y: 60000 },
             data_store,
@@ -530,22 +453,74 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         ret
     }
 
+    #[must_use]
+    pub fn new_with_world_train_ride(
+        name: String,
+        gen_info: GenerationInformation,
+        progress: ProgressInfo,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
+        progress.push_stage(1.0, Some("Generating Chunks".to_string()));
+        // This is the maximum thickness the player can generate while at the edge of the world
+        // Factorio uses 20 chunks, but their chunks are twice as large in each dimension
+        const CHUNK_THICKNESS: i32 = 40;
+
+        // TODO: Correct size
+        let ret = GameState::new_with_world_area(
+            name,
+            gen_info,
+            Position {
+                x: -1_000_000,
+                y: -1_000_000,
+            },
+            Position {
+                x: 1_000_000,
+                y: (-1_000_000 + CHUNK_THICKNESS * 16),
+            },
+            data_store,
+        );
+
+        let left = (-1_000_000..=(-1_000_000 + CHUNK_THICKNESS * 16))
+            .step_by(usize::from(CHUNK_SIZE))
+            .cartesian_product((-1_000_000..=1_000_000).step_by(usize::from(CHUNK_SIZE)))
+            .map(|(x, y)| (x / i32::from(CHUNK_SIZE), y / i32::from(CHUNK_SIZE)));
+        ret.world.lock().add_chunks(left);
+
+        let right = ((1_000_000 - CHUNK_THICKNESS * 16)..=1_000_000)
+            .step_by(usize::from(CHUNK_SIZE))
+            .cartesian_product((-1_000_000..=1_000_000).step_by(usize::from(CHUNK_SIZE)))
+            .map(|(x, y)| (x / i32::from(CHUNK_SIZE), y / i32::from(CHUNK_SIZE)));
+        ret.world.lock().add_chunks(right);
+
+        let bottom = ((1_000_000 - CHUNK_THICKNESS * 16)..=1_000_000)
+            .step_by(usize::from(CHUNK_SIZE))
+            .cartesian_product((-1_000_000..=1_000_000).step_by(usize::from(CHUNK_SIZE)))
+            .map(|(y, x)| (x / i32::from(CHUNK_SIZE), y / i32::from(CHUNK_SIZE)));
+        ret.world.lock().add_chunks(bottom);
+
+        progress.pop_stage();
+
+        ret
+    }
+
     pub fn add_solar_field(
         &mut self,
         pos: Position,
         amount: Watt,
         height_in_tiles: Option<u64>,
-        progress: Arc<AtomicU64>,
+        progress: ProgressInfo,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        let mut file = File::open("test_blueprints/solar_tile.bp").unwrap();
-        let mut s = String::new();
-        file.read_to_string(&mut s).unwrap();
+        let s = get_const_string!("test_blueprints/solar_tile.bp");
         let bp: BlueprintString = BlueprintString(s);
         let mut bp: Blueprint = Blueprint::try_from(bp).unwrap();
-        bp.optimize();
-        let bp = bp.get_reusable(false, data_store);
-        let bp = bp.optimize();
+        let poles = bp.extract_if(|action| {
+            matches!(
+                action,
+                BlueprintAction::PlaceEntity(BlueprintPlaceEntity::PowerPole { .. })
+            )
+        });
+        let rest = bp;
 
         let bp_count = amount.0.div_ceil((Watt(42_000) * 104).0);
 
@@ -558,38 +533,44 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         // let total = bp.action_count();
         let total = y_positions.clone().count() * x_positions.clone().count();
 
-        let mut current = 0;
-
         puffin::set_scopes_on(false);
+        progress.push_stage(
+            0.5,
+            Some(format!(
+                "Placing {} Solar Panels and Accumulators",
+                total * 104
+            )),
+        );
         for pos in x_positions
-            .cartesian_product(y_positions)
+            .clone()
+            .cartesian_product(y_positions.clone())
             .map(|(x_pos, y_pos)| Position { x: x_pos, y: y_pos })
         {
-            progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
-            current += 1;
-            bp.apply(pos, self, data_store);
+            progress.add_progress(1.0 / total as f64);
+            rest.apply(false, pos, self, data_store);
         }
-        // bp.apply_at_positions(
-        //     x_positions
-        //         .cartesian_product(y_positions)
-        //         .map(|(x, y)| Position { x, y }),
-        //     false,
-        //     self,
-        //     || {
-        //         progress.store((current as f64 / total as f64).to_bits(), Ordering::Relaxed);
-        //         current += 1;
-        //     },
-        //     data_store,
-        // );
+        progress.pop_stage();
+        progress.push_stage(0.5, Some(format!("Placing {} Substations", total * 4)));
+        for pos in x_positions
+            .clone()
+            .cartesian_product(y_positions.clone())
+            .map(|(x_pos, y_pos)| Position { x: x_pos, y: y_pos })
+        {
+            progress.add_progress(1.0 / total as f64);
+            poles.apply(false, pos, self, data_store);
+        }
+        progress.pop_stage();
         puffin::set_scopes_on(true);
     }
 
     #[must_use]
     pub fn new_eight_beacon_factory(
+        name: String,
+        gen_info: GenerationInformation,
         _progress: Arc<AtomicU64>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        let mut ret = GameState::new(data_store);
+        let mut ret = GameState::new(name, gen_info, data_store);
 
         let red = File::open("test_blueprints/eight_beacon_red_sci_with_storage.bp").unwrap();
         let red: Blueprint = ron::de::from_reader(red).unwrap();
@@ -605,10 +586,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     }
 
     pub fn new_with_bp(
+        name: String,
+        gen_info: GenerationInformation,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
         bp_path: impl AsRef<Path>,
     ) -> Self {
         let mut ret = GameState::new_with_world_area(
+            name,
+            gen_info,
             Position { x: 0, y: 0 },
             Position {
                 x: 32000,
@@ -653,13 +638,30 @@ pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub power_grids: PowerGridStorage<ItemIdxType, RecipeIdxType>,
     pub belts: BeltStore<ItemIdxType>,
     pub storage_storage_inserters: StorageStorageInserterStore,
-    pub belt_storage_inserters: Box<[BTreeMap<
-        u16,
-        (
-            crate::inserter::belt_storage_pure_buckets::BucketedStorageStorageInserterStoreFrontend,
-            crate::inserter::belt_storage_pure_buckets::BucketedStorageStorageInserterStore,
-        ),
-    >]>,
+    pub belt_storage_inserters: Box<
+        [(
+            (
+                List<
+                    { belt_storage_inserter::Dir::BeltToStorage },
+                    { belt_storage_inserter::Dir::BeltToStorage },
+                >,
+                List<
+                    { belt_storage_inserter::Dir::StorageToBelt },
+                    { belt_storage_inserter::Dir::BeltToStorage },
+                >,
+            ),
+            (
+                List<
+                    { belt_storage_inserter::Dir::BeltToStorage },
+                    { belt_storage_inserter::Dir::StorageToBelt },
+                >,
+                List<
+                    { belt_storage_inserter::Dir::StorageToBelt },
+                    { belt_storage_inserter::Dir::StorageToBelt },
+                >,
+            ),
+        )],
+    >,
     pub chests: FullChestStore<ItemIdxType>,
 
     pub fluid_store: FluidSystemStore<ItemIdxType>,
@@ -672,7 +674,7 @@ pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct StorageStorageInserterStore {
-    pub inserters: Box<[BTreeMap<u16, (BucketedStorageStorageInserterStore,)>]>,
+    pub inserters: Box<[BTreeMap<NonZero<u16>, (BucketedStorageStorageInserterStore,)>]>,
 }
 
 impl StorageStorageInserterStore {
@@ -740,14 +742,16 @@ impl StorageStorageInserterStore {
     pub fn add_ins<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut self,
         item: Item<ItemIdxType>,
-        movetime: u16,
+        movetime: NonZero<u16>,
         start: Storage<RecipeIdxType>,
         dest: Storage<RecipeIdxType>,
         hand_size: ITEMCOUNTTYPE,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> InserterIdentifier {
-        let source = FakeUnionStorage::from_storage_with_statics_at_zero(item, start, data_store);
-        let dest = FakeUnionStorage::from_storage_with_statics_at_zero(item, dest, data_store);
+        let source =
+            FakeUnionStorage::from_storage_with_statics_at_zero(item, start, data_store).unwrap();
+        let dest =
+            FakeUnionStorage::from_storage_with_statics_at_zero(item, dest, data_store).unwrap();
 
         let id: InserterIdentifier = self.inserters[item.into_usize()]
             .entry(movetime)
@@ -761,7 +765,7 @@ impl StorageStorageInserterStore {
     pub fn get_inserter<ItemIdxType: IdxTrait>(
         &self,
         item: Item<ItemIdxType>,
-        movetime: u16,
+        movetime: NonZero<u16>,
         id: InserterIdentifier,
         current_tick: u32,
     ) -> InserterStateInfo {
@@ -775,50 +779,75 @@ impl StorageStorageInserterStore {
     pub fn remove_ins<ItemIdxType: IdxTrait>(
         &mut self,
         item: Item<ItemIdxType>,
-        movetime: u16,
+        movetime: NonZero<u16>,
         id: InserterIdentifier,
-    ) {
+    ) -> Result<(), WaitlistSearchSide> {
         let inserter = self.inserters[item.into_usize()]
             .get_mut(&movetime)
             .unwrap()
             .0
             .remove_inserter(id);
-        // TODO: Handle what happens with the items
+
+        match inserter {
+            Ok(_) => {
+                // TODO: Handle what happens with the items
+                Ok(())
+            },
+            Err(side) => Err(side),
+        }
     }
 
     #[must_use]
     pub fn change_movetime<ItemIdxType: IdxTrait>(
         &mut self,
         item: Item<ItemIdxType>,
-        old_movetime: u16,
-        new_movetime: u16,
+        old_movetime: NonZero<u16>,
+        new_movetime: NonZero<u16>,
         id: InserterIdentifier,
-    ) -> InserterIdentifier {
+    ) -> Result<
+        InserterIdentifier,
+        (
+            WaitlistSearchSide,
+            impl FnMut(FakeUnionStorage, FakeUnionStorage, ITEMCOUNTTYPE) -> InserterIdentifier,
+        ),
+    > {
         // FIXME: This does not preserve the inserter state at all!
-        let inserter = self.inserters[item.into_usize()]
+        let inner_id = match self.inserters[item.into_usize()]
             .get_mut(&old_movetime)
             .unwrap()
             .0
-            .remove_inserter(id);
+            .remove_inserter(id)
+        {
+            Ok(inserter) => self.inserters[item.into_usize()]
+                .entry(new_movetime)
+                .or_insert_with(|| (BucketedStorageStorageInserterStore::new(new_movetime),))
+                .0
+                .add_inserter(
+                    inserter.storage_id_in,
+                    inserter.storage_id_out,
+                    inserter.max_hand_size,
+                ),
+            Err(wait_list_side) => {
+                return Err((wait_list_side, move |source, dest, max_hand_size| {
+                    self.inserters[item.into_usize()]
+                        .entry(new_movetime)
+                        .or_insert_with(
+                            || (BucketedStorageStorageInserterStore::new(new_movetime),),
+                        )
+                        .0
+                        .add_inserter(source, dest, max_hand_size)
+                }));
+            },
+        };
 
-        let inner_id: InserterIdentifier = self.inserters[item.into_usize()]
-            .entry(new_movetime)
-            .or_insert_with(|| (BucketedStorageStorageInserterStore::new(new_movetime),))
-            .0
-            .add_inserter(
-                inserter.storage_id_in,
-                inserter.storage_id_out,
-                inserter.max_hand_size,
-            );
-
-        inner_id
+        Ok(inner_id)
     }
 
     #[profiling::function]
     pub fn update_inserter_src<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut self,
         item: Item<ItemIdxType>,
-        movetime: u16,
+        movetime: NonZero<u16>,
         id: InserterIdentifier,
         new_src: Storage<RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -829,7 +858,8 @@ impl StorageStorageInserterStore {
             .0
             .update_inserter_src(
                 id,
-                FakeUnionStorage::from_storage_with_statics_at_zero(item, new_src, data_store),
+                FakeUnionStorage::from_storage_with_statics_at_zero(item, new_src, data_store)
+                    .unwrap(),
             )
     }
 
@@ -837,7 +867,7 @@ impl StorageStorageInserterStore {
     pub fn update_inserter_dest<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut self,
         item: Item<ItemIdxType>,
-        movetime: u16,
+        movetime: NonZero<u16>,
         id: InserterIdentifier,
         new_dest: Storage<RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
@@ -848,7 +878,8 @@ impl StorageStorageInserterStore {
             .0
             .update_inserter_dest(
                 id,
-                FakeUnionStorage::from_storage_with_statics_at_zero(item, new_dest, data_store),
+                FakeUnionStorage::from_storage_with_statics_at_zero(item, new_dest, data_store)
+                    .unwrap(),
             )
     }
 
@@ -856,7 +887,7 @@ impl StorageStorageInserterStore {
     pub fn update_inserter_src_if_equal<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut self,
         item: Item<ItemIdxType>,
-        movetime: u16,
+        movetime: NonZero<u16>,
         id: InserterIdentifier,
         old_src: FakeUnionStorage,
         new_src: Storage<RecipeIdxType>,
@@ -869,7 +900,8 @@ impl StorageStorageInserterStore {
             .update_inserter_src_if_equal(
                 id,
                 old_src,
-                FakeUnionStorage::from_storage_with_statics_at_zero(item, new_src, data_store),
+                FakeUnionStorage::from_storage_with_statics_at_zero(item, new_src, data_store)
+                    .unwrap(),
             )
     }
 
@@ -877,7 +909,7 @@ impl StorageStorageInserterStore {
     pub fn update_inserter_dest_if_equal<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &mut self,
         item: Item<ItemIdxType>,
-        movetime: u16,
+        movetime: NonZero<u16>,
         id: InserterIdentifier,
         old_dest: FakeUnionStorage,
         new_dest: Storage<RecipeIdxType>,
@@ -890,7 +922,8 @@ impl StorageStorageInserterStore {
             .update_inserter_dest_if_equal(
                 id,
                 old_dest,
-                FakeUnionStorage::from_storage_with_statics_at_zero(item, new_dest, data_store),
+                FakeUnionStorage::from_storage_with_statics_at_zero(item, new_dest, data_store)
+                    .unwrap(),
             )
     }
 }
@@ -907,7 +940,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
             power_grids: PowerGridStorage::new(),
             belts: BeltStore::new(data_store),
             storage_storage_inserters: StorageStorageInserterStore::new(data_store),
-            belt_storage_inserters: vec![BTreeMap::new(); data_store.item_names.len()]
+            belt_storage_inserters: vec![Default::default(); data_store.item_names.len()]
                 .into_boxed_slice(),
             chests: FullChestStore {
                 stores: (0..data_store.item_display_names.len())
@@ -993,8 +1026,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
         // dbg!(avg_len);
         // dbg!(total_num_storage_inserters);
 
-        let update_timers = &self.belts.inner.belt_update_timers;
-        let sushi_splitters = &self.belts.inner.sushi_splitters;
         rayon::scope(|scope| {
             {
                 // Update all the "Pure Belts"
@@ -1010,7 +1041,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                             .pure_to_pure_inserters
                             .iter_mut(),
                     )
-                    .zip(self.storage_storage_inserters.inserters.iter_mut().zip(self.fluid_store.fluid_systems_with_fluid.iter_mut()))
+                    .zip(
+                        self.storage_storage_inserters.inserters.iter_mut().zip(
+                            self.fluid_store
+                                .fluid_systems_with_fluid
+                                .iter_mut()
+                                .zip(self.belt_storage_inserters.iter_mut()),
+                        ),
+                    )
                     .zip(self.item_times.iter_mut())
                     .enumerate()
                     // Queue long running items first, so we do not end up waiting for a long running item at the end, which we could have started early on
@@ -1021,8 +1059,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                             item_id,
                             (
                                 (
-                                    ((belt_store, item_storages), pure_to_pure_inserters),
-                                    (storage_storage_inserter_stores, fluid_store),
+                                    ((_belt_store, item_storages), _pure_to_pure_inserters),
+                                    (
+                                        storage_storage_inserter_stores,
+                                        (fluid_store, belt_storage_inserter_lists),
+                                    ),
                                 ),
                                 avg_time,
                             ),
@@ -1033,132 +1074,105 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                 };
                                 profiling::scope!(
                                     "Pure Update",
-                                    format!("Item: {}", data_store.item_display_names[item_id]).as_str()
+                                    format!("Item: {}", data_store.item_display_names[item_id])
+                                        .as_str()
                                 );
                                 let pure_update_start = Instant::now();
                                 {
-                                    profiling::scope!(
-                                        "Pure Belt Update",
-                                        format!("Item: {}", data_store.item_display_names[item_id]).as_str()
-                                    );
-
                                     let grid_size = grid_size(item, data_store);
 
-                                    {
-                                        profiling::scope!(
-                                            "Update Belts",
-                                            format!("Count: {}", belt_store.belts.len())
-                                        );
-                                        for (belt, ty) in
-                                            belt_store.belts.iter_mut().zip(&belt_store.belt_ty)
-                                        {
-                                            // TODO: Avoid last minute decision making
-                                            if update_timers[usize::from(*ty)] >= 120 {
-                                                belt.update(sushi_splitters);
-                                            }
-                                            belt.update_inserters(item_storages, grid_size);
-                                        }
-                                    }
+                                    let (belt_to_storage_flow, storage_to_belt_flow) =
+                                        belt_storage_inserter_lists;
+
+                                    let (outgoing_belt_to_storage, incoming_belt_to_storage) =
+                                        belt_to_storage_flow;
+                                    let (incoming_storage_to_belt, outgoing_storage_to_belt) =
+                                        storage_to_belt_flow;
+
+                                    outgoing_belt_to_storage.tick();
+                                    incoming_belt_to_storage.tick();
+                                    outgoing_storage_to_belt.tick();
+                                    incoming_storage_to_belt.tick();
+                                    let (
+                                        belt_storage_exit_outgoing,
+                                        _belt_storage_reinsertion_outgoing,
+                                    ) = outgoing_belt_to_storage.get();
+                                    let (
+                                        _belt_storage_exit_incoming,
+                                        mut belt_storage_reinsertion_incoming,
+                                    ) = incoming_belt_to_storage.get();
+
+                                    let (
+                                        _storage_belt_exit_outgoing,
+                                        mut storage_belt_reinsertion_outgoing,
+                                    ) = outgoing_storage_to_belt.get();
+                                    let (
+                                        storage_belt_exit_incoming,
+                                        _storage_belt_reinsertion_incoming,
+                                    ) = incoming_storage_to_belt.get();
 
                                     {
-                                        profiling::scope!("Update PurePure Inserters");
-                                        for (
-                                            ins,
-                                            ((source, source_pos), (dest, dest_pos), cooldown, filter),
-                                        ) in pure_to_pure_inserters.iter_mut().flatten()
                                         {
-                                            let [mut source_loc, mut dest_loc] = if *source == *dest {
-                                                assert_ne!(
-                                                    source_pos, dest_pos,
-                                                    "An inserter cannot take and drop off on the same tile"
-                                                );
-                                                // We are taking and placing onto the same belt
-                                                let belt = &mut belt_store.belts[*source];
-
-                                                belt.get_two([(*source_pos).into(), (*dest_pos).into()]).map(|v| *v)
-                                            } else {
-                                                let [inp, out] = belt_store
-                                                    .belts
-                                                    .get_disjoint_mut([*source, *dest])
-                                                    .unwrap();
-
-                                                [*inp.get(*source_pos), *out.get(*dest_pos)]
-                                            };
-
-                                            if *cooldown == 0 {
-                                                ins.update_instant(&mut source_loc,&mut  dest_loc);
-                                            } else {
-                                                ins.update(
-                                                    &mut source_loc,
-                                                    &mut dest_loc,
-                                                    *cooldown,
-                                                    // FIXME:
-                                                    1,
-                                                    (),
-                                                    |_| {
-                                                        filter
-                                                            .map(|filter_item| filter_item == item)
-                                                            .unwrap_or(true)
-                                                    },
-                                                );
-                                            }
-
-                                            {
-                                                profiling::scope!("Update update_first_free_pos");
-                                                if !source_loc {
-                                                    let _: Option<_> = belt_store.belts[*source]
-                                                        .remove_item(*source_pos);
-                                                }
-
-                                                if dest_loc {
-                                                    let _ = belt_store.belts[*dest]
-                                                        .try_insert_item(*dest_pos, item);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                {
-
-                                    let item = Item {
-                                        id: item_id.try_into().unwrap(),
-                                    };
-
-                                    let grid_size = grid_size(item, data_store);
-                                    let num_recipes = num_recipes(item, data_store);
-
-                                    if data_store.item_is_fluid[item_id] {
-                                        profiling::scope!(
-                                            "FluidSystem Update",
-                                            format!("Item: {}", data_store.item_display_names[item_id])
-                                                .as_str()
-                                        );
-                                        for fluid_system in fluid_store {
-                                            // FIXME: Switch to holes
-                                            if let Some(fluid_system) = fluid_system {
-                                                update_fluid_system(&mut fluid_system.hot_data, item_storages, grid_size);
-
-                                            }
-                                        }
-                                    } else {
-                                        profiling::scope!(
-                                            "StorageStorage Inserter Update",
-                                            format!("Item: {}", data_store.item_display_names[item_id])
-                                                .as_str()
-                                        );
-                                        for (ins_store,) in storage_storage_inserter_stores.values_mut()
-                                        {
-                                            profiling::scope!(
-                                                "StorageStorage Inserter Update",
-                                                format!("Movetime: {}", ins_store.movetime).as_str()
-                                            );
-                                            ins_store.update(
+                                            profiling::scope!("belt_storage_exit.update");
+                                            belt_storage_exit_outgoing.update(
                                                 item_id,
-                                                item_storages,
                                                 grid_size,
-                                                current_tick,
+                                                &mut belt_storage_reinsertion_incoming,
+                                                item_storages,
                                             );
+                                            storage_belt_exit_incoming.update(
+                                                item_id,
+                                                grid_size,
+                                                &mut storage_belt_reinsertion_outgoing,
+                                                item_storages,
+                                            );
+                                        }
+                                        {
+                                            if data_store.item_is_fluid[item_id] {
+                                                profiling::scope!(
+                                                    "FluidSystem Update",
+                                                    format!(
+                                                        "Item: {}",
+                                                        data_store.item_display_names[item_id]
+                                                    )
+                                                    .as_str()
+                                                );
+                                                for fluid_system in fluid_store {
+                                                    // FIXME: Switch to holes
+                                                    if let Some(fluid_system) = fluid_system {
+                                                        update_fluid_system(
+                                                            item_id,
+                                                            &mut fluid_system.hot_data,
+                                                            item_storages,
+                                                            grid_size,
+                                                        );
+                                                    }
+                                                }
+                                            } else {
+                                                profiling::scope!(
+                                                    "StorageStorage Inserter Update",
+                                                    format!(
+                                                        "Item: {}",
+                                                        data_store.item_display_names[item_id]
+                                                    )
+                                                    .as_str()
+                                                );
+                                                for (ins_store,) in
+                                                    storage_storage_inserter_stores.values_mut()
+                                                {
+                                                    profiling::scope!(
+                                                        "StorageStorage Inserter Update",
+                                                        format!("Movetime: {}", ins_store.movetime)
+                                                            .as_str()
+                                                    );
+                                                    ins_store.update(
+                                                        item_id,
+                                                        item_storages,
+                                                        grid_size,
+                                                        current_tick,
+                                                    );
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -1182,17 +1196,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
 }
 
 #[cfg(feature = "client")]
+#[derive(Debug)]
 pub enum AppState {
     MainMenu {
         in_ip_box: Option<(String, bool)>,
+    },
+    LoadSaveMenu {
+        save_files: SaveFileList,
+    },
+    NewGameMenu {
+        new_game_name: String,
         gigabase_size: u16,
     },
     Ingame,
     Loading {
         start_time: Instant,
-        /// WARNING: This is a f64!
-        progress: Arc<AtomicU64>,
+        progress: ProgressInfo,
         game_state_receiver: Receiver<(LoadedGame, Arc<AtomicU64>, Sender<Input>)>,
+        current_message: String,
     },
 }
 
@@ -1246,14 +1267,42 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         for action in actions {
             // FIXME: I just clone for now
             match action.borrow() {
-                ActionType::SetActiveResearch { tech } => {
-                    game_state.simulation_state.tech_state.current_technology = *tech;
+                ActionType::SpawnPlayer {} => {
+                    log::info!("Player joined");
+                    game_state.world.players.push(PlayerInfo::default());
+                },
+
+                ActionType::AddResearchToQueue { tech } => {
+                    // TODO: Do not allow adding techs which are done?
+                    if !game_state
+                        .simulation_state
+                        .tech_state
+                        .research_queue
+                        .contains(tech)
+                    {
+                        game_state
+                            .simulation_state
+                            .tech_state
+                            .research_queue
+                            .push(*tech);
+
+                        // TODO: Do I want a max length for the queue?
+                    };
+                },
+                ActionType::RemoveResearchFromQueue { tech } => {
+                    game_state
+                        .simulation_state
+                        .tech_state
+                        .research_queue
+                        .retain(|queued_tech| queued_tech != tech);
                 },
 
                 ActionType::CheatUnlockTechnology { tech } => {
-                    if game_state.simulation_state.tech_state.current_technology == Some(*tech) {
-                        game_state.simulation_state.tech_state.current_technology = None;
-                    }
+                    game_state
+                        .simulation_state
+                        .tech_state
+                        .research_queue
+                        .retain(|queued_tech| queued_tech != tech);
                     game_state
                         .simulation_state
                         .tech_state
@@ -1340,10 +1389,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         .get_entity_at_mut(*pos, data_store)
                         .map(|e| match e {
                             Entity::Chest {
-                                ty,
-                                pos,
-                                item,
-                                slot_limit,
+                                item, slot_limit, ..
                             } => {
                                 if let Some((item, index)) = item {
                                     let removed_items =
@@ -1364,70 +1410,184 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         });
                 },
                 ActionType::OverrideInserterMovetime { pos, new_movetime } => {
-                    game_state
-                        .world
-                        .get_entity_at_mut(*pos, data_store)
-                        .map(|e| match e {
+                    let e = game_state.world.get_entity_at_mut(*pos, data_store);
+
+                    if let Some(e) = e {
+                        match e {
                             Entity::Inserter {
                                 ty,
                                 user_movetime,
                                 info,
+                                pos: inserter_pos,
+                                direction,
                                 ..
-                            } => {
-                                match info {
-                                    InserterInfo::NotAttached {} => {},
-                                    InserterInfo::Attached { info } => match info {
-                                        AttachedInserter::BeltStorage { id, belt_pos } => {
-                                            game_state
-                                                .simulation_state
-                                                .factory
-                                                .belts
-                                                .change_inserter_movetime(
-                                                    *id,
-                                                    *belt_pos,
-                                                    new_movetime.map(|v| v.into()).unwrap_or(
-                                                        data_store.inserter_infos[*ty as usize]
-                                                            .swing_time_ticks,
-                                                    ),
-                                                );
-                                        },
-                                        AttachedInserter::BeltBelt { item, inserter } => todo!(),
-                                        AttachedInserter::StorageStorage { item, inserter } => {
-                                            let old_movetime =
-                                                user_movetime.map(|v| v.into()).unwrap_or(
-                                                    data_store.inserter_infos[*ty as usize]
-                                                        .swing_time_ticks,
-                                                );
-
-                                            let new_movetime =
+                            } => match info {
+                                InserterInfo::NotAttached {} => {},
+                                InserterInfo::Attached { info } => match info {
+                                    AttachedInserter::BeltStorage { id, belt_pos } => {
+                                        game_state
+                                            .simulation_state
+                                            .factory
+                                            .belts
+                                            .change_inserter_movetime(
+                                                *id,
+                                                *belt_pos,
                                                 new_movetime.map(|v| v.into()).unwrap_or(
                                                     data_store.inserter_infos[*ty as usize]
                                                         .swing_time_ticks,
-                                                );
-
-                                            if old_movetime != new_movetime {
-                                                let new_id = game_state
-                                                    .simulation_state
-                                                    .factory
-                                                    .storage_storage_inserters
-                                                    .change_movetime(
-                                                        *item,
-                                                        old_movetime.into(),
-                                                        new_movetime.into(),
-                                                        *inserter,
-                                                    );
-
-                                                *inserter = new_id;
-                                            }
-                                        },
+                                                ),
+                                            );
                                     },
-                                }
-                                *user_movetime = *new_movetime;
+                                    AttachedInserter::BeltBelt { .. } => todo!(),
+                                    AttachedInserter::StorageStorage { item, inserter } => {
+                                        let old_movetime = user_movetime.unwrap_or(
+                                            data_store.inserter_infos[*ty as usize]
+                                                .swing_time_ticks,
+                                        );
+
+                                        let new_movetime =
+                                            new_movetime.map(|v| v.into()).unwrap_or(
+                                                data_store.inserter_infos[*ty as usize]
+                                                    .swing_time_ticks,
+                                            );
+
+                                        if old_movetime != new_movetime {
+                                            let new_id = match game_state
+                                                .simulation_state
+                                                .factory
+                                                .storage_storage_inserters
+                                                .change_movetime(
+                                                    *item,
+                                                    old_movetime.into(),
+                                                    new_movetime.into(),
+                                                    *inserter,
+                                                ) {
+                                                Ok(new_id) => new_id,
+                                                Err((search_side, mut handle_fn)) => {
+                                                    match search_side {
+                                                        WaitlistSearchSide::Source => {
+                                                            let start_pos = data_store
+                                                                .inserter_start_pos(
+                                                                    *ty,
+                                                                    *inserter_pos,
+                                                                    *direction,
+                                                                );
+
+                                                            let item = *item;
+                                                            let inserter = *inserter;
+                                                            match game_state
+                                                                .world
+                                                                .get_entity_at(
+                                                                    start_pos, data_store,
+                                                                )
+                                                                .unwrap()
+                                                            {
+                                                                Entity::Assembler {
+                                                                    info:
+                                                                        AssemblerInfo::Powered {
+                                                                            id,
+                                                                            ..
+                                                                        },
+                                                                    ..
+                                                                } => {
+                                                                    let removed =
+                                                                            game_state.simulation_state.factory.power_grids.power_grids[id.grid as usize].stores
+                                                                                .remove_wait_list_inserter(*id, item, crate::chest::WaitingInserterRemovalInfo::StorageStorage { inserter_id: inserter.id }, data_store);
+                                                                    let Conn::Storage {
+                                                                        storage_id_in,
+                                                                        storage_id_out,
+                                                                        ..
+                                                                    } = removed.conn
+                                                                    else {
+                                                                        unreachable!()
+                                                                    };
+                                                                    handle_fn(
+                                                                        storage_id_in,
+                                                                        storage_id_out,
+                                                                        removed.max_hand.into(),
+                                                                    )
+                                                                },
+
+                                                                e => unreachable!("{e:?}"),
+                                                            }
+                                                        },
+                                                        WaitlistSearchSide::Dest => {
+                                                            let end_pos = data_store
+                                                                .inserter_end_pos(
+                                                                    *ty,
+                                                                    *inserter_pos,
+                                                                    *direction,
+                                                                );
+
+                                                            let item = *item;
+                                                            let inserter = *inserter;
+                                                            match game_state
+                                                                .world
+                                                                .get_entity_at(end_pos, data_store)
+                                                                .unwrap()
+                                                            {
+                                                                Entity::Assembler {
+                                                                    info:
+                                                                        AssemblerInfo::Powered {
+                                                                            id,
+                                                                            ..
+                                                                        },
+                                                                    ..
+                                                                } => {
+                                                                    let removed = game_state.simulation_state.factory.power_grids.power_grids[id.grid as usize].stores
+                                                                                .remove_wait_list_inserter(*id, item, crate::chest::WaitingInserterRemovalInfo::StorageStorage { inserter_id: inserter.id }, data_store);
+                                                                    let Conn::Storage {
+                                                                        index,
+                                                                        storage_id_in,
+                                                                        storage_id_out,
+                                                                    } = removed.conn
+                                                                    else {
+                                                                        unreachable!()
+                                                                    };
+                                                                    handle_fn(
+                                                                        storage_id_in,
+                                                                        storage_id_out,
+                                                                        removed.max_hand.into(),
+                                                                    )
+                                                                },
+
+                                                                e => unreachable!("{e:?}"),
+                                                            }
+                                                        },
+                                                    }
+                                                },
+                                            };
+
+                                            let Some(Entity::Inserter {
+                                                user_movetime,
+                                                info:
+                                                    InserterInfo::Attached {
+                                                        info:
+                                                            AttachedInserter::StorageStorage {
+                                                                inserter,
+                                                                ..
+                                                            },
+                                                    },
+                                                ..
+                                            }) = game_state
+                                                .world
+                                                .get_entity_at_mut(*pos, data_store)
+                                            else {
+                                                unreachable!();
+                                            };
+                                            *user_movetime = Some(new_movetime.try_into().unwrap());
+                                            *inserter = new_id;
+                                        }
+                                    },
+                                },
                             },
                             _ => {
                                 warn!("Tried to set Inserter Settings on non inserter");
                             },
-                        });
+                        }
+                    } else {
+                        warn!("Tried to set Inserter Settings on empty tile");
+                    }
                 },
                 ActionType::PlaceEntity(place_entity_info) => {
                     let force = place_entity_info.force;
@@ -1478,7 +1638,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                 && slots.iter().all(|v| v.is_none())
                                         },
                                     ) {
-                                    found_idx as u32
+                                    found_idx as ModuleSlotDedupIndex
                                 } else {
                                     game_state.world.module_slot_dedup_table.push(
                                         vec![
@@ -1490,7 +1650,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         .into_boxed_slice()
                                         .into(),
                                     );
-                                    (game_state.world.module_slot_dedup_table.len() - 1) as u32
+                                    (game_state.world.module_slot_dedup_table.len() - 1)
+                                        as ModuleSlotDedupIndex
                                 };
 
                                 if let Some(pole_position) = powered_by {
@@ -1540,6 +1701,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     filter,
                                     data_store,
                                 );
+
+                                if ret.is_err() {
+                                    error!("Failed placing Inserter");
+                                }
                             },
                             crate::frontend::world::tile::PlaceEntityType::Belt {
                                 pos,
@@ -1610,7 +1775,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 }
 
                                 // Check which poles are in range to connect to
-                                let connection_candidates: Vec<_> = game_state
+                                let connection_candidates = game_state
                                     .world
                                     .get_power_poles_which_could_connect_to_pole_at(
                                         pole_pos,
@@ -1620,42 +1785,47 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         data_store,
                                     )
                                     .into_iter()
-                                    .map(|e| e.get_pos())
-                                    .collect();
+                                    .map(|e| e.get_pos());
 
-                                match game_state.simulation_state.factory.power_grids.add_pole(
+                                let res = game_state.simulation_state.factory.power_grids.add_pole(
                                     pole_pos,
-                                    connection_candidates.iter().copied(),
+                                    connection_candidates,
                                     data_store,
-                                ) {
+                                );
+                                match res {
                                     Some(storage_updates) => {
                                         // Handle storage updates
                                         for storage_update in storage_updates {
-                                            let mut entity_size = None;
-                                            game_state.world.get_entity_at_mut(storage_update.position, data_store).map(|e| {
-                                        match (e, storage_update.new_pg_entity.clone()) {
-                                            (Entity::Assembler { ty, pos: _, info: AssemblerInfo::Powered { id, pole_position: _, weak_index: _ }, modules: _, rotation }, crate::power::power_grid::PowerGridEntity::Assembler { ty: _, recipe, index }) => {
-                                                entity_size = Some(data_store.assembler_info[usize::from(*ty)].size(*rotation));
+                                            let entity = game_state.world.get_entity_at_mut(storage_update.position, data_store).expect(&format!("Did not find entity at {:?} for storage update", storage_update.position));
+
+                                            let entity_size = match (entity, storage_update.new_pg_entity.clone()) {
+                                            (Entity::Assembler {
+                                                ty,
+                                                pos: _,
+                                                info: AssemblerInfo::Powered { id, pole_position: _, weak_index: _ }, modules: _, rotation },
+                                            crate::power::power_grid::PowerGridEntity::Assembler { ty: _, recipe, index }) => {
 
                                                 assert_eq!(id.recipe, recipe);
                                                 id.grid = storage_update.new_grid;
                                                 id.assembler_index = index;
                                                 // FIXME: Store and update the weak_index
+
+                                                data_store.assembler_info[usize::from(*ty)].size(*rotation)
                                             },
                                             (Entity::Lab { pos: _, ty, modules: _, pole_position: Some((_pole_pos, _weak_idx, lab_store_index)) }, crate::power::power_grid::PowerGridEntity::Lab { ty: _, index: new_idx  }) => {
-                                                entity_size = Some(data_store.lab_info[usize::from(*ty)].size);
 
 
                                                 *lab_store_index = new_idx;
                                                 // The weak index stays the same since it it still connected to the same power pole
+
+                                                data_store.lab_info[usize::from(*ty)].size
                                             }
 
                                             (_, _) => todo!("Handler storage_update {storage_update:?}")
-                                        }
-                                    });
+                                        };
 
                                             // FIXME: Rotation
-                                            let e_size = entity_size.unwrap();
+                                            let e_size = entity_size;
 
                                             let inserter_range =
                                                 data_store.max_inserter_search_range;
@@ -1698,11 +1868,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                     let new_storage = match storage_update.new_pg_entity {
                                                                         crate::power::power_grid::PowerGridEntity::Assembler { recipe, index, .. } => Storage::Assembler { grid: storage_update.new_grid, recipe_idx_with_this_item: recipe.id, index },
                                                                         crate::power::power_grid::PowerGridEntity::Lab { index, .. } => Storage::Lab { grid: storage_update.new_grid, index },
-                                                                        crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
+                                                                        crate::power::power_grid::PowerGridEntity::LazyPowerProducer { .. } => todo!(),
                                                                         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
-                                                                    }.translate(game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), data_store).unwrap();
+                                                                    };
                                                                     game_state.simulation_state.factory.belts.update_belt_storage_inserter_src(*id, *belt_pos, game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), new_storage, data_store);
                                                                 },
                                                                 AttachedInserter::BeltBelt { .. } => {
@@ -1712,11 +1882,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                     let new_storage = match storage_update.new_pg_entity {
                                                                         crate::power::power_grid::PowerGridEntity::Assembler { recipe, index, .. } => Storage::Assembler { grid: storage_update.new_grid, recipe_idx_with_this_item: recipe.id, index },
                                                                         crate::power::power_grid::PowerGridEntity::Lab { index, .. } => Storage::Lab { grid: storage_update.new_grid, index },
-                                                                        crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
+                                                                        crate::power::power_grid::PowerGridEntity::LazyPowerProducer { .. } => todo!(),
                                                                         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
-                                                                    }.translate(*item, data_store).unwrap();
+                                                                    };
 
                                                                     let movetime = user_movetime.map(|v| v.into()).unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks);
 
@@ -1736,11 +1906,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                     let new_storage = match storage_update.new_pg_entity {
                                                                         crate::power::power_grid::PowerGridEntity::Assembler { recipe, index, .. } => Storage::Assembler { grid: storage_update.new_grid, recipe_idx_with_this_item: recipe.id, index },
                                                                         crate::power::power_grid::PowerGridEntity::Lab { index, .. } => Storage::Lab { grid: storage_update.new_grid, index },
-                                                                        crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
+                                                                        crate::power::power_grid::PowerGridEntity::LazyPowerProducer { .. } => todo!(),
                                                                         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
-                                                                    }.translate(game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), data_store).unwrap();
+                                                                    };
                                                                     game_state.simulation_state.factory.belts.update_belt_storage_inserter_dest(*id, *belt_pos, game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos), new_storage, data_store);
                                                                 },
                                                                 AttachedInserter::BeltBelt { .. } => {
@@ -1750,11 +1920,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                     let new_storage = match storage_update.new_pg_entity {
                                                                         crate::power::power_grid::PowerGridEntity::Assembler { recipe, index, .. } => Storage::Assembler { grid: storage_update.new_grid, recipe_idx_with_this_item: recipe.id, index },
                                                                         crate::power::power_grid::PowerGridEntity::Lab { index, .. } => Storage::Lab { grid: storage_update.new_grid, index },
-                                                                        crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
+                                                                        crate::power::power_grid::PowerGridEntity::LazyPowerProducer { .. } => todo!(),
                                                                         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
-                                                                    }.translate(*item, data_store).unwrap();
+                                                                    };
                                                                     let movetime = user_movetime.map(|v| v.into()).unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks);
 
                                                                     let new_id = game_state.simulation_state.factory.storage_storage_inserters.update_inserter_dest(*item, movetime.into(), *inserter, new_storage, data_store);
@@ -1765,34 +1935,30 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                         }
                                                     },
                                                 },
-                                                Entity::FluidTank { ty, pos, rotation } => {
+                                                Entity::FluidTank { pos, .. } => {
                                                     let id: FluidSystemId<_> = game_state.simulation_state.factory.fluid_store.fluid_box_pos_to_network_id[pos];
                                                     if let Some(fluid) = id.fluid {
-                                                        let storage = match storage_update.new_pg_entity {
-                                                            crate::power::power_grid::PowerGridEntity::Assembler { ty, recipe, index } => Storage::Assembler { grid: storage_update.old_grid, recipe_idx_with_this_item: recipe.id, index },
-                                                            crate::power::power_grid::PowerGridEntity::Lab { ty, index } => Storage::Lab { grid: storage_update.old_grid, index },
-                                                            crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
+                                                        let storage = match storage_update.old_pg_entity {
+                                                            crate::power::power_grid::PowerGridEntity::Assembler { ty: _, recipe, index } => Storage::Assembler { grid: storage_update.old_grid, recipe_idx_with_this_item: recipe.id, index },
+                                                            crate::power::power_grid::PowerGridEntity::Lab { ty: _, index } => Storage::Lab { grid: storage_update.old_grid, index },
+                                                            crate::power::power_grid::PowerGridEntity::LazyPowerProducer { .. } => todo!(),
                                                             crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                             crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                             crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
                                                         };
-                                                        dbg!(storage);
-                                                        let Some(translated_storage) = storage.translate(fluid, data_store) else {
+                                                        let Ok(old_storage) = FakeUnionStorage::from_storage_with_statics_at_zero(fluid, storage, data_store) else {
                                                             return ControlFlow::Continue(());
                                                         };
-                                                        dbg!(translated_storage);
-                                                        let old_storage = FakeUnionStorage::from_storage_with_statics_at_zero(fluid, translated_storage, data_store);
-                                                        dbg!(old_storage);
 
                                                         let new_storage = match storage_update.new_pg_entity {
-                                                            crate::power::power_grid::PowerGridEntity::Assembler { ty, recipe, index } => Storage::Assembler { grid: storage_update.new_grid, recipe_idx_with_this_item: recipe.id, index },
-                                                            crate::power::power_grid::PowerGridEntity::Lab { ty, index } => Storage::Lab { grid: storage_update.new_grid, index },
-                                                            crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
+                                                            crate::power::power_grid::PowerGridEntity::Assembler { ty: _, recipe, index } => Storage::Assembler { grid: storage_update.new_grid, recipe_idx_with_this_item: recipe.id, index },
+                                                            crate::power::power_grid::PowerGridEntity::Lab { ty: _, index } => Storage::Lab { grid: storage_update.new_grid, index },
+                                                            crate::power::power_grid::PowerGridEntity::LazyPowerProducer { .. } => todo!(),
                                                             crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                             crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                             crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
-                                                        }.translate(fluid, data_store).unwrap();
-                                                        game_state.simulation_state.factory.fluid_store.update_fluid_conn_if_needed(*pos, old_storage, FakeUnionStorage::from_storage_with_statics_at_zero(fluid, new_storage, data_store));
+                                                        };
+                                                        game_state.simulation_state.factory.fluid_store.update_fluid_conn_if_needed(*pos, old_storage, FakeUnionStorage::from_storage_with_statics_at_zero(fluid, new_storage, data_store).unwrap());
                                                     }
                                                 },
 
@@ -2079,10 +2245,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     .iter()
                                     .position(|slots| *slots == modules)
                                 {
-                                    idx as u32
+                                    idx as ModuleSlotDedupIndex
                                 } else {
                                     game_state.world.module_slot_dedup_table.push(modules);
-                                    (game_state.world.module_slot_dedup_table.len() - 1) as u32
+                                    (game_state.world.module_slot_dedup_table.len() - 1)
+                                        as ModuleSlotDedupIndex
                                 };
 
                                 if let Err(e) = game_state.world.add_entity(
@@ -2136,10 +2303,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     .iter()
                                     .position(|slots| *slots == modules)
                                 {
-                                    idx as u32
+                                    idx as ModuleSlotDedupIndex
                                 } else {
                                     game_state.world.module_slot_dedup_table.push(modules);
-                                    (game_state.world.module_slot_dedup_table.len() - 1) as u32
+                                    (game_state.world.module_slot_dedup_table.len() - 1)
+                                        as ModuleSlotDedupIndex
                                 };
 
                                 if let Err(e) = game_state.world.add_entity(
@@ -2329,11 +2497,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                             FakeUnionStorage::from_storage_with_statics_at_zero(item, Storage::Assembler {
                                                                 grid: id.grid,
                                                                 index: id.assembler_index,
-                                                                recipe_idx_with_this_item:
-                                                                    data_store
-                                                                        .recipe_to_translated_index
-                                                                        [&(id.recipe, item)],
-                                                            }, data_store) ,
+                                                                recipe_idx_with_this_item:id.recipe.id,
+                                                            }, data_store).unwrap() ,
                                                             dest_conn,
                                                             Box::new(|_weak_index: WeakIndex| {})
                                                                 as Box<dyn FnOnce(WeakIndex) -> ()>,
@@ -2534,10 +2699,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         if let Some(idx) =
                                             dedup.iter().position(|slots| *slots == modules_cloned)
                                         {
-                                            *modules = idx as u32;
+                                            *modules = idx as ModuleSlotDedupIndex;
                                         } else {
                                             dedup.push(modules_cloned);
-                                            *modules = (dedup.len() - 1) as u32;
+                                            *modules = (dedup.len() - 1) as ModuleSlotDedupIndex;
                                         }
 
                                         match info {
@@ -2591,10 +2756,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         if let Some(idx) =
                                             dedup.iter().position(|slots| *slots == modules_cloned)
                                         {
-                                            *modules = idx as u32;
+                                            *modules = idx as ModuleSlotDedupIndex;
                                         } else {
                                             dedup.push(modules_cloned);
-                                            *modules = (dedup.len() - 1) as u32;
+                                            *modules = (dedup.len() - 1) as ModuleSlotDedupIndex;
                                         }
 
                                         match pole_position {
@@ -2624,8 +2789,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     modules,
                                     pole_position,
                                 } => {
-                                    // TODO:
-                                    // todo!();
+                                    // TODO: Currently I insert modules into beacons on placement instead of doing this.
                                 },
                                 _ => {
                                     warn!(
@@ -2704,10 +2868,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         if let Some(idx) =
                                             dedup.iter().position(|slots| *slots == modules_clone)
                                         {
-                                            *modules = idx as u32;
+                                            *modules = idx as ModuleSlotDedupIndex;
                                         } else {
                                             dedup.push(modules_clone);
-                                            *modules = (dedup.len() - 1) as u32;
+                                            *modules = (dedup.len() - 1) as ModuleSlotDedupIndex;
                                         }
                                     }
                                 },
@@ -2722,6 +2886,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                 ActionType::PlaceOre { pos, ore, amount } => {
                     game_state.world.ore_lookup.add_ore(*pos, *ore, *amount);
+                    game_state
+                        .world
+                        .map_updates
+                        .get_or_insert_default()
+                        .push(*pos);
                 },
             }
 
@@ -2802,22 +2971,308 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             // We can downcast here, since this could only cause graphical weirdness for a couple frame every ~2 years of playtime
             .belt_and_inserter_update(aux_data.current_tick as u32, data_store);
 
-        let ((), mining_production_by_item, (tech_progress, recipe_tick_info, lab_info)) = join!(
-            || simulation_state.factory.chests.update(data_store),
-            || {
-                simulation_state.factory.ore_store.update(
-                    &simulation_state.tech_state.mining_productivity_by_item,
-                    data_store,
+        let update_timers = &simulation_state.factory.belts.inner.belt_update_timers;
+        let sushi_splitters = &simulation_state.factory.belts.inner.sushi_splitters;
+
+        let (belt_stuff, mut assembler_stuff): (Vec<_>, Vec<_>) = simulation_state
+            .factory
+            .belt_storage_inserters
+            .iter_mut()
+            .map(|belt_storage_inserter_lists| {
+                let (belt_to_storage_flow, storage_to_belt_flow) = belt_storage_inserter_lists;
+
+                let (outgoing_belt_to_storage, incoming_belt_to_storage) = belt_to_storage_flow;
+                let (incoming_storage_to_belt, outgoing_storage_to_belt) = storage_to_belt_flow;
+
+                let (belt_storage_exit_outgoing, belt_storage_reinsertion_outgoing) =
+                    outgoing_belt_to_storage.get();
+                let (belt_storage_exit_incoming, belt_storage_reinsertion_incoming) =
+                    incoming_belt_to_storage.get();
+
+                let (storage_belt_exit_outgoing, storage_belt_reinsertion_outgoing) =
+                    outgoing_storage_to_belt.get();
+                let (storage_belt_exit_incoming, storage_belt_reinsertion_incoming) =
+                    incoming_storage_to_belt.get();
+
+                (
+                    (
+                        belt_storage_exit_incoming,
+                        belt_storage_reinsertion_outgoing,
+                        storage_belt_exit_outgoing,
+                        storage_belt_reinsertion_incoming,
+                    ),
+                    (
+                        belt_storage_exit_outgoing,
+                        belt_storage_reinsertion_incoming,
+                        storage_belt_reinsertion_outgoing,
+                        storage_belt_exit_incoming,
+                    ),
                 )
-            },
-            || {
-                simulation_state.factory.power_grids.update(
-                    &simulation_state.tech_state,
-                    aux_data.current_tick as u32,
-                    data_store,
+            })
+            .unzip();
+
+        let mut ret = None;
+
+        {
+            // profiling::scope!("Power Grid, Chest, Mining Drill Stage");
+
+            rayon::scope(|scope| {
+                simulation_state
+                .factory
+                .belts
+                .inner
+                .smart_belts
+                .iter_mut()
+                .zip(
+                    simulation_state
+                        .factory
+                        .belts
+                        .inner
+                        .belt_belt_inserters
+                        .pure_to_pure_inserters
+                        .iter_mut(),
                 )
-            }
-        );
+                .zip(belt_stuff)
+                .zip(simulation_state.factory.item_times.iter_mut())
+                .enumerate()
+                // Queue long running items first, so we do not end up waiting for a long running item at the end, which we could have started early on
+                // This alone is ~10% faster on a test game I have
+                .sorted_unstable_by_key(|&(_, (_, &mut avg_time))| -(avg_time * 1000.0) as i32)
+                .for_each(
+                    |(
+                        item_id,
+                        (((belt_store, pure_to_pure_inserters), belt_stuff), _avg_time),
+                    )| scope.spawn(move |_| {
+                        profiling::scope!(
+                            "Pure Belt Update",
+                            format!("Item: {}", data_store.item_display_names[item_id]).as_str()
+                        );
+
+                        let item = Item {
+                            id: item_id.try_into().unwrap(),
+                        };
+
+                        let (belt_storage_exit_incoming, mut belt_storage_reinsertion_outgoing, storage_belt_exit_outgoing, mut storage_belt_reinsertion_incoming) = belt_stuff;
+
+
+                        {
+                            profiling::scope!("storage_belt_exit.update");
+                            // TODO: Rust-analyzer does not understand the const generics here, and thinks I am calling a different function
+                            // than rustc. This does compile fine.
+                            belt_storage_exit_incoming.update(
+                                &mut belt_storage_reinsertion_outgoing,
+                                belt_store.belts.as_mut_slice(),
+                            );
+                            storage_belt_exit_outgoing.update(
+                                &mut storage_belt_reinsertion_incoming,
+                                belt_store.belts.as_mut_slice(),
+                            );
+                        }
+                        {
+                            profiling::scope!(
+                                "Update Belts",
+                                format!("Count: {}", belt_store.belts.len())
+                            );
+                            // Belt update in parallel
+                            // TODO: This is significantly better in parallel, for reasons I do not fully understand.
+                            //       The profiler indicates that belt updates are not a huge part of update times
+                            let reinsertion = belt_store
+                                .belts
+                                .par_iter_mut()
+                                .zip(belt_store.belt_ty.par_iter())
+                                .enumerate().filter_map(|(self_index, (belt, ty))| {
+                                    // Only update belts, which have moved according to their timer
+                                    // This is what makes some types of belts different speed from others
+                                    (update_timers[usize::from(*ty)] >= 120).then_some((self_index, belt))
+                                }).map(|(self_index, belt)| {
+                                    // Update a belt
+                                    belt.update(sushi_splitters);
+                                    belt.update_inserters_lazy().into_iter().flatten().zip(iter::repeat(self_index))
+                                })
+                                .fold(|| vec![], |mut v, reinsertions| {
+                                    v.extend(reinsertions);
+                                    v
+                                })
+                                .collect_vec_list().into_iter().flatten().flatten();
+
+                            // Do the reinsertion sequentially
+                            for (ins, self_index) in reinsertion {
+                                let self_index = self_index as u32;
+                                let in_movement = BeltStorageInserterInMovement {
+                                    movetime: ins.movetime,
+                                    storage: ins.storage,
+                                    belt: self_index,
+                                    belt_pos: ins.belt_pos,
+                                    max_hand_size: ins.max_hand_size,
+                                    current_hand: ins.current_hand,
+                                };
+                                if ins.outgoing {
+                                    belt_storage_reinsertion_outgoing.reinsert(ins.movetime.into(), in_movement);
+                                } else {
+                                    storage_belt_reinsertion_incoming.reinsert(ins.movetime.into(), in_movement);
+                                }
+                            }
+                        }
+
+                        {
+                            profiling::scope!("Update PurePure Inserters");
+                            for (ins, ((source, source_pos), (dest, dest_pos), cooldown, filter)) in
+                                pure_to_pure_inserters.iter_mut().flatten()
+                            {
+                                let [mut source_loc, mut dest_loc] = if *source == *dest {
+                                    assert_ne!(
+                                        source_pos, dest_pos,
+                                        "An inserter cannot take and drop off on the same tile"
+                                    );
+                                    // We are taking and placing onto the same belt
+                                    let belt = &mut belt_store.belts[*source];
+
+                                    belt.get_two([(*source_pos).into(), (*dest_pos).into()])
+                                        .map(|v| *v)
+                                } else {
+                                    let [inp, out] =
+                                        belt_store.belts.get_disjoint_mut([*source, *dest]).unwrap();
+
+                                    [*inp.get(*source_pos), *out.get(*dest_pos)]
+                                };
+
+                                if *cooldown == 0 {
+                                    ins.update_instant(&mut source_loc, &mut dest_loc);
+                                } else {
+                                    ins.update(
+                                        &mut source_loc,
+                                        &mut dest_loc,
+                                        *cooldown,
+                                        // FIXME:
+                                        1,
+                                        (),
+                                        |_| {
+                                            filter
+                                                .map(|filter_item| filter_item == item)
+                                                .unwrap_or(true)
+                                        },
+                                    );
+                                }
+
+                                {
+                                    profiling::scope!("Update update_first_free_pos");
+                                    if !source_loc {
+                                        let _: Option<_> =
+                                            belt_store.belts[*source].remove_item(*source_pos);
+                                    }
+
+                                    if dest_loc {
+                                        let _ =
+                                            belt_store.belts[*dest].try_insert_item(*dest_pos, item);
+                                    }
+                                }
+                            }
+                        }
+                    })
+                );
+
+                scope.spawn(|_| {
+                    ret = Some(join!(
+                        || simulation_state.factory.chests.update(data_store),
+                        || {
+                            simulation_state.factory.ore_store.update(
+                                &simulation_state.tech_state.mining_productivity_by_item,
+                                data_store,
+                            )
+                        },
+                        || {
+                            simulation_state.factory.power_grids.update(
+                                &simulation_state.tech_state,
+                                aux_data.current_tick as u32,
+                                &mut simulation_state.factory.storage_storage_inserters,
+                                assembler_stuff.as_mut_slice(),
+                                data_store,
+                            )
+                        }
+                    ));
+                });
+            })
+        };
+
+        let (reinsertions, mining_production_by_item, (tech_progress, recipe_tick_info, lab_info)) =
+            ret.unwrap();
+
+        {
+            profiling::scope!("Chest inserter waitlist reinsertion");
+            reinsertions
+                .zip(
+                    simulation_state
+                        .factory
+                        .storage_storage_inserters
+                        .inserters
+                        .par_iter_mut()
+                        .zip(
+                            simulation_state
+                                .factory
+                                .belt_storage_inserters
+                                .par_iter_mut(),
+                        ),
+                )
+                .for_each(|(reinsertions, (store, belt_storage))| {
+                    for inserter in reinsertions {
+                        match inserter.conn {
+                            crate::assembler::simd::Conn::Storage {
+                                index,
+                                storage_id_in,
+                                storage_id_out,
+                            } => {
+                                let store = store.get_mut(&inserter.movetime).unwrap();
+                                let ins = InserterBucketData {
+                                    storage_id_in,
+                                    storage_id_out,
+                                    index,
+                                    current_hand: inserter.current_hand,
+                                    max_hand_size: inserter.max_hand,
+                                };
+                                if inserter.current_hand == 0 {
+                                    store.0.reinsert_empty(ins);
+                                } else {
+                                    store.0.reinsert_empty(ins);
+                                }
+                            },
+                            crate::assembler::simd::Conn::Belt {
+                                belt_id,
+                                belt_pos,
+                                self_storage,
+                                self_is_source,
+                            } => {
+                                let ((_a, belt_storage), (_c, storage_belt)) = belt_storage;
+
+                                if self_is_source {
+                                    storage_belt.reinsert(
+                                        inserter.movetime,
+                                        BeltStorageInserterInMovement {
+                                            current_hand: inserter.max_hand,
+                                            movetime: inserter.movetime.try_into().unwrap(),
+                                            storage: self_storage,
+                                            belt: belt_id,
+                                            belt_pos,
+                                            max_hand_size: inserter.max_hand,
+                                        },
+                                    );
+                                } else {
+                                    belt_storage.reinsert(
+                                        inserter.movetime,
+                                        BeltStorageInserterInMovement {
+                                            current_hand: 0,
+                                            movetime: inserter.movetime.try_into().unwrap(),
+                                            storage: self_storage,
+                                            belt: belt_id,
+                                            belt_pos,
+                                            max_hand_size: inserter.max_hand,
+                                        },
+                                    );
+                                }
+                            },
+                        }
+                    }
+                });
+        }
 
         aux_data.statistics.append_single_set_of_samples((
             ProductionInfo::from_recipe_info_and_per_item(
@@ -2848,6 +3303,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 dur: done_updating - start_updating,
             });
         aux_data.last_update_time = Some(done_updating);
+
+        for current_timer in simulation_state
+            .factory
+            .belts
+            .inner
+            .belt_update_timers
+            .iter_mut()
+        {
+            *current_timer %= 120;
+        }
     }
 
     fn update_inserters(
@@ -3112,6 +3577,7 @@ mod tests {
 
     use crate::blueprint::BlueprintAction;
 
+    use crate::replays::GenerationInformation;
     use crate::{
         DATA_STORE,
         app_state::GameState,
@@ -3133,14 +3599,11 @@ mod tests {
         },
         item::Recipe,
         power::{Watt, power_grid::MAX_POWER_MULT},
-        replays::Replay,
     };
     use proptest::{
         prelude::{Just, Strategy},
         prop_assert, prop_assert_eq, prop_assume, proptest,
     };
-
-    use test::Bencher;
 
     fn beacon_test_val() -> impl Strategy<Value = Vec<ActionType<u8, u8>>> {
         Just(vec![
@@ -3207,7 +3670,7 @@ mod tests {
         #[test]
         fn test_random_blueprint_does_not_crash(base_pos in random_position(), blueprint in random_blueprint_strategy::<u8, u8>(0..1_000, &DATA_STORE)) {
 
-            let mut game_state = GameState::new(&DATA_STORE);
+            let mut game_state = GameState::new("Test Game".to_string(), GenerationInformation::default(), &DATA_STORE);
 
             blueprint.apply(false, base_pos, &mut game_state, &DATA_STORE);
 
@@ -3216,7 +3679,7 @@ mod tests {
         #[test]
         fn test_random_blueprint_does_not_crash_after(base_pos in random_position(), blueprint in random_blueprint_strategy::<u8, u8>(0..100, &DATA_STORE), time in 0usize..10) {
 
-            let mut game_state = GameState::new(&DATA_STORE);
+            let mut game_state = GameState::new("Test Game".to_string(), GenerationInformation::default(), &DATA_STORE);
 
             blueprint.apply(false, base_pos, &mut game_state, &DATA_STORE);
 
@@ -3230,7 +3693,7 @@ mod tests {
         }
 
         #[test]
-        fn test_beacons_always_effect(actions in beacon_test_val().prop_shuffle()) {
+        fn test_beacons_always_effect(actions in beacon_test_val().prop_shuffle(), ticks in 60usize..120) {
             prop_assume!(actions.iter().position(|a| matches!(a, ActionType::PlaceEntity(PlaceEntityInfo {
                 force: false,
                 entities: EntityPlaceOptions::Single(PlaceEntityType::Assembler {
@@ -3246,11 +3709,12 @@ mod tests {
             //     ..
             // })));
 
-            let mut game_state = GameState::new(&DATA_STORE);
+            let mut game_state = GameState::new("Test Game".to_string(), GenerationInformation::default(), &DATA_STORE);
 
             Blueprint { actions: actions.into_iter().map(|a| BlueprintAction::from_with_datastore(&a, &*DATA_STORE)).collect() }.apply(false, Position { x: 0, y: 0 }, &mut game_state, &DATA_STORE);
 
-            for _ in 0usize..10 {
+            // Currently Beacons are only able to update every 60 ticks
+            for _ in 0usize..ticks {
                 GameState::update(
                     &mut *game_state.simulation_state.lock(),
                     &mut *game_state.aux_data.lock(),
@@ -3259,20 +3723,25 @@ mod tests {
             }
 
             let world = game_state.world.lock();
-            let Some(Entity::Assembler { info: AssemblerInfo::Powered { id, .. }, .. }) = world.get_entity_at(Position { x: 1600, y: 1600 }, &DATA_STORE) else {
+            let Some(Entity::Assembler { info: AssemblerInfo::Powered { id, .. }, modules, .. }) = world.get_entity_at(Position { x: 1600, y: 1600 }, &DATA_STORE) else {
                 unreachable!("{:?}", game_state.world.lock().get_entity_at(Position { x: 1600, y: 1600 }, &DATA_STORE));
             };
-            let id = *id;
-            std::mem::drop(world);
+            let modules = &world.module_slot_dedup_table[*modules as usize];
 
-            prop_assume!(game_state.simulation_state.lock().factory.power_grids.power_grids[usize::from(id.grid)].last_power_mult == MAX_POWER_MULT);
+            let id = *id;
+            // std::mem::drop(world);
+
+            prop_assert!(game_state.simulation_state.lock().factory.power_grids.power_grids[usize::from(id.grid)].last_power_mult == MAX_POWER_MULT);
 
             let info = game_state.simulation_state.lock().factory.power_grids.power_grids[usize::from(id.grid)].get_assembler_info(id, &DATA_STORE);
 
-            prop_assert!((info.power_consumption_mod - 0.7).abs() < 1.0e-6, "power_consumption_mod: {:?}", info.power_consumption_mod);
+            let module_power_effect = modules.iter().flatten().map(|module| DATA_STORE.module_info[*module as usize].power_mod as f32 / 20.0).sum::<f32>();
+            let module_speed_effect = modules.iter().flatten().map(|module| DATA_STORE.module_info[*module as usize].speed_mod as f32 / 20.0).sum::<f32>();
+            let module_prod_effect = modules.iter().flatten().map(|module| DATA_STORE.module_info[*module as usize].prod_mod as f32 / 100.0).sum::<f32>();
+            prop_assert!((info.power_consumption_mod - (0.7 + module_power_effect)).abs() < 1.0e-6, "power_consumption_mod: {:?}, wanted: {}", info.power_consumption_mod, (0.7 + module_power_effect));
             prop_assert!((info.base_speed - 1.25).abs() < 1.0e-6, "base_speed: {:?}", info.base_speed);
-            prop_assert!((info.prod_mod - 0.0).abs() < 1.0e-6, "prod_mod: {:?}", info.prod_mod);
-            prop_assert!((info.speed_mod - (0.5)).abs() < 1.0e-6, "speed_mod: {:?}", info.speed_mod);
+            prop_assert!((info.prod_mod - (0.0 + module_prod_effect)).abs() < 1.0e-6, "prod_mod: {:?}", info.prod_mod);
+            prop_assert!((info.speed_mod - (0.5 + module_speed_effect)).abs() < 1.0e-6, "speed_mod: {:?}, wanted: {}", info.speed_mod, (0.5 + module_speed_effect));
             prop_assert_eq!(info.base_power_consumption, Watt(375_000), "base_power_consumption: {:?}", info.base_power_consumption);
 
         }
@@ -3324,132 +3793,132 @@ mod tests {
         // }
     }
 
-    #[bench]
-    fn bench_single_inserter(b: &mut Bencher) {
-        let mut game_state = GameState::new(&DATA_STORE);
+    // #[bench]
+    // fn bench_single_inserter(b: &mut Bencher) {
+    //     let mut game_state = GameState::new("Test Game".to_string(), &DATA_STORE);
 
-        let mut rep = Replay::new(&game_state, None, (*DATA_STORE).clone());
+    //     let mut rep = Replay::new(&game_state, None, (*DATA_STORE).clone());
 
-        rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
-            force: false,
-            entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
-                crate::frontend::world::tile::PlaceEntityType::PowerPole {
-                    pos: Position { x: 0, y: 5 },
-                    ty: 0,
-                },
-            ),
-        })]);
+    //     rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
+    //         force: false,
+    //         entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
+    //             crate::frontend::world::tile::PlaceEntityType::PowerPole {
+    //                 pos: Position { x: 0, y: 5 },
+    //                 ty: 0,
+    //             },
+    //         ),
+    //     })]);
 
-        rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
-            force: false,
-            entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
-                crate::frontend::world::tile::PlaceEntityType::SolarPanel {
-                    pos: Position { x: 0, y: 2 },
-                    ty: 0,
-                },
-            ),
-        })]);
+    //     rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
+    //         force: false,
+    //         entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
+    //             crate::frontend::world::tile::PlaceEntityType::SolarPanel {
+    //                 pos: Position { x: 0, y: 2 },
+    //                 ty: 0,
+    //             },
+    //         ),
+    //     })]);
 
-        rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
-            force: false,
-            entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
-                crate::frontend::world::tile::PlaceEntityType::Assembler {
-                    pos: Position { x: 0, y: 6 },
-                    ty: 0,
-                    rotation: Dir::North,
-                },
-            ),
-        })]);
+    //     rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
+    //         force: false,
+    //         entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
+    //             crate::frontend::world::tile::PlaceEntityType::Assembler {
+    //                 pos: Position { x: 0, y: 6 },
+    //                 ty: 0,
+    //                 rotation: Dir::North,
+    //             },
+    //         ),
+    //     })]);
 
-        rep.append_actions(vec![ActionType::SetRecipe(
-            crate::frontend::action::set_recipe::SetRecipeInfo {
-                pos: Position { x: 0, y: 6 },
-                recipe: Recipe { id: 0 },
-            },
-        )]);
+    //     rep.append_actions(vec![ActionType::SetRecipe(
+    //         crate::frontend::action::set_recipe::SetRecipeInfo {
+    //             pos: Position { x: 0, y: 6 },
+    //             recipe: Recipe { id: 0 },
+    //         },
+    //     )]);
 
-        rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
-            force: false,
-            entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
-                crate::frontend::world::tile::PlaceEntityType::Belt {
-                    pos: Position { x: 1, y: 4 },
-                    direction: crate::frontend::world::tile::Dir::East,
-                    ty: 0,
-                },
-            ),
-        })]);
+    //     rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
+    //         force: false,
+    //         entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
+    //             crate::frontend::world::tile::PlaceEntityType::Belt {
+    //                 pos: Position { x: 1, y: 4 },
+    //                 direction: crate::frontend::world::tile::Dir::East,
+    //                 ty: 0,
+    //             },
+    //         ),
+    //     })]);
 
-        rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
-            force: false,
-            entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
-                crate::frontend::world::tile::PlaceEntityType::Belt {
-                    pos: Position { x: 2, y: 4 },
-                    direction: crate::frontend::world::tile::Dir::East,
-                    ty: 0,
-                },
-            ),
-        })]);
+    //     rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
+    //         force: false,
+    //         entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
+    //             crate::frontend::world::tile::PlaceEntityType::Belt {
+    //                 pos: Position { x: 2, y: 4 },
+    //                 direction: crate::frontend::world::tile::Dir::East,
+    //                 ty: 0,
+    //             },
+    //         ),
+    //     })]);
 
-        rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
-            force: false,
-            entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
-                crate::frontend::world::tile::PlaceEntityType::Inserter {
-                    ty: 0,
-                    pos: Position { x: 1, y: 5 },
-                    dir: crate::frontend::world::tile::Dir::North,
-                    filter: None,
-                    user_movetime: None,
-                },
-            ),
-        })]);
+    //     rep.append_actions(vec![ActionType::PlaceEntity(PlaceEntityInfo {
+    //         force: false,
+    //         entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(
+    //             crate::frontend::world::tile::PlaceEntityType::Inserter {
+    //                 ty: 0,
+    //                 pos: Position { x: 1, y: 5 },
+    //                 dir: crate::frontend::world::tile::Dir::North,
+    //                 filter: None,
+    //                 user_movetime: None,
+    //             },
+    //         ),
+    //     })]);
 
-        let blueprint = Blueprint::from_replay(&rep);
+    //     let blueprint = Blueprint::from_replay(&rep);
 
-        blueprint.apply(
-            false,
-            Position { x: 1600, y: 1600 },
-            &mut game_state,
-            &DATA_STORE,
-        );
+    //     blueprint.apply(
+    //         false,
+    //         Position { x: 1600, y: 1600 },
+    //         &mut game_state,
+    //         &DATA_STORE,
+    //     );
 
-        dbg!(
-            &game_state
-                .world
-                .lock()
-                .get_chunk_for_tile(Position { x: 1600, y: 1600 })
-        );
+    //     dbg!(
+    //         &game_state
+    //             .world
+    //             .lock()
+    //             .get_chunk_for_tile(Position { x: 1600, y: 1600 })
+    //     );
 
-        dbg!(game_state.aux_data.lock().current_tick);
+    //     dbg!(game_state.aux_data.lock().current_tick);
 
-        for _ in 0..600 {
-            GameState::update(
-                &mut *game_state.simulation_state.lock(),
-                &mut *game_state.aux_data.lock(),
-                &DATA_STORE,
-            );
-        }
+    //     for _ in 0..600 {
+    //         GameState::update(
+    //             &mut *game_state.simulation_state.lock(),
+    //             &mut *game_state.aux_data.lock(),
+    //             &DATA_STORE,
+    //         );
+    //     }
 
-        b.iter(|| {
-            GameState::update(
-                &mut *game_state.simulation_state.lock(),
-                &mut *game_state.aux_data.lock(),
-                &DATA_STORE,
-            );
-        });
+    //     b.iter(|| {
+    //         GameState::update(
+    //             &mut *game_state.simulation_state.lock(),
+    //             &mut *game_state.aux_data.lock(),
+    //             &DATA_STORE,
+    //         );
+    //     });
 
-        dbg!(game_state.aux_data.lock().current_tick);
+    //     dbg!(game_state.aux_data.lock().current_tick);
 
-        assert!(
-            game_state
-                .aux_data
-                .lock()
-                .statistics
-                .production
-                .total
-                .as_ref()
-                .unwrap()
-                .items_produced[0]
-                > 0
-        );
-    }
+    //     assert!(
+    //         game_state
+    //             .aux_data
+    //             .lock()
+    //             .statistics
+    //             .production
+    //             .total
+    //             .as_ref()
+    //             .unwrap()
+    //             .items_produced[0]
+    //             > 0
+    //     );
+    // }
 }

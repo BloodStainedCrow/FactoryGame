@@ -249,6 +249,7 @@ impl BucketedStorageStorageInserterStoreFrontend {
             );
         }
 
+        #[allow(non_snake_case)]
         for (i, _) in sizes.into_iter().enumerate().sorted_by_key(|v| v.0) {
             let MOVING_OUT_END: usize = store.list_len();
             let WATING_FOR_SPACE: usize = MOVING_OUT_END + 1;
@@ -653,7 +654,8 @@ impl BucketedStorageStorageInserterStore {
         _current_tick: u32,
         _movetime: u16,
     ) -> bool {
-        let (_max_insert, old) = index_fake_union(storages, inserter.storage_id_in, grid_size);
+        let (_max_insert, old, _) =
+            index_fake_union(None, storages, inserter.storage_id_in, grid_size);
 
         let to_extract = min(inserter.max_hand_size - inserter.current_hand, *old);
 
@@ -686,7 +688,8 @@ impl BucketedStorageStorageInserterStore {
         _current_tick: u32,
         _movetime: u16,
     ) -> bool {
-        let (max_insert, old) = index_fake_union(storages, inserter.storage_id_out, grid_size);
+        let (max_insert, old, _) =
+            index_fake_union(None, storages, inserter.storage_id_out, grid_size);
 
         let to_insert = min(inserter.current_hand, *max_insert - *old);
 
@@ -1275,11 +1278,14 @@ mod test {
     use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
     use test::Bencher;
 
-    use crate::inserter::{
-        FakeUnionStorage,
-        storage_storage_with_buckets::{
-            BucketedStorageStorageInserterStoreFrontend, InserterId, InserterIdentifier,
+    use crate::{
+        inserter::{
+            FakeUnionStorage,
+            storage_storage_with_buckets::{
+                BucketedStorageStorageInserterStoreFrontend, InserterId, InserterIdentifier,
+            },
         },
+        storage_list::{InserterWaitLists, MaxInsertionLimit},
     };
 
     use super::BucketedStorageStorageInserterStore;
@@ -1299,14 +1305,22 @@ mod test {
 
         for item in 0..NUM_ITEMS {
             let mut values = (0..(NUM_INSERTERS as u32)).collect_vec();
-            values.shuffle(&mut rand::thread_rng());
+            values.shuffle(&mut rand::rng());
             for i in values {
                 if random::<u16>() < 1 {
                     store[item].update(
                         &mut frontend[item],
                         &mut [
-                            (max_insert.as_slice(), storages_in[item].as_mut_slice()),
-                            (max_insert.as_slice(), storages_out[item].as_mut_slice()),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storages_in[item].as_mut_slice(),
+                                InserterWaitLists::None,
+                            ),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storages_out[item].as_mut_slice(),
+                                InserterWaitLists::None,
+                            ),
                         ],
                         10,
                         current_tick,
@@ -1364,8 +1378,16 @@ mod test {
                     store.update(
                         frontend,
                         &mut [
-                            (max_insert.as_slice(), storage_in.as_mut_slice()),
-                            (max_insert.as_slice(), storage_out.as_mut_slice()),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storage_in.as_mut_slice(),
+                                InserterWaitLists::None,
+                            ),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storage_out.as_mut_slice(),
+                                InserterWaitLists::None,
+                            ),
                         ],
                         10,
                         current_tick,
@@ -1393,7 +1415,7 @@ mod test {
         let mut storages_out = vec![0u8; NUM_INSERTERS];
 
         let mut values = (0..(NUM_INSERTERS as u32)).collect_vec();
-        values.shuffle(&mut rand::thread_rng());
+        values.shuffle(&mut rand::rng());
 
         let mut current_time: u32 = 0;
 
@@ -1402,8 +1424,16 @@ mod test {
                 store.update(
                     &mut frontend,
                     &mut [
-                        (max_insert.as_slice(), storages_in.as_mut_slice()),
-                        (max_insert.as_slice(), storages_out.as_mut_slice()),
+                        (
+                            MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                            storages_in.as_mut_slice(),
+                            InserterWaitLists::None,
+                        ),
+                        (
+                            MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                            storages_out.as_mut_slice(),
+                            InserterWaitLists::None,
+                        ),
                     ],
                     10,
                     current_time,
@@ -1468,7 +1498,7 @@ mod test {
                 for v in &mut storages_out {
                     *v = 0u8;
                 }
-                values.shuffle(&mut rand::thread_rng());
+                values.shuffle(&mut rand::rng());
                 to_find = (0..(NUM_VISIBLE as u32))
                     .into_iter()
                     .map(|i| InserterIdentifier {
@@ -1489,8 +1519,16 @@ mod test {
             store.update(
                 &mut frontend,
                 &mut [
-                    (max_insert.as_slice(), storages_in.as_mut_slice()),
-                    (max_insert.as_slice(), storages_out.as_mut_slice()),
+                    (
+                        MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                        storages_in.as_mut_slice(),
+                        InserterWaitLists::None,
+                    ),
+                    (
+                        MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                        storages_out.as_mut_slice(),
+                        InserterWaitLists::None,
+                    ),
                 ],
                 10,
                 current_time,
@@ -1517,7 +1555,7 @@ mod test {
         let mut storages_out = vec![0u8; NUM_INSERTERS];
 
         let mut values = (0..(NUM_INSERTERS as u32)).collect_vec();
-        values.shuffle(&mut rand::thread_rng());
+        values.shuffle(&mut rand::rng());
 
         let mut current_time: u32 = 0;
 
@@ -1526,8 +1564,16 @@ mod test {
                 store.update(
                     &mut frontend,
                     &mut [
-                        (max_insert.as_slice(), storages_in.as_mut_slice()),
-                        (max_insert.as_slice(), storages_out.as_mut_slice()),
+                        (
+                            MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                            storages_in.as_mut_slice(),
+                            InserterWaitLists::None,
+                        ),
+                        (
+                            MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                            storages_out.as_mut_slice(),
+                            InserterWaitLists::None,
+                        ),
                     ],
                     10,
                     current_time,
@@ -1601,8 +1647,16 @@ mod test {
             store.update(
                 &mut frontend,
                 &mut [
-                    (max_insert.as_slice(), storages_in.as_mut_slice()),
-                    (max_insert.as_slice(), storages_out.as_mut_slice()),
+                    (
+                        MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                        storages_in.as_mut_slice(),
+                        InserterWaitLists::None,
+                    ),
+                    (
+                        MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                        storages_out.as_mut_slice(),
+                        InserterWaitLists::None,
+                    ),
                 ],
                 10,
                 current_time,

@@ -4,6 +4,7 @@ use std::{
     io::{Read, Write},
     marker::PhantomData,
     path::PathBuf,
+    time::Duration,
 };
 
 use bitcode::Encode;
@@ -20,7 +21,18 @@ use crate::{
     item::IdxTrait,
     join_many::join,
     par_generation::Timer,
+    saving::save_file_settings::StoredSaveFileInfo,
 };
+
+pub mod loading;
+mod save_file_settings;
+
+pub(crate) fn save_folder() -> PathBuf {
+    ProjectDirs::from("de", "aschhoff", "factory_game")
+        .expect("No Home path found")
+        .data_dir()
+        .join("saves")
+}
 
 #[derive(Debug, Encode, serde::Deserialize, serde::Serialize)]
 pub struct SaveGame<
@@ -52,7 +64,12 @@ pub fn save_at<V: serde::Serialize + ?Sized>(value: &V, path: PathBuf) {
 }
 
 pub fn save_at_fork<V: serde::Serialize + ?Sized>(value: &V, path: PathBuf) {
-    let mut file = { File::create(path).expect("could not create file") };
+    let file = {
+        File::create(&path).expect(&format!(
+            "could not create file, tried to create {}",
+            path.display()
+        ))
+    };
 
     // FIXME: It is technically not okay to allocate here.
     let mut buf_writer = BufWriter::new(file);
@@ -63,32 +80,52 @@ pub fn save_at_fork<V: serde::Serialize + ?Sized>(value: &V, path: PathBuf) {
 }
 
 pub fn load_at<V: for<'a> serde::Deserialize<'a>>(path: PathBuf) -> V {
+    try_load_at(path).expect("Failed to load file")
+}
+
+#[derive(Debug)]
+pub(crate) enum LoadError {
+    CouldNotOpenFile(std::io::Error),
+    DeserializationFailed(bincode::error::DecodeError),
+}
+
+pub fn try_load_at<V: for<'a> serde::Deserialize<'a>>(path: PathBuf) -> Result<V, LoadError> {
     profiling::scope!("Load at", format!("path: {}", path.display()));
     let file = {
         profiling::scope!("Open file");
-        File::open(&path).expect(&format!("could not open file {:?}", &path))
+        File::open(&path).map_err(|err| LoadError::CouldNotOpenFile(err))?
     };
 
     let mut buf_reader = BufReader::new(file);
-    {
+    let loaded = {
         profiling::scope!("Decompressing and deserializing");
         bincode::serde::decode_from_std_read(&mut buf_reader, bincode::config::standard())
-            .expect("Deserialization failed")
-    }
+            .map_err(|err| LoadError::DeserializationFailed(err))?
+    };
+
+    Ok(loaded)
 }
 
 /// # Panics
 /// If File system stuff fails
 pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    name: &str,
+    save_name: Option<&str>,
+
     world: &World<ItemIdxType, RecipeIdxType>,
     simulation_state: &SimulationState<ItemIdxType, RecipeIdxType>,
     aux_data: &AuxillaryData,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
     let checksum = data_store.checksum.clone();
-    let dir = ProjectDirs::from("de", "aschhoff", "factory_game").expect("No Home path found");
+    let save_dir = save_folder();
 
-    create_dir_all(dir.data_dir()).expect("Could not create data dir");
+    let lockfile = crate::lockfile::LockfileUnique::create_blocking(
+        save_dir.join("save_in_progress.lockfile"),
+    )
+    .expect("Locking lockfile failed");
+
+    create_dir_all(&save_dir).expect("Could not create save dir");
 
     // if let Ok(s) = env::var("FACTORY_SAVE_READABLE") {
     //     if s == "true" {
@@ -112,10 +149,28 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     //     }
     // }
 
-    let temp_file_dir = dir.data_dir().join("tmp.save");
-    let save_file_dir = dir.data_dir().join("save.save");
+    let temp_file_dir = save_dir.join("tmp.save");
+    let save_file_dir = if let Some(name) = save_name {
+        save_dir.join(&name)
+    } else {
+        save_dir.join("autosave.save")
+    };
+
+    let info = StoredSaveFileInfo {
+        name: if save_name.is_some() {
+            name.to_string()
+        } else {
+            format!("[Autosave] {}", name)
+        },
+        saved_at: chrono::offset::Utc::now(),
+        playtime: Duration::from_secs(1) / 60 * aux_data.current_tick as u32,
+        is_autosave: save_name.is_none(),
+        includes_replay: false,
+        preview: None,
+    };
 
     create_dir_all(&temp_file_dir).expect("Could not create temp dir");
+    dbg!(&temp_file_dir);
 
     // FIXME: What to do, if the size of the Save in memory + on disk exceeds RAM?
 
@@ -136,6 +191,9 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         } = simulation_state;
 
         join!(
+            || {
+                save_at(&info, temp_file_dir.join("save_file_info"));
+            },
             || {
                 save_at(&checksum, temp_file_dir.join("checksum"));
             },
@@ -202,12 +260,22 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
     // Remove old save if it exists
     let _ = std::fs::remove_dir_all(&save_file_dir);
-    std::fs::rename(temp_file_dir, save_file_dir).expect("Could not rename tmp save dir!");
+    std::fs::rename(&temp_file_dir, save_file_dir).expect(&format!(
+        "Could not rename tmp save dir: {}",
+        temp_file_dir.display()
+    ));
+
+    lockfile.release().expect("Failed to remove lockfile");
 }
 
+pub const FORK_SAVE_STAGES: usize = 13;
 /// # Panics
 /// If File system stuff fails
+#[cfg(not(target_arch = "wasm32"))]
 pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    name: &str,
+    save_name: Option<&str>,
+
     world: &World<ItemIdxType, RecipeIdxType>,
     simulation_state: &SimulationState<ItemIdxType, RecipeIdxType>,
     aux_data: &AuxillaryData,
@@ -215,14 +283,41 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     mut send: interprocess::unnamed_pipe::Sender,
 ) {
     let checksum = &data_store.checksum;
-    let dir = ProjectDirs::from("de", "aschhoff", "factory_game").expect("No Home path found");
+    let save_dir = save_folder();
 
-    create_dir_all(dir.data_dir()).expect("Could not create data dir");
+    let lockfile = crate::lockfile::LockfileUnique::create_blocking(
+        save_dir.join("save_in_progress.lockfile"),
+    )
+    .expect("Locking lockfile failed");
 
-    let temp_file_dir = dir.data_dir().join("tmp.save");
-    let save_file_dir = dir.data_dir().join("save.save");
+    create_dir_all(&save_dir).expect("Could not create data dir");
+
+    // FIXME: Allocation and chrono is prob illegal after a fork
+    let info = StoredSaveFileInfo {
+        name: if save_name.is_some() {
+            name.to_string()
+        } else {
+            format!("[Autosave] {}", name)
+        },
+        saved_at: chrono::offset::Utc::now(),
+        playtime: Duration::from_secs(1) / 60 * aux_data.current_tick as u32,
+
+        is_autosave: save_name.is_none(),
+        includes_replay: false,
+        preview: None,
+    };
+
+    let temp_file_dir = save_dir.join("tmp.save");
+    let save_file_dir = if let Some(name) = save_name {
+        save_dir.join(&name)
+    } else {
+        save_dir.join("autosave.save")
+    };
+
+    assert_ne!(temp_file_dir, save_dir);
 
     create_dir_all(&temp_file_dir).expect("Could not create temp dir");
+    dbg!(&temp_file_dir);
 
     {
         let SimulationState {
@@ -240,6 +335,7 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 },
         } = simulation_state;
 
+        save_at_fork(&info, temp_file_dir.join("save_file_info"));
         send.write(&[0]).expect("Write to pipe failed");
         // send.flush().expect("Flushing pipe failed");
         save_at_fork(checksum, temp_file_dir.join("checksum"));
@@ -307,11 +403,17 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     // Remove old save if it exists
     let _ = std::fs::remove_dir_all(&save_file_dir);
     std::fs::rename(temp_file_dir, save_file_dir).expect("Could not rename tmp save dir!");
+
+    lockfile.release().expect("Failed to remove lockfile");
 }
 
 /// # Panics
 /// If File system stuff fails
+#[cfg(not(target_arch = "wasm32"))]
 pub fn save_with_fork<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    name: &str,
+    save_name: Option<&str>,
+
     world: &World<ItemIdxType, RecipeIdxType>,
     simulation_state: &SimulationState<ItemIdxType, RecipeIdxType>,
     aux_data: &AuxillaryData,
@@ -322,12 +424,34 @@ pub fn save_with_fork<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         let (send, recv) =
             interprocess::unnamed_pipe::pipe().expect("Failed to create unnamed pipe");
         match fork::fork() {
-            Ok(fork::Fork::Parent(child_pid)) => return Some(recv),
+            Ok(fork::Fork::Parent(child_pid)) => {
+                log::info!("Started saving fork with pid {}", child_pid);
+                return Some(recv);
+            },
             Ok(fork::Fork::Child) => {},
-            Err(e) => panic!("Failed to fork!"),
+            Err(e) => {
+                log::error!("Saving with fork failed: Unable to create fork: {}", e);
+                save_components(
+                    name,
+                    save_name,
+                    world,
+                    simulation_state,
+                    aux_data,
+                    data_store,
+                );
+                return None;
+            },
         }
 
-        save_components_fork_safe(world, simulation_state, aux_data, data_store, send);
+        save_components_fork_safe(
+            name,
+            save_name,
+            world,
+            simulation_state,
+            aux_data,
+            data_store,
+            send,
+        );
 
         unsafe { libc::_exit(0) }
     }
@@ -342,6 +466,9 @@ pub fn save_with_fork<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 /// # Panics
 /// If File system stuff fails
 pub fn save<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+    name: &str,
+    save_name: Option<&str>,
+
     game_state: &GameState<ItemIdxType, RecipeIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) {
@@ -365,7 +492,14 @@ pub fn save<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         &*aux_data.lock()
     };
 
-    save_components(world, simulation_state, aux_data, data_store);
+    save_components(
+        name,
+        save_name,
+        world,
+        simulation_state,
+        aux_data,
+        data_store,
+    );
 }
 
 /// # Panics

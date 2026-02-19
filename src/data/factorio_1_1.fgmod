@@ -12,10 +12,10 @@
             output: [
                 (
                     item: "factory_game::iron_ore",
-                    amount: 1,
+                    amount: 50,
                 ),
             ],
-            time_to_craft: 1,
+            time_to_craft: 100,
             is_intermediate: false,
         ),
         (
@@ -30,10 +30,10 @@
             output: [
                 (
                     item: "factory_game::copper_ore",
-                    amount: 1,
+                    amount: 50,
                 ),
             ],
-            time_to_craft: 1,
+            time_to_craft: 100,
             is_intermediate: false,
         ),
         (
@@ -48,10 +48,10 @@
             output: [
                 (
                     item: "factory_game::coal",
-                    amount: 1,
+                    amount: 50,
                 ),
             ],
-            time_to_craft: 1,
+            time_to_craft: 100,
             is_intermediate: false,
         ),
         (
@@ -66,10 +66,10 @@
             output: [
                 (
                     item: "factory_game::stone",
-                    amount: 1,
+                    amount: 50,
                 ),
             ],
-            time_to_craft: 1,
+            time_to_craft: 100,
             is_intermediate: false,
         ),
         (
@@ -628,7 +628,7 @@
         ),
         (
            name: "factory_game::light_oil_cracking",
-           display_name: "Heavy Oil Cracking",
+           display_name: "Light Oil Cracking",
            possible_machines: [
                "factory_game::chemical_plant",
            ],
@@ -1815,6 +1815,7 @@
             display_name: "Assembling Machine",
             tile_size: (3, 3),
             working_power_draw: (150000),
+            power_drain: (2500),
             fluid_connection_offsets: [],
             fluid_connection_flowthrough: [],
             num_module_slots: 0,
@@ -1826,6 +1827,7 @@
             display_name: "Assembling Machine 2",
             tile_size: (3, 3),
             working_power_draw: (75000),
+            power_drain: (5000),
             fluid_connection_offsets: [
                 (
                     allowed_fluid_directions: Both(
@@ -1846,6 +1848,7 @@
             display_name: "Assembling Machine 3",
             tile_size: (3, 3),
             working_power_draw: (375000),
+            power_drain: (12500),
             fluid_connection_offsets: [
                 (
                     allowed_fluid_directions: Both(
@@ -1866,6 +1869,7 @@
             display_name: "Rocket Silo",
             tile_size: (9, 9),
             working_power_draw: (4_000_000),
+            power_drain: (0),
             fluid_connection_offsets: [],
             fluid_connection_flowthrough: [],
             num_module_slots: 4,
@@ -1877,6 +1881,7 @@
             display_name: "Electric Furnace",
             tile_size: (3, 3),
             working_power_draw: (180000),
+            power_drain: (6000),
             fluid_connection_offsets: [],
             fluid_connection_flowthrough: [],
             num_module_slots: 2,
@@ -1888,6 +1893,7 @@
             display_name: "Chemical Plant",
             tile_size: (3, 3),
             working_power_draw: (210000),
+            power_drain: (7000),
             fluid_connection_offsets: [
                 (
                     allowed_fluid_directions: Single(
@@ -1932,6 +1938,7 @@
             display_name: "Oil Refinery",
             tile_size: (5, 5),
             working_power_draw: (420000),
+            power_drain: (14000),
             fluid_connection_offsets: [
                 (
                     allowed_fluid_directions: Single(
@@ -2261,9 +2268,6 @@
                 RecipeUnlock("factory_game::raw_oil_generation"),
                 RecipeUnlock("factory_game::water_generation"),
                 RecipeUnlock("factory_game::stone_generation"),
-
-                // TODO:
-                RecipeUnlock("factory_game::solid_fuel_from_light_oil"),
             ],
         ),
         (
@@ -2942,6 +2946,7 @@
                 RecipeUnlock("factory_game::advanced_oil_processing"),
                 RecipeUnlock("factory_game::heavy_oil_cracking"),
                 RecipeUnlock("factory_game::light_oil_cracking"),
+                RecipeUnlock("factory_game::solid_fuel_from_light_oil"),
             ],
         ),
         (
@@ -3357,7 +3362,7 @@
     solar_panels: [
         (
             name: "factory_game::infinity_battery",
-            display_name: "Infinity Battery",
+            display_name: "Infinite Power Source",
             tile_size: (2, 2),
             output: Constant((1000000000000)),
         ),

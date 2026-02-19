@@ -1,5 +1,5 @@
 use std::{
-    io::Read,
+    io::{Read, Write},
     marker::PhantomData,
     mem,
     net::TcpStream,
@@ -7,7 +7,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::app_state::SimulationState;
+use crate::{
+    app_state::{AuxillaryData, SimulationState},
+    multiplayer::PlayerIDInformation,
+};
+use flate2::Compression;
 use log::error;
 use parking_lot::Mutex;
 
@@ -21,7 +25,6 @@ use crate::{
 
 use super::{
     ServerInfo,
-    connection_reciever_tcp::ConnectionList,
     server::{ActionSource, HandledActionConsumer},
 };
 
@@ -34,7 +37,9 @@ pub(crate) struct Client<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
 }
 
 pub(crate) struct Server<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    client_connections: ConnectionList,
+    client_connections: Mutex<Vec<TcpStream>>,
+    new_connections: Receiver<TcpStream>,
+    accepted_connections: Mutex<Vec<(PlayerIDInformation, TcpStream)>>,
 
     item: PhantomData<ItemIdxType>,
     recipe: PhantomData<RecipeIdxType>,
@@ -43,7 +48,10 @@ pub(crate) struct Server<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Server<ItemIdxType, RecipeIdxType> {
     pub fn new(info: ServerInfo) -> Self {
         Self {
-            client_connections: info.connections,
+            client_connections: Mutex::new(info.connections),
+            new_connections: info.new_connection_recv,
+            accepted_connections: Mutex::new(vec![]),
+
             item: PhantomData,
             recipe: PhantomData,
         }
@@ -54,11 +62,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Server<ItemIdxType, RecipeI
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, RecipeIdxType>
     for Client<ItemIdxType, RecipeIdxType>
 {
-    fn get<'a, 'b, 'c, 'd>(
+    fn get<'a, 'b, 'c, 'd, 'e>(
         &'a self,
         _current_tick: u64,
         world: &'b World<ItemIdxType, RecipeIdxType>,
         sim_state: &'d SimulationState<ItemIdxType, RecipeIdxType>,
+        _aux_data: &'e AuxillaryData,
         data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
     + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType> {
@@ -71,23 +80,37 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         let mut state_machine = self.local_actions.lock();
 
         let mut local_actions: Vec<_> = state_machine
-            .handle_inputs(&self.local_input, world, sim_state, data_store)
+            .handle_inputs(self.local_input.try_iter(), world, sim_state, data_store)
             .into_iter()
             .collect();
+
         local_actions.extend(state_machine.once_per_update_actions(world, data_store));
+
+        local_actions.extend(self.ui_actions.try_iter());
 
         mem::drop(state_machine);
 
         for action in &local_actions {
             postcard::to_io(&action, &self.server_connection).expect("tcp send failed");
         }
-        let mut buffer = vec![0; 1_000_000];
-        let (recieved_actions, _v): (Vec<_>, _) =
-            postcard::from_io((&self.server_connection, &mut buffer)).unwrap();
+        // FIXME: This sucks
+        let mut buffer: Vec<u8> = vec![0; 1_000_000];
 
-        recieved_actions
-            .into_iter()
-            .chain(self.ui_actions.try_iter())
+        let flavor =
+            postcard::de_flavors::io::io::IOReader::new(&self.server_connection, &mut buffer);
+
+        let mut deserializer = postcard::Deserializer::from_flavor(flavor);
+
+        let recieved_actions: Vec<_> = match serde_path_to_error::deserialize(&mut deserializer) {
+            Ok(actions) => actions,
+            Err(err) => {
+                let path = err.path().to_string();
+                log::warn!("Failed to recieve actions. Path \"{}\" failed!", path);
+                vec![]
+            },
+        };
+
+        recieved_actions.into_iter()
     }
 }
 
@@ -107,14 +130,16 @@ impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, RecipeIdxType>
     for Server<ItemIdxType, RecipeIdxType>
 {
-    fn get(
-        &self,
+    fn get<'a, 'b, 'c, 'd, 'e>(
+        &'a self,
         _current_tick: u64,
-        _world: &World<ItemIdxType, RecipeIdxType>,
-        _sim_state: &SimulationState<ItemIdxType, RecipeIdxType>,
-        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
-    {
+        world: &'b World<ItemIdxType, RecipeIdxType>,
+        sim_state: &'d SimulationState<ItemIdxType, RecipeIdxType>,
+        aux_data: &'e AuxillaryData,
+        _data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
+    + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType> {
+        log::trace!("Server::Get");
         const RECV_BUFFER_LEN: usize = 10_000;
         let start = Instant::now();
         // This is the Server, it will just keep on chugging along and never block
@@ -124,55 +149,133 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         if start.elapsed() > Duration::from_millis(10) {
             error!("buffer {:?}", start.elapsed());
         }
-        let recieved_actions: Vec<ActionType<_, _>> = self
-            .client_connections
-            .lock()
-            .iter()
-            .flat_map(|mut conn| {
-                let start = Instant::now();
-                let mut ret = vec![];
+        let mut recieved_actions: Vec<ActionType<_, _>> = vec![];
 
-                match conn.peek(&mut buffer) {
-                    Ok(len) => {
-                        let mut written_buffer = &buffer[0..len];
+        self.client_connections.lock().retain(|mut conn| {
+            let mut ret = vec![];
 
-                        loop {
-                            if let Ok((v, rest)) = postcard::take_from_bytes(written_buffer) {
-                                let consumed_len = written_buffer.len() - rest.len();
-                                written_buffer = rest;
-                                std::io::copy(
-                                    &mut std::io::Read::by_ref(&mut conn).take(consumed_len as u64),
-                                    &mut std::io::sink(),
-                                )
-                                .expect("Discarding used bytes failed");
-                                ret.push(v);
-                            } else {
-                                if written_buffer.len() == RECV_BUFFER_LEN {
-                                    error!("RECV_BUFFER_LEN exhausted!");
-                                }
-                                break;
+            let keep = match conn.peek(&mut buffer) {
+                Ok(len) => {
+                    let mut written_buffer = &buffer[0..len];
+
+                    loop {
+                        if let Ok((v, rest)) = postcard::take_from_bytes(written_buffer) {
+                            let consumed_len = written_buffer.len() - rest.len();
+                            written_buffer = rest;
+                            std::io::copy(
+                                &mut std::io::Read::by_ref(&mut conn).take(consumed_len as u64),
+                                &mut std::io::sink(),
+                            )
+                            .expect("Discarding used bytes failed");
+                            ret.push(v);
+                        } else {
+                            if written_buffer.len() == RECV_BUFFER_LEN {
+                                error!("RECV_BUFFER_LEN exhausted!");
                             }
+                            break;
                         }
-                    },
-                    Err(e) => match e.kind() {
-                        std::io::ErrorKind::WouldBlock => {
-                            // No data to read
-                        },
+                    }
 
-                        e => todo!("{:?}", e),
+                    true
+                },
+                Err(e) => match e.kind() {
+                    std::io::ErrorKind::WouldBlock => {
+                        // No data to read
+                        true
                     },
-                }
 
-                dbg!(start.elapsed());
-                dbg!(ret.len());
-                ret
-            })
-            .collect();
+                    err => {
+                        log::warn!("Dropping Connection: {:?}", err);
+                        false
+                    },
+                },
+            };
+
+            recieved_actions.extend(ret);
+
+            keep
+        });
         if start.elapsed() > Duration::from_millis(10) {
             error!("recieved_actions {:?}", start.elapsed());
         }
 
-        recieved_actions.into_iter()
+        let spawn_player_actions = {
+            profiling::scope!("Accept new connections");
+
+            for (id_info, mut new_conn) in self.accepted_connections.lock().drain(..) {
+                assert_eq!(
+                    self.client_connections
+                        .lock()
+                        .iter()
+                        .find_map(|running_conn| (running_conn.peer_addr().unwrap()
+                            == new_conn.peer_addr().unwrap())
+                        .then_some(new_conn.peer_addr().unwrap())),
+                    None
+                );
+
+                log::info!("Sending GameState to new connection");
+                if let Err(err) = new_conn.set_nonblocking(false) {
+                    log::warn!("Failed setting connction to blocking: {:?}", err);
+                    continue;
+                }
+
+                let mut compressed =
+                    flate2::write::ZlibEncoder::new(&mut new_conn, Compression::best());
+
+                if let Err(err) = postcard::to_io(&id_info, &mut compressed) {
+                    // Sending failed, do not add this conn
+                    log::warn!("Failed sending id_info: {:?}", err);
+                    continue;
+                }
+                if let Err(err) = postcard::to_io(sim_state, &mut compressed) {
+                    // Sending failed, do not add this conn
+                    log::warn!("Failed sending sim_state: {:?}", err);
+                    continue;
+                }
+                if let Err(err) = postcard::to_io(world, &mut compressed) {
+                    // Sending failed, do not add this conn
+                    log::warn!("Failed sending world: {:?}", err);
+                    continue;
+                }
+                if let Err(err) = postcard::to_io(aux_data, &mut compressed) {
+                    // Sending failed, do not add this conn
+                    log::warn!("Failed sending aux_data: {:?}", err);
+                    continue;
+                }
+
+                std::mem::drop(compressed);
+
+                if let Err(err) = new_conn.set_nonblocking(true) {
+                    log::warn!("Failed setting connction to blocking: {:?}", err);
+                    continue;
+                }
+
+                if let Err(err) = new_conn.flush() {
+                    log::warn!("Flushing failed: {:?}", err);
+                    continue;
+                }
+
+                self.client_connections.lock().push(new_conn);
+            }
+
+            let mut actions = vec![];
+
+            for new_conn in self.new_connections.try_iter() {
+                let next_id = (world.players.len() + actions.len())
+                    .try_into()
+                    .expect("Max of u16::MAX Player allowed");
+
+                actions.push(ActionType::SpawnPlayer {});
+
+                self.accepted_connections
+                    .lock()
+                    .push((PlayerIDInformation { player_id: next_id }, new_conn));
+            }
+
+            actions
+        };
+
+        recieved_actions.into_iter().chain(spawn_player_actions)
     }
 }
 
@@ -186,11 +289,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     ) {
         let actions: Vec<_> = actions.into_iter().collect();
         // Send the actions to the clients
-        for conn in self.client_connections.lock().iter() {
-            for action in &actions {
-                postcard::to_io(&action, conn).expect("tcp send failed");
-            }
-        }
+        self.client_connections.lock().retain(|mut conn| {
+            let mut keep = if let Err(err) = postcard::to_io(&actions, conn) {
+                log::warn!("Dropping Connection: {:?}", err);
+                false
+            } else {
+                true
+            };
+            keep &= conn.flush().is_ok();
+
+            // let keep = serde_json::to_writer(conn, &actions).is_ok();
+
+            keep
+        });
     }
 }
 
@@ -206,11 +317,12 @@ pub(crate) struct IntegratedServer<ItemIdxType: WeakIdxTrait, RecipeIdxType: Wea
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, RecipeIdxType>
     for IntegratedServer<ItemIdxType, RecipeIdxType>
 {
-    fn get<'a, 'b, 'c, 'd>(
+    fn get<'a, 'b, 'c, 'd, 'e>(
         &'a self,
         current_tick: u64,
         world: &'b World<ItemIdxType, RecipeIdxType>,
         sim_state: &'d SimulationState<ItemIdxType, RecipeIdxType>,
+        aux_data: &'e AuxillaryData,
         data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
     + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType> {
@@ -237,7 +349,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
 
         let ret = self
             .server
-            .get(current_tick, world, sim_state, data_store)
+            .get(current_tick, world, sim_state, aux_data, data_store)
             .into_iter()
             .chain(v);
         if start.elapsed() > Duration::from_millis(10) {

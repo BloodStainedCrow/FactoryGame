@@ -2,6 +2,7 @@ use crate::inserter::StaticID;
 use crate::item::ITEMCOUNTTYPE;
 use crate::mining_drill::only_solo_owned::PureDrillStorageOnlySoloOwned;
 use crate::power::power_grid::MAX_POWER_MULT;
+use crate::storage_list::MaxInsertionLimit;
 use crate::{
     data::DataStore,
     frontend::world::Position,
@@ -360,7 +361,7 @@ impl<ItemIdxType: IdxTrait> MiningDrillStore<ItemIdxType> {
 
     pub fn storages_by_item(
         &mut self,
-    ) -> impl Iterator<Item = (&[ITEMCOUNTTYPE], &mut [ITEMCOUNTTYPE])> {
+    ) -> impl Iterator<Item = (MaxInsertionLimit<'_>, &mut [ITEMCOUNTTYPE])> {
         self.pure_solo_owned
             .iter_mut()
             .map(|store| store.get_inventories())

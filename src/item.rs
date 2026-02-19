@@ -47,10 +47,11 @@ pub trait WeakIdxTrait:
     + Hash
     + Ord
     + 'static
+    + Debug
 {
 }
 
-pub fn usize_from<T: IdxTrait>(t: T) -> usize {
+pub fn usize_from<T: WeakIdxTrait>(t: T) -> usize {
     Into::<usize>::into(t)
 }
 

@@ -1,4 +1,14 @@
-use crate::frontend::world::tile::ModuleSlots;
+use crate::inserter::belt_storage_inserter::Dir;
+use crate::inserter::belt_storage_movement_list::FinishedMovingLists;
+use crate::inserter::belt_storage_movement_list::{
+    BeltStorageInserterInMovement, ReinsertionLists,
+};
+use crate::inserter::storage_storage_with_buckets_indirect::InserterBucketData;
+use crate::item::Indexable;
+use crate::power::power_grid::MAX_POWER_MULT;
+use crate::{
+    app_state::StorageStorageInserterStore, frontend::world::tile::ModuleSlots, join_many::join,
+};
 use itertools::Itertools;
 use log::{error, warn};
 use power_grid::{
@@ -213,7 +223,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         (0..count).map(|_| {
             let hole_idx = self.power_grids.iter().position(|grid| grid.is_placeholder);
 
-            let new_grid = PowerGrid::new_trusted(data_store);
+            let new_grid = PowerGrid::new_trusted(
+                hole_idx.unwrap_or(self.power_grids.len()) as u16,
+                data_store,
+            );
 
             let id = if let Some(hole_idx) = hole_idx {
                 self.power_grids[hole_idx] = new_grid;
@@ -261,7 +274,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         // TODO: This is O(N). Is that a problem?
         let hole_idx = self.power_grids.iter().position(|grid| grid.is_placeholder);
 
-        let new_grid = PowerGrid::new(data_store, first_pole_position);
+        let new_grid = PowerGrid::new(
+            hole_idx.unwrap_or(self.power_grids.len()) as u16,
+            data_store,
+            first_pole_position,
+        );
 
         let id = if let Some(hole_idx) = hole_idx {
             self.power_grids[hole_idx] = new_grid;
@@ -285,7 +302,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
     fn add_power_grid(
         &mut self,
         power_grid: PowerGrid<ItemIdxType, RecipeIdxType>,
-        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> PowerGridIdentifier {
         // TODO: This is O(N). Is that a problem?
         let hole_idx = self.power_grids.iter().position(|grid| grid.is_placeholder);
@@ -306,6 +323,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             ))
         };
 
+        self.power_grids[id as usize].set_grid_id(id, data_store);
+
         for pole_pos in poles {
             self.pole_pos_to_grid_id.insert(pole_pos, id);
         }
@@ -322,6 +341,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Option<
         impl IntoIterator<Item = IndexUpdateInfo<ItemIdxType, RecipeIdxType>>
+        // Asserting this is static means it does not capture the input lifetime of the connected_pole iter
+        + 'static
         + use<ItemIdxType, RecipeIdxType, T>,
     > {
         #[cfg(debug_assertions)]
@@ -341,12 +362,51 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                 });
             assert!(affected_grids_and_potential_match);
         }
+
+        #[cfg(debug_assertions)]
+        {
+            for grid in &self.power_grids {
+                if grid.is_placeholder {
+                    continue;
+                }
+
+                let num_labs_in_list: usize = grid.num_labs_of_type.iter().copied().sum();
+                let num_labs_in_graph = grid
+                    .grid_graph
+                    .weak_components()
+                    .filter(|grid_entity| match grid_entity {
+                        (_, PowerGridEntity::Lab { .. }) => true,
+                        _ => false,
+                    })
+                    .count();
+                let num_labs_in_sim =
+                    grid.lab_stores.sciences[0].len() - grid.lab_stores.holes.len();
+
+                assert_eq!(num_labs_in_list, num_labs_in_graph);
+                assert_eq!(num_labs_in_list, num_labs_in_sim);
+
+                let num_assemblers_in_list: usize =
+                    grid.num_assemblers_of_type.iter().copied().sum();
+                let num_assemblers_in_graph = grid
+                    .grid_graph
+                    .weak_components()
+                    .filter(|grid_entity| match grid_entity {
+                        (_, PowerGridEntity::Assembler { .. }) => true,
+                        _ => false,
+                    })
+                    .count();
+                let num_assemblers_in_sim: usize = grid.stores.num_assemblers();
+
+                assert_eq!(num_assemblers_in_list, num_assemblers_in_graph);
+                assert_eq!(num_assemblers_in_list, num_assemblers_in_sim);
+            }
+        }
         let mut connected_poles: Vec<_> = connected_poles.into_iter().collect();
 
         let ret = if !connected_poles.is_empty() {
             // Find the largest grid, and choose it as the base
             // If the size is a tossup pick the one with the smaller grid_id to reduce holes in the power_grid list
-            let grid = connected_poles
+            let kept_grid_id = connected_poles
                 .iter()
                 .map(|pos| self.pole_pos_to_grid_id[pos])
                 .max_by_key(|grid_id| {
@@ -364,7 +424,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                 .map(|pos| self.pole_pos_to_grid_id[pos])
                 .all_equal();
 
-            self.pole_pos_to_grid_id.insert(pole_position, grid);
+            self.pole_pos_to_grid_id.insert(pole_position, kept_grid_id);
 
             if need_to_merge {
                 let mut storage_update_vec = vec![];
@@ -377,29 +437,38 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                     .collect::<Vec<_>>()
                 {
                     // No need to merge a grid with itself.
-                    if other_grid == grid {
+                    if other_grid == kept_grid_id {
                         continue;
                     }
 
                     ran_once = true;
                     let storage_updates = self
                         .merge_power_grids(
-                            grid,
+                            kept_grid_id,
                             other_grid,
                             data_store,
                             pole_position,
                             connected_poles.iter().copied(),
                         )
                         .into_iter()
-                        .flatten();
+                        .flatten()
+                        .map(|update| {
+                            // TODO: Make debug assert
+                            assert_eq!(update.new_grid, kept_grid_id);
+                            assert_eq!(update.old_grid, other_grid);
 
+                            update
+                        });
+
+                    let old_len = storage_update_vec.len();
                     storage_update_vec.extend(storage_updates);
+                    let new_updates = storage_update_vec.len() - old_len;
                 }
                 assert!(ran_once);
 
                 #[cfg(debug_assertions)]
                 {
-                    for key in self.power_grids[grid as usize].grid_graph.keys() {
+                    for key in self.power_grids[kept_grid_id as usize].grid_graph.keys() {
                         if let Some(index) = connected_poles.iter().position(|v| v == key) {
                             connected_poles.remove(index);
                         }
@@ -419,7 +488,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
 
                 Some(storage_update_vec)
             } else {
-                self.power_grids[grid as usize].add_pole(pole_position, connected_poles);
+                self.power_grids[kept_grid_id as usize].add_pole(pole_position, connected_poles);
                 None
             }
         } else {
@@ -475,7 +544,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
 
                         grid.change_assembler_module_modifiers(id, beacon_update.1, data_store);
                     },
-                    power_grid::BeaconAffectedEntity::Lab { grid, index } => todo!(),
+                    power_grid::BeaconAffectedEntity::Lab { .. } => todo!(),
                 }
             }
         }
@@ -576,7 +645,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                     BeaconAffectedEntity::Assembler { id } => {
                         self.power_grids[id.grid as usize].is_assembler_id_a_hole(*id, data_store)
                     },
-                    BeaconAffectedEntity::Lab { grid, index } => {
+                    BeaconAffectedEntity::Lab { .. } => {
                         // TODO: Check that this is not a lab hole
                         false
                     },
@@ -601,7 +670,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         let removed = if usize::from(id) == self.power_grids.len() - 1 {
             self.power_grids.pop().unwrap()
         } else {
-            let mut tmp = PowerGrid::new_placeholder(data_store);
+            let mut tmp = PowerGrid::new_placeholder(id, data_store);
             std::mem::swap(&mut tmp, &mut self.power_grids[usize::from(id)]);
             tmp
         };
@@ -648,7 +717,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                     BeaconAffectedEntity::Assembler { id } => {
                         self.power_grids[id.grid as usize].is_assembler_id_a_hole(*id, data_store)
                     },
-                    BeaconAffectedEntity::Lab { grid, index } => {
+                    BeaconAffectedEntity::Lab { .. } => {
                         // TODO: Check that this is not a lab hole
                         false
                     },
@@ -683,27 +752,98 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         };
 
         let beacon_updates = match (
-            new_power_mult >= MIN_BEACON_POWER_MULT,
-            self.power_grids[usize::from(removed_id)].last_power_mult >= MIN_BEACON_POWER_MULT,
+            new_power_mult
+                == self.power_grids[usize::from(removed_id)].power_mult_at_last_beacon_update,
+            new_power_mult
+                == self.power_grids[usize::from(kept_id)].power_mult_at_last_beacon_update,
         ) {
             (true, true) => vec![],
-            (true, false) => {
-                // Enable the beacons
-                self.power_grids[usize::from(removed_id)]
-                    .beacon_affected_entities
-                    .iter()
-                    .map(|(k, v)| (*k, (v.0, v.1, 0)))
-                    .collect()
-            },
-            (false, true) => {
-                // Disable the beacons
-                self.power_grids[usize::from(removed_id)]
-                    .beacon_affected_entities
-                    .iter()
-                    .map(|(k, v)| (*k, (-v.0, -v.1, -0)))
-                    .collect()
-            },
-            (false, false) => vec![],
+            (true, false) => self.power_grids[usize::from(removed_id)]
+                .beacon_affected_entities
+                .iter()
+                .map(|(k, v)| {
+                    let old_effect = calculate_beacon_effect(
+                        self.power_grids[usize::from(removed_id)].power_mult_at_last_beacon_update,
+                        (*v).into(),
+                    );
+                    let new_effect = calculate_beacon_effect(new_power_mult, (*v).into());
+
+                    (
+                        *k,
+                        old_effect
+                            .into_iter()
+                            .zip(new_effect)
+                            .map(|(old, new)| new - old)
+                            .collect_array()
+                            .unwrap(),
+                    )
+                })
+                .collect(),
+            (false, true) => self.power_grids[usize::from(kept_id)]
+                .beacon_affected_entities
+                .iter()
+                .map(|(k, v)| {
+                    let old_effect = calculate_beacon_effect(
+                        self.power_grids[usize::from(kept_id)].power_mult_at_last_beacon_update,
+                        (*v).into(),
+                    );
+                    let new_effect = calculate_beacon_effect(new_power_mult, (*v).into());
+
+                    (
+                        *k,
+                        old_effect
+                            .into_iter()
+                            .zip(new_effect)
+                            .map(|(old, new)| new - old)
+                            .collect_array()
+                            .unwrap(),
+                    )
+                })
+                .collect(),
+            (false, false) => self.power_grids[usize::from(removed_id)]
+                .beacon_affected_entities
+                .iter()
+                .map(|(k, v)| {
+                    let old_effect = calculate_beacon_effect(
+                        self.power_grids[usize::from(removed_id)].power_mult_at_last_beacon_update,
+                        (*v).into(),
+                    );
+                    let new_effect = calculate_beacon_effect(new_power_mult, (*v).into());
+
+                    (
+                        *k,
+                        old_effect
+                            .into_iter()
+                            .zip(new_effect)
+                            .map(|(old, new)| new - old)
+                            .collect_array()
+                            .unwrap(),
+                    )
+                })
+                .chain(
+                    self.power_grids[usize::from(kept_id)]
+                        .beacon_affected_entities
+                        .iter()
+                        .map(|(k, v)| {
+                            let old_effect = calculate_beacon_effect(
+                                self.power_grids[usize::from(kept_id)]
+                                    .power_mult_at_last_beacon_update,
+                                (*v).into(),
+                            );
+                            let new_effect = calculate_beacon_effect(new_power_mult, (*v).into());
+
+                            (
+                                *k,
+                                old_effect
+                                    .into_iter()
+                                    .zip(new_effect)
+                                    .map(|(old, new)| new - old)
+                                    .collect_array()
+                                    .unwrap(),
+                            )
+                        }),
+                )
+                .collect(),
         };
 
         {
@@ -711,10 +851,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             for update in beacon_updates {
                 match update.0 {
                     power_grid::BeaconAffectedEntity::Assembler { id } => {
-                        self.power_grids[usize::from(id.grid)]
-                            .change_assembler_module_modifiers(id, update.1, data_store);
+                        self.power_grids[usize::from(id.grid)].change_assembler_module_modifiers(
+                            id,
+                            update.1.into(),
+                            data_store,
+                        );
                     },
-                    power_grid::BeaconAffectedEntity::Lab { grid, index } => {
+                    power_grid::BeaconAffectedEntity::Lab { .. } => {
                         // TODO:
                         error!("Ignoring Beacon affect on lab");
                     },
@@ -738,7 +881,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         //     })
         //     .collect();
 
-        let mut placeholder = PowerGrid::new_placeholder(data_store);
+        let mut placeholder = PowerGrid::new_placeholder(kept_id, data_store);
 
         mem::swap(
             &mut placeholder,
@@ -997,6 +1140,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         &mut self,
         tech_state: &TechState,
         current_tick: u32,
+        inserter_store: &mut StorageStorageInserterStore,
+
+        belt_storage_reinsertion_list: &mut [(
+            FinishedMovingLists<'_, { Dir::BeltToStorage }, { Dir::BeltToStorage }>,
+            ReinsertionLists<'_, { Dir::StorageToBelt }, { Dir::BeltToStorage }>,
+            ReinsertionLists<'_, { Dir::StorageToBelt }, { Dir::StorageToBelt }>,
+            FinishedMovingLists<'_, { Dir::BeltToStorage }, { Dir::StorageToBelt }>,
+        )],
+
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (ResearchProgress, RecipeTickInfo, Option<LabTickInfo>) {
         {
@@ -1018,23 +1170,120 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             .map(|info| info.power_output.get_at_time(current_tick))
             .collect::<Box<[Watt]>>();
 
-        let (research_progress, production_info, times_labs_used_science, beacon_updates) = self
-            .power_grids
-            .par_iter_mut()
-            .map(|grid| grid.update(&solar_production, tech_state, data_store))
-            .reduce(
-                || (0, RecipeTickInfo::new(data_store), 0, vec![]),
-                |(acc_progress, infos, times_labs_used_science, mut old_updates),
-                 (rhs_progress, info, new_times_labs_used_science, new_updates)| {
-                    old_updates.extend(new_updates);
-                    (
-                        acc_progress + rhs_progress,
-                        infos + &info,
-                        times_labs_used_science + new_times_labs_used_science,
-                        old_updates,
-                    )
-                },
-            );
+        let (research_progress, production_info, times_labs_used_science, beacon_updates) = {
+            let lists = {
+                profiling::scope!("Update Grids");
+
+                self.power_grids
+                    .par_iter_mut()
+                    .map(|grid| {
+                        grid.update(&solar_production, tech_state, current_tick, data_store)
+                    })
+                    .collect_vec_list()
+            };
+
+            {
+                profiling::scope!("Fold lists");
+                lists.into_iter().flatten().fold(
+                    (0, RecipeTickInfo::new(data_store), 0, vec![]),
+                    |(acc_progress, infos, times_labs_used_science, mut old_updates),
+                     (
+                        rhs_progress,
+                        info,
+                        new_times_labs_used_science,
+                        new_updates,
+                        reinsertions,
+                    )| {
+                        join!(
+                            || {
+                                old_updates.extend(new_updates);
+                            },
+                            || {
+                                for inserter in reinsertions {
+                                    match inserter.conn {
+                                        crate::assembler::simd::Conn::Storage {
+                                            index,
+                                            storage_id_in,
+                                            storage_id_out,
+                                        } => {
+                                            let store = inserter_store.inserters
+                                                [inserter.item.into_usize()]
+                                            .get_mut(&inserter.movetime)
+                                            .unwrap();
+                                            let ins = InserterBucketData {
+                                                storage_id_in: storage_id_in,
+                                                storage_id_out: storage_id_out,
+                                                index: index,
+                                                current_hand: inserter.current_hand,
+                                                max_hand_size: inserter.max_hand,
+                                            };
+                                            if inserter.current_hand == 0 {
+                                                store.0.reinsert_empty(ins);
+                                            } else {
+                                                store.0.reinsert_empty(ins);
+                                            }
+                                        },
+                                        crate::assembler::simd::Conn::Belt {
+                                            belt_id,
+                                            belt_pos,
+                                            self_is_source,
+                                            self_storage,
+                                        } => {
+                                            let (
+                                                _belt_storage_exit_outgoing,
+                                                belt_storage_reinsertion_incoming,
+                                                storage_belt_reinsertion_outgoing,
+                                                _storage_belt_exit_incoming,
+                                            ) = &mut belt_storage_reinsertion_list
+                                                [inserter.item.into_usize()];
+
+                                            if self_is_source {
+                                                storage_belt_reinsertion_outgoing.reinsert(
+                                                    inserter.movetime,
+                                                    BeltStorageInserterInMovement {
+                                                        current_hand: inserter.max_hand,
+                                                        movetime: inserter
+                                                            .movetime
+                                                            .try_into()
+                                                            .unwrap(),
+                                                        storage: self_storage,
+                                                        belt: belt_id,
+                                                        belt_pos,
+                                                        max_hand_size: inserter.max_hand,
+                                                    },
+                                                );
+                                            } else {
+                                                belt_storage_reinsertion_incoming.reinsert(
+                                                    inserter.movetime,
+                                                    BeltStorageInserterInMovement {
+                                                        current_hand: 0,
+                                                        movetime: inserter
+                                                            .movetime
+                                                            .try_into()
+                                                            .unwrap(),
+                                                        storage: self_storage,
+                                                        belt: belt_id,
+                                                        belt_pos,
+                                                        max_hand_size: inserter.max_hand,
+                                                    },
+                                                );
+                                            }
+                                        },
+                                    }
+                                }
+                            }
+                        );
+
+                        (
+                            acc_progress + rhs_progress,
+                            infos + &info,
+                            times_labs_used_science + new_times_labs_used_science,
+                            old_updates,
+                        )
+                    },
+                )
+            }
+        };
 
         {
             profiling::scope!("Propagate beacon modifier changes");
@@ -1055,10 +1304,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         (
             research_progress,
             production_info,
-            tech_state.current_technology.map(|tech| LabTickInfo {
-                times_labs_used_science,
-                tech,
-            }),
+            tech_state
+                .research_queue
+                .first()
+                .copied()
+                .map(|tech| LabTickInfo {
+                    times_labs_used_science,
+                    tech,
+                }),
         )
     }
 
@@ -1084,26 +1337,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
             })
             .reduce(|acc, v| (acc.0 + v.0, acc.1 + v.1, acc.2 + v.2))
             .unwrap_or((0, 0, 0));
-        let effect = if self.power_grids[usize::from(grid)].last_power_mult >= MIN_BEACON_POWER_MULT
-        {
-            // Add the full beacon effect since we are powered
-            (
+        let effect = calculate_beacon_effect(
+            self.power_grids[usize::from(grid)].power_mult_at_last_beacon_update,
+            [
                 effect.0 * data_store.beacon_info[usize::from(ty)].effectiveness.0 as i16
                     / data_store.beacon_info[usize::from(ty)].effectiveness.1 as i16,
                 effect.1 * data_store.beacon_info[usize::from(ty)].effectiveness.0 as i16
                     / data_store.beacon_info[usize::from(ty)].effectiveness.1 as i16,
                 effect.2 * data_store.beacon_info[usize::from(ty)].effectiveness.0 as i16
                     / data_store.beacon_info[usize::from(ty)].effectiveness.1 as i16,
-            )
-        } else {
-            // Not enough power, only add the power_consumption modifier
-            (
-                0,
-                0,
-                effect.2 * data_store.beacon_info[usize::from(ty)].effectiveness.0 as i16
-                    / data_store.beacon_info[usize::from(ty)].effectiveness.1 as i16,
-            )
-        };
+            ],
+        );
 
         let affected_entities: Vec<BeaconAffectedEntity<RecipeIdxType>> =
             affected_entities.into_iter().collect();
@@ -1111,13 +1355,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         for affected_entity in affected_entities.iter() {
             match affected_entity {
                 BeaconAffectedEntity::Assembler { id } => {
-                    self.power_grids[usize::from(id.grid)]
-                        .change_assembler_module_modifiers(*id, effect, data_store);
+                    self.power_grids[usize::from(id.grid)].change_assembler_module_modifiers(
+                        *id,
+                        effect.into(),
+                        data_store,
+                    );
                 },
                 BeaconAffectedEntity::Lab { grid, index } => {
                     self.power_grids[usize::from(*grid)].change_lab_module_modifiers(
                         (*index).try_into().unwrap(),
-                        effect,
+                        effect.into(),
                         data_store,
                     );
                 },
@@ -1267,16 +1514,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                 / data_store.beacon_info[usize::from(ty)].effectiveness.1 as i16,
         );
 
-        let effect = if self.power_grids[usize::from(self.pole_pos_to_grid_id[&beacon_pole_pos])]
-            .last_power_mult
-            >= MIN_BEACON_POWER_MULT
-        {
-            // Add the full beacon effect since we are powered
-            raw_effect
-        } else {
-            // Not enough power, only add the power_consumption modifier
-            (0, 0, raw_effect.2)
-        };
+        let effect = calculate_beacon_effect(
+            self.power_grids[usize::from(self.pole_pos_to_grid_id[&beacon_pole_pos])]
+                .power_mult_at_last_beacon_update,
+            raw_effect.into(),
+        );
 
         let effect_sum = self.power_grids[usize::from(self.pole_pos_to_grid_id[&beacon_pole_pos])]
             .beacon_affected_entities
@@ -1289,13 +1531,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
 
         match entity {
             BeaconAffectedEntity::Assembler { id } => {
-                self.power_grids[usize::from(id.grid)]
-                    .change_assembler_module_modifiers(id, effect, data_store);
+                self.power_grids[usize::from(id.grid)].change_assembler_module_modifiers(
+                    id,
+                    effect.into(),
+                    data_store,
+                );
             },
             BeaconAffectedEntity::Lab { grid, index } => {
                 self.power_grids[usize::from(grid)].change_lab_module_modifiers(
                     index.try_into().unwrap(),
-                    effect,
+                    effect.into(),
                     data_store,
                 );
             },
@@ -1305,4 +1550,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
     pub fn remove_beacon_affected_entity(&mut self, pole_pos: Position, weak_idx: WeakIndex) {
         todo!()
     }
+}
+
+fn calculate_beacon_effect(power_mult: u8, raw_effect: [i16; 3]) -> [i16; 3] {
+    linear_scaling_effect(power_mult, raw_effect)
+}
+
+#[allow(unused)]
+fn switching_effect(power_mult: u8, raw_effect: [i16; 3]) -> [i16; 3] {
+    if power_mult >= MIN_BEACON_POWER_MULT {
+        raw_effect
+    } else {
+        [0, 0, raw_effect[2]]
+    }
+}
+
+fn linear_scaling_effect(power_mult: u8, raw_effect: [i16; 3]) -> [i16; 3] {
+    assert!(power_mult <= MAX_POWER_MULT);
+    raw_effect
+        .map(|e| i32::from(e) * i32::from(power_mult) / i32::from(MAX_POWER_MULT))
+        .map(|v| v.try_into().unwrap())
 }

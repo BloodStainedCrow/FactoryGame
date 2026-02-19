@@ -7,17 +7,18 @@ use std::{
     num::NonZero,
 };
 
-use egui::Layout;
 use egui_graphs::{DefaultEdgeShape, DefaultNodeShape, Graph};
+use enum_map::EnumMap;
 use itertools::Itertools;
 use log::{error, warn};
 use petgraph::Directed;
 
 use crate::{
+    NewWithDataStore, TICKS_PER_SECOND_LOGIC,
     app_state::SimulationState,
     belt::splitter::SplitterDistributionMode,
     blueprint::Blueprint,
-    data::{self, DataStore},
+    data::{self, DataStore, pedia::Pedia},
     frontend::{
         action::{
             place_entity::{EntityPlaceOptions, PlaceEntityInfo},
@@ -46,10 +47,63 @@ pub const WIDTH_PER_LEVEL: usize = 16;
 pub struct Hotbar<ItemIdxType: WeakIdxTrait> {
     slots: [Option<HeldObject<ItemIdxType>>; 10],
 }
-impl<ItemIdxType: IdxTrait> Default for Hotbar<ItemIdxType> {
-    fn default() -> Self {
+impl<ItemIdxType: IdxTrait> NewWithDataStore for Hotbar<ItemIdxType> {
+    fn new<DataStoreItem: IdxTrait, RecipeIdxType: IdxTrait>(
+        data_store: impl std::borrow::Borrow<DataStore<DataStoreItem, RecipeIdxType>>,
+    ) -> Self {
         Self {
-            slots: array::from_fn(|_| None),
+            slots: array::from_fn(|idx| match idx + 1 {
+                1 => Some(HeldObject::Entity(PlaceEntityType::Lab {
+                    pos: Position { x: 0, y: 0 },
+                    ty: 0,
+                })),
+                2 => Some(HeldObject::Entity(PlaceEntityType::Assembler {
+                    pos: Position { x: 0, y: 0 },
+                    ty: 0,
+                    rotation: Dir::North,
+                })),
+                3 => Some(HeldObject::Entity(PlaceEntityType::Belt {
+                    pos: Position { x: 0, y: 0 },
+                    ty: 0,
+                    direction: Dir::North,
+                })),
+                4 => Some(HeldObject::Entity(PlaceEntityType::Inserter {
+                    pos: Position { x: 0, y: 0 },
+                    ty: 0,
+                    dir: Dir::North,
+                    filter: None,
+                    user_movetime: None,
+                })),
+                5 => Some(HeldObject::Entity(PlaceEntityType::PowerPole {
+                    pos: Position { x: 0, y: 0 },
+                    ty: 0,
+                })),
+                6 => Some(HeldObject::Entity(PlaceEntityType::Chest {
+                    pos: Position { x: 0, y: 0 },
+                    ty: 0,
+                })),
+                7 => Some(HeldObject::Entity(PlaceEntityType::Underground {
+                    pos: Position { x: 0, y: 0 },
+                    ty: 0,
+                    direction: Dir::North,
+                    underground_dir: UndergroundDir::Entrance,
+                })),
+                8 => Some(HeldObject::Entity(PlaceEntityType::SolarPanel {
+                    pos: Position { x: 0, y: 0 },
+                    ty: 0,
+                })),
+                9 => Some(HeldObject::Entity(PlaceEntityType::FluidTank {
+                    pos: Position { x: 0, y: 0 },
+                    ty: 0,
+                    rotation: Dir::North,
+                })),
+                10 => Some(HeldObject::Entity(PlaceEntityType::Beacon {
+                    pos: Position { x: 0, y: 0 },
+                    ty: 0,
+                })),
+
+                _ => unreachable!(),
+            }),
         }
     }
 }
@@ -59,8 +113,6 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     pub local_player_pos: (f32, f32),
     pub my_player_id: PLAYERID,
 
-    pub statistics_panel_open: bool,
-    pub technology_panel_open: bool,
     pub tech_tree_render: Option<
         Graph<
             data::Technology<RecipeIdxType>,
@@ -80,8 +132,6 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     current_held_keys: HashSet<Key>,
     pub state: ActionStateMachineState<ItemIdxType>,
 
-    pub escape_menu_open: bool,
-
     pub debug_view_options: DebugViewOptions,
 
     pub zoom_level: f32,
@@ -98,12 +148,31 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
 
     pub mouse_wheel_sensitivity: f32,
 
+    // #[serde(skip)]
+    #[cfg(not(target_arch = "wasm32"))]
     pub current_fork_save_in_progress: Option<ForkSaveInfo>,
 
     pub hotbar: Hotbar<ItemIdxType>,
-    pub hotbar_window_open: bool,
+
+    pub last_tick_seen_for_autosave: u32,
+    pub autosave_interval: u32,
+
+    pub open_windows: EnumMap<Window, bool>,
+
+    pub datapedia: Pedia<ItemIdxType, RecipeIdxType>,
 }
 
+#[derive(Debug, enum_map::Enum, PartialEq)]
+pub(crate) enum Window {
+    Tip,
+    Technology,
+    Statistics,
+    Hotbar,
+    Escape,
+    Datapedia,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug)]
 pub struct ForkSaveInfo {
     pub recv: interprocess::unnamed_pipe::Recver,
@@ -177,19 +246,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     ActionStateMachine<ItemIdxType, RecipeIdxType>
 {
     #[must_use]
-    pub fn new(
+    fn new(
         my_player_id: PLAYERID,
         local_player_pos: (f32, f32),
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
+        let open_windows = EnumMap::from_fn(|win| win == Window::Tip);
+
         Self {
             my_player_id,
             local_player_pos,
 
             tech_tree_render: None,
 
-            statistics_panel_open: false,
-            technology_panel_open: true,
             statistics_panel: StatisticsPanel::default(),
             statistics_panel_locked_scale: false,
             production_filters: vec![true; data_store.item_display_names.len()],
@@ -202,7 +271,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             zoom_level: 1.0,
             map_view_info: None,
 
-            escape_menu_open: false,
             debug_view_options: DebugViewOptions {
                 highlight_sushi_belts: false,
                 sushi_belt_len_threshhold: 1,
@@ -220,10 +288,74 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
             mouse_wheel_sensitivity: 1.0,
 
+            #[cfg(not(target_arch = "wasm32"))]
             current_fork_save_in_progress: None,
 
-            hotbar: Hotbar::default(),
-            hotbar_window_open: true,
+            hotbar: Hotbar::new(data_store),
+
+            last_tick_seen_for_autosave: 0,
+            autosave_interval: (60 * TICKS_PER_SECOND_LOGIC) as u32,
+
+            open_windows,
+            datapedia: Pedia::new(data_store),
+        }
+    }
+
+    #[must_use]
+    pub fn new_from_gamestate(
+        my_player_id: PLAYERID,
+        world: &World<ItemIdxType, RecipeIdxType>,
+        sim_state: &SimulationState<ItemIdxType, RecipeIdxType>,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Self {
+        let player_pos = world.players[my_player_id as usize].pos;
+        let open_windows = EnumMap::from_fn(|win| win == Window::Tip);
+
+        Self {
+            my_player_id,
+            local_player_pos: player_pos,
+
+            tech_tree_render: None,
+
+            statistics_panel: StatisticsPanel::default(),
+            statistics_panel_locked_scale: false,
+            production_filters: vec![true; data_store.item_display_names.len()],
+            consumption_filters: vec![true; data_store.item_display_names.len()],
+
+            current_mouse_pos: (0.0, 0.0),
+            current_held_keys: HashSet::new(),
+            state: ActionStateMachineState::Idle,
+
+            zoom_level: 1.0,
+            map_view_info: None,
+
+            debug_view_options: DebugViewOptions {
+                highlight_sushi_belts: false,
+                sushi_belt_len_threshhold: 1,
+
+                sushi_finder_view_lock: None,
+            },
+
+            copy_info: None,
+
+            show_graph_dot_output: false,
+
+            recipe: PhantomData,
+
+            get_size_cache: HashMap::new(),
+
+            mouse_wheel_sensitivity: 1.0,
+
+            #[cfg(not(target_arch = "wasm32"))]
+            current_fork_save_in_progress: None,
+
+            hotbar: Hotbar::new(data_store),
+
+            last_tick_seen_for_autosave: 0,
+            autosave_interval: (60 * TICKS_PER_SECOND_LOGIC) as u32,
+
+            open_windows,
+            datapedia: Pedia::new(data_store),
         }
     }
 
@@ -237,7 +369,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
     + use<'a, 'b, 'c, 'd, 'e, ItemIdxType, RecipeIdxType, I> {
         input.into_iter().map(|input| {
-            if self.escape_menu_open && input != Input::KeyPress(Key::Esc) {
+            if self.open_windows[Window::Escape] && input != Input::KeyPress(Key::Esc) {
                 match input {
                     Input::KeyPress(key) => {
                         self.current_held_keys.insert(key);
@@ -344,7 +476,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
                                 match held_object {
                                     HeldObject::Blueprint(bp) => {
-                                        bp.get_reusable(force, data_store).actions_with_base_pos(Self::player_mouse_to_tile(
+                                        bp.get_reusable(force, data_store).optimize().actions_with_base_pos(Self::player_mouse_to_tile(
                                             self.zoom_level,
                                             self.map_view_info.unwrap_or(self.local_player_pos),
                                             self.current_mouse_pos,
@@ -508,7 +640,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             let x_range = min(start_pos.x, end_pos.x)..(max(start_pos.x, end_pos.x) + 1);
                             let y_range = min(start_pos.y, end_pos.y)..(max(start_pos.y, end_pos.y) + 1);
 
-                            self.state = ActionStateMachineState::Holding(HeldObject::Blueprint(Blueprint::from_area(world, sim_state, [x_range, y_range], data_store)));
+                            let mut bp = Blueprint::from_area(world, sim_state, [x_range, y_range], data_store);
+                            bp.optimize();
+
+                            self.state = ActionStateMachineState::Holding(HeldObject::Blueprint(bp));
                     vec![]
                 },
                         ActionStateMachineState::DeleteDragInProgress { start_pos } => {
@@ -537,6 +672,167 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 Input::MouseMove(x, y) => {
                     self.current_mouse_pos = (x, y);
 
+                    match &mut self.state {
+            ActionStateMachineState::CtrlCPressed
+            | ActionStateMachineState::CopyDragInProgress { start_pos: _ } => {},
+            ActionStateMachineState::DelPressed
+            | ActionStateMachineState::DeleteDragInProgress { start_pos: _ } => {},
+
+            ActionStateMachineState::Idle | ActionStateMachineState::Viewing(_) => {},
+            ActionStateMachineState::Holding(held_object) => match held_object {
+                HeldObject::Blueprint(_) => {},
+
+                HeldObject::Tile(_floor_tile) => {},
+                HeldObject::Entity(place_entity_type) => match place_entity_type {
+                    PlaceEntityType::Assembler {
+                        pos: position,
+                        ty: _,
+                        rotation: _,
+                        ..
+                    } => {
+                        *position = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Inserter {
+                        pos,
+                        dir: _,
+                        filter: _,
+                        ty: _,
+                        ..
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Belt {
+                        pos,
+                        ty: _,
+                        direction: _,
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Underground {
+                        pos,
+                        ty: _,
+                        direction: _,
+                        underground_dir: _,
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::PowerPole { pos, ty: _ } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Splitter {
+                        pos,
+                        direction: _,
+                        ty: _,
+                        in_mode: _,
+                        out_mode: _,
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Chest { pos, .. } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::SolarPanel { pos, ty: _ } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Accumulator { pos, ty: _ } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Lab { pos, ty: _, .. } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Beacon { ty: _, pos, .. } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::FluidTank {
+                        ty: _,
+                        pos,
+                        rotation: _,
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::MiningDrill {
+                        ty: _,
+                        pos,
+                        rotation: _,
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                },
+                HeldObject::OrePlacement { .. } => {},
+            },
+            ActionStateMachineState::Deconstructing(position, _timer) => {
+                if let Some(e) = world.get_entity_at(*position, data_store) {
+                    let e_pos = e.get_pos();
+                    let e_size = e.get_entity_size(data_store);
+                    let mouse_pos = Self::player_mouse_to_tile(self.zoom_level, self.map_view_info.unwrap_or(self.local_player_pos), self.current_mouse_pos);
+
+                    if mouse_pos.contained_in(e_pos, e_size) {
+                        // We are still deconstructing. Continue
+                    } else {
+                        // The mouse is no longer over the entity
+                        self.state = ActionStateMachineState::Idle;
+                    }
+
+                } else {
+                    // The entity is gone
+                    self.state = ActionStateMachineState::Idle;
+                }
+
+            },
+        }
+
                     vec![]
                 },
                 Input::KeyPress(code) => {
@@ -564,7 +860,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     let Position {x: mouse_x, y: mouse_y} = Self::player_mouse_to_tile(self.zoom_level, self.map_view_info.unwrap_or(self.local_player_pos), self.current_mouse_pos);
                     match delta {
                         (_, y) => {
-                            self.zoom_level -=  y as f32 / 10.0 * self.mouse_wheel_sensitivity;
+                            self.zoom_level -=  y as f32 * 4.0 * self.mouse_wheel_sensitivity;
                         },
                     }
                     if let Some(view_center) = &mut self.map_view_info {
@@ -733,7 +1029,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             },
                         ));
                     },
-                    Some(Entity::Roboport { ty, .. }) => todo!(),
+                    Some(Entity::Roboport { .. }) => todo!(),
                     Some(Entity::SolarPanel {
                         pos: _,
                         ty,
@@ -809,7 +1105,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             },
 
             (_, Key::E) => {
-                self.hotbar_window_open = !self.hotbar_window_open;
+                self.open_windows[Window::Hotbar] = !self.open_windows[Window::Hotbar];
                 vec![]
             },
 
@@ -996,12 +1292,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             },
 
             (_, Key::P) => {
-                self.statistics_panel_open = !self.statistics_panel_open;
+                self.open_windows[Window::Statistics] = !self.open_windows[Window::Statistics];
                 vec![]
             },
 
             (_, Key::T) => {
-                self.technology_panel_open = !self.technology_panel_open;
+                self.open_windows[Window::Technology] = !self.open_windows[Window::Technology];
                 vec![]
             },
 
@@ -1028,7 +1324,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             },
 
             (_, Key::Esc) => {
-                self.escape_menu_open = !self.escape_menu_open;
+                self.open_windows[Window::Escape] = !self.open_windows[Window::Escape];
                 vec![]
             },
 
@@ -1036,7 +1332,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         };
 
         // Do not send any actions if we are in the escape menu
-        if self.escape_menu_open {
+        if self.open_windows[Window::Escape] {
             vec![].into_iter()
         } else {
             ret.into_iter()
@@ -1066,8 +1362,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         );
 
         Position {
-            x: mouse_pos.0 as i32,
-            y: mouse_pos.1 as i32,
+            x: mouse_pos.0.floor() as i32,
+            y: mouse_pos.1.floor() as i32,
         }
     }
 
@@ -1218,8 +1514,26 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 },
                 HeldObject::OrePlacement { .. } => {},
             },
-            ActionStateMachineState::Deconstructing(position, timer) => {
-                //todo!("Check if we are still over the same thing")
+            ActionStateMachineState::Deconstructing(position, _timer) => {
+                if let Some(e) = world.get_entity_at(*position, data_store) {
+                    let e_pos = e.get_pos();
+                    let e_size = e.get_entity_size(data_store);
+                    let mouse_pos = Self::player_mouse_to_tile(
+                        self.zoom_level,
+                        self.map_view_info.unwrap_or(self.local_player_pos),
+                        self.current_mouse_pos,
+                    );
+
+                    if mouse_pos.contained_in(e_pos, e_size) {
+                        // We are still deconstructing. Continue
+                    } else {
+                        // The mouse is no longer over the entity
+                        self.state = ActionStateMachineState::Idle;
+                    }
+                } else {
+                    // The entity is gone
+                    self.state = ActionStateMachineState::Idle;
+                }
             },
         }
 
@@ -1290,7 +1604,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
         // Possible Actions
-        ui.columns_const(|uis: &mut [egui::Ui; 12]| {
+        ui.columns_const(|uis: &mut [egui::Ui; 13]| {
             for (i, ui) in uis.iter_mut().enumerate() {
                 let ty_count = match i {
                     0 => data_store.assembler_info.len(),
@@ -1305,6 +1619,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     9 => data_store.solar_panel_info.len(),
                     10 => data_store.lab_info.len(),
                     11 => data_store.inserter_infos.len(),
+                    12 => data_store.mining_drill_info.len(),
 
                     _ => unreachable!(),
                 } as u8;
@@ -1413,6 +1728,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             }),
                             &data_store.inserter_infos[ty as usize].display_name,
                         ),
+                        12 => (
+                            HeldObject::Entity(PlaceEntityType::MiningDrill {
+                                pos: Position { x: 0, y: 0 },
+                                ty,
+                                rotation: Dir::North,
+                            }),
+                            &data_store.mining_drill_info[ty as usize].display_name,
+                        ),
 
                         _ => unreachable!(),
                     };
@@ -1493,14 +1816,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             PlaceEntityType::MiningDrill { ty, .. } => Cow::Borrowed(
                                 &*data_store.mining_drill_info[ty as usize].display_name,
                             ),
-
-                            _ => unreachable!(),
                         },
 
                         _ => unreachable!(),
                     })
                     .unwrap_or(Cow::Borrowed("None"));
-                let slot_id = egui::Id::new(("hotbar_slot", slot_idx));
                 let response = ui.label(&format!("{}", text));
 
                 if let Some(new) = response.dnd_release_payload::<HeldObject<ItemIdxType>>() {

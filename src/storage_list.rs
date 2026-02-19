@@ -1,13 +1,17 @@
+use core::panic;
 use std::iter;
+use std::ops::Index;
 use std::u16;
 
 use itertools::Itertools;
 use rayon::iter::IndexedParallelIterator;
 use strum::IntoEnumIterator;
 
+use crate::DATA_STORE;
 use crate::assembler::MultiAssemblerStore;
+use crate::assembler::simd::InserterWaitList;
 use crate::chest::MultiChestStore;
-use crate::item::Indexable;
+use crate::item::{Indexable, WeakIdxTrait};
 use crate::mining_drill::MiningDrillStore;
 use crate::{
     chest::FullChestStore,
@@ -20,22 +24,87 @@ use crate::{
     split_arbitrary::split_arbitrary_mut_slice,
 };
 
-// FIXME: We just yeet 10MB of RAM into the wind here :/
-pub const ALWAYS_FULL: &'static [ITEMCOUNTTYPE] = &[0; 10_000_000];
-pub const PANIC_ON_INSERT: &'static [ITEMCOUNTTYPE] = &[0; 0];
+pub const ALWAYS_FULL: MaxInsertionLimit<'static> = MaxInsertionLimit::Global(0);
+pub const PANIC_ON_INSERT: MaxInsertionLimit<'static> = MaxInsertionLimit::PerMachine(&[]);
 
-type SingleGridStorage<'a, 'b> = (&'a [ITEMCOUNTTYPE], &'b mut [ITEMCOUNTTYPE]);
+#[derive(Debug)]
+pub enum MaxInsertionLimit<'a> {
+    PerMachine(&'a [ITEMCOUNTTYPE]),
+    Global(ITEMCOUNTTYPE),
+}
+
+impl<'a> Index<usize> for MaxInsertionLimit<'a> {
+    type Output = ITEMCOUNTTYPE;
+    fn index(&self, index: usize) -> &Self::Output {
+        // return &30;
+        match self {
+            MaxInsertionLimit::PerMachine(items) => &items[index],
+            MaxInsertionLimit::Global(value) => value,
+        }
+    }
+}
+impl<'a> MaxInsertionLimit<'a> {
+    fn get(&self, index: usize) -> Option<&ITEMCOUNTTYPE> {
+        // return Some(&30);
+        match self {
+            MaxInsertionLimit::PerMachine(items) => items.get(index),
+            MaxInsertionLimit::Global(value) => Some(value),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum InserterWaitLists<'a> {
+    PerMachine(&'a mut [InserterWaitList], &'a mut [ITEMCOUNTTYPE]),
+    None,
+}
+
+// impl<'a> Index<usize> for InserterWaitLists<'a> {
+//     type Output = (&'a mut InserterWaitList, &'a mut ITEMCOUNTTYPE);
+//     fn index<'b>(&'b self, index: usize) -> &'b Self::Output {
+//         match self {
+//             InserterWaitLists::PerMachine(items, min_needed) => {
+//                 &(&mut items[index], &mut min_needed[index])
+//             },
+//             InserterWaitLists::None => panic!("No list"),
+//         }
+//     }
+// }
+// impl<'a> IndexMut<usize> for InserterWaitLists<'a> {
+//     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+//         &mut self.get_mut(index).unwrap()
+//     }
+// }
+impl<'a> InserterWaitLists<'a> {
+    fn get_mut(&mut self, index: usize) -> Option<(&mut InserterWaitList, &mut ITEMCOUNTTYPE)> {
+        match self {
+            InserterWaitLists::PerMachine(items, min_needed) => {
+                match (items.get_mut(index), min_needed.get_mut(index)) {
+                    (Some(a), Some(b)) => Some((a, b)),
+                    _ => None,
+                }
+            },
+            InserterWaitLists::None => None,
+        }
+    }
+}
+
+type SingleGridStorage<'a, 'b> = (
+    MaxInsertionLimit<'a>,
+    &'b mut [ITEMCOUNTTYPE],
+    InserterWaitLists<'a>,
+);
 pub type SingleItemStorages<'a, 'b> = &'a mut [SingleGridStorage<'b, 'b>]; //[SingleGridStorage; NUM_RECIPES * NUM_GRIDS];
 pub type FullStorages<'a, 'b> = Box<[SingleGridStorage<'a, 'b>]>; //[SingleGridStorage; NUM_ITEMS * NUM_RECIPES * NUM_GRIDS];
 
-fn num_labs<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+fn num_labs<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>(
     item: Item<ItemIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> usize {
     usize::from(data_store.item_is_science[usize_from(item.id)])
 }
 
-pub fn num_recipes<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+pub fn num_recipes<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>(
     item: Item<ItemIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> usize {
@@ -47,7 +116,7 @@ pub fn num_recipes<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     num_recipes
 }
 
-pub fn static_size<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+pub fn static_size<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>(
     _item: Item<ItemIdxType>,
     _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> usize {
@@ -62,7 +131,7 @@ pub fn static_size<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     size
 }
 
-pub fn grid_size<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+pub fn grid_size<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>(
     item: Item<ItemIdxType>,
     data_store: &DataStore<ItemIdxType, RecipeIdxType>,
 ) -> usize {
@@ -90,7 +159,11 @@ pub fn index<'a, 'b, RecipeIdxType: IdxTrait>(
     num_recipes: usize,
     grid_size: usize,
     static_size: usize,
-) -> (&'a ITEMCOUNTTYPE, &'a mut ITEMCOUNTTYPE) {
+) -> (
+    &'a ITEMCOUNTTYPE,
+    &'a mut ITEMCOUNTTYPE,
+    Option<(&'a mut InserterWaitList, &'a mut ITEMCOUNTTYPE)>,
+) {
     let first_grid_offs_in_grids = static_size.div_ceil(grid_size);
 
     match storage_id {
@@ -109,6 +182,7 @@ pub fn index<'a, 'b, RecipeIdxType: IdxTrait>(
             (
                 &outer.0[usize::try_from(index).unwrap()],
                 &mut outer.1[usize::try_from(index).unwrap()],
+                outer.2.get_mut(usize::try_from(index).unwrap()),
             )
         },
         Storage::Lab { grid, index } => {
@@ -117,6 +191,7 @@ pub fn index<'a, 'b, RecipeIdxType: IdxTrait>(
             (
                 &outer.0[usize::try_from(index).unwrap()],
                 &mut outer.1[usize::try_from(index).unwrap()],
+                outer.2.get_mut(usize::try_from(index).unwrap()),
             )
         },
         Storage::Static { static_id, index } => {
@@ -125,6 +200,7 @@ pub fn index<'a, 'b, RecipeIdxType: IdxTrait>(
             (
                 &outer.0[usize::try_from(index).unwrap()],
                 &mut outer.1[usize::try_from(index).unwrap()],
+                outer.2.get_mut(usize::try_from(index).unwrap()),
             )
         },
     }
@@ -132,10 +208,15 @@ pub fn index<'a, 'b, RecipeIdxType: IdxTrait>(
 
 #[inline(always)]
 pub fn index_fake_union<'a, 'b>(
+    item_id: Option<usize>,
     slice: SingleItemStorages<'a, 'b>,
     storage_id: FakeUnionStorage,
     grid_size: usize,
-) -> (&'a ITEMCOUNTTYPE, &'a mut ITEMCOUNTTYPE) {
+) -> (
+    &'a ITEMCOUNTTYPE,
+    &'a mut ITEMCOUNTTYPE,
+    Option<(&'a mut InserterWaitList, &'a mut ITEMCOUNTTYPE)>,
+) {
     let (outer, inner) = storage_id.into_inner_and_outer_indices_with_statics_at_zero(grid_size);
 
     let len = slice.len();
@@ -144,7 +225,119 @@ pub fn index_fake_union<'a, 'b>(
             "Out slice was out of bounds for storage_id {storage_id:?}. len was {len}, index was {outer}, grid_size was {grid_size}.",
         );
     };
-    (&subslice.0[inner], &mut subslice.1[inner])
+
+    let Some(max_insert) = subslice.0.get(inner) else {
+        if let Some(item_id) = item_id {
+            let item = Item {
+                id: item_id.try_into().unwrap(),
+            };
+            let static_size: usize = static_size(item, &DATA_STORE);
+            let is_static = (storage_id.grid_or_static_flag as usize) < static_size;
+            let index = storage_id.index;
+
+            if !is_static {
+                let grid_id = storage_id.grid_or_static_flag as usize - static_size;
+
+                let recipe = DATA_STORE.recipe_to_translated_index.iter().find(
+                    |((_recipe, found_item), index)| {
+                        item == *found_item
+                            && u16::from(**index) == storage_id.recipe_idx_with_this_item
+                    },
+                );
+
+                if let Some(((r, _), _)) = recipe {
+                    // we are a assembler
+                    panic!(
+                        "Failed FakeUnion Index for item {} for Assembler in grid {}, with recipe {} and index {}",
+                        &DATA_STORE.item_names[item_id],
+                        grid_id,
+                        DATA_STORE.recipe_names[r.into_usize()],
+                        index
+                    );
+                } else {
+                    // We are a lab
+                    panic!(
+                        "Failed FakeUnion Index for item {} for Lab in grid {}, with index {}",
+                        &DATA_STORE.item_names[item_id], grid_id, index
+                    );
+                }
+            } else {
+                let static_id =
+                    StaticID::try_from(storage_id.recipe_idx_with_this_item as u8).unwrap();
+
+                panic!(
+                    "Failed FakeUnion Index for item {} for Static {:?}, with index {}",
+                    &DATA_STORE.item_names[item_id], static_id, index
+                );
+            }
+        } else {
+            let grid = storage_id.grid_or_static_flag;
+            let rec = storage_id.recipe_idx_with_this_item;
+            let index = storage_id.index;
+
+            panic!(
+                "Failed FakeUnion Index in grid_or_static_flag {}, with recipe_idx_with_this_item {} and index {}",
+                grid, rec, index
+            );
+        }
+    };
+    let Some(items) = subslice.1.get_mut(inner) else {
+        if let Some(item_id) = item_id {
+            let item = Item {
+                id: item_id.try_into().unwrap(),
+            };
+            let static_size: usize = static_size(item, &DATA_STORE);
+            let is_static = (storage_id.grid_or_static_flag as usize) < static_size;
+            let index = storage_id.index;
+
+            if !is_static {
+                let grid_id = storage_id.grid_or_static_flag as usize - static_size;
+
+                let recipe = DATA_STORE.recipe_to_translated_index.iter().find(
+                    |((_recipe, found_item), index)| {
+                        item == *found_item
+                            && u16::from(**index) == storage_id.recipe_idx_with_this_item
+                    },
+                );
+
+                if let Some(((r, _), _)) = recipe {
+                    // we are a assembler
+                    panic!(
+                        "Failed FakeUnion Index for item {} for Assembler in grid {}, with recipe {} and index {}",
+                        &DATA_STORE.item_names[item_id],
+                        grid_id,
+                        DATA_STORE.recipe_names[r.into_usize()],
+                        index
+                    );
+                } else {
+                    // We are a lab
+                    panic!(
+                        "Failed FakeUnion Index for item {} for Lab in grid {}, with index {}",
+                        &DATA_STORE.item_names[item_id], grid_id, index
+                    );
+                }
+            } else {
+                let static_id =
+                    StaticID::try_from(storage_id.recipe_idx_with_this_item as u8).unwrap();
+
+                panic!(
+                    "Failed FakeUnion Index for item {} for Static {:?}, with index {}",
+                    &DATA_STORE.item_names[item_id], static_id, index
+                );
+            }
+        } else {
+            let grid = storage_id.grid_or_static_flag;
+            let rec = storage_id.recipe_idx_with_this_item;
+            let index = storage_id.index;
+
+            panic!(
+                "Failed FakeUnion Index in grid_or_static_flag {}, with recipe_idx_with_this_item {} and index {}",
+                grid, rec, index
+            );
+        }
+    };
+    let wait_list = subslice.2.get_mut(inner);
+    (max_insert, items, wait_list)
 }
 
 #[profiling::function]
@@ -262,7 +455,7 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             num_power_grids,
                                             data_store,
                                         ),
-                                        (v.0, v.1, v.2.len()),
+                                        (v.0, v.1, v.3.len()),
                                     )
                                 })
                                 .collect();
@@ -354,13 +547,18 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         static_storages_pre_sorted(
                             item,
                             chest_store,
-                            mining_drill_lists,
+                            (
+                                mining_drill_lists.0,
+                                mining_drill_lists.1,
+                                InserterWaitLists::None,
+                            ),
                             data_store,
                         )
-                        .chain(
-                            grid.into_iter()
-                                .map(|(_item, _storage, max_insert, data)| (max_insert, data)),
-                        )
+                        .chain(grid.into_iter().map(
+                            |(_item, _storage, max_insert, data, wait_list)| {
+                                (max_insert, data, wait_list)
+                            },
+                        ))
                     },
                 )
                 .collect()
@@ -381,8 +579,9 @@ fn all_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     Item = (
         Item<ItemIdxType>,
         Storage<RecipeIdxType>,
-        &'a [ITEMCOUNTTYPE],
+        MaxInsertionLimit<'a>,
         &'a mut [ITEMCOUNTTYPE],
+        InserterWaitLists<'a>,
     ),
 > + use<'a, 'b, ItemIdxType, RecipeIdxType> {
     let all_storages = grids
@@ -403,10 +602,19 @@ fn all_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 pub fn static_storages_pre_sorted<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     item: Item<ItemIdxType>,
     chest_store: &'a mut MultiChestStore<ItemIdxType>,
-    drill_lists: (&'a [ITEMCOUNTTYPE], &'a mut [ITEMCOUNTTYPE]),
+    drill_lists: (
+        MaxInsertionLimit<'a>,
+        &'a mut [ITEMCOUNTTYPE],
+        InserterWaitLists<'a>,
+    ),
     data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
-) -> impl Iterator<Item = (&'a [ITEMCOUNTTYPE], &'a mut [ITEMCOUNTTYPE])>
-+ use<'a, 'b, ItemIdxType, RecipeIdxType> {
+) -> impl Iterator<
+    Item = (
+        MaxInsertionLimit<'a>,
+        &'a mut [ITEMCOUNTTYPE],
+        InserterWaitLists<'a>,
+    ),
+> + use<'a, 'b, ItemIdxType, RecipeIdxType> {
     let grid_size = grid_size(item, data_store);
     let static_size = static_size(item, data_store);
 
@@ -414,9 +622,13 @@ pub fn static_storages_pre_sorted<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: 
 
     let first_grid_offs = grid_size * first_grid_offs_in_grids;
 
-    iter::once(chest_store.storage_list_slices())
+    let (chest_max, chest_data, wait_lists) = chest_store.storage_list_slices();
+
+    iter::once((chest_max, chest_data, wait_lists))
         .chain(iter::once(drill_lists))
-        .chain(iter::repeat_with(|| (ALWAYS_FULL, [].as_mut_slice())))
+        .chain(iter::repeat_with(|| {
+            (ALWAYS_FULL, [].as_mut_slice(), InserterWaitLists::None)
+        }))
         .take(first_grid_offs)
 }
 
@@ -428,8 +640,9 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
     Item = (
         Item<ItemIdxType>,
         Storage<RecipeIdxType>,
-        &'a [ITEMCOUNTTYPE],
+        MaxInsertionLimit<'a>,
         &'a mut [ITEMCOUNTTYPE],
+        InserterWaitLists<'a>,
     ),
 > + use<'a, 'b, ItemIdxType, RecipeIdxType> {
     let i = assembler_store
@@ -450,7 +663,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                 .copied()
                 .unwrap();
 
-            let (([], []), [outputs]) = multi.get_all_mut();
+            let (([], [], []), ([outputs], [output_wait])) = multi.get_all_mut();
 
             (
                 item,
@@ -464,6 +677,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                 },
                 ALWAYS_FULL,
                 outputs,
+                output_wait,
             )
         })
         .chain(
@@ -498,7 +712,8 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                         .copied()
                         .unwrap();
 
-                    let (([ings_max_insert], [ings]), [outputs]) = multi.get_all_mut();
+                    let (([ings_max_insert], [ings], [ings_wait]), ([outputs], [outputs_wait])) =
+                        multi.get_all_mut();
 
                     [
                         (
@@ -513,6 +728,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings_max_insert,
                             ings,
+                            ings_wait,
                         ),
                         (
                             item_out,
@@ -526,6 +742,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ALWAYS_FULL,
                             outputs,
+                            outputs_wait,
                         ),
                     ]
                 }),
@@ -562,7 +779,10 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                         .copied()
                         .unwrap();
 
-                    let (([ings0_max, ings1_max], [ings0, ings1]), [outputs]) = multi.get_all_mut();
+                    let (
+                        ([ings0_max, ings1_max], [ings0, ings1], [ings0_wait, ings1_wait]),
+                        ([outputs], [outputs_wait]),
+                    ) = multi.get_all_mut();
 
                     [
                         (
@@ -577,6 +797,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings0_max,
                             ings0,
+                            ings0_wait,
                         ),
                         (
                             item_in1,
@@ -590,6 +811,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings1_max,
                             ings1,
+                            ings1_wait,
                         ),
                         (
                             item_out,
@@ -603,6 +825,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ALWAYS_FULL,
                             outputs,
+                            outputs_wait,
                         ),
                     ]
                 }),
@@ -639,8 +862,10 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                     let item_out0 = *items_out.next().unwrap();
                     let item_out1 = *items_out.next().unwrap();
 
-                    let (([ings0_max, ings1_max], [ings0, ings1]), [outputs0, outputs1]) =
-                        multi.get_all_mut();
+                    let (
+                        ([ings0_max, ings1_max], [ings0, ings1], [ings0_wait, ings1_wait]),
+                        ([outputs0, outputs1], [outputs0_wait, outputs1_wait]),
+                    ) = multi.get_all_mut();
 
                     [
                         (
@@ -655,6 +880,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings0_max,
                             ings0,
+                            ings0_wait,
                         ),
                         (
                             item_in1,
@@ -668,6 +894,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings1_max,
                             ings1,
+                            ings1_wait,
                         ),
                         (
                             item_out0,
@@ -681,6 +908,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ALWAYS_FULL,
                             outputs0,
+                            outputs0_wait,
                         ),
                         (
                             item_out1,
@@ -694,6 +922,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ALWAYS_FULL,
                             outputs1,
+                            outputs1_wait,
                         ),
                     ]
                 }),
@@ -731,8 +960,13 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                     let item_out1 = *items_out.next().unwrap();
                     let item_out2 = *items_out.next().unwrap();
 
-                    let (([ings0_max, ings1_max], [ings0, ings1]), [outputs0, outputs1, outputs2]) =
-                        multi.get_all_mut();
+                    let (
+                        ([ings0_max, ings1_max], [ings0, ings1], [ings0_wait, ings1_wait]),
+                        (
+                            [outputs0, outputs1, outputs2],
+                            [outputs0_wait, outputs1_wait, outputs2_wait],
+                        ),
+                    ) = multi.get_all_mut();
 
                     [
                         (
@@ -747,6 +981,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings0_max,
                             ings0,
+                            ings0_wait,
                         ),
                         (
                             item_in1,
@@ -760,6 +995,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings1_max,
                             ings1,
+                            ings1_wait,
                         ),
                         (
                             item_out0,
@@ -773,6 +1009,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ALWAYS_FULL,
                             outputs0,
+                            outputs0_wait,
                         ),
                         (
                             item_out1,
@@ -786,6 +1023,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ALWAYS_FULL,
                             outputs1,
+                            outputs1_wait,
                         ),
                         (
                             item_out2,
@@ -799,6 +1037,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ALWAYS_FULL,
                             outputs2,
+                            outputs2_wait,
                         ),
                     ]
                 }),
@@ -836,8 +1075,14 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                         .copied()
                         .unwrap();
 
-                    let (([ings0_max, ings1_max, ings2_max], [ings0, ings1, ings2]), [outputs]) =
-                        multi.get_all_mut();
+                    let (
+                        (
+                            [ings0_max, ings1_max, ings2_max],
+                            [ings0, ings1, ings2],
+                            [ings0_wait, ings1_wait, ings2_wait],
+                        ),
+                        ([outputs], [outputs_wait]),
+                    ) = multi.get_all_mut();
 
                     [
                         (
@@ -852,6 +1097,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings0_max,
                             ings0,
+                            ings0_wait,
                         ),
                         (
                             item_in1,
@@ -865,6 +1111,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings1_max,
                             ings1,
+                            ings1_wait,
                         ),
                         (
                             item_in2,
@@ -878,6 +1125,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings2_max,
                             ings2,
+                            ings2_wait,
                         ),
                         (
                             item_out,
@@ -891,6 +1139,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ALWAYS_FULL,
                             outputs,
+                            outputs_wait,
                         ),
                     ]
                 }),
@@ -933,8 +1182,9 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                         (
                             [ings0_max, ings1_max, ings2_max, ings3_max],
                             [ings0, ings1, ings2, ings3],
+                            [ings0_wait, ings1_wait, ings2_wait, ings3_wait],
                         ),
-                        [outputs],
+                        ([outputs], [outputs_wait]),
                     ) = multi.get_all_mut();
 
                     [
@@ -950,6 +1200,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings0_max,
                             ings0,
+                            ings0_wait,
                         ),
                         (
                             item_in1,
@@ -963,6 +1214,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings1_max,
                             ings1,
+                            ings1_wait,
                         ),
                         (
                             item_in2,
@@ -976,6 +1228,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings2_max,
                             ings2,
+                            ings2_wait,
                         ),
                         (
                             item_in3,
@@ -989,6 +1242,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings3_max,
                             ings3,
+                            ings3_wait,
                         ),
                         (
                             item_out,
@@ -1002,6 +1256,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ALWAYS_FULL,
                             outputs,
+                            outputs_wait,
                         ),
                     ]
                 }),
@@ -1045,8 +1300,9 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                         (
                             [ings0_max, ings1_max, ings2_max, ings3_max, ings4_max],
                             [ings0, ings1, ings2, ings3, ings4],
+                            [ings0_wait, ings1_wait, ings2_wait, ings3_wait, ings4_wait],
                         ),
-                        [outputs],
+                        ([outputs], [outputs_wait]),
                     ) = multi.get_all_mut();
 
                     [
@@ -1062,6 +1318,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings0_max,
                             ings0,
+                            ings0_wait,
                         ),
                         (
                             item_in1,
@@ -1075,6 +1332,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings1_max,
                             ings1,
+                            ings1_wait,
                         ),
                         (
                             item_in2,
@@ -1088,6 +1346,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings2_max,
                             ings2,
+                            ings2_wait,
                         ),
                         (
                             item_in3,
@@ -1101,6 +1360,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings3_max,
                             ings3,
+                            ings3_wait,
                         ),
                         (
                             item_in4,
@@ -1114,6 +1374,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings4_max,
                             ings4,
+                            ings4_wait,
                         ),
                         (
                             item_out,
@@ -1127,6 +1388,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ALWAYS_FULL,
                             outputs,
+                            outputs_wait,
                         ),
                     ]
                 }),
@@ -1178,8 +1440,16 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                                 ings5_max,
                             ],
                             [ings0, ings1, ings2, ings3, ings4, ings5],
+                            [
+                                ings0_wait,
+                                ings1_wait,
+                                ings2_wait,
+                                ings3_wait,
+                                ings4_wait,
+                                ings5_wait,
+                            ],
                         ),
-                        [outputs],
+                        ([outputs], [outputs_wait]),
                     ) = multi.get_all_mut();
 
                     [
@@ -1195,6 +1465,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings0_max,
                             ings0,
+                            ings0_wait,
                         ),
                         (
                             item_in1,
@@ -1208,6 +1479,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings1_max,
                             ings1,
+                            ings1_wait,
                         ),
                         (
                             item_in2,
@@ -1221,6 +1493,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings2_max,
                             ings2,
+                            ings2_wait,
                         ),
                         (
                             item_in3,
@@ -1234,6 +1507,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings3_max,
                             ings3,
+                            ings3_wait,
                         ),
                         (
                             item_in4,
@@ -1247,6 +1521,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings4_max,
                             ings4,
+                            ings4_wait,
                         ),
                         (
                             item_in5,
@@ -1260,6 +1535,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ings5_max,
                             ings5,
+                            ings5_wait,
                         ),
                         (
                             item_out,
@@ -1273,10 +1549,12 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                             },
                             ALWAYS_FULL,
                             outputs,
+                            outputs_wait,
                         ),
                     ]
                 }),
-        );
+        )
+        .map(|(a, b, c, d, e)| (a, b, c, d, InserterWaitLists::PerMachine(e.0, e.1)));
     i
 }
 
@@ -1288,8 +1566,9 @@ fn all_lab_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     Item = (
         Item<ItemIdxType>,
         Storage<RecipeIdxType>,
-        &'a [ITEMCOUNTTYPE],
+        MaxInsertionLimit<'a>,
         &'a mut [ITEMCOUNTTYPE],
+        InserterWaitLists<'a>,
     ),
 > + use<'a, 'b, ItemIdxType, RecipeIdxType> {
     lab_store
@@ -1301,8 +1580,13 @@ fn all_lab_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             (
                 item,
                 Storage::Lab { grid, index: 0 },
-                max_insert.as_slice(),
+                // max_insert.as_slice(),
+                match max_insert.get(0) {
+                    Some(v) => MaxInsertionLimit::Global(*v),
+                    None => PANIC_ON_INSERT,
+                },
                 science.as_mut_slice(),
+                InserterWaitLists::None,
             )
         })
 }
@@ -1316,8 +1600,9 @@ fn all_static_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     Item = (
         Item<ItemIdxType>,
         Storage<RecipeIdxType>,
-        &'a [ITEMCOUNTTYPE],
+        MaxInsertionLimit<'a>,
         &'a mut [ITEMCOUNTTYPE],
+        InserterWaitLists<'a>,
     ),
 > + use<'a, 'b, ItemIdxType, RecipeIdxType> {
     (0..data_store.item_display_names.len())
@@ -1338,7 +1623,7 @@ fn all_static_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             assert!(first_grid_offs >= static_size);
             assert!(first_grid_offs % grid_size == 0);
 
-            let (max_insert, data) = chest.storage_list_slices();
+            let (max_insert, data, wait_lists) = chest.storage_list_slices();
 
             std::iter::repeat(item)
                 .zip(
@@ -1349,6 +1634,7 @@ fn all_static_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         },
                         max_insert,
                         data,
+                        wait_lists,
                     ))
                     .chain(iter::once((
                         Storage::Static {
@@ -1357,6 +1643,7 @@ fn all_static_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         },
                         drill_lists.0,
                         drill_lists.1,
+                        InserterWaitLists::None,
                     )))
                     .chain(
                         std::iter::repeat_with(|| (PANIC_ON_INSERT, [].as_mut_slice()))
@@ -1369,12 +1656,13 @@ fn all_static_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                     },
                                     max,
                                     data,
+                                    InserterWaitLists::None,
                                 )
                             }),
                     )
                     .take(first_grid_offs),
                 )
-                .map(|(item, (a, b, c))| (item, a, b, c))
+                .map(|(a, (b, c, d, e))| (a, b, c, d, e))
         })
 }
 
@@ -1385,8 +1673,9 @@ fn all_chest_storages<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     Item = (
         Item<ItemIdxType>,
         Storage<RecipeIdxType>,
-        &'a [ITEMCOUNTTYPE],
+        MaxInsertionLimit<'a>,
         &'a mut [ITEMCOUNTTYPE],
+        InserterWaitLists<'a>,
     ),
 > + use<'a, ItemIdxType, RecipeIdxType> {
     chest_store
@@ -1398,7 +1687,7 @@ fn all_chest_storages<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 id: id.try_into().unwrap(),
             };
 
-            let (max_insert, data) = multi.storage_list_slices();
+            let (max_insert, data, wait_lists) = multi.storage_list_slices();
 
             (
                 item,
@@ -1408,6 +1697,7 @@ fn all_chest_storages<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 },
                 max_insert,
                 data,
+                wait_lists,
             )
         })
 }

@@ -1,8 +1,12 @@
+use std::env;
+
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
 #[cfg(not(feature = "dhat-heap"))]
+#[cfg(not(debug_assertions))]
+#[cfg(not(target_arch = "wasm32"))]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
@@ -14,5 +18,16 @@ fn main() -> Result<(), ()> {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
 
-    factory::main()
+    let args: Vec<String> = env::args().collect();
+
+    match factory::main(&args) {
+        Ok(()) => {
+            log::info!("Exiting");
+            Ok(())
+        },
+        Err(e) => {
+            eprintln!("{e}");
+            Err(())
+        },
+    }
 }

@@ -1,5 +1,6 @@
+use crate::frontend::world::sparse_grid::SparseGrid;
+use crate::frontend::world::sparse_grid::dynamic::DynamicGrid;
 use crate::frontend::world::tile::belt_placement::expected_belt_state;
-use crate::mining_drill;
 use crate::mining_drill::AddMinerError;
 use crate::mining_drill::FullOreStore;
 use crate::mining_drill::MiningDrillIdentifier;
@@ -8,6 +9,8 @@ use egui::Color32;
 #[cfg(feature = "client")]
 use egui_show_info::{EguiDisplayable, InfoExtractor, ShowInfo};
 use log::error;
+use petgraph::visit::NodeIndexable;
+use petgraph::visit::VisitMap;
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::ParallelIterator;
 use rayon::prelude::ParallelSliceMut;
@@ -23,6 +26,7 @@ use std::{
     num::NonZero,
     ops::{Add, ControlFlow, Range},
 };
+use strum::IntoEnumIterator;
 
 use crate::frontend::world::sparse_grid::GetGridIndex;
 
@@ -42,7 +46,7 @@ use strum::EnumIter;
 
 use itertools::Itertools;
 
-use noise::{NoiseFn, Simplex};
+use noise::Simplex;
 
 use crate::mining_drill::OreLookup;
 use crate::{
@@ -74,10 +78,8 @@ use serde::Serializer;
 use std::iter;
 
 use noise::Seedable;
-use petgraph::prelude::Bfs;
 
 use super::Position;
-use super::sparse_grid::bounding_box_grid::BoundingBoxGrid;
 use crate::liquid::FluidSystemId;
 
 pub const BELT_LEN_PER_TILE: u16 = 4;
@@ -106,8 +108,8 @@ const_assert!(CHUNK_SIZE * CHUNK_SIZE - 1 <= u8::MAX as u16);
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
-pub struct Chunk<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    base_pos: (i32, i32),
+pub struct Chunk<ItemIdxType: WeakIdxTrait = u8, RecipeIdxType: WeakIdxTrait = u8> {
+    // base_pos: (i32, i32),
     pub floor_tiles: Option<Box<[[FloorTile; CHUNK_SIZE as usize]; CHUNK_SIZE as usize]>>,
     chunk_tile_to_entity_into: Option<Box<[[u8; CHUNK_SIZE as usize]; CHUNK_SIZE as usize]>>,
     entities: Vec<Entity<ItemIdxType, RecipeIdxType>>,
@@ -124,10 +126,6 @@ enum FloorOre<ItemIdxType: WeakIdxTrait> {
         // We Box this here to not increase the RAM consumption of chunks which only contain a single type of ore (which are most chunks with ore)
         mixed_ores: Box<[[(Item<ItemIdxType>, u32); CHUNK_SIZE as usize]; CHUNK_SIZE as usize]>,
     },
-}
-
-fn is_default<T: Default + PartialEq>(val: &T) -> bool {
-    *val == T::default()
 }
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
@@ -173,11 +171,10 @@ pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     // TODO: I don´t think I want FP
     pub players: Vec<PlayerInfo>,
-    chunks: BoundingBoxGrid<i32, Chunk<ItemIdxType, RecipeIdxType>>,
+    pub(crate) chunks: DynamicGrid<i32, Chunk<ItemIdxType, RecipeIdxType>>,
 
     belt_lookup: BeltIdLookup<ItemIdxType>,
     belt_recieving_input_directions: HashMap<Position, EnumMap<Dir, bool>>,
-    power_grid_lookup: PowerGridConnectedDevicesLookup,
 
     pub ore_lookup: OreLookup<ItemIdxType>,
 
@@ -256,22 +253,14 @@ enum WorldUpdate {
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-struct PowerGridConnectedDevicesLookup {
-    grid_to_chunks: BTreeMap<PowerGridIdentifier, BTreeSet<(i32, i32)>>,
-}
-
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct BeltIdLookup<ItemIdxType: WeakIdxTrait> {
     belt_id_to_chunks: BTreeMap<BeltTileId<ItemIdxType>, BTreeSet<(i32, i32)>>,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct ChunkMissingError;
-
-#[derive(Debug, Clone, Copy)]
-enum AddEntityError {
-    ChunkMissingError(ChunkMissingError),
+pub(crate) enum AddEntityError {
+    ChunkMissingError {},
+    CannotFitError {},
 }
 
 struct CascadingUpdate<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
@@ -289,7 +278,7 @@ fn try_attaching_fluids<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     new_assembler_pos: Position,
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
-        update: Box::new(move |world, sim_state, updates, data_store| {
+        update: Box::new(move |world, sim_state, _updates, data_store| {
             profiling::scope!("try_attaching_fluids");
             let Some(
                 e @ Entity::Assembler {
@@ -398,8 +387,7 @@ fn try_attaching_fluids<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             Storage::Assembler {
                                                 grid: id.grid,
                                                 index: id.assembler_index,
-                                                recipe_idx_with_this_item: data_store
-                                                    .recipe_to_translated_index[&(id.recipe, item)],
+                                                recipe_idx_with_this_item: id.recipe.id,
                                             },
                                             dest_conn,
                                             Box::new(|_weak_index: WeakIndex| {})
@@ -419,7 +407,8 @@ fn try_attaching_fluids<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             conn_fluid,
                                             conn_storage,
                                             data_store,
-                                        ),
+                                        )
+                                        .unwrap(),
                                         conn_pos,
                                     )
                                 },
@@ -431,7 +420,8 @@ fn try_attaching_fluids<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             conn_fluid,
                                             conn_storage,
                                             data_store,
-                                        ),
+                                        )
+                                        .unwrap(),
                                         conn_pos,
                                     )
                                 },
@@ -457,19 +447,30 @@ fn try_instantiating_inserters_for_belt_cascade<ItemIdxType: IdxTrait, RecipeIdx
     belt_id: BeltTileId<ItemIdxType>,
 ) -> CascadingUpdate<ItemIdxType, RecipeIdxType> {
     CascadingUpdate {
-        update: Box::new(move |_world, sim_state, updates, data_store| {
+        update: Box::new(move |_world, sim_state, updates, _data_store| {
             profiling::scope!("try_instantiating_inserters_for_belt_cascade");
-            let mut reachable = Bfs::new(
-                &*sim_state.factory.belts.belt_graph,
-                *sim_state.factory.belts.belt_graph_lookup[&belt_id],
-            );
+            let reachable = &mut *sim_state.factory.belts.belt_graph_bfs;
+
+            // Reset the BFS. We reuse the bfs here since otherwise 10% of time is used to just allocated the bitmap for the discovered set.
+
+            reachable
+                .discovered
+                .grow(sim_state.factory.belts.belt_graph.node_bound());
+            // FIXME: This memset is sloooow, if the factory is large
+            reachable.discovered.clear();
+            reachable
+                .discovered
+                .visit(*sim_state.factory.belts.belt_graph_lookup[&belt_id]);
+            reachable.stack.clear();
+            reachable
+                .stack
+                .push_front(*sim_state.factory.belts.belt_graph_lookup[&belt_id]);
+
             while let Some(idx) = reachable.next(&*sim_state.factory.belts.belt_graph) {
                 let belt = sim_state.factory.belts.belt_graph.node_weight(idx).unwrap();
                 // FIXME: What if the graph contains cycles???
                 updates.push(try_instantiating_inserters_for_belt(*belt));
             }
-            // // In order to avoid problems wit
-            // updates.push(try_instantiating_all_inserters_cascade());
         }),
     }
 }
@@ -701,7 +702,7 @@ fn instantiate_inserter_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     }
                 },
                 Err(e) => {
-                    info!(
+                    log::trace!(
                         "try_instantiate_inserter failed at {:?}, with {e:?}",
                         new_instantiate_pos
                     );
@@ -812,7 +813,7 @@ fn instantiate_mining_drill_internal_inserter<ItemIdxType: IdxTrait, RecipeIdxTy
 
             match world.try_instantiate_inserter(
                 sim_state,
-                1,
+                1.try_into().unwrap(),
                 1,
                 Some(single_item),
                 *pos,
@@ -869,9 +870,7 @@ fn instantiate_mining_drill_internal_inserter<ItemIdxType: IdxTrait, RecipeIdxTy
                 Err(InstantiateInserterError::NotUnattachedInserter) => {
                     unreachable!("We are bypassing this check");
                 },
-                Err(InstantiateInserterError::PleaseSpecifyFilter {
-                    belts_which_could_help,
-                }) => {
+                Err(InstantiateInserterError::PleaseSpecifyFilter { .. }) => {
                     unreachable!("We are specifying a filter");
                 },
                 Err(e) => {
@@ -920,7 +919,7 @@ fn new_lab_cascade<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 2 * data_store.max_beacon_range.1 as u16 + size.1,
             );
 
-            for entity in world.get_entities_colliding_with(
+            for entity in world.get_entities_in_chunks_colliding_with(
                 beacon_search_start_pos,
                 beacon_search_size,
                 data_store,
@@ -1034,13 +1033,7 @@ fn new_power_pole<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             } => {
                                 *info = AssemblerInfo::PoweredNoRecipe(pole_pos);
                             },
-                            Entity::Roboport {
-                                ty,
-                                pos,
-                                power_grid,
-                                network,
-                                id,
-                            } => todo!(),
+                            Entity::Roboport { .. } => todo!(),
                             Entity::SolarPanel {
                                 pos,
                                 ty,
@@ -1049,6 +1042,17 @@ fn new_power_pole<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 let weak_index = sim_state.factory.power_grids.power_grids
                                     [usize::from(grid_id)]
                                 .add_solar_panel(*pos, *ty, pole_pos, data_store);
+
+                                *pole_position = Some((pole_pos, weak_index));
+                            },
+                            Entity::Accumulator {
+                                pos,
+                                ty,
+                                pole_position: pole_position @ None,
+                            } => {
+                                let weak_index = sim_state.factory.power_grids.power_grids
+                                    [usize::from(grid_id)]
+                                .add_accumulator(*pos, *ty, pole_pos, data_store);
 
                                 *pole_position = Some((pole_pos, weak_index));
                             },
@@ -1233,7 +1237,7 @@ fn newly_working_assembler<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 2 * data_store.max_beacon_range.1 as u16 + size.1,
             );
 
-            for entity in world.get_entities_colliding_with(
+            for entity in world.get_entities_in_chunks_colliding_with(
                 beacon_search_start_pos,
                 beacon_search_size,
                 data_store,
@@ -1324,7 +1328,10 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                                 {
                                     match attached_inserter {
                                         AttachedInserter::BeltStorage { id, belt_pos } => {
-                                            sim_state.factory.belts.remove_inserter(*id, *belt_pos);
+                                            match sim_state.factory.belts.remove_inserter(*id, *belt_pos) {
+                                                Ok(()) => {},
+                                                Err((_belt_id, _belt_pos)) => todo!(),
+                                            }
 
                                             *info = InserterInfo::NotAttached {};
                                         },
@@ -1339,10 +1346,29 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                                                 );
 
                                             // This might return something at some point, and this will be a compiler error
-                                            let () = sim_state
+                                            match sim_state
                                                 .factory
                                                 .storage_storage_inserters
-                                                .remove_ins(*item, movetime.into(), *inserter);
+                                                .remove_ins(*item, movetime.into(), *inserter)
+                                            {
+                                                Ok(()) => {},
+                                                Err(side) => match side {
+                                                    crate::inserter::WaitlistSearchSide::Source => {
+                                                        if start_pos.contained_in(pos, size) {
+                                                            // No need to remove it. The storage which this inserter was waiting on was removed anywy
+                                                        } else {
+                                                            todo!()
+                                                        }
+                                                    },
+                                                    crate::inserter::WaitlistSearchSide::Dest => {
+                                                        if end_pos.contained_in(pos, size) {
+                                                            // No need to remove it. The storage which this inserter was waiting on was removed anywy
+                                                        } else {
+                                                            todo!()
+                                                        }
+                                                    },
+                                                },
+                                            };
 
                                             *info = InserterInfo::NotAttached {};
                                         },
@@ -1354,7 +1380,7 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                             ty,
                             pos: mining_drill_pos,
                             rotation,
-                            drill_id,
+                            drill_id: _drill_id,
                             internal_inserter,
                         } => {
                             match internal_inserter {
@@ -1376,7 +1402,7 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                                                 sim_state
                                                     .factory
                                                     .belts
-                                                    .remove_inserter(*id, *belt_pos);
+                                                    .remove_inserter(*id, *belt_pos).expect("Removing inserter failed");
                                             },
                                             AttachedInternalInserter::StorageStorage {
                                                 item,
@@ -1385,10 +1411,20 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
                                                 let movetime = 1;
 
                                                 // This might return something at some point, and this will be a compiler error
-                                                let () = sim_state
+                                                match sim_state
                                                     .factory
                                                     .storage_storage_inserters
-                                                    .remove_ins(*item, movetime, *inserter);
+                                                    .remove_ins(*item, NonZero::new(movetime).unwrap(), *inserter){
+                                                    Ok(()) => {},
+                                                    Err(side) => match side {
+                                                        crate::inserter::WaitlistSearchSide::Source => {
+                                                            // No need to remove it. The mining_drill which this inserter was waiting on was removed anywy
+                                                        },
+                                                        crate::inserter::WaitlistSearchSide::Dest => {
+                                                            todo!()
+                                                        },
+                                                    },
+                                                };
                                             },
                                         }
                                         *internal_inserter = InternalInserterInfo::NotAttached {};
@@ -1404,9 +1440,6 @@ fn removal_of_possible_inserter_connection<ItemIdxType: IdxTrait, RecipeIdxType:
         }),
     }
 }
-
-const ORE_THRESHHOLD: f64 = 0.95;
-const ORE_DISTANCE_MULT: f64 = 1.0 / 80.0;
 
 enum ChunkTileState {
     Index(usize),
@@ -1436,10 +1469,11 @@ impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> GetGridIndex<i32>
     for Chunk<ItemIdxType, RecipeIdxType>
 {
     fn get_grid_index(&self) -> (i32, i32) {
-        (
-            self.base_pos.0 / i32::from(CHUNK_SIZE),
-            self.base_pos.1 / i32::from(CHUNK_SIZE),
-        )
+        // (
+        //     self.base_pos.0.div_floor(i32::from(CHUNK_SIZE)),
+        //     self.base_pos.1.div_floor(i32::from(CHUNK_SIZE)),
+        // )
+        unimplemented!()
     }
 }
 
@@ -1490,7 +1524,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             ore_lookup,
             belt_lookup,
             belt_recieving_input_directions,
-            power_grid_lookup,
             remaining_updates,
             to_instantiate,
             to_instantiate_by_belt,
@@ -1506,14 +1539,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         );
         save_at_fork(noise, base_path.join("noise"));
         save_at_fork(players, base_path.join("players"));
-        chunks.save_fork(base_path.join("chunks"));
+        chunks.save_single_thread(base_path.join("chunks"));
         save_at_fork(ore_lookup, base_path.join("ore_lookup"));
         save_at_fork(belt_lookup, base_path.join("belt_lookup"));
         save_at_fork(
             belt_recieving_input_directions,
             base_path.join("belt_recieving_input_directions"),
         );
-        save_at_fork(power_grid_lookup, base_path.join("power_grid_lookup"));
         save_at_fork(remaining_updates, base_path.join("remaining_updates"));
         save_at_fork(to_instantiate, base_path.join("to_instantiate"));
         save_at_fork(
@@ -1534,7 +1566,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             ore_lookup,
             belt_lookup,
             belt_recieving_input_directions,
-            power_grid_lookup,
             remaining_updates,
             to_instantiate,
             to_instantiate_by_belt,
@@ -1558,7 +1589,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 belt_recieving_input_directions,
                 base_path.join("belt_recieving_input_directions")
             ),
-            || save_at(power_grid_lookup, base_path.join("power_grid_lookup")),
             || save_at(remaining_updates, base_path.join("remaining_updates")),
             || save_at(to_instantiate, base_path.join("to_instantiate")),
             || save_at(
@@ -1577,7 +1607,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             ore_lookup,
             belt_lookup,
             belt_recieving_input_directions,
-            power_grid_lookup,
             remaining_updates,
             to_instantiate,
             to_instantiate_by_belt,
@@ -1585,11 +1614,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             || load_at(base_path.join("module_slot_dedup_table")),
             || load_at(base_path.join("noise")),
             || load_at(base_path.join("players")),
-            || BoundingBoxGrid::par_load(base_path.join("chunks")),
+            || DynamicGrid::par_load(base_path.join("chunks")),
             || load_at(base_path.join("ore_lookup")),
             || load_at(base_path.join("belt_lookup")),
             || load_at(base_path.join("belt_recieving_input_directions")),
-            || load_at(base_path.join("power_grid_lookup")),
             || load_at(base_path.join("remaining_updates")),
             || load_at(base_path.join("to_instantiate")),
             || load_at(base_path.join("to_instantiate_by_belt"))
@@ -1604,7 +1632,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             ore_lookup,
             belt_lookup,
             belt_recieving_input_directions,
-            power_grid_lookup,
             remaining_updates,
             to_instantiate,
             to_instantiate_by_belt,
@@ -1614,17 +1641,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
     #[must_use]
     pub fn new_with_starting_area(top_left: Position, bottom_right: Position) -> Self {
-        let grid = BoundingBoxGrid::new_with_filled_grid(
-            [
-                top_left.x / i32::from(CHUNK_SIZE),
-                top_left.y / i32::from(CHUNK_SIZE),
-            ],
-            [
-                bottom_right.x / i32::from(CHUNK_SIZE),
-                bottom_right.y / i32::from(CHUNK_SIZE),
-            ],
-            |[x, y]| Chunk {
-                base_pos: (x * i32::from(CHUNK_SIZE), y * i32::from(CHUNK_SIZE)),
+        let grid = DynamicGrid::new_with_filled_grid(
+            Self::get_chunk_pos_for_tile(top_left).into(),
+            Self::get_chunk_pos_for_tile(bottom_right).into(),
+            |[_x, _y]| Chunk {
+                // base_pos: (x * i32::from(CHUNK_SIZE), y * i32::from(CHUNK_SIZE)),
                 floor_tiles: None,
                 chunk_tile_to_entity_into: None,
                 entities: vec![],
@@ -1645,9 +1666,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 belt_id_to_chunks: BTreeMap::new(),
             },
             belt_recieving_input_directions: HashMap::new(),
-            power_grid_lookup: PowerGridConnectedDevicesLookup {
-                grid_to_chunks: BTreeMap::new(),
-            },
 
             remaining_updates: vec![],
 
@@ -1660,6 +1678,18 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
     pub fn new_with_area(top_left: Position, bottom_right: Position) -> Self {
         Self::new_with_starting_area(top_left, bottom_right)
+    }
+
+    pub fn add_chunks(&mut self, chunks: impl IntoIterator<Item = (i32, i32)> + Clone) {
+        self.chunks.insert_many(
+            chunks.clone(),
+            chunks.into_iter().map(|_pos| Chunk {
+                // base_pos: (pos.0 * i32::from(CHUNK_SIZE), pos.1 * i32::from(CHUNK_SIZE)),
+                floor_tiles: None,
+                chunk_tile_to_entity_into: None,
+                entities: vec![],
+            }),
+        )
     }
 
     pub fn get_ore_type_at_pos(&self, pos: Position) -> Option<Item<ItemIdxType>> {
@@ -1684,8 +1714,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     }
 
     fn get_original_ore_at_pos_from_noise(
-        noise: &SerializableSimplex,
-        pos: Position,
+        _noise: &SerializableSimplex,
+        _pos: Position,
     ) -> Option<(Item<ItemIdxType>, u32)> {
         None
         // let v = noise.get([
@@ -1813,7 +1843,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         dedup.len() - 1
                     };
 
-                    *modules = new_module_index as u32;
+                    *modules = new_module_index as ModuleSlotDedupIndex;
 
                     if id.recipe == new_recipe {
                         return ControlFlow::Break(());
@@ -1868,7 +1898,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         dedup.len() - 1
                     };
 
-                    *modules = new_module_index as u32;
+                    *modules = new_module_index as ModuleSlotDedupIndex;
 
                     let AssemblerInfo::PoweredNoRecipe(pole_position) = info else {
                         unreachable!();
@@ -1914,7 +1944,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         dedup.len() - 1
                     };
 
-                    *modules = new_module_index as u32;
+                    *modules = new_module_index as ModuleSlotDedupIndex;
 
                     *recipe = new_recipe;
                 },
@@ -1940,7 +1970,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         dedup.len() - 1
                     };
 
-                    *modules = new_module_index as u32;
+                    *modules = new_module_index as ModuleSlotDedupIndex;
                     *info = AssemblerInfo::Unpowered(new_recipe);
                 },
                 e => unreachable!("Called change recipe on non assembler: {e:?}"),
@@ -1973,8 +2003,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     ) {
         let pos = entity.get_pos();
 
-        let chunk_x = pos.x / i32::from(CHUNK_SIZE);
-        let chunk_y = pos.y / i32::from(CHUNK_SIZE);
+        let (chunk_x, chunk_y) = Self::get_chunk_pos_for_tile(pos);
         let Some(chunk) = self.get_chunk_mut((chunk_x, chunk_y)) else {
             panic!("Chunk outside the world: {:?}!", entity);
         };
@@ -2059,8 +2088,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     ) {
         let pos = entity.get_pos();
 
-        let chunk_x = pos.x / i32::from(CHUNK_SIZE);
-        let chunk_y = pos.y / i32::from(CHUNK_SIZE);
+        let (chunk_x, chunk_y) = Self::get_chunk_pos_for_tile(pos);
 
         match entity {
             Entity::Belt {
@@ -2170,99 +2198,43 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         entity: Entity<ItemIdxType, RecipeIdxType>,
         sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Result<(), ()> {
+    ) -> Result<(), AddEntityError> {
         if !self.can_fit(
             entity.get_pos(),
             entity.get_entity_size(data_store),
             data_store,
         ) {
             warn!("Tried to place entity where it does not fit");
-            return Err(());
+            return Err(AddEntityError::CannotFitError {});
         }
 
         profiling::scope!("add_entity {}", entity.get_type_name());
 
         let pos = entity.get_pos();
 
-        let chunk_pos = self.get_chunk_pos_for_tile(pos);
+        let chunk_pos = Self::get_chunk_pos_for_tile(pos);
 
         if self.get_chunk_for_tile_mut(pos).is_none() {
             error!("Tried to place entity outside generated chunks");
-            return Err(());
+            return Err(AddEntityError::ChunkMissingError {});
         }
 
         let mut cascading_updates = self.cascading_updates.take().unwrap_or_default().recycle();
 
         match entity {
-            Entity::Lab {
-                pos, pole_position, ..
-            } => {
-                if let Some((pole_pos, _, _)) = pole_position {
-                    let grid = sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos];
-                    self.power_grid_lookup
-                        .grid_to_chunks
-                        .entry(grid)
-                        .or_default()
-                        .insert(chunk_pos);
-                }
-
+            Entity::Lab { pos, .. } => {
                 cascading_updates.push(new_lab_cascade(pos, data_store));
             },
-            Entity::SolarPanel { pole_position, .. } => {
-                if let Some((pole_pos, _)) = pole_position {
-                    let grid = sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos];
-                    self.power_grid_lookup
-                        .grid_to_chunks
-                        .entry(grid)
-                        .or_default()
-                        .insert(chunk_pos);
-                }
-            },
-            Entity::Accumulator { pole_position, .. } => {
-                if let Some((pole_pos, _)) = pole_position {
-                    let grid = sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos];
-                    self.power_grid_lookup
-                        .grid_to_chunks
-                        .entry(grid)
-                        .or_default()
-                        .insert(chunk_pos);
-                }
-            },
+            Entity::SolarPanel { .. } => {},
+            Entity::Accumulator { .. } => {},
             Entity::Assembler { info, .. } => match info {
                 AssemblerInfo::UnpoweredNoRecipe | AssemblerInfo::Unpowered(_) => {},
-                AssemblerInfo::PoweredNoRecipe(pole_position) => {
-                    let grid = sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_position];
-                    self.power_grid_lookup
-                        .grid_to_chunks
-                        .entry(grid)
-                        .or_default()
-                        .insert(chunk_pos);
-                },
-                AssemblerInfo::Powered {
-                    id: AssemblerID { grid, .. },
-                    pole_position,
-                    ..
-                } => {
-                    let lookup_grid =
-                        sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_position];
-                    assert_eq!(grid, lookup_grid);
-                    self.power_grid_lookup
-                        .grid_to_chunks
-                        .entry(grid)
-                        .or_default()
-                        .insert(chunk_pos);
-
+                AssemblerInfo::PoweredNoRecipe(_) => {},
+                AssemblerInfo::Powered { .. } => {
                     cascading_updates.push(newly_working_assembler(pos, data_store));
                 },
             },
             Entity::PowerPole { pos: pole_pos, .. } => {
-                let grid = sim_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos];
-                self.power_grid_lookup
-                    .grid_to_chunks
-                    .entry(grid)
-                    .or_default()
-                    .insert(chunk_pos);
-
                 // Handle Entities that are newly powered
                 cascading_updates.push(new_power_pole(pole_pos, data_store));
             },
@@ -2434,8 +2406,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             }
         }
 
-        let chunk_x = pos.x / i32::from(CHUNK_SIZE);
-        let chunk_y = pos.y / i32::from(CHUNK_SIZE);
+        let (chunk_x, chunk_y) = Self::get_chunk_pos_for_tile(pos);
         let chunk = self
             .get_chunk_mut((chunk_x, chunk_y))
             .expect("Chunk outside the world!");
@@ -2575,9 +2546,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         // TODO: Calculate tech effect
         let hand_size = data_store.inserter_infos[*ty as usize].base_hand_size;
 
-        let movetime = user_movetime
-            .map(|v| v.into())
-            .unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks);
+        let movetime =
+            user_movetime.unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks);
 
         let start_pos = data_store.inserter_start_pos(*ty, pos, *direction);
         let end_pos = data_store.inserter_end_pos(*ty, pos, *direction);
@@ -2596,11 +2566,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
         match ins {
             AttachedInserter::BeltStorage { id, .. } => {
+                let chunk_pos = Self::get_chunk_pos_for_tile(pos);
                 self.belt_lookup
                     .belt_id_to_chunks
                     .entry(id)
                     .or_default()
-                    .insert((pos.x / i32::from(CHUNK_SIZE), pos.y / i32::from(CHUNK_SIZE)));
+                    .insert(chunk_pos);
             },
             AttachedInserter::BeltBelt { item, inserter } => {
                 todo!("Set the correct belt_ids in the belt_lookup")
@@ -2625,7 +2596,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         &mut self,
         simulation_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
 
-        movetime: u16,
+        movetime: NonZero<u16>,
         hand_size: crate::item::ITEMCOUNTTYPE,
 
         known_filter: Option<Item<ItemIdxType>>,
@@ -3004,11 +2975,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
         let instantiated = match (start_conn.conn, dest_conn.conn) {
             (
-                InserterConnection::Belt(start_belt_id, start_belt_pos),
-                InserterConnection::Belt(dest_belt_id, dest_belt_pos),
+                InserterConnection::Belt(start_belt_id, _start_belt_pos),
+                InserterConnection::Belt(dest_belt_id, _dest_belt_pos),
             ) => InserterInstantiationNewOptions::Belts(vec![start_belt_id, dest_belt_id]),
             (
-                InserterConnection::Belt(start_belt_id, start_belt_pos),
+                InserterConnection::Belt(start_belt_id, _start_belt_pos),
                 InserterConnection::Storage(dest_storage_untranslated),
             ) => {
                 let dest_storage_untranslated = match dest_storage_untranslated {
@@ -3184,7 +3155,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         simulation_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
         filter: Item<ItemIdxType>,
 
-        movetime: u16,
+        movetime: NonZero<u16>,
         hand_size: crate::item::ITEMCOUNTTYPE,
 
         start: InserterConnection<ItemIdxType, RecipeIdxType>,
@@ -3214,16 +3185,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 InserterConnection::Belt(start_belt_id, start_belt_pos),
                 InserterConnection::Storage(dest_storage_untranslated),
             ) => {
-                let dest_storage_untranslated = match dest_storage_untranslated {
+                let dest_storage = match dest_storage_untranslated {
                     Static::Done(storage) => storage,
                     Static::ToInstantiate => {
                         unreachable!("Storages must be instantiated before calling this function")
                     },
                 };
-
-                let dest_storage = dest_storage_untranslated
-                    .translate(filter, data_store)
-                    .unwrap();
 
                 match simulation_state.factory.belts.add_belt_storage_inserter(
                     filter,
@@ -3233,7 +3200,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         filter,
                         dest_storage,
                         data_store,
-                    ),
+                    )
+                    .unwrap(),
                     movetime.into(),
                     hand_size,
                 ) {
@@ -3252,16 +3220,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 InserterConnection::Storage(start_storage_untranslated),
                 InserterConnection::Belt(dest_belt_id, dest_belt_pos),
             ) => {
-                let start_storage_untranslated = match start_storage_untranslated {
+                let start_storage = match start_storage_untranslated {
                     Static::Done(storage) => storage,
                     Static::ToInstantiate => {
                         unreachable!("Storages must be instantiated before calling this function")
                     },
                 };
-
-                let start_storage = start_storage_untranslated
-                    .translate(filter, data_store)
-                    .unwrap();
 
                 match simulation_state.factory.belts.add_storage_belt_inserter(
                     filter,
@@ -3271,7 +3235,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         filter,
                         start_storage,
                         data_store,
-                    ),
+                    )
+                    .unwrap(),
                     movetime.into(),
                     hand_size,
                 ) {
@@ -3290,30 +3255,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 InserterConnection::Storage(start_storage_untranslated),
                 InserterConnection::Storage(dest_storage_untranslated),
             ) => {
-                let start_storage_untranslated = match start_storage_untranslated {
+                let start_storage = match start_storage_untranslated {
                     Static::Done(storage) => storage,
                     Static::ToInstantiate => {
                         unreachable!("Storages must be instantiated before calling this function")
                     },
                 };
 
-                let dest_storage_untranslated = match dest_storage_untranslated {
+                let dest_storage = match dest_storage_untranslated {
                     Static::Done(storage) => storage,
                     Static::ToInstantiate => {
                         unreachable!("Storages must be instantiated before calling this function")
                     },
                 };
-
-                let start_storage = start_storage_untranslated
-                    .translate(filter, data_store)
-                    .unwrap();
-                let dest_storage = dest_storage_untranslated
-                    .translate(filter, data_store)
-                    .unwrap();
 
                 let index = simulation_state.factory.storage_storage_inserters.add_ins(
                     filter,
-                    movetime.into(),
+                    movetime,
                     start_storage,
                     dest_storage,
                     hand_size,
@@ -3328,110 +3286,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         }
     }
 
-    pub fn update_power_grid_id(
-        &mut self,
-        sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
-        old_id: PowerGridIdentifier,
-        new_id: PowerGridIdentifier,
-    ) {
-        let old_chunks = self.power_grid_lookup.grid_to_chunks.remove(&old_id);
-
-        for chunk_pos in old_chunks.iter().flatten() {
-            let chunk = self
-                .chunks
-                .get_mut(chunk_pos.0, chunk_pos.1)
-                .expect("Ungenerated chunk in belt map!");
-
-            for entity in &mut chunk.entities {
-                match entity {
-                    Entity::SolarPanel {
-                        pole_position: None,
-                        ..
-                    } => {},
-                    Entity::SolarPanel {
-                        pole_position: Some(_),
-                        ..
-                    } => todo!(),
-                    Entity::Accumulator {
-                        pole_position: None,
-                        ..
-                    } => {},
-                    Entity::Accumulator {
-                        pole_position: Some(_),
-                        ..
-                    } => todo!(),
-                    Entity::Lab {
-                        pole_position: None,
-                        ..
-                    } => {},
-                    Entity::Lab {
-                        pole_position: Some(_),
-                        ..
-                    } => todo!(),
-                    Entity::Assembler { info, .. } => match info {
-                        AssemblerInfo::UnpoweredNoRecipe | AssemblerInfo::Unpowered(_) => {},
-                        AssemblerInfo::PoweredNoRecipe(_) => {},
-                        AssemblerInfo::Powered {
-                            id:
-                                AssemblerID {
-                                    grid: grid_in_id, ..
-                                },
-                            pole_position,
-                            ..
-                        } => {
-                            let grid =
-                                sim_state.factory.power_grids.pole_pos_to_grid_id[pole_position];
-                            assert_eq!(grid, new_id);
-                            if *grid_in_id == old_id {
-                                *grid_in_id = new_id;
-                            }
-                        },
-                    },
-                    Entity::PowerPole { .. } => {},
-                    Entity::Inserter { info, .. } => match info {
-                        InserterInfo::NotAttached { .. } => {},
-                        InserterInfo::Attached {
-                            info: attached_inserter,
-                            ..
-                        } => match attached_inserter {
-                            AttachedInserter::BeltStorage { id, belt_pos } => {
-                                // TODO
-                            },
-                            AttachedInserter::BeltBelt { item, inserter } => {
-                                // TODO
-                            },
-                            AttachedInserter::StorageStorage { .. } => todo!(),
-                        },
-                    },
-                    Entity::Roboport { power_grid, .. } => {
-                        if *power_grid == Some(old_id) {
-                            *power_grid = Some(new_id);
-                        }
-                    },
-                    Entity::MiningDrill {
-                        ty,
-                        pos,
-                        rotation,
-                        drill_id,
-                        internal_inserter,
-                    } => todo!(),
-                    Entity::Belt { .. }
-                    | Entity::Underground { .. }
-                    | Entity::Splitter { .. }
-                    | Entity::Chest { .. }
-                    | Entity::Beacon { .. }
-                    | Entity::FluidTank { .. } => {},
-                }
-            }
-        }
-
-        self.power_grid_lookup
-            .grid_to_chunks
-            .entry(new_id)
-            .or_default()
-            .extend(old_chunks.into_iter().flatten());
-    }
-
     pub fn update_belt_id_after(
         &mut self,
         sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
@@ -3443,9 +3297,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         if old_id == new_id {
             return;
         }
-        info!(
+        log::debug!(
             "Change belt_id at >= {} {:?} to {:?}",
-            belt_pos_earliest, old_id, new_id
+            belt_pos_earliest,
+            old_id,
+            new_id
         );
         if belt_pos_earliest != 0 {
             if let Some(waiting) = self.to_instantiate_by_belt.get(&old_id) {
@@ -3473,7 +3329,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                 InserterInfo::NotAttached { .. } => true,
                                 InserterInfo::Attached { info, .. } => match info {
                                     AttachedInserter::BeltStorage { id, .. } => *id != old_id,
-                                    AttachedInserter::BeltBelt { item, inserter } => {
+                                    AttachedInserter::BeltBelt { .. } => {
                                         // TODO:
                                         true
                                     },
@@ -3496,7 +3352,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 .collect()
         };
 
-        info!("Checking {} chunks to change belt_id", old_chunks.len());
+        log::debug!("Checking {} chunks to change belt_id", old_chunks.len());
         if old_chunks.len() > 150 {
             warn!("Having to check a lot of chunks: {}", old_chunks.len());
         }
@@ -3557,7 +3413,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     found_anything = true;
                                 }
                             },
-                            AttachedInserter::BeltBelt { item, inserter } => todo!(),
+                            AttachedInserter::BeltBelt { .. } => todo!(),
                             AttachedInserter::StorageStorage { .. } => {},
                         },
                     },
@@ -3589,7 +3445,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         new_id: BeltTileId<ItemIdxType>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
-        info!("Change belt_id {:?} to {:?}", old_id, new_id);
+        log::debug!("Change belt_id {:?} to {:?}", old_id, new_id);
         if let Some(waiting) = self.to_instantiate_by_belt.remove(&old_id) {
             self.to_instantiate_by_belt
                 .entry(new_id)
@@ -3605,7 +3461,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         let chunks = self.belt_lookup.belt_id_to_chunks.get_mut(&id_to_change);
 
         let num_chunks = chunks.as_ref().map(|v| v.len()).unwrap_or(0);
-        info!("Checking {} chunks to modify pos", num_chunks);
+        log::debug!("Checking {} chunks to modify pos", num_chunks);
         if num_chunks > 150 {
             warn!("Having to check a lot of chunks: {}", num_chunks);
         }
@@ -3685,7 +3541,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                         }
                                     }
                                 },
-                                AttachedInserter::BeltBelt { item, inserter } => todo!(),
+                                AttachedInserter::BeltBelt { .. } => todo!(),
                                 AttachedInserter::StorageStorage { .. } => {},
                             },
                         },
@@ -3720,10 +3576,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                                     .belts.get_inserter_positions(id));
                                 };
                         },
-                        AttachedInserter::BeltBelt { item, inserter } => {
+                        AttachedInserter::BeltBelt { .. } => {
                             // TODO:
                         },
-                        AttachedInserter::StorageStorage { item, inserter } => {
+                        AttachedInserter::StorageStorage { .. } => {
                             // TODO:
                         },
                     }
@@ -3734,20 +3590,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
     #[must_use]
     pub fn get_chunk_for_tile(&self, pos: Position) -> Option<&Chunk<ItemIdxType, RecipeIdxType>> {
-        self.chunks
-            .get(pos.x / i32::from(CHUNK_SIZE), pos.y / i32::from(CHUNK_SIZE))
+        let (chunk_x, chunk_y) = Self::get_chunk_pos_for_tile(pos);
+        self.chunks.get(chunk_x, chunk_y)
     }
 
     fn get_chunk_for_tile_mut(
         &mut self,
         pos: Position,
     ) -> Option<&mut Chunk<ItemIdxType, RecipeIdxType>> {
-        self.chunks
-            .get_mut(pos.x / i32::from(CHUNK_SIZE), pos.y / i32::from(CHUNK_SIZE))
+        let (chunk_x, chunk_y) = Self::get_chunk_pos_for_tile(pos);
+        self.chunks.get_mut(chunk_x, chunk_y)
     }
 
-    fn get_chunk_pos_for_tile(&self, pos: Position) -> (i32, i32) {
-        (pos.x / i32::from(CHUNK_SIZE), pos.y / i32::from(CHUNK_SIZE))
+    fn get_chunk_pos_for_tile(pos: Position) -> (i32, i32) {
+        (
+            pos.x.div_floor(i32::from(CHUNK_SIZE)),
+            pos.y.div_floor(i32::from(CHUNK_SIZE)),
+        )
     }
 
     fn get_chunk_mut(
@@ -3763,7 +3622,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         entity_size: (u16, u16),
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Option<Position> {
-        self.get_entities_colliding_with(
+        // We can use *_in_chunks_* here, since we do a overlaps test later anyway. This way we do not have to check twice
+        self.get_entities_in_chunks_colliding_with(
             Position {
                 x: entity_pos.x - i32::from(data_store.max_power_search_range),
                 y: entity_pos.y - i32::from(data_store.max_power_search_range),
@@ -3839,11 +3699,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         const OVERLAP: i32 = 1;
         let chunk_x_start = max(
             x_extent.start,
-            (x_range_tiles.start / i32::from(CHUNK_SIZE)) - OVERLAP,
+            (x_range_tiles.start.div_floor(i32::from(CHUNK_SIZE))) - OVERLAP,
         );
         let chunk_x_end = min(
             x_extent.end - 1,
-            (x_range_tiles.end / i32::from(CHUNK_SIZE)) + OVERLAP,
+            (x_range_tiles.end.div_floor(i32::from(CHUNK_SIZE))) + OVERLAP,
         );
 
         data.par_chunks_mut(chunk_size)
@@ -3862,8 +3722,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     (my_y_start_pixel * pixel_to_tile) as i32 + y_range_tiles.start;
                 let my_y_end_tile = (my_y_end_pixel * pixel_to_tile) as i32 + y_range_tiles.start;
 
-                let chunk_y_start = my_y_start_tile / i32::from(CHUNK_SIZE);
-                let chunk_y_end = my_y_end_tile / i32::from(CHUNK_SIZE);
+                let chunk_y_start = my_y_start_tile.div_floor(i32::from(CHUNK_SIZE));
+                let chunk_y_end = my_y_end_tile.div_floor(i32::from(CHUNK_SIZE));
 
 
                 {
@@ -4096,16 +3956,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         &'a self,
         pos: Position,
         size: (u16, u16),
+        base_pos: (i32, i32),
         _data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
     ) -> bool {
         let bb_top_left = (pos.x, pos.y);
 
         let bb_bottom_right = (pos.x + i32::from(size.0), pos.y + i32::from(size.1));
 
-        let chunk_range_x =
-            (bb_top_left.0 / i32::from(CHUNK_SIZE))..=(bb_bottom_right.0 / i32::from(CHUNK_SIZE));
-        let chunk_range_y =
-            (bb_top_left.1 / i32::from(CHUNK_SIZE))..=(bb_bottom_right.1 / i32::from(CHUNK_SIZE));
+        let chunk_range_x = (bb_top_left.0.div_floor(i32::from(CHUNK_SIZE)))
+            ..=(bb_bottom_right.0.div_floor(i32::from(CHUNK_SIZE)));
+        let chunk_range_y = (bb_top_left.1.div_floor(i32::from(CHUNK_SIZE)))
+            ..=(bb_bottom_right.1.div_floor(i32::from(CHUNK_SIZE)));
 
         assert!(chunk_range_x.clone().count() >= 1);
         assert!(chunk_range_y.clone().count() >= 1);
@@ -4114,11 +3975,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             .cartesian_product(chunk_range_y)
             .filter_map(|(chunk_x, chunk_y)| self.chunks.get(chunk_x, chunk_y))
             .flat_map(|chunk| {
-                let x_start = max(bb_top_left.0 - chunk.base_pos.0, 0);
-                let x_end = min(bb_bottom_right.0 - chunk.base_pos.0, CHUNK_SIZE as i32 - 1);
+                let x_start = max(bb_top_left.0 - base_pos.0, 0);
+                let x_end = min(bb_bottom_right.0 - base_pos.0, CHUNK_SIZE as i32 - 1);
 
-                let y_start = max(bb_top_left.1 - chunk.base_pos.1, 0);
-                let y_end = min(bb_bottom_right.1 - chunk.base_pos.1, CHUNK_SIZE as i32 - 1);
+                let y_start = max(bb_top_left.1 - base_pos.1, 0);
+                let y_end = min(bb_bottom_right.1 - base_pos.1, CHUNK_SIZE as i32 - 1);
 
                 (x_start..x_end)
                     .cartesian_product(y_start..y_end)
@@ -4154,30 +4015,48 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl IntoIterator<Item = &'a Entity<ItemIdxType, RecipeIdxType>, IntoIter: Clone>
     + use<'a, 'b, ItemIdxType, RecipeIdxType> {
-        let max_size = data_store.max_entity_size;
-
-        let bb_top_left = (pos.x - i32::from(max_size.0), pos.y - i32::from(max_size.1));
-
-        let bb_bottom_right = (pos.x + i32::from(size.0), pos.y + i32::from(size.1));
-
-        let chunk_range_x =
-            (bb_top_left.0 / i32::from(CHUNK_SIZE))..=(bb_bottom_right.0 / i32::from(CHUNK_SIZE));
-        let chunk_range_y =
-            (bb_top_left.1 / i32::from(CHUNK_SIZE))..=(bb_bottom_right.1 / i32::from(CHUNK_SIZE));
-
-        debug_assert!(chunk_range_x.clone().count() >= 1);
-        debug_assert!(chunk_range_y.clone().count() >= 1);
-
-        chunk_range_x
-            .cartesian_product(chunk_range_y)
-            .filter_map(|(chunk_x, chunk_y)| self.chunks.get(chunk_x, chunk_y))
-            .flat_map(move |chunk| chunk.entities.iter())
+        self.get_entities_in_chunks_colliding_with(pos, size, data_store)
+            .into_iter()
             .filter(move |e| {
                 let e_pos = e.get_pos();
                 let e_size = e.get_entity_size(data_store);
 
                 pos.overlap(size, e_pos, (e_size.0.into(), e_size.1.into()))
             })
+    }
+
+    pub fn get_entities_in_chunks_colliding_with<'a, 'b>(
+        &'a self,
+        pos: Position,
+        size: (u16, u16),
+        data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl IntoIterator<Item = &'a Entity<ItemIdxType, RecipeIdxType>, IntoIter: Clone>
+    + use<'a, 'b, ItemIdxType, RecipeIdxType> {
+        let max_size = data_store.max_entity_size;
+
+        let bb_top_left = (pos.x - i32::from(max_size.0), pos.y - i32::from(max_size.1));
+
+        let bb_bottom_right = (pos.x + i32::from(size.0), pos.y + i32::from(size.1));
+
+        let chunk_range_x = (bb_top_left.0.div_floor(i32::from(CHUNK_SIZE)))
+            ..=(bb_bottom_right.0.div_floor(i32::from(CHUNK_SIZE)));
+        let chunk_range_y = (bb_top_left.1.div_floor(i32::from(CHUNK_SIZE)))
+            ..=(bb_bottom_right.1.div_floor(i32::from(CHUNK_SIZE)));
+
+        debug_assert!(chunk_range_x.clone().count() >= 1);
+        debug_assert!(chunk_range_y.clone().count() >= 1);
+
+        // dbg!(
+        //     chunk_range_x
+        //         .clone()
+        //         .cartesian_product(chunk_range_y.clone())
+        //         .count()
+        // );
+
+        chunk_range_x
+            .cartesian_product(chunk_range_y)
+            .filter_map(|(chunk_x, chunk_y)| self.chunks.get(chunk_x, chunk_y))
+            .flat_map(move |chunk| chunk.entities.iter())
     }
 
     pub fn get_entity_at_mut(
@@ -4249,7 +4128,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             continue;
                         }
 
-                        info!("Checking other chunk pos: {:?}", next_chunk_pos);
+                        log::trace!("Checking other chunk pos: {:?}", next_chunk_pos);
                         // FIXME: This sucks, but the borrow checker is unhappy otherwise
                         match self.get_entity_at_mut_no_recursion(next_chunk_pos) {
                             Some(e) => {
@@ -4338,7 +4217,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                             continue;
                         }
 
-                        info!("Checking other chunk pos: {:?}", next_chunk_pos);
+                        log::trace!("Checking other chunk pos: {:?}", next_chunk_pos);
                         match self.get_entity_at_no_recursion(next_chunk_pos) {
                             Some(e) => {
                                 if pos.contained_in(e.get_pos(), e.get_entity_size(data_store)) {
@@ -4433,10 +4312,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
 
         let bb_bottom_right = (pos.x + i32::from(size.0), pos.y + i32::from(size.1));
 
-        let chunk_range_x =
-            (bb_top_left.0 / i32::from(CHUNK_SIZE))..=(bb_bottom_right.0 / i32::from(CHUNK_SIZE));
-        let chunk_range_y =
-            (bb_top_left.1 / i32::from(CHUNK_SIZE))..=(bb_bottom_right.1 / i32::from(CHUNK_SIZE));
+        let chunk_range_x = (bb_top_left.0.div_floor(i32::from(CHUNK_SIZE)))
+            ..=(bb_bottom_right.0.div_floor(i32::from(CHUNK_SIZE)));
+        let chunk_range_y = (bb_top_left.1.div_floor(i32::from(CHUNK_SIZE)))
+            ..=(bb_bottom_right.1.div_floor(i32::from(CHUNK_SIZE)));
 
         debug_assert!(chunk_range_x.clone().count() >= 1);
         debug_assert!(chunk_range_y.clone().count() >= 1);
@@ -4834,7 +4713,49 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         }
                     }
                 },
-                Entity::Splitter { pos, direction, id } => todo!(),
+                Entity::Splitter {
+                    pos, direction, id, ..
+                } => {
+                    let removed_items = sim_state.factory.belts.remove_splitter(*id);
+                    // TODO: Handle these removed items
+
+                    // Handle the shortening of the belt due to the removal of the splitter len
+                    // Front
+                    for side in SplitterSide::iter() {
+                        let side_offs = match side {
+                            SplitterSide::Left => (0, 0),
+                            SplitterSide::Right => direction.turn_right().into_offset(),
+                        };
+                        let pos = *pos + *direction;
+
+                        let pos = Position {
+                            x: pos.x + i32::from(side_offs.0),
+                            y: pos.y + i32::from(side_offs.1),
+                        };
+
+                        // FIXME: SIDELOADING MUST BE HANDLED, AND TURNING
+                        if let Some(Entity::Belt { id, .. }) = self.get_entity_at(pos, data_store) {
+                        }
+                    }
+                    // BACK
+                    for side in SplitterSide::iter() {
+                        let side_offs = match side {
+                            SplitterSide::Left => (0, 0),
+                            SplitterSide::Right => direction.turn_right().into_offset(),
+                        };
+                        let pos = *pos + (direction.reverse());
+
+                        let pos = Position {
+                            x: pos.x + i32::from(side_offs.0),
+                            y: pos.y + i32::from(side_offs.1),
+                        };
+
+                        // FIXME: SIDELOADING MUST BE HANDLED, AND TURNING
+                        if let Some(Entity::Belt { id, .. }) = self.get_entity_at(pos, data_store) {
+                            self.modify_belt_pos(*id, true, SPLITTER_BELT_LEN);
+                        }
+                    }
+                },
 
                 Entity::Chest { ty, pos, item, .. } => {
                     if let Some((item, index)) = item {
@@ -4849,13 +4770,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         ));
                     }
                 },
-                Entity::Roboport {
-                    ty,
-                    pos,
-                    power_grid,
-                    network,
-                    id,
-                } => todo!(),
+                Entity::Roboport { .. } => todo!(),
 
                 Entity::Inserter {
                     info: InserterInfo::NotAttached { .. },
@@ -4863,6 +4778,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                 } => {},
                 Entity::Inserter {
                     ty,
+                    pos,
+                    direction,
                     user_movetime,
                     info:
                         InserterInfo::Attached {
@@ -4871,30 +4788,169 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                         },
                     ..
                 } => match attached_inserter {
-                    AttachedInserter::BeltStorage { id, belt_pos } => {
-                        sim_state.factory.belts.remove_inserter(*id, *belt_pos);
+                    AttachedInserter::BeltStorage { id, belt_pos } => 'remove: {
+                        match sim_state.factory.belts.remove_inserter(*id, *belt_pos) {
+                            Ok(()) => {
+                                log::trace!(
+                                    "Successfully removed belt storage inserter from sim_state.factory.belts"
+                                );
+                            },
+                            Err((belt_id, belt_pos)) => {
+                                let item = sim_state
+                                    .factory
+                                    .belts
+                                    .get_pure_item(*id)
+                                    .expect("Sushi belts do not currently use waitlists");
+                                let start_pos =
+                                    data_store.inserter_start_pos(*ty, *pos, *direction);
+
+                                let (belt_to_storage, storage_to_belt) = &mut sim_state
+                                    .factory
+                                    .belt_storage_inserters[item.into_usize()];
+
+                                let start_at_belt = match self.get_entity_at(start_pos, data_store).expect("Since this inserter is attached, there should be an entity there") {
+                                    Entity::Belt { .. } => {true},
+                                    Entity::Underground { ..} => {true},
+                                    Entity::Splitter { .. } => {true},
+                                    _ => false
+                                };
+
+                                if start_at_belt {
+                                    if belt_to_storage.0.remove_inserter(belt_id, belt_pos).is_ok()
+                                    {
+                                        break 'remove;
+                                    }
+                                    if belt_to_storage.1.remove_inserter(belt_id, belt_pos).is_ok()
+                                    {
+                                        break 'remove;
+                                    }
+                                } else {
+                                    if storage_to_belt.0.remove_inserter(belt_id, belt_pos).is_ok()
+                                    {
+                                        break 'remove;
+                                    }
+                                    if storage_to_belt.1.remove_inserter(belt_id, belt_pos).is_ok()
+                                    {
+                                        break 'remove;
+                                    }
+                                }
+
+                                let removed_stuff = match self.get_entity_at(start_pos, data_store).expect("Since this inserter is attached, there should be an entity there") {
+                                    Entity::Assembler { info, .. } => {
+                                        let AssemblerInfo::Powered { id, pole_position, .. } = info else {
+                                            unreachable!("If an inserter is attached, the assembler must be powered with a recipe")
+                                        };
+                                        sim_state.factory.power_grids.power_grids[sim_state.factory.power_grids.pole_pos_to_grid_id[pole_position] as usize]
+                                            .remove_waiting_inserter(*id, item, crate::chest::WaitingInserterRemovalInfo::BeltStorage { belt_id,  belt_pos }, data_store);
+                                        true
+                                    },
+                                    Entity::Belt { .. } => {false},
+                                    Entity::Underground { ..} => {false},
+                                    Entity::Splitter { .. } => {false},
+                                    Entity::Chest { item: chest_item, .. } => {
+                                        let (chest_item, chest_id) = chest_item.expect("If a chest has an inserter it must havbe an item");
+                                        assert_eq!(chest_item, item);
+                                        sim_state.factory.chests.stores[item.into_usize()]
+                                            .remove_inserter_from_waitlist(chest_id, crate::chest::WaitingInserterRemovalInfo::BeltStorage { belt_id,  belt_pos });
+                                        true
+                                    },
+                                    Entity::Roboport { .. } => todo!(),
+                                    Entity::Lab { .. } => unreachable!("Labs currently do not have waitlists"),
+                                    Entity::MiningDrill { .. } => unreachable!("Drills currently do not have waitlists"),
+
+                                    _ => unreachable!()
+                                };
+
+                                if !removed_stuff {
+                                    let end_pos =
+                                        data_store.inserter_end_pos(*ty, *pos, *direction);
+                                    match self.get_entity_at(end_pos, data_store).expect("Since this inserter is attached, there should be an entity there") {
+                                    Entity::Assembler {  info, .. } => {
+                                        let AssemblerInfo::Powered { id, pole_position, .. } = info else {
+                                            unreachable!("If an inserter is attached, the assembler must be powered with a recipe")
+                                        };
+                                        sim_state.factory.power_grids.power_grids[sim_state.factory.power_grids.pole_pos_to_grid_id[pole_position] as usize]
+                                            .remove_waiting_inserter(*id, item, crate::chest::WaitingInserterRemovalInfo::BeltStorage { belt_id,  belt_pos }, data_store);
+                                    },
+                                    Entity::Belt { .. } => unreachable!("There should be a non belt on start or end"),
+                                    Entity::Underground { .. } => unreachable!("There should be a non belt on start or end"),
+                                    Entity::Splitter { .. } => unreachable!("There should be a non belt on start or end"),
+                                    Entity::Chest { item: chest_item, .. } => {
+                                        let (chest_item, chest_id) = chest_item.expect("If a chest has an inserter it must havbe an item");
+                                        assert_eq!(chest_item, item);
+                                        sim_state.factory.chests.stores[item.into_usize()]
+                                            .remove_inserter_from_waitlist(chest_id, crate::chest::WaitingInserterRemovalInfo::BeltStorage { belt_id,  belt_pos });
+                                    },
+                                    Entity::Roboport { .. } => todo!(),
+                                    Entity::Lab { .. } => unreachable!("Labs currently do not have waitlists"),
+                                    Entity::MiningDrill { .. } => unreachable!("Drills currently do not have waitlists"),
+
+                                    _ => unreachable!()
+                                }
+                                }
+                            },
+                        }
                     },
                     AttachedInserter::BeltBelt { inserter, .. } => {
                         sim_state.factory.belts.remove_belt_belt_inserter(*inserter);
                     },
                     AttachedInserter::StorageStorage { item, inserter } => {
-                        sim_state.factory.storage_storage_inserters.remove_ins(
+                        match sim_state.factory.storage_storage_inserters.remove_ins(
                             *item,
                             user_movetime
                                 .map(|v| v.into())
                                 .unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks)
                                 .into(),
                             *inserter,
-                        );
+                        ) {
+                            Ok(()) => {
+                                log::trace!(
+                                    "Successfully removed storage storage inserter from sim_state.factory.storage_storage_inserters"
+                                );
+                            },
+                            Err(side) => {
+                                log::trace!(
+                                    "Failed removing storage storage inserter from sim_state.factory.storage_storage_inserters, need to look at {:?}",
+                                    side
+                                );
+
+                                let search_pos = match side {
+                                    crate::inserter::WaitlistSearchSide::Source => {
+                                        data_store.inserter_start_pos(*ty, *pos, *direction)
+                                    },
+                                    crate::inserter::WaitlistSearchSide::Dest => {
+                                        data_store.inserter_end_pos(*ty, *pos, *direction)
+                                    },
+                                };
+
+                                match self.get_entity_at(search_pos, data_store).expect("The inserter is supposed to be in the waitlist of this entity so it should exist") {
+                                    Entity::Assembler { info, .. } => {
+                                        let AssemblerInfo::Powered { id, pole_position, .. } = info else {
+                                            unreachable!("If an inserter is attached, the assembler must be powered with a recipe")
+                                        };
+                                        sim_state.factory.power_grids.power_grids[sim_state.factory.power_grids.pole_pos_to_grid_id[pole_position] as usize]
+                                            .remove_waiting_inserter(*id, *item, crate::chest::WaitingInserterRemovalInfo::StorageStorage { inserter_id: inserter.id }, data_store);
+                                    },
+                                    Entity::Chest { item: chest_item, .. } => {
+                                        let (chest_item, chest_id) = chest_item.expect("If a chest has an inserter it must havbe an item");
+                                        assert_eq!(chest_item, *item);
+                                        sim_state.factory.chests.stores[item.into_usize()].remove_inserter_from_waitlist(chest_id, crate::chest::WaitingInserterRemovalInfo::StorageStorage { inserter_id: inserter.id });
+                                    },
+                                    Entity::Roboport { .. } => todo!(),
+                                    Entity::Lab { .. } => unreachable!("Currently Labs do not have a waitlist implementation"),
+                                    Entity::MiningDrill { .. } => unreachable!("Currently Drills do not have a waitlist implementation"),
+
+                                    e => unreachable!("A storage_storage inserter cannot attach to a {e:?}")
+                                }
+
+                                log::trace!(
+                                    "Successfully removed storage storage inserter from waitlist"
+                                );
+                            },
+                        }
                     },
                 },
-                Entity::MiningDrill {
-                    ty,
-                    pos,
-                    rotation,
-                    drill_id,
-                    internal_inserter,
-                } => todo!(),
+                Entity::MiningDrill { .. } => todo!(),
             }
 
             let chunk = self.get_chunk_for_tile_mut(e_pos).unwrap();
@@ -4963,24 +5019,32 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         //     !self.any_entity_colliding_with(pos, size, data_store)
         // );
 
-        // let chunk_range_x = (pos.x / i32::from(CHUNK_SIZE))
-        //     ..=((pos.x + i32::from(size.0) - 1) / i32::from(CHUNK_SIZE));
-        // let chunk_range_y = (pos.y / i32::from(CHUNK_SIZE))
-        //     ..=((pos.y + i32::from(size.1) - 1) / i32::from(CHUNK_SIZE));
+        let chunk_range_x = (pos.x.div_floor(i32::from(CHUNK_SIZE)))
+            ..=((pos.x + i32::from(size.0) - 1).div_floor(i32::from(CHUNK_SIZE)));
+        let chunk_range_y = (pos.y.div_floor(i32::from(CHUNK_SIZE)))
+            ..=((pos.y + i32::from(size.1) - 1).div_floor(i32::from(CHUNK_SIZE)));
 
-        // chunk_range_x
-        //     .cartesian_product(chunk_range_y)
-        //     .all(
-        //         |(chunk_x, chunk_y)| match self.get_chunk(chunk_x, chunk_y) {
-        //             Some(chunk) => chunk.can_fit(pos, size, data_store),
-        //             None => false,
-        //         },
-        //     )
+        chunk_range_x
+            .cartesian_product(chunk_range_y)
+            .all(
+                |(chunk_x, chunk_y)| match self.get_chunk(chunk_x, chunk_y) {
+                    Some(chunk) => chunk.can_fit(
+                        pos,
+                        size,
+                        Position {
+                            x: chunk_x * i32::from(CHUNK_SIZE),
+                            y: chunk_y * i32::from(CHUNK_SIZE),
+                        },
+                        data_store,
+                    ),
+                    None => false,
+                },
+            )
         // !self.any_entity_colliding_with(pos, size, data_store)
-        self.get_entities_colliding_with(pos, size, data_store)
-            .into_iter()
-            .next()
-            .is_none()
+        // self.get_entities_colliding_with(pos, size, data_store)
+        //     .into_iter()
+        //     .next()
+        //     .is_none()
     }
 
     pub fn get_power_poles_which_could_connect_to_pole_at<'a, 'b>(
@@ -4992,19 +5056,37 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
     ) -> impl IntoIterator<Item = &'a Entity<ItemIdxType, RecipeIdxType>, IntoIter: Clone>
     + Clone
     + use<'a, 'b, ItemIdxType, RecipeIdxType> {
-        self.get_entities_colliding_with(
+        self.get_entities_in_chunks_colliding_with(
             Position {
                 x: pole_pos.x - i32::from(connection_range),
                 y: pole_pos.y - i32::from(connection_range),
             },
             (
-                2 * connection_range as u16 + pole_size.0 as u16,
-                2 * connection_range as u16 + pole_size.1 as u16,
+                2 * connection_range as u16 + pole_size.0,
+                2 * connection_range as u16 + pole_size.1,
             ),
             data_store,
         )
         .into_iter()
-        .filter(|e| matches!(e, Entity::PowerPole { .. }))
+        .filter(move |e| match e {
+            Entity::PowerPole { ty, pos } => {
+                let other_range = data_store.power_pole_data[*ty as usize].connection_range;
+                let other_size = data_store.power_pole_data[*ty as usize].size;
+
+                pole_pos.overlap(
+                    pole_size,
+                    Position {
+                        x: pos.x - other_range as i32,
+                        y: pos.y - other_range as i32,
+                    },
+                    (
+                        2 * other_range as u16 + other_size.0,
+                        2 * other_range as u16 + other_size.1,
+                    ),
+                )
+            },
+            _ => false,
+        })
     }
 
     fn get_power_pole_range(
@@ -5047,27 +5129,55 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
     pub fn get_entity_at(
         &self,
         pos: Position,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Option<&Entity<ItemIdxType, RecipeIdxType>> {
-        self.entities.iter().find(|e| {
-            let e_pos = e.get_pos();
-            let e_size = e.get_entity_size(data_store);
+        let x = usize::try_from(pos.x.rem_euclid(i32::from(CHUNK_SIZE))).unwrap();
+        let y = usize::try_from(pos.y.rem_euclid(i32::from(CHUNK_SIZE))).unwrap();
 
-            pos.contained_in(e_pos, (e_size.0.into(), e_size.1.into()))
-        })
+        if let Some(arr) = &self.chunk_tile_to_entity_into {
+            match arr_val_to_state(self.entities.len(), arr[x][y]) {
+                ChunkTileState::Index(idx) => return Some(&self.entities[idx]),
+                ChunkTileState::Empty => return None,
+                ChunkTileState::OtherChunk => return None,
+                ChunkTileState::EmptyOrOtherChunk => return None,
+            }
+        } else {
+            None
+        }
+
+        // self.entities.iter().find(|e| {
+        //     let e_pos = e.get_pos();
+        //     let e_size = e.get_entity_size(data_store);
+
+        //     pos.contained_in(e_pos, (e_size.0.into(), e_size.1.into()))
+        // })
     }
 
     pub fn get_entity_at_mut(
         &mut self,
         pos: Position,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Option<&mut Entity<ItemIdxType, RecipeIdxType>> {
-        self.entities.iter_mut().find(|e| {
-            let e_pos = e.get_pos();
-            let e_size = e.get_entity_size(data_store);
+        let x = usize::try_from(pos.x.rem_euclid(i32::from(CHUNK_SIZE))).unwrap();
+        let y = usize::try_from(pos.y.rem_euclid(i32::from(CHUNK_SIZE))).unwrap();
 
-            pos.contained_in(e_pos, (e_size.0.into(), e_size.1.into()))
-        })
+        if let Some(arr) = &self.chunk_tile_to_entity_into {
+            match arr_val_to_state(self.entities.len(), arr[x][y]) {
+                ChunkTileState::Index(idx) => return Some(&mut self.entities[idx]),
+                ChunkTileState::Empty => return None,
+                ChunkTileState::OtherChunk => return None,
+                ChunkTileState::EmptyOrOtherChunk => return None,
+            }
+        } else {
+            None
+        }
+
+        // self.entities.iter_mut().find(|e| {
+        //     let e_pos = e.get_pos();
+        //     let e_size = e.get_entity_size(data_store);
+
+        //     pos.contained_in(e_pos, (e_size.0.into(), e_size.1.into()))
+        // })
     }
 
     #[must_use]
@@ -5075,23 +5185,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
         &self,
         pos: Position,
         size: (u16, u16),
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        chunk_top_left: Position,
+        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> bool {
         if let Some(arr) = &self.chunk_tile_to_entity_into {
-            let x_in_chunk = pos.x.rem_euclid(i32::from(CHUNK_SIZE)) as usize;
-            let y_in_chunk = pos.y.rem_euclid(i32::from(CHUNK_SIZE)) as usize;
-            for x in x_in_chunk
-                ..min(
-                    x_in_chunk + usize::from(size.0),
-                    usize::from(CHUNK_SIZE) - 1,
-                )
-            {
-                for y in y_in_chunk
-                    ..min(
-                        y_in_chunk + usize::from(size.1),
-                        usize::from(CHUNK_SIZE) - 1,
-                    )
-                {
+            let x_start = max(pos.x - chunk_top_left.x, 0) as usize;
+            let y_start = max(pos.y - chunk_top_left.y, 0) as usize;
+
+            let x_end = min(
+                (pos.x + size.0 as i32) - chunk_top_left.x,
+                CHUNK_SIZE as i32,
+            ) as usize;
+            let y_end = min(
+                (pos.y + size.1 as i32) - chunk_top_left.y,
+                CHUNK_SIZE as i32,
+            ) as usize;
+
+            for x in x_start..x_end {
+                for y in y_start..y_end {
                     match arr_val_to_state(self.entities.len(), arr[x][y]) {
                         ChunkTileState::Index(_) => return false,
                         ChunkTileState::Empty => {},
@@ -5191,18 +5302,11 @@ pub enum UndergroundDir {
     Exit,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
-struct PipeConnection {
-    pipe_pos: Position,
-    connection_weak_index: WeakIndex,
-}
-
 pub type ModuleTy = u8;
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleSlots(pub thin_dst::ThinBox<(), Option<ModuleTy>>);
 
-pub type ModuleSlotDedupIndex = u32;
+pub type ModuleSlotDedupIndex = u16;
 
 impl serde::Serialize for ModuleSlots {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -5235,10 +5339,10 @@ impl GetSize for ModuleSlots {
 impl<E: InfoExtractor<Self, Info>, Info: EguiDisplayable> ShowInfo<E, Info> for ModuleSlots {
     fn show_fields<C: egui_show_info::Cache<String, Info>>(
         &self,
-        extractor: &mut E,
-        ui: &mut egui::Ui,
-        path: String,
-        cache: &mut C,
+        _extractor: &mut E,
+        _ui: &mut egui::Ui,
+        _path: String,
+        _cache: &mut C,
     ) {
     }
 }
@@ -5449,7 +5553,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
     }
 
     #[cfg(feature = "client")]
-    pub fn get_map_color(&self, data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Color32 {
+    pub fn get_map_color(&self, _data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Color32 {
         match self {
             Self::Assembler { .. } => hex_color!("#0086c9"),
             Self::PowerPole { .. } => hex_color!("#eeee29"),
@@ -5589,12 +5693,6 @@ pub enum PlaceEntityType<ItemIdxType: WeakIdxTrait> {
     },
 }
 
-impl<ItemIdxType: WeakIdxTrait> PlaceEntityType<ItemIdxType> {
-    pub fn order_for_optimization(&self, other: &Self) -> std::cmp::Ordering {
-        todo!()
-    }
-}
-
 impl<ItemIdxType: IdxTrait> PlaceEntityType<ItemIdxType> {
     pub fn cares_about_power(&self) -> bool {
         match self {
@@ -5727,55 +5825,46 @@ impl Add<Dir> for Position {
 #[cfg(test)]
 mod test {
 
-    use proptest::{prop_assert, prop_assert_eq, proptest};
+    use proptest::{prop_assert, proptest};
 
-    // use crate::{
-    //     DATA_STORE,
-    //     app_state::GameState,
-    //     blueprint::{
-    //         Blueprint,
-    //         test::{random_entity_to_place, random_position},
-    //     },
-    //     frontend::{
-    //         action::{ActionType, place_entity::PlaceEntityInfo},
-    //         world::Position,
-    //     },
-    //     replays::Replay,
-    // };
+    use crate::{
+        DATA_STORE,
+        app_state::GameState,
+        blueprint::test::{random_entity_to_place, random_position},
+        frontend::{
+            action::{ActionType, place_entity::PlaceEntityInfo},
+            world::Position,
+        },
+        replays::GenerationInformation,
+    };
 
     proptest! {
 
-        // #[test]
-        // fn test_get_entity(position in random_position(), ent in random_entity_to_place(&DATA_STORE)) {
-        //     let mut state = GameState::new(&DATA_STORE);
+        #[test]
+        fn test_get_entity(position in random_position(), ent in random_entity_to_place(&DATA_STORE)) {
+            let state = GameState::new("TEST_GAMESTATE".to_string(), GenerationInformation::default(), &DATA_STORE);
 
-        //     let mut rep = Replay::new(&state, None, &*DATA_STORE);
+            GameState::apply_actions(&mut *state.simulation_state.lock(), &mut *state.world.lock(), [ActionType::PlaceEntity(PlaceEntityInfo { force: false, entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(ent) })], &DATA_STORE);
 
-        //     rep.append_actions([ActionType::PlaceEntity(PlaceEntityInfo { force: false, entities: crate::frontend::action::place_entity::EntityPlaceOptions::Single(ent) })]);
+            let mut e_pos = None;
+            let mut e_size = None;
+            state.world.lock().get_entities_colliding_with(position, (100, 100), &DATA_STORE).into_iter().for_each(|v| {
+                e_pos = Some(v.get_pos());
+                e_size = Some(v.get_entity_size(&DATA_STORE));
+            });
 
-        //     let bp = Blueprint::from_replay(&rep);
+            prop_assert!(e_pos.is_some());
+            prop_assert!(e_size.is_some());
 
-        //     bp.apply(false, position, &mut state, &DATA_STORE);
+            let e_pos = e_pos.unwrap();
+            let e_size = e_size.unwrap();
 
-        //     let mut e_pos = None;
-        //     let mut e_size = None;
-        //     state.world.get_entities_colliding_with(position, (100, 100), &DATA_STORE).into_iter().for_each(|v| {
-        //         e_pos = Some(v.get_pos());
-        //         e_size = Some(v.get_entity_size(&DATA_STORE));
-        //     });
-
-        //     prop_assert!(e_pos.is_some());
-        //     prop_assert!(e_size.is_some());
-
-        //     let e_pos = e_pos.unwrap();
-        //     let e_size = e_size.unwrap();
-
-        //     for x_pos in e_pos.x..(e_pos.x + (e_size.0 as i32)) {
-        //         for y_pos in e_pos.y..(e_pos.y + (e_size.1 as i32)) {
-        //             prop_assert_eq!(state.world.get_entities_colliding_with(Position { x: x_pos, y: y_pos }, (1, 1), &DATA_STORE).into_iter().count(), 1,  "test_pos = {:?}, world + {:?}", Position {x: x_pos, y: y_pos}, state.world.get_chunk_for_tile(position));
-        //         }
-        //     }
-        // }
+            for x_pos in e_pos.x..(e_pos.x + (e_size.0 as i32)) {
+                for y_pos in e_pos.y..(e_pos.y + (e_size.1 as i32)) {
+                    prop_assert!(state.world.lock().get_entity_at(Position { x: x_pos, y: y_pos }, &DATA_STORE).is_some(),  "test_pos = {:?}, world + {:?}", Position {x: x_pos, y: y_pos}, state.world.lock().get_chunk_for_tile(position));
+                }
+            }
+        }
 
     }
 }

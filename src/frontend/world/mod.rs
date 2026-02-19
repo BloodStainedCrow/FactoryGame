@@ -9,7 +9,17 @@ pub mod tile;
 // TODO: Do not use usize for anything that might go to another machine, where it could be different size!
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(
-    Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord,
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
 )]
 pub struct Position {
     pub x: i32,

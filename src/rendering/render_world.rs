@@ -1,8 +1,17 @@
 use crate::belt::belt::Belt;
-use crate::belt::smart::{HAND_SIZE, NUM_BELT_LOCS_SEARCHED, SmartBelt};
-use crate::belt::smart::{NUM_BELT_FREE_CACHE_HITS, NUM_BELT_UPDATES};
+#[cfg(feature = "debug-stat-gathering")]
+use crate::belt::smart::{
+    NUM_BELT_FREE_CACHE_HITS, NUM_BELT_INSERTER_UPDATES, NUM_BELT_LOCS_SEARCHED, NUM_BELT_UPDATES,
+    NUM_INSERTER_LOADS_WAITING_FOR_ITEMS, NUM_INSERTER_LOADS_WAITING_FOR_SPACE,
+    NUM_INSERTER_LOADS_WAITING_FOR_SPACE_IN_GUARANTEED_FULL, TIMES_ALL_INCOMING_EARLY_RETURN,
+    TIMES_INSERTERS_EXTRACTED,
+};
+
+use crate::belt::smart::SmartBelt;
 use crate::blueprint::blueprint_string::BlueprintString;
 use crate::chest::ChestSize;
+use crate::frontend::action::action_state_machine;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::frontend::action::action_state_machine::ForkSaveInfo;
 use crate::frontend::action::place_entity::EntityPlaceOptions;
 use crate::frontend::action::place_entity::PlaceEntityInfo;
@@ -14,9 +23,11 @@ use crate::get_size::RamUsage;
 use crate::item::{ITEMCOUNTTYPE, Indexable};
 use crate::lab::{LabViewInfo, TICKS_PER_SCIENCE};
 use crate::liquid::FluidSystemState;
-use crate::par_generation::ParGenerateInfo;
+use crate::par_generation::{ParGenerateInfo, Timer};
 use crate::rendering::{BeltSide, Corner};
-use crate::saving::{save_components, save_with_fork};
+use crate::saving::save_components;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::saving::save_with_fork;
 use crate::statistics::{NUM_DIFFERENT_TIMESCALES, TIMESCALE_NAMES};
 use crate::{
     TICKS_PER_SECOND_LOGIC,
@@ -49,23 +60,25 @@ use eframe::egui::{
     self, Align2, Color32, ComboBox, Context, CornerRadius, Label, Layout, ProgressBar, Stroke, Ui,
     Window,
 };
-use egui::{Button, CollapsingHeader, Modal, Rect, RichText, ScrollArea, Sense, Slider};
+use egui::{Button, CollapsingHeader, Modal, RichText, ScrollArea, Sense, Slider};
 use egui_extras::{Column, TableBuilder};
-use egui_graphs::Graph;
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
 use egui_show_info::ShowInfo;
 use flate2::Compression;
 use flate2::write::ZlibEncoder;
+
+#[cfg(not(target_arch = "wasm32"))]
 use interprocess::os::unix::unnamed_pipe::UnnamedPipeExt;
 use itertools::Itertools;
 use log::error;
-use log::{info, trace, warn};
+use log::{trace, warn};
 use parking_lot::MutexGuard;
 use petgraph::dot::Dot;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::cmp::max;
 use std::fs::File;
 use std::io::{Read, Write};
+use std::num::NonZero;
 use std::sync::LazyLock;
 use std::{
     cmp::{Ordering, min},
@@ -181,8 +194,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     };
 
     let player_chunk = (
-        (camera_pos.0 / CHUNK_SIZE_FLOAT) as i32,
-        (camera_pos.1 / CHUNK_SIZE_FLOAT) as i32,
+        (camera_pos.0 / CHUNK_SIZE_FLOAT).floor() as i32,
+        (camera_pos.1 / CHUNK_SIZE_FLOAT).floor() as i32,
     );
 
     if num_tiles_across_screen_horizontal > SWITCH_TO_MAPVIEW_TILES {
@@ -197,16 +210,16 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     state_machine.current_mouse_pos,
                 );
 
-            // bp.draw(
-            //     (
-            //         x as f32 + num_tiles_across_screen_horizontal / 2.0,
-            //         y as f32 + num_tiles_across_screen_vertical / 2.0,
-            //     ),
-            //     camera_pos,
-            //     &mut entity_overlay_layer,
-            //     texture_atlas,
-            //     data_store,
-            // );
+            bp.draw(
+                (
+                    x as f32 + num_tiles_across_screen_horizontal / 2.0,
+                    y as f32 + num_tiles_across_screen_vertical / 2.0,
+                ),
+                camera_pos,
+                &mut entity_overlay_layer,
+                texture_atlas,
+                data_store,
+            );
         }
 
         mem::drop(state_machine);
@@ -242,13 +255,20 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 },
                 num_tiles_across_screen_horizontal as u32,
                 num_tiles_across_screen_vertical as u32,
-                // Only allow incremental map_view building for the last view level
-                map_view::MIN_WIDTH
-                    .iter()
-                    .all(|&v| v < num_tiles_across_screen_horizontal as u32)
-                    .then_some(Duration::from_millis(15)),
-                // Some(Duration::from_millis(15)),
-                // None,
+                None,
+                data_store,
+            );
+        }
+
+        {
+            profiling::scope!("Create Map Textures Preemptively");
+            create_map_textures_if_needed(
+                &world,
+                renderer,
+                Position { x: 0, y: 0 },
+                2_000_000,
+                2_000_000,
+                Some(Duration::from_millis(1)),
                 data_store,
             );
         }
@@ -300,9 +320,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         pos_iter
             .map(|(x_offs, y_offs)| {
                 let chunk_draw_offs = (
-                    x_offs as f32 * CHUNK_SIZE_FLOAT - camera_pos.0 % CHUNK_SIZE_FLOAT
+                    x_offs as f32 * CHUNK_SIZE_FLOAT - camera_pos.0.rem_euclid(CHUNK_SIZE_FLOAT)
                         + (0.5 * num_tiles_across_screen_horizontal),
-                    y_offs as f32 * CHUNK_SIZE_FLOAT - camera_pos.1 % CHUNK_SIZE_FLOAT
+                    y_offs as f32 * CHUNK_SIZE_FLOAT - camera_pos.1.rem_euclid(CHUNK_SIZE_FLOAT)
                         + (0.5 * num_tiles_across_screen_vertical),
                 );
 
@@ -567,6 +587,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                         prod_mod: _,
                                                         power_consumption_mod: _,
                                                         base_power_consumption: _,
+
+                                                        ..
                                                     } = game_state
                                                         .simulation_state
                                                         .factory
@@ -638,7 +660,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             state,
                                         } => {
                                             let mut source_dir = None;
-                                            let (sprite, corner) = {
+                                            let (sprite, _corner) = {
                                                 match state {
                                                     BeltState::Straight => {
                                                         (&texture_atlas.belt[*direction], None::<BeltSide>)
@@ -906,14 +928,19 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         let start_pos = data_store.inserter_start_pos(*ty, *pos, *direction);
                                         let end_pos = data_store.inserter_end_pos(*ty, *pos, *direction);
 
-                                        let movetime: u16 = user_movetime.map(|v| v.into()).unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks).into();
+                                        let movetime = user_movetime.map(|v| v.into()).unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks).into();
                                         match info {
                                             crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => {
-                                                let hand_size = HAND_SIZE;
                                                 let Some(state) = game_state.simulation_state.factory.belts.get_inserter_info_at(*id, *belt_pos) else {
                                                     error!("Could not get rendering info for inserter!");
                                                     continue;
                                                 };
+                                                let hand_size = state.hand_size;
+
+                                                // TODO: Due to clamping this does not currently hold:
+                                                // assert_eq!(movetime, u16::from(state.movetime));
+                                                let movetime = u16::from(state.movetime);
+
                                                 let item =  game_state.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos);
 
                                                 let (mut position, items): (f32, ITEMCOUNTTYPE) = match state.state {
@@ -956,19 +983,19 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                                     item_pos[1] += stack_offset;
                                                 }
                                             },
-                                            crate::frontend::world::tile::AttachedInserter::BeltBelt { item, inserter } => {
+                                            crate::frontend::world::tile::AttachedInserter::BeltBelt { .. } => {
                                                 // TODO:
                                             },
                                             crate::frontend::world::tile::AttachedInserter::StorageStorage { item, inserter } => {
-                                                let hand_size = HAND_SIZE;
+                                                let hand_size = data_store.inserter_infos[*ty as usize].base_hand_size;
                                                 let item =  *item;
                                                 let state = game_state.simulation_state.factory.storage_storage_inserters.get_inserter(item, movetime, *inserter, current_tick);
 
                                                 let (position, items): (f32, ITEMCOUNTTYPE) = match state.state {
                                                     crate::inserter::storage_storage_with_buckets::LargeInserterState::WaitingForSourceItems(count) => (0.0, count),
                                                     crate::inserter::storage_storage_with_buckets::LargeInserterState::WaitingForSpaceInDestination(count) => (1.0, count),
-                                                    crate::inserter::storage_storage_with_buckets::LargeInserterState::FullAndMovingOut(timer) => (1.0 - (timer as f32 / movetime as f32), hand_size),
-                                                    crate::inserter::storage_storage_with_buckets::LargeInserterState::EmptyAndMovingBack(timer) => (timer as f32 / movetime as f32, 0),
+                                                    crate::inserter::storage_storage_with_buckets::LargeInserterState::FullAndMovingOut(timer) => (1.0 - (timer as f32 / u16::from(movetime) as f32), hand_size),
+                                                    crate::inserter::storage_storage_with_buckets::LargeInserterState::EmptyAndMovingBack(timer) => (timer as f32 / u16::from(movetime) as f32, 0),
                                                 };
 
                                                 assert!(position >= 0.0);
@@ -1205,7 +1232,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             [usize::from(*ty)].size, 0, entity_layer);
                                         },
                                         Entity::Accumulator { ty, pos, .. } => {
-                                            texture_atlas.chest.draw([
+                                            texture_atlas.accumulator.draw([
                                                 draw_offset.0 + pos.x as f32,
                                                 draw_offset.1 + pos.y as f32,
                                             ], data_store.solar_panel_info
@@ -1452,7 +1479,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 animation_frame: 0,
             },
         );
-        info!(
+        log::trace!(
             "Rendering other player {} at {:?}",
             player_id,
             [player.pos.0 - camera_pos.0, player.pos.1 - camera_pos.1,]
@@ -1537,7 +1564,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     );
                 },
 
-                crate::frontend::action::action_state_machine::HeldObject::Tile(floor_tile) => {
+                crate::frontend::action::action_state_machine::HeldObject::Tile(_floor_tile) => {
                     // TODO
                 },
                 crate::frontend::action::action_state_machine::HeldObject::Entity(
@@ -1564,11 +1591,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         );
                     },
                     crate::frontend::world::tile::PlaceEntityType::Inserter {
-                        pos,
-                        dir,
-                        filter,
-                        ty,
-                        user_movetime,
+                        pos, dir, ..
                     } => {
                         // FIXME: Respect ty while rendering
                         let size: [u16; 2] = [1, 1];
@@ -1668,14 +1691,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             },
                         );
                     },
-                    crate::frontend::world::tile::PlaceEntityType::Splitter {
-                        pos,
-                        direction,
-                        in_mode,
-                        out_mode,
-
-                        ty,
-                    } => {
+                    crate::frontend::world::tile::PlaceEntityType::Splitter { .. } => {
                         // TODO:
                     },
                     crate::frontend::world::tile::PlaceEntityType::Chest { pos, ty } => {
@@ -1702,7 +1718,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         );
                     },
                     crate::frontend::world::tile::PlaceEntityType::Accumulator { pos, ty } => {
-                        texture_atlas.chest.draw(
+                        texture_atlas.accumulator.draw(
                             [draw_offset.0 + pos.x as f32, draw_offset.1 + pos.y as f32],
                             data_store.accumulator_info[usize::from(*ty)].size,
                             0,
@@ -1819,8 +1835,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     },
                 },
                 crate::frontend::action::action_state_machine::HeldObject::OrePlacement {
-                    ore,
-                    amount,
+                    ore: _,
+                    amount: _,
                 } => {
                     // TODO:
                 },
@@ -1875,6 +1891,7 @@ pub enum EscapeMenuOptions {
     BackToMainMenu,
 }
 
+#[profiling::function]
 pub fn render_ui<
     ItemIdxType: IdxTrait + ShowInfo<RAMExtractor, RamUsage>,
     RecipeIdxType: IdxTrait + ShowInfo<RAMExtractor, RamUsage>,
@@ -1894,6 +1911,68 @@ pub fn render_ui<
     let data_store_ref = &*data_store;
     let mut actions = vec![];
 
+    let current_tick = aux_data.current_tick;
+
+    let tick = (current_tick % u64::from(state_machine_ref.autosave_interval)) as u32;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    if cfg!(target_os = "linux") {
+        if tick < state_machine_ref.last_tick_seen_for_autosave {
+            if state_machine_ref.current_fork_save_in_progress.is_none() {
+                let recv = save_with_fork(
+                    &aux_data.game_name,
+                    None,
+                    &*world,
+                    &*simulation_state,
+                    &*aux_data,
+                    data_store_ref,
+                );
+                if let Some(recv) = recv {
+                    recv.set_nonblocking(true)
+                        .expect("Could not set pipe to nonblocking!");
+                    state_machine_ref.current_fork_save_in_progress = Some(ForkSaveInfo {
+                        recv,
+                        current_state: 0,
+                    });
+                } else {
+                    error!("Nonblocking save failed to start! Saving in blocking mode");
+                    save_components(
+                        &aux_data.game_name,
+                        None,
+                        &*world,
+                        &*simulation_state,
+                        &*aux_data,
+                        data_store_ref,
+                    );
+                }
+            } else {
+                warn!(
+                    "Save already in progress while trying to start autosave interval. If this was due to autosaves taking too long, consider increasing your autosave interval."
+                );
+            }
+        }
+    } else {
+        // Ensure that the saving Window is on screen when the window freezes
+        if tick >= state_machine_ref.autosave_interval - 10 || tick <= 5 {
+            let progress = if tick > 1 && tick <= 5 { 1.0 } else { 0.0 };
+            if tick < state_machine_ref.last_tick_seen_for_autosave {
+                let _timer = Timer::new("Saving");
+                save_components(
+                    &aux_data.game_name,
+                    None,
+                    &*world,
+                    &*simulation_state,
+                    &*aux_data,
+                    data_store_ref,
+                );
+            }
+            Window::new("Saving...").default_open(true).show(ctx, |ui| {
+                ui.add(ProgressBar::new(progress).corner_radius(0.0));
+            });
+        }
+    }
+    state_machine_ref.last_tick_seen_for_autosave = tick;
+
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     ui.vertical_centered(|ui|{
         ui.label(
@@ -1908,9 +1987,8 @@ pub fn render_ui<
         );
     });
 
+    #[cfg(not(target_arch = "wasm32"))]
     if let Some(recv) = &mut state_machine_ref.current_fork_save_in_progress {
-        const NUM_STATES: u8 = 12;
-
         let mut v = [0];
         if let Err(e) = recv.recv.read_exact(&mut v) {
             if e.kind() != std::io::ErrorKind::WouldBlock {
@@ -1920,7 +1998,7 @@ pub fn render_ui<
         } else {
             if let Some(current_state) = v.last() {
                 recv.current_state = *current_state;
-                if recv.current_state == NUM_STATES {
+                if recv.current_state == crate::saving::FORK_SAVE_STAGES as u8 {
                     state_machine_ref.current_fork_save_in_progress = None;
                 }
             }
@@ -1928,27 +2006,52 @@ pub fn render_ui<
         if let Some(recv) = &state_machine_ref.current_fork_save_in_progress {
             Window::new("Saving...").default_open(true).show(ctx, |ui| {
                 ui.add(
-                    ProgressBar::new(recv.current_state as f32 / NUM_STATES as f32)
-                        .corner_radius(0.0),
+                    ProgressBar::new(
+                        recv.current_state as f32 / crate::saving::FORK_SAVE_STAGES as f32,
+                    )
+                    .corner_radius(0.0),
                 );
             });
         }
     }
 
-    if state_machine_ref.escape_menu_open {
+    if state_machine_ref.open_windows[action_state_machine::Window::Escape] {
         if let Some(escape_action) = Modal::new("Pause Window".into())
             .show(ctx, |ui| {
                 ui.heading("Paused");
-                if ui.button("Save").clicked() {
-                    save_components(&*world, &*simulation_state, &*aux_data, data_store_ref);
-                }
+
+                let in_wasm = cfg!(target_arch = "wasm32");
 
                 if ui
-                    .add_enabled(
+                    .add_enabled(!in_wasm, Button::new("Save"))
+                    .on_disabled_hover_text("I currently do not support saving in the Browser yet")
+                    .clicked()
+                {
+                    save_components(
+                        &aux_data.game_name,
+                        Some(&format!("{}.save", &aux_data.game_name)),
+                        &*world,
+                        &*simulation_state,
+                        &*aux_data,
+                        data_store_ref,
+                    );
+                }
+
+                let enabled = {
+                    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+                    {
+                        false
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
                         cfg!(target_os = "linux")
-                            && state_machine_ref.current_fork_save_in_progress.is_none(),
-                        Button::new("Save with fork"),
-                    )
+                            && state_machine_ref.current_fork_save_in_progress.is_none()
+                    }
+                };
+
+                if ui
+                    .add_enabled(enabled, Button::new("Save with fork"))
                     .on_disabled_hover_text(if !cfg!(target_os = "linux") {
                         "Only available on Linux"
                     } else {
@@ -1956,16 +2059,28 @@ pub fn render_ui<
                     })
                     .clicked()
                 {
-                    let recv =
-                        save_with_fork(&*world, &*simulation_state, &*aux_data, data_store_ref);
-                    if let Some(recv) = recv {
-                        recv.set_nonblocking(true)
-                            .expect("Could not set pipe to nonblocking!");
-                        state_machine_ref.current_fork_save_in_progress = Some(ForkSaveInfo {
-                            recv,
-                            current_state: 0,
-                        });
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        let recv = save_with_fork(
+                            &aux_data.game_name,
+                            Some(&format!("{}.save", &aux_data.game_name)),
+                            &*world,
+                            &*simulation_state,
+                            &*aux_data,
+                            data_store_ref,
+                        );
+                        if let Some(recv) = recv {
+                            recv.set_nonblocking(true)
+                                .expect("Could not set pipe to nonblocking!");
+                            state_machine_ref.current_fork_save_in_progress = Some(ForkSaveInfo {
+                                recv,
+                                current_state: 0,
+                            });
+                        }
                     }
+                }
+                if ui.button("Reopen Tip Window").clicked() {
+                    state_machine_ref.open_windows[action_state_machine::Window::Tip] = true;
                 }
                 if ui.button("Main Menu").clicked() {
                     return Some(EscapeMenuOptions::BackToMainMenu);
@@ -1976,6 +2091,21 @@ pub fn render_ui<
                         .text("Mouse Wheel sensitivity")
                         .logarithmic(true),
                 );
+
+                let mut autosave_interval_minutes =
+                    state_machine_ref.autosave_interval / 60 / (TICKS_PER_SECOND_LOGIC as u32);
+                ui.add(
+                    egui::Slider::new(&mut autosave_interval_minutes, 1..=100)
+                        .integer()
+                        .custom_formatter(|v, _range| {
+                            let value: u32 = v as u32;
+
+                            format!("{value} min")
+                        })
+                        .text("Autosave interval"),
+                );
+                state_machine_ref.autosave_interval =
+                    autosave_interval_minutes * 60 * (TICKS_PER_SECOND_LOGIC as u32);
 
                 None
             })
@@ -1993,30 +2123,57 @@ pub fn render_ui<
     };
     let game_state_ref = &mut fake_game_state;
 
-    Window::new("Mouse Pos").default_open(true).show(ctx, |ui| {
-        ui.label(
-            format!(
-                "{:?}",
-                ActionStateMachine::<u8, u8>::player_mouse_to_tile(
-                    state_machine_ref.zoom_level,
-                    state_machine_ref
-                        .map_view_info
-                        .unwrap_or(state_machine_ref.local_player_pos),
-                    state_machine_ref.current_mouse_pos
-                )
-            )
-            .as_str(),
-        )
-    });
+    // Window::new("Mouse Pos").default_open(true).show(ctx, |ui| {
+    //     ui.label(
+    //         format!(
+    //             "{:?}",
+    //             ActionStateMachine::<u8, u8>::player_mouse_to_tile(
+    //                 state_machine_ref.zoom_level,
+    //                 state_machine_ref
+    //                     .map_view_info
+    //                     .unwrap_or(state_machine_ref.local_player_pos),
+    //                 state_machine_ref.current_mouse_pos
+    //             )
+    //         )
+    //         .as_str(),
+    //     )
+    // });
 
     // TODO: Make this conditional
-    let mut open = state_machine_ref.hotbar_window_open;
+    let mut open = state_machine_ref.open_windows[action_state_machine::Window::Hotbar];
     Window::new("Customize Hotbar")
         .open(&mut open)
         .show(ctx, |ui| {
             state_machine_ref.hotbar_window(ui, data_store_ref);
         });
-    state_machine_ref.hotbar_window_open = open;
+    state_machine_ref.open_windows[action_state_machine::Window::Hotbar] = open;
+
+    let mut open = state_machine_ref.open_windows[action_state_machine::Window::Tip];
+    Window::new("Tip").open(&mut open).show(ctx, |ui| {
+        ui.label("Use Mining Drills to mine Resources, Smelt them in Furnaces and Assemble them into Science Packs. These can then be used in Laboratories to research new technologies.");
+        ui.label("Inserters can pull items out of machines, drop them onto Conveyor Belts, or load them back into different machines.");
+        ui.label("Machines require power to run. Power Poles supply nearby machines and extract power from nearby power sources.");
+
+        ui.separator();
+
+        ui.label("Use [WASD] to move around.");
+        ui.label("Press [E] to open the hotbar customization menu.");
+        ui.label("Press [P] to open your production statistics.");
+        ui.label("Press [T] to open the technology tree.");
+        ui.label("Press [M] to switch to map view.");
+        ui.label("Use the [Scroll Wheel] to zoom in or out.");
+        ui.label("Use [Q] to pipette the entity under your cursor.");
+        ui.label("Use [Left Click] to place a held entity or Blueprint or inspect an entity.");
+        ui.label("Hold [Right Click] to deconstruct an entity.");
+        ui.label("Press [Ctrl + C] and start dragging to copy an area into a Blueprint.");
+    });
+    state_machine_ref.open_windows[action_state_machine::Window::Tip] = open;
+
+    let mut open = state_machine_ref.open_windows[action_state_machine::Window::Datapedia];
+    state_machine_ref
+        .datapedia
+        .show_window(&mut open, ctx, data_store_ref);
+    state_machine_ref.open_windows[action_state_machine::Window::Datapedia] = open;
 
     Window::new("Size")
         .fixed_size(egui::vec2(1920f32, 1080f32))
@@ -2047,26 +2204,6 @@ pub fn render_ui<
             });
         });
 
-    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    Window::new("Import BP")
-        .default_open(false)
-        .show(ctx, |ui| {
-            if ui.button("Import").clicked() {
-                if let Some(path) = rfd::FileDialog::new().pick_file() {
-                    if let Ok(mut file) = File::open(path) {
-                        let mut bp_string = BlueprintString(String::new());
-                        file.read_to_string(&mut bp_string.0)
-                            .expect("Failed to read from file");
-
-                        if let Ok(bp) = bp_string.try_into() {
-                            state_machine_ref.state =
-                                ActionStateMachineState::Holding(HeldObject::Blueprint(bp));
-                        }
-                    }
-                }
-            }
-        });
-
     let tech_response = Window::new("Tech")
         .anchor(Align2::RIGHT_TOP, [0.0, 0.0])
         .title_bar(false)
@@ -2076,7 +2213,8 @@ pub fn render_ui<
             if let Some(tech) = game_state_ref
                 .simulation_state
                 .tech_state
-                .current_technology
+                .research_queue
+                .first()
             {
                 let (tech_cost_units, _tech_cost_items) =
                     &data_store.technology_costs[tech.id as usize];
@@ -2100,10 +2238,7 @@ pub fn render_ui<
                         data::RepeatableCostScaling::Linear {
                             unit_increase_per_level,
                         } => unit_increase_per_level * u64::from(times_this_tech_was_finished),
-                        data::RepeatableCostScaling::Exponential {
-                            unit_multiplier_per_level_nom,
-                            unit_multiplier_per_level_denom,
-                        } => todo!(),
+                        data::RepeatableCostScaling::Exponential { .. } => todo!(),
                     };
 
                     tech_cost_units += tech_cost_increase;
@@ -2176,7 +2311,6 @@ pub fn render_ui<
                     .include_y(0.0)
                     .set_margin_fraction([0.0, 0.05].into())
                     .x_grid_spacer(|grid_input| {
-                        let min_step = grid_input.base_step_size;
                         (0..NUM_X_AXIS_TICKS[SCALE])
                             .map(|v| GridMark {
                                 value: v as f64 / (NUM_X_AXIS_TICKS[SCALE] as f64)
@@ -2201,7 +2335,6 @@ pub fn render_ui<
                             lower_dec = 1.0;
                         }
 
-                        dbg!(lower_dec);
                         lower_dec = lower_dec * ticks_per_value / 60.0 / 60.0;
 
                         (0..40)
@@ -2257,20 +2390,20 @@ pub fn render_ui<
     }
 
     if tech_response.clicked() {
-        state_machine_ref.technology_panel_open = true;
+        state_machine_ref.open_windows[action_state_machine::Window::Technology] = true;
     }
 
     Window::new("DEBUG USE WITH CARE")
         .default_open(false)
         .show(ctx, |ui| {
-            if ui.button("⚠️DEFRAGMENT GAMESTATE").clicked() {
-                // TODO:
+            // TODO:
+            // if ui.button("⚠️DEFRAGMENT GAMESTATE").clicked() {
                 // let mut new_state = game_state_ref.clone();
 
                 // mem::swap(&mut new_state, &mut *game_state_ref);
 
                 // mem::drop(new_state);
-            }
+            // }
 
             if ui.button("Switch from generation assemblers to miners (inserter_transfer)").clicked() {
                 for entity in game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()) {
@@ -2299,7 +2432,7 @@ pub fn render_ui<
 
                                         actions.push(ActionType::Remove(assembler_pos));
 
-                                        let area = data_store.mining_drill_info[1].size(*rotation);
+                                        let area = data_store.mining_drill_info[0].size(*rotation);
 
                                         for x in assembler_pos.x..(assembler_pos.x + i32::from(area[0])) {
                                             for y in assembler_pos.y..(assembler_pos.y + i32::from(area[1])) {
@@ -2310,7 +2443,7 @@ pub fn render_ui<
                                             }
                                         }
 
-                                        let inserter_rotation =  game_state_ref.world.get_entities_colliding_with(Position {
+                                        let inserter_rotation =  game_state_ref.world.get_entities_in_chunks_colliding_with(Position {
                                             x: assembler_pos.x - i32::from(data_store.max_inserter_search_range),
                                             y: assembler_pos.y - i32::from(data_store.max_inserter_search_range),
                                         }, (assembler_size.0 + 2 * u16::from(data_store.max_inserter_search_range), assembler_size.1 + 2 * u16::from(data_store.max_inserter_search_range)), data_store_ref).into_iter().find_map(|inserter_entity| {
@@ -2332,7 +2465,7 @@ pub fn render_ui<
                                             entities: EntityPlaceOptions::Single(PlaceEntityType::MiningDrill {
                                                 pos: assembler_pos,
                                                 rotation: inserter_rotation,
-                                                ty: 1,
+                                                ty: 0,
                                             }),
                                             force: false,
                                         }));
@@ -2374,7 +2507,7 @@ pub fn render_ui<
                                         let assembler_pos = entity.get_pos();
                                         let assembler_size = entity.get_entity_size(data_store_ref);
 
-                                        for inserter_entity in  game_state_ref.world.get_entities_colliding_with(Position {
+                                        for inserter_entity in  game_state_ref.world.get_entities_in_chunks_colliding_with(Position {
                                             x: assembler_pos.x - i32::from(data_store.max_inserter_search_range),
                                             y: assembler_pos.y - i32::from(data_store.max_inserter_search_range),
                                         }, (assembler_size.0 + 2 * u16::from(data_store.max_inserter_search_range), assembler_size.1 + 2 * u16::from(data_store.max_inserter_search_range)), data_store_ref) {
@@ -2458,30 +2591,26 @@ pub fn render_ui<
             if ui.button("⚠️Auto Clock Inserters").clicked() {
                 let inserters_without_values_set = game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter_map(|e| match e {
                     Entity::Inserter { ty, user_movetime, direction, pos, info, .. } => {
-                        if user_movetime.is_none() {
-                            match info {
-                                crate::frontend::world::tile::InserterInfo::NotAttached { .. } => None,
-                                crate::frontend::world::tile::InserterInfo::Attached { info } => match info {
-                                    crate::frontend::world::tile::AttachedInserter::BeltStorage {id, belt_pos, .. } => {
-                                        let item = game_state_ref.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos);
-                                        let start_pos =
-                                            data_store.inserter_start_pos(*ty, *pos, *direction);
-                                        let end_pos =
-                                            data_store.inserter_end_pos(*ty, *pos, *direction);
-                                        Some((ty, pos, start_pos, end_pos, item, true))
-                                    },
-                                    crate::frontend::world::tile::AttachedInserter::BeltBelt { .. } => None,
-                                    crate::frontend::world::tile::AttachedInserter::StorageStorage { item, .. } => {
-                                        let start_pos =
+                        match info {
+                            crate::frontend::world::tile::InserterInfo::NotAttached { .. } => None,
+                            crate::frontend::world::tile::InserterInfo::Attached { info } => match info {
+                                crate::frontend::world::tile::AttachedInserter::BeltStorage {id, belt_pos, .. } => {
+                                    let item = game_state_ref.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos);
+                                    let start_pos =
                                         data_store.inserter_start_pos(*ty, *pos, *direction);
                                     let end_pos =
                                         data_store.inserter_end_pos(*ty, *pos, *direction);
-                                        Some((ty, pos, start_pos, end_pos, *item, false))
-                                    },
+                                    Some((ty, pos, start_pos, end_pos, item, true))
                                 },
-                            }
-                        } else {
-                            None
+                                crate::frontend::world::tile::AttachedInserter::BeltBelt { .. } => None,
+                                crate::frontend::world::tile::AttachedInserter::StorageStorage { item, .. } => {
+                                    let start_pos =
+                                    data_store.inserter_start_pos(*ty, *pos, *direction);
+                                let end_pos =
+                                    data_store.inserter_end_pos(*ty, *pos, *direction);
+                                    Some((ty, pos, start_pos, end_pos, *item, false))
+                                },
+                            },
                         }
                     },
                     _ => None,
@@ -2492,7 +2621,7 @@ pub fn render_ui<
 
                     if let Some(e) = game_state_ref.world.get_entity_at(end_pos, data_store_ref) {
                         match e {
-                            Entity::Assembler {info, .. } => {
+                            Entity::Assembler {pos: assembler_pos, ty: assembler_ty, rotation: assembler_rotation, info, .. } => {
                                 match info {
                                     AssemblerInfo::UnpoweredNoRecipe => {},
                                     AssemblerInfo::Unpowered(_) => {},
@@ -2501,11 +2630,73 @@ pub fn render_ui<
                                         let (_, _, count_in_recipe) = data_store_ref.recipe_to_items_and_amounts[id.recipe.into_usize()].iter().find(|(dir, recipe_item, _)| *dir == ItemRecipeDir::Ing && item == *recipe_item).unwrap();
                                         let time_per_recipe = data_store_ref.recipe_timers[usize_from(id.recipe.id)] as f32;
 
-                                        let AssemblerOnclickInfo { base_speed, speed_mod, .. } = game_state_ref.simulation_state.factory.power_grids.get_assembler_info(*id, data_store_ref);
+                                        let AssemblerOnclickInfo { base_speed, speed_mod, prod_mod, .. } = game_state_ref.simulation_state.factory.power_grids.get_assembler_info(*id, data_store_ref);
                                         let crafting_speed = base_speed * (1.0 + speed_mod);
-                                        let time_per_craft = time_per_recipe / crafting_speed;
+                                        let mut crafts_per_tick = crafting_speed / time_per_recipe;
 
-                                        let items_needed_per_tick = *count_in_recipe as f32 / time_per_craft;
+                                        let mut outputs = data_store.recipe_to_items_and_amounts[id.recipe.into_usize()]
+                                            .iter()
+                                            .filter(|(dir, _, _)| *dir == data::ItemRecipeDir::Out).map(|(_, item ,amount_in_recipe)| (*item, *amount_in_recipe, 0.0))
+                                            .collect_vec();
+
+                                        let inserters = game_state_ref.world.get_entities_in_chunks_colliding_with(Position {
+                                            x: assembler_pos.x - i32::from(data_store_ref.max_inserter_search_range),
+                                            y: assembler_pos.y - i32::from(data_store_ref.max_inserter_search_range),
+                                        }, [
+                                            u16::from(data_store_ref.max_inserter_search_range) * 2 + data_store_ref.assembler_info[*assembler_ty as usize].size(*assembler_rotation).0,
+                                            u16::from(data_store_ref.max_inserter_search_range) * 2 + data_store_ref.assembler_info[*assembler_ty as usize].size(*assembler_rotation).1
+                                        ].into(), data_store_ref).into_iter().filter(|e| matches!(e, Entity::Inserter { .. })).filter_map(|e| match e {
+                                            Entity::Inserter {
+                                                pos, direction, ty, user_movetime, info, ..
+                                            } => {
+                                                let start_pos = data_store_ref.inserter_start_pos(*ty, *pos, *direction);
+
+                                                let item = match info {
+                                                    crate::frontend::world::tile::InserterInfo::NotAttached {  } => return None,
+                                                    crate::frontend::world::tile::InserterInfo::Attached { info } => {
+                                                        match info {
+                                                            crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => {
+                                                                let item = game_state_ref.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos);
+
+                                                                item
+                                                            },
+                                                            crate::frontend::world::tile::AttachedInserter::BeltBelt { item, .. } => *item,
+                                                            crate::frontend::world::tile::AttachedInserter::StorageStorage { item, .. } => *item,
+                                                        }
+                                                    },
+                                                };
+
+                                                if start_pos.contained_in(*assembler_pos, data_store.assembler_info[*assembler_ty as usize].size(*assembler_rotation)) {
+                                                    let movetime = user_movetime.map(|v| v.into()).unwrap_or(data_store_ref.inserter_infos[*ty as usize].swing_time_ticks);
+
+                                                    let items_per_tick = f32::from(data_store_ref.inserter_infos[*ty as usize].base_hand_size) / (2.0 * f32::from(u16::from(movetime)) + 2.0);
+
+                                                    Some((item, items_per_tick))
+                                                } else {
+                                                    None
+                                                }
+                                            }
+                                            _ => unreachable!(),
+                                        });
+
+                                        for (item, amount) in inserters {
+                                            outputs.iter_mut().find(|(list_item, _, _)| *list_item == item).unwrap().2 += amount;
+                                        }
+
+                                        for (item, amount_in_recipe, amount_removed_by_inserters_per_tick) in outputs {
+                                            let recipes_per_tick = amount_removed_by_inserters_per_tick / (f32::from(amount_in_recipe) * (1.0 + prod_mod));
+
+
+                                            if !data_store_ref.item_is_fluid[item.into_usize()] && amount_removed_by_inserters_per_tick > 0.0 {
+                                                if recipes_per_tick < crafts_per_tick {
+                                                    crafts_per_tick = recipes_per_tick;
+                                                }
+
+                                            }
+                                        }
+
+
+                                        let items_needed_per_tick = *count_in_recipe as f32 * crafts_per_tick;
 
                                         // FIXME: Take tech level into consideration
                                         let hand_size = data_store.inserter_infos[*ty as usize].base_hand_size as f32;
@@ -2522,10 +2713,63 @@ pub fn render_ui<
 
                                         let swing_time_in_ticks = full_rotation_time_in_ticks / 2.0 - 1.0;
 
-                                        goal_movetime = max(goal_movetime, swing_time_in_ticks as u16 / 10 * 10);
+                                        goal_movetime = max(goal_movetime, (swing_time_in_ticks as u16 / 10 * 10).try_into().unwrap());
                                     },
                                 }
                             },
+
+                            Entity::Chest { ty: chest_ty, pos: chest_pos, item, slot_limit } => {
+                                let inserters = game_state_ref.world.get_entities_in_chunks_colliding_with(Position {
+                                    x: chest_pos.x - i32::from(data_store_ref.max_inserter_search_range),
+                                    y: chest_pos.y - i32::from(data_store_ref.max_inserter_search_range),
+                                }, [
+                                    u16::from(data_store_ref.max_inserter_search_range) * 3, u16::from(data_store_ref.max_inserter_search_range) * 3
+                                ].into(), data_store_ref).into_iter().filter(|e| matches!(e, Entity::Inserter { .. })).filter_map(|e| match e {
+                                    Entity::Inserter {
+                                        pos, direction, ty, user_movetime, info, ..
+                                    } => {
+                                        let start_pos = data_store_ref.inserter_start_pos(*ty, *pos, *direction);
+
+                                        let item = match info {
+                                            crate::frontend::world::tile::InserterInfo::NotAttached {  } => return None,
+                                            crate::frontend::world::tile::InserterInfo::Attached { info } => {
+                                                match info {
+                                                    crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => {
+                                                        let item = game_state_ref.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos);
+
+                                                        item
+                                                    },
+                                                    crate::frontend::world::tile::AttachedInserter::BeltBelt { item, .. } => *item,
+                                                    crate::frontend::world::tile::AttachedInserter::StorageStorage { item, .. } => *item,
+                                                }
+                                            },
+                                        };
+
+                                        if start_pos.contained_in(*chest_pos, data_store_ref.chest_tile_sizes[*chest_ty as usize]) {
+                                            let movetime = user_movetime.map(|v| v.into()).unwrap_or(data_store_ref.inserter_infos[*ty as usize].swing_time_ticks);
+
+                                            let items_per_tick = f32::from(data_store_ref.inserter_infos[*ty as usize].base_hand_size) / (2.0 * f32::from(u16::from(movetime)));
+
+                                            Some((item, items_per_tick))
+                                        } else {
+                                            None
+                                        }
+                                    }
+                                    _ => unreachable!(),
+                                });
+
+                                let outgoing_amount: f32 = inserters.map(|(_item, amount_per_tick)| amount_per_tick).sum();
+
+                                let hand_size = data_store.inserter_infos[*ty as usize].base_hand_size as f32;
+
+                                let full_rotations_needed_per_tick = outgoing_amount / hand_size;
+
+                                let full_rotation_time_in_ticks = 1.0 / full_rotations_needed_per_tick;
+
+                                let swing_time_in_ticks = full_rotation_time_in_ticks / 2.0 - 1.0;
+
+                                goal_movetime = max(goal_movetime, (swing_time_in_ticks as u16 / 10 * 10).try_into().unwrap());
+                            }
 
                             _ => {}
                         }
@@ -2533,7 +2777,7 @@ pub fn render_ui<
 
                     if let Some(e) = game_state_ref.world.get_entity_at(start_pos, data_store_ref) {
                         match e {
-                            Entity::Assembler { info, .. } => {
+                            Entity::Assembler { pos: assembler_pos, ty: assembler_ty, rotation: assembler_rotation, info, .. } => {
                                 match info {
                                     AssemblerInfo::UnpoweredNoRecipe => {},
                                     AssemblerInfo::Unpowered(_) => {},
@@ -2544,9 +2788,68 @@ pub fn render_ui<
 
                                         let AssemblerOnclickInfo { base_speed, speed_mod, prod_mod, .. } = game_state_ref.simulation_state.factory.power_grids.get_assembler_info(*id, data_store_ref);
                                         let crafting_speed = base_speed * (1.0 + speed_mod);
-                                        let time_per_craft = time_per_recipe / crafting_speed;
+                                        let mut crafts_per_tick = crafting_speed / time_per_recipe;
 
-                                        let items_produced_per_tick = (*count_in_recipe as f32 * (1.0 + prod_mod)) / time_per_craft;
+                                        let mut outputs = data_store.recipe_to_items_and_amounts[id.recipe.into_usize()]
+                                            .iter()
+                                            .filter(|(dir, _, _)| *dir == data::ItemRecipeDir::Out).map(|(_, item ,amount_in_recipe)| (*item, *amount_in_recipe, 0.0))
+                                            .collect_vec();
+
+                                        let inserters = game_state_ref.world.get_entities_in_chunks_colliding_with(Position {
+                                            x: assembler_pos.x - i32::from(data_store_ref.max_inserter_search_range),
+                                            y: assembler_pos.y - i32::from(data_store_ref.max_inserter_search_range),
+                                        }, [
+                                            u16::from(data_store_ref.max_inserter_search_range) * 2 + data_store_ref.assembler_info[*assembler_ty as usize].size(*assembler_rotation).0,
+                                            u16::from(data_store_ref.max_inserter_search_range) * 2 + data_store_ref.assembler_info[*assembler_ty as usize].size(*assembler_rotation).1
+                                        ].into(), data_store_ref).into_iter().filter(|e| matches!(e, Entity::Inserter { .. })).filter_map(|e| match e {
+                                            Entity::Inserter {
+                                                pos, direction, ty, user_movetime, info, ..
+                                            } => {
+                                                let start_pos = data_store_ref.inserter_start_pos(*ty, *pos, *direction);
+
+                                                let item = match info {
+                                                    crate::frontend::world::tile::InserterInfo::NotAttached {  } => return None,
+                                                    crate::frontend::world::tile::InserterInfo::Attached { info } => {
+                                                        match info {
+                                                            crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => {
+                                                                let item = game_state_ref.simulation_state.factory.belts.get_inserter_item(*id, *belt_pos);
+
+                                                                item
+                                                            },
+                                                            crate::frontend::world::tile::AttachedInserter::BeltBelt { item, .. } => *item,
+                                                            crate::frontend::world::tile::AttachedInserter::StorageStorage { item, .. } => *item,
+                                                        }
+                                                    },
+                                                };
+
+                                                if start_pos.contained_in(*assembler_pos, data_store.assembler_info[*assembler_ty as usize].size(*assembler_rotation)) {
+                                                    let movetime = user_movetime.map(|v| v.into()).unwrap_or(data_store_ref.inserter_infos[*ty as usize].swing_time_ticks);
+
+                                                    let items_per_tick = f32::from(data_store_ref.inserter_infos[*ty as usize].base_hand_size) / (2.0 * f32::from(u16::from(movetime)) + 2.0);
+
+                                                    Some((item, items_per_tick))
+                                                } else {
+                                                    None
+                                                }
+                                            }
+                                            _ => unreachable!(),
+                                        });
+
+                                        for (item, amount) in inserters {
+                                            outputs.iter_mut().find(|(list_item, _, _)| *list_item == item).unwrap().2 += amount;
+                                        }
+
+                                        for (list_item, amount_in_recipe, amount_removed_by_inserters_per_tick) in outputs {
+                                            let recipes_per_tick = amount_removed_by_inserters_per_tick / (f32::from(amount_in_recipe) * (1.0 + prod_mod));
+
+                                            if list_item != item && !data_store_ref.item_is_fluid[item.into_usize()] && amount_removed_by_inserters_per_tick > 0.0 {
+                                                if recipes_per_tick < crafts_per_tick {
+                                                    crafts_per_tick = recipes_per_tick;
+                                                }
+                                            }
+                                        }
+
+                                        let items_produced_per_tick = (*count_in_recipe as f32 * (1.0 + prod_mod)) * crafts_per_tick;
 
                                         // FIXME: Take tech level into consideration
                                         let hand_size = data_store.inserter_infos[*ty as usize].base_hand_size as f32;
@@ -2557,7 +2860,7 @@ pub fn render_ui<
 
                                         let swing_time_in_ticks = full_rotation_time_in_ticks / 2.0 - 1.0;
 
-                                        goal_movetime = max(goal_movetime, swing_time_in_ticks as u16);
+                                        goal_movetime = max(goal_movetime, (swing_time_in_ticks as u16 / 10 * 10).try_into().unwrap());
                                     },
                                 }
                             },
@@ -2573,6 +2876,34 @@ pub fn render_ui<
                     ActionType::OverrideInserterMovetime { pos, new_movetime: Some(time.try_into().unwrap()) }
                 }))
             }
+
+            // if ui.button("⚠️Auto Clock Inserters (SLOW!)").clicked() {
+            //     let mut clocking_state = crate::clocking::ClockingState::default();
+
+            //     for assembler in game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter(|e| matches!(e, Entity::Assembler { ..})) {
+            //         clocking_state.assume_enough_ingredients(assembler, &game_state_ref.world, &game_state_ref.simulation_state, data_store_ref);
+            //     }
+
+            //     for _ in 0..5 {
+            //         for inserter in game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter(|e| matches!(e, Entity::Inserter { ..})) {
+            //             clocking_state.get_clocking(inserter, &game_state_ref.world, &game_state_ref.simulation_state, data_store_ref);
+            //         }
+
+            //         for assembler in game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter(|e| matches!(e, Entity::Assembler { ..})) {
+            //             clocking_state.calculate_machine_slowdown(assembler, &game_state_ref.world, &game_state_ref.simulation_state, data_store_ref);
+            //         }
+            //     }
+
+            //     actions.extend(game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter(|e| matches!(e, Entity::Inserter { ..})).map(|inserter| {
+            //         let pos = inserter.get_pos();
+
+            //         let ticks = clocking_state.get_clocking(inserter, &game_state_ref.world, &game_state_ref.simulation_state, data_store_ref);
+
+
+            //         ActionType::OverrideInserterMovetime { pos, new_movetime: ticks.map(|v| v.try_into().unwrap()) }
+            //     }));
+            // }
+
             if ui.button("Remove Clocking from all Inserters").clicked() {
                 let inserters_without_values_set = game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter_map(|e| match e {
                     Entity::Inserter { pos, info, .. } => {
@@ -2612,12 +2943,40 @@ pub fn render_ui<
             } else {
                 'P'
             })));
+            if ui.button("Find additional Grid").clicked() {
+                let id = game_state_ref.simulation_state.factory.power_grids.power_grids.iter().enumerate().filter(|(_id, grid)| !grid.is_placeholder).nth(1);
 
-            let num_locs_searched = NUM_BELT_LOCS_SEARCHED.load(std::sync::atomic::Ordering::Relaxed);
-            let num_cache_hits = NUM_BELT_FREE_CACHE_HITS.load(std::sync::atomic::Ordering::Relaxed);
-            let num_updates = NUM_BELT_UPDATES.load(std::sync::atomic::Ordering::Relaxed);
-            ui.label(&format!("BeltUpdates: {}, BeltCacheHits: {}, Cache ratio: {:.2}%", num_updates, num_cache_hits,num_cache_hits as f64 / num_updates as f64 * 100.0 ));
-            ui.label(&format!("BeltLocsSearched: {}, LocsPerUpdate: {:.2}", num_locs_searched, num_locs_searched as f64 / num_updates as f64 ));
+                if let Some((id, _grid)) = id {
+                    let pole_pos = game_state_ref.simulation_state.factory.power_grids.pole_pos_to_grid_id.iter().find(|(k, v)| **v as usize == id).unwrap().0;
+
+                    state_machine_ref.local_player_pos = (pole_pos.x as f32, pole_pos.y as f32);
+                }
+            }
+
+
+            #[cfg(feature = "debug-stat-gathering")]
+            CollapsingHeader::new("Gathered Debug Stats").show(ui, |ui| {
+                let num_locs_searched = NUM_BELT_LOCS_SEARCHED.load(std::sync::atomic::Ordering::Relaxed);
+                let num_cache_hits = NUM_BELT_FREE_CACHE_HITS.load(std::sync::atomic::Ordering::Relaxed);
+                let num_updates = NUM_BELT_UPDATES.load(std::sync::atomic::Ordering::Relaxed);
+                ui.label(&format!("BeltUpdates: {}, BeltCacheHits: {}, Cache ratio: {:.2}%", num_updates, num_cache_hits,num_cache_hits as f64 / num_updates as f64 * 100.0 ));
+                ui.label(&format!("BeltLocsSearched: {}, LocsPerUpdate: {:.2}", num_locs_searched, num_locs_searched as f64 / num_updates as f64 ));
+
+
+                let inserter_update_calls = NUM_BELT_INSERTER_UPDATES.load(std::sync::atomic::Ordering::Relaxed);
+                let inserter_update_skips = TIMES_ALL_INCOMING_EARLY_RETURN.load(std::sync::atomic::Ordering::Relaxed);
+                let inserter_loads_waiting_for_item = NUM_INSERTER_LOADS_WAITING_FOR_ITEMS.load(std::sync::atomic::Ordering::Relaxed);
+                let inserter_loads_waiting_for_space = NUM_INSERTER_LOADS_WAITING_FOR_SPACE.load(std::sync::atomic::Ordering::Relaxed);
+                let inserter_loads_waiting_for_space_waster = NUM_INSERTER_LOADS_WAITING_FOR_SPACE_IN_GUARANTEED_FULL.load(std::sync::atomic::Ordering::Relaxed);
+                let inserter_extractions = TIMES_INSERTERS_EXTRACTED.load(std::sync::atomic::Ordering::Relaxed);
+                ui.label(&format!("Belts updated: {}, percentage skipped: {:.2}", inserter_update_calls, (inserter_update_skips) as f64 / inserter_update_calls as f64));
+                ui.label(&format!("Total inserter loads: {}, Avg per belt: {:.2}", inserter_loads_waiting_for_item + inserter_loads_waiting_for_space, (inserter_loads_waiting_for_item + inserter_loads_waiting_for_space) as f64 / inserter_update_calls as f64));
+                ui.label(&format!("Loads waiting for item: {}, {:.2}", inserter_loads_waiting_for_item, inserter_loads_waiting_for_item as f64 / (inserter_loads_waiting_for_item + inserter_loads_waiting_for_space) as f64 ));
+                ui.label(&format!("Loads waiting for space: {}, {:.2}", inserter_loads_waiting_for_space, inserter_loads_waiting_for_space as f64 / (inserter_loads_waiting_for_item + inserter_loads_waiting_for_space) as f64 ));
+                ui.label(&format!("Loads waiting for space, while space is guaranteed filled: {}, {:.2}", inserter_loads_waiting_for_space_waster, inserter_loads_waiting_for_space_waster as f64 / (inserter_loads_waiting_for_item + inserter_loads_waiting_for_space) as f64 ));
+                ui.label(&format!("Extractions: {}, Avg ticks before extraction: {:.2}", inserter_extractions, (inserter_loads_waiting_for_item + inserter_loads_waiting_for_space) as f64 / inserter_extractions as f64 ));
+            });
+
 
             if ui.button("Remove Infinity Batteries").clicked() {
                 for entity in game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()) {
@@ -2631,6 +2990,37 @@ pub fn render_ui<
                     }
                 }
             }
+
+            CollapsingHeader::new("Inserter Counts").show(ui, |ui| {
+                let mut storage_storage = 0;
+                let mut belt_storage = 0;
+                let mut belt_belt = 0;
+
+
+                for inserter_info in game_state_ref.world.get_chunks().flat_map(|chunk| chunk.get_entities()).filter_map(|e| match e {
+                    Entity::Inserter {
+                        info: crate::frontend::world::tile::InserterInfo::Attached {
+                            info
+                        },
+                        ..
+                    } => {
+                        Some(info)
+                    },
+
+                    _ => None,
+                }) {
+                    match inserter_info {
+                        crate::frontend::world::tile::AttachedInserter::StorageStorage { ..} => storage_storage += 1,
+                        crate::frontend::world::tile::AttachedInserter::BeltStorage { ..} => belt_storage += 1,
+                        crate::frontend::world::tile::AttachedInserter::BeltBelt { ..} => belt_belt += 1,
+                    }
+                }
+
+                ui.label(&format!("StorageStorage: {}", storage_storage));
+                ui.label(&format!("BeltStorage: {}", belt_storage));
+                ui.label(&format!("BeltBelt: {}", belt_belt));
+
+            });
 
             CollapsingHeader::new("Lab analysis").show(ui, |ui| {
                 let mut items = vec![0u32; data_store.item_names.len()];
@@ -2745,7 +3135,7 @@ pub fn render_ui<
                         .storage_storage_inserters
                         .inserters
                         .iter()
-                        .flat_map(|tree: &std::collections::BTreeMap<u16, (crate::inserter::storage_storage_with_buckets_indirect::BucketedStorageStorageInserterStore,)>| tree.values())
+                        .flat_map(|tree| tree.values())
                         .map(|(store, )| store.get_load_info())
                         .map(|(_, _, num_storage_cachelines, num_struct_cachelines)| {
                             num_storage_cachelines + num_struct_cachelines
@@ -2914,6 +3304,8 @@ pub fn render_ui<
                         game_state_ref.simulation_state.factory.belts
                     ));
                 });
+
+                ui.label(&format!("Number of generated chunks: {}", game_state_ref.world.chunks.num_chunks));
         });
 
     Window::new("UPS").default_open(true).show(ctx, |ui| {
@@ -2977,47 +3369,72 @@ pub fn render_ui<
         });
     });
 
-    Window::new("BP").default_open(false).show(ctx, |ui| {
-        let bp = if let ActionStateMachineState::Holding(HeldObject::Blueprint(bp)) =
-            &state_machine_ref.state
-        {
-            Some(bp)
-        } else {
-            None
-        };
+    Window::new("Blueprint")
+        .default_open(false)
+        .show(ctx, |ui| {
+            let is_wasm = cfg!(target_arch = "wasm32");
 
-        if ui
-            .add_enabled(bp.is_some(), Button::new("Copy Blueprint String"))
-            .clicked()
-        {
-            let s: BlueprintString = bp.cloned().unwrap().into();
-            ctx.copy_text(s.0);
-        }
+            if ui
+                .add_enabled(!is_wasm, Button::new("Import"))
+                .on_disabled_hover_text("Disabled on WASM for now")
+                .clicked()
+            {
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Some(path) = rfd::FileDialog::new().pick_file() {
+                    if let Ok(mut file) = File::open(path) {
+                        let mut bp_string = BlueprintString(String::new());
+                        file.read_to_string(&mut bp_string.0)
+                            .expect("Failed to read from file");
 
-        if ui
-            .add_enabled(bp.is_some(), Button::new("Write Blueprint String to file"))
-            .clicked()
-        {
-            let s: BlueprintString = bp.cloned().unwrap().into();
-            let mut file = File::create("saved.bp").unwrap();
-            file.write(s.0.as_bytes()).unwrap();
-        }
+                        if let Ok(bp) = bp_string.try_into() {
+                            state_machine_ref.state =
+                                ActionStateMachineState::Holding(HeldObject::Blueprint(bp));
+                        }
+                    }
+                }
+            }
 
-        if ui
-            .add_enabled(
-                bp.is_some(),
-                Button::new("Write Blueprint binary data to file"),
-            )
-            .clicked()
-        {
-            let v: Vec<u8> = bitcode::serialize(bp.unwrap()).unwrap();
-            let file = File::create("saved_binary.bp").unwrap();
-            let mut encoder = ZlibEncoder::new(file, Compression::best());
-            encoder.write_all(&v).unwrap();
-            encoder.finish().unwrap();
-        }
-    });
+            let bp = if let ActionStateMachineState::Holding(HeldObject::Blueprint(bp)) =
+                &state_machine_ref.state
+            {
+                Some(bp)
+            } else {
+                None
+            };
 
+            if ui
+                .add_enabled(bp.is_some(), Button::new("Copy Blueprint String"))
+                .clicked()
+            {
+                let s: BlueprintString = bp.cloned().unwrap().into();
+                ctx.copy_text(s.0);
+            }
+
+            if ui
+                .add_enabled(bp.is_some(), Button::new("Write Blueprint String to file"))
+                .clicked()
+            {
+                let s: BlueprintString = bp.cloned().unwrap().into();
+                let mut file = File::create("saved.bp").unwrap();
+                file.write(s.0.as_bytes()).unwrap();
+            }
+
+            if ui
+                .add_enabled(
+                    bp.is_some(),
+                    Button::new("Write Blueprint binary data to file"),
+                )
+                .clicked()
+            {
+                let v: Vec<u8> = bitcode::serialize(bp.unwrap()).unwrap();
+                let file = File::create("saved_binary.bp").unwrap();
+                let mut encoder = ZlibEncoder::new(file, Compression::best());
+                encoder.write_all(&v).unwrap();
+                encoder.finish().unwrap();
+            }
+        });
+
+    #[cfg(debug_assertions)]
     Window::new("RawData").default_open(false).show(ctx, |ui| {
         let raw = get_raw_data_test();
 
@@ -3068,7 +3485,7 @@ pub fn render_ui<
 
                         // TODO: Once a dropdown with a low number of items is shown, all future dropdowns get cropped to that count :/
                         ComboBox::new(format!("Recipe list {}", *ty), "Recipes").selected_text(goal_recipe.map(|recipe| data_store_ref.recipe_display_names[usize_from(recipe.id)].as_str()).unwrap_or("Choose a recipe!")).show_ui(ui, |ui| {
-                            data_store_ref.recipe_display_names.iter().enumerate().filter(|(i, recipe_name)| {
+                            data_store_ref.recipe_display_names.iter().enumerate().filter(|(i, _recipe_name)| {
                                     (aux_data.settings.show_unresearched_recipes || game_state_ref.simulation_state.tech_state.get_active_recipes()[*i]) && data_store_ref.recipe_allowed_assembling_machines[*i].contains(ty)
                                 }).for_each(|(i, recipe_name)| {
 
@@ -3126,6 +3543,9 @@ pub fn render_ui<
                                     prod_mod,
                                     power_consumption_mod,
                                     base_power_consumption,
+
+                                    #[cfg(feature = "assembler-craft-tracking")]
+                                    times_craft_finished
                                 } = game_state_ref
                                     .simulation_state
                                     .factory
@@ -3183,6 +3603,10 @@ pub fn render_ui<
                                 ui.label(format!("Crafting Speed: {:.2}({:+.0}%)", crafting_speed, speed_mod * 100.0));
                                 ui.label(format!("Productivity: {:.1}%", prod_mod * 100.0));
                                 ui.label(format!("Max Consumption: {}({:+.0}%)", Watt((base_power_consumption.0 as f64 * (1.0 + power_consumption_mod as f64)) as u64), power_consumption_mod * 100.0));
+
+
+                                #[cfg(feature = "assembler-craft-tracking")]
+                                ui.label(format!("Crafts finished: {}", times_craft_finished));
 
                             }
                         }
@@ -3245,7 +3669,7 @@ pub fn render_ui<
                         });
 
                         TableBuilder::new(ui).columns(Column::auto(), 2).body(|body| {
-                            body.rows(1.0, pg.num_assemblers_of_type.len() + pg.num_solar_panels_of_type.len() + pg.num_beacons_of_type.len()+ pg.num_labs_of_type.len(), |mut row| {
+                            body.rows(1.0, pg.num_assemblers_of_type.len() + pg.num_solar_panels_of_type.len() + pg.num_beacons_of_type.len()+ pg.num_labs_of_type.len()+ pg.main_accumulator_count.len(), |mut row| {
                                 let i = row.index();
 
                                 if i < pg.num_assemblers_of_type.len() {
@@ -3268,8 +3692,15 @@ pub fn render_ui<
 
                                     });
                                     row.col(|ui| {ui.add(Label::new(format!("{}", pg.num_beacons_of_type[i])).extend());});
-                                } else {
+                                } else if i < pg.num_assemblers_of_type.len() +  pg.num_solar_panels_of_type.len() + pg.num_beacons_of_type.len() + pg.main_accumulator_count.len()  {
                                     let i = i - (pg.num_assemblers_of_type.len() +  pg.num_solar_panels_of_type.len() + pg.num_beacons_of_type.len());
+                                    row.col(|ui| {
+                                        ui.add(Label::new(&data_store_ref.accumulator_info[i].display_name).extend());
+
+                                    });
+                                    row.col(|ui| {ui.add(Label::new(format!("{}", pg.main_accumulator_count[i])).extend());});
+                                } else {
+                                    let i = i - (pg.num_assemblers_of_type.len() +  pg.num_solar_panels_of_type.len() + pg.num_beacons_of_type.len() + pg.main_accumulator_count.len());
                                     row.col(|ui| {
                                         ui.add(Label::new(&data_store_ref.lab_info[i].display_name).extend());
 
@@ -3384,9 +3815,7 @@ pub fn render_ui<
 
                                     // TODO:
                                 },
-                                crate::frontend::world::tile::AttachedInserter::BeltBelt {
-                                    item,
-                                    inserter,
+                                crate::frontend::world::tile::AttachedInserter::BeltBelt { ..
                                 } => {
                                     ui.label("BeltBelt");
                                     // TODO:
@@ -3407,7 +3836,7 @@ pub fn render_ui<
                         if movetime_overridden {
                             let mut movetime = user_movetime.map(|v| v.into()).unwrap_or(data_store.inserter_infos[*ty as usize].swing_time_ticks);
 
-                            ui.add(egui::Slider::new(&mut movetime, (data_store.inserter_infos[*ty as usize].swing_time_ticks)..=u16::MAX).text("Ticks per half swing"));
+                            ui.add(egui::Slider::new(&mut movetime, (data_store.inserter_infos[*ty as usize].swing_time_ticks)..=NonZero::<u16>::MAX).text("Ticks per half swing"));
 
                             if *user_movetime != Some(movetime.try_into().unwrap()) {
                                 actions.push(ActionType::OverrideInserterMovetime { pos: *pos, new_movetime: Some(movetime.try_into().unwrap()) });
@@ -3537,14 +3966,53 @@ pub fn render_ui<
                             },
                         }
                     },
-                    Entity::SolarPanel {  .. } => {
-                        // TODO
+                    Entity::SolarPanel {  ty, .. } => {
+                        ui.label(format!("{}", &data_store.solar_panel_info[*ty as usize].display_name));
+
+                        let current = data_store.solar_panel_info[*ty as usize].power_output.get_at_time(aux_data.current_tick as u32);
+                        let max = data_store.solar_panel_info[*ty as usize].power_output.max();
+
+                        let perc = current.0 as f32 / max.0 as f32;
+
+                        ui.add(ProgressBar::new(perc).text(format!("{}/{}", current, max)).corner_radius(0.0));
                     },
-                    Entity::Accumulator {  .. } => {
-                        // TODO
+                    Entity::Accumulator {  ty, pole_position, .. } => {
+                        ui.label(format!("{}", &data_store.accumulator_info[*ty as usize].display_name));
+
+                        let max_charge = data_store.accumulator_info[*ty as usize].max_charge;
+                        let charge = if let Some(pole_pos) = pole_position {
+                            let grid = game_state_ref.simulation_state.factory.power_grids.pole_pos_to_grid_id[&pole_pos.0];
+                            let grid = &game_state_ref.simulation_state.factory.power_grids.power_grids[grid as usize];
+                            let charge = grid.main_accumulator_charge[*ty as usize] / grid.main_accumulator_count[*ty as usize];
+
+                            charge
+                        } else {
+                            // FIXME: A unconnected accumulator can still have charge
+                            Joule(0)
+                        };
+
+                        let perc = charge.0 as f32 / max_charge.0 as f32;
+
+                        ui.add(ProgressBar::new(perc).text(format!("{}/{}", charge, max_charge)).corner_radius(0.0));
                     },
-                    Entity::Beacon {   .. } => {
-                        // TODO
+                    Entity::Beacon { ty, modules, .. } => {
+                        ui.label(&data_store.beacon_info[*ty as usize].display_name);
+
+                        // Render module slots
+                        let modules = &game_state_ref.world.module_slot_dedup_table[*modules as usize];
+                        TableBuilder::new(ui).id_salt("Module Slots").columns(Column::auto(), modules.len()).body(|mut body| {
+                            body.row(1.0, |mut row| {
+                                for module in modules.iter() {
+                                    row.col(|ui| {
+                                        if let Some(module_id) = module {
+                                            ui.label(&data_store_ref.module_info[*module_id as usize].display_name);
+                                        } else {
+                                            ui.label("Empty Module Slot");
+                                        }
+                                    });
+                                }
+                            });
+                        });
                     },
                     Entity::FluidTank { ty, pos, rotation } => {
                         let id = game_state_ref.simulation_state.factory.fluid_store.fluid_box_pos_to_network_id[pos];
@@ -3611,35 +4079,35 @@ pub fn render_ui<
         },
     }
 
-    egui::Area::new("Hotbar".into())
-        .anchor(Align2::CENTER_BOTTOM, (0.0, 0.0))
-        .show(ui.ctx(), |ui| {
-            egui_extras::TableBuilder::new(ui)
-                .columns(Column::auto().resizable(false), 10)
-                .body(|mut body| {
-                    body.row(30.0, |mut row| {
-                        for i in 0..10 {
-                            if row
-                                .col(|ui| {
-                                    let button_response = ui.button(format!("{i}"));
+    // egui::Area::new("Hotbar".into())
+    //     .anchor(Align2::CENTER_BOTTOM, (0.0, 0.0))
+    //     .show(ui.ctx(), |ui| {
+    //         egui_extras::TableBuilder::new(ui)
+    //             .columns(Column::auto().resizable(false), 10)
+    //             .body(|mut body| {
+    //                 body.row(30.0, |mut row| {
+    //                     for i in 0..10 {
+    //                         if row
+    //                             .col(|ui| {
+    //                                 let button_response = ui.button(format!("{i}"));
 
-                                    if button_response.hovered() {
-                                        dbg!(i);
-                                    }
-                                })
-                                .1
-                                .hovered()
-                            {
-                                dbg!(i);
-                            };
-                        }
-                    });
-                });
-        });
+    //                                 if button_response.hovered() {
+    //                                     dbg!(i);
+    //                                 }
+    //                             })
+    //                             .1
+    //                             .hovered()
+    //                         {
+    //                             dbg!(i);
+    //                         };
+    //                     }
+    //                 });
+    //             });
+    //     });
 
     Window::new("Technology")
         .collapsible(false)
-        .open(&mut state_machine_ref.technology_panel_open)
+        .open(&mut state_machine_ref.open_windows[action_state_machine::Window::Technology])
         .show(ctx, |ui| {
             let research_actions = game_state_ref
                 .simulation_state
@@ -3660,7 +4128,7 @@ pub fn render_ui<
 
     Window::new("Statistics")
         .collapsible(false)
-        .open(&mut state_machine_ref.statistics_panel_open)
+        .open(&mut state_machine_ref.open_windows[action_state_machine::Window::Statistics])
         .show(ctx, |ui| {
             let time_scale = match &mut state_machine_ref.statistics_panel {
                 StatisticsPanel::Items(timescale) => timescale,
@@ -3950,9 +4418,13 @@ pub fn render_ui<
                                 .product::<usize>();
                             let ticks_total = min(
                                 ticks_per_sample * NUM_SAMPLES_AT_INTERVALS[time_scale],
-                                (aux_data.statistics.production.num_samples_pushed
-                                    - ticks_per_sample
-                                    + 1)
+                                (aux_data
+                                    .statistics
+                                    .production
+                                    .num_samples_pushed
+                                    .checked_sub(ticks_per_sample)
+                                    .map(|v| v + 1)
+                                    .unwrap_or(0))
                                 .next_multiple_of(ticks_per_sample),
                             );
 

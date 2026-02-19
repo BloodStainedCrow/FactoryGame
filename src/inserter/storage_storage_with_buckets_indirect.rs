@@ -5,11 +5,15 @@ use super::{
     FakeUnionStorage, InserterStateInfo, storage_storage_with_buckets::LargeInserterState,
 };
 use crate::{
+    assembler::simd::InserterWithBelts as WaitListInserter,
+    inserter::WaitlistSearchSide,
     item::ITEMCOUNTTYPE,
     join_many::join,
     storage_list::{SingleItemStorages, index_fake_union},
 };
 use std::cmp::min;
+
+use std::num::NonZero;
 
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
@@ -56,29 +60,29 @@ pub enum ImplicitState {
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub struct InserterIdentifier {
-    id: InserterId,
+    pub id: InserterId,
 }
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
-struct InserterId {
+pub struct InserterId {
     index: u32,
 }
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
-struct InserterBucketData {
+pub struct InserterBucketData {
     pub storage_id_in: FakeUnionStorage,
     pub storage_id_out: FakeUnionStorage,
-    index: InserterId,
-    current_hand: ITEMCOUNTTYPE,
-    max_hand_size: ITEMCOUNTTYPE,
+    pub index: InserterId,
+    pub current_hand: ITEMCOUNTTYPE,
+    pub max_hand_size: ITEMCOUNTTYPE,
 }
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BucketedStorageStorageInserterStore {
-    pub movetime: u16,
+    pub movetime: NonZero<u16>,
 
     holes: Vec<u32>,
     inserters: Vec<InserterState>,
@@ -95,17 +99,23 @@ const PLACEHOLDER: InserterState = InserterState {
     state: ImplicitState::WaitingForSourceItems(0),
 };
 
+struct UpdateResult {
+    extract: bool,
+    reinsert: bool,
+}
+
 impl BucketedStorageStorageInserterStore {
-    pub fn new(movetime: u16) -> Self {
+    pub fn new(movetime: NonZero<u16>) -> Self {
         Self {
             movetime,
             holes: vec![],
             inserters: vec![],
 
             waiting_for_item: vec![],
-            full_and_moving_out: vec![vec![]; movetime as usize + 1].into_boxed_slice(),
+            full_and_moving_out: vec![vec![]; u16::from(movetime) as usize + 1].into_boxed_slice(),
             waiting_for_space_in_destination: vec![],
-            empty_and_moving_back: vec![vec![]; movetime as usize + 1].into_boxed_slice(),
+            empty_and_moving_back: vec![vec![]; u16::from(movetime) as usize + 1]
+                .into_boxed_slice(),
             current_tick: 0,
         }
     }
@@ -146,74 +156,96 @@ impl BucketedStorageStorageInserterStore {
     }
 
     fn list_len(&self) -> usize {
-        self.movetime as usize + 1
+        u16::from(self.movetime) as usize + 1
     }
 
-    pub fn remove_inserter(&mut self, id: InserterIdentifier) -> Inserter {
+    pub fn remove_inserter(
+        &mut self,
+        id: InserterIdentifier,
+    ) -> Result<Inserter, WaitlistSearchSide> {
         let state = self.inserters[id.id.index as usize];
 
-        let ret = |storage_id_in, storage_id_out, max_hand_size| Inserter {
-            storage_id_in,
-            storage_id_out,
-            last_update_time: state.last_update_time,
-            max_hand_size,
-            state: state.state,
+        let ret = |storage_id_in, storage_id_out, max_hand_size| {
+            Ok(Inserter {
+                storage_id_in,
+                storage_id_out,
+                last_update_time: state.last_update_time,
+                max_hand_size,
+                state: state.state,
+            })
         };
+
+        let hand = self.inserters[id.id.index as usize].state;
 
         self.inserters[id.id.index as usize] = PLACEHOLDER;
 
-        if let Some(pos) = self
-            .waiting_for_item
-            .iter()
-            .position(|ins| id.id == ins.index)
-        {
-            let removed = self.waiting_for_item.remove(pos);
-
-            return ret(
-                removed.storage_id_in,
-                removed.storage_id_out,
-                removed.max_hand_size,
-            );
-        }
-
-        if let Some(pos) = self
-            .waiting_for_space_in_destination
-            .iter()
-            .position(|ins| id.id == ins.index)
-        {
-            let removed = self.waiting_for_space_in_destination.remove(pos);
-
-            return ret(
-                removed.storage_id_in,
-                removed.storage_id_out,
-                removed.max_hand_size,
-            );
-        }
-
-        for full in &mut self.full_and_moving_out {
-            if let Some(pos) = full.iter().position(|ins| id.id == ins.index) {
-                let removed = full.remove(pos);
+        if let ImplicitState::WaitingForSourceItems(_) = hand {
+            if let Some(pos) = self
+                .waiting_for_item
+                .iter()
+                .position(|ins| id.id == ins.index)
+            {
+                let removed = self.waiting_for_item.remove(pos);
 
                 return ret(
                     removed.storage_id_in,
                     removed.storage_id_out,
                     removed.max_hand_size,
                 );
+            } else {
+                return Err(WaitlistSearchSide::Source);
             }
         }
 
-        for empty in &mut self.empty_and_moving_back {
-            if let Some(pos) = empty.iter().position(|ins| id.id == ins.index) {
-                let removed = empty.remove(pos);
+        if let ImplicitState::WaitingForSpaceInDestination(_) = hand {
+            if let Some(pos) = self
+                .waiting_for_space_in_destination
+                .iter()
+                .position(|ins| id.id == ins.index)
+            {
+                let removed = self.waiting_for_space_in_destination.remove(pos);
 
                 return ret(
                     removed.storage_id_in,
                     removed.storage_id_out,
                     removed.max_hand_size,
                 );
+            } else {
+                return Err(WaitlistSearchSide::Dest);
             }
         }
 
+        if let ImplicitState::FullAndMovingOut = hand {
+            for full in &mut self.full_and_moving_out {
+                if let Some(pos) = full.iter().position(|ins| id.id == ins.index) {
+                    let removed = full.remove(pos);
+
+                    return ret(
+                        removed.storage_id_in,
+                        removed.storage_id_out,
+                        removed.max_hand_size,
+                    );
+                }
+            }
+            unreachable!()
+        }
+
+        if let ImplicitState::EmptyAndMovingBack = hand {
+            for empty in &mut self.empty_and_moving_back {
+                if let Some(pos) = empty.iter().position(|ins| id.id == ins.index) {
+                    let removed = empty.remove(pos);
+
+                    return ret(
+                        removed.storage_id_in,
+                        removed.storage_id_out,
+                        removed.max_hand_size,
+                    );
+                }
+            }
+            unreachable!()
+        }
+
+        // TODO: Use match statemen
         unreachable!()
     }
 
@@ -272,17 +304,19 @@ impl BucketedStorageStorageInserterStore {
     }
 
     fn handle_waiting_for_item_ins(
+        item_id: usize,
         inserter: &mut InserterState,
         bucket_data: &mut InserterBucketData,
 
         storages: SingleItemStorages,
         grid_size: usize,
         current_tick: u32,
-        _movetime: u16,
-    ) -> bool {
+        movetime: std::num::NonZero<u16>,
+    ) -> UpdateResult {
         let storage_id = bucket_data.storage_id_in;
 
-        let (_max_insert, old) = index_fake_union(storages, storage_id, grid_size);
+        let (_max_insert, old, wait_list) =
+            index_fake_union(Some(item_id), storages, storage_id, grid_size);
 
         let old_val = *old;
         let max_hand_size = bucket_data.max_hand_size;
@@ -297,29 +331,71 @@ impl BucketedStorageStorageInserterStore {
             inserter.state = ImplicitState::WaitingForSourceItems(bucket_data.current_hand);
         }
 
-        let extract = bucket_data.current_hand == max_hand_size;
-
-        if extract {
+        if bucket_data.current_hand == max_hand_size {
             inserter.state = ImplicitState::FullAndMovingOut;
             // Only use the lower 2 bytes
             inserter.last_update_time = current_tick as u16;
-        }
+            UpdateResult {
+                extract: true,
+                reinsert: true,
+            }
+        } else {
+            if let Some((wait_list, wait_list_needed)) = wait_list {
+                if let Some((pos, empty)) = wait_list
+                    .inserters
+                    .iter_mut()
+                    .enumerate()
+                    .find(|(_i, v)| v.is_none())
+                {
+                    if pos == 0 {
+                        *wait_list_needed = bucket_data.max_hand_size - bucket_data.current_hand;
+                    }
 
-        extract
+                    *empty = Some(WaitListInserter {
+                        current_hand: bucket_data.current_hand,
+                        max_hand: bucket_data.max_hand_size.try_into().unwrap(),
+                        movetime: movetime,
+
+                        rest: crate::assembler::simd::InserterWithBeltsEnum::StorageStorage {
+                            self_is_source: true,
+                            index: bucket_data.index,
+                            other: bucket_data.storage_id_out,
+                        },
+                    });
+
+                    UpdateResult {
+                        extract: true,
+                        reinsert: false,
+                    }
+                } else {
+                    UpdateResult {
+                        extract: false,
+                        reinsert: false,
+                    }
+                }
+            } else {
+                UpdateResult {
+                    extract: false,
+                    reinsert: false,
+                }
+            }
+        }
     }
 
     fn handle_waiting_for_space_ins(
+        item_id: usize,
         inserter: &mut InserterState,
         bucket_data: &mut InserterBucketData,
 
         storages: SingleItemStorages,
         grid_size: usize,
         current_tick: u32,
-        _movetime: u16,
-    ) -> bool {
+        movetime: std::num::NonZero<u16>,
+    ) -> UpdateResult {
         let storage_id = bucket_data.storage_id_out;
 
-        let (max_insert, old) = index_fake_union(storages, storage_id, grid_size);
+        let (max_insert, old, wait_list) =
+            index_fake_union(Some(item_id), storages, storage_id, grid_size);
 
         let old_val = *old;
         let max_insert = *max_insert;
@@ -333,15 +409,55 @@ impl BucketedStorageStorageInserterStore {
             inserter.state = ImplicitState::WaitingForSpaceInDestination(bucket_data.current_hand);
         }
 
-        let extract = bucket_data.current_hand == 0;
-
-        if extract {
+        if bucket_data.current_hand == 0 {
             inserter.state = ImplicitState::EmptyAndMovingBack;
             // Only use the lower 2 bytes
             inserter.last_update_time = current_tick as u16;
-        }
+            UpdateResult {
+                extract: true,
+                reinsert: true,
+            }
+        } else {
+            if let Some((wait_list, wait_list_needed)) = wait_list {
+                if let Some((pos, empty)) = wait_list
+                    .inserters
+                    .iter_mut()
+                    .enumerate()
+                    .find(|(_i, v)| v.is_none())
+                {
+                    if pos == 0 {
+                        *wait_list_needed = bucket_data.current_hand;
+                    }
 
-        extract
+                    *empty = Some(WaitListInserter {
+                        current_hand: bucket_data.current_hand,
+                        max_hand: bucket_data.max_hand_size.try_into().unwrap(),
+                        movetime: movetime,
+
+                        rest: crate::assembler::simd::InserterWithBeltsEnum::StorageStorage {
+                            self_is_source: false,
+                            index: bucket_data.index,
+                            other: bucket_data.storage_id_in,
+                        },
+                    });
+
+                    UpdateResult {
+                        extract: true,
+                        reinsert: false,
+                    }
+                } else {
+                    UpdateResult {
+                        extract: false,
+                        reinsert: false,
+                    }
+                }
+            } else {
+                UpdateResult {
+                    extract: false,
+                    reinsert: false,
+                }
+            }
+        }
     }
 
     pub fn get_load_info(&self) -> (usize, usize, usize, usize) {
@@ -392,7 +508,8 @@ impl BucketedStorageStorageInserterStore {
         grid_size: usize,
         current_tick: u32,
     ) {
-        let old_len: usize = self.get_list_sizes().iter().sum();
+        // #[cfg(debug_assertions)]
+        // let old_len: usize = self.get_list_sizes().iter().sum();
 
         assert!(self.current_tick < self.list_len());
 
@@ -456,6 +573,7 @@ impl BucketedStorageStorageInserterStore {
             );
             let now_moving = self.waiting_for_item.extract_if(start..end, |inserter| {
                 Self::handle_waiting_for_item_ins(
+                    item_id,
                     &mut self.inserters[inserter.index.index as usize],
                     inserter,
                     storages,
@@ -463,10 +581,12 @@ impl BucketedStorageStorageInserterStore {
                     current_tick,
                     self.movetime,
                 )
+                .extract
             });
 
-            self.full_and_moving_out[(self.current_tick + usize::from(self.movetime)) % len]
-                .extend(now_moving);
+            self.full_and_moving_out
+                [(self.current_tick + usize::from(u16::from(self.movetime))) % len]
+                .extend(now_moving.filter(|ins| ins.current_hand == ins.max_hand_size));
         }
 
         // {
@@ -529,6 +649,7 @@ impl BucketedStorageStorageInserterStore {
                 self.waiting_for_space_in_destination
                     .extract_if(start..end, |inserter| {
                         Self::handle_waiting_for_space_ins(
+                            item_id,
                             &mut self.inserters[inserter.index.index as usize],
                             inserter,
                             storages,
@@ -536,10 +657,12 @@ impl BucketedStorageStorageInserterStore {
                             current_tick,
                             self.movetime,
                         )
+                        .extract
                     });
 
-            self.empty_and_moving_back[(self.current_tick + usize::from(self.movetime)) % len]
-                .extend(now_moving_back);
+            self.empty_and_moving_back
+                [(self.current_tick + usize::from(u16::from(self.movetime))) % len]
+                .extend(now_moving_back.filter(|ins| ins.current_hand == 0));
         }
 
         {
@@ -605,7 +728,15 @@ impl BucketedStorageStorageInserterStore {
 
         self.current_tick = (self.current_tick + 1) % self.list_len();
 
-        assert_eq!(old_len, self.get_list_sizes().iter().sum::<usize>());
+        // TODO: This does not hold with waitlists. As such this should only be active if waitlists are disabled
+        // #[cfg(debug_assertions)]
+        // {
+        //     assert_eq!(
+        //         old_len,
+        //         self.get_list_sizes().iter().sum::<usize>(),
+        //         "Updating inserters lost an inserter from the update lists"
+        //     );
+        // }
     }
 
     fn get_list_sizes(&self) -> Vec<usize> {
@@ -658,25 +789,27 @@ impl BucketedStorageStorageInserterStore {
                         first_tick_value_with_this_lower_part(ins.last_update_time, current_tick),
                     );
 
-                    u16::try_from(u32::from(self.movetime).strict_sub(time_passed)).expect(
-                        &format!(
+                    u16::try_from(u32::from(u16::from(self.movetime)).strict_sub(time_passed))
+                        .expect(&format!(
                             "Inserter has been moving for more than u16::MAX ticks: {}",
-                            u32::from(self.movetime).strict_sub(current_tick.strict_sub(
-                                first_tick_value_with_this_lower_part(
+                            u32::from(u16::from(self.movetime)).strict_sub(
+                                current_tick.strict_sub(first_tick_value_with_this_lower_part(
                                     ins.last_update_time,
                                     current_tick
-                                )
-                            ))
-                        ),
-                    )
+                                ))
+                            )
+                        ))
                 }),
                 ImplicitState::EmptyAndMovingBack => LargeInserterState::EmptyAndMovingBack(
-                    u16::try_from(u32::from(self.movetime).strict_sub(current_tick.strict_sub(
-                        first_tick_value_with_this_lower_part(ins.last_update_time, current_tick),
-                    )))
+                    u16::try_from(u32::from(u16::from(self.movetime)).strict_sub(
+                        current_tick.strict_sub(first_tick_value_with_this_lower_part(
+                            ins.last_update_time,
+                            current_tick,
+                        )),
+                    ))
                     .expect(&format!(
                         "Inserter has been moving for more than u16::MAX ticks: {}",
-                        u32::from(self.movetime).strict_sub(current_tick.strict_sub(
+                        u32::from(u16::from(self.movetime)).strict_sub(current_tick.strict_sub(
                             first_tick_value_with_this_lower_part(
                                 ins.last_update_time,
                                 current_tick
@@ -909,11 +1042,23 @@ impl BucketedStorageStorageInserterStore {
 
         unreachable!()
     }
+
+    pub fn reinsert_empty(&mut self, inserter: InserterBucketData) {
+        self.empty_and_moving_back[(self.current_tick + usize::from(u16::from(self.movetime)))
+            % self.empty_and_moving_back.len()]
+        .push(inserter);
+    }
+
+    pub fn reinsert_full(&mut self, inserter: InserterBucketData) {
+        self.full_and_moving_out[(self.current_tick + usize::from(u16::from(self.movetime)))
+            % self.full_and_moving_out.len()]
+        .push(inserter);
+    }
 }
 
 #[cfg(test)]
 mod test {
-    const MOVETIME: u16 = 120;
+    const MOVETIME: NonZero<u16> = NonZero::new(120).unwrap();
     const NUM_INSERTERS: usize = 20_000_000;
     const NUM_ITEMS: usize = 5;
 
@@ -923,6 +1068,8 @@ mod test {
     use itertools::Itertools;
     use rand::{random, seq::SliceRandom};
     use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
+
+    use crate::storage_list::{InserterWaitLists, MaxInsertionLimit};
 
     use super::*;
 
@@ -939,14 +1086,22 @@ mod test {
 
         for item in 0..NUM_ITEMS {
             let mut values = (0..(NUM_INSERTERS as u32)).collect_vec();
-            values.shuffle(&mut rand::thread_rng());
+            values.shuffle(&mut rand::rng());
             for i in values {
                 if random::<u16>() < 1 {
                     store[item].update(
                         0,
                         &mut [
-                            (max_insert.as_slice(), storages_in[item].as_mut_slice()),
-                            (max_insert.as_slice(), storages_out[item].as_mut_slice()),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storages_in[item].as_mut_slice(),
+                                InserterWaitLists::None,
+                            ),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storages_out[item].as_mut_slice(),
+                                InserterWaitLists::None,
+                            ),
                         ],
                         10,
                         current_tick,
@@ -1000,8 +1155,16 @@ mod test {
                     store.update(
                         0,
                         &mut [
-                            (max_insert.as_slice(), storage_in.as_mut_slice()),
-                            (max_insert.as_slice(), storage_out.as_mut_slice()),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storage_in.as_mut_slice(),
+                                InserterWaitLists::None,
+                            ),
+                            (
+                                MaxInsertionLimit::PerMachine(max_insert.as_slice()),
+                                storage_out.as_mut_slice(),
+                                InserterWaitLists::None,
+                            ),
                         ],
                         10,
                         current_tick,

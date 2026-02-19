@@ -1,15 +1,9 @@
 use std::{array, ops::AddAssign};
 
-use charts_rs::{LineChart, Series};
 use consumption::ConsumptionInfo;
 use production::ProductionInfo;
 
-use crate::{
-    NewWithDataStore,
-    data::DataStore,
-    item::{IdxTrait, Item},
-    research::ResearchProgress,
-};
+use crate::{NewWithDataStore, data::DataStore, item::IdxTrait, research::ResearchProgress};
 
 #[cfg(feature = "client")]
 use egui_show_info_derive::ShowInfo;
@@ -21,8 +15,9 @@ mod power;
 pub mod production;
 pub mod recipe;
 pub mod research;
+pub mod time_usage;
 
-pub const NUM_DIFFERENT_TIMESCALES: usize = 5;
+pub const NUM_DIFFERENT_TIMESCALES: usize = 8;
 pub const SAMPLES_FOR_SMOOTHING_BASE: usize = 600;
 
 const SAMPLES_FOR_SMOOTHING: [usize; NUM_DIFFERENT_TIMESCALES] = {
@@ -40,7 +35,8 @@ const SAMPLES_FOR_SMOOTHING: [usize; NUM_DIFFERENT_TIMESCALES] = {
     }
     b
 };
-pub const NUM_SAMPLES_AT_INTERVALS: [usize; NUM_DIFFERENT_TIMESCALES] = [600, 60, 60, 60, 50];
+pub const NUM_SAMPLES_AT_INTERVALS: [usize; NUM_DIFFERENT_TIMESCALES] =
+    [600, 60, 60, 60, 60, 50, 50, 50];
 pub const NUM_SAMPLES_AT_INTERVALS_STORED: [usize; NUM_DIFFERENT_TIMESCALES] = {
     let mut b = [0; NUM_DIFFERENT_TIMESCALES];
     let mut i = 0;
@@ -50,19 +46,45 @@ pub const NUM_SAMPLES_AT_INTERVALS_STORED: [usize; NUM_DIFFERENT_TIMESCALES] = {
     }
     b
 };
-pub const NUM_X_AXIS_TICKS: [usize; NUM_DIFFERENT_TIMESCALES] = [10, 6, 6, 10, 10];
-pub const RELATIVE_INTERVAL_MULTS: [usize; NUM_DIFFERENT_TIMESCALES] = [1, 60, 60, 10, 5];
+pub const NUM_X_AXIS_TICKS: [usize; NUM_DIFFERENT_TIMESCALES] = [10, 6, 10, 6, 10, 10, 10, 10];
+pub const RELATIVE_INTERVAL_MULTS: [usize; NUM_DIFFERENT_TIMESCALES] = [1, 60, 10, 6, 10, 5, 5, 4];
 
-pub const TIMESCALE_NAMES: [&'static str; NUM_DIFFERENT_TIMESCALES] =
-    ["10 seconds", "1 minute", "1 hour", "10 hours", "50 hours"];
+pub const TIMESCALE_NAMES: [&'static str; NUM_DIFFERENT_TIMESCALES] = [
+    "10 seconds",
+    "1 minute",
+    "10 minute",
+    "1 hour",
+    "10 hours",
+    "50 hours",
+    "250 hours",
+    "1000 hours",
+];
 
 pub const TIMESCALE_LEGEND: [fn(f64) -> String; NUM_DIFFERENT_TIMESCALES] = [
     |t| format!("{:.0}s", t / 60.0),
     |t| format!("{:.0}s", t),
+    |t| format!("{:.0}m", t / 6.0),
     |t| format!("{:.0}m", t),
-    |t| format!("{:.0}m", t * 10.0),
+    |t| format!("{:.0}h", t / 60.0),
     |t| format!("{:.0}h", t),
+    |t| format!("{:.0}h", t * 5.0),
+    |t| format!("{:.0}h", t * 20.0),
 ];
+
+#[derive(Debug)]
+pub(crate) struct Series {
+    pub name: String,
+    pub data: Vec<f32>,
+}
+
+impl From<(&str, Vec<f32>)> for Series {
+    fn from((name, data): (&str, Vec<f32>)) -> Self {
+        Self {
+            name: name.into(),
+            data: data,
+        }
+    }
+}
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -91,25 +113,6 @@ impl GenStatistics {
         self.production.append_single_set_of_samples(samples.0);
         self.consumption.append_single_set_of_samples(samples.1);
         self.research.append_single_set_of_samples(samples.2 as u64);
-    }
-
-    pub fn get_chart<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
-        &self,
-        timescale: usize,
-        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-        filter: Option<impl Fn(Item<ItemIdxType>) -> bool>,
-    ) -> LineChart {
-        let prod_values: Vec<Series> = self
-            .production
-            .get_series(timescale, data_store, filter)
-            .into_iter()
-            .map(|v| v.1)
-            .collect();
-
-        LineChart::new(
-            prod_values,
-            vec![".".to_string(); NUM_SAMPLES_AT_INTERVALS[timescale]],
-        )
     }
 }
 

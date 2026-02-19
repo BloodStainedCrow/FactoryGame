@@ -1,7 +1,7 @@
-use std::{borrow::Borrow, fs::File, io::Write, marker::PhantomData};
+use std::{fs::File, io::Write, marker::PhantomData};
 
 use crate::{
-    app_state::{GameState, SimulationState},
+    app_state::{AuxillaryData, GameState, SimulationState},
     data::DataStore,
     frontend::{action::ActionType, world::tile::World},
     item::{IdxTrait, WeakIdxTrait},
@@ -21,11 +21,12 @@ where
 }
 
 pub(super) trait ActionSource<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
-    fn get<'a, 'b, 'c, 'd>(
+    fn get<'a, 'b, 'c, 'd, 'e>(
         &'a self,
         current_tick: u64,
         world: &'b World<ItemIdxType, RecipeIdxType>,
         sim_state: &'d SimulationState<ItemIdxType, RecipeIdxType>,
+        aux_data: &'e AuxillaryData,
         data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
     + use<'a, 'b, 'c, 'd, Self, ItemIdxType, RecipeIdxType>;
@@ -64,47 +65,56 @@ impl<
         }
     }
 
-    pub fn update<DataStor: Borrow<DataStore<ItemIdxType, RecipeIdxType>> + serde::Serialize>(
+    pub fn update(
         &mut self,
         game_state: &GameState<ItemIdxType, RecipeIdxType>,
-        replay: Option<&mut Replay<ItemIdxType, RecipeIdxType, DataStor>>,
+        replay: Option<&mut Replay>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) {
+        log::trace!("Start Update");
+
         let mut simulation_state = game_state.simulation_state.lock();
+        let mut world = game_state.world.lock();
+        let aux_data = &mut *game_state.aux_data.lock();
         {
             profiling::scope!("GameState Update");
-            GameState::update(
-                &mut *simulation_state,
-                &mut *game_state.aux_data.lock(),
-                data_store,
-            );
-        }
 
-        let mut world = game_state.world.lock();
-        let current_tick = game_state.aux_data.lock().current_tick;
+            GameState::update(&mut *simulation_state, aux_data, data_store);
+        }
+        log::trace!("Post Update");
+
+        let current_tick = aux_data.current_tick;
 
         let actions_iter = {
             profiling::scope!("Get Actions");
 
-            self.action_interface
-                .get(current_tick, &world, &simulation_state, data_store)
+            self.action_interface.get(
+                current_tick,
+                &world,
+                &simulation_state,
+                &aux_data,
+                data_store,
+            )
         };
 
         let actions: Vec<_> = actions_iter.into_iter().collect();
 
+        #[cfg(feature = "replay")]
         {
             profiling::scope!("Update Replay");
             if let Some(replay) = replay {
-                replay.append_actions(actions.iter().cloned());
+                replay.append_actions(actions.iter().cloned(), data_store);
                 replay.tick();
 
                 #[cfg(debug_assertions)]
                 {
+                    use ron::ser::PrettyConfig;
+
                     profiling::scope!("Serialize Replay to disk");
                     // If we are in debug mode, save the replay to a file
                     let mut file = File::create("./last_replay.rep").expect("Could not open file");
-                    let ser = bitcode::serialize(replay).unwrap();
-                    file.write_all(ser.as_slice())
+                    let ser = ron::ser::to_string_pretty(replay, PrettyConfig::default()).unwrap();
+                    file.write_all(ser.as_bytes())
                         .expect("Could not write to file");
                 }
             }

@@ -1,9 +1,14 @@
 use std::cmp::max;
 use std::{cmp::min, u8};
 
-use rayon::iter::IndexedParallelIterator;
+use rayon::iter::{IndexedParallelIterator, IntoParallelIterator};
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
+use crate::assembler::simd::{InserterReinsertionInfo, InserterWaitList, InserterWithBelts};
+use crate::belt::belt::BeltLenType;
+use crate::inserter::storage_storage_with_buckets_indirect::InserterId;
+use crate::inserter::{FakeUnionStorage, StaticID};
+use crate::storage_list::{InserterWaitLists, MaxInsertionLimit};
 use crate::{
     data::DataStore,
     item::{ITEMCOUNTTYPE, IdxTrait, Item, WeakIdxTrait, usize_from},
@@ -20,6 +25,37 @@ const CHEST_GOAL_AMOUNT: ITEMCOUNTTYPE = ITEMCOUNTTYPE::MAX / 2;
 pub type ChestSize = u32;
 pub type SignedChestSize = i32;
 
+// #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+// #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+// #[repr(align(64))]
+// pub struct InserterWaitList {
+//     pub inserters: [Option<Inserter>; 3],
+// }
+
+// const_assert!(std::mem::size_of::<InserterWaitList>() <= 64);
+
+// #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+// #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+// pub struct Inserter {
+//     // item: u8,
+//     self_is_source: bool,
+//     // Ideally we would track the hand here so we avoid having to reinsert them each time the assembler produces anything
+//     // This does mean we can only fit 3 Inserters per cacheline :/
+//     // This is fixed by the item arena optimization
+//     pub current_hand: ITEMCOUNTTYPE,
+//     pub max_hand: NonZero<ITEMCOUNTTYPE>,
+//     pub movetime: u16,
+//     pub(crate) index: InserterId,
+//     pub other: FakeUnionStorage,
+// }
+
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone)]
+struct InternalInserterReinsertionInfo {
+    inserter: InserterWithBelts,
+    self_index: u32,
+}
+
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct FullChestStore<ItemIdxType: WeakIdxTrait> {
@@ -31,17 +67,75 @@ impl<ItemIdxType: IdxTrait> FullChestStore<ItemIdxType> {
     pub fn update<RecipeIdxType: IdxTrait>(
         &mut self,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) {
+    ) -> impl IndexedParallelIterator
+    + ParallelIterator<
+        Item = impl Iterator<Item = crate::assembler::simd::InserterReinsertionInfo<ItemIdxType>>,
+    > {
         self.stores
             .par_iter_mut()
             .enumerate()
-            .for_each(|(item_id, store)| {
+            .map(|(item_id, store)| {
+                let item = store.item;
                 profiling::scope!(
                     "Chest Update",
                     format!("Item: {}", data_store.item_display_names[item_id]).as_str()
                 );
-                store.update_simd()
-            });
+                store.update_simd().map(
+                    move |InternalInserterReinsertionInfo {
+                              inserter,
+                              self_index,
+                          }| InserterReinsertionInfo {
+                        movetime: inserter.movetime.into(),
+                        item,
+                        current_hand: inserter.current_hand,
+                        max_hand: inserter.max_hand.into(),
+
+                        conn: match inserter.rest {
+                            crate::assembler::simd::InserterWithBeltsEnum::StorageStorage {
+                                self_is_source,
+                                index,
+                                other,
+                            } => crate::assembler::simd::Conn::Storage {
+                                index,
+                                storage_id_in: if self_is_source {
+                                    FakeUnionStorage {
+                                        index: self_index,
+                                        grid_or_static_flag: 0,
+                                        recipe_idx_with_this_item: StaticID::Chest as u16,
+                                    }
+                                } else {
+                                    other
+                                },
+                                storage_id_out: if self_is_source {
+                                    other
+                                } else {
+                                    FakeUnionStorage {
+                                        index: self_index,
+                                        grid_or_static_flag: 0,
+                                        recipe_idx_with_this_item: StaticID::Chest as u16,
+                                    }
+                                },
+                            },
+                            crate::assembler::simd::InserterWithBeltsEnum::BeltStorage {
+                                belt_id,
+                                belt_pos,
+                                self_is_source,
+                            } => crate::assembler::simd::Conn::Belt {
+                                belt_id,
+                                belt_pos,
+                                self_is_source,
+                                self_storage: FakeUnionStorage {
+                                    index: self_index,
+                                    grid_or_static_flag: 0,
+                                    recipe_idx_with_this_item: StaticID::Chest as u16,
+                                },
+                            },
+                        },
+                    },
+                )
+            })
+            .collect::<Vec<_>>()
+            .into_par_iter()
     }
 }
 
@@ -50,13 +144,26 @@ impl<ItemIdxType: IdxTrait> FullChestStore<ItemIdxType> {
 pub struct MultiChestStore<ItemIdxType: WeakIdxTrait> {
     item: Item<ItemIdxType>,
     max_insert: Vec<ITEMCOUNTTYPE>,
+    pub last_inout: Vec<ITEMCOUNTTYPE>,
     pub inout: Vec<ITEMCOUNTTYPE>,
     storage: Vec<ChestSize>,
     // TODO: Any way to not have to store this a billion times?
     max_items: Vec<ChestSize>,
     holes: Vec<usize>,
 
+    wait_list: Vec<InserterWaitList>,
+    wait_list_min: Vec<ITEMCOUNTTYPE>,
+
+    #[serde(skip)]
+    inserter_reinsertion_vec: Vec<InternalInserterReinsertionInfo>,
+
     num_large_chests: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum WaitingInserterRemovalInfo {
+    StorageStorage { inserter_id: InserterId },
+    BeltStorage { belt_id: u32, belt_pos: BeltLenType },
 }
 
 impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
@@ -65,10 +172,17 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         Self {
             item,
             inout: vec![],
+            last_inout: vec![],
             storage: vec![],
             max_insert: vec![],
             max_items: vec![],
+
+            wait_list: vec![],
+            wait_list_min: vec![],
+
             holes: vec![],
+
+            inserter_reinsertion_vec: vec![],
 
             num_large_chests: 0,
         }
@@ -91,20 +205,70 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
 
         if let Some(hole) = self.holes.pop() {
             self.inout[hole] = 0;
+            self.last_inout[hole] = 0;
             self.storage[hole] = 0;
             self.max_insert[hole] = max_items.try_into().unwrap_or(ITEMCOUNTTYPE::MAX);
 
             self.max_items[hole] = max_items.saturating_sub(ChestSize::from(ITEMCOUNTTYPE::MAX));
+            self.wait_list[hole] = InserterWaitList::default();
+            self.wait_list_min[hole] = ITEMCOUNTTYPE::MAX;
+
             hole.try_into().unwrap()
         } else {
             self.inout.push(0);
+            self.last_inout.push(0);
             self.storage.push(0);
             self.max_insert
                 .push(max_items.try_into().unwrap_or(ITEMCOUNTTYPE::MAX));
 
             self.max_items
                 .push(max_items.saturating_sub(ChestSize::from(ITEMCOUNTTYPE::MAX)));
+            self.wait_list.push(InserterWaitList::default());
+            self.wait_list_min.push(ITEMCOUNTTYPE::MAX);
             (self.inout.len() - 1).try_into().unwrap()
+        }
+    }
+
+    pub(crate) fn remove_inserter_from_waitlist(
+        &mut self,
+        id: u32,
+        inserter_info: WaitingInserterRemovalInfo,
+    ) {
+        for wait_slot in &mut self.wait_list[id as usize].inserters {
+            if let Some(inserter) = wait_slot {
+                match (&inserter_info, &inserter.rest) {
+                    (
+                        WaitingInserterRemovalInfo::StorageStorage { inserter_id },
+                        crate::assembler::simd::InserterWithBeltsEnum::StorageStorage {
+                            self_is_source,
+                            index,
+                            other,
+                        },
+                    ) => {
+                        if *index == *inserter_id {
+                            let removed = wait_slot.take().unwrap();
+                            // TODO: What do I want to return
+                            return;
+                        }
+                    },
+                    (
+                        WaitingInserterRemovalInfo::BeltStorage { belt_id, belt_pos },
+                        crate::assembler::simd::InserterWithBeltsEnum::BeltStorage {
+                            self_is_source,
+                            belt_id: ins_belt_id,
+                            belt_pos: ins_belt_pos,
+                        },
+                    ) => {
+                        if *belt_id == *ins_belt_id && *ins_belt_pos == *belt_pos {
+                            let removed = wait_slot.take().unwrap();
+                            // TODO: What do I want to return
+                            return;
+                        }
+                    },
+
+                    _ => {},
+                }
+            }
         }
     }
 
@@ -115,19 +279,27 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
 
         if let Some(hole) = self.holes.pop() {
             self.inout[hole] = 0;
+            self.last_inout[hole] = 0;
             self.storage[hole] = 0;
             self.max_insert[hole] = max_items.try_into().unwrap_or(ITEMCOUNTTYPE::MAX);
 
             self.max_items[hole] = max_items.saturating_sub(ChestSize::from(ITEMCOUNTTYPE::MAX));
+            self.wait_list[hole] = InserterWaitList::default();
+            self.wait_list_min[hole] = ITEMCOUNTTYPE::MAX;
+
             hole.try_into().unwrap()
         } else {
             self.inout.push(0);
+            self.last_inout.push(0);
             self.storage.push(0);
             self.max_insert
                 .push(max_items.try_into().unwrap_or(ITEMCOUNTTYPE::MAX));
 
             self.max_items
                 .push(max_items.saturating_sub(ChestSize::from(ITEMCOUNTTYPE::MAX)));
+            self.wait_list.push(InserterWaitList::default());
+            self.wait_list_min.push(ITEMCOUNTTYPE::MAX);
+
             (self.inout.len() - 1).try_into().unwrap()
         }
     }
@@ -141,8 +313,11 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         }
         let items = ChestSize::from(self.inout[index]) + self.storage[index];
         self.inout[index] = 0;
+        self.last_inout[index] = 0;
         self.storage[index] = 0;
         self.max_items[index] = 0;
+        self.wait_list[index] = InserterWaitList::default();
+        self.wait_list_min[index] = ITEMCOUNTTYPE::MAX;
         items
     }
 
@@ -179,7 +354,9 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         }
     }
 
-    pub fn update_simd(&mut self) {
+    fn update_simd(&mut self) -> impl Iterator<Item = InternalInserterReinsertionInfo> {
+        self.inserter_reinsertion_vec
+            .reserve((self.inout.len() * 4).saturating_sub(self.inserter_reinsertion_vec.len()));
         #[cfg(debug_assertions)]
         {
             if self.num_large_chests == 0 {
@@ -188,32 +365,94 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         }
 
         // TODO: Splitting this into large chests and small chests would be better since now a single large chest will make all small chests in the world expensive
-        if self.num_large_chests > 0 {
-            for (inout, (storage, max_items)) in self
-                .inout
-                .iter_mut()
-                .zip(self.storage.iter_mut().zip(self.max_items.iter().copied()))
-            {
-                let to_move = inout.abs_diff(CHEST_GOAL_AMOUNT);
+        // With wait lists we cannot avoid updating all chests (even small chests)
+        // if self.num_large_chests > 0 {
+        for (
+            index,
+            ((((inout, last_inout), (storage, max_items)), (wait_list, wait_list_min)), max_insert),
+        ) in self
+            .inout
+            .iter_mut()
+            .zip(self.last_inout.iter_mut())
+            .zip(self.storage.iter_mut().zip(self.max_items.iter().copied()))
+            .zip(self.wait_list.iter_mut().zip(self.wait_list_min.iter_mut()))
+            .zip(self.max_insert.iter())
+            .enumerate()
+        {
+            let is_full = *inout == *max_insert;
+            let is_empty = *inout == 0;
+            let was_full = *last_inout == *max_insert;
+            let was_empty = *last_inout == 0;
+            *last_inout = *inout;
 
-                let switch = ChestSize::from(*inout >= CHEST_GOAL_AMOUNT);
+            let to_move = inout.abs_diff(CHEST_GOAL_AMOUNT);
 
-                let moved: SignedChestSize = (switch as SignedChestSize
-                    + (1 - switch as SignedChestSize) * -1)
-                    * (min(
-                        ChestSize::from(to_move),
-                        (max_items - *storage) * switch + (1 - switch) * *storage,
-                    ) as SignedChestSize);
+            let switch = ChestSize::from(*inout >= CHEST_GOAL_AMOUNT);
 
-                *inout = (ChestSize::from(*inout)).wrapping_sub_signed(moved) as u8;
-                *storage = (*storage).wrapping_add_signed(moved) as ChestSize;
+            if (was_full && !is_full) || (was_empty && !is_empty) {
+                for ins in wait_list.inserters.iter_mut() {
+                    if let Some(inserter) = ins {
+                        let self_is_source = match inserter.rest {
+                            crate::assembler::simd::InserterWithBeltsEnum::StorageStorage {
+                                self_is_source,
+                                ..
+                            } => self_is_source,
+                            crate::assembler::simd::InserterWithBeltsEnum::BeltStorage {
+                                self_is_source,
+                                ..
+                            } => self_is_source,
+                        };
 
-                debug_assert!(*storage <= max_items);
+                        if self_is_source && !is_empty {
+                            let taken_by_this_inserter = min(
+                                ITEMCOUNTTYPE::from(inserter.max_hand) - inserter.current_hand,
+                                *inout,
+                            );
+
+                            *inout -= taken_by_this_inserter;
+                            inserter.current_hand += taken_by_this_inserter;
+                        } else if !self_is_source && !is_full {
+                            let taken_by_this_inserter =
+                                min(inserter.current_hand, *max_insert - *inout);
+
+                            *inout += taken_by_this_inserter;
+                            inserter.current_hand -= taken_by_this_inserter;
+                        }
+
+                        if (inserter.current_hand == ITEMCOUNTTYPE::from(inserter.max_hand)
+                            && self_is_source)
+                            || (inserter.current_hand == 0 && !self_is_source)
+                        {
+                            let removed = ins.take().unwrap();
+                            self.inserter_reinsertion_vec
+                                .push_within_capacity(InternalInserterReinsertionInfo {
+                                    inserter: removed,
+                                    self_index: index as u32,
+                                })
+                                .unwrap();
+                        }
+                    }
+                }
             }
-        } else {
-            // Since all chests have a max_items of 0, we will never need/want to move items out of the inout
-            // So we can just return
+
+            let moved: SignedChestSize = (switch as SignedChestSize
+                + (1 - switch as SignedChestSize) * -1)
+                * (min(
+                    ChestSize::from(to_move),
+                    (max_items - *storage) * switch + (1 - switch) * *storage,
+                ) as SignedChestSize);
+
+            *inout = (ChestSize::from(*inout)).wrapping_sub_signed(moved) as u8;
+            *storage = (*storage).wrapping_add_signed(moved) as ChestSize;
+
+            debug_assert!(*storage <= max_items);
         }
+        // } else {
+        //     // Since all chests have a max_items of 0, we will never need/want to move items out of the inout
+        //     // So we can just return
+        // }
+
+        self.inserter_reinsertion_vec.drain(..)
     }
 
     pub fn add_items_to_chest(
@@ -322,8 +561,22 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         removed_items
     }
 
-    pub fn storage_list_slices(&mut self) -> (&[ITEMCOUNTTYPE], &mut [ITEMCOUNTTYPE]) {
-        (self.max_insert.as_slice(), self.inout.as_mut_slice())
+    pub fn storage_list_slices<'a>(
+        &'a mut self,
+    ) -> (
+        MaxInsertionLimit<'a>,
+        &'a mut [ITEMCOUNTTYPE],
+        InserterWaitLists<'a>,
+    ) {
+        (
+            MaxInsertionLimit::PerMachine(self.max_insert.as_slice()),
+            self.inout.as_mut_slice(),
+            // InserterWaitLists::None,
+            InserterWaitLists::PerMachine(
+                self.wait_list.as_mut_slice(),
+                self.wait_list_min.as_mut_slice(),
+            ),
+        )
     }
 }
 

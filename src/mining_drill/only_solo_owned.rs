@@ -8,10 +8,10 @@ use crate::WeakIdxTrait;
 use crate::data::DataStore;
 use crate::item::ITEMCOUNTTYPE;
 use crate::item::IdxTrait;
-use crate::item::Indexable;
 use crate::item::Item;
 use crate::mining_drill::MiningDrillInfo;
 use crate::power::Joule;
+use crate::storage_list::MaxInsertionLimit;
 
 use std::cmp::min;
 use std::mem;
@@ -132,7 +132,7 @@ impl<ItemIdxType: IdxTrait> PureDrillStorageOnlySoloOwned<ItemIdxType> {
         owned_resource_tile_list
     }
 
-    pub fn get_inventories(&mut self) -> (&[ITEMCOUNTTYPE], &mut [ITEMCOUNTTYPE]) {
+    pub fn get_inventories(&mut self) -> (MaxInsertionLimit<'_>, &mut [ITEMCOUNTTYPE]) {
         (ALWAYS_FULL, self.inventory.as_mut_slice())
     }
 

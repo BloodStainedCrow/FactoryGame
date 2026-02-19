@@ -23,9 +23,11 @@ pub struct MapViewUpdate {
     pub color: Color32,
 }
 
-const NUM_MAP_TILE_SIZES: usize = 4;
+// FIXME: It seems we are rendering one map tile to much in the positive directions
+
+const NUM_MAP_TILE_SIZES: usize = 5;
 // TODO: Figure out a good tilesize. 1024 seems to work fine, but is larger or smaller better?
-const TILE_SIZE_PIXELS: [u32; NUM_MAP_TILE_SIZES] = [1024, 1024, 1024, 4096];
+const TILE_SIZE_PIXELS: [u32; NUM_MAP_TILE_SIZES] = [1024, 1024, 1024, 1024, 4000];
 // TODO: Since array::map is not const, we hack it like this
 const NUM_TILES_PER_AXIS: [u32; NUM_MAP_TILE_SIZES] = {
     let mut b = [0; NUM_MAP_TILE_SIZES];
@@ -36,8 +38,8 @@ const NUM_TILES_PER_AXIS: [u32; NUM_MAP_TILE_SIZES] = {
     }
     b
 };
-const TILE_PIXEL_TO_WORLD_TILE: [u32; NUM_MAP_TILE_SIZES] = [1, 4, 16, 64];
-pub const MIN_WIDTH: [u32; NUM_MAP_TILE_SIZES] = [0, 5_000, 10_000, 50_000];
+const TILE_PIXEL_TO_WORLD_TILE: [u32; NUM_MAP_TILE_SIZES] = [1, 4, 16, 64, 256];
+pub const MIN_WIDTH: [u32; NUM_MAP_TILE_SIZES] = [0, 10_000, 40_000, 100_000, 300_000];
 
 #[profiling::function]
 pub fn create_map_textures_if_needed<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
@@ -121,19 +123,37 @@ pub fn create_map_textures_if_needed<ItemIdxType: IdxTrait, RecipeIdxType: IdxTr
                 [map_tile_size; 2], pixel_to_tile
             )
         );
-        renderer.create_runtime_texture_if_missing(
-            tile_texture_id,
-            [map_tile_size as usize; 2],
-            || {
-                collect_colors(
-                    world,
-                    [tile_x as u32, tile_y as u32],
-                    map_tile_size,
-                    pixel_to_tile,
-                    data_store,
-                )
-            },
-        );
+
+        let tile_x_end = ((tile_x + 1) * map_tile_size as i32 * pixel_to_tile as i32) - 1_000_000;
+        let real_tile_x_end = min(tile_x_end, 1_000_000);
+        let tile_y_end = ((tile_y + 1) * map_tile_size as i32 * pixel_to_tile as i32) - 1_000_000;
+        let real_tile_y_end = min(tile_y_end, 1_000_000);
+        assert!(tile_x_end >= real_tile_x_end);
+        assert!(tile_y_end >= real_tile_y_end);
+        let size = [
+            (((map_tile_size) * pixel_to_tile - (tile_x_end - real_tile_x_end) as u32)
+                / pixel_to_tile) as usize,
+            (((map_tile_size) * pixel_to_tile - (tile_y_end - real_tile_y_end) as u32)
+                / pixel_to_tile) as usize,
+        ];
+
+        assert!(size[0] > 0);
+        assert!(size[1] > 0);
+
+        renderer.create_runtime_texture_if_missing(tile_texture_id, size, || {
+            let ret = collect_colors(
+                world,
+                [tile_x as u32, tile_y as u32],
+                size.map(|v| v as u32),
+                map_tile_size,
+                pixel_to_tile,
+                data_store,
+            );
+
+            assert_eq!(Borrow::<[u8]>::borrow(&ret).len(), size[0] * size[1] * 4);
+
+            ret
+        });
 
         if let Some(allowed_time) = allowed_time {
             if start_time.elapsed() > allowed_time {
@@ -174,6 +194,7 @@ static DEDUP_MAP: LazyLock<HashMap<u32, Vec<u8>>> = LazyLock::new(|| {
 fn collect_colors<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     world: &World<ItemIdxType, RecipeIdxType>,
     [tile_x, tile_y]: [u32; 2],
+    [size_x, size_y]: [u32; 2],
     map_tile_size: u32,
     pixel_to_tile: u32,
     data_store: &crate::data::DataStore<ItemIdxType, RecipeIdxType>,
@@ -187,26 +208,29 @@ fn collect_colors<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     as i32,
             },
             Position {
-                x: (i32::try_from((tile_x + 1) * map_tile_size * pixel_to_tile).unwrap()
+                x: (i32::try_from((tile_x * map_tile_size + size_x) * pixel_to_tile).unwrap()
                     - 1_000_000) as i32,
-                y: (i32::try_from((tile_y + 1) * map_tile_size * pixel_to_tile).unwrap()
+                y: (i32::try_from((tile_y * map_tile_size + size_y) * pixel_to_tile).unwrap()
                     - 1_000_000) as i32,
             },
         )
         .unwrap_or(true)
     {
         ColorResult::Generated(bytemuck::cast_vec(
-            ((tile_y * map_tile_size)..((tile_y + 1) * map_tile_size))
+            ((tile_y * map_tile_size)..(tile_y * map_tile_size + size_y))
                 .into_par_iter()
                 .flat_map_iter(|y_pos| {
                     std::iter::repeat(y_pos)
-                        .zip((tile_x * map_tile_size)..((tile_x + 1) * map_tile_size))
+                        .zip((tile_x * map_tile_size)..(tile_x * map_tile_size + size_x))
                 })
                 .map(|(y_pos, x_pos)| {
                     let x_pos_world =
                         (i32::try_from(x_pos * pixel_to_tile).unwrap() - 1_000_000) as i32;
                     let y_pos_world =
                         (i32::try_from(y_pos * pixel_to_tile).unwrap() - 1_000_000) as i32;
+
+                    assert!(x_pos_world <= 1_000_000);
+                    assert!(y_pos_world <= 1_000_000);
 
                     let color = world.get_entity_color(
                         Position {
@@ -221,12 +245,12 @@ fn collect_colors<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 .collect(),
         ))
     } else {
-        match DEDUP_MAP.get(&(map_tile_size * map_tile_size)) {
+        match DEDUP_MAP.get(&(size_x * size_y)) {
             Some(cached_alloc) => ColorResult::Const(&cached_alloc),
             None => ColorResult::Generated(bytemuck::cast_vec(vec![
                 Color32::BLACK;
-                map_tile_size as usize
-                    * map_tile_size as usize
+                size_x as usize
+                    * size_y as usize
             ])),
         }
     };
@@ -384,14 +408,30 @@ pub fn render_map_view(
             );
 
             if renderer.has_runtime_texture(texture_id) {
-                map_layer.draw_runtime_texture(
-                    texture_id,
-                    DrawInstance {
-                        position: [tile_draw_offs.0, tile_draw_offs.1],
-                        size: [(map_tile_size * pixel_to_tile) as f32; 2],
-                        animation_frame: 0,
-                    },
-                );
+                let tile_x_end =
+                    ((tile_x + 1) * map_tile_size as i32 * pixel_to_tile as i32) - 1_000_000;
+                let real_tile_x_end = min(tile_x_end, 1_000_000);
+                let tile_y_end =
+                    ((tile_y + 1) * map_tile_size as i32 * pixel_to_tile as i32) - 1_000_000;
+                let real_tile_y_end = min(tile_y_end, 1_000_000);
+                assert!(tile_x_end >= real_tile_x_end);
+                assert!(tile_y_end >= real_tile_y_end);
+                let size = [
+                    ((map_tile_size) * pixel_to_tile - (tile_x_end - real_tile_x_end) as u32)
+                        as f32,
+                    ((map_tile_size) * pixel_to_tile - (tile_y_end - real_tile_y_end) as u32)
+                        as f32,
+                ];
+                if size[0] > 0.0 && size[1] > 0.0 {
+                    map_layer.draw_runtime_texture(
+                        texture_id,
+                        DrawInstance {
+                            position: [tile_draw_offs.0, tile_draw_offs.1],
+                            size,
+                            animation_frame: 0,
+                        },
+                    );
+                }
             }
             // map_layer.draw_sprite(
             //     &Sprite::new(Texture::default()),

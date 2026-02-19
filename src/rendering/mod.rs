@@ -169,6 +169,8 @@ pub struct TextureAtlas {
 
     underground: enum_map::EnumMap<Dir, enum_map::EnumMap<UndergroundDir, EntitySprite>>,
 
+    accumulator: EntitySprite,
+
     mining_drill: EntitySprite,
     solar_panel: EntitySprite,
 
@@ -273,6 +275,7 @@ fn texture_atlas() -> TextureAtlas {
         no_power: entity_sprite_from_path_scaled!("temp_assets/no_power.png", 1, 1.0),
 
         assembler: entity_sprite_from_path_tiling!("temp_assets/assembler.png", 1),
+        accumulator: entity_sprite_from_path_tiling!("temp_assets/assembler.png", 1),
         chest: entity_sprite_from_path_tiling!("temp_assets/outside_world.png", 1),
 
         items: vec![sprite_from_path!("temp_assets/plate.png", 1); 200].into_boxed_slice(),
@@ -494,6 +497,8 @@ fn texture_atlas() -> TextureAtlas {
             1,
             1.0 / 2.0
         ),
+
+        accumulator: entity_sprite_from_path_tiling!("temp_assets/krastorio/energy-storage.png", 1),
 
         lab: entity_sprite_from_path_tiling!("temp_assets/krastorio/advanced-lab.png", 1),
 

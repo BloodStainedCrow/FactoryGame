@@ -44,7 +44,8 @@ pub type ResearchProgress = u16;
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 pub struct TechState {
-    pub current_technology: Option<Technology>,
+    pub research_queue: Vec<Technology>,
+
     // Map from technologies to how many times they were completed
     pub finished_technologies: HashMap<Technology, u32>,
     pub in_progress_technologies: HashMap<Technology, u64>,
@@ -93,7 +94,7 @@ impl TechState {
             .collect();
 
         Self {
-            current_technology: None,
+            research_queue: vec![],
             finished_technologies,
             recipe_active,
 
@@ -120,7 +121,7 @@ impl TechState {
             return;
         }
 
-        if let Some(current) = &self.current_technology {
+        if let Some(current) = self.research_queue.first() {
             let (tech_cost_units, tech_cost_items) =
                 &data_store.technology_costs[current.id as usize];
             let mut tech_cost_units = *tech_cost_units;
@@ -141,10 +142,7 @@ impl TechState {
                     data::RepeatableCostScaling::Linear {
                         unit_increase_per_level,
                     } => unit_increase_per_level * u64::from(times_this_tech_was_finished),
-                    data::RepeatableCostScaling::Exponential {
-                        unit_multiplier_per_level_nom,
-                        unit_multiplier_per_level_denom,
-                    } => todo!(),
+                    data::RepeatableCostScaling::Exponential { .. } => todo!(),
                 };
 
                 tech_cost_units += tech_cost_increase;
@@ -212,10 +210,11 @@ impl TechState {
                 {
                     self.recipe_active[recipe.into_usize()] = true;
                 }
-                if is_repeating {
+                // TODO: Do not autorepeat always
+                if is_repeating && self.research_queue.len() == 1 {
                     // Just keep researching the same tech (just one level higher)
                 } else {
-                    self.current_technology = None;
+                    self.research_queue.remove(0);
                 }
 
                 // Since we only check if a tech is finished at the end of each update, it is possible we produced more science progress in this tick, than was required.
@@ -247,6 +246,7 @@ impl TechState {
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Graph<data::Technology<RecipeIdxType>, (), Directed, u16, DefaultNodeShape, DefaultEdgeShape>
     {
+        // TODO: This seems to be called every frame???
         egui_graphs::to_graph_custom::<_, _, _, _, DefaultNodeShape, DefaultEdgeShape>(
             &data_store.technology_tree,
             |node| {
@@ -331,6 +331,10 @@ impl TechState {
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
     {
+        use itertools::Itertools;
+
+        debug_assert!(self.research_queue.iter().all_unique());
+
         {
             profiling::scope!("Update Tech Tree colors");
             for tech in 0..data_store.technology_costs.len() {
@@ -397,7 +401,7 @@ impl TechState {
         SidePanel::new(egui::panel::Side::Left, "Current Technology Info Sidepanel").show_inside(
             ui,
             |ui| {
-                if let Some(tech) = &self.current_technology {
+                if let Some(tech) = self.research_queue.first() {
                     let is_repeating = data_store
                         .technology_tree
                         .node_weight(NodeIndex::new(tech.id.into()))
@@ -451,8 +455,8 @@ impl TechState {
                                 unit_increase_per_level,
                             } => unit_increase_per_level * u64::from(times_this_tech_was_finished),
                             data::RepeatableCostScaling::Exponential {
-                                unit_multiplier_per_level_nom,
-                                unit_multiplier_per_level_denom,
+                                unit_multiplier_per_level_nom: _,
+                                unit_multiplier_per_level_denom: _,
                             } => todo!(),
                         };
 
@@ -465,10 +469,44 @@ impl TechState {
                     );
 
                     if ui.button("Cancel").clicked() {
-                        ret.push(ActionType::SetActiveResearch { tech: None });
+                        ret.push(ActionType::RemoveResearchFromQueue { tech: *tech });
                     } else if ui.button("[CHEAT] Unlock Technology").clicked() {
                         ret.push(ActionType::CheatUnlockTechnology { tech: *tech });
                     }
+
+                    ui.separator();
+
+                    use egui_extras::{Column, TableBuilder};
+
+                    TableBuilder::new(ui)
+                        .column(Column::remainder())
+                        .column(Column::auto())
+                        .id_salt("Research Queue")
+                        .body(|body| {
+                            body.rows(1.0, self.research_queue.len() - 1, |mut row| {
+                                let idx = row.index();
+
+                                let tech = &self.research_queue[idx + 1];
+
+                                row.col(|ui| {
+                                    ui.label(
+                                        &data_store
+                                            .technology_tree
+                                            .node_weight(NodeIndex::from(tech.id))
+                                            .unwrap()
+                                            .name,
+                                    );
+                                });
+
+                                row.col(|ui| {
+                                    if ui.button("X").clicked() {
+                                        ret.push(ActionType::RemoveResearchFromQueue {
+                                            tech: *tech,
+                                        });
+                                    }
+                                });
+                            });
+                        });
                 }
             },
         );
@@ -487,8 +525,14 @@ impl TechState {
                 }
 
                 if !render_graph.selected_nodes().is_empty() {
+                    use crate::data::TechnologyEffect;
+
                     let [selected_node] = render_graph.selected_nodes() else {
                         unreachable!("We only allow selecting a single node!");
+                    };
+
+                    let selected_tech = Technology {
+                        id: selected_node.index().try_into().unwrap(),
                     };
 
                     ui.label(
@@ -511,9 +555,7 @@ impl TechState {
                         false
                     } else {
                         self.finished_technologies
-                            .get(&Technology {
-                                id: selected_node.index().try_into().unwrap(),
-                            })
+                            .get(&selected_tech)
                             .copied()
                             .unwrap_or(0)
                             > 0
@@ -531,10 +573,7 @@ impl TechState {
                                 .unwrap_or(0)
                                 > 0
                         });
-
-                    let is_currently_researching = Some(Technology {
-                        id: selected_node.index().try_into().unwrap(),
-                    }) == self.current_technology;
+                    let is_currently_researching = self.research_queue.contains(&selected_tech);
 
                     if ui
                         .add_enabled(
@@ -543,20 +582,31 @@ impl TechState {
                         )
                         .clicked()
                     {
-                        ret.push(ActionType::SetActiveResearch {
-                            tech: Some(Technology {
-                                id: selected_node.index().try_into().unwrap(),
-                            }),
+                        ret.push(ActionType::AddResearchToQueue {
+                            tech: selected_tech,
                         });
                     }
 
                     if is_done {
                         if ui.button("[CHEAT] Undo Technology").clicked() {
                             ret.push(ActionType::CheatRelockTechnology {
-                                tech: Technology {
-                                    id: selected_node.index().try_into().unwrap(),
-                                },
+                                tech: selected_tech,
                             });
+                        }
+                    }
+
+                    // Render Tech Effect
+                    let TechnologyEffect { unlocked_recipes } = &data_store
+                        .technology_tree
+                        .node_weight(NodeIndex::from(selected_tech.id))
+                        .unwrap()
+                        .effect;
+
+                    // Unlocked Recipes
+                    if !unlocked_recipes.is_empty() {
+                        ui.label("Unlocks Recipes:");
+                        for recipe in unlocked_recipes {
+                            ui.label(&data_store.recipe_display_names[recipe.into_usize()]);
                         }
                     }
                 }
@@ -565,6 +615,7 @@ impl TechState {
 
         let mut view =
             GraphView::<_, _, _, _, _, _, LayoutStateTree, LayoutTree>::new(render_graph)
+                .with_id(Some("Tech Tree".to_string()))
                 .with_navigations(
                     &SettingsNavigation::new()
                         .with_fit_to_screen_enabled(false)

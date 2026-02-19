@@ -1,9 +1,13 @@
+use crate::belt::belt::BeltLenType;
 use std::{
-    array, i32,
+    array,
+    cmp::min,
+    i32,
+    num::NonZero,
     ops::{Add, Sub},
     simd::{
         Simd,
-        cmp::SimdPartialOrd,
+        cmp::{SimdPartialEq, SimdPartialOrd},
         num::{SimdInt, SimdUint},
     },
     u8,
@@ -13,13 +17,16 @@ use crate::{
     MASKTYPE, SIMDTYPE,
     data::{AssemblerInfo, DataStore, ItemRecipeDir},
     frontend::world::Position,
-    item::{ITEMCOUNTTYPE, IdxTrait, Indexable, Recipe, WeakIdxTrait},
+    inserter::{FakeUnionStorage, Storage, storage_storage_with_buckets_indirect::InserterId},
+    item::{ITEMCOUNTTYPE, IdxTrait, Indexable, Item, Recipe, WeakIdxTrait},
     power::{
         Watt,
         power_grid::{IndexUpdateInfo, MAX_POWER_MULT, PowerGridEntity, PowerGridIdentifier},
     },
+    storage_list::{MaxInsertionLimit, PANIC_ON_INSERT},
 };
 use itertools::{Either, Itertools};
+use static_assertions::const_assert;
 
 use super::{AssemblerOnclickInfo, PowerUsageInfo, Simdtype, TIMERTYPE, arrays};
 
@@ -28,9 +35,115 @@ use egui_show_info_derive::ShowInfo;
 #[cfg(feature = "client")]
 use get_size2::GetSize;
 
+const WAITLIST_LEN: usize = 3;
+
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[repr(align(64))]
+pub struct InserterWaitList {
+    pub(crate) inserters: [Option<InserterWithBelts>; WAITLIST_LEN],
+}
+
+const_assert!(std::mem::size_of::<InserterWaitList>() <= 64);
+
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Inserter {
+    // item: u8,
+    // TODO: This is not needed for assemblers, just for chests.
+    pub self_is_source: bool,
+    // We track the hand here so we avoid having to reinsert them each time the assembler produces anything
+    // This does mean we can only fit 3 Inserters per cacheline :/
+    // This is fixed by the item arena optimization
+    pub current_hand: ITEMCOUNTTYPE,
+    pub max_hand: NonZero<ITEMCOUNTTYPE>,
+    pub movetime: u16,
+    pub(crate) index: InserterId,
+    pub other: FakeUnionStorage,
+}
+
+const_assert!(std::mem::size_of::<Option<InserterWithBelts>>() <= 20);
+const_assert!(std::mem::size_of::<InserterWithBelts>() <= 20);
+
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct InserterWithBelts {
+    pub(crate) current_hand: ITEMCOUNTTYPE,
+    pub(crate) max_hand: ITEMCOUNTTYPE,
+
+    pub(crate) rest: InserterWithBeltsEnum,
+    pub(crate) movetime: NonZero<u16>,
+}
+
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) enum InserterWithBeltsEnum {
+    StorageStorage {
+        // TODO: This is not needed for assemblers, just for chests.
+        self_is_source: bool,
+        index: InserterId,
+
+        other: FakeUnionStorage,
+    },
+    BeltStorage {
+        self_is_source: bool,
+        belt_id: u32,
+        belt_pos: u16,
+    },
+}
+
+#[derive(Debug)]
+pub struct InserterReinsertionInfo<ItemIdxType: WeakIdxTrait> {
+    pub movetime: NonZero<u16>,
+    pub item: Item<ItemIdxType>,
+    pub current_hand: ITEMCOUNTTYPE,
+    pub max_hand: ITEMCOUNTTYPE,
+
+    pub(crate) conn: Conn,
+}
+
+#[derive(Debug)]
+pub enum Conn {
+    Storage {
+        index: InserterId,
+        storage_id_in: FakeUnionStorage,
+        storage_id_out: FakeUnionStorage,
+    },
+    Belt {
+        belt_id: u32,
+        belt_pos: BeltLenType,
+        self_storage: FakeUnionStorage,
+        self_is_source: bool,
+    },
+}
+
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone)]
+struct InternalInserterReinsertionInfo {
+    pub movetime: NonZero<u16>,
+    pub item: u8,
+    pub max_hand: ITEMCOUNTTYPE,
+    pub self_index: u32,
+
+    pub(crate) rest: Rest,
+}
+
+#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[derive(Debug, Clone)]
+enum Rest {
+    Storage {
+        index: InserterId,
+        other: FakeUnionStorage,
+    },
+    Belt {
+        belt_id: u32,
+        belt_pos: BeltLenType,
+        self_is_source: bool,
+    },
+}
+
 // FIXME: We store the same slice length n times!
 // TODO: Don´t clump update data and data for adding/removing assemblers together!
-
 // FIXME: Using Boxed slices here is probably the main contributor to the time usage for building large power grids, since this means reallocation whenever we add assemblers!
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -75,10 +188,32 @@ pub struct MultiAssemblerStore<
     timers: Box<[TIMERTYPE]>,
     prod_timers: Box<[TIMERTYPE]>,
 
+    // FIXME: For me to be able to add inserters to waitlists during parallel/per item updates,
+    //        We would need a list of waitlists per ING and OUTPUT item
+    //        This is a pretty big commitment in terms of memory
+    #[serde(with = "arrays")]
+    waitlists_ings: [Box<[InserterWaitList]>; NUM_INGS],
+    #[serde(with = "arrays")]
+    waitlists_ings_needed: [Box<[ITEMCOUNTTYPE]>; NUM_INGS],
+    #[serde(with = "arrays")]
+    waitlists_outputs: [Box<[InserterWaitList]>; NUM_OUTPUTS],
+    #[serde(with = "arrays")]
+    waitlists_outputs_needed: [Box<[ITEMCOUNTTYPE]>; NUM_OUTPUTS],
     holes: Vec<usize>,
+
+    #[cfg(feature = "assembler-craft-tracking")]
+    number_of_crafts_finished: Vec<u32>,
+
     positions: Box<[Position]>,
     types: Box<[u8]>,
     len: usize,
+
+    #[serde(skip)]
+    inserter_waitlist_output_vec: Vec<InternalInserterReinsertionInfo>,
+    #[serde(with = "arrays")]
+    self_fake_union_ing: [FakeUnionStorage; NUM_INGS],
+    #[serde(with = "arrays")]
+    self_fake_union_out: [FakeUnionStorage; NUM_OUTPUTS],
 }
 
 // TODO: Maybe also add a defragmentation routine to mend the ineffeciencies left by deconstruction large amounts of assemblers
@@ -201,6 +336,12 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         times: &[TIMERTYPE],
         power_list: &[AssemblerInfo],
     ) -> (Watt, u32, u32) {
+        // FIXME: This could technically not be enough if enough items are produced in a single tick
+        // self.inserter_waitlist_output_vec.reserve(
+        //     (self.len * 4 * (NUM_INGS + NUM_OUTPUTS))
+        //         .saturating_sub(self.inserter_waitlist_output_vec.len()),
+        // );
+
         let (ing_idx, out_idx) = recipe_lookup[self.recipe.id.into()];
 
         let our_ings: &[ITEMCOUNTTYPE; NUM_INGS] = &recipe_ings[ing_idx];
@@ -240,7 +381,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         let (timers, overlap) = self.timers.as_chunks_mut::<{ SIMDTYPE::LEN }>();
 
         // FIXME:
-        // assert!(overlap.is_empty());
+        assert!(overlap.is_empty());
 
         for (
             index,
@@ -256,6 +397,50 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
             ))
             .enumerate()
         {
+            // let timer = SIMDTYPE::from_array(*timer_arr);
+            // let stopped_empty = dbg!(timer).simd_eq(SIMDTYPE::splat(0));
+            // let stopped_full = timer.simd_eq(SIMDTYPE::splat(TIMERTYPE::MAX));
+
+            // let speed_mod = Simd::<u8, 16>::from_array(*speed_mod);
+            // let increase: SIMDTYPE = (power_level_recipe_increase.cast::<u32>()
+            //     * speed_mod.cast::<u32>()
+            //     / Simd::<u32, 16>::splat(20))
+            // .cast();
+            // let new_timer_assuming_free_run = timer + increase;
+            // let timer_mask_assuming_free_run: MASKTYPE = new_timer_assuming_free_run.simd_lt(timer);
+            // let progress = (new_timer_assuming_free_run.sub(timer)).cast::<u32>();
+            // let prod_timer = SIMDTYPE::from_array(*prod_timer_arr);
+            // let bonus_prod = Simd::<u8, 16>::from_array(*bonus_prod);
+            // let new_prod_timer_assuming_free_run: SIMDTYPE = prod_timer.add(SimdUint::cast::<u16>(
+            //     progress * SimdUint::cast::<u32>(bonus_prod) / Simd::<u32, 16>::splat(100),
+            // ));
+            // let prod_timer_mask: MASKTYPE = if bonus_prod
+            //     .simd_gt(Simd::<u8, { SIMDTYPE::LEN }>::splat(0))
+            //     .any()
+            // {
+            //     let prod_timer = SIMDTYPE::from_array(*prod_timer_arr);
+            //     // This needs be calculated in u32 to prevent overflows in intermediate values
+            //     let progress = (new_timer_assuming_free_run.sub(timer)).cast::<u32>();
+            //     let new_prod_timer: SIMDTYPE = prod_timer.add(SimdUint::cast::<u16>(
+            //         progress * SimdUint::cast::<u32>(bonus_prod) / Simd::<u32, 16>::splat(100),
+            //     ));
+
+            //     *prod_timer_arr = new_prod_timer.to_array();
+
+            //     new_prod_timer.simd_lt(prod_timer)
+            // } else {
+            //     MASKTYPE::splat(false)
+            // };
+            // if !stopped_empty.any()
+            //     && !stopped_full.any()
+            //     && !timer_mask_assuming_free_run.any()
+            //     && !prod_timer_mask.any()
+            // {
+            //     *timer_arr = new_timer_assuming_free_run.to_array();
+            //     *prod_timer_arr = new_prod_timer_assuming_free_run.to_array();
+            //     continue;
+            // }
+
             let index = index * 16;
             // ~~Remove the items from the ings at the start of the crafting process~~
             // We will do this as part of the frontend ui!
@@ -306,10 +491,13 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
             let new_timer = space_mask.select(new_timer_output_space, new_timer_output_full);
 
+            if timer == new_timer {
+                continue;
+            }
+
             // Power calculation
             // We use power if any work was done
-            let uses_power =
-                ing_mask & (space_mask | timer.simd_lt(SIMDTYPE::splat(TIMERTYPE::MAX)));
+            let uses_power = timer.simd_ne(new_timer);
             if self.single_type.is_some() {
                 power_const_type += u32::from(
                     uses_power
@@ -327,50 +515,245 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                 );
             }
 
-            if timer == new_timer {
-                continue;
-            }
-
             let timer_mask: MASKTYPE = new_timer.simd_lt(timer);
-
             // if we have enough items for another craft keep the wrapped value (This improves the accuracy), else clamp it to 0
             let new_timer =
                 (!timer_mask | ing_mask_for_two_crafts).select(new_timer, SIMDTYPE::splat(0));
-
-            let prod_timer = SIMDTYPE::from_array(*prod_timer_arr);
-            let bonus_prod = Simd::<u8, 16>::from_array(*bonus_prod);
-            // This needs be calculated in u32 to prevent overflows in intermediate values
-            let progress = (new_timer.sub(timer)).cast::<u32>();
-            let new_prod_timer: SIMDTYPE = prod_timer.add(SimdUint::cast::<u16>(
-                progress * SimdUint::cast::<u32>(bonus_prod) / Simd::<u32, 16>::splat(100),
-            ));
-
-            let prod_timer_mask: MASKTYPE = new_prod_timer.simd_lt(prod_timer);
-
             *timer_arr = new_timer.to_array();
-            *prod_timer_arr = new_prod_timer.to_array();
+            let bonus_prod = Simd::<u8, 16>::from_array(*bonus_prod);
+            let prod_timer_mask: MASKTYPE = if bonus_prod
+                .simd_gt(Simd::<u8, { SIMDTYPE::LEN }>::splat(0))
+                .any()
+            {
+                let prod_timer = SIMDTYPE::from_array(*prod_timer_arr);
+                // This needs be calculated in u32 to prevent overflows in intermediate values
+                let progress = (new_timer.sub(timer)).cast::<u32>();
+                let new_prod_timer: SIMDTYPE = prod_timer.add(SimdUint::cast::<u16>(
+                    progress * SimdUint::cast::<u32>(bonus_prod) / Simd::<u32, 16>::splat(100),
+                ));
+
+                *prod_timer_arr = new_prod_timer.to_array();
+
+                new_prod_timer.simd_lt(prod_timer)
+            } else {
+                MASKTYPE::splat(false)
+            };
+
             if timer_mask.any() || prod_timer_mask.any() {
-                for i in 0..NUM_OUTPUTS {
-                    let our_outputs = SIMDTYPE::splat(our_outputs[i].into());
-                    let outputs: Simd<u8, 16> =
-                        Simd::<u8, 16>::from_slice(&self.outputs[i][index..]);
-                    let outputs = outputs.cast();
-                    let int_output = timer_mask.select(outputs + our_outputs, outputs);
-                    self.outputs[i][index..(index + 16)].copy_from_slice(
-                        (prod_timer_mask.select(int_output + our_outputs, int_output))
-                            .cast()
-                            .as_array(),
-                    );
+                // for i in 0..NUM_OUTPUTS {
+                //     let our_outputs = SIMDTYPE::splat(our_outputs[i].into());
+                //     let outputs: Simd<u8, 16> =
+                //         Simd::<u8, 16>::from_slice(&self.outputs[i][index..]);
+                //     let outputs = outputs.cast();
+                //     let int_output = timer_mask.select(outputs + our_outputs, outputs);
+                //     self.outputs[i][index..(index + 16)].copy_from_slice(
+                //         (prod_timer_mask.select(int_output + our_outputs, int_output))
+                //             .cast()
+                //             .as_array(),
+                //     );
+                // }
+
+                // FIXME: We are missing production if main and prod tick are at the same time!
+                for (i, (has_produced_base, has_produced_prod)) in timer_mask
+                    .to_array()
+                    .into_iter()
+                    .zip(prod_timer_mask.to_array().into_iter())
+                    .enumerate()
+                {
+                    if has_produced_base || has_produced_prod {
+                        let final_idx = index + i;
+                        #[cfg(feature = "assembler-craft-tracking")]
+                        {
+                            self.number_of_crafts_finished[final_idx] +=
+                                u32::from(has_produced_base) + u32::from(has_produced_prod);
+                        }
+
+                        let mut items = our_outputs.clone();
+
+                        for (item, (out, items_to_distribute)) in self
+                            .waitlists_outputs
+                            .iter_mut()
+                            .zip(&mut items)
+                            .enumerate()
+                        {
+                            if *items_to_distribute + self.outputs[item][final_idx]
+                                >= min(
+                                    self.waitlists_outputs_needed[item][final_idx],
+                                    our_maximums[item],
+                                )
+                            {
+                                *items_to_distribute += self.outputs[item][final_idx];
+                                self.outputs[item][final_idx] = 0;
+                                for idx in 0..WAITLIST_LEN {
+                                    let ins = &mut out[final_idx].inserters[idx];
+                                    if let Some(v) = ins {
+                                        let amount_taken_by_this_inserter = min(
+                                            *items_to_distribute,
+                                            ITEMCOUNTTYPE::from(v.max_hand) - v.current_hand,
+                                        );
+                                        if v.current_hand + amount_taken_by_this_inserter
+                                            == ITEMCOUNTTYPE::from(v.max_hand)
+                                        {
+                                            let ins = ins.take().unwrap();
+                                            for move_left_idx in idx..WAITLIST_LEN {
+                                                out[final_idx].inserters[move_left_idx] = out
+                                                    [final_idx]
+                                                    .inserters
+                                                    .get_mut(move_left_idx + 1)
+                                                    .map(|v| v.take())
+                                                    .unwrap_or(None);
+                                            }
+                                            let () =
+                                                self.inserter_waitlist_output_vec
+                                                    .push(InternalInserterReinsertionInfo {
+                                                    movetime: ins.movetime.into(),
+                                                    item: (NUM_INGS + item) as u8,
+                                                    max_hand: ins.max_hand.into(),
+                                                    self_index: final_idx as u32,
+                                                    rest: match ins.rest {
+                                                        InserterWithBeltsEnum::StorageStorage {
+                                                            self_is_source: _,
+                                                            index,
+                                                            other,
+                                                        } => Rest::Storage { index, other },
+                                                        InserterWithBeltsEnum::BeltStorage {
+                                                            belt_id,
+                                                            belt_pos,
+                                                            self_is_source,
+                                                        } => Rest::Belt {
+                                                            belt_id,
+                                                            belt_pos,
+                                                            self_is_source,
+                                                        },
+                                                    },
+                                                })
+                                            else {
+                                                panic!(
+                                                    "Not enough space in inserter readdition vec. Capacity is {}",
+                                                    self.inserter_waitlist_output_vec.capacity()
+                                                );
+                                            };
+                                            self.waitlists_outputs_needed[item][final_idx] =
+                                                out[final_idx].inserters[0]
+                                                    .as_ref()
+                                                    .map(|ins| ins.max_hand - ins.current_hand)
+                                                    .unwrap_or(ITEMCOUNTTYPE::MAX);
+                                        } else {
+                                            v.current_hand += amount_taken_by_this_inserter;
+                                        }
+                                        *items_to_distribute -= amount_taken_by_this_inserter;
+
+                                        // TODO: Check if this is good or bad
+                                        if *items_to_distribute == 0 {
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+
+                            if *items_to_distribute > 0 {
+                                self.outputs[item][final_idx] += *items_to_distribute;
+                            }
+                        }
+                    }
                 }
             }
             if timer_mask.any() {
-                for i in 0..NUM_INGS {
-                    let ings: Simd<u8, 16> = Simd::<u8, 16>::from_slice(&self.ings[i][index..]);
-                    let ings = ings.cast();
-                    let our_ings = SIMDTYPE::splat(our_ings[i].into());
-                    self.ings[i][index..(index + 16)].copy_from_slice(
-                        timer_mask.select(ings - our_ings, ings).cast().as_array(),
-                    );
+                // for i in 0..NUM_INGS {
+                //     let ings: Simd<u8, 16> = Simd::<u8, 16>::from_slice(&self.ings[i][index..]);
+                //     let ings = ings.cast();
+                //     let our_ings = SIMDTYPE::splat(our_ings[i].into());
+                //     self.ings[i][index..(index + 16)].copy_from_slice(
+                //         timer_mask.select(ings - our_ings, ings).cast().as_array(),
+                //     );
+                // }
+
+                let has_consumed = timer_mask;
+                for (i, has_consumed) in has_consumed.to_array().into_iter().enumerate() {
+                    if has_consumed {
+                        let final_idx = index + i;
+                        let mut items = our_ings.clone();
+
+                        for (item, (ing, items_to_drain)) in
+                            self.waitlists_ings.iter_mut().zip(&mut items).enumerate()
+                        {
+                            if *items_to_drain
+                                + (self.ings_max_insert[item][final_idx]
+                                    - self.ings[item][final_idx])
+                                >= self.waitlists_ings_needed[item][final_idx]
+                            {
+                                *items_to_drain += self.ings_max_insert[item][final_idx]
+                                    - self.ings[item][final_idx];
+                                self.ings[item][final_idx] = self.ings_max_insert[item][final_idx];
+
+                                for idx in 0..WAITLIST_LEN {
+                                    let ins = &mut ing[final_idx].inserters[idx];
+                                    if let Some(v) = ins {
+                                        let amount_taken_by_this_inserter =
+                                            min(*items_to_drain, v.current_hand);
+                                        if v.current_hand - amount_taken_by_this_inserter == 0 {
+                                            let ins = ins.take().unwrap();
+                                            for move_left_idx in idx..WAITLIST_LEN {
+                                                ing[final_idx].inserters[move_left_idx] = ing
+                                                    [final_idx]
+                                                    .inserters
+                                                    .get_mut(move_left_idx + 1)
+                                                    .map(|v| v.take())
+                                                    .unwrap_or(None);
+                                            }
+                                            let () =
+                                                self.inserter_waitlist_output_vec
+                                                    .push(InternalInserterReinsertionInfo {
+                                                    movetime: ins.movetime.into(),
+                                                    item: item as u8,
+                                                    max_hand: ins.max_hand.into(),
+                                                    self_index: final_idx as u32,
+                                                    rest: match ins.rest {
+                                                        InserterWithBeltsEnum::StorageStorage {
+                                                            self_is_source: _,
+                                                            index,
+                                                            other,
+                                                        } => Rest::Storage { index, other },
+                                                        InserterWithBeltsEnum::BeltStorage {
+                                                            belt_id,
+                                                            belt_pos,
+                                                            self_is_source,
+                                                        } => Rest::Belt {
+                                                            belt_id,
+                                                            belt_pos,
+                                                            self_is_source,
+                                                        },
+                                                    },
+                                                })
+                                            else {
+                                                panic!(
+                                                    "Not enough space in inserter readdition vec. Capacity is {}.",
+                                                    self.inserter_waitlist_output_vec.capacity()
+                                                );
+                                            };
+                                            self.waitlists_ings_needed[item][final_idx] =
+                                                ing[final_idx].inserters[0]
+                                                    .as_ref()
+                                                    .map(|ins| ins.current_hand)
+                                                    .unwrap_or(ITEMCOUNTTYPE::MAX);
+                                        } else {
+                                            v.current_hand -= amount_taken_by_this_inserter;
+                                        }
+                                        *items_to_drain -= amount_taken_by_this_inserter;
+
+                                        // TODO: Check if this is good or bad
+                                        if *items_to_drain == 0 {
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+
+                            if *items_to_drain > 0 {
+                                self.ings[item][final_idx] -= *items_to_drain;
+                            }
+                        }
+                    }
                 }
             }
             times_ings_used += (timer_mask.to_int().reduce_sum() * -1) as u32;
@@ -434,7 +817,8 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
 {
     fn new<ItemIdxType: IdxTrait>(
         recipe: Recipe<RecipeIdxType>,
-        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+        grid: PowerGridIdentifier,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         Self {
             recipe,
@@ -458,11 +842,94 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
 
             base_power_consumption: vec![].into_boxed_slice(),
 
+            waitlists_ings: array::from_fn(|_| vec![].into_boxed_slice()),
+            waitlists_ings_needed: array::from_fn(|_| vec![].into_boxed_slice()),
+            waitlists_outputs: array::from_fn(|_| vec![].into_boxed_slice()),
+            waitlists_outputs_needed: array::from_fn(|_| vec![].into_boxed_slice()),
             holes: vec![],
             positions: vec![].into_boxed_slice(),
             types: vec![].into_boxed_slice(),
             len: 0,
+
+            inserter_waitlist_output_vec: vec![],
+
+            self_fake_union_ing: {
+                array::from_fn(|index| {
+                    let item = data_store.recipe_item_index_to_item[recipe.into_usize()][index];
+
+                    FakeUnionStorage::from_storage_with_statics_at_zero(
+                        item,
+                        Storage::Assembler {
+                            grid,
+                            recipe_idx_with_this_item: recipe.id,
+                            index: 0,
+                        },
+                        data_store,
+                    )
+                    .unwrap()
+                })
+            },
+            self_fake_union_out: {
+                array::from_fn(|index| {
+                    let item =
+                        data_store.recipe_item_index_to_item[recipe.into_usize()][index + NUM_INGS];
+
+                    FakeUnionStorage::from_storage_with_statics_at_zero(
+                        item,
+                        Storage::Assembler {
+                            grid,
+                            recipe_idx_with_this_item: recipe.id,
+                            index: 0,
+                        },
+                        data_store,
+                    )
+                    .unwrap()
+                })
+            },
+
+            #[cfg(feature = "assembler-craft-tracking")]
+            number_of_crafts_finished: vec![],
         }
+    }
+
+    fn set_grid_id<ItemIdxType: IdxTrait>(
+        &mut self,
+        new_grid_id: PowerGridIdentifier,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) {
+        self.self_fake_union_ing = {
+            array::from_fn(|index| {
+                let item = data_store.recipe_item_index_to_item[self.recipe.into_usize()][index];
+
+                FakeUnionStorage::from_storage_with_statics_at_zero(
+                    item,
+                    Storage::Assembler {
+                        grid: new_grid_id,
+                        recipe_idx_with_this_item: self.recipe.id,
+                        index: 0,
+                    },
+                    data_store,
+                )
+                .unwrap()
+            })
+        };
+        self.self_fake_union_out = {
+            array::from_fn(|index| {
+                let item = data_store.recipe_item_index_to_item[self.recipe.into_usize()]
+                    [index + NUM_INGS];
+
+                FakeUnionStorage::from_storage_with_statics_at_zero(
+                    item,
+                    Storage::Assembler {
+                        grid: new_grid_id,
+                        recipe_idx_with_this_item: self.recipe.id,
+                        index: 0,
+                    },
+                    data_store,
+                )
+                .unwrap()
+            })
+        };
     }
 
     fn modify_modifiers<ItemIdxType: IdxTrait>(
@@ -526,7 +993,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         let power_consumption = if let Some(ty) = self.single_type {
             data_store.assembler_info[ty as usize].base_power_consumption
         } else {
-            assert!(self.positions.get(index as usize).is_some());
+            assert!(self.base_power_consumption.get(index as usize).is_some());
             self.base_power_consumption[index as usize]
         };
 
@@ -575,6 +1042,9 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 * 0.05
                 - 1.0,
             base_power_consumption: power_consumption,
+
+            #[cfg(feature = "assembler-craft-tracking")]
+            times_craft_finished: self.number_of_crafts_finished[index as usize],
         }
     }
 
@@ -665,6 +1135,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .iter()
                 .map(|&old_idx| old_idx + self.timers.len()),
         );
+        self.holes.extend(other.len..(other.timers.len()));
         self.len = old_len_stored;
 
         let new_ings_max: [Box<[u8]>; NUM_INGS] = self
@@ -673,13 +1144,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             .zip(other.ings_max_insert)
             .map(|(s, o)| {
                 let mut s = s.into_vec();
-                s.extend(
-                    o.into_vec()
-                        .into_iter()
-                        .enumerate()
-                        .take(other.len)
-                        .map(|(_, v)| v),
-                );
+                s.extend(o.into_vec().into_iter().enumerate().map(|(_, v)| v));
                 s.into_boxed_slice()
             })
             .collect_array()
@@ -691,13 +1156,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             .zip(other.ings)
             .map(|(s, o)| {
                 let mut s = s.into_vec();
-                s.extend(
-                    o.into_vec()
-                        .into_iter()
-                        .enumerate()
-                        .take(other.len)
-                        .map(|(_, v)| v),
-                );
+                s.extend(o.into_vec().into_iter().enumerate().map(|(_, v)| v));
                 s.into_boxed_slice()
             })
             .collect_array()
@@ -708,13 +1167,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             .zip(other.outputs)
             .map(|(s, o)| {
                 let mut s = s.into_vec();
-                s.extend(
-                    o.into_vec()
-                        .into_iter()
-                        .enumerate()
-                        .take(other.len)
-                        .map(|(_, v)| v),
-                );
+                s.extend(o.into_vec().into_iter().enumerate().map(|(_, v)| v));
                 s.into_boxed_slice()
             })
             .collect_array()
@@ -726,7 +1179,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_vec()
                 .into_iter()
                 .enumerate()
-                .take(other.len)
                 .map(|(_, v)| v),
         );
 
@@ -737,7 +1189,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_vec()
                 .into_iter()
                 .enumerate()
-                .take(other.len)
                 .map(|(_, v)| v),
         );
 
@@ -748,7 +1199,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_vec()
                 .into_iter()
                 .enumerate()
-                .take(other.len)
                 .map(|(_, v)| v),
         );
 
@@ -759,7 +1209,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_vec()
                 .into_iter()
                 .enumerate()
-                .take(other.len)
                 .map(|(_, v)| v),
         );
 
@@ -770,7 +1219,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_vec()
                 .into_iter()
                 .enumerate()
-                .take(other.len)
                 .map(|(_, v)| v),
         );
 
@@ -781,7 +1229,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_vec()
                 .into_iter()
                 .enumerate()
-                .take(other.len)
                 .map(|(_, v)| v),
         );
 
@@ -792,7 +1239,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_vec()
                 .into_iter()
                 .enumerate()
-                .take(other.len)
                 .map(|(_, v)| v),
         );
 
@@ -803,7 +1249,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_vec()
                 .into_iter()
                 .enumerate()
-                .take(other.len)
                 .map(|(_, v)| v),
         );
 
@@ -814,7 +1259,6 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_vec()
                 .into_iter()
                 .enumerate()
-                .take(other.len)
                 .map(|(_, v)| v),
         );
 
@@ -825,39 +1269,53 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .into_vec()
                 .into_iter()
                 .enumerate()
-                .take(other.len)
                 .map(|(_, v)| v),
         );
 
         let mut new_positions = self.positions.into_vec();
-        new_positions.extend(
-            other
-                .positions
-                .iter()
-                .copied()
-                .enumerate()
-                .take(other.len)
-                .map(|(_, v)| v),
-        );
+        new_positions.extend(other.positions.iter().copied().enumerate().map(|(_, v)| v));
 
         let mut new_types = self.types.into_vec();
-        new_types.extend(
-            other
-                .types
-                .iter()
-                .copied()
-                .enumerate()
-                .take(other.len)
-                .map(|(_, v)| v),
-        );
+        new_types.extend(other.types.iter().copied().enumerate().map(|(_, v)| v));
+
+        let mut new_waitlists_ings = self.waitlists_ings.map(|v| v.into_vec());
+        for (new, other) in new_waitlists_ings.iter_mut().zip(other.waitlists_ings) {
+            new.extend(other);
+        }
+
+        let mut new_waitlists_ings_needed = self.waitlists_ings_needed.map(|v| v.into_vec());
+        for (new, other) in new_waitlists_ings_needed
+            .iter_mut()
+            .zip(other.waitlists_ings_needed)
+        {
+            new.extend(other);
+        }
+
+        let mut new_waitlists_outputs = self.waitlists_outputs.map(|v| v.into_vec());
+        for (new, other) in new_waitlists_outputs
+            .iter_mut()
+            .zip(other.waitlists_outputs)
+        {
+            new.extend(other);
+        }
+
+        let mut new_waitlists_outputs_needed = self
+            .waitlists_outputs_needed
+            .map(|v: Box<[u8]>| v.into_vec());
+        for (new, other) in new_waitlists_outputs_needed
+            .iter_mut()
+            .zip(other.waitlists_outputs_needed)
+        {
+            new.extend(other);
+        }
 
         let updates = IntoIterator::into_iter(other.positions)
             .take(other.len)
             .zip(other.types)
             .enumerate()
             .take(other.len)
-            .filter(move |(i, _)| !other.holes.contains(i))
             .enumerate()
+            .filter(move |(_offs, (i, _))| !other.holes.contains(i))
             .map(move |(new_index_offs, (old_index, (pos, ty)))| {
                 assert!(new_index_offs <= old_index);
                 IndexUpdateInfo {
@@ -938,8 +1396,63 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             raw_power_consumption_modifier: new_raw_power_consumption_modifier.into_boxed_slice(),
 
             base_power_consumption: new_base_power_consumption.into_boxed_slice(),
+
+            waitlists_ings: new_waitlists_ings.map(|v| v.into_boxed_slice()),
+            waitlists_ings_needed: new_waitlists_ings_needed.map(|v| v.into_boxed_slice()),
+            waitlists_outputs: new_waitlists_outputs.map(|v| v.into_boxed_slice()),
+            waitlists_outputs_needed: new_waitlists_outputs_needed.map(|v| v.into_boxed_slice()),
             positions: new_positions.into_boxed_slice(),
             types: new_types.into_boxed_slice(),
+
+            inserter_waitlist_output_vec: if self.inserter_waitlist_output_vec.capacity()
+                > other.inserter_waitlist_output_vec.capacity()
+            {
+                self.inserter_waitlist_output_vec
+            } else {
+                other.inserter_waitlist_output_vec
+            },
+
+            self_fake_union_ing: {
+                array::from_fn(|index| {
+                    let item =
+                        data_store.recipe_item_index_to_item[self.recipe.into_usize()][index];
+
+                    FakeUnionStorage::from_storage_with_statics_at_zero(
+                        item,
+                        Storage::Assembler {
+                            grid: new_grid_id,
+                            recipe_idx_with_this_item: self.recipe.id,
+                            index: 0,
+                        },
+                        data_store,
+                    )
+                    .unwrap()
+                })
+            },
+            self_fake_union_out: {
+                array::from_fn(|index| {
+                    let item = data_store.recipe_item_index_to_item[self.recipe.into_usize()]
+                        [index + NUM_INGS];
+
+                    FakeUnionStorage::from_storage_with_statics_at_zero(
+                        item,
+                        Storage::Assembler {
+                            grid: new_grid_id,
+                            recipe_idx_with_this_item: self.recipe.id,
+                            index: 0,
+                        },
+                        data_store,
+                    )
+                    .unwrap()
+                })
+            },
+
+            #[cfg(feature = "assembler-craft-tracking")]
+            number_of_crafts_finished: {
+                self.number_of_crafts_finished
+                    .extend(other.number_of_crafts_finished);
+                self.number_of_crafts_finished
+            },
         };
 
         #[cfg(debug_assertions)]
@@ -964,7 +1477,12 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         recipe_maximums: &[[ITEMCOUNTTYPE; NUM_OUTPUTS]],
         times: &[TIMERTYPE],
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> (PowerUsageInfo, u32, u32)
+    ) -> (
+        PowerUsageInfo,
+        u32,
+        u32,
+        impl Iterator<Item = InserterReinsertionInfo<ItemIdxType>>,
+    )
     where
         RecipeIdxType: IdxTrait,
     {
@@ -978,24 +1496,131 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             &data_store.assembler_info,
         );
 
-        (PowerUsageInfo::Combined(power), ings_used, produced)
+        (
+            PowerUsageInfo::Combined(power),
+            ings_used,
+            produced,
+            self.inserter_waitlist_output_vec
+                .drain(..)
+                .map(|internal| InserterReinsertionInfo {
+                    movetime: internal.movetime,
+                    item: data_store.recipe_item_index_to_item[self.recipe.into_usize()]
+                        [internal.item as usize],
+                    current_hand: if (internal.item as usize) < NUM_INGS {
+                        // This is an ingredient inserter
+                        // So it is now empty
+                        0
+                    } else {
+                        internal.max_hand
+                    },
+                    max_hand: internal.max_hand,
+
+                    conn: match internal.rest {
+                        Rest::Storage { index, other } => Conn::Storage {
+                            index,
+                            storage_id_in: if (internal.item as usize) < NUM_INGS {
+                                // This is an ingredient inserter
+                                other
+                            } else {
+                                FakeUnionStorage {
+                                    index: internal.self_index,
+                                    grid_or_static_flag: self.self_fake_union_out
+                                        [internal.item as usize - NUM_INGS]
+                                        .grid_or_static_flag,
+                                    recipe_idx_with_this_item: self.self_fake_union_out
+                                        [internal.item as usize - NUM_INGS]
+                                        .recipe_idx_with_this_item,
+                                }
+                            },
+                            storage_id_out: if (internal.item as usize) < NUM_INGS {
+                                // This is an ingredient inserter
+                                FakeUnionStorage {
+                                    index: internal.self_index,
+                                    grid_or_static_flag: self.self_fake_union_ing
+                                        [internal.item as usize]
+                                        .grid_or_static_flag,
+                                    recipe_idx_with_this_item: self.self_fake_union_ing
+                                        [internal.item as usize]
+                                        .recipe_idx_with_this_item,
+                                }
+                            } else {
+                                other
+                            },
+                        },
+                        Rest::Belt {
+                            belt_id,
+                            belt_pos,
+                            self_is_source,
+                        } => Conn::Belt {
+                            belt_id,
+                            belt_pos,
+                            self_is_source,
+                            self_storage: if (internal.item as usize) < NUM_INGS {
+                                FakeUnionStorage {
+                                    index: internal.self_index,
+                                    grid_or_static_flag: self.self_fake_union_ing
+                                        [internal.item as usize]
+                                        .grid_or_static_flag,
+                                    recipe_idx_with_this_item: self.self_fake_union_ing
+                                        [internal.item as usize]
+                                        .recipe_idx_with_this_item,
+                                }
+                            } else {
+                                FakeUnionStorage {
+                                    index: internal.self_index,
+                                    grid_or_static_flag: self.self_fake_union_out
+                                        [internal.item as usize - NUM_INGS]
+                                        .grid_or_static_flag,
+                                    recipe_idx_with_this_item: self.self_fake_union_out
+                                        [internal.item as usize - NUM_INGS]
+                                        .recipe_idx_with_this_item,
+                                }
+                            },
+                        },
+                    },
+                }),
+        )
     }
 
     fn get_all_mut(
         &mut self,
     ) -> (
         (
-            [&[ITEMCOUNTTYPE]; NUM_INGS],
+            [MaxInsertionLimit<'_>; NUM_INGS],
             [&mut [ITEMCOUNTTYPE]; NUM_INGS],
+            [(&mut [InserterWaitList], &mut [ITEMCOUNTTYPE]); NUM_INGS],
         ),
-        [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS],
+        (
+            [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS],
+            [(&mut [InserterWaitList], &mut [ITEMCOUNTTYPE]); NUM_OUTPUTS],
+        ),
     ) {
         (
             (
-                self.ings_max_insert.each_mut().map(|b| &**b),
+                self.ings_max_insert.each_mut().map(|b| match b.get(0) {
+                    Some(v) => MaxInsertionLimit::Global(*v),
+                    None => PANIC_ON_INSERT,
+                }),
+                // self.ings_max_insert.each_mut().map(|b| &**b),
                 self.ings.each_mut().map(|b| &mut **b),
+                self.waitlists_ings
+                    .each_mut()
+                    .into_iter()
+                    .zip(self.waitlists_ings_needed.each_mut())
+                    .map(|(wait, needed)| (&mut **wait, &mut **needed))
+                    .collect_array()
+                    .unwrap(),
             ),
-            self.outputs.each_mut().map(|b| &mut **b),
+            (
+                self.outputs.each_mut().map(|b| &mut **b),
+                self.waitlists_outputs
+                    .each_mut()
+                    .into_iter()
+                    .zip(self.waitlists_outputs_needed.each_mut())
+                    .map(|(wait, needed)| (&mut **wait, &mut **needed))
+                    .collect_array()
+                    .unwrap(),
+            ),
         )
     }
 
@@ -1081,8 +1706,27 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .try_into()
                 .expect("Value clamped already");
 
+            for ings in &mut self.waitlists_ings {
+                ings[hole_index] = InserterWaitList::default();
+            }
+            for out in &mut self.waitlists_outputs {
+                out[hole_index] = InserterWaitList::default();
+            }
+            for ings in &mut self.waitlists_ings_needed {
+                ings[hole_index] = ITEMCOUNTTYPE::MAX;
+            }
+            for out in &mut self.waitlists_outputs_needed {
+                out[hole_index] = ITEMCOUNTTYPE::MAX;
+            }
+
             self.types[hole_index] = ty;
             self.positions[hole_index] = position;
+
+            // TODO: Actually pass this
+            #[cfg(feature = "assembler-craft-tracking")]
+            {
+                self.number_of_crafts_finished[hole_index] = 0;
+            }
             return hole_index.try_into().unwrap();
         }
 
@@ -1213,12 +1857,45 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 );
                 pos.into_boxed_slice()
             });
+            for ing in &mut self.waitlists_ings {
+                take_mut::take(ing, |list| {
+                    let mut list = list.into_vec();
+                    list.resize(new_len, InserterWaitList::default());
+                    list.into_boxed_slice()
+                });
+            }
+            for out in &mut self.waitlists_outputs {
+                take_mut::take(out, |list| {
+                    let mut list = list.into_vec();
+                    list.resize(new_len, InserterWaitList::default());
+                    list.into_boxed_slice()
+                });
+            }
+            for ing in &mut self.waitlists_ings_needed {
+                take_mut::take(ing, |list| {
+                    let mut list = list.into_vec();
+                    list.resize(new_len, ITEMCOUNTTYPE::MAX);
+                    list.into_boxed_slice()
+                });
+            }
+            for out in &mut self.waitlists_outputs_needed {
+                take_mut::take(out, |list| {
+                    let mut list = list.into_vec();
+                    list.resize(new_len, ITEMCOUNTTYPE::MAX);
+                    list.into_boxed_slice()
+                });
+            }
 
             take_mut::take(&mut self.types, |ty| {
                 let mut ty = ty.into_vec();
                 ty.resize(new_len, u8::MAX);
                 ty.into_boxed_slice()
             });
+
+            #[cfg(feature = "assembler-craft-tracking")]
+            {
+                self.number_of_crafts_finished.resize(new_len, 0);
+            }
         }
 
         for (output, new_val) in self.outputs.iter_mut().zip(out) {
@@ -1253,9 +1930,26 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             .clamp(0, u8::MAX.into())
             .try_into()
             .expect("Values already clamped");
+        for ing in &mut self.waitlists_ings {
+            ing[self.len] = InserterWaitList::default();
+        }
+        for out in &mut self.waitlists_outputs {
+            out[self.len] = InserterWaitList::default();
+        }
+        for ing in &mut self.waitlists_ings_needed {
+            ing[self.len] = ITEMCOUNTTYPE::MAX;
+        }
+        for out in &mut self.waitlists_outputs_needed {
+            out[self.len] = ITEMCOUNTTYPE::MAX;
+        }
 
         self.positions[self.len] = position;
         self.types[self.len] = ty;
+
+        #[cfg(feature = "assembler-craft-tracking")]
+        {
+            self.number_of_crafts_finished[self.len] = 0;
+        }
 
         self.len += 1;
         assert_eq!(self.timers.len() % SIMDTYPE::LEN, 0);
@@ -1326,6 +2020,18 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             x: i32::MAX,
             y: i32::MAX,
         };
+        for ing in &mut self.waitlists_ings {
+            ing[index] = InserterWaitList::default();
+        }
+        for out in &mut self.waitlists_outputs {
+            out[index] = InserterWaitList::default();
+        }
+        for ing in &mut self.waitlists_ings_needed {
+            ing[index] = ITEMCOUNTTYPE::MAX;
+        }
+        for out in &mut self.waitlists_outputs_needed {
+            out[index] = ITEMCOUNTTYPE::MAX;
+        }
 
         (
             data.0.into(),
@@ -1342,6 +2048,155 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             data.11.into(),
         )
     }
+
+    fn num_assemblers(&self) -> usize {
+        self.len - self.holes.len()
+    }
+
+    fn remove_wait_list_inserter<ItemIdxType: IdxTrait>(
+        &mut self,
+        self_index: u32,
+        item: Item<ItemIdxType>,
+        info: crate::chest::WaitingInserterRemovalInfo,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> self::InserterReinsertionInfo<ItemIdxType> {
+        let item_index = data_store.recipe_item_index_to_item[self.recipe.into_usize()]
+            .iter()
+            .position(|recipe_item| recipe_item == &item)
+            .unwrap();
+
+        if item_index < NUM_INGS {
+            let our_waitlist = &mut self.waitlists_ings[item_index][self_index as usize];
+            let v = our_waitlist
+                .inserters
+                .iter_mut()
+                .filter(|v| v.is_some())
+                .find(|ins| match (&ins.as_ref().unwrap().rest, info) {
+                    (
+                        InserterWithBeltsEnum::StorageStorage { index, .. },
+                        crate::chest::WaitingInserterRemovalInfo::StorageStorage { inserter_id },
+                    ) => inserter_id == *index,
+                    (
+                        InserterWithBeltsEnum::BeltStorage {
+                            belt_id: ins_belt_id,
+                            belt_pos: ins_belt_pos,
+                            ..
+                        },
+                        crate::chest::WaitingInserterRemovalInfo::BeltStorage { belt_id, belt_pos },
+                    ) => *ins_belt_id == belt_id && *ins_belt_pos == belt_pos,
+
+                    _ => false,
+                })
+                .unwrap();
+
+            let ins = v.take().unwrap();
+
+            InserterReinsertionInfo {
+                movetime: ins.movetime.into(),
+                item: item,
+                current_hand: ins.current_hand,
+                max_hand: ins.max_hand.into(),
+
+                conn: match ins.rest {
+                    InserterWithBeltsEnum::StorageStorage { index, other, .. } => Conn::Storage {
+                        index,
+                        // This is an ingredient inserter
+                        storage_id_in: other,
+                        // This is an ingredient inserter
+                        storage_id_out: FakeUnionStorage {
+                            index: self_index,
+                            grid_or_static_flag: self.self_fake_union_ing[item_index]
+                                .grid_or_static_flag,
+                            recipe_idx_with_this_item: self.self_fake_union_ing[item_index]
+                                .recipe_idx_with_this_item,
+                        },
+                    },
+                    InserterWithBeltsEnum::BeltStorage {
+                        self_is_source,
+                        belt_id,
+                        belt_pos,
+                    } => Conn::Belt {
+                        self_is_source,
+                        belt_id,
+                        belt_pos,
+                        self_storage: FakeUnionStorage {
+                            index: self_index,
+                            grid_or_static_flag: self.self_fake_union_ing[item_index]
+                                .grid_or_static_flag,
+                            recipe_idx_with_this_item: self.self_fake_union_ing[item_index]
+                                .recipe_idx_with_this_item,
+                        },
+                    },
+                },
+            }
+        } else {
+            // This is an output inserter
+            let item_index = item_index - NUM_INGS;
+            let our_waitlist = &mut self.waitlists_outputs[item_index][self_index as usize];
+            let v = our_waitlist
+                .inserters
+                .iter_mut()
+                .filter(|v| v.is_some())
+                .find(|ins| match (&ins.as_ref().unwrap().rest, info) {
+                    (
+                        InserterWithBeltsEnum::StorageStorage { index, .. },
+                        crate::chest::WaitingInserterRemovalInfo::StorageStorage { inserter_id },
+                    ) => inserter_id == *index,
+                    (
+                        InserterWithBeltsEnum::BeltStorage {
+                            belt_id: ins_belt_id,
+                            belt_pos: ins_belt_pos,
+                            ..
+                        },
+                        crate::chest::WaitingInserterRemovalInfo::BeltStorage { belt_id, belt_pos },
+                    ) => *ins_belt_id == belt_id && *ins_belt_pos == belt_pos,
+
+                    _ => false,
+                })
+                .unwrap();
+
+            let ins = v.take().unwrap();
+
+            InserterReinsertionInfo {
+                movetime: ins.movetime.into(),
+                item: item,
+                current_hand: ins.current_hand,
+                max_hand: ins.max_hand.into(),
+
+                conn: match ins.rest {
+                    InserterWithBeltsEnum::StorageStorage { index, other, .. } => Conn::Storage {
+                        index,
+                        // This is an output inserter
+                        storage_id_in: FakeUnionStorage {
+                            index: self_index,
+                            grid_or_static_flag: self.self_fake_union_out[item_index]
+                                .grid_or_static_flag,
+                            recipe_idx_with_this_item: self.self_fake_union_out[item_index]
+                                .recipe_idx_with_this_item,
+                        },
+                        // This is an output inserter
+                        storage_id_out: other,
+                    },
+                    InserterWithBeltsEnum::BeltStorage {
+                        self_is_source,
+                        belt_id,
+                        belt_pos,
+                    } => Conn::Belt {
+                        self_is_source,
+                        belt_id,
+                        belt_pos,
+                        self_storage: FakeUnionStorage {
+                            index: self_index,
+                            grid_or_static_flag: self.self_fake_union_out[item_index]
+                                .grid_or_static_flag,
+                            recipe_idx_with_this_item: self.self_fake_union_out[item_index]
+                                .recipe_idx_with_this_item,
+                        },
+                    },
+                },
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1357,14 +2212,14 @@ mod test {
     #[bench]
     fn bench_multithreaded_assembler_update(bencher: &mut Bencher) {
         const NUM_RECIPES: usize = 12;
-        const NUM_ASSEMBLERS: usize = 30_000_000;
+        const NUM_ASSEMBLERS: usize = 1_000_000;
 
         let mut assemblers: Vec<MultiAssemblerStore<u8, 1, 1>> = (0..NUM_RECIPES as u8)
-            .map(|_| MultiAssemblerStore::new(Recipe { id: 11 }, &DATA_STORE))
+            .map(|_| MultiAssemblerStore::new(Recipe { id: 11 }, 0, &DATA_STORE))
             .collect_vec();
 
         let items: Vec<Vec<_>> = vec![
-            rayon::iter::repeat(rand::thread_rng().gen_range(250..=255))
+            rayon::iter::repeat(rand::rng().random_range(250..=255))
                 .flat_map_iter(|v| std::iter::repeat_n(v, 10))
                 .take_any(NUM_ASSEMBLERS)
                 .collect();
@@ -1432,9 +2287,5 @@ mod test {
                 });
             }
         });
-
-        dbg!(i);
-        dbg!(num_produced);
-        dbg!(assemblers[11].get_info(0, &DATA_STORE));
     }
 }

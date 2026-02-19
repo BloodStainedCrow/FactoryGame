@@ -1,6 +1,6 @@
 use std::iter;
 
-use crate::{item::IdxTrait, research::ResearchProgress};
+use crate::{item::IdxTrait, statistics::Series};
 
 use super::IntoSeries;
 
@@ -14,7 +14,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> IntoSeries<(), ItemIdxType,
         smoothing_window: usize,
         filter: Option<impl Fn(()) -> bool>,
         _data_store: &crate::data::DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl Iterator<Item = (usize, charts_rs::Series)> {
+    ) -> impl Iterator<Item = (usize, Series)> {
         iter::once((
             0,
             (

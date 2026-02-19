@@ -331,6 +331,13 @@ impl<T> Mutex<T> {
     }
 }
 
+// NOTE (Tim): This impl is not ideal since if it is derived, it might not respect the locking order of things
+impl<T: Clone> Clone for Mutex<T> {
+    fn clone(&self) -> Self {
+        Self::new(self.lock().clone())
+    }
+}
+
 impl<T> Deref for Mutex<T> {
     type Target = parking_lot::Mutex<T>;
     fn deref(&self) -> &Self::Target {
@@ -467,6 +474,61 @@ impl Deref for BitBox {
 impl DerefMut for BitBox {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.bitbox
+    }
+}
+
+#[derive(Clone)]
+#[repr(transparent)]
+pub struct Bfs<A, B> {
+    pub(crate) bfs: petgraph::visit::Bfs<A, B>,
+}
+
+impl<A, B: Default> Default for Bfs<A, B> {
+    fn default() -> Self {
+        Self {
+            bfs: petgraph::visit::Bfs::default(),
+        }
+    }
+}
+
+impl<A, B> std::fmt::Debug for Bfs<A, B> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Bfs").field("bfs", &"TODO").finish()
+    }
+}
+
+#[cfg(feature = "client")]
+impl<A, B> GetSize for Bfs<A, B> {
+    fn get_heap_size(&self) -> usize {
+        0
+    }
+}
+
+#[cfg(feature = "client")]
+impl<A, B, Info: EguiDisplayable, Extractor: InfoExtractor<Self, Info>> ShowInfo<Extractor, Info>
+    for Bfs<A, B>
+{
+    fn show_fields<C: Cache<String, Info>>(
+        &self,
+        _extractor: &mut Extractor,
+        _ui: &mut egui::Ui,
+        _path: String,
+        _cache: &mut C,
+    ) {
+    }
+}
+
+impl<A, B> Deref for Bfs<A, B> {
+    type Target = petgraph::visit::Bfs<A, B>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.bfs
+    }
+}
+
+impl<A, B> DerefMut for Bfs<A, B> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.bfs
     }
 }
 

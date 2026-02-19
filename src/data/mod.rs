@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::{
     array,
-    cmp::{max, min},
+    cmp::max,
     collections::{BTreeSet, HashMap},
     iter,
 };
@@ -17,6 +17,7 @@ use sha2::{Digest, Sha256};
 use strum::IntoEnumIterator;
 
 pub mod factorio_1_1;
+pub mod pedia;
 
 use crate::{
     assembler::TIMERTYPE,
@@ -25,6 +26,7 @@ use crate::{
     item::{ITEMCOUNTTYPE, IdxTrait, Item, Recipe, WeakIdxTrait},
     power::{Joule, Watt},
 };
+use std::num::NonZero;
 
 type ItemString = String;
 type RecipeString = String;
@@ -65,6 +67,7 @@ struct RawAssemblingMachine {
     name: String,
     display_name: String,
     tile_size: (u8, u8),
+    power_drain: Watt,
     working_power_draw: Watt,
     fluid_connection_offsets: Vec<RawFluidConnection>,
     fluid_connection_flowthrough: Vec<RawFluidFlowthrough>,
@@ -161,7 +164,7 @@ struct RawFluidFlowthrough {
 struct RawInserter {
     name: String,
     display_name: String,
-    time_per_trip: TIMERTYPE,
+    time_per_trip: NonZero<u16>,
     handsize: ITEMCOUNTTYPE,
     tile_size: [u8; 2],
 
@@ -329,6 +332,8 @@ pub struct AssemblerInfo {
     pub base_speed: u8,
     pub base_prod: u8,
     pub base_power_consumption: Watt,
+
+    pub power_drain: Watt,
 }
 
 impl AssemblerInfo {
@@ -437,6 +442,20 @@ impl SolarPanelOutputFunction {
             },
         }
     }
+
+    pub(crate) fn max(&self) -> Watt {
+        match self {
+            SolarPanelOutputFunction::Constant(watt) => *watt,
+            SolarPanelOutputFunction::Segmented(power_generation_segments) => {
+                power_generation_segments
+                    .iter()
+                    .map(|segment| segment.end_power)
+                    .max()
+                    .unwrap()
+            },
+            SolarPanelOutputFunction::Lookup(watts) => *watts.iter().max().unwrap(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
@@ -473,7 +492,7 @@ pub struct InserterInfo {
     pub display_name: String,
     pub size: [u8; 2],
 
-    pub swing_time_ticks: u16,
+    pub swing_time_ticks: NonZero<u16>,
 
     /// pre any increases by technology
     pub base_hand_size: ITEMCOUNTTYPE,
@@ -575,6 +594,7 @@ pub struct DataStore<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub technology_costs: Vec<(u64, Box<[ITEMCOUNTTYPE]>)>,
     pub belt_infos: Vec<BeltInfo>,
     pub mining_drill_info: Vec<MiningDrillInfo>,
+    pub recipe_item_index_to_item: Box<[Box<[Item<ItemIdxType>]>]>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
@@ -718,12 +738,12 @@ pub struct FluidConnection {
 }
 
 impl FluidConnection {
-    pub fn with_fluid_tank_rotation(self, rotation: Dir) -> Self {
+    pub fn with_fluid_tank_rotation(self, _rotation: Dir) -> Self {
         todo!()
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PowerPoleData {
     pub name: Arc<str>,
     pub display_name: String,
@@ -732,7 +752,9 @@ pub struct PowerPoleData {
     pub connection_range: u8,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[derive(
+    Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, serde::Deserialize, serde::Serialize,
+)]
 pub enum ItemRecipeDir {
     Ing,
     Out,
@@ -1401,11 +1423,8 @@ impl RawDataStore {
                                     unit_increase_per_level: units_per_level,
                                 }
                             },
-                            InfiniteCostScaling::Quadradic { units_per_level } => todo!(),
-                            InfiniteCostScaling::Exponential {
-                                units_per_level,
-                                exponential_base,
-                            } => todo!(),
+                            InfiniteCostScaling::Quadradic { .. } => todo!(),
+                            InfiniteCostScaling::Exponential { .. } => todo!(),
                         },
                         level_counter_offset: infinite_info.display_level_offset,
                     }
@@ -1511,33 +1530,34 @@ impl RawDataStore {
             instantly_finished_technologies,
 
             belt_infos: vec![
+                // TODO: For now only have one kind of transport belt since connection is still borked
                 BeltInfo {
                     name: "factory_game::fast_transport_belt".to_string().into(),
-                    display_name: "Fast Transport Belt".to_string(),
+                    display_name: "Express Transport Belt".to_string(),
                     has_underground: Some(BeltUndergroundInfo { max_distance: 9 }),
                     has_splitter: None,
                     timer_increase: 45 * 2,
                 },
-                BeltInfo {
-                    name: "factory_game::transport_belt".to_string().into(),
-                    display_name: "Transport Belt".to_string(),
-                    has_underground: Some(BeltUndergroundInfo { max_distance: 6 }),
-                    has_splitter: None,
-                    timer_increase: 15 * 2,
-                },
+                // BeltInfo {
+                //     name: "factory_game::transport_belt".to_string().into(),
+                //     display_name: "Transport Belt".to_string(),
+                //     has_underground: Some(BeltUndergroundInfo { max_distance: 6 }),
+                //     has_splitter: None,
+                //     timer_increase: 15 * 2,
+                // },
             ],
 
             // FIXME:
             mining_drill_info: vec![
-                MiningDrillInfo {
-                    name: "factory_game::mining_drill".to_string().into(),
-                    display_name: "Electric Mining Drill".to_string().into(),
-                    size: [3, 3],
-                    mining_range: [5, 5],
-                    base_speed: 20,
-                    resource_drain: (1, 1),
-                    output_offset: Some([1, -1]),
-                },
+                // MiningDrillInfo {
+                //     name: "factory_game::mining_drill".to_string().into(),
+                //     display_name: "Electric Mining Drill".to_string().into(),
+                //     size: [3, 3],
+                //     mining_range: [5, 5],
+                //     base_speed: 20,
+                //     resource_drain: (1, 1),
+                //     output_offset: Some([1, -1]),
+                // },
                 MiningDrillInfo {
                     name: "factory_game::mining_drill_small_no_output"
                         .to_string()
@@ -1551,6 +1571,19 @@ impl RawDataStore {
                     output_offset: None,
                 },
             ],
+
+            recipe_item_index_to_item: recipe_to_items
+                .iter()
+                .map(|recipe| {
+                    let items = recipe
+                        .clone()
+                        .into_iter()
+                        .sorted_by_key(|p| p.0)
+                        .map(|p| p.1);
+
+                    items.collect()
+                })
+                .collect(),
 
             recipe_allowed_assembling_machines: self
                 .recipes
@@ -1587,6 +1620,8 @@ impl RawDataStore {
                     base_speed: m.base_speed,
                     base_prod: m.base_bonus_prod,
                     base_power_consumption: m.working_power_draw,
+
+                    power_drain: m.power_drain,
 
                     fluid_connections: m
                         .fluid_connection_offsets

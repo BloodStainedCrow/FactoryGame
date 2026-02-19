@@ -75,7 +75,20 @@ impl TryFrom<egui::Event> for Input {
                     Ok(Input::MouseScoll((delta.x as f64, delta.y as f64)))
                 },
                 eframe::egui::MouseWheelUnit::Line => {
-                    Ok(Input::MouseScoll((delta.x as f64, delta.y as f64)))
+                    // TODO: This is hardcoded to the default of egui
+                    // See InputOptions::default and https://github.com/emilk/egui/issues/461
+                    let units_per_line = if cfg!(all(target_arch = "wasm32", target_os = "unknown"))
+                    {
+                        // FIXME: Why does it seem like I need to use 40 here, if egui uses 8 on wasm????
+                        40.0
+                    } else {
+                        40.0
+                    };
+
+                    Ok(Input::MouseScoll((
+                        delta.x as f64 / units_per_line,
+                        delta.y as f64 / units_per_line,
+                    )))
                 },
                 eframe::egui::MouseWheelUnit::Page => Err(()),
             },

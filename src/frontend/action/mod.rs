@@ -53,8 +53,12 @@ pub enum ActionType<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
     Remove(Position),
 
-    SetActiveResearch {
-        tech: Option<Technology>,
+    AddResearchToQueue {
+        tech: Technology,
+    },
+
+    RemoveResearchFromQueue {
+        tech: Technology,
     },
 
     CheatUnlockTechnology {
@@ -72,6 +76,9 @@ pub enum ActionType<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     },
 
     Ping(Position),
+
+    // TODO: Does this need args?
+    SpawnPlayer {},
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, RecipeIdxType> {
@@ -104,11 +111,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, Rec
             ActionType::RemoveModules { pos, .. } => Some(*pos),
             ActionType::SetChestSlotLimit { pos, .. } => Some(*pos),
             ActionType::Remove(position) => Some(*position),
-            ActionType::SetActiveResearch { .. } => None,
+            ActionType::AddResearchToQueue { .. } => None,
+            ActionType::RemoveResearchFromQueue { .. } => None,
             ActionType::CheatUnlockTechnology { .. } => None,
             ActionType::CheatRelockTechnology { .. } => None,
             ActionType::PlaceOre { pos, .. } => Some(*pos),
             ActionType::Ping(position) => Some(*position),
+            ActionType::SpawnPlayer { .. } => None,
         }
     }
 
@@ -171,11 +180,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, Rec
             ActionType::RemoveModules { .. } => None,
             ActionType::SetChestSlotLimit { .. } => None,
             ActionType::Remove(_) => None,
-            ActionType::SetActiveResearch { .. } => None,
+            ActionType::AddResearchToQueue { .. } => None,
+            ActionType::RemoveResearchFromQueue { .. } => None,
             ActionType::CheatUnlockTechnology { .. } => None,
             ActionType::CheatRelockTechnology { .. } => None,
             ActionType::PlaceOre { .. } => None,
             ActionType::Ping(_) => None,
+
+            ActionType::SpawnPlayer { .. } => None,
         }
     }
 
@@ -195,11 +207,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionType<ItemIdxType, Rec
             ActionType::RemoveModules { .. } => Some([1, 1]),
             ActionType::SetChestSlotLimit { .. } => Some([1, 1]),
             ActionType::Remove(_) => Some([1, 1]),
-            ActionType::SetActiveResearch { .. } => None,
+            ActionType::AddResearchToQueue { .. } => None,
+            ActionType::RemoveResearchFromQueue { .. } => None,
             ActionType::CheatUnlockTechnology { .. } => None,
             ActionType::CheatRelockTechnology { .. } => None,
             ActionType::PlaceOre { pos, .. } => Some([1, 1]),
             ActionType::Ping(_) => None,
+
+            ActionType::SpawnPlayer { .. } => None,
         })
     }
 }

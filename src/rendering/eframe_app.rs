@@ -1,28 +1,35 @@
 use std::{
+    fs::remove_dir_all,
     net::ToSocketAddrs,
     sync::{
         Arc,
-        atomic::{AtomicU64, Ordering},
         mpsc::{Sender, channel},
     },
     thread,
     time::Duration,
 };
 
+use chrono::Local;
+use egui_extras::{Column, TableBuilder};
+use egui_graphs::LayoutStateTree;
+use url::Url;
 use wasm_timer::Instant;
 
-use directories::ProjectDirs;
 use parking_lot::Mutex;
 
-use crate::{GameCreationInfo, run_client};
-use crate::{StartGameInfo, frontend::world::Position};
+use crate::{
+    example_worlds, get_version,
+    progress_info::ProgressInfo,
+    run_client,
+    saving::{load, loading::SaveFileList, save_folder},
+};
 use crate::{rendering::render_world::EscapeMenuOptions, run_integrated_server};
 use eframe::{
     egui::{CentralPanel, Event, PaintCallbackInfo, Shape},
     egui_wgpu::{self, CallbackTrait},
 };
 use egui::{
-    Align2, Color32, CursorIcon, Grid, Modal, ProgressBar, RichText, Slider, TextEdit, Window,
+    Align2, Button, Color32, CursorIcon, Grid, Modal, ProgressBar, RichText, TextEdit, Window,
 };
 use log::{error, warn};
 use tilelib::types::RawRenderer;
@@ -50,6 +57,8 @@ pub struct App {
 
     last_rendered_update: u64,
 
+    world_creation_state: example_worlds::WorldValueStore,
+
     pub input_sender: Option<Sender<Input>>,
 
     texture_atlas: Arc<TextureAtlas>,
@@ -70,10 +79,8 @@ impl App {
                 )
             }),
             input_sender: None,
-            state: AppState::MainMenu {
-                in_ip_box: None,
-                gigabase_size: 40,
-            },
+            state: AppState::MainMenu { in_ip_box: None },
+            world_creation_state: Default::default(),
             texture_atlas: atlas,
             currently_loaded_game: None,
             last_rendered_update: 0,
@@ -98,6 +105,8 @@ impl eframe::App for App {
 
         match &self.state {
             AppState::MainMenu { .. } => {},
+            AppState::LoadSaveMenu { .. } => {},
+            AppState::NewGameMenu { .. } => {},
             AppState::Loading { .. } => {
                 ctx.request_repaint_after(Duration::from_secs_f32(1.0 / 60.0));
             },
@@ -126,12 +135,183 @@ impl eframe::App for App {
                 self.update_ingame(ctx, frame);
             },
 
+            AppState::LoadSaveMenu { save_files } => {
+                let mut new_state = None;
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    if ui.button("Back to Main Menu").clicked() {
+                        new_state = Some(AppState::MainMenu { in_ip_box: None });
+                    }
+
+                    if ui
+                        .add_enabled(
+                            cfg!(not(target_arch = "wasm32")),
+                            Button::new("Open Save File Folder"),
+                        )
+                        .clicked()
+                    {
+                        #[cfg(not(target_arch = "wasm32"))]
+                        {
+                            let uri =
+                                Url::from_file_path(save_folder()).expect("Could not generate URI");
+                            open::that(uri.as_str()).expect("Failed to Open Folder");
+                        }
+                    }
+
+                    let mut dirty = false;
+
+                    TableBuilder::new(ui)
+                        .columns(Column::remainder(), 5)
+                        .header(1.0, |mut header| {
+                            header.col(|ui| {
+                                ui.label("Save File Name");
+                            });
+                            header.col(|ui| {
+                                ui.label("Saved At");
+                            });
+                            header.col(|ui| {
+                                ui.label("Playtime");
+                            });
+                            header.col(|ui| {
+                                ui.label("");
+                            });
+                        })
+                        .body(|ui| {
+                            ui.rows(1.0, save_files.save_files.len(), |mut row| {
+                                let idx = row.index();
+                                let file = &save_files.save_files[idx];
+
+                                match file {
+                                    Ok(file) => {
+                                        row.col(|ui| {
+                                            ui.label(&file.stored.name);
+                                        });
+                                        row.col(|ui| {
+                                            ui.label(format!(
+                                                "{}",
+                                                file.stored
+                                                    .saved_at
+                                                    .with_timezone(&Local)
+                                                    .format("%v %R")
+                                            ));
+                                        });
+                                        row.col(|ui| {
+                                            let dur = chrono::Duration::from_std(
+                                                file.stored.playtime,
+                                            )
+                                            .expect(
+                                                "Could not transform playtime to chrono duration",
+                                            );
+                                            ui.label(format!(
+                                                "{:02}:{:02}:{:02}",
+                                                dur.num_hours(),
+                                                dur.num_minutes() % 60,
+                                                dur.num_seconds() % 60,
+                                            ));
+                                        });
+                                        row.col(|ui| {
+                                            if ui
+                                                .add_enabled(
+                                                    true,
+                                                    Button::new(
+                                                        RichText::new("Delete").color(Color32::RED),
+                                                    ),
+                                                )
+                                                .clicked()
+                                            {
+                                                remove_dir_all(&file.path)
+                                                    .expect("Unable to delete save game");
+                                                dirty = true;
+                                            }
+                                        });
+                                        row.col(|ui| {
+                                            if ui.add_enabled(true, Button::new("Load")).on_disabled_hover_text("Currently WASM does not support saving or loading").clicked() {
+                                                let path = file.path.clone();
+                                                let progress =
+                                                    ProgressInfo::new();
+                                                let (send, recv) = channel();
+
+                                                let progress_send = progress.clone();
+                                                thread::spawn(move || {
+                                                    send.send(run_integrated_server(
+                                                        progress_send,
+                                                        |progress, data_store| {
+                                                            load(path).map(|sg| {
+                                                                assert_eq!(
+                                                                    sg.checksum, data_store.checksum,
+                                                                    "A savegame can only be loaded with the EXACT same mods!"
+                                                                );
+                                                                sg.game_state
+                                                            })
+                                                            .unwrap()
+                                                        },
+                                                        None,
+                                                    ))
+                                                    .expect("Channel send failed");
+                                                });
+                                                new_state = Some(AppState::Loading {
+                                                    start_time: Instant::now(),
+                                                    progress,
+                                                    game_state_receiver: recv,
+                                                    current_message: "Loading savegame".to_string(),
+                                                });
+                                            }
+                                        });
+                                    },
+                                    Err((p, e)) => {
+                                        row.col(|ui| {
+                                            ui.label("Save File corrupt").on_hover_text(&format!(
+                                                "Path: {}, Error: {e:?}",
+                                                p.display()
+                                            ));
+                                        });
+                                        row.col(|ui| {
+                                            ui.label("Save File corrupt").on_hover_text(&format!(
+                                                "Path: {}, Error: {e:?}",
+                                                p.display()
+                                            ));
+                                        });
+                                        row.col(|ui| {
+                                            ui.label("Save File corrupt").on_hover_text(&format!(
+                                                "Path: {}, Error: {e:?}",
+                                                p.display()
+                                            ));
+                                        });
+                                        row.col(|ui| {
+                                            ui.add_enabled(false, Button::new("Load"));
+                                        });
+                                        row.col(|ui| {
+                                            if ui.add_enabled(true, Button::new("Delete")).clicked()
+                                            {
+                                                remove_dir_all(p)
+                                                    .expect("Unable to delete save game");
+                                                dirty = true;
+                                            }
+                                        });
+                                    },
+                                }
+                            });
+                        });
+
+                    if dirty {
+                        *save_files = SaveFileList::generate_from_save_folder(&save_folder())
+                    }
+                });
+                // Borrow checker issue
+                if let Some(new_state) = new_state {
+                    self.state = new_state;
+                }
+            },
+
             AppState::Loading {
                 start_time,
                 progress,
                 game_state_receiver,
+                current_message,
             } => {
-                let progress = f64::from_bits(progress.load(Ordering::Relaxed));
+                if let Some(new_message) = progress.get_message() {
+                    *current_message = new_message;
+                }
+                let progress = progress.get_progress();
 
                 CentralPanel::default().show(ctx, |ui| {
                     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
@@ -152,7 +332,7 @@ impl eframe::App for App {
                         .default_pos((0.5, 0.5))
                         .show(ctx, |ui| {
                             let mul: f64 = 1.0 / progress;
-                            let text = if mul.is_infinite() {
+                            let time_text = if mul.is_infinite() {
                                 format!("Calculating Remaining Time...")
                             } else {
                                 if mul >= 1.0 {
@@ -165,15 +345,21 @@ impl eframe::App for App {
                                             .div_ceil(60)
                                     )
                                 } else {
-                                    error!("mul out of range 1.0..: {}", mul);
-                                    format!("Calculating Remaining Time...")
+                                    if mul < 0.99 {
+                                        error!("mul out of range 1.0..: {}", mul);
+                                        format!("Calculating Remaining Time...")
+                                    } else {
+                                        // Lets assume this is just floating point rounding crap
+                                        format!("Est Remaining 1 min")
+                                    }
                                 }
                             };
                             ui.add(
                                 ProgressBar::new(progress as f32)
                                     .corner_radius(0)
-                                    .text(text),
+                                    .text(current_message.as_str()),
                             );
+                            ui.label(time_text);
                             if mul.is_finite() {
                                 ui.label(format!(
                                     "Est Full Time: {:?} min",
@@ -194,30 +380,31 @@ impl eframe::App for App {
                         state: new_state,
                         tick: current_tick,
                     });
+                    // FIXME: This is needed to prevent the tech tree from collapsing?
+                    // TODO: Make an issue to investigae why this is needed
+                    Window::new("FIXME").show(ctx, |ui| {
+                        egui_graphs::reset_layout::<LayoutStateTree>(
+                            ui,
+                            Some("Tech Tree".to_string()),
+                        );
+                    });
                     self.state = AppState::Ingame;
                 }
             },
 
-            AppState::MainMenu {
-                in_ip_box,
-                gigabase_size,
-            } => {
+            AppState::MainMenu { in_ip_box } => {
                 Window::new("Version")
                     .default_pos(Align2::RIGHT_TOP.pos_in_rect(&ctx.screen_rect()))
                     .show(ctx, |ui| {
                         Grid::new("version_grid").num_columns(2).show(ui, |ui| {
                             ui.label("Version:");
-                            if crate::built_info::GIT_HEAD_REF == Some("refs/head/master") {
-                                ui.label(crate::built_info::PKG_VERSION);
-                            } else {
-                                ui.label(crate::built_info::GIT_VERSION.unwrap());
-                            }
+                            ui.label(get_version());
                             ui.end_row();
 
                             // TODO: This does not work because of nixos :/
-                            // ui.label("Built at:");
-                            // ui.label(crate::built_info::BUILT_TIME_UTC);
-                            // ui.end_row();
+                            ui.label("Built at:");
+                            ui.label(crate::built_info::BUILT_TIME_UTC);
+                            ui.end_row();
                         })
                     });
 
@@ -267,72 +454,49 @@ impl eframe::App for App {
                         })
                         .inner
                     {
-                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
+                        let progress = ProgressInfo::new();
                         let (send, recv) = channel();
 
-                        send.send(run_client(ip)).expect("Channel send failed");
+                        run_client(ip, send);
 
                         self.state = AppState::Loading {
                             start_time: Instant::now(),
                             progress,
                             game_state_receiver: recv,
+                            current_message: "Fetching gamestate from server".to_string(),
                         };
 
                         return;
                     }
                 }
 
-                let gigabase_size = *gigabase_size;
-
                 CentralPanel::default().show(ctx, |ui| {
                     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-                    ui.vertical_centered(|ui|{
-                        ui.label(
-                            egui::RichText::new("Detected running in a browser(WASM). Performance might be significantly degraded, and/or features might not work correctly. Support is on a best effort basis.")
-                                .heading()
-                                .color(egui::Color32::RED),
-                        );
-                        ui.label(
-                            egui::RichText::new("For the best experience run on native.")
-                                .heading()
-                                .color(egui::Color32::RED),
-                        );
-                    });
+                        ui.vertical_centered(|ui|{
+                            ui.label(
+                                egui::RichText::new("Detected running in a browser(WASM). Performance might be significantly degraded, and/or features might not work correctly. Support is on a best effort basis.")
+                                    .heading()
+                                    .color(egui::Color32::RED),
+                            );
+                            ui.label(
+                                egui::RichText::new("For the best experience run on native.")
+                                    .heading()
+                                    .color(egui::Color32::RED),
+                            );
+                        });
 
-                    if ui.button("Load").clicked() {
-                        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-                        if let Some(path) = rfd::FileDialog::new()
-                            .set_directory(
-                                ProjectDirs::from("de", "aschhoff", "factory_game")
-                                    .expect("No Home path found")
-                                    .data_dir(),
-                            )
-                            .pick_folder()
-                        {
-                            let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
-                            let (send, recv) = channel();
-
-                            let progress_send = progress.clone();
-                            thread::spawn(move || {
-                                send.send(run_integrated_server(
-                                    progress_send,
-                                    StartGameInfo::Load(path),
-                                )).expect("Channel send failed");
-                            });
-
-                            self.state = AppState::Loading {
-                                start_time: Instant::now(),progress,
-                                game_state_receiver: recv,
-                            };
+                    if ui.add_enabled(cfg!(not(target_arch = "wasm32")), Button::new("Load")).on_disabled_hover_text("Saving/Loading not yet supported when running the browser").clicked() {
+                        self.state = AppState::LoadSaveMenu {
+                            save_files: SaveFileList::generate_from_save_folder(
+                                &save_folder()
+                            ),
                         }
-                    } 
+                    }
                     // else if ui.button("Load Debug Save").clicked() {
-                    //     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                    //     #[cfg(not(target_arch = "wasm32"))]
                     //     if let Some(path) = rfd::FileDialog::new()
                     //         .set_directory(
-                    //             ProjectDirs::from("de", "aschhoff", "factory_game")
-                    //                 .expect("No Home path found")
-                    //                 .data_dir(),
+                    //             save_folder(),
                     //         )
                     //         .pick_file()
                     //     {
@@ -352,180 +516,91 @@ impl eframe::App for App {
                     //             game_state_receiver: recv,
                     //         };
                     //     }
-                    // } 
-                    else if ui.add_enabled(cfg!(not(target_arch = "wasm32")), egui::Button::new("Connect over network")).on_disabled_hover_text("Disabled on WASM").clicked() {
+                    // }
+                    else if ui
+                        .button(
+                            "Create New Game"
+                        )
+                        .clicked()
+                    {
+                        self.state = AppState::NewGameMenu { gigabase_size: 40, new_game_name: "My World".to_string()};
+                    }
+                    else if ui
+                        .add_enabled(
+                            cfg!(not(target_arch = "wasm32")),
+                            egui::Button::new("Connect over network"),
+                        )
+                        .on_disabled_hover_text("Disabled on WASM")
+                        .clicked()
+                    {
                         let AppState::MainMenu { in_ip_box, .. } = &mut self.state else {
                             unreachable!()
                         };
                         assert!(in_ip_box.is_none());
                         *in_ip_box = Some((String::new(), false));
-                    } else if ui.button("Empty World").clicked() {
-                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
+                    }
+                });
+            },
+
+            AppState::NewGameMenu {
+                gigabase_size,
+                new_game_name,
+            } => {
+                CentralPanel::default().show(ctx, |ui| {
+                    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+                    ui.vertical_centered(|ui|{
+                        ui.label(
+                            egui::RichText::new("Detected running in a browser(WASM). Performance might be significantly degraded, and/or features might not work correctly. Support is on a best effort basis.")
+                                .heading()
+                                .color(egui::Color32::RED),
+                        );
+                        ui.label(
+                            egui::RichText::new("For the best experience run on native.")
+                                .heading()
+                                .color(egui::Color32::RED),
+                        );
+                    });
+
+                    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+                    ui.vertical_centered(|ui|{
+                        ui.label(
+                            egui::RichText::new("Creating a game on WASM might freeze the browser tab for some time. Do not worry if after clicking \'Create\' the tab freezes and your browser warns that \"This page is slowing down your browser\"")
+                                .heading()
+                                .color(egui::Color32::YELLOW),
+                        );
+                    });
+
+                    if ui.button("Back to Main Menu").clicked() {
+                        self.state = AppState::MainMenu { in_ip_box: None };
+                        return;
+                    }
+                    let ret =
+                        example_worlds::list_example_worlds(&mut self.world_creation_state, ui);
+
+                    if let Some(creation_fn) = ret {
+                        let progress = ProgressInfo::new();
                         let (send, recv) = channel();
 
                         let progress_send = progress.clone();
                         #[cfg(not(target_arch = "wasm32"))]
                         thread::spawn(move || {
                             send.send(run_integrated_server(
-                                progress_send,
-                                StartGameInfo::Create(GameCreationInfo::Empty),
-                            )).expect("Channel send failed");
+                                progress_send.clone(),
+                                creation_fn,
+                                None,
+                            ))
+                            .expect("Channel send failed");
                         });
 
                         #[cfg(target_arch = "wasm32")]
-                        send.send(run_integrated_server(
-                            progress_send,
-                            StartGameInfo::Create(GameCreationInfo::Empty),
-                        ));
+                        send.send(run_integrated_server(progress_send, creation_fn, None));
 
                         self.state = AppState::Loading {
-                            start_time: Instant::now(),progress,
+                            start_time: Instant::now(),
+                            progress,
                             game_state_receiver: recv,
+                            current_message: "Creating world".to_string()
                         };
-                    } else if ui.button("Lots of Belts").clicked() {
-                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
-                        let (send, recv) = channel();
-
-                        let progress_send = progress.clone();
-                        #[cfg(not(target_arch = "wasm32"))]
-                        thread::spawn(move || {
-                            send.send(run_integrated_server(
-                                progress_send,
-                                StartGameInfo::Create(GameCreationInfo::LotsOfBelts),
-                            )).expect("Channel send failed");
-                        });
-
-                        #[cfg(target_arch = "wasm32")]
-                        send.send(run_integrated_server(
-                            progress_send,
-                            StartGameInfo::Create(GameCreationInfo::LotsOfBelts),
-                        ));
-
-                        self.state = AppState::Loading {
-                            start_time: Instant::now(),progress,
-                            game_state_receiver: recv,
-                        };
-                    } else if ui.button("Megabase").clicked() {
-                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
-                        let (send, recv) = channel();
-
-                        let progress_send = progress.clone();
-                        #[cfg(not(target_arch = "wasm32"))]
-                        thread::spawn(move || {
-                            send.send(run_integrated_server(
-                                progress_send,
-                                StartGameInfo::Create(GameCreationInfo::Megabase(true)),
-                            )).expect("Channel send failed");
-                        });
-
-                        #[cfg(target_arch = "wasm32")]
-                        send.send(run_integrated_server(
-                            progress_send,
-                            StartGameInfo::Create(GameCreationInfo::Megabase(true)),
-                        ));
-
-                        self.state = AppState::Loading {
-                            start_time: Instant::now(),progress,
-                            game_state_receiver: recv,
-                        };
-                    } else if ui.button("Megabase with Infinity Battery").clicked() {
-                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
-                        let (send, recv) = channel();
-
-                        let progress_send = progress.clone();
-                        #[cfg(not(target_arch = "wasm32"))]
-                        thread::spawn(move || {
-                            send.send(run_integrated_server(
-                                progress_send,
-                                StartGameInfo::Create(GameCreationInfo::Megabase(false)),
-                            )).expect("Channel send failed");
-                        });
-
-                        #[cfg(target_arch = "wasm32")]
-                        send.send(run_integrated_server(
-                            progress_send,
-                            StartGameInfo::Create(GameCreationInfo::Megabase(false)),
-                        ));
-
-                        self.state = AppState::Loading {
-                            start_time: Instant::now(),progress,
-                            game_state_receiver: recv,
-                        };
-                    } else if {
-                        let v = ui.horizontal( |ui| {
-                            let ret = ui.button("Gigabase").clicked();
-
-                            let AppState::MainMenu { gigabase_size, .. } = &mut self.state else {
-                                unreachable!()
-                            };
-
-                            ui.add(Slider::new(gigabase_size, 1..=1_000).logarithmic(true).update_while_editing(true).text("Number of base copies to build"));
-
-                            let single_base_size  = 15.4 / 40.0;
-                            let single_base_usage  = 40.0 / 40.0;
-
-                            ui.label(&format!("Est. Memory Usage: ~{:.1}GB", single_base_size * f64::from(*gigabase_size)));
-                            ui.label(&format!("Est. Memory Bandwidth for 60 UPS: ~{:.1}GB/s", single_base_usage * f64::from(*gigabase_size)));
-
-                            ret
-                        });
-
-
-                        v.inner
-                    } {
-                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
-                        let (send, recv) = channel();
-
-                        let progress_send = progress.clone();
-                        thread::spawn(move || {
-                            send.send(run_integrated_server(
-                                progress_send,
-                                StartGameInfo::Create(GameCreationInfo::Gigabase(gigabase_size)),
-                            )).expect("Channel send failed");
-                        });
-
-                        self.state = AppState::Loading {
-                            start_time: Instant::now(),progress,
-                            game_state_receiver: recv,
-                        };
-                    } else if ui.button("Solar Field").clicked() {
-                        let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
-                        let (send, recv) = channel();
-
-                        let progress_send = progress.clone();
-                        thread::spawn(move || {
-                            send.send(run_integrated_server(
-                                progress_send,
-                                StartGameInfo::Create(GameCreationInfo::SolarField(
-                                    crate::power::Watt(1_000),
-                                    Position { x: 1600, y: 1600 },
-                                )),
-                            )).expect("Channel send failed");
-                        });
-
-                        self.state = AppState::Loading {
-                            start_time: Instant::now(),progress,
-                            game_state_receiver: recv,
-                        };
-                    } else if ui.button("With bp file").clicked() {
-                        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-                        if let Some(path) = rfd::FileDialog::new().pick_file() {
-                            let progress = Arc::new(AtomicU64::new(0f64.to_bits()));
-                            let (send, recv) = channel();
-
-                            let progress_send = progress.clone();
-                            thread::spawn(move || {
-                                send.send(run_integrated_server(
-                                    progress_send,
-                                    StartGameInfo::Create(GameCreationInfo::FromBP(path)),
-                                )).expect("Channel send failed");
-                            });
-
-                            self.state = AppState::Loading {
-                                start_time: Instant::now(),progress,
-                                game_state_receiver: recv,
-                            };
-                        }
                     }
                 });
             },
@@ -535,10 +610,38 @@ impl eframe::App for App {
     fn on_exit(&mut self) {
         if let Some(state) = &self.currently_loaded_game {
             match &state.state {
-                LoadedGame::ItemU8RecipeU8(state) => save(&state.state, &state.data_store.lock()),
-                LoadedGame::ItemU8RecipeU16(state) => save(&state.state, &state.data_store.lock()),
-                LoadedGame::ItemU16RecipeU8(state) => save(&state.state, &state.data_store.lock()),
-                LoadedGame::ItemU16RecipeU16(state) => save(&state.state, &state.data_store.lock()),
+                LoadedGame::ItemU8RecipeU8(state) => {
+                    save(
+                        "Last Exit",
+                        Some("last_exit.save"),
+                        &state.state,
+                        &state.data_store.lock(),
+                    );
+                },
+                LoadedGame::ItemU8RecipeU16(state) => {
+                    save(
+                        "Last Exit",
+                        Some("last_exit.save"),
+                        &state.state,
+                        &state.data_store.lock(),
+                    );
+                },
+                LoadedGame::ItemU16RecipeU8(state) => {
+                    save(
+                        "Last Exit",
+                        Some("last_exit.save"),
+                        &state.state,
+                        &state.data_store.lock(),
+                    );
+                },
+                LoadedGame::ItemU16RecipeU16(state) => {
+                    save(
+                        "Last Exit",
+                        Some("last_exit.save"),
+                        &state.state,
+                        &state.data_store.lock(),
+                    );
+                },
             }
         }
     }
@@ -547,6 +650,9 @@ impl eframe::App for App {
 impl App {
     fn update_ingame(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         let size = ctx.available_rect();
+
+        #[cfg(target_arch = "wasm32")]
+        let mut render_action_vec = vec![];
 
         CentralPanel::default().show(ctx, |ui| {
             if ui.ui_contains_pointer() {
@@ -559,137 +665,155 @@ impl App {
                 let wants_pointer = ctx.wants_pointer_input();
                 let wants_keyboard = ctx.wants_keyboard_input();
 
-                #[cfg(not(target_arch = "wasm32"))]
-                ui.input(|input_state| {
-                    for event in &input_state.events {
-                        match event {
-                            Event::Copy
-                            | Event::Cut
-                            | Event::Paste(_)
-                            | Event::Text(_)
-                            | Event::Key { .. } => {
-                                if wants_keyboard {
-                                    continue;
-                                }
-                            },
-                            Event::PointerMoved(_)
-                            | Event::MouseMoved(_)
-                            | Event::PointerButton { .. }
-                            | Event::PointerGone
-                            | Event::Zoom(_)
-                            | Event::Touch { .. }
-                            | Event::MouseWheel { .. } => {
-                                if wants_pointer {
-                                    continue;
-                                }
-                            },
-                            _ => {},
-                        }
-                        let input = if let Event::PointerMoved(dest) = event {
-                            let pos_normalized = [dest.x / size.width(), dest.y / size.height()];
-
-                            let ar = size.width() / size.height();
-
-                            if pos_normalized[0] < 0.0
-                                || pos_normalized[0] > 1.0
-                                || pos_normalized[1] < 0.0
-                                || pos_normalized[1] > 1.0
-                            {
-                                continue;
-                            }
-
-                            Ok(Input::MouseMove(
-                                pos_normalized[0] - 0.5,
-                                (pos_normalized[1] - 0.5) / ar,
-                            ))
-                        } else {
-                            event.clone().try_into()
-                        };
-
-                        if let Ok(input) = input {
-                            if self.input_sender.as_mut().unwrap().send(input).is_err() {
-                                #[cfg(not(test))]
-                                panic!("Could not send input");
-                                #[allow(unreachable_code)]
-                                {
-                                    error!("Could not send input");
-                                }
-                            }
-                        }
-                    }
-                });
-
-                match &game.state {
-                    LoadedGame::ItemU8RecipeU8(loaded_game_sized) => {
-                        let cb = Callback {
-                            raw_renderer: self
-                                .raw_renderer
-                                .clone()
-                                .expect("Tried to Load a game without a renderer ready"),
-                            texture_atlas: self.texture_atlas.clone(),
-                            state_machine: loaded_game_sized.state_machine.clone(),
-                            game_state: loaded_game_sized.state.clone(),
-                            data_store: loaded_game_sized.data_store.clone(),
-                        };
-                        painter.add(Shape::Callback(egui_wgpu::Callback::new_paint_callback(
-                            size, cb,
-                        )));
-
-                        let simulation_state = loaded_game_sized.state.simulation_state.lock();
-                        let world = loaded_game_sized.state.world.lock();
-                        let aux_data = loaded_game_sized.state.aux_data.lock();
-                        let state_machine = loaded_game_sized.state_machine.lock();
-                        let data_store = loaded_game_sized.data_store.lock();
-
-                        let tick = game.tick.load(std::sync::atomic::Ordering::Relaxed);
-
-                        self.last_rendered_update = tick;
-
-                        match render_ui(
-                            ctx,
-                            ui,
-                            state_machine,
-                            simulation_state,
-                            world,
-                            aux_data,
-                            data_store,
-                        ) {
-                            Ok(render_actions) => {
-                                for action in render_actions {
-                                    #[cfg(not(target_arch = "wasm32"))]
-                                    loaded_game_sized
-                                        .ui_action_sender
-                                        .send(action)
-                                        .expect("Ui action channel died");
-
-                                    #[cfg(target_arch = "wasm32")]
-                                    render_action_vec.push(action);
-                                }
-                            },
-                            Err(escape) => match escape {
-                                EscapeMenuOptions::BackToMainMenu => {
-                                    self.state = AppState::MainMenu {
-                                        in_ip_box: None,
-                                        gigabase_size: 40,
-                                    };
-                                    self.last_rendered_update = 0;
-                                    self.input_sender = None;
-
-                                    self.currently_loaded_game = None;
+                {
+                    profiling::scope!("Inputs");
+                    #[cfg(not(target_arch = "wasm32"))]
+                    ui.input(|input_state| {
+                        for event in &input_state.events {
+                            match event {
+                                Event::Copy
+                                | Event::Cut
+                                | Event::Paste(_)
+                                | Event::Text(_)
+                                | Event::Key { .. } => {
+                                    if wants_keyboard {
+                                        continue;
+                                    }
                                 },
-                            },
+                                Event::PointerMoved(_)
+                                | Event::MouseMoved(_)
+                                | Event::PointerButton { .. }
+                                | Event::PointerGone
+                                | Event::Zoom(_)
+                                | Event::Touch { .. }
+                                | Event::MouseWheel { .. } => {
+                                    if wants_pointer {
+                                        continue;
+                                    }
+                                },
+                                _ => {},
+                            }
+                            let input = if let Event::PointerMoved(dest) = event {
+                                let pos_normalized =
+                                    [dest.x / size.width(), dest.y / size.height()];
+
+                                let ar = size.width() / size.height();
+
+                                if pos_normalized[0] < 0.0
+                                    || pos_normalized[0] > 1.0
+                                    || pos_normalized[1] < 0.0
+                                    || pos_normalized[1] > 1.0
+                                {
+                                    continue;
+                                }
+
+                                Ok(Input::MouseMove(
+                                    pos_normalized[0] - 0.5,
+                                    (pos_normalized[1] - 0.5) / ar,
+                                ))
+                            } else {
+                                event.clone().try_into()
+                            };
+
+                            if let Ok(input) = input {
+                                if self.input_sender.as_mut().unwrap().send(input).is_err() {
+                                    #[cfg(not(test))]
+                                    panic!("Could not send input");
+                                    #[allow(unreachable_code)]
+                                    {
+                                        error!("Could not send input");
+                                    }
+                                }
+                            }
                         }
-                    },
-                    LoadedGame::ItemU8RecipeU16(loaded_game_sized) => {
-                        todo!("Handle bigger item/recipe counts")
-                    },
-                    LoadedGame::ItemU16RecipeU8(loaded_game_sized) => {
-                        todo!("Handle bigger item/recipe counts")
-                    },
-                    LoadedGame::ItemU16RecipeU16(loaded_game_sized) => {
-                        todo!("Handle bigger item/recipe counts")
-                    },
-                };
+                    });
+                }
+
+                {
+                    profiling::scope!("Render UI");
+                    match &game.state {
+                        LoadedGame::ItemU8RecipeU8(loaded_game_sized) => {
+                            let cb = Callback {
+                                raw_renderer: self
+                                    .raw_renderer
+                                    .clone()
+                                    .expect("Tried to Load a game without a renderer ready"),
+                                texture_atlas: self.texture_atlas.clone(),
+                                state_machine: loaded_game_sized.state_machine.clone(),
+                                game_state: loaded_game_sized.state.clone(),
+                                data_store: loaded_game_sized.data_store.clone(),
+                            };
+                            painter.add(Shape::Callback(egui_wgpu::Callback::new_paint_callback(
+                                size, cb,
+                            )));
+
+                            // dbg!("pre simulation_state");
+                            let simulation_state = loaded_game_sized.state.simulation_state.lock();
+                            // dbg!("pre world");
+                            let world = loaded_game_sized.state.world.lock();
+                            // dbg!("pre aux_data");
+                            let aux_data = loaded_game_sized.state.aux_data.lock();
+                            // dbg!("pre state_machine");
+                            let state_machine = loaded_game_sized.state_machine.lock();
+                            // dbg!("pre data_store");
+                            let data_store = loaded_game_sized.data_store.lock();
+                            // dbg!("post data_store");
+
+                            let tick = game.tick.load(std::sync::atomic::Ordering::Relaxed);
+
+                            self.last_rendered_update = tick;
+
+                            match render_ui(
+                                ctx,
+                                ui,
+                                state_machine,
+                                simulation_state,
+                                world,
+                                aux_data,
+                                data_store,
+                            ) {
+                                Ok(render_actions) => {
+                                    for action in render_actions {
+                                        #[cfg(not(target_arch = "wasm32"))]
+                                        loaded_game_sized
+                                            .ui_action_sender
+                                            .send(action)
+                                            .expect("Ui action channel died");
+
+                                        #[cfg(target_arch = "wasm32")]
+                                        render_action_vec.push(action);
+                                    }
+                                },
+                                Err(escape) => match escape {
+                                    EscapeMenuOptions::BackToMainMenu => {
+                                        #[cfg(not(target_arch = "wasm32"))]
+                                        save(
+                                            "Last Exit",
+                                            Some("last_exit.save"),
+                                            &loaded_game_sized.state,
+                                            &loaded_game_sized.data_store.lock(),
+                                        );
+
+                                        self.state = AppState::MainMenu { in_ip_box: None };
+                                        self.last_rendered_update = 0;
+                                        self.input_sender = None;
+
+                                        self.currently_loaded_game = None;
+                                    },
+                                },
+                            }
+                        },
+                        LoadedGame::ItemU8RecipeU16(_loaded_game_sized) => {
+                            todo!("Handle bigger item/recipe counts")
+                        },
+                        LoadedGame::ItemU16RecipeU8(_loaded_game_sized) => {
+                            todo!("Handle bigger item/recipe counts")
+                        },
+                        LoadedGame::ItemU16RecipeU16(_loaded_game_sized) => {
+                            todo!("Handle bigger item/recipe counts")
+                        },
+                    };
+                }
             } else {
                 warn!("No Game loaded!");
             }
@@ -773,10 +897,10 @@ impl App {
                         let mut sim_state_lock = state.state.simulation_state.lock();
                         let sim_state = &mut *sim_state_lock;
 
-                        let mut actions: Vec<ActionType<_, _>> = state
+                        let mut actions: Vec<crate::frontend::action::ActionType<_, _>> = state
                             .state_machine
                             .lock()
-                            .handle_inputs(inputs, world, data_store)
+                            .handle_inputs(inputs, world, sim_state, data_store)
                             .collect();
 
                         actions.extend(
