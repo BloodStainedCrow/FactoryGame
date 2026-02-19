@@ -2123,21 +2123,21 @@ pub fn render_ui<
     };
     let game_state_ref = &mut fake_game_state;
 
-    Window::new("Mouse Pos").default_open(true).show(ctx, |ui| {
-        ui.label(
-            format!(
-                "{:?}",
-                ActionStateMachine::<u8, u8>::player_mouse_to_tile(
-                    state_machine_ref.zoom_level,
-                    state_machine_ref
-                        .map_view_info
-                        .unwrap_or(state_machine_ref.local_player_pos),
-                    state_machine_ref.current_mouse_pos
-                )
-            )
-            .as_str(),
-        )
-    });
+    // Window::new("Mouse Pos").default_open(true).show(ctx, |ui| {
+    //     ui.label(
+    //         format!(
+    //             "{:?}",
+    //             ActionStateMachine::<u8, u8>::player_mouse_to_tile(
+    //                 state_machine_ref.zoom_level,
+    //                 state_machine_ref
+    //                     .map_view_info
+    //                     .unwrap_or(state_machine_ref.local_player_pos),
+    //                 state_machine_ref.current_mouse_pos
+    //             )
+    //         )
+    //         .as_str(),
+    //     )
+    // });
 
     // TODO: Make this conditional
     let mut open = state_machine_ref.open_windows[action_state_machine::Window::Hotbar];
@@ -3434,6 +3434,7 @@ pub fn render_ui<
             }
         });
 
+    #[cfg(debug_assertions)]
     Window::new("RawData").default_open(false).show(ctx, |ui| {
         let raw = get_raw_data_test();
 
