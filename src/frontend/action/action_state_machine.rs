@@ -826,7 +826,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         // The mouse is no longer over the entity
                         self.state = ActionStateMachineState::Idle;
                     }
-                    
+
                 } else {
                     // The entity is gone
                     self.state = ActionStateMachineState::Idle;
@@ -1520,7 +1520,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 if let Some(e) = world.get_entity_at(*position, data_store) {
                     let e_pos = e.get_pos();
                     let e_size = e.get_entity_size(data_store);
-                    let mouse_pos = Self::player_mouse_to_tile(self.zoom_level, self.map_view_info.unwrap_or(self.local_player_pos), self.current_mouse_pos);
+                    let mouse_pos = Self::player_mouse_to_tile(
+                        self.zoom_level,
+                        self.map_view_info.unwrap_or(self.local_player_pos),
+                        self.current_mouse_pos,
+                    );
 
                     if mouse_pos.contained_in(e_pos, e_size) {
                         // We are still deconstructing. Continue
@@ -1528,7 +1532,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         // The mouse is no longer over the entity
                         self.state = ActionStateMachineState::Idle;
                     }
-                    
                 } else {
                     // The entity is gone
                     self.state = ActionStateMachineState::Idle;
