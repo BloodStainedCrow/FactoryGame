@@ -18,7 +18,6 @@ use crate::{
     },
     item::IdxTrait,
     replays::GenerationInformation,
-    test_world_harness::test::player_mouse_to_tile,
 };
 
 mod assert;
@@ -85,7 +84,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Test<ItemIdxType, RecipeIdx
             .exactly_one()
             .expect(&format!("Could not find exclusive match for {}", item));
 
-        todo!()
+        todo!("Get Hand from item {item:?}")
     }
 
     pub fn rotate_holding(&mut self, goal_dir: Dir) {

@@ -455,8 +455,8 @@ impl TechState {
                                 unit_increase_per_level,
                             } => unit_increase_per_level * u64::from(times_this_tech_was_finished),
                             data::RepeatableCostScaling::Exponential {
-                                unit_multiplier_per_level_nom,
-                                unit_multiplier_per_level_denom,
+                                unit_multiplier_per_level_nom: _,
+                                unit_multiplier_per_level_denom: _,
                             } => todo!(),
                         };
 

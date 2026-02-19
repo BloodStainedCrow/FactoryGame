@@ -45,6 +45,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Pedia<ItemIdxType, RecipeId
         Window::new("Datapedia").open(open).show(ctx, |ui| {
             ui.columns_const(|[_grid, entry_ui]| {
                 // Grid
+                // TODO: Grid category buttons
+
+                match Self::show_grid(&self.open_page, data_store) {
+                    Some(new_entry) => self.entry = Some(new_entry),
+                    None => {},
+                }
 
                 // Entry
                 match &mut self.entry {
@@ -53,6 +59,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Pedia<ItemIdxType, RecipeId
                 }
             });
         });
+    }
+
+    fn show_grid(
+        _open_page: &OpenPage,
+        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> Option<OpenEntry<ItemIdxType, RecipeIdxType>> {
+        // TODO:
+        None
     }
 
     fn show_entry(
@@ -207,7 +221,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Pedia<ItemIdxType, RecipeId
                         }
                     }
                 },
-                OpenEntry::Recipe { recipe } => todo!(),
+                OpenEntry::Recipe { recipe } => todo!("Show entry for recipe {recipe:?}"),
             }
         });
     }

@@ -9,7 +9,6 @@ use std::{
 
 use crate::{
     app_state::{AuxillaryData, SimulationState},
-    frontend::{action::belt_placement::FakeGameState, world::Position},
     multiplayer::PlayerIDInformation,
 };
 use flate2::Compression;
@@ -26,7 +25,6 @@ use crate::{
 
 use super::{
     ServerInfo,
-    connection_reciever_tcp::ConnectionList,
     server::{ActionSource, HandledActionConsumer},
 };
 
@@ -69,7 +67,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         _current_tick: u64,
         world: &'b World<ItemIdxType, RecipeIdxType>,
         sim_state: &'d SimulationState<ItemIdxType, RecipeIdxType>,
-        aux_data: &'e AuxillaryData,
+        _aux_data: &'e AuxillaryData,
         data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
     + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType> {
@@ -132,15 +130,15 @@ impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, RecipeIdxType>
     for Server<ItemIdxType, RecipeIdxType>
 {
-    fn get(
-        &self,
+    fn get<'a, 'b, 'c, 'd, 'e>(
+        &'a self,
         _current_tick: u64,
-        world: &World<ItemIdxType, RecipeIdxType>,
-        sim_state: &SimulationState<ItemIdxType, RecipeIdxType>,
-        aux_data: &AuxillaryData,
-        _data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<ItemIdxType, RecipeIdxType>
-    {
+        world: &'b World<ItemIdxType, RecipeIdxType>,
+        sim_state: &'d SimulationState<ItemIdxType, RecipeIdxType>,
+        aux_data: &'e AuxillaryData,
+        _data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
+    + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType> {
         log::trace!("Server::Get");
         const RECV_BUFFER_LEN: usize = 10_000;
         let start = Instant::now();
@@ -154,7 +152,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ActionSource<ItemIdxType, R
         let mut recieved_actions: Vec<ActionType<_, _>> = vec![];
 
         self.client_connections.lock().retain(|mut conn| {
-            let start = Instant::now();
             let mut ret = vec![];
 
             let keep = match conn.peek(&mut buffer) {

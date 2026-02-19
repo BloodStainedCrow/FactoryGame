@@ -738,7 +738,7 @@ pub struct FluidConnection {
 }
 
 impl FluidConnection {
-    pub fn with_fluid_tank_rotation(self, rotation: Dir) -> Self {
+    pub fn with_fluid_tank_rotation(self, _rotation: Dir) -> Self {
         todo!()
     }
 }

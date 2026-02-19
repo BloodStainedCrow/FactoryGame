@@ -298,7 +298,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             autosave_interval: (60 * TICKS_PER_SECOND_LOGIC) as u32,
 
             open_windows,
-            datapedia: Pedia::new(data_store),  
+            datapedia: Pedia::new(data_store),
         }
     }
 
@@ -357,7 +357,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             autosave_interval: (60 * TICKS_PER_SECOND_LOGIC) as u32,
 
             open_windows,
-            datapedia: Pedia::new(data_store),  
+            datapedia: Pedia::new(data_store),
         }
     }
 
@@ -673,7 +673,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 },
                 Input::MouseMove(x, y) => {
                     self.current_mouse_pos = (x, y);
-                    
+
                     match &mut self.state {
             ActionStateMachineState::CtrlCPressed
             | ActionStateMachineState::CopyDragInProgress { start_pos: _ } => {},
@@ -814,8 +814,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 },
                 HeldObject::OrePlacement { .. } => {},
             },
-            ActionStateMachineState::Deconstructing(position, timer) => {
-                //todo!("Check if we are still over the same thing")
+            ActionStateMachineState::Deconstructing(position, _timer) => {
+                if let Some(e) = world.get_entity_at(*position, data_store) {
+                    let e_pos = e.get_pos();
+                    let e_size = e.get_entity_size(data_store);
+                    let mouse_pos = Self::player_mouse_to_tile(self.zoom_level, self.map_view_info.unwrap_or(self.local_player_pos), self.current_mouse_pos);
+
+                    if mouse_pos.contained_in(e_pos, e_size) {
+                        // We are still deconstructing. Continue
+                    } else {
+                        // The mouse is no longer over the entity
+                        self.state = ActionStateMachineState::Idle;
+                    }
+                    
+                } else {
+                    // The entity is gone
+                    self.state = ActionStateMachineState::Idle;
+                }
+
             },
         }
 
@@ -1015,7 +1031,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             },
                         ));
                     },
-                    Some(Entity::Roboport { ty, .. }) => todo!(),
+                    Some(Entity::Roboport { .. }) => todo!(),
                     Some(Entity::SolarPanel {
                         pos: _,
                         ty,
@@ -1500,8 +1516,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 },
                 HeldObject::OrePlacement { .. } => {},
             },
-            ActionStateMachineState::Deconstructing(position, timer) => {
-                //todo!("Check if we are still over the same thing")
+            ActionStateMachineState::Deconstructing(position, _timer) => {
+                if let Some(e) = world.get_entity_at(*position, data_store) {
+                    let e_pos = e.get_pos();
+                    let e_size = e.get_entity_size(data_store);
+                    let mouse_pos = Self::player_mouse_to_tile(self.zoom_level, self.map_view_info.unwrap_or(self.local_player_pos), self.current_mouse_pos);
+
+                    if mouse_pos.contained_in(e_pos, e_size) {
+                        // We are still deconstructing. Continue
+                    } else {
+                        // The mouse is no longer over the entity
+                        self.state = ActionStateMachineState::Idle;
+                    }
+                    
+                } else {
+                    // The entity is gone
+                    self.state = ActionStateMachineState::Idle;
+                }
             },
         }
 
@@ -1784,14 +1815,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             PlaceEntityType::MiningDrill { ty, .. } => Cow::Borrowed(
                                 &*data_store.mining_drill_info[ty as usize].display_name,
                             ),
-
-                            _ => unreachable!(),
                         },
 
                         _ => unreachable!(),
                     })
                     .unwrap_or(Cow::Borrowed("None"));
-                let slot_id = egui::Id::new(("hotbar_slot", slot_idx));
                 let response = ui.label(&format!("{}", text));
 
                 if let Some(new) = response.dnd_release_payload::<HeldObject<ItemIdxType>>() {

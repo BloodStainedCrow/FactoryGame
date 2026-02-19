@@ -32,7 +32,6 @@ use crate::{
         },
     },
     item::{IdxTrait, Item, Recipe},
-    replays::Replay,
 };
 
 pub mod blueprint_string;
@@ -40,7 +39,7 @@ pub mod blueprint_string;
 // For now blueprint will just be a list of actions
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Blueprint {
-    pub actions: Vec<BlueprintAction>,
+    pub(crate) actions: Vec<BlueprintAction>,
 }
 
 #[derive(Debug, Clone)]
@@ -49,7 +48,7 @@ pub struct ReusableBlueprint<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTr
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub enum BlueprintAction {
+pub(crate) enum BlueprintAction {
     PlaceEntity(BlueprintPlaceEntity),
 
     SetRecipe {
@@ -86,7 +85,7 @@ fn default_inserter() -> Arc<str> {
 #[derive(
     Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize, serde::Serialize,
 )]
-enum BeltId {
+pub(crate) enum BeltId {
     Sushi(usize),
     Pure(usize),
 }
@@ -936,7 +935,7 @@ impl Blueprint {
         self.actions.len()
     }
 
-    pub fn extract_if(&mut self, filter: impl Fn(&BlueprintAction) -> bool) -> Self {
+    pub(crate) fn extract_if(&mut self, filter: impl Fn(&BlueprintAction) -> bool) -> Self {
         let extracted = self.actions.extract_if(.., |action| (filter)(action));
 
         Self {

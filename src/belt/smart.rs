@@ -5,6 +5,10 @@ use std::{
     u8,
 };
 
+use crate::inserter::{
+    belt_storage_inserter_non_const_gen::DynInserterState,
+    belt_storage_movement_list::{BeltStorageInserterInMovement, ReinsertionLists},
+};
 use crate::{
     inserter::{
         InserterState, belt_storage_inserter::Dir,
@@ -12,13 +16,6 @@ use crate::{
     },
     item::{ITEMCOUNTTYPE, IdxTrait, Item, WeakIdxTrait},
     temp_vec::VecHolder,
-};
-use crate::{
-    inserter::{
-        belt_storage_inserter_non_const_gen::DynInserterState,
-        belt_storage_movement_list::{BeltStorageInserterInMovement, ReinsertionLists},
-    },
-    temp_vec::SmallCapVec,
 };
 use bitvec::{
     access::BitSafeUsize,
@@ -212,7 +209,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             input_splitter,
             output_splitter,
 
-            latest_inserter_pos_if_all_incoming: earliest_inserter_pos_if_all_incoming,
+            latest_inserter_pos_if_all_incoming: _earliest_inserter_pos_if_all_incoming,
         } = self;
 
         SushiBelt {
@@ -776,7 +773,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
     pub fn get_update_size(&self) -> (usize, usize, usize, usize, usize) {
         let free_index_search_indices = match self.first_free_index {
-            FreeIndex::FreeIndex(idx) => vec![],
+            FreeIndex::FreeIndex(_idx) => vec![],
             FreeIndex::OldFreeIndex(idx) => self
                 .items()
                 .skip(usize::from(idx))
@@ -796,6 +793,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             * std::mem::size_of::<BeltStorageInserterDyn>())
         .div_ceil(64);
 
+        let mut old_idx = 0;
         let cache_lines_from_inserter_belt_lookup = self
             .inserters
             .inserters
@@ -807,12 +805,13 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
                 _ => (ins.belt_pos, false),
             })
             .fold(0usize, |old_count, (belt_pos, needs)| {
-                // let our_idx = belt_pos;
-                // (old_count
-                //     + usize::from(
-                //         needs && (old_idx == 0 || (old_idx - 1) / 8 / 64 != our_idx / 8 / 64),
-                //     ),)
-                todo!()
+                let our_idx = belt_pos;
+                let new_count = old_count
+                    + usize::from(
+                        needs && (old_idx == 0 || (old_idx - 1) / 8 / 64 != our_idx / 8 / 64),
+                    );
+                old_idx = our_idx;
+                new_count
             });
 
         let cache_lines_from_storage_lookup = self
@@ -1120,7 +1119,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             input_splitter,
             output_splitter,
 
-            latest_inserter_pos_if_all_incoming: earliest_inserter_pos_if_all_incoming,
+            latest_inserter_pos_if_all_incoming: _earliest_inserter_pos_if_all_incoming,
         } = self;
 
         match side {
@@ -1200,7 +1199,7 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         new
     }
 
-    pub fn break_belt_at(&mut self, belt_pos_to_break_at: u16) -> Option<Self> {
+    pub fn break_belt_at(&mut self, _belt_pos_to_break_at: u16) -> Option<Self> {
         todo!()
         // // TODO: Is this correct
         // if self.is_circular {
@@ -1725,7 +1724,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
                 FreeIndex::OldFreeIndex(_) => {},
             }
         }
-        let (old_free, need_to_check) = match self.first_free_index {
+        let (_old_free, need_to_check) = match self.first_free_index {
             FreeIndex::FreeIndex(idx) => (idx, false),
             FreeIndex::OldFreeIndex(idx) => (idx, true),
         };

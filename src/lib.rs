@@ -6,10 +6,11 @@
 #![feature(int_roundings)]
 #![feature(vec_push_within_capacity)]
 #![feature(iterator_try_collect)]
+// the vec recycle crate will collide with Vec::recycle at some point. Once that happens I want to switch over to std anyway
+#![allow(unstable_name_collisions)]
 
 extern crate test;
 
-// FIXME: I believe this does not work in nix packages, since build scripts do not work, in order to keep the build reproducable
 // See https://docs.rs/built/latest/built/
 pub mod built_info {
     // The file has been placed there by the build script.
@@ -39,7 +40,7 @@ use data::{DataStore, factorio_1_1::get_raw_data_test};
 #[cfg(feature = "client")]
 #[cfg(not(target_arch = "wasm32"))]
 use eframe::NativeOptions;
-use frontend::world::{Position, tile::CHUNK_SIZE_FLOAT};
+use frontend::world::Position;
 #[cfg(feature = "client")]
 use frontend::{action::action_state_machine::ActionStateMachine, input::Input};
 use item::{IdxTrait, WeakIdxTrait};
@@ -54,7 +55,7 @@ use rendering::{
     window::{LoadedGame, LoadedGameSized},
 };
 
-use saving::{load, load_readable};
+use saving::load;
 use std::path::PathBuf;
 
 use crate::item::Indexable;
@@ -77,7 +78,8 @@ pub mod power;
 pub mod progress_info;
 pub mod research;
 
-pub mod scenario;
+// For future modding capabilities
+// pub mod scenario;
 
 #[cfg(test)]
 pub mod test_world_harness;
@@ -127,7 +129,8 @@ pub mod liquid;
 
 mod par_generation;
 
-mod bucket_store;
+// In progress
+// mod bucket_store;
 mod lockfile;
 
 impl WeakIdxTrait for u8 {}
@@ -175,6 +178,7 @@ fn get_version() -> &'static str {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[allow(unused)]
 pub fn main(input: &Vec<String>) -> Result<(), args::ArgsError> {
     // use ron::ser::PrettyConfig;
 
@@ -453,11 +457,11 @@ fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
                 StartGameInfo::Load(path_buf) => load(path_buf)
                     .map(|save| save.game_state)
                     .expect("Could not load game"),
-                StartGameInfo::LoadReadable(path_buf) => unimplemented!(),
+                StartGameInfo::LoadReadable(_path_buf) => unimplemented!(),
                 StartGameInfo::Create {
                     name,
                     gen_info,
-                    info,
+                    info: _info,
                     allow_overwrite,
                 } => {
                     if !allow_overwrite {
@@ -492,8 +496,6 @@ fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
 
             let data_store = Arc::new(data_store);
             match game.run(stop, &data_store) {
-                multiplayer::ExitReason::UserQuit => exit(0),
-                multiplayer::ExitReason::ConnectionDropped => exit(1),
                 multiplayer::ExitReason::LoopStopped => exit(0),
             }
         },
@@ -594,125 +596,65 @@ pub fn simple(
 
 #[cfg(test)]
 mod tests {
-    use std::{iter, rc::Rc};
+    use std::sync::Arc;
 
-    use test::{Bencher, black_box};
+    use test::Bencher;
 
     use crate::{
-        TICKS_PER_SECOND_LOGIC,
-        app_state::GameState,
-        data::factorio_1_1::get_raw_data_test,
-        frontend::{action::ActionType, world::Position},
-        replays::{Replay, run_till_finished},
+        app_state::GameState, data::factorio_1_1::get_raw_data_test, progress_info::ProgressInfo,
+        replays::GenerationInformation,
     };
 
-    // #[bench]
-    // fn clone_empty_simulation(b: &mut Bencher) {
-    //     let data_store = get_raw_data_test().process().assume_simple();
+    #[bench]
+    fn clone_empty_simulation(b: &mut Bencher) {
+        let data_store = get_raw_data_test().process().assume_simple();
 
-    //     let game_state = GameState::new("Test World".to_string(), &data_store);
+        let game_state = GameState::new(
+            "Test World".to_string(),
+            GenerationInformation::default(),
+            &data_store,
+        );
 
-    //     let replay = Replay::new(&game_state, None, Rc::new(data_store));
+        b.iter(|| game_state.clone());
+    }
 
-    //     b.iter(|| replay.clone());
-    // }
+    #[bench]
+    fn empty_simulation(b: &mut Bencher) {
+        let data_store = get_raw_data_test().process().assume_simple();
 
-    // #[bench]
-    // fn empty_simulation(b: &mut Bencher) {
-    //     // 1 hour
-    //     const NUM_TICKS: u64 = TICKS_PER_SECOND_LOGIC * 60 * 60;
+        let game_state = Arc::new(GameState::new(
+            "Test World".to_string(),
+            GenerationInformation::default(),
+            &data_store,
+        ));
 
-    //     let data_store = get_raw_data_test().process().assume_simple();
+        b.iter(|| {
+            GameState::update(
+                &mut *game_state.simulation_state.lock(),
+                &mut *game_state.aux_data.lock(),
+                &data_store,
+            )
+        });
+    }
 
-    //     let game_state = GameState::new("Test World".to_string(), &data_store);
+    #[bench]
+    fn bench_megabase(b: &mut Bencher) {
+        let data_store = get_raw_data_test().process().assume_simple();
 
-    //     let mut replay = Replay::new(&game_state, None, Rc::new(data_store));
+        let game_state = GameState::new_with_megabase(
+            "Test World".to_string(),
+            GenerationInformation::default(),
+            false,
+            ProgressInfo::new(),
+            &data_store,
+        );
 
-    //     for _ in 0..NUM_TICKS {
-    //         replay.tick();
-    //     }
-
-    //     replay.finish();
-
-    //     b.iter(|| black_box(replay.clone().run().with(run_till_finished)));
-    // }
-
-    // #[bench]
-    // fn noop_actions_simulation(b: &mut Bencher) {
-    //     // 1 hour
-    //     const NUM_TICKS: u64 = TICKS_PER_SECOND_LOGIC * 60 * 60;
-
-    //     let data_store = get_raw_data_test().process().assume_simple();
-
-    //     let game_state = GameState::new("Test World".to_string(), &data_store);
-
-    //     let mut replay = Replay::new(&game_state, None, Rc::new(data_store));
-
-    //     for _ in 0..NUM_TICKS {
-    //         replay.append_actions(
-    //             iter::repeat(ActionType::Ping(Position { x: 100, y: 100 })).take(5),
-    //         );
-    //         replay.tick();
-    //     }
-
-    //     replay.finish();
-
-    //     b.iter(|| replay.clone().run().with(run_till_finished));
-    // }
-
-    // #[rstest]
-    // fn crashing_replays(#[files("crash_replays/*.rep")] path: PathBuf) {
-    //     use std::io::Read;
-
-    //     // Keep running for 30 seconds
-    //     const RUNTIME_AFTER_PRESUMED_CRASH: u64 = 30 * 60;
-
-    //     let mut file = File::open(&path).unwrap();
-
-    //     let mut v = Vec::with_capacity(file.metadata().unwrap().len() as usize);
-
-    //     file.read_to_end(&mut v).unwrap();
-
-    //     // TODO: For non u8 IdxTypes this will fail
-    //     let mut replay: Replay<u8, u8, DataStore<u8, u8>> = bitcode::deserialize(v.as_slice())
-    //         .expect(
-    //             format!("Test replay {path:?} did not deserialize, consider removing it.").as_str(),
-    //         );
-
-    //     replay.finish();
-
-    //     let running_replay = replay.run();
-
-    //     let (mut game_state_before_crash, data_store) = running_replay.with(run_till_finished);
-
-    //     for _ in 0..RUNTIME_AFTER_PRESUMED_CRASH {
-    //         game_state_before_crash.update(&data_store);
-    //     }
-    // }
-
-    // #[bench]
-    // fn bench_huge_red_green_sci(b: &mut Bencher) {
-    //     let game_state = GameState::new_with_beacon_red_green_production_many_grids(
-    //         Default::default(),
-    //         &DATA_STORE,
-    //     );
-
-    //     let mut game_state = game_state.clone();
-
-    //     b.iter(|| {
-    //         game_state.update(&DATA_STORE);
-    //     })
-    // }
-
-    // #[bench]
-    // fn bench_12_beacon_red(b: &mut Bencher) {
-    //     let game_state =
-    //         GameState::new_with_beacon_belt_production(Default::default(), &DATA_STORE);
-
-    //     let mut game_state = game_state.clone();
-
-    //     b.iter(|| {
-    //         game_state.update(&DATA_STORE);
-    //     })
-    // }
+        b.iter(|| {
+            GameState::update(
+                &mut *game_state.simulation_state.lock(),
+                &mut *game_state.aux_data.lock(),
+                &data_store,
+            );
+        })
+    }
 }

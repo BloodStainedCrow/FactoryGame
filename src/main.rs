@@ -29,7 +29,5 @@ fn main() -> Result<(), ()> {
             eprintln!("{e}");
             Err(())
         },
-    };
-
-    Ok(())
+    }
 }

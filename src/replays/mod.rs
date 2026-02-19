@@ -40,8 +40,8 @@ impl ProgramInformation {
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GenerationInformation {
     // The example world (and settings) which were used
-    pub example_idx: usize,
-    pub example_settings: Vec<ValueValue>,
+    pub(crate) example_idx: usize,
+    pub(crate) example_settings: Vec<ValueValue>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

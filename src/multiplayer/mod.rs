@@ -117,8 +117,6 @@ pub enum GameInitData<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
 
 pub enum ExitReason {
     LoopStopped,
-    UserQuit,
-    ConnectionDropped,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -256,7 +254,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                     false
                 }
             };
-            if !env::var("ZOOM").is_ok() {
+            if !env::var("ZOOM").is_ok() || is_client {
                 profiling::scope!("Wait");
                 update_interval.tick();
             }
@@ -336,15 +334,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
 impl<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
     ActionSource<ItemIdxType, RecipeIdxType> for Receiver<ActionType<ItemIdxType, RecipeIdxType>>
 {
-    fn get<'a>(
+    fn get<'a, 'b, 'c, 'd, 'e>(
         &'a self,
-        _current_tick: u64,
-        _: &World<ItemIdxType, RecipeIdxType>,
-        _: &SimulationState<ItemIdxType, RecipeIdxType>,
-        _: &AuxillaryData,
-        _: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>> + use<'a, ItemIdxType, RecipeIdxType>
-    {
+        current_tick: u64,
+        world: &'b World<ItemIdxType, RecipeIdxType>,
+        sim_state: &'d SimulationState<ItemIdxType, RecipeIdxType>,
+        aux_data: &'e AuxillaryData,
+        data_store: &'c DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
+    + use<'a, 'b, 'c, 'd, ItemIdxType, RecipeIdxType> {
         self.try_iter()
     }
 }

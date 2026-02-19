@@ -111,7 +111,7 @@ use crate::get_size::Mutex;
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct AuxillaryData {
     pub game_name: String,
-    pub gen_info: (ProgramInformation, GenerationInformation),
+    pub(crate) gen_info: (ProgramInformation, GenerationInformation),
 
     pub current_tick: u64,
 
@@ -148,7 +148,7 @@ impl AuxillaryData {
 }
 
 #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct GameState<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub world: Mutex<World<ItemIdxType, RecipeIdxType>>,
     pub simulation_state: Mutex<SimulationState<ItemIdxType, RecipeIdxType>>,
@@ -460,6 +460,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
         progress: ProgressInfo,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
+        progress.push_stage(1.0, Some("Generating Chunks".to_string()));
         // This is the maximum thickness the player can generate while at the edge of the world
         // Factorio uses 20 chunks, but their chunks are twice as large in each dimension
         const CHUNK_THICKNESS: i32 = 40;
@@ -496,6 +497,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
             .cartesian_product((-1_000_000..=1_000_000).step_by(usize::from(CHUNK_SIZE)))
             .map(|(y, x)| (x / i32::from(CHUNK_SIZE), y / i32::from(CHUNK_SIZE)));
         ret.world.lock().add_chunks(bottom);
+
+        progress.pop_stage();
 
         ret
     }
@@ -1023,8 +1026,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
         // dbg!(avg_len);
         // dbg!(total_num_storage_inserters);
 
-        let update_timers = &self.belts.inner.belt_update_timers;
-        let sushi_splitters = &self.belts.inner.sushi_splitters;
         rayon::scope(|scope| {
             {
                 // Update all the "Pure Belts"
@@ -1058,7 +1059,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                             item_id,
                             (
                                 (
-                                    ((belt_store, item_storages), pure_to_pure_inserters),
+                                    ((_belt_store, item_storages), _pure_to_pure_inserters),
                                     (
                                         storage_storage_inserter_stores,
                                         (fluid_store, belt_storage_inserter_lists),
@@ -1700,6 +1701,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     filter,
                                     data_store,
                                 );
+
+                                if ret.is_err() {
+                                    error!("Failed placing Inserter");
+                                }
                             },
                             crate::frontend::world::tile::PlaceEntityType::Belt {
                                 pos,
@@ -1863,7 +1868,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                     let new_storage = match storage_update.new_pg_entity {
                                                                         crate::power::power_grid::PowerGridEntity::Assembler { recipe, index, .. } => Storage::Assembler { grid: storage_update.new_grid, recipe_idx_with_this_item: recipe.id, index },
                                                                         crate::power::power_grid::PowerGridEntity::Lab { index, .. } => Storage::Lab { grid: storage_update.new_grid, index },
-                                                                        crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
+                                                                        crate::power::power_grid::PowerGridEntity::LazyPowerProducer { .. } => todo!(),
                                                                         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
@@ -1877,7 +1882,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                     let new_storage = match storage_update.new_pg_entity {
                                                                         crate::power::power_grid::PowerGridEntity::Assembler { recipe, index, .. } => Storage::Assembler { grid: storage_update.new_grid, recipe_idx_with_this_item: recipe.id, index },
                                                                         crate::power::power_grid::PowerGridEntity::Lab { index, .. } => Storage::Lab { grid: storage_update.new_grid, index },
-                                                                        crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
+                                                                        crate::power::power_grid::PowerGridEntity::LazyPowerProducer { .. } => todo!(),
                                                                         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
@@ -1901,7 +1906,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                                     let new_storage = match storage_update.new_pg_entity {
                                                                         crate::power::power_grid::PowerGridEntity::Assembler { recipe, index, .. } => Storage::Assembler { grid: storage_update.new_grid, recipe_idx_with_this_item: recipe.id, index },
                                                                         crate::power::power_grid::PowerGridEntity::Lab { index, .. } => Storage::Lab { grid: storage_update.new_grid, index },
-                                                                        crate::power::power_grid::PowerGridEntity::LazyPowerProducer { item, index } => todo!(),
+                                                                        crate::power::power_grid::PowerGridEntity::LazyPowerProducer { .. } => todo!(),
                                                                         crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
                                                                         crate::power::power_grid::PowerGridEntity::Beacon { .. } => unreachable!(),
@@ -1946,8 +1951,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                                         };
 
                                                         let new_storage = match storage_update.new_pg_entity {
-                                                            crate::power::power_grid::PowerGridEntity::Assembler { ty, recipe, index } => Storage::Assembler { grid: storage_update.new_grid, recipe_idx_with_this_item: recipe.id, index },
-                                                            crate::power::power_grid::PowerGridEntity::Lab { ty, index } => Storage::Lab { grid: storage_update.new_grid, index },
+                                                            crate::power::power_grid::PowerGridEntity::Assembler { ty: _, recipe, index } => Storage::Assembler { grid: storage_update.new_grid, recipe_idx_with_this_item: recipe.id, index },
+                                                            crate::power::power_grid::PowerGridEntity::Lab { ty: _, index } => Storage::Lab { grid: storage_update.new_grid, index },
                                                             crate::power::power_grid::PowerGridEntity::LazyPowerProducer { .. } => todo!(),
                                                             crate::power::power_grid::PowerGridEntity::SolarPanel { .. } => unreachable!(),
                                                             crate::power::power_grid::PowerGridEntity::Accumulator { .. } => unreachable!(),
@@ -2784,8 +2789,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     modules,
                                     pole_position,
                                 } => {
-                                    // TODO:
-                                    // todo!();
+                                    // TODO: Currently I insert modules into beacons on placement instead of doing this.
                                 },
                                 _ => {
                                     warn!(
@@ -3037,7 +3041,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                 .for_each(
                     |(
                         item_id,
-                        (((belt_store, pure_to_pure_inserters), belt_stuff), avg_time),
+                        (((belt_store, pure_to_pure_inserters), belt_stuff), _avg_time),
                     )| scope.spawn(move |_| {
                         profiling::scope!(
                             "Pure Belt Update",
@@ -3053,6 +3057,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                         {
                             profiling::scope!("storage_belt_exit.update");
+                            // TODO: Rust-analyzer does not understand the const generics here, and thinks I am calling a different function
+                            // than rustc. This does compile fine.
                             belt_storage_exit_incoming.update(
                                 &mut belt_storage_reinsertion_outgoing,
                                 belt_store.belts.as_mut_slice(),
@@ -3593,14 +3599,11 @@ mod tests {
         },
         item::Recipe,
         power::{Watt, power_grid::MAX_POWER_MULT},
-        replays::Replay,
     };
     use proptest::{
         prelude::{Just, Strategy},
         prop_assert, prop_assert_eq, prop_assume, proptest,
     };
-
-    use test::Bencher;
 
     fn beacon_test_val() -> impl Strategy<Value = Vec<ActionType<u8, u8>>> {
         Just(vec![

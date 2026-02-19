@@ -206,6 +206,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             ins.into_boxed_slice()
         });
         let removed = removed.unwrap();
+        todo!("{:?}", removed);
     }
 
     pub(super) fn check_sushi(
@@ -377,7 +378,7 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
         self.output_splitter.take()
     }
 
-    pub fn break_belt_at(&mut self, belt_pos_to_break_at: u16) -> Option<Self> {
+    pub fn break_belt_at(&mut self, _belt_pos_to_break_at: u16) -> Option<Self> {
         todo!()
         // // TODO: Is this correct
         // if self.is_circular {
@@ -913,8 +914,8 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
 
     fn remove_length(
         &mut self,
-        amount: BeltLenType,
-        side: Side,
+        _amount: BeltLenType,
+        _side: Side,
     ) -> (Vec<(Item<ItemIdxType>, u32)>, BeltLenType) {
         todo!()
         // if amount == 0 {
@@ -986,7 +987,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
         // )
     }
 
-    fn add_length(&mut self, amount: BeltLenType, side: super::smart::Side) -> BeltLenType {
+    fn add_length(&mut self, _amount: BeltLenType, _side: super::smart::Side) -> BeltLenType {
         todo!()
         // let len = self.get_len();
 

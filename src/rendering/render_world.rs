@@ -71,7 +71,7 @@ use flate2::write::ZlibEncoder;
 use interprocess::os::unix::unnamed_pipe::UnnamedPipeExt;
 use itertools::Itertools;
 use log::error;
-use log::{info, trace, warn};
+use log::{trace, warn};
 use parking_lot::MutexGuard;
 use petgraph::dot::Dot;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -1564,7 +1564,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     );
                 },
 
-                crate::frontend::action::action_state_machine::HeldObject::Tile(floor_tile) => {
+                crate::frontend::action::action_state_machine::HeldObject::Tile(_floor_tile) => {
                     // TODO
                 },
                 crate::frontend::action::action_state_machine::HeldObject::Entity(
@@ -1591,11 +1591,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         );
                     },
                     crate::frontend::world::tile::PlaceEntityType::Inserter {
-                        pos,
-                        dir,
-                        filter,
-                        ty,
-                        user_movetime,
+                        pos, dir, ..
                     } => {
                         // FIXME: Respect ty while rendering
                         let size: [u16; 2] = [1, 1];
@@ -1695,14 +1691,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             },
                         );
                     },
-                    crate::frontend::world::tile::PlaceEntityType::Splitter {
-                        pos,
-                        direction,
-                        in_mode,
-                        out_mode,
-
-                        ty,
-                    } => {
+                    crate::frontend::world::tile::PlaceEntityType::Splitter { .. } => {
                         // TODO:
                     },
                     crate::frontend::world::tile::PlaceEntityType::Chest { pos, ty } => {
@@ -1846,8 +1835,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     },
                 },
                 crate::frontend::action::action_state_machine::HeldObject::OrePlacement {
-                    ore,
-                    amount,
+                    ore: _,
+                    amount: _,
                 } => {
                     // TODO:
                 },
@@ -3495,7 +3484,7 @@ pub fn render_ui<
 
                         // TODO: Once a dropdown with a low number of items is shown, all future dropdowns get cropped to that count :/
                         ComboBox::new(format!("Recipe list {}", *ty), "Recipes").selected_text(goal_recipe.map(|recipe| data_store_ref.recipe_display_names[usize_from(recipe.id)].as_str()).unwrap_or("Choose a recipe!")).show_ui(ui, |ui| {
-                            data_store_ref.recipe_display_names.iter().enumerate().filter(|(i, recipe_name)| {
+                            data_store_ref.recipe_display_names.iter().enumerate().filter(|(i, _recipe_name)| {
                                     (aux_data.settings.show_unresearched_recipes || game_state_ref.simulation_state.tech_state.get_active_recipes()[*i]) && data_store_ref.recipe_allowed_assembling_machines[*i].contains(ty)
                                 }).for_each(|(i, recipe_name)| {
 
@@ -3825,9 +3814,7 @@ pub fn render_ui<
 
                                     // TODO:
                                 },
-                                crate::frontend::world::tile::AttachedInserter::BeltBelt {
-                                    item,
-                                    inserter,
+                                crate::frontend::world::tile::AttachedInserter::BeltBelt { ..
                                 } => {
                                     ui.label("BeltBelt");
                                     // TODO:

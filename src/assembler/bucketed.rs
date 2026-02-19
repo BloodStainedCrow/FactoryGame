@@ -90,8 +90,6 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
         .try_into()
         .unwrap();
 
-        let tick_till_main_done: u16 = ticks_per_main - data.timer;
-
         let power_subticks_passed = ticks_passed;
 
         let (is_idle, main_produced, prod_produced) = Self::apply_subticks(

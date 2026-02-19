@@ -2212,7 +2212,7 @@ mod test {
     #[bench]
     fn bench_multithreaded_assembler_update(bencher: &mut Bencher) {
         const NUM_RECIPES: usize = 12;
-        const NUM_ASSEMBLERS: usize = 30_000_000;
+        const NUM_ASSEMBLERS: usize = 1_000_000;
 
         let mut assemblers: Vec<MultiAssemblerStore<u8, 1, 1>> = (0..NUM_RECIPES as u8)
             .map(|_| MultiAssemblerStore::new(Recipe { id: 11 }, 0, &DATA_STORE))
@@ -2287,9 +2287,5 @@ mod test {
                 });
             }
         });
-
-        dbg!(i);
-        dbg!(num_produced);
-        dbg!(assemblers[11].get_info(0, &DATA_STORE));
     }
 }

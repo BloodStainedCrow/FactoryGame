@@ -161,7 +161,7 @@ pub struct MultiChestStore<ItemIdxType: WeakIdxTrait> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum WaitingInserterRemovalInfo {
+pub enum WaitingInserterRemovalInfo {
     StorageStorage { inserter_id: InserterId },
     BeltStorage { belt_id: u32, belt_pos: BeltLenType },
 }

@@ -7,7 +7,7 @@ use crate::saving::{
 };
 
 #[derive(Debug)]
-pub(crate) struct SaveFileList {
+pub struct SaveFileList {
     pub(crate) save_files: Vec<Result<SaveFileInfo, (PathBuf, SaveFileError)>>,
 }
 

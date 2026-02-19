@@ -331,6 +331,13 @@ impl<T> Mutex<T> {
     }
 }
 
+// NOTE (Tim): This impl is not ideal since if it is derived, it might not respect the locking order of things
+impl<T: Clone> Clone for Mutex<T> {
+    fn clone(&self) -> Self {
+        Self::new(self.lock().clone())
+    }
+}
+
 impl<T> Deref for Mutex<T> {
     type Target = parking_lot::Mutex<T>;
     fn deref(&self) -> &Self::Target {
