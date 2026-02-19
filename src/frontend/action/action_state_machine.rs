@@ -251,8 +251,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         local_player_pos: (f32, f32),
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
-        //FIXME: REMOVE Datapedia
-        let open_windows = EnumMap::from_fn(|win| win == Window::Tip || win == Window::Datapedia);
+        let open_windows = EnumMap::from_fn(|win| win == Window::Tip);
 
         Self {
             my_player_id,
@@ -310,8 +309,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> Self {
         let player_pos = world.players[my_player_id as usize].pos;
-        //FIXME: REMOVE Datapedia
-        let open_windows = EnumMap::from_fn(|win| win == Window::Tip || win == Window::Datapedia);
+        let open_windows = EnumMap::from_fn(|win| win == Window::Tip);
 
         Self {
             my_player_id,
