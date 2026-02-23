@@ -1,7 +1,3 @@
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
 use std::fmt::Debug;
 use std::hash::Hash;
 
@@ -16,7 +12,7 @@ pub trait IdxTrait:
 {
 }
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 pub trait WeakIdxTrait:
     Indexable
     + Into<usize>
@@ -29,12 +25,12 @@ pub trait WeakIdxTrait:
     + Hash
     + Ord
     + 'static
-    + GetSize
+    + get_size2::GetSize
     + Debug
 {
 }
 
-#[cfg(not(feature = "client"))]
+#[cfg(not(feature = "show-info"))]
 pub trait WeakIdxTrait:
     Indexable
     + Into<usize>
@@ -61,7 +57,11 @@ pub fn usize_from<T: WeakIdxTrait>(t: T) -> usize {
 //    }
 //}
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(
     Debug, PartialEq, Eq, Hash, Clone, Copy, serde::Serialize, serde::Deserialize, PartialOrd, Ord,
 )]
@@ -87,7 +87,11 @@ impl<ItemIdxType: IdxTrait> Item<ItemIdxType> {
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(
     Debug, PartialEq, Eq, Hash, Clone, Copy, serde::Serialize, serde::Deserialize, PartialOrd, Ord,
 )]

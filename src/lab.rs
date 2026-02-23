@@ -9,17 +9,16 @@ use crate::{
     },
 };
 
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
-
 use crate::frontend::world::tile::ModuleTy;
 
 pub const TICKS_PER_SCIENCE: TIMERTYPE = 60;
 
 // TODO: Add variable power consumption and speed
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct MultiLabStore {
     pub max_insert: Box<[Vec<ITEMCOUNTTYPE>]>,

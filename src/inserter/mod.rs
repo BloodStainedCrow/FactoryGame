@@ -15,12 +15,8 @@ use std::cmp::min;
 
 use crate::item::usize_from;
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 use egui_show_info::{EguiDisplayable, InfoExtractor, ShowInfo};
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
 
 pub mod belt_belt_inserter;
 pub mod belt_storage_inserter;
@@ -37,7 +33,11 @@ pub mod storage_storage_with_buckets_indirect;
 // TODO: This could be minified using a union or similar,
 // But since Inserters are the same size, whether this is 2 or 1 byte (atleast in a Vec of Structs)
 // I will leave this be for now.
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub enum InserterState {
     WaitingForSourceItems(ITEMCOUNTTYPE),
@@ -47,7 +47,11 @@ pub enum InserterState {
     EmptyAndMovingBack(u8),
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 enum SushiInserterState<ItemIdxType: WeakIdxTrait> {
     Empty,
@@ -79,7 +83,11 @@ pub enum WaitlistSearchSide {
 // TODO: maybe do this differently
 
 // TODO: Since I collect the "all storage" list anyway I should be able to flatten it?
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct StorageID<RecipeIdxType: WeakIdxTrait> {
     pub grid: PowerGridIdentifier,
@@ -107,7 +115,7 @@ pub struct InserterStateInfo {
     pub state: LargeInserterState,
 }
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 impl<E: InfoExtractor<Self, Info>, Info: EguiDisplayable> ShowInfo<E, Info> for FakeUnionStorage {
     fn show_fields<C: egui_show_info::Cache<String, Info>>(
         &self,
@@ -120,8 +128,8 @@ impl<E: InfoExtractor<Self, Info>, Info: EguiDisplayable> ShowInfo<E, Info> for 
     }
 }
 
-#[cfg(feature = "client")]
-impl GetSize for FakeUnionStorage {}
+#[cfg(feature = "show-info")]
+impl get_size2::GetSize for FakeUnionStorage {}
 
 impl FakeUnionStorage {
     #[inline(always)]
@@ -249,7 +257,11 @@ impl FakeUnionStorage {
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(
     Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, Hash, PartialOrd, Ord,
 )]
@@ -335,7 +347,11 @@ impl<RecipeIdxType: IdxTrait> Storage<RecipeIdxType> {
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(
     Debug,
     Clone,

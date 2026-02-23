@@ -15,12 +15,10 @@ use std::path::PathBuf;
 use crate::saving::load_at;
 use std::fs::File;
 
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+
+
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BoundingBoxGrid<I, T> {
     extent: Option<[[I; 2]; 2]>,

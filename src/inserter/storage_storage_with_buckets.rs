@@ -9,14 +9,12 @@ use crate::{
 use log::{info, warn};
 use std::{cmp::min, iter};
 
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
+
+
 
 pub(super) const MAX_MOVE_TIME: usize = 1_000;
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 // #[repr(packed)]
 pub struct UpdatingInserter {
@@ -27,7 +25,7 @@ pub struct UpdatingInserter {
     pub id: InserterId,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub struct MovingInserter {
     pub storage_id_in: FakeUnionStorage,
@@ -36,7 +34,7 @@ pub struct MovingInserter {
     pub id: InserterId,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub enum LargeInserterState {
     WaitingForSourceItems(ITEMCOUNTTYPE),
@@ -46,18 +44,18 @@ pub enum LargeInserterState {
 }
 
 // This means at most u8::MAX inserters connecting any pair of Storages, that seems plenty
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub struct InserterId(pub(super) u8);
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BucketedStorageStorageInserterStoreFrontend {
     pub(super) lookup: HashMap<InserterIdentifier, (u32, LargeInserterState)>,
     pub(super) next_tick: NextTick,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 pub(super) struct NextTick {
     pub(super) time: u32,
@@ -67,7 +65,7 @@ pub(super) struct NextTick {
     pub(super) waiting_for_space_result: Vec<UpdatingInserter>,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub struct InserterIdentifier {
     pub source: FakeUnionStorage,
@@ -422,7 +420,7 @@ pub(super) fn get_possible_new_states(
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BucketedStorageStorageInserterStore {
     pub movetime: u16,

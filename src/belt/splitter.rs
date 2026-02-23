@@ -6,19 +6,18 @@ use itertools::Itertools;
 use serde::ser::SerializeSeq;
 
 use crate::item::{IdxTrait, Item, WeakIdxTrait};
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 use egui_show_info::{Cache, EguiDisplayable, InfoExtractor, ShowInfo};
 
 use strum::EnumIter;
 
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
-
 pub const SPLITTER_BELT_LEN: u16 = 2;
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, EnumIter)]
 pub enum SplitterSide {
     Left,
@@ -52,7 +51,11 @@ impl SplitterSide {
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub enum SplitterDistributionMode {
     Fair { next: SplitterSide },
@@ -68,7 +71,11 @@ impl Default for SplitterDistributionMode {
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct PureSplitter {
     pub in_mode: SplitterDistributionMode,
@@ -157,7 +164,7 @@ pub struct SushiSplitter<ItemIdxType: WeakIdxTrait> {
     pub(super) outputs: [UnsafeCell<Option<Item<ItemIdxType>>>; 2],
 }
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 impl<
     ItemIdxType: WeakIdxTrait,
     E: InfoExtractor<Self, Info>
@@ -178,8 +185,8 @@ impl<
     }
 }
 
-#[cfg(feature = "client")]
-impl<ItemIdxType: WeakIdxTrait> GetSize for SushiSplitter<ItemIdxType> {}
+#[cfg(feature = "show-info")]
+impl<ItemIdxType: WeakIdxTrait> get_size2::GetSize for SushiSplitter<ItemIdxType> {}
 
 // SAFETY:
 // Since all accesses to the UnsafeCells are tightly controlled inside the super module, we can share this between threads

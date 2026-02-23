@@ -1,6 +1,7 @@
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 use egui_show_info::{Cache, EguiDisplayable, InfoExtractor, RemoveSuffix, ShowInfo};
-#[cfg(feature = "client")]
+
+#[cfg(feature = "show-info")]
 use get_size2::GetSize;
 use petgraph::Directed;
 use petgraph::{EdgeType, csr::IndexType};
@@ -29,7 +30,7 @@ pub struct NodeIndex<Ix: IndexType = petgraph::stable_graph::DefaultIx> {
     pub node_index: petgraph::stable_graph::NodeIndex<Ix>,
 }
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 impl<E: InfoExtractor<Self, Info>, Info: EguiDisplayable, Ix: IndexType> ShowInfo<E, Info>
     for NodeIndex<Ix>
 {
@@ -56,7 +57,7 @@ impl DerefMut for NodeIndex {
     }
 }
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 impl GetSize for NodeIndex {}
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -98,7 +99,7 @@ impl<N, E, Ty: EdgeType, Ix: IndexType> DerefMut for StableGraph<N, E, Ty, Ix> {
     }
 }
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 impl<N: GetSize, E: GetSize, Ty: EdgeType, Ix: IndexType + GetSize> GetSize
     for StableGraph<N, E, Ty, Ix>
 {
@@ -115,7 +116,7 @@ impl<N: GetSize, E: GetSize, Ty: EdgeType, Ix: IndexType + GetSize> GetSize
     }
 }
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 impl<
     N: ShowInfo<Extractor, Info>,
     E: ShowInfo<Extractor, Info>,
@@ -193,7 +194,7 @@ impl<N, E, Ty: EdgeType, Ix: IndexType> DerefMut for Graph<N, E, Ty, Ix> {
     }
 }
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 impl<N: GetSize, E: GetSize, Ty: EdgeType, Ix: IndexType + GetSize> GetSize
     for Graph<N, E, Ty, Ix>
 {
@@ -210,7 +211,7 @@ impl<N: GetSize, E: GetSize, Ty: EdgeType, Ix: IndexType + GetSize> GetSize
     }
 }
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 impl<
     N: ShowInfo<Extractor, Info>,
     E: ShowInfo<Extractor, Info>,
@@ -287,14 +288,14 @@ impl<K: EnumArray<V> + EnumArray<Option<V>>, V> DerefMut for EnumMap<K, V> {
     }
 }
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 impl<K: EnumArray<V> + EnumArray<Option<V>>, V: GetSize> GetSize for EnumMap<K, V> {
     fn get_heap_size(&self) -> usize {
         self.values().map(|v| v.get_heap_size()).sum()
     }
 }
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 impl<
     K: EnumArray<V> + EnumArray<Option<V>>,
     V: ShowInfo<E, Info>,
@@ -351,14 +352,14 @@ impl<T> DerefMut for Mutex<T> {
     }
 }
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 impl<T: GetSize> GetSize for Mutex<T> {
     fn get_heap_size(&self) -> usize {
         self.mutex.lock().get_heap_size()
     }
 }
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 impl<
     T: ShowInfo<E, Info>,
     E: InfoExtractor<Self, Info> + InfoExtractor<T, Info>,
@@ -402,7 +403,7 @@ impl<A: Hash + Eq + Ord, B: Hash + Eq + Ord> DerefMut for BiMap<A, B> {
     }
 }
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 impl<A: Hash + Eq + Ord + GetSize, B: Hash + Eq + Ord + GetSize> GetSize for BiMap<A, B> {
     fn get_heap_size(&self) -> usize {
         self.map.left_values().map(|v| v.get_size()).sum::<usize>()
@@ -418,7 +419,7 @@ impl<A: Hash + Eq + Ord, B: Hash + Eq + Ord> FromIterator<(A, B)> for BiMap<A, B
     }
 }
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 impl<
     A: ShowInfo<Extractor, Info> + Eq + Ord + Hash,
     B: ShowInfo<Extractor, Info> + Eq + Ord + Hash,
@@ -442,14 +443,14 @@ pub struct BitBox {
     bitbox: bitvec::prelude::BitBox,
 }
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 impl GetSize for BitBox {
     fn get_heap_size(&self) -> usize {
         self.bitbox.len().div_ceil(std::mem::size_of::<usize>())
     }
 }
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 impl<Info: EguiDisplayable, Extractor: InfoExtractor<Self, Info>> ShowInfo<Extractor, Info>
     for BitBox
 {
@@ -497,14 +498,14 @@ impl<A, B> std::fmt::Debug for Bfs<A, B> {
     }
 }
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 impl<A, B> GetSize for Bfs<A, B> {
     fn get_heap_size(&self) -> usize {
         0
     }
 }
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 impl<A, B, Info: EguiDisplayable, Extractor: InfoExtractor<Self, Info>> ShowInfo<Extractor, Info>
     for Bfs<A, B>
 {
@@ -562,7 +563,7 @@ impl std::fmt::Display for RamUsage {
 
 pub struct RAMExtractor;
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 impl<T: GetSize> InfoExtractor<T, RamUsage> for RAMExtractor {
     fn extract_info(&mut self, value: &T) -> RamUsage {
         RamUsage(value.get_size())

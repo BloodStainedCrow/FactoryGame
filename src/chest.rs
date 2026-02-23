@@ -14,18 +14,13 @@ use crate::{
     item::{ITEMCOUNTTYPE, IdxTrait, Item, WeakIdxTrait, usize_from},
 };
 
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
-
 const CHEST_GOAL_AMOUNT: ITEMCOUNTTYPE = ITEMCOUNTTYPE::MAX / 2;
 
 // TODO: Add specialised chests for different sizes
 pub type ChestSize = u32;
 pub type SignedChestSize = i32;
 
-// #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+// #[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 // #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 // #[repr(align(64))]
 // pub struct InserterWaitList {
@@ -34,7 +29,7 @@ pub type SignedChestSize = i32;
 
 // const_assert!(std::mem::size_of::<InserterWaitList>() <= 64);
 
-// #[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+// #[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 // #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 // pub struct Inserter {
 //     // item: u8,
@@ -49,14 +44,22 @@ pub type SignedChestSize = i32;
 //     pub other: FakeUnionStorage,
 // }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone)]
 struct InternalInserterReinsertionInfo {
     inserter: InserterWithBelts,
     self_index: u32,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct FullChestStore<ItemIdxType: WeakIdxTrait> {
     pub stores: Box<[MultiChestStore<ItemIdxType>]>,
@@ -139,7 +142,11 @@ impl<ItemIdxType: IdxTrait> FullChestStore<ItemIdxType> {
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct MultiChestStore<ItemIdxType: WeakIdxTrait> {
     item: Item<ItemIdxType>,

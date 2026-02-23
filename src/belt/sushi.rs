@@ -3,10 +3,8 @@ use std::num::NonZero;
 
 use itertools::Itertools;
 
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
+
+
 
 use crate::belt::smart::InserterExtractedWhenMoving;
 use crate::inserter::belt_storage_inserter::Dir;
@@ -26,7 +24,7 @@ use crate::inserter::FakeUnionStorage;
 use crate::inserter::belt_storage_inserter_non_const_gen::BeltStorageInserterDyn;
 use itertools::Either;
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SushiBelt<ItemIdxType: WeakIdxTrait> {
     pub(super) ty: u8,
@@ -45,7 +43,7 @@ pub struct SushiBelt<ItemIdxType: WeakIdxTrait> {
     pub(super) output_splitter: Option<(SplitterID, SplitterSide)>,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub(super) struct SushiInserterStoreDyn<ItemIdxType: WeakIdxTrait> {
     pub(super) inserters: Box<
@@ -295,6 +293,15 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             output_splitter,
         } = self;
 
+        let (input_splitter, input_splitter_id) = match input_splitter {
+            Some((id, side)) => (Some(side), id),
+            None => (None, SplitterID { index: u32::MAX }),
+        };
+        let (output_splitter, output_splitter_id) = match output_splitter {
+            Some((id, side)) => (Some(side), id),
+            None => (None, SplitterID { index: u32::MAX }),
+        };
+
         SmartBelt {
             ty,
 
@@ -338,7 +345,9 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             last_moving_spot,
 
             input_splitter,
+            input_splitter_id,
             output_splitter,
+            output_splitter_id,
 
             latest_inserter_pos_if_all_incoming: None,
         }

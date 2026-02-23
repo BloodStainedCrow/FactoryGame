@@ -12,12 +12,10 @@ use crate::{
     temp_vec::VecHolder,
 };
 
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+
+
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub struct BeltStorageInserterInMovement {
     pub(crate) movetime: NonZero<u8>,
@@ -29,7 +27,7 @@ pub struct BeltStorageInserterInMovement {
     pub(crate) max_hand_size: ITEMCOUNTTYPE,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct List<const SWING_DIR: Dir, const ITEM_FLOW_DIR: Dir> {
     zero_index: usize,

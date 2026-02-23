@@ -15,19 +15,17 @@ use crate::{
 use log::{info, warn};
 use std::cmp::min;
 
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+
+
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BucketedStorageStorageInserterStoreFrontend {
     pub(super) lookup: HashMap<InserterIdentifier, (u32, LargeInserterState)>,
     pub(super) next_tick: NextTick,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 pub(super) struct NextTicbacok {
     pub(super) time: u32,
@@ -341,7 +339,7 @@ impl BucketedStorageStorageInserterStoreFrontend {
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BucketedStorageStorageInserterStore {
     pub movetime: u16,

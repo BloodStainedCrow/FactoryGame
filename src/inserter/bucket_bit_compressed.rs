@@ -5,10 +5,8 @@ use bitvec::{field::BitField, order::Lsb0, slice::BitSlice, vec::BitVec, view::B
 use crate::item::ITEMCOUNTTYPE;
 #[cfg(feature = "client")]
 use egui_show_info::{EguiDisplayable, InfoExtractor};
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
+
+
 
 use super::{FakeUnionStorage, storage_storage_with_buckets::InserterId};
 
@@ -198,7 +196,7 @@ impl BitCompressable for EncodedUpdatingInserter {
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub(super) struct BitInserterStorageInfo {
     pub(super) max_inserter_id: u8,

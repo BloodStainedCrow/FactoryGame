@@ -6,7 +6,7 @@ use crate::mining_drill::FullOreStore;
 use crate::mining_drill::MiningDrillIdentifier;
 #[cfg(feature = "client")]
 use egui::Color32;
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 use egui_show_info::{EguiDisplayable, InfoExtractor, ShowInfo};
 use log::error;
 use petgraph::visit::NodeIndexable;
@@ -36,11 +36,9 @@ use crate::saving::save_at;
 use crate::saving::save_at_fork;
 use crate::{frontend::action::belt_placement, get_size::EnumMap};
 use ecolor::hex_color;
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
+
 use enum_map::Enum;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
+
 use log::{info, trace, warn};
 use strum::EnumIter;
 
@@ -87,7 +85,11 @@ pub const BELT_LEN_PER_TILE: u16 = 4;
 pub const CHUNK_SIZE: u16 = 16;
 pub const CHUNK_SIZE_FLOAT: f32 = 16.0;
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum FloorTile {
     #[default]
@@ -106,7 +108,11 @@ pub enum InserterInstantiationNewOptions<ItemIdxType: WeakIdxTrait> {
 // We rely on this, by storing entity indices as u8 in the chunk
 const_assert!(CHUNK_SIZE * CHUNK_SIZE - 1 <= u8::MAX as u16);
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct Chunk<ItemIdxType: WeakIdxTrait = u8, RecipeIdxType: WeakIdxTrait = u8> {
     // base_pos: (i32, i32),
@@ -115,7 +121,11 @@ pub struct Chunk<ItemIdxType: WeakIdxTrait = u8, RecipeIdxType: WeakIdxTrait = u
     entities: Vec<Entity<ItemIdxType, RecipeIdxType>>,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 enum FloorOre<ItemIdxType: WeakIdxTrait> {
     AllSame {
@@ -128,7 +138,11 @@ enum FloorOre<ItemIdxType: WeakIdxTrait> {
     },
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct PlayerInfo {
     pub pos: (f32, f32),
@@ -151,7 +165,11 @@ impl Default for PlayerInfo {
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct World<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     // TODO: Is this a good idea?
@@ -192,10 +210,10 @@ struct SerializableSimplex {
     inner: Simplex,
 }
 
-#[cfg(feature = "client")]
-impl GetSize for SerializableSimplex {}
+#[cfg(feature = "show-info")]
+impl get_size2::GetSize for SerializableSimplex {}
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 impl<E: InfoExtractor<Self, Info>, Info: EguiDisplayable> ShowInfo<E, Info>
     for SerializableSimplex
 {
@@ -244,14 +262,22 @@ impl<'de> serde::Deserialize<'de> for SerializableSimplex {
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 enum WorldUpdate {
     EntityNewlyPowered { pos: Position },
     NewEntity { pos: Position },
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct BeltIdLookup<ItemIdxType: WeakIdxTrait> {
     belt_id_to_chunks: BTreeMap<BeltTileId<ItemIdxType>, BTreeSet<(i32, i32)>>,
@@ -5233,7 +5259,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum AssemblerInfo<RecipeIdxType: WeakIdxTrait = u8> {
     UnpoweredNoRecipe,
@@ -5247,14 +5277,22 @@ pub enum AssemblerInfo<RecipeIdxType: WeakIdxTrait = u8> {
 }
 
 // TODO: The Inserter start/end position can be calculated from the inserters ty + position + dir triple. No need to store it here
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum InserterInfo<ItemIdxType: WeakIdxTrait = u8> {
     NotAttached {},
     Attached { info: AttachedInserter<ItemIdxType> },
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum InternalInserterInfo<ItemIdxType: WeakIdxTrait> {
     NotAttached {},
@@ -5263,7 +5301,11 @@ pub enum InternalInserterInfo<ItemIdxType: WeakIdxTrait> {
     },
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum AttachedInserter<ItemIdxType: WeakIdxTrait = u8> {
     BeltStorage {
@@ -5281,7 +5323,11 @@ pub enum AttachedInserter<ItemIdxType: WeakIdxTrait = u8> {
     },
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum AttachedInternalInserter<ItemIdxType: WeakIdxTrait> {
     BeltStorage {
@@ -5295,7 +5341,11 @@ pub enum AttachedInternalInserter<ItemIdxType: WeakIdxTrait> {
     },
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, Enum)]
 pub enum UndergroundDir {
     Entrance,
@@ -5328,14 +5378,14 @@ impl<'de> serde::Deserialize<'de> for ModuleSlots {
     }
 }
 
-#[cfg(feature = "client")]
-impl GetSize for ModuleSlots {
+#[cfg(feature = "show-info")]
+impl get_size2::GetSize for ModuleSlots {
     fn get_heap_size(&self) -> usize {
         self.0.slice.len() * std::mem::size_of::<Option<ModuleTy>>()
     }
 }
 
-#[cfg(feature = "client")]
+#[cfg(feature = "show-info")]
 impl<E: InfoExtractor<Self, Info>, Info: EguiDisplayable> ShowInfo<E, Info> for ModuleSlots {
     fn show_fields<C: egui_show_info::Cache<String, Info>>(
         &self,
@@ -5367,14 +5417,22 @@ impl From<Box<[Option<u8>]>> for ModuleSlots {
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum BeltState {
     Straight,
     Curved { source_dir: Dir },
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum Entity<ItemIdxType: WeakIdxTrait = u8, RecipeIdxType: WeakIdxTrait = u8> {
     Assembler {
@@ -5481,14 +5539,22 @@ pub enum Entity<ItemIdxType: WeakIdxTrait = u8, RecipeIdxType: WeakIdxTrait = u8
     },
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum DrillID {
     OnlySolo(u32),
     WithShared(u32),
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
 pub struct UndergroundPipeConnection<ItemIdxType: WeakIdxTrait> {
     connected_pipe_pos: Position,
@@ -5611,7 +5677,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(
     Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, Hash, PartialOrd, Ord,
 )]
@@ -5714,7 +5784,11 @@ impl<ItemIdxType: IdxTrait> PlaceEntityType<ItemIdxType> {
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(
     Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize, PartialEq, Eq, Enum, EnumIter,
 )]
@@ -5776,7 +5850,11 @@ impl Dir {
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(
     Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]
@@ -5786,7 +5864,11 @@ pub struct AssemblerID<RecipeIdxType: WeakIdxTrait = u8> {
     pub assembler_index: u32,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(
     Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]

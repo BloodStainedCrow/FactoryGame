@@ -30,14 +30,12 @@ use static_assertions::const_assert;
 
 use super::{AssemblerOnclickInfo, PowerUsageInfo, Simdtype, TIMERTYPE, arrays};
 
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
+
+
 
 const WAITLIST_LEN: usize = 3;
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[repr(align(64))]
 pub struct InserterWaitList {
@@ -46,7 +44,7 @@ pub struct InserterWaitList {
 
 const_assert!(std::mem::size_of::<InserterWaitList>() <= 64);
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Inserter {
     // item: u8,
@@ -65,7 +63,7 @@ pub struct Inserter {
 const_assert!(std::mem::size_of::<Option<InserterWithBelts>>() <= 20);
 const_assert!(std::mem::size_of::<InserterWithBelts>() <= 20);
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct InserterWithBelts {
     pub(crate) current_hand: ITEMCOUNTTYPE,
@@ -75,7 +73,7 @@ pub(crate) struct InserterWithBelts {
     pub(crate) movetime: NonZero<u16>,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) enum InserterWithBeltsEnum {
     StorageStorage {
@@ -117,7 +115,7 @@ pub enum Conn {
     },
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone)]
 struct InternalInserterReinsertionInfo {
     pub movetime: NonZero<u16>,
@@ -128,7 +126,7 @@ struct InternalInserterReinsertionInfo {
     pub(crate) rest: Rest,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone)]
 enum Rest {
     Storage {
@@ -145,7 +143,7 @@ enum Rest {
 // FIXME: We store the same slice length n times!
 // TODO: Don´t clump update data and data for adding/removing assemblers together!
 // FIXME: Using Boxed slices here is probably the main contributor to the time usage for building large power grids, since this means reallocation whenever we add assemblers!
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MultiAssemblerStore<
     RecipeIdxType: WeakIdxTrait,

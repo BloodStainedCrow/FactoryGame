@@ -15,10 +15,8 @@ use std::cmp::min;
 
 use std::num::NonZero;
 
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
+
+
 
 const PERFORMANCE_CHEAT_INSERTER_UPDATE_MODULE: usize = 1;
 
@@ -31,14 +29,14 @@ struct IdealInserter {
     pub max_hand_size: ITEMCOUNTTYPE,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub struct InserterState {
     pub last_update_time: u16,
     state: ImplicitState,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub struct Inserter {
     pub storage_id_in: FakeUnionStorage,
@@ -48,7 +46,7 @@ pub struct Inserter {
     state: ImplicitState,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub enum ImplicitState {
     WaitingForSourceItems(ITEMCOUNTTYPE),
@@ -57,19 +55,19 @@ pub enum ImplicitState {
     EmptyAndMovingBack,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub struct InserterIdentifier {
     pub id: InserterId,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub struct InserterId {
     index: u32,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub struct InserterBucketData {
     pub storage_id_in: FakeUnionStorage,
@@ -79,7 +77,7 @@ pub struct InserterBucketData {
     pub max_hand_size: ITEMCOUNTTYPE,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BucketedStorageStorageInserterStore {
     pub movetime: NonZero<u16>,

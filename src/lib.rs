@@ -59,7 +59,6 @@ use saving::load;
 use std::path::PathBuf;
 
 use crate::item::Indexable;
-#[cfg(feature = "client")]
 use crate::{progress_info::ProgressInfo, replays::GenerationInformation};
 
 const TICKS_PER_SECOND_LOGIC: u64 = 60;
@@ -84,7 +83,8 @@ pub mod research;
 #[cfg(test)]
 pub mod test_world_harness;
 
-#[cfg(feature = "client")]
+// TODO: Do I want to include these even in non graphical builds?
+// #[cfg(feature = "client")]
 mod example_worlds;
 
 mod shopping_list_arena;
@@ -251,6 +251,10 @@ pub fn main(input: &Vec<String>) -> Result<(), args::ArgsError> {
         let start_game = if create {
             StartGameInfo::Create {
                 name: "dedicated_server_save.save".to_string(),
+                gen_info: GenerationInformation {
+                    example_idx: 0,
+                    example_settings: vec![],
+                },
                 info: GameCreationInfo::Empty,
                 allow_overwrite: overwrite,
             }

@@ -32,17 +32,15 @@ use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
 use super::Watt;
 
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
+
+
 
 pub const MAX_POWER_MULT: u8 = 64;
 pub const MIN_BEACON_POWER_MULT: u8 = MAX_POWER_MULT / 2;
 
 pub const MAX_BURNER_RATE: Watt = Watt(1_800_000);
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Assembler {
@@ -72,7 +70,7 @@ pub enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
     },
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub enum BeaconAffectedEntity<RecipeIdxType: WeakIdxTrait = u8> {
     Assembler {
@@ -106,7 +104,7 @@ pub type FullAssemblerStore<RecipeIdxType> = BaseFullAssemblerStore<
     MultiAssemblerStoreStruct<RecipeIdxType, 6, 1>,
 >;
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct PowerGrid<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub stores: FullAssemblerStore<RecipeIdxType>,
@@ -149,7 +147,7 @@ pub struct PowerGrid<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         HashMap<(Position, WeakIndex), Vec<BeaconAffectedEntity<RecipeIdxType>>>,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize, serde::Serialize)]
 enum BurnableFuelForAccumulators {
     Yes,
@@ -2966,7 +2964,7 @@ struct UniqueAccumulator {
     charge: Joule,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Default, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SteamPowerProducerStore {
     all_producers: Box<[MultiLazyPowerProducer]>,
@@ -3055,7 +3053,7 @@ impl SteamPowerProducerStore {
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Default, Clone, serde::Deserialize, serde::Serialize)]
 struct MultiLazyPowerProducer {
     // TODO: For now turbines can only have a single input and no outputs

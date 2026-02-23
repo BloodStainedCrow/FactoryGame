@@ -129,14 +129,15 @@ incremental = true
 # codegen-units = 1
 
 [features]
-default = ["profiler", "graphics", "client", "logging", "replay"]
+default = ["profiler", "graphics", "client", "logging", "replay", "show-info"]
 # Use Krastorio2 graphics.
 graphics = []
 # dhat-rs memory profiling (https://docs.rs/dhat/latest/dhat/)
 dhat-heap = [ "dhat" ]
 profiler = ["profiling/profile-with-puffin"]
-client = [ "dep:eframe", "dep:egui", "dep:egui_extras", "dep:egui_plot", "dep:puffin_egui", "dep:egui_graphs", "dep:egui-show-info", "dep:egui-show-info-derive", "dep:tilelib", "dep:image", "dep:rfd", "dep:get-size2"]
+client = [ "dep:eframe", "dep:egui", "dep:egui_extras", "dep:egui_plot", "dep:puffin_egui", "dep:egui_graphs", "dep:tilelib", "dep:image", "dep:rfd"]
 logging = ["simple_logger"]
 debug-stat-gathering = []
 assembler-craft-tracking = []
 replay = []
+show-info = ["dep:get-size2", "dep:egui-show-info", "dep:egui-show-info-derive", "dep:egui"]

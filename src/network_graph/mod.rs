@@ -15,12 +15,10 @@ use crate::get_size::StableGraph;
 use std::hash::Hash;
 
 use crate::get_size::NodeIndex;
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+
+
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Network<NodeKey: Eq + Hash + Ord, S, W> {
     // We use stableUnGraph here to allow remove_node to not invalidate any other indices
@@ -28,14 +26,14 @@ pub struct Network<NodeKey: Eq + Hash + Ord, S, W> {
     key_map: BiMap<NodeKey, crate::get_size::NodeIndex>,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct NetworkNode<S, W> {
     node_info: S,
     connected_weak_components: Vec<Option<W>>,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub struct WeakIndex {
     index: u32,

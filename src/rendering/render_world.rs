@@ -1893,8 +1893,8 @@ pub enum EscapeMenuOptions {
 
 #[profiling::function]
 pub fn render_ui<
-    ItemIdxType: IdxTrait + ShowInfo<RAMExtractor, RamUsage>,
-    RecipeIdxType: IdxTrait + ShowInfo<RAMExtractor, RamUsage>,
+    ItemIdxType: IdxTrait + egui_show_info::ShowInfo<RAMExtractor, RamUsage>,
+    RecipeIdxType: IdxTrait + egui_show_info::ShowInfo<RAMExtractor, RamUsage>,
 >(
     ctx: &Context,
     ui: &mut Ui,
@@ -2990,6 +2990,27 @@ pub fn render_ui<
                     }
                 }
             }
+
+            CollapsingHeader::new("Inserters per Belt average").show(ui, |ui| {
+                let num_inserters: usize = game_state_ref.simulation_state.factory.belts.inner.smart_belts.iter().map(|pure_list| pure_list.belts.iter().map(|smart| smart.inserters.inserters.len()).sum::<usize>()).sum();
+                let num_belts: usize = game_state_ref.simulation_state.factory.belts.inner.smart_belts.iter().map(|pure_list| pure_list.belts.len()).sum();
+            
+                let mut num_to_count = std::collections::BTreeMap::<usize, usize>::new();
+                for count in game_state_ref.simulation_state.factory.belts.inner.smart_belts.iter().flat_map(|pure_list| pure_list.belts.iter().map(|smart| smart.inserters.inserters.len())) {
+                    *num_to_count.entry(count).or_default() += 1;
+                }
+
+                let avg = num_inserters as f64 / num_belts as f64;
+
+                ui.label(&format!("Avg num inserters per smart belt: {}", avg));
+
+                let max_ins = *num_to_count.keys().max().unwrap();
+                let max = *num_to_count.values().max().unwrap();
+                for num_ins in 0..=max_ins {
+                    let num_belts = num_to_count.get(&num_ins).copied().unwrap_or_default();
+                    ui.label(&format!("{num_ins}: {}", "|".repeat(num_belts * 20 / max)));
+                }
+            });
 
             CollapsingHeader::new("Inserter Counts").show(ui, |ui| {
                 let mut storage_storage = 0;

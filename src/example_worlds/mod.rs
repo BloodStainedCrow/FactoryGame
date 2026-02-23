@@ -1,11 +1,5 @@
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
-
 use std::{iter, ops::RangeInclusive, sync::LazyLock};
 
-#[cfg(feature = "client")]
 use crate::progress_info::ProgressInfo;
 use crate::{
     app_state::GameState,
@@ -185,7 +179,11 @@ enum ValueKind {
 }
 
 // FIXME: Naming???
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) enum ValueValue {
     Range(usize),

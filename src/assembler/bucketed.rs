@@ -16,14 +16,12 @@ use crate::storage_list::MaxInsertionLimit;
 
 use crate::WeakIdxTrait;
 
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
+
+
 
 // TODO: This does not work correctly yet
 // Also I do not update the waitlist if modifiers change
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MultiAssemblerStore<
     RecipeIdxType: WeakIdxTrait,
@@ -51,7 +49,7 @@ pub struct MultiAssemblerStore<
     holes: Vec<usize>,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct BucketStore {
     // outer len is
@@ -60,7 +58,7 @@ struct BucketStore {
     waiting_for_update: Box<[Vec<AssemblerUpdateInfo>]>,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 struct AssemblerUpdateInfo {
     assembler: u32,
@@ -300,7 +298,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct AssemblerDataStruct {
     // In 64th of a tick
@@ -315,7 +313,7 @@ struct AssemblerDataStruct {
     last_update_time: u32,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct ColdAssemblerData {
     raw_speed_mod: i16,

@@ -16,21 +16,19 @@ use crate::{
     network_graph::{Network, WeakIndex},
 };
 
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
+
+
 
 pub mod connection_logic;
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub struct FluidSystemId<ItemIdxType: WeakIdxTrait> {
     pub fluid: Option<Item<ItemIdxType>>,
     pub index: usize,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct FluidSystemStore<ItemIdxType: WeakIdxTrait> {
     pub fluid_systems_with_fluid: Box<[Vec<Option<FluidSystem<ItemIdxType>>>]>,
@@ -47,7 +45,7 @@ pub struct CannotMixFluidsError<ItemIdxType: WeakIdxTrait> {
     pub items: [Item<ItemIdxType>; 2],
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum FluidConnectionDir {
     Output,
@@ -899,7 +897,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum FluidSystemEntity {
     OutgoingPump { inserter_id: PumpID },
@@ -908,26 +906,26 @@ pub enum FluidSystemEntity {
     Output { inserter_id: u32 },
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct PumpID {
     index: u32,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct FluidBox {
     capacity: u32,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum FluidSystemState<ItemIdxType: WeakIdxTrait> {
     NoFluid,
     HasFluid { fluid: Item<ItemIdxType> },
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct FluidSystem<ItemIdxType: WeakIdxTrait> {
     pub graph: Network<Position, FluidBox, FluidSystemEntity>,
@@ -936,7 +934,7 @@ pub struct FluidSystem<ItemIdxType: WeakIdxTrait> {
     pub hot_data: FluidSystemHotData,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct FluidSystemHotData {
     pub storage_capacity: u32,

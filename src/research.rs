@@ -5,10 +5,8 @@ use egui_graphs::{
     DefaultEdgeShape, DefaultNodeShape, Graph, GraphView, LayoutStateTree, LayoutTree,
     SettingsInteraction, SettingsNavigation, SettingsStyle,
 };
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
+
+
 
 use petgraph::Directed;
 use petgraph::graph::NodeIndex;
@@ -26,7 +24,7 @@ use crate::IdxTrait;
 use crate::frontend::action::ActionType;
 use crate::item::Recipe;
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Deserialize, serde::Serialize,
 )]
@@ -41,7 +39,7 @@ pub struct LabTickInfo {
 
 pub type ResearchProgress = u16;
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 pub struct TechState {
     pub research_queue: Vec<Technology>,

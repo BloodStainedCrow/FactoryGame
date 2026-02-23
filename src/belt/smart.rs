@@ -2,7 +2,7 @@ use std::{
     iter::repeat,
     num::NonZero,
     ops::{Deref, DerefMut},
-    u8,
+    u8, u32,
 };
 
 use crate::inserter::{
@@ -27,6 +27,7 @@ use bitvec::{
 use itertools::Either;
 use itertools::Itertools;
 use log::trace;
+use smallvec::SmallVec;
 
 use super::{
     FreeIndex, SplitterID,
@@ -35,11 +36,6 @@ use super::{
     sushi::{SushiBelt, SushiInserterStoreDyn},
 };
 use crate::inserter::FakeUnionStorage;
-
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
 
 #[cfg(feature = "debug-stat-gathering")]
 pub static NUM_BELT_UPDATES: AtomicUsize = AtomicUsize::new(0);
@@ -64,10 +60,14 @@ pub static NUM_INSERTER_LOADS_WAITING_FOR_SPACE_IN_GUARANTEED_FULL: AtomicUsize 
 pub static TIMES_INSERTERS_EXTRACTED: AtomicUsize = AtomicUsize::new(0);
 
 #[allow(clippy::module_name_repetitions)]
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-// FIXME: Make sure a smart belt fits in a cacheline
-// #[repr(align(64))]
+// Make sure a smart belt fits in a cacheline, so we never need to load multiple cachelines for a random access on a belt
+#[repr(align(64))]
 pub struct SmartBelt<ItemIdxType: WeakIdxTrait = u8> {
     pub(super) ty: u8,
 
@@ -82,16 +82,25 @@ pub struct SmartBelt<ItemIdxType: WeakIdxTrait = u8> {
 
     pub last_moving_spot: BeltLenType,
 
-    pub(super) input_splitter: Option<(SplitterID, SplitterSide)>,
-    pub(super) output_splitter: Option<(SplitterID, SplitterSide)>,
+    // This is technically this, but splitting it is better to keep this struct small
+    // pub(super) input_splitter: Option<(SplitterID, SplitterSide)>,
+    pub(super) input_splitter: Option<SplitterSide>,
+    pub(super) input_splitter_id: SplitterID,
+    // This is technically this, but splitting it is better to keep this struct small
+    // pub(super) output_splitter: Option<(SplitterID, SplitterSide)>,
+    pub(super) output_splitter: Option<SplitterSide>,
+    pub(super) output_splitter_id: SplitterID,
 
     pub(crate) latest_inserter_pos_if_all_incoming: Option<NonZero<BeltLenType>>,
 }
 
-// FIXME:
-// const_assert! {std::mem::size_of::<SmartBelt<u8>>() <= 64}
+static_assertions::const_assert! {std::mem::size_of::<SmartBelt<u8>>() <= 64}
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default)]
 pub struct EmptyBelt {
     ty: u8,
@@ -104,18 +113,7 @@ pub struct EmptyBelt {
     pub len: u16,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct InserterExtractedWhenMoving {
-    pub(crate) storage: FakeUnionStorage,
-    pub(crate) belt_pos: BeltLenType,
-    pub(crate) movetime: NonZero<u8>,
-    pub(crate) outgoing: bool,
-    pub(crate) max_hand_size: ITEMCOUNTTYPE,
-    pub(crate) current_hand: ITEMCOUNTTYPE,
-}
-
-// TODO: Idea:
+// Idea:
 //       Have Belt inserters only be in belts as waitlist.
 //       when their hand is full, move them into a "store" of some kind
 //       where they are lazily waited on for their movetime. Once that is up, their outputs they either directly interact with the storage,
@@ -126,7 +124,26 @@ pub struct InserterExtractedWhenMoving {
 //          2. Stop the belt updates from needing the storage lists, making them parallelizable with assembler updates
 //       This should ~double the amount of parallel processing we can do,
 //       and should prevent us from having to wait on the (always going to be) slow belt update for starting on assemblers (significantly improving the parallelism there also)
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct InserterExtractedWhenMoving {
+    pub(crate) storage: FakeUnionStorage,
+    pub(crate) belt_pos: BeltLenType,
+    pub(crate) movetime: NonZero<u8>,
+    pub(crate) outgoing: bool,
+    pub(crate) max_hand_size: ITEMCOUNTTYPE,
+    pub(crate) current_hand: ITEMCOUNTTYPE,
+}
+
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct InserterStoreDyn {
     pub inserters: Vec<InserterExtractedWhenMoving>,
@@ -168,7 +185,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             last_moving_spot: len,
 
             input_splitter: None,
+            input_splitter_id: SplitterID { index: u32::MAX },
             output_splitter: None,
+            output_splitter_id: SplitterID { index: u32::MAX },
 
             latest_inserter_pos_if_all_incoming: None,
         }
@@ -207,7 +226,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             last_moving_spot,
 
             input_splitter,
+            input_splitter_id,
             output_splitter,
+            output_splitter_id,
 
             latest_inserter_pos_if_all_incoming: _earliest_inserter_pos_if_all_incoming,
         } = self;
@@ -247,8 +268,8 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
             last_moving_spot,
 
-            input_splitter,
-            output_splitter,
+            input_splitter: input_splitter.map(|side| (input_splitter_id, side)),
+            output_splitter: output_splitter.map(|side| (output_splitter_id, side)),
         }
     }
 
@@ -275,7 +296,8 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             "A circular belt can never be attached to a splitter!"
         );
 
-        self.input_splitter = Some((id, side));
+        self.input_splitter = Some(side);
+        self.input_splitter_id = id;
     }
 
     pub(super) fn add_output_splitter(&mut self, id: SplitterID, side: SplitterSide) {
@@ -288,15 +310,20 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             "A circular belt can never be attached to a splitter!"
         );
 
-        self.output_splitter = Some((id, side));
+        self.output_splitter = Some(side);
+        self.output_splitter_id = id;
     }
 
     pub(super) fn remove_input_splitter(&mut self) -> Option<(SplitterID, SplitterSide)> {
-        self.input_splitter.take()
+        self.input_splitter
+            .take()
+            .map(|side| (self.input_splitter_id, side))
     }
 
     pub(super) fn remove_output_splitter(&mut self) -> Option<(SplitterID, SplitterSide)> {
-        self.output_splitter.take()
+        self.output_splitter
+            .take()
+            .map(|side| (self.output_splitter_id, side))
     }
 
     // pub fn get_take_item_fn<'a>(
@@ -645,8 +672,10 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         let locs = &mut self.locs;
         let latest_inserter_pos_if_all_incoming = &mut self.latest_inserter_pos_if_all_incoming;
 
-        let extracted = self.inserters.inserters.access_mut(|v| {
-            v.extract_if(.., move |ins| {
+        let extracted = self.inserters.inserters
+        // .access_mut(|v| {
+        //     v
+            .extract_if(.., move |ins| {
                 // FIXME: This should not be needed, if we did not incorrectly insert inserters always in the belt
                 if ins.current_hand == 0 && !ins.outgoing {
                     return true;
@@ -735,8 +764,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             })
             // TODO: When using a SmallCapVec, the we cannot lazily return the extract_if iterator, since the vec no longer exists after the closure returns
             // This could be fixed using a custom extract_if implementation, but that is very hairy unsafe code I am unwilling to commit to for now 
-            .collect_vec()
-        });
+            // .collect_vec()
+        // })
+        ;
 
         Some(extracted)
     }
@@ -1013,7 +1043,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             last_moving_spot: last_moving_spot_front,
 
             input_splitter: None,
+            input_splitter_id: _,
             output_splitter,
+            output_splitter_id,
 
             latest_inserter_pos_if_all_incoming: _,
         } = front
@@ -1036,7 +1068,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             last_moving_spot: _,
 
             input_splitter,
+            input_splitter_id,
             output_splitter: None,
+            output_splitter_id: _,
 
             latest_inserter_pos_if_all_incoming: _,
         } = back
@@ -1090,7 +1124,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             last_moving_spot: last_moving_spot_front,
 
             input_splitter,
+            input_splitter_id,
             output_splitter,
+            output_splitter_id,
 
             // Since this is just an optimization, and will be rechecked on next update, None is fine
             latest_inserter_pos_if_all_incoming: None,
@@ -1117,7 +1153,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             last_moving_spot,
 
             input_splitter,
+            input_splitter_id,
             output_splitter,
+            output_splitter_id,
 
             latest_inserter_pos_if_all_incoming: _earliest_inserter_pos_if_all_incoming,
         } = self;
@@ -1188,7 +1226,9 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
             },
 
             input_splitter,
+            input_splitter_id,
             output_splitter,
+            output_splitter_id,
 
             // Since this is just an optimization, and will be rechecked on next update, None is fine
             latest_inserter_pos_if_all_incoming: None,
@@ -1341,6 +1381,15 @@ impl EmptyBelt {
         item: Item<ItemIdxType>,
     ) -> SmartBelt<ItemIdxType> {
         assert!(self.len > 0);
+        let (input_splitter, input_splitter_id) = match self.input_splitter {
+            Some((id, side)) => (Some(side), id),
+            None => (None, SplitterID { index: u32::MAX }),
+        };
+        let (output_splitter, output_splitter_id) = match self.output_splitter {
+            Some((id, side)) => (Some(side), id),
+            None => (None, SplitterID { index: u32::MAX }),
+        };
+
         SmartBelt {
             ty: self.ty,
             is_circular: self.is_circular,
@@ -1352,8 +1401,10 @@ impl EmptyBelt {
             },
             item,
             last_moving_spot: 0,
-            input_splitter: self.input_splitter,
-            output_splitter: self.output_splitter,
+            input_splitter,
+            input_splitter_id,
+            output_splitter,
+            output_splitter_id,
 
             latest_inserter_pos_if_all_incoming: None,
         }
@@ -1661,7 +1712,10 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
             return;
         }
 
-        if let Some((input_id, side)) = &self.input_splitter {
+        if let Some((input_id, side)) = &self
+            .input_splitter
+            .map(|side| (self.input_splitter_id, side))
+        {
             // Last pos
             if self.query_item(self.get_len() - 1).is_none() {
                 let splitter_loc =
@@ -1681,7 +1735,10 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
             }
         }
 
-        if let Some((output_id, side)) = &self.output_splitter {
+        if let Some((output_id, side)) = &self
+            .output_splitter
+            .map(|side| (self.output_splitter_id, side))
+        {
             if let Some(item) = self.query_item(0) {
                 let splitter_loc =
                     &splitter_list[output_id.index as usize].inputs[usize::from(bool::from(*side))];

@@ -1,7 +1,5 @@
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
+
+
 use itertools::Itertools;
 
 use crate::WeakIdxTrait;
@@ -18,7 +16,7 @@ use std::mem;
 
 use crate::storage_list::ALWAYS_FULL;
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(super) struct PureDrillStorageOnlySoloOwned<ItemIdxType: WeakIdxTrait> {
     pub(super) item: Item<ItemIdxType>,

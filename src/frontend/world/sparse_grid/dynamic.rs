@@ -9,23 +9,21 @@ use crate::{
     saving::{load_at, save_at, save_at_fork},
 };
 
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
+
+
 
 // If more than every 20th chunk is inhabited, switch to map
 // TODO: Find a good value for this
 const SWITCH_RATIO: usize = 20;
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub(crate) struct DynamicGrid<I: Ord, T> {
     pub(crate) num_chunks: usize,
     store: Backing<I, T>,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 enum Backing<I: Ord, T> {
     BoundingBoxGrid(BoundingBoxGrid<I, T>),

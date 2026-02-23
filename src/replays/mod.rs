@@ -1,7 +1,5 @@
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
+
+
 
 use std::sync::Arc;
 
@@ -16,7 +14,7 @@ use crate::replays::replay_action::{ReplayAction, ReplayActionError};
 use crate::{app_state::GameState, data::DataStore, frontend::action::ActionType, item::IdxTrait};
 use crate::{built_info, get_version};
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ProgramInformation {
     // The git rev when this was recorded
@@ -36,7 +34,7 @@ impl ProgramInformation {
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GenerationInformation {
     // The example world (and settings) which were used

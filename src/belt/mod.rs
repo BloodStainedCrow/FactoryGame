@@ -1,8 +1,6 @@
-#[cfg(feature = "client")]
-use egui_show_info_derive::ShowInfo;
+
 use fixedbitset::FixedBitSet;
-#[cfg(feature = "client")]
-use get_size2::GetSize;
+
 
 #[allow(clippy::module_inception)]
 pub mod belt;
@@ -64,27 +62,27 @@ use splitter::{
 };
 use sushi::SushiBelt;
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, PartialEq, Clone, Copy, serde::Deserialize, serde::Serialize)]
 enum FreeIndex {
     FreeIndex(BeltLenType),
     OldFreeIndex(BeltLenType),
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 struct SplitterID {
     index: u32,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum Inserter {
     Out(BeltStorageInserter<{ Dir::BeltToStorage }>),
     In(BeltStorageInserter<{ Dir::StorageToBelt }>),
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize, PartialOrd, Ord,
 )]
@@ -107,7 +105,7 @@ use crate::{
     item::{IdxTrait, WeakIdxTrait},
 };
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BeltStore<ItemIdxType: WeakIdxTrait> {
     pub inner: InnerBeltStore<ItemIdxType>,
@@ -125,7 +123,7 @@ pub struct BeltStore<ItemIdxType: WeakIdxTrait> {
     pub belt_graph_lookup: HashMap<BeltTileId<ItemIdxType>, NodeIndex>,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub enum BeltGraphConnection<ItemIdxType: WeakIdxTrait> {
     Sideload {
@@ -143,7 +141,7 @@ pub enum BeltGraphConnection<ItemIdxType: WeakIdxTrait> {
     },
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, serde::Deserialize)]
 pub struct InnerBeltStore<ItemIdxType: WeakIdxTrait> {
     pub sushi_belts: Vec<SushiBelt<ItemIdxType>>,
@@ -263,7 +261,7 @@ where
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct SplitterStore<ItemIdxType: WeakIdxTrait> {
     // TODO: Holes
@@ -274,7 +272,7 @@ struct SplitterStore<ItemIdxType: WeakIdxTrait> {
 
 impl<ItemIdxType: IdxTrait> SplitterStore<ItemIdxType> {}
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BeltBeltInserterStore<ItemIdxType: WeakIdxTrait> {
     // FIXME: This is likely VERY slow
@@ -326,7 +324,7 @@ pub struct BeltBeltInserterStore<ItemIdxType: WeakIdxTrait> {
     )>,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BeltBeltInserterInfo<ItemIdxType: WeakIdxTrait> {
     source: (BeltTileId<ItemIdxType>, u16),
@@ -335,7 +333,7 @@ pub struct BeltBeltInserterInfo<ItemIdxType: WeakIdxTrait> {
     item: PhantomData<ItemIdxType>,
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum BeltBeltInserterType {
     Normal,
@@ -374,7 +372,11 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
 
             let needs_update = match input_belt {
                 AnyBelt::Smart(belt_id) => {
-                    if let Some((out_id, out_side)) = self.get_smart(*belt_id).output_splitter {
+                    if let Some((out_id, out_side)) = self
+                        .get_smart(*belt_id)
+                        .output_splitter
+                        .map(|side| (self.get_smart(*belt_id).output_splitter_id, side))
+                    {
                         out_id != id || out_side != side
                     } else {
                         true
@@ -414,7 +416,11 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
 
             let needs_update = match output_belt {
                 AnyBelt::Smart(belt_id) => {
-                    if let Some((in_id, in_side)) = self.get_smart(*belt_id).input_splitter {
+                    if let Some((in_id, in_side)) = self
+                        .get_smart(*belt_id)
+                        .input_splitter
+                        .map(|side| (self.get_smart(*belt_id).input_splitter_id, side))
+                    {
                         in_id != id || in_side != side
                     } else {
                         true
@@ -478,7 +484,10 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
             };
 
             let index = store.belts.iter().position(|belt| {
-                if let Some((splitter_id, splitter_side)) = belt.output_splitter {
+                if let Some((splitter_id, splitter_side)) = belt
+                    .output_splitter
+                    .map(|side| (belt.output_splitter_id, side))
+                {
                     splitter_id == id && splitter_side == side
                 } else {
                     false
@@ -530,7 +539,10 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
             };
 
             let index = store.belts.iter().position(|belt| {
-                if let Some((splitter_id, splitter_side)) = belt.input_splitter {
+                if let Some((splitter_id, splitter_side)) = belt
+                    .input_splitter
+                    .map(|side| (belt.input_splitter_id, side))
+                {
                     splitter_id == id && splitter_side == side
                 } else {
                     false
@@ -1436,20 +1448,20 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 pub enum SplitterTileId {
     Any(u32),
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 enum AnySplitter<ItemIdxType: WeakIdxTrait> {
     Pure(Item<ItemIdxType>, usize),
     Sushi(SplitterID),
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SplitterInfo<ItemIdxType: WeakIdxTrait> {
     pub in_mode: SplitterDistributionMode,
@@ -3715,31 +3727,35 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                         let removed_items = self.inner.smart_belts[item.into_usize()]
                             .belts_mut()
                             .flat_map(|belt| {
-                                let removed_items_front =
-                                    if let Some((splitter, _)) = belt.input_splitter {
-                                        if splitter == id {
-                                            belt.input_splitter = None;
-                                        }
+                                let removed_items_front = if let Some((splitter, _)) = belt
+                                    .input_splitter
+                                    .map(|side| (belt.input_splitter_id, side))
+                                {
+                                    if splitter == id {
+                                        belt.input_splitter = None;
+                                    }
 
-                                        let (removed_items, _new_len) =
-                                            belt.remove_length(SPLITTER_BELT_LEN, Side::BACK);
-                                        Some(removed_items)
-                                    } else {
-                                        None
-                                    };
+                                    let (removed_items, _new_len) =
+                                        belt.remove_length(SPLITTER_BELT_LEN, Side::BACK);
+                                    Some(removed_items)
+                                } else {
+                                    None
+                                };
 
-                                let removed_items_back =
-                                    if let Some((splitter, _)) = belt.output_splitter {
-                                        if splitter == id {
-                                            belt.output_splitter = None;
-                                        }
+                                let removed_items_back = if let Some((splitter, _)) = belt
+                                    .output_splitter
+                                    .map(|side| (belt.output_splitter_id, side))
+                                {
+                                    if splitter == id {
+                                        belt.output_splitter = None;
+                                    }
 
-                                        let (removed_items, _new_len) =
-                                            belt.remove_length(SPLITTER_BELT_LEN, Side::FRONT);
-                                        Some(removed_items)
-                                    } else {
-                                        None
-                                    };
+                                    let (removed_items, _new_len) =
+                                        belt.remove_length(SPLITTER_BELT_LEN, Side::FRONT);
+                                    Some(removed_items)
+                                } else {
+                                    None
+                                };
 
                                 removed_items_front.into_iter().chain(removed_items_back)
                             })
@@ -3822,31 +3838,35 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                                     .iter_mut()
                                     .flat_map(|store| store.belts_mut())
                                     .flat_map(|belt| {
-                                        let removed_items_front =
-                                            if let Some((splitter, _)) = belt.input_splitter {
-                                                if splitter == id {
-                                                    belt.input_splitter = None;
-                                                }
+                                        let removed_items_front = if let Some((splitter, _)) = belt
+                                            .input_splitter
+                                            .map(|side| (belt.input_splitter_id, side))
+                                        {
+                                            if splitter == id {
+                                                belt.input_splitter = None;
+                                            }
 
-                                                let (removed_items, _new_len) = belt
-                                                    .remove_length(SPLITTER_BELT_LEN, Side::BACK);
-                                                Some(removed_items)
-                                            } else {
-                                                None
-                                            };
+                                            let (removed_items, _new_len) =
+                                                belt.remove_length(SPLITTER_BELT_LEN, Side::BACK);
+                                            Some(removed_items)
+                                        } else {
+                                            None
+                                        };
 
-                                        let removed_items_back =
-                                            if let Some((splitter, _)) = belt.output_splitter {
-                                                if splitter == id {
-                                                    belt.output_splitter = None;
-                                                }
+                                        let removed_items_back = if let Some((splitter, _)) = belt
+                                            .output_splitter
+                                            .map(|side| (belt.output_splitter_id, side))
+                                        {
+                                            if splitter == id {
+                                                belt.output_splitter = None;
+                                            }
 
-                                                let (removed_items, _new_len) = belt
-                                                    .remove_length(SPLITTER_BELT_LEN, Side::FRONT);
-                                                Some(removed_items)
-                                            } else {
-                                                None
-                                            };
+                                            let (removed_items, _new_len) =
+                                                belt.remove_length(SPLITTER_BELT_LEN, Side::FRONT);
+                                            Some(removed_items)
+                                        } else {
+                                            None
+                                        };
 
                                         removed_items_front.into_iter().chain(removed_items_back)
                                     }),
@@ -3880,7 +3900,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct MultiBeltStore<ItemIdxType: WeakIdxTrait> {
     pub belt_ty: Vec<u8>,
@@ -3929,7 +3949,7 @@ impl<ItemIdxType: IdxTrait> MultiBeltStore<ItemIdxType> {
     }
 }
 
-#[cfg_attr(feature = "client", derive(ShowInfo), derive(GetSize))]
+#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 enum AnyBelt<ItemIdxType: WeakIdxTrait> {
     Smart(BeltId<ItemIdxType>),
