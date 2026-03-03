@@ -1,6 +1,9 @@
 use std::fmt::Debug;
 use std::hash::Hash;
 
+#[cfg(feature = "show-info")]
+use crate::get_size::{RAMExtractor, RamUsage};
+
 pub type ITEMCOUNTTYPE = u8;
 
 pub trait Indexable {
@@ -26,6 +29,7 @@ pub trait WeakIdxTrait:
     + Ord
     + 'static
     + get_size2::GetSize
+    + egui_show_info::ShowInfo<RAMExtractor, RamUsage>
     + Debug
 {
 }

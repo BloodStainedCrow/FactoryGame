@@ -63,6 +63,7 @@ use eframe::egui::{
 use egui::{Button, CollapsingHeader, Modal, RichText, ScrollArea, Sense, Slider};
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
+#[cfg(feature = "show-info")]
 use egui_show_info::ShowInfo;
 use flate2::Compression;
 use flate2::write::ZlibEncoder;
@@ -1893,8 +1894,8 @@ pub enum EscapeMenuOptions {
 
 #[profiling::function]
 pub fn render_ui<
-    ItemIdxType: IdxTrait + egui_show_info::ShowInfo<RAMExtractor, RamUsage>,
-    RecipeIdxType: IdxTrait + egui_show_info::ShowInfo<RAMExtractor, RamUsage>,
+    ItemIdxType: IdxTrait,
+    RecipeIdxType: IdxTrait,
 >(
     ctx: &Context,
     ui: &mut Ui,
@@ -2175,6 +2176,7 @@ pub fn render_ui<
         .show_window(&mut open, ctx, data_store_ref);
     state_machine_ref.open_windows[action_state_machine::Window::Datapedia] = open;
 
+    #[cfg(feature = "show-info")]
     Window::new("Size")
         .fixed_size(egui::vec2(1920f32, 1080f32))
         .default_open(false)

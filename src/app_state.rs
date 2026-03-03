@@ -122,7 +122,7 @@ pub struct AuxillaryData {
     pub update_round_trip_times: Timeline<UpdateTime>,
     pub update_times: Timeline<UpdateTime>,
 
-    #[cfg_attr(feature = "client", get_size(ignore))]
+    #[cfg_attr(feature = "show-info", get_size(ignore))]
     #[serde(skip)]
     last_update_time: Option<Instant>,
 
