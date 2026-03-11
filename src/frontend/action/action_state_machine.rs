@@ -160,6 +160,8 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     pub open_windows: EnumMap<Window, bool>,
 
     pub datapedia: Pedia<ItemIdxType, RecipeIdxType>,
+
+    pub blueprint_import_string: Option<String>,
 }
 
 #[derive(Debug, enum_map::Enum, PartialEq)]
@@ -298,6 +300,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
             open_windows,
             datapedia: Pedia::new(data_store),
+
+            blueprint_import_string: None,
         }
     }
 
@@ -356,6 +360,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
             open_windows,
             datapedia: Pedia::new(data_store),
+
+            blueprint_import_string: None,
         }
     }
 

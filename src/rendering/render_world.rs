@@ -3424,6 +3424,12 @@ pub fn render_ui<
                 }
             }
 
+            if ui.add_enabled(state_machine_ref.blueprint_import_string.is_none(), Button::new("Import from String"))
+                .clicked()
+            {
+                state_machine_ref.blueprint_import_string = Some(String::new());
+            }
+
             let bp = if let ActionStateMachineState::Holding(HeldObject::Blueprint(bp)) =
                 &state_machine_ref.state
             {
@@ -3463,6 +3469,27 @@ pub fn render_ui<
                 encoder.finish().unwrap();
             }
         });
+
+    if let Some(bp_string) = &mut state_machine_ref.blueprint_import_string {
+        let mut open = true;
+        let mut imported = false;
+        Window::new("Import Blueprint From String").open(&mut open).show(ctx, |ui| {
+            if ui.button("Import").clicked() {
+                if let Ok(bp) = BlueprintString(std::mem::take(bp_string)).try_into() {
+                    state_machine_ref.state = ActionStateMachineState::Holding(HeldObject::Blueprint(bp));
+                    imported = true;
+                } else {
+                    error!("Blueprint String invalid!");
+                }
+            } else {
+                ui.text_edit_multiline(bp_string);
+            }
+        });
+
+        if !open || imported {
+            state_machine_ref.blueprint_import_string = None;
+        }
+    }
 
     #[cfg(debug_assertions)]
     Window::new("RawData").default_open(false).show(ctx, |ui| {
