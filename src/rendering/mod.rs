@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use image::GenericImageView;
 use tilelib::types::{DrawInstance, Layer, Sprite, Texture};
 
@@ -10,6 +12,16 @@ pub mod window;
 pub mod map_view;
 
 use enum_map::{Enum, EnumArray};
+
+pub(crate) static BOT_SPRITE: LazyLock<Sprite> = LazyLock::new(|| {
+    let sprite = include_bytes!("temp_assets/bot_map_view.png");
+    let sprite = image::load_from_memory(sprite).unwrap();
+
+    let sprite_dimensions = sprite.dimensions();
+    let sprite = sprite.to_rgba8().into_vec();
+
+    Sprite::new(Texture::new(1, sprite, sprite_dimensions))
+});
 
 #[derive(Debug, Clone)]
 struct EntitySprite {
@@ -274,7 +286,17 @@ fn texture_atlas() -> TextureAtlas {
 
         no_power: entity_sprite_from_path_scaled!("temp_assets/no_power.png", 1, 1.0),
 
-        assembler: entity_sprite_from_path_tiling!("temp_assets/assembler.png", 1),
+        assembler: vec![
+            // TODO: Add animation for assembling machine
+            entity_sprite_from_path_tiling!("temp_assets/assembler.png", 1),
+            entity_sprite_from_path_tiling!("temp_assets/assembler.png", 1),
+            entity_sprite_from_path_tiling!("temp_assets/assembler.png", 1),
+            entity_sprite_from_path_tiling!("temp_assets/assembler.png", 1),
+            entity_sprite_from_path_tiling!("temp_assets/assembler.png", 1),
+            entity_sprite_from_path_tiling!("temp_assets/assembler.png", 1),
+            entity_sprite_from_path_tiling!("temp_assets/assembler.png", 1),
+        ]
+        .into_boxed_slice(),
         accumulator: entity_sprite_from_path_tiling!("temp_assets/assembler.png", 1),
         chest: entity_sprite_from_path_tiling!("temp_assets/outside_world.png", 1),
 
@@ -310,8 +332,8 @@ fn texture_atlas() -> TextureAtlas {
 
         underground: undergrounds,
 
-        mining_drill: Sprite::new(Texture::default()),
-        solar_panel: Sprite::new(Texture::default()),
+        mining_drill: EntitySprite::new_tiling(Sprite::new(Texture::default())),
+        solar_panel: EntitySprite::new_tiling(Sprite::new(Texture::default())),
 
         default: Sprite::new(Texture::default()),
     }

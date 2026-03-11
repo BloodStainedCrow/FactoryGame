@@ -4,7 +4,7 @@ use std::ops::Index;
 use std::u16;
 
 use itertools::Itertools;
-use rayon::iter::IndexedParallelIterator;
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use strum::IntoEnumIterator;
 
 use crate::DATA_STORE;
@@ -404,6 +404,7 @@ fn get_full_storage_index<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 }
 
 #[profiling::function]
+#[inline(never)]
 pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     grids: &'a mut PowerGridStorage<ItemIdxType, RecipeIdxType>,
     chest_store: &'a mut FullChestStore<ItemIdxType>,
@@ -502,37 +503,149 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         let mut grids_by_item = {
             // TODO: This is super slow with a lot of grids. To the point where it takes the majority of the processing time in some cases!
             profiling::scope!("grids_by_item");
-            grids
-                .power_grids
-                .iter_mut()
-                .enumerate()
-                .flat_map(|(grid_id, grid)| {
-                    let grid_id = grid_id.try_into().unwrap();
-                    all_assembler_storages(grid_id, &mut grid.stores, data_store)
-                        .into_iter()
-                        .chain(all_lab_storages(grid_id, &mut grid.lab_stores, data_store))
-                })
-                .into_group_map_by(|v| v.0)
+            // let mut grids_by_item = Vec::new();
+            // {
+            //     profiling::scope!("resize grids_by_item");
+            //     grids_by_item.resize_with(data_store.item_display_names.len(), || {
+            //         Vec::with_capacity(grids.power_grids.len())
+            //     });
+            // }
+
+            // for v @ (item, _, _, _, _) in
+            //     grids
+            //         .power_grids
+            //         .iter_mut()
+            //         .enumerate()
+            //         .flat_map(|(grid_id, grid)| {
+            //             let grid_id = grid_id.try_into().unwrap();
+            //             all_assembler_storages(grid_id, &mut grid.stores, data_store)
+            //                 .into_iter()
+            //                 .chain(all_lab_storages(grid_id, &mut grid.lab_stores, data_store))
+            //         })
+            // {
+            //     grids_by_item[item.into_usize()].push(v);
+            // }
+            // .into_group_map_by(|v| v.0)
+
+            let pg_len: usize = grids.power_grids.len();
+
+            // FIXME: We seem to be doing something at some point that is not tracked by profiling.
+            let grids_by_item = {
+                profiling::scope!("par grids_by_item");
+                grids
+                    .power_grids
+                    .par_iter_mut()
+                    .enumerate()
+                    // FIXME: Hardcoded core count
+                    .fold_chunks(
+                        pg_len.div_ceil(12),
+                        || {
+                            // profiling::scope!("resize grids_by_item");
+                            let mut grids_by_item = Vec::new();
+                            grids_by_item
+                                .resize_with(data_store.item_display_names.len(), || Vec::new());
+                            grids_by_item
+                        },
+                        |mut grids_by_item, (grid_id, grid)| {
+                            // profiling::scope!("fill grids_by_item");
+                            for v @ (item, _, _, _, _) in {
+                                let grid_id = grid_id.try_into().unwrap();
+                                all_assembler_storages(grid_id, &mut grid.stores, data_store)
+                                    .into_iter()
+                                    .chain(all_lab_storages(
+                                        grid_id,
+                                        &mut grid.lab_stores,
+                                        data_store,
+                                    ))
+                            } {
+                                grids_by_item[item.into_usize()].push(v);
+                            }
+                            grids_by_item
+                        },
+                    )
+                    .collect::<Vec<_>>()
+            };
+            // .flat_map_iter(|(grid_id, grid)| {
+            //     let grid_id = grid_id.try_into().unwrap();
+            //     all_assembler_storages(grid_id, &mut grid.stores, data_store)
+            //         .into_iter()
+            //         .chain(all_lab_storages(grid_id, &mut grid.lab_stores, data_store))
+            // })
+            // .fold(
+            //     || {
+            //         let mut grids_by_item = Vec::new();
+            //         profiling::scope!("resize grids_by_item");
+            //         grids_by_item
+            //             .resize_with(data_store.item_display_names.len(), || Vec::new());
+            //         grids_by_item
+            //     },
+            //     |mut grids_by_item, v @ (item, _, _, _, _)| {
+            //         grids_by_item[item.into_usize()].push(v);
+            //         grids_by_item
+            //     },
+            // )
+            // .collect_vec_list();
+
+            // grids_by_item
+            //         .into_iter()
+            //         // .flatten()
+            //         .reduce(|mut a, b| {
+            //             for (a, b) in a.iter_mut().zip(b) {
+            //                 a.extend(b)
+            //             }
+            //             a
+            //         })
+            //         .unwrap()
+            let grids_by_item = {
+                profiling::scope!("sequential grids_by_item");
+                let mut final_grids_by_item = Vec::new();
+                final_grids_by_item.resize_with(data_store.item_display_names.len(), || Vec::new());
+                final_grids_by_item
+                    .iter_mut()
+                    .enumerate()
+                    .for_each(|(item_id, v)| {
+                        v.reserve(grids_by_item.iter().map(|grid| grid[item_id].len()).sum())
+                    });
+
+                for grid in grids_by_item {
+                    for (a, b) in final_grids_by_item.iter_mut().zip(grid) {
+                        a.extend(b)
+                    }
+                }
+
+                final_grids_by_item
+            };
+
+            grids_by_item
         };
 
-        for item in all_item_iter(data_store) {
-            let _vec = grids_by_item.entry(item).or_default();
-            // assert!(
-            //     vec.is_sorted_by_key(|v| get_full_storage_index(
-            //         v.0,
-            //         v.1,
-            //         num_power_grids,
-            //         data_store
-            //     )),
-            //     "{:?}",
-            //     vec.iter()
-            //         .map(|v| (
-            //             v.1,
-            //             get_full_storage_index(v.0, v.1, num_power_grids, data_store)
-            //         ))
-            //         .collect_vec()
-            // );
-        }
+        // for item in all_item_iter(data_store) {
+        //     let _vec = grids_by_item.entry(item).or_default();
+        // assert!(
+        //     vec.is_sorted_by_key(|v| get_full_storage_index(
+        //         v.0,
+        //         v.1,
+        //         num_power_grids,
+        //         data_store
+        //     )),
+        //     "{:?}",
+        //     vec.iter()
+        //         .map(|v| (
+        //             v.1,
+        //             get_full_storage_index(v.0, v.1, num_power_grids, data_store)
+        //         ))
+        //         .collect_vec()
+        // );
+        // }
+
+        let sorted_grid_list = {
+            profiling::scope!("sorted_grid_list");
+            // grids_by_item.into_iter().sorted_by_key(|v| v.0)
+            grids_by_item
+                .into_iter()
+                .enumerate()
+                .map(|(idx, list)| (Item::from(ItemIdxType::try_from(idx).unwrap()), list))
+        };
 
         // FIXME: This is not easily synced
         {
@@ -540,7 +653,7 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             all_item_iter(data_store)
                 .zip(chest_store.stores.iter_mut())
                 .zip(drill_store.storages_by_item())
-                .zip(grids_by_item.into_iter().sorted_by_key(|v| v.0))
+                .zip(sorted_grid_list)
                 .flat_map(
                     |(((item, chest_store), mining_drill_lists), (grid_item, grid))| {
                         assert_eq!(item, grid_item);
@@ -598,7 +711,6 @@ fn all_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     all_storages
 }
 
-#[profiling::function]
 pub fn static_storages_pre_sorted<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     item: Item<ItemIdxType>,
     chest_store: &'a mut MultiChestStore<ItemIdxType>,

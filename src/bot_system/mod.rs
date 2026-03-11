@@ -1,10 +1,18 @@
 #![allow(unused)]
 
-use std::{cmp::max, cmp::min, collections::BTreeMap, marker::PhantomData};
+use std::{
+    cmp::{max, min},
+    collections::BTreeMap,
+    iter,
+    marker::PhantomData,
+};
 
 // I will render bots as "particles" with a fixed size instanced gpu buffer
 // This is fine as long as we do not override bots, which are still flying
+// Here I do an example calculation to get an idea of how much VRAM is needed for this scheme
 mod calc {
+    use crate::bot_system::BotRenderInfo;
+
     const GOAL_ITEMS_PER_MINUTE: usize = 1_000_000_000;
     const GOAL_ITEMS_PER_TICK: usize = GOAL_ITEMS_PER_MINUTE / 60 / 60;
     const BOT_HAND_SIZE: usize = 4;
@@ -23,18 +31,22 @@ mod calc {
     const BOT_UPDATE_COUNT_CPU_PER_TICK: usize = REQUIRED_BOTS / BOT_BATTERY_LIFE_TICKS;
     const REQUIRED_DRAW_SLOTS: usize = MAX_BOT_TRAVEL_TIME_TICKS * AVG_NEW_BOTS_PER_TICK;
     const REQUIRED_MEMORY_SEND_TO_GPU_PER_TICK: usize =
-        AVG_NEW_BOTS_PER_TICK * (2 * 3 * (2 + 1)) * 4;
+        AVG_NEW_BOTS_PER_TICK * size_of::<BotRenderInfo>();
     const REQUIRED_PCI_BANDWIDTH_MBS: usize = REQUIRED_MEMORY_SEND_TO_GPU_PER_TICK * 60 / 1_000_000;
-    const REQUIRED_VRAM: usize = REQUIRED_DRAW_SLOTS * (2 * 3 * (2 + 1));
+    const REQUIRED_VRAM: usize = REQUIRED_DRAW_SLOTS * size_of::<BotRenderInfo>();
     const REQUIRED_VRAM_MB: usize = REQUIRED_VRAM / 1_000_000;
 }
 
+use kd_tree::KdTree2;
 use log::info;
+
+pub(crate) mod render;
 
 use crate::{
     app_state::SimulationState,
+    data::DataStore,
     frontend::world::{Position, tile::World},
-    item::{ITEMCOUNTTYPE, IdxTrait, Item, WeakIdxTrait, usize_from},
+    item::{ITEMCOUNTTYPE, IdxTrait, Indexable, Item, WeakIdxTrait, usize_from},
     network_graph::{Network, WeakIndex},
     power::{Joule, Watt},
 };
@@ -60,9 +72,8 @@ struct BotSystem<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     networks: Vec<BotNetwork<ItemIdxType, RecipeIdxType>>,
 }
 
-struct BotNetwork<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+pub(crate) struct BotNetwork<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     // TODO: This might need another graph to handle removal of roboports
-    current_tick: u32,
     roboports: Vec<Roboport>,
     network: Network<RoboportId, (), NetworkEntity<ItemIdxType>>,
     bot_jobs: BTreeMap<u32, Vec<BotUpdate<ItemIdxType>>>,
@@ -71,10 +82,18 @@ struct BotNetwork<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     requesters: Box<[MultiRequesterInfo]>,
     storages: Box<[MultiStorageInfo]>,
 
+    roboport_kd: KdTree2<([i32; 2], u32)>,
+
     ty: PhantomData<RecipeIdxType>,
 }
 
-enum BotRenderInfo {
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub(crate) enum BotRenderInfo {
     StraightLine {
         sprite: u8,
         start_time: f32,
@@ -103,7 +122,27 @@ enum BotRenderInfo {
     },
 }
 
+impl Default for BotRenderInfo {
+    fn default() -> Self {
+        Self::StraightLine {
+            sprite: 0,
+            start_time: 0.0,
+            end_time: 0.0,
+            start_pos: (0.0, 0.0),
+            end_pos: (0.0, 0.0),
+        }
+    }
+}
+
 impl BotRenderInfo {
+    fn end_time(self) -> f32 {
+        match self {
+            BotRenderInfo::StraightLine { end_time, .. } => end_time,
+            BotRenderInfo::VShape { end_time, .. } => end_time,
+            BotRenderInfo::WaitThenVShape { end_time, .. } => end_time,
+        }
+    }
+
     fn prepend_movement(self, new_start_pos: (f32, f32), time: f32) -> Self {
         match self {
             BotRenderInfo::StraightLine {
@@ -186,6 +225,7 @@ impl BotRenderInfo {
     }
 }
 
+#[derive(Debug, Clone)]
 struct MultiChestInfo {
     in_out: Vec<ITEMCOUNTTYPE>,
     storages: Vec<u16>,
@@ -249,6 +289,7 @@ impl MultiChestInfo {
     }
 }
 
+#[derive(Debug, Clone)]
 struct MultiRequesterInfo {
     in_out: Vec<ITEMCOUNTTYPE>,
     storages: Vec<u16>,
@@ -361,6 +402,7 @@ struct Roboport {
     current_charge: Joule,
     construction_bots_idle: u8,
     logibots_idle: u8,
+    empty_slots: u8,
 }
 
 struct ConstructionBotWorldUpdate {}
@@ -384,6 +426,42 @@ enum WithdrawError {
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, RecipeIdxType> {
+    fn new_TEST(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
+        let requesters = MultiRequesterInfo {
+            in_out: vec![0],
+            storages: vec![0],
+            requests: vec![100],
+            max_items: vec![100],
+            holes: vec![],
+        };
+
+        let providers = MultiChestInfo {
+            in_out: vec![100],
+            storages: vec![0],
+            max_items: vec![100],
+            holes: vec![],
+        };
+
+        let kd = KdTree2::build(vec![([50, 0], 0)]);
+
+        Self {
+            roboports: vec![Roboport {
+                pos: Position { x: 50, y: 0 },
+                current_charge: Joule(0),
+                construction_bots_idle: 0,
+                logibots_idle: 1,
+                empty_slots: 99,
+            }],
+            network: Network::trusted_new_empty(),
+            bot_jobs: BTreeMap::new(),
+            providers: vec![providers; data_store.item_names.len()].into_boxed_slice(),
+            requesters: vec![requesters; data_store.item_names.len()].into_boxed_slice(),
+            storages: vec![].into_boxed_slice(),
+            roboport_kd: kd,
+            ty: PhantomData,
+        }
+    }
+
     fn path_result_keep_going_when_empty(
         current_bot_pos: (f32, f32),
         current_bot_charge: Joule,
@@ -464,6 +542,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
         item: Item<ItemIdxType>,
         amount: ITEMCOUNTTYPE,
         dest_id: u16,
+        current_tick: u32,
     ) -> ((u32, BotUpdate<ItemIdxType>), BotRenderInfo) {
         let storage_pos = self.get_storage_pos(item, dest_id);
         self.go_and_possibly_recharge(
@@ -479,6 +558,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                 amount,
                 dest_id,
             },
+            current_tick,
         )
     }
 
@@ -493,6 +573,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
         amount: ITEMCOUNTTYPE,
         source_id: u16,
         dest_id: u16,
+        current_tick: u32,
     ) -> ((u32, BotUpdate<ItemIdxType>), BotRenderInfo) {
         let storage_pos = self.get_storage_pos(item, source_id);
         self.go_and_possibly_recharge(
@@ -509,6 +590,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                 source_id,
                 dest_id,
             },
+            current_tick,
         )
     }
 
@@ -521,6 +603,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
         bot_power_consumption: Watt,
         goal: (f32, f32),
         goal_fn: impl Fn(Joule) -> BotGoal<ItemIdxType>,
+
+        current_tick: u32,
     ) -> ((u32, BotUpdate<ItemIdxType>), BotRenderInfo) {
         match Self::path_result(
             current_bot_pos,
@@ -533,8 +617,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                 (arrival_time as u32, BotUpdate::DoGoal(goal_fn(rest_charge))),
                 BotRenderInfo::StraightLine {
                     sprite: 0,
-                    start_time: self.current_tick as f32,
-                    end_time: self.current_tick as f32 + arrival_time,
+                    start_time: current_tick as f32,
+                    end_time: current_tick as f32 + arrival_time,
                     start_pos: current_bot_pos,
                     end_pos: goal,
                 },
@@ -570,9 +654,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                     ),
                     BotRenderInfo::VShape {
                         sprite: 0,
-                        start_time: self.current_tick as f32,
-                        mid_time: self.current_tick as f32 + out_of_power_time,
-                        end_time: self.current_tick as f32
+                        start_time: current_tick as f32,
+                        mid_time: current_tick as f32 + out_of_power_time,
+                        end_time: current_tick as f32
                             + out_of_power_time
                             + arrival_time_at_roboport_from_out_of_power,
                         start_pos: current_bot_pos,
@@ -586,7 +670,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
 
     // TODO: This should return a result and error if the storage was removed (But still return the position)
     fn get_storage_pos(&self, item: Item<ItemIdxType>, id: u16) -> (f32, f32) {
-        todo!()
+        // FIXME: PLACEHOLDER
+        if id == 0 { (0.0, 0.0) } else { (100.0, 100.0) }
     }
 
     // TODO: Handle Logibot types
@@ -594,7 +679,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
         &mut self,
         pos: (f32, f32),
     ) -> Option<(u32, (f32, f32))> {
-        todo!()
+        // FIXME: STOP ALWAYS SEARCHING FOR ALL OF THEM
+        let closest_ordered = self
+            .roboport_kd
+            .nearests(&[pos.0 as i32, pos.1 as i32], self.roboport_kd.len());
+
+        closest_ordered.into_iter().find_map(|robo| {
+            if self.roboports[robo.item.1 as usize].empty_slots > 0 {
+                self.roboports[robo.item.1 as usize].empty_slots -= 1;
+                Some((robo.item.1, (robo.item.0[0] as f32, robo.item.0[1] as f32)))
+            } else {
+                None
+            }
+        })
     }
 
     // TODO: Handle Logibot types
@@ -602,13 +699,30 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
         &mut self,
         pos: (f32, f32),
     ) -> Option<(u32, (f32, f32))> {
-        todo!()
+        // FIXME: STOP ALWAYS SEARCHING FOR ALL OF THEM
+        let closest_ordered = self
+            .roboport_kd
+            .nearests(&[pos.0 as i32, pos.1 as i32], self.roboport_kd.len());
+
+        closest_ordered.into_iter().find_map(|robo| {
+            if self.roboports[robo.item.1 as usize].logibots_idle > 0 {
+                self.roboports[robo.item.1 as usize].logibots_idle -= 1;
+                self.roboports[robo.item.1 as usize].empty_slots += 1;
+                Some((robo.item.1, (robo.item.0[0] as f32, robo.item.0[1] as f32)))
+            } else {
+                None
+            }
+        })
     }
 
-    // This is effectively a lookup into a voronoi texture!
+    // This could effectively be a lookup into a voronoi texture!
     // Except it is not, since this would lead to all robots flying to the same roboport :/
     fn get_closest_roboport(&self, pos: (f32, f32)) -> u32 {
-        todo!()
+        let closest_id = self
+            .roboport_kd
+            .nearest(&[pos.0 as i32, pos.1 as i32])
+            .expect("Each network needs to contain at least one roboport");
+        closest_id.item.1
     }
 
     fn get_roboport_position(&self, roboport_id: u32) -> (f32, f32) {
@@ -624,7 +738,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
         amount: ITEMCOUNTTYPE,
         sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
     ) -> Result<(), DepositError> {
-        todo!()
+        self.requesters[item.into_usize()].in_out[id as usize] = self.requesters[item.into_usize()]
+            .in_out[id as usize]
+            .checked_add(amount)
+            .ok_or(DepositError::NoSpaceWait)?;
+        Ok(())
     }
 
     fn try_withdraw(
@@ -634,7 +752,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
         amount: ITEMCOUNTTYPE,
         sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
     ) -> Result<(), WithdrawError> {
-        todo!()
+        self.requesters[item.into_usize()].in_out[id as usize] = self.requesters[item.into_usize()]
+            .in_out[id as usize]
+            .checked_sub(amount)
+            .ok_or(WithdrawError::NoItemsWait)?;
+        Ok(())
     }
 
     fn try_find_storage_to_get_rid_of_and_reserve(
@@ -649,7 +771,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
         &mut self,
     ) -> impl Iterator<Item = (Item<ItemIdxType>, ITEMCOUNTTYPE, u16, u16)>
     + use<ItemIdxType, RecipeIdxType> {
-        vec![todo!()].into_iter()
+        iter::repeat_n(
+            (
+                Item {
+                    id: ItemIdxType::from(0u8),
+                },
+                1,
+                0,
+                1,
+            ),
+            10,
+        )
     }
 
     fn add_requester_chest(
@@ -689,7 +821,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
             unreachable!()
         };
 
-        let item_count = self.providers[usize_from(item.id)].remove_chest(index);
+        let item_count = self.requesters[usize_from(item.id)].remove_chest(index);
 
         (item, item_count)
     }
@@ -733,13 +865,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
     fn update_logibots(
         &mut self,
         sim_state: &mut SimulationState<ItemIdxType, RecipeIdxType>,
+        current_tick: u32,
     ) -> impl Iterator<Item = BotRenderInfo> + use<ItemIdxType, RecipeIdxType> {
         let mut render_infos = vec![];
 
         // Handle logibots, which are now done with their job
-        let done = self.bot_jobs.remove(&self.current_tick).unwrap_or(vec![]);
+        let done = self.bot_jobs.remove(&current_tick).unwrap_or(vec![]);
 
-        debug_assert!(self.bot_jobs.get(&(self.current_tick - 1)).is_none());
+        debug_assert!(self.bot_jobs.get(&(current_tick - 1)).is_none());
 
         for update in done {
             match update {
@@ -767,7 +900,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                                         );
 
                                     self.bot_jobs
-                                        .entry(self.current_tick + arrival_time as u32)
+                                        .entry(current_tick + arrival_time as u32)
                                         .or_default()
                                         .push(BotUpdate::TryStartChargingAndEnter(
                                             roboport_id,
@@ -794,10 +927,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                                         item,
                                         amount,
                                         id,
+                                        current_tick,
                                     );
 
                                     self.bot_jobs
-                                        .entry(self.current_tick + time)
+                                        .entry(current_tick + time)
                                         .or_default()
                                         .push(update);
                                     render_infos.push(render);
@@ -829,7 +963,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                             ) {
                                 (arrival_time, Ok(rest_charge)) => {
                                     self.bot_jobs
-                                        .entry(self.current_tick + arrival_time as u32)
+                                        .entry(current_tick + arrival_time as u32)
                                         .or_default()
                                         .push(BotUpdate::DoGoal(BotGoal::TryDepositItem {
                                             current_charge: rest_charge,
@@ -840,8 +974,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
 
                                     render_infos.push(BotRenderInfo::StraightLine {
                                         sprite: 0,
-                                        start_time: self.current_tick as f32,
-                                        end_time: self.current_tick as f32 + arrival_time,
+                                        start_time: current_tick as f32,
+                                        end_time: current_tick as f32 + arrival_time,
                                         start_pos: current_bot_pos,
                                         end_pos: dest_pos,
                                     });
@@ -870,7 +1004,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
 
                                     self.bot_jobs
                                         .entry(
-                                            self.current_tick
+                                            current_tick
                                                 + (out_of_power_time
                                                     + arrival_time_at_roboport_from_out_of_power)
                                                     as u32,
@@ -889,9 +1023,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
 
                                     render_infos.push(BotRenderInfo::VShape {
                                         sprite: 0,
-                                        start_time: self.current_tick as f32,
-                                        mid_time: self.current_tick as f32 + out_of_power_time,
-                                        end_time: self.current_tick as f32
+                                        start_time: current_tick as f32,
+                                        mid_time: current_tick as f32 + out_of_power_time,
+                                        end_time: current_tick as f32
                                             + out_of_power_time
                                             + arrival_time_at_roboport_from_out_of_power,
                                         start_pos: current_bot_pos,
@@ -914,7 +1048,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                     if self.roboports[idx as usize].current_charge < charge_needed {
                         // Requeue charging later
                         self.bot_jobs
-                            .entry(self.current_tick + BOT_RETRY_CHARGE_TIME)
+                            .entry(current_tick + BOT_RETRY_CHARGE_TIME)
                             .or_default()
                             .push(BotUpdate::TryStartChargingAndEnter(
                                 idx,
@@ -926,8 +1060,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                         render_infos.push(BotRenderInfo::StraightLine {
                             // TODO: Correct values
                             sprite: 0,
-                            start_time: self.current_tick as f32,
-                            end_time: (self.current_tick + BOT_RETRY_CHARGE_TIME) as f32,
+                            start_time: current_tick as f32,
+                            end_time: (current_tick + BOT_RETRY_CHARGE_TIME) as f32,
                             start_pos: charge_pos,
                             end_pos: charge_pos,
                         });
@@ -939,7 +1073,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                         // Enter the roboport
                         // FIXME: Check that the roboport has not been deconstructed
                         self.bot_jobs
-                            .entry(self.current_tick + BOT_ENTER_TIME)
+                            .entry(current_tick + BOT_ENTER_TIME)
                             .or_default()
                             .push(BotUpdate::Enter(idx));
 
@@ -952,9 +1086,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                         render_infos.push(BotRenderInfo::VShape {
                             // TODO: Correct values
                             sprite: 0,
-                            start_time: self.current_tick as f32,
-                            mid_time: (self.current_tick as f32) + charge_time,
-                            end_time: (self.current_tick + BOT_ENTER_TIME) as f32 + charge_time,
+                            start_time: current_tick as f32,
+                            mid_time: (current_tick as f32) + charge_time,
+                            end_time: (current_tick + BOT_ENTER_TIME) as f32 + charge_time,
                             start_pos: charge_pos,
                             mid_pos: charge_pos,
                             end_pos: (roboport_pos.x as f32, roboport_pos.y as f32),
@@ -966,7 +1100,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                     if self.roboports[idx as usize].current_charge < charge_needed {
                         // Requeue charging later
                         self.bot_jobs
-                            .entry(self.current_tick + BOT_RETRY_CHARGE_TIME)
+                            .entry(current_tick + BOT_RETRY_CHARGE_TIME)
                             .or_default()
                             .push(BotUpdate::TryStartChargingAndContinue(
                                 idx, charge_pos, next_goal,
@@ -976,8 +1110,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                         render_infos.push(BotRenderInfo::StraightLine {
                             // TODO: Correct values
                             sprite: 0,
-                            start_time: self.current_tick as f32,
-                            end_time: (self.current_tick + BOT_RETRY_CHARGE_TIME) as f32,
+                            start_time: current_tick as f32,
+                            end_time: (current_tick + BOT_RETRY_CHARGE_TIME) as f32,
                             start_pos: charge_pos,
                             end_pos: charge_pos,
                         });
@@ -1004,6 +1138,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                                 item,
                                 amount,
                                 dest_id,
+                                current_tick,
                             ),
                             BotGoal::TryRetrieveItem {
                                 current_charge: BOT_MAX_CHARGE,
@@ -1021,6 +1156,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                                 amount,
                                 source_id,
                                 dest_id,
+                                current_tick,
                             ),
                             goal => unreachable!(
                                 "Bot Goal after recharging with set current_charge, this indicates an error somewhere {:?}",
@@ -1028,7 +1164,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                             ),
                         };
                         self.bot_jobs
-                            .entry(self.current_tick + time)
+                            .entry(current_tick + time)
                             .or_default()
                             .push(update);
                         render_infos.push(render.prepend_waiting(charge_time));
@@ -1064,9 +1200,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
                     amount,
                     source,
                     destination,
+                    current_tick,
                 );
                 self.bot_jobs
-                    .entry(self.current_tick + time)
+                    .entry(current_tick + time)
                     .or_default()
                     .push(update);
                 render_infos.push(render);
@@ -1081,8 +1218,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> BotNetwork<ItemIdxType, Rec
             "Adding {} new logibot draw commands to the draw queue",
             render_infos.len()
         );
-
-        self.current_tick += 1;
 
         render_infos.into_iter()
     }

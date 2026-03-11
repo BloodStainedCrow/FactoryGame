@@ -67,6 +67,8 @@ pub struct Inserter {
 
 const_assert!(std::mem::size_of::<Option<InserterWithBelts>>() <= 20);
 const_assert!(std::mem::size_of::<InserterWithBelts>() <= 20);
+// IF this fails increase WAITLIST_LEN to 4
+const_assert!(std::mem::size_of::<InserterWithBelts>() > 16);
 
 #[cfg_attr(
     feature = "show-info",
@@ -128,7 +130,11 @@ pub enum Conn {
     },
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone)]
 struct InternalInserterReinsertionInfo {
     pub movetime: NonZero<u16>,
@@ -139,7 +145,11 @@ struct InternalInserterReinsertionInfo {
     pub(crate) rest: Rest,
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone)]
 enum Rest {
     Storage {
@@ -156,7 +166,11 @@ enum Rest {
 // FIXME: We store the same slice length n times!
 // TODO: Don´t clump update data and data for adding/removing assemblers together!
 // FIXME: Using Boxed slices here is probably the main contributor to the time usage for building large power grids, since this means reallocation whenever we add assemblers!
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MultiAssemblerStore<
     RecipeIdxType: WeakIdxTrait,
@@ -587,12 +601,16 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                             .zip(&mut items)
                             .enumerate()
                         {
+                            assert!(self.waitlists_outputs_needed[item][final_idx] > 0);
                             if *items_to_distribute + self.outputs[item][final_idx]
                                 >= min(
                                     self.waitlists_outputs_needed[item][final_idx],
                                     our_maximums[item],
                                 )
+                                && self.waitlists_outputs_needed[item][final_idx]
+                                    < ITEMCOUNTTYPE::MAX
                             {
+                                let mut has_popped = false;
                                 *items_to_distribute += self.outputs[item][final_idx];
                                 self.outputs[item][final_idx] = 0;
                                 for idx in 0..WAITLIST_LEN {
@@ -605,6 +623,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                                         if v.current_hand + amount_taken_by_this_inserter
                                             == ITEMCOUNTTYPE::from(v.max_hand)
                                         {
+                                            has_popped = true;
                                             let ins = ins.take().unwrap();
                                             for move_left_idx in idx..WAITLIST_LEN {
                                                 out[final_idx].inserters[move_left_idx] = out
@@ -660,6 +679,12 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                                         }
                                     }
                                 }
+
+                                // if !has_popped {
+                                //     dbg!(self.waitlists_outputs_needed[item][final_idx]);
+                                //     dbg!(*items_to_distribute);
+                                //     assert!(has_popped, "Assembler scanned waitlist ");
+                                // }
                             }
 
                             if *items_to_distribute > 0 {
@@ -693,6 +718,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                                     - self.ings[item][final_idx])
                                 >= self.waitlists_ings_needed[item][final_idx]
                             {
+                                let mut has_popped = false;
                                 *items_to_drain += self.ings_max_insert[item][final_idx]
                                     - self.ings[item][final_idx];
                                 self.ings[item][final_idx] = self.ings_max_insert[item][final_idx];
@@ -703,6 +729,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                                         let amount_taken_by_this_inserter =
                                             min(*items_to_drain, v.current_hand);
                                         if v.current_hand - amount_taken_by_this_inserter == 0 {
+                                            has_popped = true;
                                             let ins = ins.take().unwrap();
                                             for move_left_idx in idx..WAITLIST_LEN {
                                                 ing[final_idx].inserters[move_left_idx] = ing
@@ -758,6 +785,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                                         }
                                     }
                                 }
+                                // assert!(has_popped);
                             }
 
                             if *items_to_drain > 0 {
@@ -1662,7 +1690,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 ]
                 .into_boxed_slice();
             } else {
-                // The new inserter matches the single_type of this
+                // The new assembler matches the single_type of this
             }
         } else if self.len - self.holes.len() == 0 {
             // This is the only assembler

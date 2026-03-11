@@ -90,6 +90,7 @@ use tilelib::types::{DrawInstance, Layer, RendererTrait};
 
 use super::TextureAtlas;
 use crate::app_state::{AuxillaryData, SimulationState};
+use crate::bot_system::render::BotRender;
 
 const BELT_ANIM_SPEED: f32 = 1.0 / (BELT_LEN_PER_TILE as f32);
 
@@ -199,10 +200,13 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         (camera_pos.1 / CHUNK_SIZE_FLOAT).floor() as i32,
     );
 
+    let mut bot_layer = Layer::square_tile_grid(tilesize, ar);
+
+    // game_state.simulation_state.factory.bot_render_storage.render_map_view(&mut bot_layer, camera_pos, num_tiles_across_screen_horizontal, num_tiles_across_screen_vertical, aux_data.current_tick as f32);
+
     if num_tiles_across_screen_horizontal > SWITCH_TO_MAPVIEW_TILES {
         let mut updates = Some(vec![]);
         mem::swap(&mut updates, &mut game_state.world.map_updates);
-        mem::drop(aux_data);
         if let ActionStateMachineState::Holding(HeldObject::Blueprint(bp)) = &state_machine.state {
             let Position { x, y } =
                 ActionStateMachine::<ItemIdxType, RecipeIdxType>::player_mouse_to_tile(
@@ -222,7 +226,8 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 data_store,
             );
         }
-
+        
+        mem::drop(aux_data);
         mem::drop(state_machine);
 
         let FakeGameState {
@@ -295,6 +300,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         }
 
         renderer.draw(&entity_overlay_layer);
+        renderer.draw(&bot_layer);
 
         return;
     }
@@ -1885,6 +1891,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         renderer.draw(&state_machine_layer);
         renderer.draw(&entity_overlay_layer);
         renderer.draw(&player_layer);
+        renderer.draw(&bot_layer);
     }
 }
 
@@ -2124,21 +2131,21 @@ pub fn render_ui<
     };
     let game_state_ref = &mut fake_game_state;
 
-    // Window::new("Mouse Pos").default_open(true).show(ctx, |ui| {
-    //     ui.label(
-    //         format!(
-    //             "{:?}",
-    //             ActionStateMachine::<u8, u8>::player_mouse_to_tile(
-    //                 state_machine_ref.zoom_level,
-    //                 state_machine_ref
-    //                     .map_view_info
-    //                     .unwrap_or(state_machine_ref.local_player_pos),
-    //                 state_machine_ref.current_mouse_pos
-    //             )
-    //         )
-    //         .as_str(),
-    //     )
-    // });
+    Window::new("Mouse Pos").default_open(true).show(ctx, |ui| {
+        ui.label(
+            format!(
+                "{:?}",
+                ActionStateMachine::<u8, u8>::player_mouse_to_tile(
+                    state_machine_ref.zoom_level,
+                    state_machine_ref
+                        .map_view_info
+                        .unwrap_or(state_machine_ref.local_player_pos),
+                    state_machine_ref.current_mouse_pos
+                )
+            )
+            .as_str(),
+        )
+    });
 
     // TODO: Make this conditional
     let mut open = state_machine_ref.open_windows[action_state_machine::Window::Hotbar];

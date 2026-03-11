@@ -386,6 +386,7 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
             .zip(self.max_insert.iter())
             .enumerate()
         {
+            // FIXME: This loop is not vectorized
             let is_full = *inout == *max_insert;
             let is_empty = *inout == 0;
             let was_full = *last_inout == *max_insert;
@@ -395,6 +396,8 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
             let to_move = inout.abs_diff(CHEST_GOAL_AMOUNT);
 
             let switch = ChestSize::from(*inout >= CHEST_GOAL_AMOUNT);
+
+            let _inserter_amount = min(*inout, *max_insert - *inout);
 
             if (was_full && !is_full) || (was_empty && !is_empty) {
                 for ins in wait_list.inserters.iter_mut() {

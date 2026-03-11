@@ -4,6 +4,9 @@ use crate::belt::belt::Belt;
 use crate::blueprint::BlueprintAction;
 use crate::blueprint::BlueprintPlaceEntity;
 use crate::blueprint::blueprint_string::BlueprintString;
+use crate::bot_system::BotRenderInfo;
+use crate::bot_system::render::BotRender;
+use crate::bot_system::render::cpu_vec::CPUBotRenderer;
 use crate::chest::ChestSize;
 use crate::data::AllowedFluidDirection;
 use crate::frontend::action::belt_placement::FakeGameState;
@@ -657,6 +660,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> SimulationState<ItemIdxType
 )]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Factory<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+    pub(crate) bot_render_storage: CPUBotRenderer,
+
     pub power_grids: PowerGridStorage<ItemIdxType, RecipeIdxType>,
     pub belts: BeltStore<ItemIdxType>,
     pub storage_storage_inserters: StorageStorageInserterStore,
@@ -963,6 +968,7 @@ pub struct BeltBeltInserterStore<ItemIdxType: WeakIdxTrait> {
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, RecipeIdxType> {
     pub fn new(data_store: &DataStore<ItemIdxType, RecipeIdxType>) -> Self {
         Self {
+            bot_render_storage: BotRender::new(1_000_000),
             power_grids: PowerGridStorage::new(),
             belts: BeltStore::new(data_store),
             storage_storage_inserters: StorageStorageInserterStore::new(data_store),
@@ -2992,6 +2998,52 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
     ) {
         let start_updating = Instant::now();
         aux_data.current_tick += 1;
+
+        // {
+        //     profiling::scope!("Start Bot flight");
+        //     // FIXME: REMOVE THIS DO NOT COMMIT
+        //     simulation_state
+        //         .factory
+        //         .bot_render_storage
+        //         .add_flying_bots(
+        //             0,
+        //             iter::repeat_with(|| {
+        //                 let mid: (f32, f32) = (
+        //                     rand::random_range(-3_000.0..=3_000.0),
+        //                     rand::random_range(-3_000.0..=3_000.0),
+        //                 );
+
+        //                 let end: (f32, f32) = (
+        //                     rand::random_range(-3_000.0..=3_000.0),
+        //                     rand::random_range(-3_000.0..=3_000.0),
+        //                 );
+        //                 let first_distance = (mid.0 * mid.0 + mid.1 * mid.1).sqrt();
+        //                 let second_distance = ((end.0 - mid.0) * (end.0 - mid.0)
+        //                     + (end.1 - mid.1) * (end.1 - mid.1))
+        //                     .sqrt();
+        //                 // Speed level 10
+        //                 let first_time_ticks = first_distance / (0.05 * (1.0 + 2.4 + 0.65 * 5.0));
+        //                 // Speed level 10 without power
+        //                 let second_time_ticks = second_distance / (0.01 * (1.0 + 2.4 + 0.65 * 5.0));
+        //                 BotRenderInfo::VShape {
+        //                     sprite: 0,
+        //                     start_time: aux_data.current_tick as f32,
+        //                     mid_time: aux_data.current_tick as f32 + first_time_ticks,
+
+        //                     end_time: aux_data.current_tick as f32
+        //                         + first_time_ticks
+        //                         + second_time_ticks,
+        //                     start_pos: (0.0, 0.0),
+        //                     mid_pos: mid,
+        //                     end_pos: end,
+        //                 }
+        //             })
+        //             .take(10),
+        //             aux_data.current_tick as f32,
+        //         )
+        //         .unwrap();
+        // }
+
         simulation_state
             .factory
             // We can downcast here, since this could only cause graphical weirdness for a couple frame every ~2 years of playtime

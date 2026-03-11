@@ -27,7 +27,6 @@ use bitvec::{
 use itertools::Either;
 use itertools::Itertools;
 use log::trace;
-use smallvec::SmallVec;
 
 use super::{
     FreeIndex, SplitterID,

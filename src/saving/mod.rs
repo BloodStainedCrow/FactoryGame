@@ -119,6 +119,7 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 ) {
     let checksum = data_store.checksum.clone();
     let save_dir = save_folder();
+    create_dir_all(&save_dir).expect(&format!("Could not create save dir: {:?}", save_dir));
 
     let lockfile = crate::lockfile::LockfileUnique::create_blocking(
         save_dir.join("save_in_progress.lockfile"),
@@ -179,6 +180,7 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             tech_state,
             factory:
                 Factory {
+                    bot_render_storage,
                     power_grids,
                     belts,
                     storage_storage_inserters,
@@ -201,6 +203,12 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 save_at(
                     tech_state,
                     temp_file_dir.join("simulation_state.tech_state"),
+                );
+            },
+            || {
+                save_at(
+                    bot_render_storage,
+                    temp_file_dir.join("simulation_state.factory.bot_render_storage"),
                 );
             },
             || {
@@ -268,7 +276,7 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     lockfile.release().expect("Failed to remove lockfile");
 }
 
-pub const FORK_SAVE_STAGES: usize = 13;
+pub const FORK_SAVE_STAGES: usize = 14;
 /// # Panics
 /// If File system stuff fails
 #[cfg(not(target_arch = "wasm32"))]
@@ -284,6 +292,7 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 ) {
     let checksum = &data_store.checksum;
     let save_dir = save_folder();
+    create_dir_all(&save_dir).expect(&format!("Could not create save dir: {:?}", save_dir));
 
     let lockfile = crate::lockfile::LockfileUnique::create_blocking(
         save_dir.join("save_in_progress.lockfile"),
@@ -324,6 +333,7 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             tech_state,
             factory:
                 Factory {
+                    bot_render_storage,
                     power_grids,
                     belts,
                     storage_storage_inserters,
@@ -397,6 +407,12 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         // send.flush().expect("Flushing pipe failed");
         save_at_fork(aux_data, temp_file_dir.join("aux_data"));
         send.write(&[12]).expect("Write to pipe failed");
+        // send.flush().expect("Flushing pipe failed");
+        save_at_fork(
+            bot_render_storage,
+            temp_file_dir.join("simulation_state.factory.bot_render_storage"),
+        );
+        send.write(&[13]).expect("Write to pipe failed");
         // send.flush().expect("Flushing pipe failed");
     }
 
@@ -516,6 +532,7 @@ pub fn load<
     let (
         checksum,
         tech_state,
+        bot_render_storage,
         power_grids,
         belts,
         storage_storage_inserters,
@@ -534,6 +551,10 @@ pub fn load<
         || {
             profiling::scope!("Deserialize simulation_state.tech_state");
             load_at(path.join("simulation_state.tech_state"))
+        },
+        || {
+            profiling::scope!("Deserialize simulation_state.factory.bot_render_storage");
+            load_at(path.join("simulation_state.factory.bot_render_storage"))
         },
         || {
             profiling::scope!("Deserialize simulation_state.factory.power_grids");
@@ -582,6 +603,7 @@ pub fn load<
         simulation_state: Mutex::new(SimulationState {
             tech_state,
             factory: Factory {
+                bot_render_storage,
                 power_grids,
                 belts,
                 storage_storage_inserters,
