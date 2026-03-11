@@ -276,7 +276,7 @@ pub fn save_components<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     lockfile.release().expect("Failed to remove lockfile");
 }
 
-pub const FORK_SAVE_STAGES: usize = 14;
+pub const FORK_SAVE_STAGES: usize = 13;
 /// # Panics
 /// If File system stuff fails
 #[cfg(not(target_arch = "wasm32"))]
@@ -326,7 +326,6 @@ pub fn save_components_fork_safe<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     assert_ne!(temp_file_dir, save_dir);
 
     create_dir_all(&temp_file_dir).expect("Could not create temp dir");
-    dbg!(&temp_file_dir);
 
     {
         let SimulationState {
