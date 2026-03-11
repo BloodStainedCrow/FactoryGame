@@ -527,7 +527,7 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             // }
             // .into_group_map_by(|v| v.0)
 
-            let pg_len: usize = grids.power_grids.len();
+            let pg_len: usize = grids.power_grids.len() + 1;
 
             // FIXME: We seem to be doing something at some point that is not tracked by profiling.
             let grids_by_item = {
