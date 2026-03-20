@@ -181,6 +181,8 @@ pub struct TextureAtlas {
 
     underground: enum_map::EnumMap<Dir, enum_map::EnumMap<UndergroundDir, EntitySprite>>,
 
+    pipe: Vec<enum_map::EnumMap<Dir, EntitySprite>>,
+
     accumulator: EntitySprite,
 
     mining_drill: EntitySprite,
@@ -303,6 +305,15 @@ fn texture_atlas() -> TextureAtlas {
         items: vec![sprite_from_path!("temp_assets/plate.png", 1); 200].into_boxed_slice(),
 
         player: sprite_from_path!("temp_assets/player.png", 1),
+        pipe: vec![
+            enum_map::EnumMap::from_array([
+                entity_sprite_from_path_scaled!("temp_assets/belt_north.png", 1, 1.0),
+                entity_sprite_from_path_scaled!("temp_assets/belt_east.png", 1, 1.0),
+                entity_sprite_from_path_scaled!("temp_assets/belt_south.png", 1, 1.0),
+                entity_sprite_from_path_scaled!("temp_assets/belt_west.png", 1, 1.0),
+            ]);
+            10
+        ],
         belt: belts,
 
         belt_corners: enum_map::EnumMap::from_array([
@@ -351,6 +362,75 @@ fn texture_atlas() -> TextureAtlas {
         not_connected: entity_sprite_from_path_scaled!("temp_assets/not_connected.png", 1, 3.0),
 
         no_power: entity_sprite_from_path_scaled!("temp_assets/no_power.png", 1, 1.0),
+
+        pipe: vec![
+            enum_map::EnumMap::from_array([
+                entity_sprite_from_path_scaled!(
+                    "temp_assets/krastorio/steel-pipe-cross.png",
+                    1,
+                    1.0
+                ),
+                entity_sprite_from_path_scaled!(
+                    "temp_assets/krastorio/steel-pipe-cross.png",
+                    1,
+                    1.0
+                ),
+                entity_sprite_from_path_scaled!(
+                    "temp_assets/krastorio/steel-pipe-cross.png",
+                    1,
+                    1.0
+                ),
+                entity_sprite_from_path_scaled!(
+                    "temp_assets/krastorio/steel-pipe-cross.png",
+                    1,
+                    1.0
+                ),
+            ]),
+            enum_map::EnumMap::from_array([
+                entity_sprite_from_path_scaled!(
+                    "temp_assets/krastorio/steel-pipe-to-ground-up.png",
+                    1,
+                    1.0
+                ),
+                entity_sprite_from_path_scaled!(
+                    "temp_assets/krastorio/steel-pipe-to-ground-right.png",
+                    1,
+                    1.0
+                ),
+                entity_sprite_from_path_scaled!(
+                    "temp_assets/krastorio/steel-pipe-to-ground-down.png",
+                    1,
+                    1.0
+                ),
+                entity_sprite_from_path_scaled!(
+                    "temp_assets/krastorio/steel-pipe-to-ground-left.png",
+                    1,
+                    1.0
+                ),
+            ]),
+            enum_map::EnumMap::from_array([
+                entity_sprite_from_path_scaled!(
+                    "temp_assets/krastorio/big-storage-tank.png",
+                    1,
+                    1.0
+                ),
+                entity_sprite_from_path_scaled!(
+                    "temp_assets/krastorio/big-storage-tank.png",
+                    1,
+                    1.0
+                ),
+                entity_sprite_from_path_scaled!(
+                    "temp_assets/krastorio/big-storage-tank.png",
+                    1,
+                    1.0
+                ),
+                entity_sprite_from_path_scaled!(
+                    "temp_assets/krastorio/big-storage-tank.png",
+                    1,
+                    1.0
+                ),
+            ]),
+        ],
 
         assembler: vec![
             // TODO: Add animation for assembling machine

@@ -1370,7 +1370,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                             let size =
                                                 data_store.fluid_tank_infos[usize::from(*ty)].size;
 
-                                            texture_atlas.belt[*rotation].draw(
+                                            texture_atlas.pipe[*ty as usize][*rotation].draw(
                                                 [
                                                     draw_offset.0 + pos.x as f32,
                                                     draw_offset.1 + pos.y as f32,
@@ -1787,13 +1787,12 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         pos,
                         rotation,
                     } => {
-                        let size: [u16; 2] = [1, 1];
-                        texture_atlas.belt[*rotation].draw(
+                        let size = data_store.fluid_tank_infos[usize::from(*ty)].size;
+
+                        texture_atlas.pipe[*ty as usize][*rotation].draw(
                             [
-                                pos.x as f32 - camera_pos.0
-                                    + num_tiles_across_screen_horizontal / 2.0,
-                                pos.y as f32 - camera_pos.1
-                                    + num_tiles_across_screen_vertical / 2.0,
+                                draw_offset.0 + pos.x as f32,
+                                draw_offset.1 + pos.y as f32,
                             ],
                             size,
                             0,
