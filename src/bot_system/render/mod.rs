@@ -2,17 +2,20 @@ use tilelib::types::RawRenderer;
 
 use crate::bot_system::BotRenderInfo;
 
-pub(crate) mod cpu_vec;
-pub(crate) mod fake_render_dedicated;
+mod cpu_vec;
+mod fake_render_dedicated;
+mod full_gpu_render;
+
+pub(crate) type BotRenderStore = full_gpu_render::FullGPURender;
 
 #[derive(Debug)]
 pub(crate) enum AddBotError {
     OutOfSlots,
 }
 
-pub(crate) trait BotRender: serde::Serialize + for<'a> serde::Deserialize<'a> {
-    type Renderer;
-
+pub(crate) trait BotRender<Renderer>:
+    serde::Serialize + for<'a> serde::Deserialize<'a>
+{
     fn new(num_slots: usize) -> Self;
 
     fn add_flying_bots(
@@ -22,17 +25,17 @@ pub(crate) trait BotRender: serde::Serialize + for<'a> serde::Deserialize<'a> {
         current_time: f32,
     ) -> Result<(), AddBotError>;
 
-    fn render(
-        &self,
-        renderer: &mut Self::Renderer,
+    fn render<const N: usize>(
+        &mut self,
+        renderer: &mut [&mut Renderer; N],
         camera_pos: (f32, f32),
         num_tiles_across_screen_horizontal: f32,
         num_tiles_across_screen_vertical: f32,
         current_time: f32,
     );
-    fn render_map_view(
-        &self,
-        renderer: &mut Self::Renderer,
+    fn render_map_view<const N: usize>(
+        &mut self,
+        renderer: &mut [&mut Renderer; N],
         camera_pos: (f32, f32),
         num_tiles_across_screen_horizontal: f32,
         num_tiles_across_screen_vertical: f32,

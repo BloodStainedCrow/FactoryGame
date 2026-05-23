@@ -1,3 +1,4 @@
+use crate::RUNSPEED_MULTIPLIER;
 use crate::belt::belt::Belt;
 #[cfg(feature = "debug-stat-gathering")]
 use crate::belt::smart::{
@@ -60,6 +61,7 @@ use eframe::egui::{
     self, Align2, Color32, ComboBox, Context, CornerRadius, Label, Layout, ProgressBar, Stroke, Ui,
     Window,
 };
+use egui::RadioButton;
 use egui::{Button, CollapsingHeader, Modal, RichText, ScrollArea, Sense, Slider};
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{AxisHints, GridMark, Line, Plot, PlotPoints};
@@ -200,9 +202,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         (camera_pos.1 / CHUNK_SIZE_FLOAT).floor() as i32,
     );
 
-    let mut bot_layer = Layer::square_tile_grid(tilesize, ar);
-
-    // game_state.simulation_state.factory.bot_render_storage.render_map_view(&mut bot_layer, camera_pos, num_tiles_across_screen_horizontal, num_tiles_across_screen_vertical, aux_data.current_tick as f32);
+    // let mut bot_layers: [_; 12] = core::array::from_fn(|_| Layer::square_tile_grid(tilesize, ar));
 
     if num_tiles_across_screen_horizontal > SWITCH_TO_MAPVIEW_TILES {
         let mut updates = Some(vec![]);
@@ -227,15 +227,13 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             );
         }
         
-        mem::drop(aux_data);
-        mem::drop(state_machine);
-
         let FakeGameState {
-            simulation_state,
+            mut simulation_state,
             world,
         } = game_state;
-        mem::drop(simulation_state);
 
+        mem::drop(state_machine);
+        
         {
             profiling::scope!("map_view::apply_updates");
             map_view::apply_updates(
@@ -279,8 +277,6 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             );
         }
 
-        mem::drop(world);
-
         {
             profiling::scope!("Render Map View");
             map_view::render_map_view(
@@ -298,9 +294,22 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 camera_pos,
             );
         }
+        mem::drop(world);
 
         renderer.draw(&entity_overlay_layer);
-        renderer.draw(&bot_layer);
+        // FIXME: I want to drop the locks before rendering the map view
+        {
+            profiling::scope!("render bot layers");
+            let mut renderer_arr = [renderer];
+    
+            simulation_state.factory.bot_render_storage.render_map_view(&mut renderer_arr, camera_pos, num_tiles_across_screen_horizontal, num_tiles_across_screen_vertical, aux_data.current_tick as f32);
+            
+            let [renderer] = renderer_arr;
+        }
+
+        mem::drop(aux_data);
+        mem::drop(simulation_state);
+
 
         return;
     }
@@ -1509,8 +1518,6 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         trace!("Rendering self at {:?}", state_machine.local_player_pos);
     }
 
-    mem::drop(game_state);
-    mem::drop(aux_data);
 
     match &state_machine.state {
         ActionStateMachineState::CtrlCPressed | ActionStateMachineState::DelPressed => {},
@@ -1890,7 +1897,20 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         renderer.draw(&state_machine_layer);
         renderer.draw(&entity_overlay_layer);
         renderer.draw(&player_layer);
-        renderer.draw(&bot_layer);
+        // for bot_layer in bot_layers {
+        //     renderer.draw(&bot_layer);
+        // } 
+
+        {
+            profiling::scope!("render bot layers");
+            let mut renderer_arr = [renderer];
+    
+            game_state.simulation_state.factory.bot_render_storage.render_map_view(&mut renderer_arr, camera_pos, num_tiles_across_screen_horizontal, num_tiles_across_screen_vertical, aux_data.current_tick as f32);
+            
+            let [renderer] = renderer_arr;
+        }
+        mem::drop(game_state);
+        mem::drop(aux_data);
     }
 }
 
@@ -1999,7 +2019,7 @@ pub fn render_ui<
         let mut v = [0];
         if let Err(e) = recv.recv.read_exact(&mut v) {
             if e.kind() != std::io::ErrorKind::WouldBlock {
-                error!("Failed to read from unnamed pipe");
+                error!("Failed to read from unnamed pipe: {:?}", e.kind());
                 state_machine_ref.current_fork_save_in_progress = None;
             }
         } else {
@@ -3350,6 +3370,14 @@ pub fn render_ui<
             (points.iter().map(|v| v.dur).sum::<Duration>() / points.len() as u32).as_secs_f32()
                 * 1000.0
         ));
+
+        for v in [0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, f64::INFINITY] {
+            let checked = state_machine_ref.desired_runspeed == v;
+            if ui.add(RadioButton::new(checked, format!("{v}x"))).clicked() {
+                state_machine_ref.desired_runspeed = v;
+                RUNSPEED_MULTIPLIER.store(state_machine_ref.desired_runspeed.to_bits(), std::sync::atomic::Ordering::Relaxed)
+            }
+        }
     });
 
     Window::new("Editor").default_open(false).show(ctx, |ui| {
@@ -4763,7 +4791,7 @@ pub fn render_ui<
                                         });
                                     });
                             },
-                        );
+                    );
                     });
                 },
             }

@@ -1,3 +1,7 @@
+use rayon::{
+    iter::{IndexedParallelIterator, ParallelIterator},
+    slice::ParallelSlice,
+};
 use tilelib::types::DrawInstance;
 
 use crate::{bot_system::BotRenderInfo, rendering::BOT_SPRITE};
@@ -13,9 +17,7 @@ pub(crate) struct CPUBotRenderer {
     slots: Box<[BotRenderInfo]>,
 }
 
-impl super::BotRender for CPUBotRenderer {
-    type Renderer = tilelib::types::Layer;
-
+impl super::BotRender<tilelib::types::Layer> for CPUBotRenderer {
     fn new(num_slots: usize) -> Self {
         Self {
             next_insertion: 0,
@@ -33,7 +35,7 @@ impl super::BotRender for CPUBotRenderer {
 
         // TODO: Is there a better function for doing this
         for render_info in new_bots {
-            assert!(self.slots[self.next_insertion].end_time() < current_time);
+            // assert!(self.slots[self.next_insertion].end_time() < current_time);
             self.slots[self.next_insertion] = render_info;
             self.next_insertion += 1;
             self.next_insertion %= self.slots.len();
@@ -43,9 +45,9 @@ impl super::BotRender for CPUBotRenderer {
     }
 
     #[profiling::function]
-    fn render(
-        &self,
-        renderer: &mut Self::Renderer,
+    fn render<const N: usize>(
+        &mut self,
+        renderer: &mut [&mut tilelib::types::Layer; N],
         camera_pos: (f32, f32),
         num_tiles_across_screen_horizontal: f32,
         num_tiles_across_screen_vertical: f32,
@@ -61,35 +63,61 @@ impl super::BotRender for CPUBotRenderer {
     }
 
     #[profiling::function]
-    fn render_map_view(
-        &self,
-        renderer: &mut Self::Renderer,
+    fn render_map_view<const N: usize>(
+        &mut self,
+        renderer: &mut [&mut tilelib::types::Layer; N],
         camera_pos: (f32, f32),
         num_tiles_across_screen_horizontal: f32,
         num_tiles_across_screen_vertical: f32,
         current_time: f32,
     ) {
-        let mut count = 0;
-        for render_info in &self.slots {
-            if render_info.end_time() > current_time {
-                count += 1;
-                renderer.draw_sprite(
+        let count = self
+            .slots
+            .par_chunks(self.slots.len() / N)
+            .zip(renderer)
+            .for_each(|(list, renderer)| {
+                // let mut count = 0;
+                profiling::scope!("draw_many_sprites", format!("list_len: {}", list.len()));
+                renderer.draw_many_sprites(
                     &BOT_SPRITE,
-                    render_info.get_instance(
-                        camera_pos,
-                        num_tiles_across_screen_horizontal,
-                        num_tiles_across_screen_vertical,
-                        current_time,
-                    ),
+                    list.iter()
+                        .filter(|render_info| render_info.end_time() > current_time)
+                        .map(|render_info| {
+                            // count += 1;
+                            render_info.get_instance(
+                                camera_pos,
+                                num_tiles_across_screen_horizontal,
+                                num_tiles_across_screen_vertical,
+                                current_time,
+                            )
+                        }),
                 );
-            } else {
-                // This particle has already expired
-            }
-        }
+                // count
+            });
+        // .sum::<usize>();
 
-        if count > 0 {
-            dbg!(count);
-        }
+        // profiling::scope!(
+        //     "draw_many_sprites",
+        //     format!("list_len: {}", self.slots.len())
+        // );
+        // renderer[0].draw_many_sprites(
+        //     &BOT_SPRITE,
+        //     self.slots
+        //         .iter()
+        //         .filter(|render_info| render_info.end_time() > current_time)
+        //         .map(|render_info| {
+        //             render_info.get_instance(
+        //                 camera_pos,
+        //                 num_tiles_across_screen_horizontal,
+        //                 num_tiles_across_screen_vertical,
+        //                 current_time,
+        //             )
+        //         }),
+        // );
+
+        // if count > 0 {
+        //     dbg!(count);
+        // }
     }
 }
 

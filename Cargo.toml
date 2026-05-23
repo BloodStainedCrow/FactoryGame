@@ -94,6 +94,9 @@ puffin = { git = "https://github.com/EmbarkStudios/puffin" }
 egui_graphs = { git = "https://github.com/BloodStainedCrow/egui_graphs", branch = "tree_layout" }
 petgraph = { git = "https://github.com/BloodStainedCrow/petgraph", branch = "stable_graph_node_weights_mut_indexed" }
 
+# [patch."https://github.com/BloodStainedCrow/tilelib"]
+# tilelib = { path = "../tilelib" }
+
 [lints.rust]
 
 [lints.clippy]

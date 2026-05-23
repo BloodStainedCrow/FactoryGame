@@ -20,6 +20,8 @@ pub mod built_info {
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use eframe::web_sys;
 
+#[cfg(feature = "client")]
+use std::thread::JoinHandle;
 use std::{
     borrow::Borrow,
     net::{SocketAddr, TcpStream},
@@ -64,6 +66,9 @@ use crate::{progress_info::ProgressInfo, replays::GenerationInformation};
 const TICKS_PER_SECOND_LOGIC: u64 = 60;
 
 const TICKS_PER_SECOND_RUNSPEED: u64 = 60;
+
+// NOTE(BSC): This is a f64 in disguise
+pub static RUNSPEED_MULTIPLIER: AtomicU64 = AtomicU64::new(1.0f64.to_bits());
 
 pub mod get_size;
 
@@ -204,6 +209,7 @@ pub fn main(input: &Vec<String>) -> Result<(), args::ArgsError> {
             "FactoryGame",
             NativeOptions {
                 // depth_buffer: 32,
+                vsync: false,
                 ..Default::default()
             },
             Box::new(|cc| {
@@ -355,7 +361,12 @@ fn run_integrated_server(
 
     // FIXME: This type is wrong
     listen_addr: Option<&'static str>,
-) -> (LoadedGame, Arc<AtomicU64>, Sender<Input>) {
+) -> (
+    LoadedGame,
+    Arc<AtomicU64>,
+    Sender<Input>,
+    Option<(Arc<AtomicBool>, JoinHandle<()>)>,
+) {
     // TODO: Do mod loading here
     let raw_data = get_raw_data_test();
     let data_store = raw_data.process();
@@ -385,7 +396,7 @@ fn run_integrated_server(
 
             let (ui_sender, ui_recv) = channel();
 
-            let mut game = Game::new(
+            let mut game = Game::new::<()>(
                 GameInitData::IntegratedServer {
                     game_state: game_state.clone(),
                     tick_counter: tick_counter.clone(),
@@ -408,7 +419,8 @@ fn run_integrated_server(
                 },
                 &data_store,
             )
-            .unwrap();
+            .unwrap()
+            .0;
 
             let stop = Arc::new(AtomicBool::new(false));
 
@@ -416,10 +428,15 @@ fn run_integrated_server(
             let m_stop: Arc<AtomicBool> = stop.clone();
 
             #[cfg(not(target_arch = "wasm32"))]
-            thread::spawn(move || {
-                profiling::register_thread!("Game Update Thread");
-                game.run(m_stop, &m_data_store);
-            });
+            let handle = Some((
+                m_stop.clone(),
+                thread::spawn(move || {
+                    profiling::register_thread!("Game Update Thread");
+                    game.run(m_stop, &m_data_store);
+                }),
+            ));
+            #[cfg(target_arch = "wasm32")]
+            let handle = None;
 
             let data_store = Arc::new(Mutex::new(data_store));
             return (
@@ -433,6 +450,7 @@ fn run_integrated_server(
                 }),
                 tick_counter,
                 send,
+                handle,
             );
         },
         _ => todo!(),
@@ -477,7 +495,7 @@ fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
                 },
             };
 
-            let mut game = Game::new(
+            let mut game = Game::new::<()>(
                 GameInitData::DedicatedServer(
                     game_state,
                     ServerInfo {
@@ -494,7 +512,8 @@ fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
                 ),
                 &data_store,
             )
-            .unwrap();
+            .unwrap()
+            .0;
 
             let stop = Arc::new(AtomicBool::new(false));
 
@@ -510,7 +529,12 @@ fn run_dedicated_server(start_game_info: StartGameInfo) -> ! {
 #[cfg(feature = "client")]
 fn run_client(
     remote_addr: SocketAddr,
-    game_state_sender: Sender<(LoadedGame, Arc<AtomicU64>, Sender<Input>)>,
+    game_state_sender: Sender<(
+        LoadedGame,
+        Arc<AtomicU64>,
+        Sender<Input>,
+        Option<(Arc<AtomicBool>, JoinHandle<()>)>,
+    )>,
 ) {
     // TODO: Do mod loading here
     let raw_data = get_raw_data_test();
@@ -529,24 +553,11 @@ fn run_client(
             let m_data_store = data_store.clone();
             let data_store = Arc::new(Mutex::new(data_store));
             let m_tick_counter = tick_counter.clone();
-            let mut game = Game::new(
+            let (mut game, Some((game_state, state_machine))) = Game::new(
                 GameInitData::Client {
-                    game_state_start_fun: Box::new(move |game_state, state_machine| {
+                    game_state_start_fun: Box::new(|game_state, state_machine| {
                         log::info!("GameState Recieved Successfully");
-
-                        game_state_sender
-                            .send((
-                                LoadedGame::ItemU8RecipeU8(LoadedGameSized {
-                                    state: game_state,
-                                    state_machine,
-                                    data_store,
-                                    ui_action_sender: ui_sender,
-                                    stop_update_thread: stop,
-                                }),
-                                tick_counter,
-                                send,
-                            ))
-                            .unwrap();
+                        (game_state, state_machine)
                     }),
                     inputs: recv,
                     tick_counter: m_tick_counter,
@@ -555,11 +566,29 @@ fn run_client(
                 },
                 &m_data_store,
             )
-            .expect("Could not start Game");
+            .expect("Could not start Game") else {
+                unreachable!()
+            };
 
-            thread::spawn(move || {
-                game.run(m_stop, &m_data_store);
+            let cloned = m_stop.clone();
+            let handle = thread::spawn(move || {
+                game.run(cloned, &m_data_store);
             });
+
+            game_state_sender
+                .send((
+                    LoadedGame::ItemU8RecipeU8(LoadedGameSized {
+                        state: game_state,
+                        state_machine,
+                        data_store,
+                        ui_action_sender: ui_sender,
+                        stop_update_thread: stop,
+                    }),
+                    tick_counter,
+                    send,
+                    Some((m_stop, handle)),
+                ))
+                .unwrap();
         },
         _ => todo!(),
     }

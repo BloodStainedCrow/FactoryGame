@@ -20,7 +20,7 @@ use server::{ActionSource, GameStateUpdateHandler, HandledActionConsumer};
 #[cfg(feature = "client")]
 use crate::frontend::action::action_state_machine::ActionStateMachine;
 use crate::{
-    TICKS_PER_SECOND_RUNSPEED,
+    RUNSPEED_MULTIPLIER, TICKS_PER_SECOND_RUNSPEED,
     app_state::{AuxillaryData, GameState, SimulationState},
     data::DataStore,
     frontend::{action::ActionType, input::Input, world::tile::World},
@@ -84,14 +84,14 @@ pub struct ServerInfo {
     pub new_connection_recv: Receiver<TcpStream>,
 }
 
-pub enum GameInitData<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
+pub enum GameInitData<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait, T> {
     #[cfg(feature = "client")]
     Client {
         game_state_start_fun: Box<
             dyn FnOnce(
                 Arc<GameState<ItemIdxType, RecipeIdxType>>,
                 Arc<Mutex<ActionStateMachine<ItemIdxType, RecipeIdxType>>>,
-            ),
+            ) -> T,
         >,
         inputs: Receiver<Input>,
         ui_actions: Receiver<ActionType<ItemIdxType, RecipeIdxType>>,
@@ -125,10 +125,10 @@ struct PlayerIDInformation {
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdxType> {
-    pub fn new(
-        init: GameInitData<ItemIdxType, RecipeIdxType>,
+    pub fn new<T>(
+        init: GameInitData<ItemIdxType, RecipeIdxType, T>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> Result<Self, std::io::Error> {
+    ) -> Result<(Self, Option<T>), std::io::Error> {
         match init {
             #[cfg(feature = "client")]
             GameInitData::Client {
@@ -178,26 +178,33 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
 
                 let stream = decoder.into_inner();
 
-                game_state_start_fun(game_state.clone(), action_state_machine.clone());
+                let user_val =
+                    game_state_start_fun(game_state.clone(), action_state_machine.clone());
 
-                Ok(Self::Client(
-                    game_state,
-                    GameStateUpdateHandler::new(Client {
-                        local_actions: action_state_machine,
-                        local_input: inputs,
-                        server_connection: stream,
-                        ui_actions,
-                    }),
-                    tick_counter,
+                Ok((
+                    Self::Client(
+                        game_state,
+                        GameStateUpdateHandler::new(Client {
+                            local_actions: action_state_machine,
+                            local_input: inputs,
+                            server_connection: stream,
+                            ui_actions,
+                        }),
+                        tick_counter,
+                    ),
+                    Some(user_val),
                 ))
             },
             GameInitData::DedicatedServer(game_state, info, cancel_socket) => {
                 let replay = Replay::new(game_state.aux_data.lock().gen_info.1.clone(), data_store);
-                Ok(Self::DedicatedServer(
-                    game_state,
-                    replay,
-                    GameStateUpdateHandler::new(Server::new(info)),
-                    cancel_socket,
+                Ok((
+                    Self::DedicatedServer(
+                        game_state,
+                        replay,
+                        GameStateUpdateHandler::new(Server::new(info)),
+                        cancel_socket,
+                    ),
+                    None,
                 ))
             },
             #[cfg(feature = "client")]
@@ -211,17 +218,20 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                 cancel_socket,
             } => {
                 let replay = Replay::new(game_state.aux_data.lock().gen_info.1.clone(), data_store);
-                Ok(Self::IntegratedServer(
-                    game_state,
-                    replay,
-                    GameStateUpdateHandler::new(IntegratedServer {
-                        local_actions: action_state_machine,
-                        local_input: inputs,
-                        server: Server::new(info),
-                        ui_actions,
-                    }),
-                    tick_counter,
-                    cancel_socket,
+                Ok((
+                    Self::IntegratedServer(
+                        game_state,
+                        replay,
+                        GameStateUpdateHandler::new(IntegratedServer {
+                            local_actions: action_state_machine,
+                            local_input: inputs,
+                            server: Server::new(info),
+                            ui_actions,
+                        }),
+                        tick_counter,
+                        cancel_socket,
+                    ),
+                    None,
                 ))
             },
         }
@@ -235,9 +245,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
         let mut update_interval =
             spin_sleep_util::interval(Duration::from_secs(1) / TICKS_PER_SECOND_RUNSPEED as u32);
 
+        let mut current_speed = 1.0f64.to_bits();
+
         while stop.load(std::sync::atomic::Ordering::Relaxed) == false {
             profiling::finish_frame!();
             profiling::scope!("Update Loop");
+
+            let desired_runspeed = RUNSPEED_MULTIPLIER.load(std::sync::atomic::Ordering::Relaxed);
+            if current_speed != desired_runspeed {
+                current_speed = desired_runspeed;
+                if f64::from_bits(desired_runspeed).is_finite() {
+                    update_interval.set_period(
+                        Duration::from_secs(1)
+                            / (TICKS_PER_SECOND_RUNSPEED as f64 * f64::from_bits(desired_runspeed))
+                                as u32,
+                    );
+                }
+            }
 
             match self.do_tick(data_store) {
                 ControlFlow::Continue(_) => {},
@@ -254,7 +278,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Game<ItemIdxType, RecipeIdx
                     false
                 }
             };
-            if !env::var("ZOOM").is_ok() || is_client {
+            if f64::from_bits(desired_runspeed).is_finite() || is_client {
                 profiling::scope!("Wait");
                 update_interval.tick();
             }

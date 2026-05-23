@@ -108,6 +108,7 @@ fn start_ui() -> (Mutex<Context>, Arc<GameState<u8, u8>>) {
                         stop_update_thread: Default::default(),
                     }),
                     tick: Arc::new(AtomicU64::new(0)),
+                    stop_update_thread: Default::default(),
                 });
 
                 app.input_sender = Some(send_input);

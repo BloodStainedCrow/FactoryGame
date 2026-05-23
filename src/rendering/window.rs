@@ -1,7 +1,10 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicU64},
-    mpsc::Sender,
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64},
+        mpsc::Sender,
+    },
+    thread::JoinHandle,
 };
 
 use parking_lot::Mutex;
@@ -16,6 +19,7 @@ use crate::{
 pub struct LoadedGameInfo {
     pub state: LoadedGame,
     pub tick: Arc<AtomicU64>,
+    pub stop_update_thread: Option<(Arc<AtomicBool>, JoinHandle<()>)>,
 }
 
 pub enum LoadedGame {

@@ -32,15 +32,16 @@ use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
 use super::Watt;
 
-
-
-
 pub const MAX_POWER_MULT: u8 = 64;
 pub const MIN_BEACON_POWER_MULT: u8 = MAX_POWER_MULT / 2;
 
 pub const MAX_BURNER_RATE: Watt = Watt(1_800_000);
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     Assembler {
@@ -70,7 +71,11 @@ pub enum PowerGridEntity<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait>
     },
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub enum BeaconAffectedEntity<RecipeIdxType: WeakIdxTrait = u8> {
     Assembler {
@@ -104,7 +109,11 @@ pub type FullAssemblerStore<RecipeIdxType> = BaseFullAssemblerStore<
     MultiAssemblerStoreStruct<RecipeIdxType, 6, 1>,
 >;
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct PowerGrid<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     pub stores: FullAssemblerStore<RecipeIdxType>,
@@ -133,6 +142,7 @@ pub struct PowerGrid<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
     // pub power_consumption_history: Timeline<Watt>,
     // pub power_production_history: Timeline<Watt>,
     pub is_placeholder: bool,
+    has_machines: bool,
 
     pub num_assemblers_of_type: Box<[usize]>,
     pub num_labs_of_type: Box<[usize]>,
@@ -147,7 +157,11 @@ pub struct PowerGrid<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxTrait> {
         HashMap<(Position, WeakIndex), Vec<BeaconAffectedEntity<RecipeIdxType>>>,
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize, serde::Serialize)]
 enum BurnableFuelForAccumulators {
     Yes,
@@ -217,6 +231,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             power_mult_history: Timeline::new(false, data_store),
 
             is_placeholder: false,
+            has_machines: false,
 
             num_assemblers_of_type: vec![0; data_store.assembler_info.len()].into_boxed_slice(),
             num_labs_of_type: vec![0; data_store.lab_info.len()].into_boxed_slice(),
@@ -265,6 +280,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             power_mult_history: Timeline::new(false, data_store),
 
             is_placeholder: false,
+            has_machines: false,
 
             num_assemblers_of_type: vec![0; data_store.assembler_info.len()].into_boxed_slice(),
             num_labs_of_type: vec![0; data_store.lab_info.len()].into_boxed_slice(),
@@ -312,6 +328,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             power_mult_history: Timeline::new(false, data_store),
 
             is_placeholder: true,
+            has_machines: false,
 
             num_assemblers_of_type: vec![].into_boxed_slice(),
             num_labs_of_type: vec![].into_boxed_slice(),
@@ -511,6 +528,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 }
             },
             is_placeholder: false,
+            has_machines: self.has_machines || other.has_machines,
 
             num_assemblers_of_type: self.num_assemblers_of_type,
             num_labs_of_type: self.num_labs_of_type,
@@ -631,6 +649,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (WeakIndex, u32) {
         assert!(!self.is_placeholder);
+        self.has_machines = true;
 
         self.num_labs_of_type[usize::from(ty)] += 1;
 
@@ -1455,6 +1474,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> (AssemblerID<RecipeIdxType>, WeakIndex) {
         assert!(!self.is_placeholder);
+        self.has_machines = true;
 
         self.num_assemblers_of_type[usize::from(ty)] += 1;
 
@@ -2363,7 +2383,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             )
     }
 
-    #[profiling::function]
     pub fn update(
         &mut self,
         solar_panel_production_amounts: &[Watt],
@@ -2380,7 +2399,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
             std::iter::Empty<crate::assembler::simd::InserterReinsertionInfo<ItemIdxType>>,
         >,
     ) {
-        if self.is_placeholder {
+        if self.is_placeholder || !self.has_machines {
+            // if self.is_placeholder {
             return (
                 0,
                 RecipeTickInfo::new(data_store),
@@ -2389,6 +2409,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                 itertools::Either::Right(std::iter::empty()),
             );
         }
+        profiling::scope!("PowerGrid::update");
 
         let active_recipes = tech_state.get_active_recipes();
 
@@ -2804,6 +2825,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
         affected_entities: Vec<BeaconAffectedEntity<RecipeIdxType>>,
         data_store: &DataStore<ItemIdxType, RecipeIdxType>,
     ) -> WeakIndex {
+        self.has_machines = true;
+
         #[cfg(debug_assertions)]
         {
             let affected_grids_and_potential_match = self
@@ -2964,7 +2987,11 @@ struct UniqueAccumulator {
     charge: Joule,
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Default, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SteamPowerProducerStore {
     all_producers: Box<[MultiLazyPowerProducer]>,
@@ -3053,7 +3080,11 @@ impl SteamPowerProducerStore {
     }
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Default, Clone, serde::Deserialize, serde::Serialize)]
 struct MultiLazyPowerProducer {
     // TODO: For now turbines can only have a single input and no outputs

@@ -162,6 +162,8 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     pub datapedia: Pedia<ItemIdxType, RecipeIdxType>,
 
     pub blueprint_import_string: Option<String>,
+
+    pub desired_runspeed: f64,
 }
 
 #[derive(Debug, enum_map::Enum, PartialEq)]
@@ -302,6 +304,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             datapedia: Pedia::new(data_store),
 
             blueprint_import_string: None,
+
+            desired_runspeed: 1.0,
         }
     }
 
@@ -362,6 +366,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
             datapedia: Pedia::new(data_store),
 
             blueprint_import_string: None,
+
+            desired_runspeed: 1.0,
         }
     }
 

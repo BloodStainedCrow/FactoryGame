@@ -5,7 +5,7 @@ use std::{
         Arc,
         mpsc::{Sender, channel},
     },
-    thread,
+    thread::{self, JoinHandle},
     time::Duration,
 };
 
@@ -373,12 +373,14 @@ impl eframe::App for App {
                     // });
                 });
 
-                if let Ok((new_state, current_tick, input_sender)) = game_state_receiver.try_recv()
+                if let Ok((new_state, current_tick, input_sender, stop_update_thread)) =
+                    game_state_receiver.try_recv()
                 {
                     self.input_sender = Some(input_sender);
                     self.currently_loaded_game = Some(LoadedGameInfo {
                         state: new_state,
                         tick: current_tick,
+                        stop_update_thread,
                     });
                     // FIXME: This is needed to prevent the tech tree from collapsing?
                     // TODO: Make an issue to investigae why this is needed
@@ -608,7 +610,11 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self) {
-        if let Some(state) = &self.currently_loaded_game {
+        if let Some(state) = self.currently_loaded_game.take() {
+            if let Some((stop, handle)) = state.stop_update_thread {
+                stop.store(true, std::sync::atomic::Ordering::SeqCst);
+                handle.join();
+            }
             match &state.state {
                 LoadedGame::ItemU8RecipeU8(state) => {
                     save(
@@ -950,8 +956,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> CallbackTrait
         let mut rend = self.raw_renderer.start_draw(
             render_pass,
             [
-                info.viewport_in_pixels().width_px as f32,
-                info.viewport_in_pixels().height_px as f32,
+                info.viewport_in_pixels()
+                    .width_px
+                    .try_into()
+                    .expect("Negative canvas size????"),
+                info.viewport_in_pixels()
+                    .height_px
+                    .try_into()
+                    .expect("Negative canvas size????"),
             ],
         );
 

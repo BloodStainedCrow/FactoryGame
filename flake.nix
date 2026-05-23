@@ -91,6 +91,7 @@
         perf
         samply
         bacon
+        mangohud
 
         (vscode-with-extensions.override {
           vscode = pkgs-codium.vscodium;

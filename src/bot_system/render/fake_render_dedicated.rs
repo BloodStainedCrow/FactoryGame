@@ -1,8 +1,6 @@
 use crate::bot_system::BotRenderInfo;
 
-impl super::BotRender for (usize, Box<[BotRenderInfo]>) {
-    type Renderer = !;
-
+impl super::BotRender<!> for (usize, Box<[BotRenderInfo]>) {
     fn new(num_slots: usize) -> Self {
         (0, vec![BotRenderInfo::default()].into_boxed_slice())
     }
@@ -26,9 +24,9 @@ impl super::BotRender for (usize, Box<[BotRenderInfo]>) {
         Ok(())
     }
 
-    fn render(
-        &self,
-        renderer: &mut Self::Renderer,
+    fn render<const N: usize>(
+        &mut self,
+        renderer: &mut [&mut !; N],
         camera_pos: (f32, f32),
         num_tiles_across_screen_horizontal: f32,
         num_tiles_across_screen_vertical: f32,
@@ -37,9 +35,9 @@ impl super::BotRender for (usize, Box<[BotRenderInfo]>) {
         unimplemented!()
     }
 
-    fn render_map_view(
-        &self,
-        renderer: &mut Self::Renderer,
+    fn render_map_view<const N: usize>(
+        &mut self,
+        renderer: &mut [&mut !; N],
         camera_pos: (f32, f32),
         num_tiles_across_screen_horizontal: f32,
         num_tiles_across_screen_vertical: f32,
