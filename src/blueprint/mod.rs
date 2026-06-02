@@ -5,8 +5,10 @@ use crate::{
     item::Indexable,
 };
 use crate::{frontend::world::tile::UndergroundDir, item::WeakIdxTrait};
+use itertools::Itertools;
 use log::{error, info};
 use rayon::slice::ParallelSliceMut;
+use std::collections::HashMap;
 use std::num::NonZero;
 use std::sync::Arc;
 use std::{borrow::Borrow, ops::Range};
@@ -933,6 +935,50 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
 impl Blueprint {
     pub fn action_count(&self) -> usize {
         self.actions.len()
+    }
+
+    // FIXME: This is a really bad interface
+    pub fn items(&self) -> Vec<(Arc<str>, usize)> {
+        let mut items = HashMap::new();
+
+        for action in &self.actions {
+            match action {
+                BlueprintAction::PlaceEntity(blueprint_place_entity) => {
+                    match blueprint_place_entity {
+                        BlueprintPlaceEntity::Assembler { ty, .. }
+                        | BlueprintPlaceEntity::Inserter { ty, .. }
+                        | BlueprintPlaceEntity::Belt { ty, .. }
+                        | BlueprintPlaceEntity::Underground { ty, .. }
+                        | BlueprintPlaceEntity::PowerPole { ty, .. }
+                        | BlueprintPlaceEntity::Splitter { ty, .. }
+                        | BlueprintPlaceEntity::Chest { ty, .. }
+                        | BlueprintPlaceEntity::SolarPanel { ty, .. }
+                        | BlueprintPlaceEntity::Accumulator { ty, .. }
+                        | BlueprintPlaceEntity::Lab { ty, .. }
+                        | BlueprintPlaceEntity::Beacon { ty, .. }
+                        | BlueprintPlaceEntity::FluidTank { ty, .. }
+                        | BlueprintPlaceEntity::MiningDrill { ty, .. } => {
+                            *items.entry(ty).or_default() += 1;
+                        },
+                    }
+                },
+                BlueprintAction::SetRecipe { .. } => {},
+                BlueprintAction::OverrideInserterMovetime { .. } => {},
+                BlueprintAction::AddModules { modules, .. } => {
+                    for module in modules {
+                        *items.entry(module).or_default() += 1;
+                    }
+                },
+                BlueprintAction::SetChestSlotLimit { .. } => {},
+                BlueprintAction::PlaceOre { .. } => {},
+            }
+        }
+
+        items
+            .into_iter()
+            .map(|(a, b)| (a.clone(), b))
+            .sorted_by_key(|v| v.0.clone())
+            .collect()
     }
 
     pub(crate) fn extract_if(&mut self, filter: impl Fn(&BlueprintAction) -> bool) -> Self {

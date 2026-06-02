@@ -3,9 +3,6 @@ use std::num::NonZero;
 
 use itertools::Itertools;
 
-
-
-
 use crate::belt::smart::InserterExtractedWhenMoving;
 use crate::inserter::belt_storage_inserter::Dir;
 use crate::item::ITEMCOUNTTYPE;
@@ -24,7 +21,11 @@ use crate::inserter::FakeUnionStorage;
 use crate::inserter::belt_storage_inserter_non_const_gen::BeltStorageInserterDyn;
 use itertools::Either;
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SushiBelt<ItemIdxType: WeakIdxTrait> {
     pub(super) ty: u8,
@@ -43,7 +44,11 @@ pub struct SushiBelt<ItemIdxType: WeakIdxTrait> {
     pub(super) output_splitter: Option<(SplitterID, SplitterSide)>,
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub(super) struct SushiInserterStoreDyn<ItemIdxType: WeakIdxTrait> {
     pub(super) inserters: Box<

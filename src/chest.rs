@@ -371,6 +371,7 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
             }
         }
 
+        // TODO: I really want my chests to be actually free :/
         // TODO: Splitting this into large chests and small chests would be better since now a single large chest will make all small chests in the world expensive
         // With wait lists we cannot avoid updating all chests (even small chests)
         // if self.num_large_chests > 0 {
@@ -395,11 +396,18 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
 
             let to_move = inout.abs_diff(CHEST_GOAL_AMOUNT);
 
+            if to_move == 0 {
+                continue;
+            } else {
+                std::hint::cold_path();
+            }
+
             let switch = ChestSize::from(*inout >= CHEST_GOAL_AMOUNT);
 
             let _inserter_amount = min(*inout, *max_insert - *inout);
 
             if (was_full && !is_full) || (was_empty && !is_empty) {
+                std::hint::cold_path();
                 for ins in wait_list.inserters.iter_mut() {
                     if let Some(inserter) = ins {
                         let self_is_source = match inserter.rest {
@@ -434,12 +442,15 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
                             || (inserter.current_hand == 0 && !self_is_source)
                         {
                             let removed = ins.take().unwrap();
-                            self.inserter_reinsertion_vec
-                                .push_within_capacity(InternalInserterReinsertionInfo {
+                            // This always fits. No need to handle the error here
+                            let res = self.inserter_reinsertion_vec.push_within_capacity(
+                                InternalInserterReinsertionInfo {
                                     inserter: removed,
                                     self_index: index as u32,
-                                })
-                                .unwrap();
+                                },
+                            );
+
+                            debug_assert!(res.is_ok());
                         }
                     }
                 }

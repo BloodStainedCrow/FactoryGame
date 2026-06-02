@@ -93,7 +93,40 @@ pub struct SmartBelt<ItemIdxType: WeakIdxTrait = u8> {
     pub(crate) latest_inserter_pos_if_all_incoming: Option<NonZero<BeltLenType>>,
 }
 
-static_assertions::const_assert! {std::mem::size_of::<SmartBelt<u8>>() <= 64}
+// I think it MIGHT be possible to get this down to 32 bytes
+// Also an idea, maybe SOA could help. This way random access SUCKS, but then alignment is irrelevant
+// Check IF/how much random access to transport lines is required
+#[repr(packed)]
+struct CompactSmartBelt {
+    // I could even shrink these by making these "Pointer" as in offsets into an arena
+    // locs: *const usize,
+    locs: u32,
+    // inserters: *const InserterExtractedWhenMoving,
+    // IDEA: I could store the inserters with a single "pointer", if the outgoing inserter list went "rightwards" and the incoming went "leftwards" (until we find a null entry, CStr style, or by storing lengths)
+    inserters: u32,
+    // Or maybe we could somehow store the current length of those slices somehow, which means insertion is no longer O(n), which would be great
+    // Doing the arena style waitlist, could allow me to avoid loading the SmartBelt when inserting.
+
+    // This is technically this, but splitting it is better to keep this struct small
+    // pub(super) input_splitter: Option<(SplitterID, SplitterSide)>,
+    input_splitter: Option<SplitterSide>,
+    input_splitter_id: SplitterID,
+    // This is technically this, but splitting it is better to keep this struct small
+    // pub(super) output_splitter: Option<(SplitterID, SplitterSide)>,
+    output_thing: Option<SplitterSide>,
+    // What about if the output is a pure or sushi belt? We might need to store the item_id
+    output_thing_id: SplitterID,
+
+    length: u32,
+    last_moving_spot: u32,
+    zero_index: u32,
+
+    is_circular: bool,
+}
+
+// Make sure a smart belt fits in a cacheline, so we never need to load multiple cachelines for a random access on a belt
+const BELT_SIZE: usize = std::mem::size_of::<SmartBelt<u8>>();
+static_assertions::const_assert! {BELT_SIZE <= 64}
 
 #[cfg_attr(
     feature = "show-info",
@@ -136,6 +169,14 @@ pub struct InserterExtractedWhenMoving {
     pub(crate) outgoing: bool,
     pub(crate) max_hand_size: ITEMCOUNTTYPE,
     pub(crate) current_hand: ITEMCOUNTTYPE,
+}
+
+struct CompactInserterExtractedWhenMoving {
+    storage: u32,
+    belt_pos: u32,
+    movetime: NonZero<u16>,
+    max_hand_size: ITEMCOUNTTYPE,
+    current_hand: ITEMCOUNTTYPE,
 }
 
 #[cfg_attr(
@@ -493,8 +534,6 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
         }
     }
 
-    // FIXME: This is horrendously slow. it breaks my tests since they are compiled without optimizations!!!
-    // FIXME: This is super slow on belts with lots of inserters
     /// # Errors
     /// If the index is already used by another inserter
     /// # Panics
@@ -1723,6 +1762,8 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
                 // SAFETY:
                 // This is the only place where we modify splitter_list from a &.
                 // This can never race since only one belt ever has the same values for output_id and side, so only a single belt will ever modify each splitter loc
+
+                // Note: This is cross thread random access. High likelyhood for false sharing
                 let splitter_loc = unsafe { &mut *splitter_loc.get() };
 
                 if let Some(item) = *splitter_loc {

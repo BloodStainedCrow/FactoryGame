@@ -14,9 +14,6 @@ use crate::{
 };
 use std::cmp::max;
 
-
-
-
 pub mod bucketed;
 pub mod simd;
 
@@ -24,7 +21,11 @@ pub type Simdtype = Simd<u8, 32>;
 
 pub type TIMERTYPE = u16;
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct FullAssemblerStore<
     RecipeIdxType: WeakIdxTrait,

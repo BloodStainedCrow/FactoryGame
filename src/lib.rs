@@ -8,6 +8,7 @@
 #![feature(iterator_try_collect)]
 // the vec recycle crate will collide with Vec::recycle at some point. Once that happens I want to switch over to std anyway
 #![allow(unstable_name_collisions)]
+#![feature(cold_path)]
 
 extern crate test;
 
@@ -81,6 +82,8 @@ pub mod mining_drill;
 pub mod power;
 pub mod progress_info;
 pub mod research;
+
+mod interface;
 
 // For future modding capabilities
 // pub mod scenario;

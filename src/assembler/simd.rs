@@ -68,7 +68,7 @@ pub struct Inserter {
 const_assert!(std::mem::size_of::<Option<InserterWithBelts>>() <= 20);
 const_assert!(std::mem::size_of::<InserterWithBelts>() <= 20);
 // IF this fails increase WAITLIST_LEN to 4
-const_assert!(std::mem::size_of::<InserterWithBelts>() > 16);
+const_assert!(std::mem::size_of::<Option<InserterWithBelts>>() > 16);
 
 #[cfg_attr(
     feature = "show-info",

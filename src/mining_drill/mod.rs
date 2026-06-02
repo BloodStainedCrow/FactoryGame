@@ -9,7 +9,6 @@ use crate::{
     item::{IdxTrait, Indexable, Item, WeakIdxTrait},
 };
 
-
 use itertools::Itertools;
 use log::error;
 use rayon::iter::IndexedParallelIterator;
@@ -20,13 +19,21 @@ use std::collections::HashMap;
 pub mod only_solo_owned;
 pub mod with_shared_ore;
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct MiningDrillID {
     index: u32,
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FullOreStore<ItemIdxType: WeakIdxTrait> {
     stores: Box<[SingleOreStore]>,
@@ -34,7 +41,11 @@ pub struct FullOreStore<ItemIdxType: WeakIdxTrait> {
     pub drills: MiningDrillStore<ItemIdxType>,
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OreLookup<ItemIdxType: WeakIdxTrait> {
     pub ore_lookup: HashMap<Position, (Item<ItemIdxType>, OreLoc), rustc_hash::FxBuildHasher>,
@@ -67,7 +78,11 @@ pub enum AddMinerError {
     NoOre,
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MiningDrillIdentifier<ItemIdxType: WeakIdxTrait> {
     kind: MiningDrillIdentifierKind<ItemIdxType>,
@@ -95,7 +110,11 @@ impl<ItemIdxType: IdxTrait> MiningDrillIdentifier<ItemIdxType> {
     }
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 enum MiningDrillIdentifierKind<ItemIdxType: WeakIdxTrait> {
     PureOnlySoloOwned {
@@ -310,7 +329,11 @@ impl<ItemIdxType: IdxTrait> FullOreStore<ItemIdxType> {
     }
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct SingleOreStore {
     shared_locations: Vec<u32>,
@@ -318,7 +341,11 @@ struct SingleOreStore {
 }
 
 // TODO: This should prob not be pub
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub enum OreLoc {
     Shared {
@@ -333,7 +360,11 @@ pub enum OreLoc {
     },
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MiningDrillStore<ItemIdxType: WeakIdxTrait> {
     pure_solo_owned: Box<[PureDrillStorageOnlySoloOwned<ItemIdxType>]>,

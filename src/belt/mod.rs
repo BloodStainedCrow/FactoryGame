@@ -1,6 +1,4 @@
-
 use fixedbitset::FixedBitSet;
-
 
 #[allow(clippy::module_inception)]
 pub mod belt;
@@ -62,27 +60,43 @@ use splitter::{
 };
 use sushi::SushiBelt;
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, PartialEq, Clone, Copy, serde::Deserialize, serde::Serialize)]
 enum FreeIndex {
     FreeIndex(BeltLenType),
     OldFreeIndex(BeltLenType),
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 struct SplitterID {
     index: u32,
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum Inserter {
     Out(BeltStorageInserter<{ Dir::BeltToStorage }>),
     In(BeltStorageInserter<{ Dir::StorageToBelt }>),
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize, PartialOrd, Ord,
 )]
@@ -105,7 +119,11 @@ use crate::{
     item::{IdxTrait, WeakIdxTrait},
 };
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BeltStore<ItemIdxType: WeakIdxTrait> {
     pub inner: InnerBeltStore<ItemIdxType>,
@@ -123,7 +141,11 @@ pub struct BeltStore<ItemIdxType: WeakIdxTrait> {
     pub belt_graph_lookup: HashMap<BeltTileId<ItemIdxType>, NodeIndex>,
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub enum BeltGraphConnection<ItemIdxType: WeakIdxTrait> {
     Sideload {
@@ -141,7 +163,11 @@ pub enum BeltGraphConnection<ItemIdxType: WeakIdxTrait> {
     },
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, serde::Deserialize)]
 pub struct InnerBeltStore<ItemIdxType: WeakIdxTrait> {
     pub sushi_belts: Vec<SushiBelt<ItemIdxType>>,
@@ -261,7 +287,11 @@ where
     }
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct SplitterStore<ItemIdxType: WeakIdxTrait> {
     // TODO: Holes
@@ -272,7 +302,11 @@ struct SplitterStore<ItemIdxType: WeakIdxTrait> {
 
 impl<ItemIdxType: IdxTrait> SplitterStore<ItemIdxType> {}
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BeltBeltInserterStore<ItemIdxType: WeakIdxTrait> {
     // FIXME: This is likely VERY slow
@@ -324,7 +358,11 @@ pub struct BeltBeltInserterStore<ItemIdxType: WeakIdxTrait> {
     )>,
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BeltBeltInserterInfo<ItemIdxType: WeakIdxTrait> {
     source: (BeltTileId<ItemIdxType>, u16),
@@ -333,7 +371,11 @@ pub struct BeltBeltInserterInfo<ItemIdxType: WeakIdxTrait> {
     item: PhantomData<ItemIdxType>,
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum BeltBeltInserterType {
     Normal,
@@ -1448,20 +1490,32 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
     }
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 pub enum SplitterTileId {
     Any(u32),
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 enum AnySplitter<ItemIdxType: WeakIdxTrait> {
     Pure(Item<ItemIdxType>, usize),
     Sushi(SplitterID),
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SplitterInfo<ItemIdxType: WeakIdxTrait> {
     pub in_mode: SplitterDistributionMode,
@@ -3900,7 +3954,11 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
     }
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct MultiBeltStore<ItemIdxType: WeakIdxTrait> {
     pub belt_ty: Vec<u8>,
@@ -3949,7 +4007,11 @@ impl<ItemIdxType: IdxTrait> MultiBeltStore<ItemIdxType> {
     }
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 enum AnyBelt<ItemIdxType: WeakIdxTrait> {
     Smart(BeltId<ItemIdxType>),

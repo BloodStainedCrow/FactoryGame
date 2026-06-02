@@ -7,9 +7,11 @@ use crate::{
 
 use super::{FakeUnionStorage, InserterState};
 
-
-
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(
     Debug,
     ConstParamTy,
@@ -28,7 +30,11 @@ pub enum Dir {
     StorageToBelt = 1,
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BeltStorageInserter<const DIR: Dir> {
     pub storage_id: FakeUnionStorage,

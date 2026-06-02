@@ -2757,6 +2757,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGrid<ItemIdxType, Reci
                         );
                         let new_effect = calculate_beacon_effect(next_power_mult, (*v).into());
 
+                        // TODO: If the affected entity is in this grid we can apply the effect eagerly.
+                        //       This means that the "main" thread needs to do less work (since we do the updates spread over the power grid update threads)
+                        //       It also saves some allocations which is nice. Theoretically we could do this in parallel, but that would require unsafe code to assure rustc that
+                        //       no two beacon_affected_entities point to the same value
+
                         if old_effect == new_effect {
                             None
                         } else {

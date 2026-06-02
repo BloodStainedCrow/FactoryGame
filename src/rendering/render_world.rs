@@ -226,14 +226,14 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 data_store,
             );
         }
-        
+
         let FakeGameState {
             mut simulation_state,
             world,
         } = game_state;
 
         mem::drop(state_machine);
-        
+
         {
             profiling::scope!("map_view::apply_updates");
             map_view::apply_updates(
@@ -301,15 +301,20 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         {
             profiling::scope!("render bot layers");
             let mut renderer_arr = [renderer];
-    
-            simulation_state.factory.bot_render_storage.render_map_view(&mut renderer_arr, camera_pos, num_tiles_across_screen_horizontal, num_tiles_across_screen_vertical, aux_data.current_tick as f32);
-            
+
+            simulation_state.factory.bot_render_storage.render_map_view(
+                &mut renderer_arr,
+                camera_pos,
+                num_tiles_across_screen_horizontal,
+                num_tiles_across_screen_vertical,
+                aux_data.current_tick as f32,
+            );
+
             let [renderer] = renderer_arr;
         }
 
         mem::drop(aux_data);
         mem::drop(simulation_state);
-
 
         return;
     }
@@ -948,7 +953,9 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                         match info {
                                             crate::frontend::world::tile::AttachedInserter::BeltStorage { id, belt_pos } => {
                                                 let Some(state) = game_state.simulation_state.factory.belts.get_inserter_info_at(*id, *belt_pos) else {
-                                                    error!("Could not get rendering info for inserter!");
+                                                    // FIXME: Missing lookup for inserters in waitlist.
+                                                    //        Will probably only get fixed with the huge refactor I am planning on.
+                                                    // error!("Could not get rendering info for inserter!");
                                                     continue;
                                                 };
                                                 let hand_size = state.hand_size;
@@ -1518,11 +1525,45 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         trace!("Rendering self at {:?}", state_machine.local_player_pos);
     }
 
-
     match &state_machine.state {
         ActionStateMachineState::CtrlCPressed | ActionStateMachineState::DelPressed => {},
-        ActionStateMachineState::CopyDragInProgress { start_pos }
-        | ActionStateMachineState::DeleteDragInProgress { start_pos } => {
+        ActionStateMachineState::CopyDragInProgress {
+            start_pos,
+            current_bp,
+            last_end_pos,
+        } => {
+            let end_pos = ActionStateMachine::<ItemIdxType, RecipeIdxType>::player_mouse_to_tile(
+                state_machine.zoom_level,
+                camera_pos,
+                state_machine.current_mouse_pos,
+            );
+
+            let bottom_right = Position {
+                x: max(start_pos.x, end_pos.x) + 1,
+                y: max(start_pos.y, end_pos.y) + 1,
+            };
+
+            let base_pos = Position {
+                x: min(start_pos.x, end_pos.x),
+                y: min(start_pos.y, end_pos.y),
+            };
+
+            entity_overlay_layer.draw_sprite(
+                &texture_atlas.dark_square,
+                DrawInstance {
+                    position: [
+                        base_pos.x as f32 - camera_pos.0 + num_tiles_across_screen_horizontal / 2.0,
+                        base_pos.y as f32 - camera_pos.1 + num_tiles_across_screen_vertical / 2.0,
+                    ],
+                    size: [
+                        (bottom_right.x - base_pos.x) as f32,
+                        (bottom_right.y - base_pos.y) as f32,
+                    ],
+                    animation_frame: 0,
+                },
+            );
+        },
+        ActionStateMachineState::DeleteDragInProgress { start_pos } => {
             let end_pos = ActionStateMachine::<ItemIdxType, RecipeIdxType>::player_mouse_to_tile(
                 state_machine.zoom_level,
                 camera_pos,
@@ -1797,10 +1838,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         let size = data_store.fluid_tank_infos[usize::from(*ty)].size;
 
                         texture_atlas.pipe[*ty as usize][*rotation].draw(
-                            [
-                                draw_offset.0 + pos.x as f32,
-                                draw_offset.1 + pos.y as f32,
-                            ],
+                            [draw_offset.0 + pos.x as f32, draw_offset.1 + pos.y as f32],
                             size,
                             0,
                             &mut state_machine_layer,
@@ -1899,14 +1937,24 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         renderer.draw(&player_layer);
         // for bot_layer in bot_layers {
         //     renderer.draw(&bot_layer);
-        // } 
+        // }
 
         {
             profiling::scope!("render bot layers");
             let mut renderer_arr = [renderer];
-    
-            game_state.simulation_state.factory.bot_render_storage.render_map_view(&mut renderer_arr, camera_pos, num_tiles_across_screen_horizontal, num_tiles_across_screen_vertical, aux_data.current_tick as f32);
-            
+
+            game_state
+                .simulation_state
+                .factory
+                .bot_render_storage
+                .render_map_view(
+                    &mut renderer_arr,
+                    camera_pos,
+                    num_tiles_across_screen_horizontal,
+                    num_tiles_across_screen_vertical,
+                    aux_data.current_tick as f32,
+                );
+
             let [renderer] = renderer_arr;
         }
         mem::drop(game_state);
@@ -1919,10 +1967,7 @@ pub enum EscapeMenuOptions {
 }
 
 #[profiling::function]
-pub fn render_ui<
-    ItemIdxType: IdxTrait,
-    RecipeIdxType: IdxTrait,
->(
+pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     ctx: &Context,
     ui: &mut Ui,
     mut state_machine: MutexGuard<ActionStateMachine<ItemIdxType, RecipeIdxType>>,
@@ -3022,7 +3067,7 @@ pub fn render_ui<
             CollapsingHeader::new("Inserters per Belt average").show(ui, |ui| {
                 let num_inserters: usize = game_state_ref.simulation_state.factory.belts.inner.smart_belts.iter().map(|pure_list| pure_list.belts.iter().map(|smart| smart.inserters.inserters.len()).sum::<usize>()).sum();
                 let num_belts: usize = game_state_ref.simulation_state.factory.belts.inner.smart_belts.iter().map(|pure_list| pure_list.belts.len()).sum();
-            
+
                 let mut num_to_count = std::collections::BTreeMap::<usize, usize>::new();
                 for count in game_state_ref.simulation_state.factory.belts.inner.smart_belts.iter().flat_map(|pure_list| pure_list.belts.iter().map(|smart| smart.inserters.inserters.len())) {
                     *num_to_count.entry(count).or_default() += 1;
@@ -3371,11 +3416,25 @@ pub fn render_ui<
                 * 1000.0
         ));
 
-        for v in [0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, f64::INFINITY] {
+        for v in [
+            0.1,
+            0.25,
+            0.5,
+            1.0,
+            2.0,
+            4.0,
+            8.0,
+            16.0,
+            32.0,
+            f64::INFINITY,
+        ] {
             let checked = state_machine_ref.desired_runspeed == v;
             if ui.add(RadioButton::new(checked, format!("{v}x"))).clicked() {
                 state_machine_ref.desired_runspeed = v;
-                RUNSPEED_MULTIPLIER.store(state_machine_ref.desired_runspeed.to_bits(), std::sync::atomic::Ordering::Relaxed)
+                RUNSPEED_MULTIPLIER.store(
+                    state_machine_ref.desired_runspeed.to_bits(),
+                    std::sync::atomic::Ordering::Relaxed,
+                )
             }
         }
     });
@@ -3451,7 +3510,11 @@ pub fn render_ui<
                 }
             }
 
-            if ui.add_enabled(state_machine_ref.blueprint_import_string.is_none(), Button::new("Import from String"))
+            if ui
+                .add_enabled(
+                    state_machine_ref.blueprint_import_string.is_none(),
+                    Button::new("Import from String"),
+                )
                 .clicked()
             {
                 state_machine_ref.blueprint_import_string = Some(String::new());
@@ -3500,18 +3563,21 @@ pub fn render_ui<
     if let Some(bp_string) = &mut state_machine_ref.blueprint_import_string {
         let mut open = true;
         let mut imported = false;
-        Window::new("Import Blueprint From String").open(&mut open).show(ctx, |ui| {
-            if ui.button("Import").clicked() {
-                if let Ok(bp) = BlueprintString(std::mem::take(bp_string)).try_into() {
-                    state_machine_ref.state = ActionStateMachineState::Holding(HeldObject::Blueprint(bp));
-                    imported = true;
+        Window::new("Import Blueprint From String")
+            .open(&mut open)
+            .show(ctx, |ui| {
+                if ui.button("Import").clicked() {
+                    if let Ok(bp) = BlueprintString(std::mem::take(bp_string)).try_into() {
+                        state_machine_ref.state =
+                            ActionStateMachineState::Holding(HeldObject::Blueprint(bp));
+                        imported = true;
+                    } else {
+                        error!("Blueprint String invalid!");
+                    }
                 } else {
-                    error!("Blueprint String invalid!");
+                    ui.text_edit_multiline(bp_string);
                 }
-            } else {
-                ui.text_edit_multiline(bp_string);
-            }
-        });
+            });
 
         if !open || imported {
             state_machine_ref.blueprint_import_string = None;
@@ -3532,8 +3598,33 @@ pub fn render_ui<
         ActionStateMachineState::CtrlCPressed => {
             ctx.set_cursor_icon(egui::CursorIcon::Copy);
         },
-        ActionStateMachineState::CopyDragInProgress { start_pos: _ } => {
+        ActionStateMachineState::CopyDragInProgress { current_bp, .. } => {
             ctx.set_cursor_icon(egui::CursorIcon::Copy);
+
+            egui::Tooltip::always_open(
+                ctx.clone(),
+                egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("Blueprint cost layer")),
+                egui::Id::new("Blueprint cost"),
+                egui::PopupAnchor::Pointer,
+            )
+            .show(|ui| {
+                let row_height = ui.spacing().interact_size.y;
+                TableBuilder::new(ui)
+                    .id_salt("Blueprint cost list")
+                    .column(Column::auto())
+                    .column(Column::auto())
+                    .body(|body| {
+                        body.rows(row_height, current_bp.len(), |mut row| {
+                            let idx = row.index();
+                            row.col(|ui| {
+                                ui.add(Label::new(&*current_bp[idx].0).extend());
+                            });
+                            row.col(|ui| {
+                                ui.add(Label::new(format!("{}", current_bp[idx].1)).extend());
+                            });
+                        });
+                    });
+            });
         },
 
         ActionStateMachineState::DelPressed => {
@@ -4791,7 +4882,7 @@ pub fn render_ui<
                                         });
                                     });
                             },
-                    );
+                        );
                     });
                 },
             }

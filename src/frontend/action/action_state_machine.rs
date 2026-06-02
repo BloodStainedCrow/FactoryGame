@@ -5,6 +5,7 @@ use std::{
     collections::{HashMap, HashSet},
     marker::PhantomData,
     num::NonZero,
+    sync::Arc,
 };
 
 use egui_graphs::{DefaultEdgeShape, DefaultNodeShape, Graph};
@@ -229,10 +230,16 @@ pub enum ActionStateMachineState<ItemIdxType: WeakIdxTrait> {
     Viewing(Position),
 
     CtrlCPressed,
-    CopyDragInProgress { start_pos: Position },
+    CopyDragInProgress {
+        start_pos: Position,
+        last_end_pos: Position,
+        current_bp: Vec<(Arc<str>, usize)>,
+    },
 
     DelPressed,
-    DeleteDragInProgress { start_pos: Position },
+    DeleteDragInProgress {
+        start_pos: Position,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -449,18 +456,21 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             },
 
                             ActionStateMachineState::CtrlCPressed => {
-                                self.state = ActionStateMachineState::CopyDragInProgress {
-                                    start_pos: Self::player_mouse_to_tile(
+                                let mouse_pos = Self::player_mouse_to_tile(
                                         self.zoom_level,
                                         self.map_view_info.unwrap_or(self.local_player_pos),
                                         self.current_mouse_pos,
-                                    )
+                                    );
+                                self.state = ActionStateMachineState::CopyDragInProgress {
+                                    start_pos: mouse_pos,
+                                    last_end_pos: mouse_pos,
+                                    current_bp: Blueprint::from_area(world, sim_state, [mouse_pos.x..(mouse_pos.x + 1), mouse_pos.y..(mouse_pos.y + 1)], data_store).items()
                                 };
 
                                 vec![]
                             },
 
-                            ActionStateMachineState::CopyDragInProgress { start_pos: _ } => {
+                            ActionStateMachineState::CopyDragInProgress { .. } => {
                                 warn!("Tried starting CopyDraw again!");
                                 vec![]
                             },
@@ -619,7 +629,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 vec![]
                             },
                             ActionStateMachineState::Deconstructing(_, _) => vec![],
-                            ActionStateMachineState::CtrlCPressed | ActionStateMachineState::CopyDragInProgress { start_pos: _ } => {
+                            ActionStateMachineState::CtrlCPressed | ActionStateMachineState::CopyDragInProgress { .. } => {
                                 self.state = ActionStateMachineState::Idle;
                                 vec![]
                             },
@@ -635,14 +645,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
                 ,
                 Input::LeftClickReleased => {
-                    match self.state {
+                    match &mut self.state {
                         ActionStateMachineState::Idle => {vec![]},
                         ActionStateMachineState::Deconstructing(_, _) => {vec![]},
                         ActionStateMachineState::Holding(_) => {vec![]},
                         ActionStateMachineState::Viewing(_) => {vec![]},
                         ActionStateMachineState::CtrlCPressed => {vec![]},
                         ActionStateMachineState::DelPressed => {vec![]},
-                        ActionStateMachineState::CopyDragInProgress { start_pos } => {
+                        ActionStateMachineState::CopyDragInProgress { start_pos, last_end_pos: _, current_bp: _ } => {
                             let end_pos = Self::player_mouse_to_tile(
                                 self.zoom_level,
                                 self.map_view_info.unwrap_or(self.local_player_pos),
@@ -653,11 +663,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                             let y_range = min(start_pos.y, end_pos.y)..(max(start_pos.y, end_pos.y) + 1);
 
                             let mut bp = Blueprint::from_area(world, sim_state, [x_range, y_range], data_store);
+
                             bp.optimize();
 
                             self.state = ActionStateMachineState::Holding(HeldObject::Blueprint(bp));
-                    vec![]
-                },
+                            vec![]
+                        },
                         ActionStateMachineState::DeleteDragInProgress { start_pos } => {
                             let end_pos = Self::player_mouse_to_tile(
                                 self.zoom_level,
@@ -685,8 +696,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     self.current_mouse_pos = (x, y);
 
                     match &mut self.state {
-            ActionStateMachineState::CtrlCPressed
-            | ActionStateMachineState::CopyDragInProgress { start_pos: _ } => {},
+            ActionStateMachineState::CtrlCPressed => {},
+            ActionStateMachineState::CopyDragInProgress { start_pos, last_end_pos, current_bp  } => {
+                let mouse_pos = Self::player_mouse_to_tile(
+                    self.zoom_level,
+                    self.map_view_info.unwrap_or(self.local_player_pos),
+                    self.current_mouse_pos,
+                );
+
+                if mouse_pos != *last_end_pos {
+                    *last_end_pos = mouse_pos;
+
+                    let x_range = min(start_pos.x, mouse_pos.x)..(max(start_pos.x, mouse_pos.x) + 1);
+                    let y_range = min(start_pos.y, mouse_pos.y)..(max(start_pos.y, mouse_pos.y) + 1);
+
+                    *current_bp = Blueprint::from_area(world, sim_state, [x_range, y_range], data_store).items();
+                }
+            },
             ActionStateMachineState::DelPressed
             | ActionStateMachineState::DeleteDragInProgress { start_pos: _ } => {},
 
@@ -1388,7 +1414,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
     {
         match &mut self.state {
             ActionStateMachineState::CtrlCPressed
-            | ActionStateMachineState::CopyDragInProgress { start_pos: _ } => {},
+            | ActionStateMachineState::CopyDragInProgress { .. } => {},
             ActionStateMachineState::DelPressed
             | ActionStateMachineState::DeleteDragInProgress { start_pos: _ } => {},
 

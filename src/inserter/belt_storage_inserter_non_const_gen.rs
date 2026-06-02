@@ -11,11 +11,13 @@ use crate::{
 
 use super::{FakeUnionStorage, InserterState};
 
-
-
 use crate::inserter::belt_storage_inserter::Dir;
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub enum DynInserterState {
     SBWaitingForSourceItems(ITEMCOUNTTYPE),
@@ -61,7 +63,11 @@ impl From<DynInserterState> for (Dir, InserterState) {
     }
 }
 
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BeltStorageInserterDyn {
     pub belt_pos: u16,

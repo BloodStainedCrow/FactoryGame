@@ -3058,7 +3058,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         end_pos: end,
                     }
                 })
-                .take(1_000),
+                .take(0),
                 aux_data.current_tick as f32,
             )
             .unwrap();
@@ -3174,25 +3174,50 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             // Belt update in parallel
                             // TODO: This is significantly better in parallel, for reasons I do not fully understand.
                             //       The profiler indicates that belt updates are not a huge part of update times
-                            let reinsertion = belt_store
-                                .belts
-                                .iter_mut()
-                                .zip(belt_store.belt_ty.iter())
-                                .enumerate().filter_map(|(self_index, (belt, ty))| {
-                                    // Only update belts, which have moved according to their timer
-                                    // This is what makes some types of belts different speed from others
-                                    (update_timers[usize::from(*ty)] >= 120).then_some((self_index, belt))
-                                }).map(|(self_index, belt)| {
-                                    // Update a belt
-                                    belt.update(sushi_splitters);
-                                    belt.update_inserters_lazy().into_iter().flatten().zip(iter::repeat(self_index))
-                                    // iter::empty::<(InserterExtractedWhenMoving, u32)>()
-                                })
-                                .fold(vec![], |mut v, reinsertions| {
-                                    v.extend(reinsertions);
-                                    v
-                                })
-                                .into_iter();
+                            #[cfg(feature = "par-belt-update")]
+                            let reinsertion =
+                                    belt_store
+                                    .belts
+                                    .par_iter_mut()
+                                    .zip(belt_store.belt_ty.par_iter())
+                                    .enumerate().filter_map(|(self_index, (belt, ty))| {
+                                        // Only update belts, which have moved according to their timer
+                                        // This is what makes some types of belts different speed from others
+                                        (update_timers[usize::from(*ty)] >= 120).then_some((self_index, belt))
+                                    }).map(|(self_index, belt)| {
+                                        // Update a belt
+                                        belt.update(sushi_splitters);
+                                        belt.update_inserters_lazy().into_iter().flatten().zip(iter::repeat(self_index))
+                                        // iter::empty::<(InserterExtractedWhenMoving, u32)>()
+                                    })
+                                    .fold(|| vec![], |mut v, reinsertions| {
+                                        v.extend(reinsertions);
+                                        v
+                                    })
+                                    // TODO: Is this deterministic?
+                                    .collect_vec_list()
+                                    .into_iter().flatten().flatten();
+
+                            #[cfg(not(feature = "par-belt-update"))]
+                            let reinsertion =
+                                    belt_store
+                                    .belts
+                                    .iter_mut()
+                                    .zip(belt_store.belt_ty.iter())
+                                    .enumerate().filter_map(|(self_index, (belt, ty))| {
+                                        // Only update belts, which have moved according to their timer
+                                        // This is what makes some types of belts different speed from others
+                                        (update_timers[usize::from(*ty)] >= 120).then_some((self_index, belt))
+                                    }).map(|(self_index, belt)| {
+                                        // Update a belt
+                                        belt.update(sushi_splitters);
+                                        belt.update_inserters_lazy().into_iter().flatten().zip(iter::repeat(self_index))
+                                        // iter::empty::<(InserterExtractedWhenMoving, u32)>()
+                                    })
+                                    .fold(vec![], |mut v, reinsertions| {
+                                        v.extend(reinsertions);
+                                        v
+                                    });
 
                             // Do the reinsertion sequentially
                             {

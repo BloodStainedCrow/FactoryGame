@@ -973,8 +973,10 @@ pub struct FluidSystemHotData {
     pub storage_capacity: u32,
     current_fluid_level: u32,
     incoming_connections: Box<[FakeUnionStorage]>,
+    /// These start_indices are used to keep a round robin distribution on the fluid
     incoming_start_index: u32,
     outgoing_connections: Box<[FakeUnionStorage]>,
+    /// These start_indices are used to keep a round robin distribution on the fluid
     outgoing_start_index: u32,
 }
 

@@ -4,10 +4,11 @@ use super::{InserterState, SushiInserterState};
 
 use crate::item::ITEMCOUNTTYPE;
 
-
-
-
-#[cfg_attr(feature = "show-info", derive(egui_show_info_derive::ShowInfo), derive(get_size2::GetSize))]
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub struct BeltBeltInserter {
     state: InserterState,
