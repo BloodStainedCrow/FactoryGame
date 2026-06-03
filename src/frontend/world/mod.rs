@@ -39,6 +39,66 @@ impl Position {
             || (self.x) >= (other.x + i32::from(size.0))
             || (self.y) >= (other.y + i32::from(size.1)))
     }
+
+    pub fn self_minus_other(
+        self,
+        self_size: (u16, u16),
+        other: Position,
+        size: (u16, u16),
+    ) -> [(Self, (u16, u16)); 4] {
+        let sx1 = self.x;
+        let sy1 = self.y;
+        let sx2 = sx1 + self_size.0 as i32;
+        let sy2 = sy1 + self_size.1 as i32;
+
+        let ox1 = other.x;
+        let oy1 = other.y;
+        let ox2 = ox1 + size.0 as i32;
+        let oy2 = oy1 + size.1 as i32;
+
+        // Intersection
+        let ix1 = sx1.max(ox1);
+        let iy1 = sy1.max(oy1);
+        let ix2 = sx2.min(ox2);
+        let iy2 = sy2.min(oy2);
+
+        // No overlap
+        if ix1 >= ix2 || iy1 >= iy2 {
+            assert!(!self.overlap(self_size, other, size));
+
+            return [
+                (self, self_size),
+                (self, (0, 0)),
+                (self, (0, 0)),
+                (self, (0, 0)),
+            ];
+        }
+
+        assert!(self.overlap(self_size, other, size));
+
+        [
+            // Top strip
+            (
+                Position { x: sx1, y: sy1 },
+                (self_size.0, (iy1.strict_sub(sy1)) as u16),
+            ),
+            // Bottom strip
+            (
+                Position { x: sx1, y: iy2 },
+                (self_size.0, (sy2.strict_sub(iy2)) as u16),
+            ),
+            // Left strip
+            (
+                Position { x: sx1, y: iy1 },
+                ((ix1.strict_sub(sx1)) as u16, (iy2.strict_sub(iy1)) as u16),
+            ),
+            // Right strip
+            (
+                Position { x: ix2, y: iy1 },
+                ((sx2.strict_sub(ix2)) as u16, (iy2.strict_sub(iy1)) as u16),
+            ),
+        ]
+    }
 }
 
 #[cfg(test)]

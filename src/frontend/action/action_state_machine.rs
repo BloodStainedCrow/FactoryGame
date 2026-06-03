@@ -705,12 +705,50 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 );
 
                 if mouse_pos != *last_end_pos {
+                    let old_top_left = Position {
+                        x: min(start_pos.x, last_end_pos.x),
+                        y: min(start_pos.y, last_end_pos.y),
+                    };
+
+                    let top_left = Position {
+                        x: min(start_pos.x, mouse_pos.x),
+                        y: min(start_pos.y, mouse_pos.y),
+                    };
+
+                    let old_bottom_right = Position {
+                        x: max(start_pos.x, last_end_pos.x) + 1,
+                        y: max(start_pos.y, last_end_pos.y) + 1,
+                    };
+
+                    let bottom_right = Position {
+                        x: max(start_pos.x, mouse_pos.x) + 1,
+                        y: max(start_pos.y, mouse_pos.y) + 1,
+                    };
+
+                    let removed = world.get_entities_no_longer_colliding_with_reduced_area(top_left, old_top_left, ((old_bottom_right.x - old_top_left.x).try_into().unwrap(), (old_bottom_right.y - old_top_left.y).try_into().unwrap()),  ((bottom_right.x - top_left.x).try_into().unwrap(), (bottom_right.y - top_left.y).try_into().unwrap()), data_store);
+
+                    for removed in removed {
+                        let name = removed.get_prototype_name(data_store);
+
+                        let v = &mut current_bp.iter_mut().find(|v| *v.0 == *name).unwrap().1;
+
+                        assert!(*v > 0);
+
+                        *v -= 1;
+                    }
+
+                    let added = world.get_entities_colliding_with_increased_area(top_left, old_top_left, ((old_bottom_right.x - old_top_left.x).try_into().unwrap(), (old_bottom_right.y - old_top_left.y).try_into().unwrap()),  ((bottom_right.x - top_left.x).try_into().unwrap(), (bottom_right.y - top_left.y).try_into().unwrap()), data_store);
+
+                    for added in added {
+                        let name = added.get_prototype_name(data_store);
+
+                        match current_bp.iter_mut().find(|v| *v.0 == *name) {
+                            Some((_, v)) => *v += 1,
+                            None => current_bp.push((name.into(), 1)),
+                        }
+                    }
+
                     *last_end_pos = mouse_pos;
-
-                    let x_range = min(start_pos.x, mouse_pos.x)..(max(start_pos.x, mouse_pos.x) + 1);
-                    let y_range = min(start_pos.y, mouse_pos.y)..(max(start_pos.y, mouse_pos.y) + 1);
-
-                    *current_bp = Blueprint::from_area(world, sim_state, [x_range, y_range], data_store).items();
                 }
             },
             ActionStateMachineState::DelPressed

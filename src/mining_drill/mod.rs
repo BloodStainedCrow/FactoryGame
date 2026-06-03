@@ -24,7 +24,7 @@ pub mod with_shared_ore;
     derive(egui_show_info_derive::ShowInfo),
     derive(get_size2::GetSize)
 )]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 struct MiningDrillID {
     index: u32,
 }
@@ -83,7 +83,7 @@ pub enum AddMinerError {
     derive(egui_show_info_derive::ShowInfo),
     derive(get_size2::GetSize)
 )]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct MiningDrillIdentifier<ItemIdxType: WeakIdxTrait> {
     kind: MiningDrillIdentifierKind<ItemIdxType>,
 }
@@ -115,7 +115,7 @@ impl<ItemIdxType: IdxTrait> MiningDrillIdentifier<ItemIdxType> {
     derive(egui_show_info_derive::ShowInfo),
     derive(get_size2::GetSize)
 )]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 enum MiningDrillIdentifierKind<ItemIdxType: WeakIdxTrait> {
     PureOnlySoloOwned {
         item: Item<ItemIdxType>,

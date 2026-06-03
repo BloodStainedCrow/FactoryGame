@@ -4034,6 +4034,114 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
             })
     }
 
+    pub fn get_entities_colliding_with_increased_area<'a, 'b>(
+        &'a self,
+        new_pos: Position,
+        old_pos: Position,
+        old_size: (u16, u16),
+        new_size: (u16, u16),
+        data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl IntoIterator<Item = &'a Entity<ItemIdxType, RecipeIdxType>>
+    + use<'a, 'b, ItemIdxType, RecipeIdxType> {
+        let areas = new_pos.self_minus_other(new_size, old_pos, old_size);
+        // dbg!(new_pos, old_pos, new_size, old_size, areas);
+        // let areas = [()];
+
+        let mut entities = areas
+            .into_iter()
+            .enumerate()
+            .filter(|(_, (_, size))| size.0 > 0 || size.1 > 0)
+            .flat_map(move |(i, (pos, size))| {
+                self.get_entities_colliding_with(pos, size, data_store)
+                    .into_iter()
+                    .zip(iter::repeat(i))
+            })
+            .filter_map(move |(e, i)| {
+                assert!(new_pos.overlap(new_size, e.get_pos(), e.get_entity_size(data_store)));
+
+                // Only include entities which do not overlap with the old area, i.e. are already counted
+                (!old_pos.overlap(old_size, e.get_pos(), e.get_entity_size(data_store))
+                    && areas[0..i].iter().all(|(other_pos, other_size)| {
+                        !other_pos.overlap(*other_size, e.get_pos(), e.get_entity_size(data_store))
+                    }))
+                .then_some(e)
+            });
+
+        debug_assert!(entities.all_unique());
+
+        areas
+            .into_iter()
+            .enumerate()
+            .filter(|(_, (_, size))| size.0 > 0 || size.1 > 0)
+            .flat_map(move |(i, (pos, size))| {
+                self.get_entities_colliding_with(pos, size, data_store)
+                    .into_iter()
+                    .zip(iter::repeat(i))
+            })
+            .filter_map(move |(e, i)| {
+                assert!(new_pos.overlap(new_size, e.get_pos(), e.get_entity_size(data_store)));
+
+                // Only include entities which do not overlap with the old area, i.e. are already counted
+                (!old_pos.overlap(old_size, e.get_pos(), e.get_entity_size(data_store))
+                    && areas[0..i].iter().all(|(other_pos, other_size)| {
+                        !other_pos.overlap(*other_size, e.get_pos(), e.get_entity_size(data_store))
+                    }))
+                .then_some(e)
+            })
+    }
+
+    pub fn get_entities_no_longer_colliding_with_reduced_area<'a, 'b>(
+        &'a self,
+        new_pos: Position,
+        old_pos: Position,
+        old_size: (u16, u16),
+        new_size: (u16, u16),
+        data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl IntoIterator<Item = &'a Entity<ItemIdxType, RecipeIdxType>>
+    + use<'a, 'b, ItemIdxType, RecipeIdxType> {
+        let areas = old_pos.self_minus_other(old_size, new_pos, new_size);
+
+        let mut entities = areas
+            .into_iter()
+            .enumerate()
+            .filter(|(_, (_, size))| size.0 > 0 || size.1 > 0)
+            .flat_map(move |(i, (pos, size))| {
+                self.get_entities_colliding_with(pos, size, data_store)
+                    .into_iter()
+                    .zip(iter::repeat(i))
+            })
+            .filter_map(move |(e, i)| {
+                assert!(old_pos.overlap(old_size, e.get_pos(), e.get_entity_size(data_store)));
+
+                (!new_pos.overlap(new_size, e.get_pos(), e.get_entity_size(data_store))
+                    && areas[0..i].iter().all(|(other_pos, other_size)| {
+                        !other_pos.overlap(*other_size, e.get_pos(), e.get_entity_size(data_store))
+                    }))
+                .then_some(e)
+            });
+
+        debug_assert!(entities.all_unique());
+
+        areas
+            .into_iter()
+            .enumerate()
+            .filter(|(_, (_, size))| size.0 > 0 || size.1 > 0)
+            .flat_map(move |(i, (pos, size))| {
+                self.get_entities_colliding_with(pos, size, data_store)
+                    .into_iter()
+                    .zip(iter::repeat(i))
+            })
+            .filter_map(move |(e, i)| {
+                assert!(old_pos.overlap(old_size, e.get_pos(), e.get_entity_size(data_store)));
+
+                (!new_pos.overlap(new_size, e.get_pos(), e.get_entity_size(data_store))
+                    && areas[0..i].iter().all(|(other_pos, other_size)| {
+                        !other_pos.overlap(*other_size, e.get_pos(), e.get_entity_size(data_store))
+                    }))
+                .then_some(e)
+            })
+    }
+
     pub fn get_entities_colliding_with<'a, 'b>(
         &'a self,
         pos: Position,
@@ -5264,7 +5372,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Chunk<ItemIdxType, RecipeId
     derive(egui_show_info_derive::ShowInfo),
     derive(get_size2::GetSize)
 )]
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, Hash)]
 pub enum AssemblerInfo<RecipeIdxType: WeakIdxTrait = u8> {
     UnpoweredNoRecipe,
     Unpowered(Recipe<RecipeIdxType>),
@@ -5282,7 +5390,7 @@ pub enum AssemblerInfo<RecipeIdxType: WeakIdxTrait = u8> {
     derive(egui_show_info_derive::ShowInfo),
     derive(get_size2::GetSize)
 )]
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, Hash)]
 pub enum InserterInfo<ItemIdxType: WeakIdxTrait = u8> {
     NotAttached {},
     Attached { info: AttachedInserter<ItemIdxType> },
@@ -5293,7 +5401,7 @@ pub enum InserterInfo<ItemIdxType: WeakIdxTrait = u8> {
     derive(egui_show_info_derive::ShowInfo),
     derive(get_size2::GetSize)
 )]
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, Hash)]
 pub enum InternalInserterInfo<ItemIdxType: WeakIdxTrait> {
     NotAttached {},
     Attached {
@@ -5306,7 +5414,7 @@ pub enum InternalInserterInfo<ItemIdxType: WeakIdxTrait> {
     derive(egui_show_info_derive::ShowInfo),
     derive(get_size2::GetSize)
 )]
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, Hash)]
 pub enum AttachedInserter<ItemIdxType: WeakIdxTrait = u8> {
     BeltStorage {
         id: BeltTileId<ItemIdxType>,
@@ -5328,7 +5436,7 @@ pub enum AttachedInserter<ItemIdxType: WeakIdxTrait = u8> {
     derive(egui_show_info_derive::ShowInfo),
     derive(get_size2::GetSize)
 )]
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, Hash)]
 pub enum AttachedInternalInserter<ItemIdxType: WeakIdxTrait> {
     BeltStorage {
         id: BeltTileId<ItemIdxType>,
@@ -5346,7 +5454,7 @@ pub enum AttachedInternalInserter<ItemIdxType: WeakIdxTrait> {
     derive(egui_show_info_derive::ShowInfo),
     derive(get_size2::GetSize)
 )]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize, Enum)]
 pub enum UndergroundDir {
     Entrance,
     Exit,
@@ -5422,7 +5530,7 @@ impl From<Box<[Option<u8>]>> for ModuleSlots {
     derive(egui_show_info_derive::ShowInfo),
     derive(get_size2::GetSize)
 )]
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, Hash)]
 pub enum BeltState {
     Straight,
     Curved { source_dir: Dir },
@@ -5433,7 +5541,7 @@ pub enum BeltState {
     derive(egui_show_info_derive::ShowInfo),
     derive(get_size2::GetSize)
 )]
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq, Eq, Hash)]
 pub enum Entity<ItemIdxType: WeakIdxTrait = u8, RecipeIdxType: WeakIdxTrait = u8> {
     Assembler {
         ty: u8,
@@ -5675,6 +5783,28 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
             Self::MiningDrill { .. } => "MiningDrill",
         }
     }
+
+    pub fn get_prototype_name<'a>(
+        &self,
+        data_store: &'a DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> &'a str {
+        match self {
+            Self::Assembler { ty, .. } => &*data_store.assembler_info[usize::from(*ty)].name,
+            Self::PowerPole { ty, .. } => &*data_store.power_pole_data[usize::from(*ty)].name,
+            Self::Belt { ty, .. } => &*data_store.belt_infos[usize::from(*ty)].name,
+            Self::Inserter { ty, .. } => &*data_store.inserter_infos[usize::from(*ty)].name,
+            Self::Underground { ty, .. } => &*data_store.belt_infos[usize::from(*ty)].name,
+            Self::Splitter { .. } => "FIXME",
+            Self::Chest { ty, .. } => &*data_store.chest_names[usize::from(*ty)],
+            Self::Roboport { ty, .. } => todo!(),
+            Self::SolarPanel { ty, .. } => &*data_store.solar_panel_info[usize::from(*ty)].name,
+            Self::Accumulator { ty, .. } => &*data_store.accumulator_info[usize::from(*ty)].name,
+            Self::Lab { ty, .. } => &*data_store.lab_info[usize::from(*ty)].name,
+            Self::Beacon { ty, .. } => &*data_store.beacon_info[usize::from(*ty)].name,
+            Self::FluidTank { ty, .. } => &*data_store.fluid_tank_infos[usize::from(*ty)].name,
+            Self::MiningDrill { ty, .. } => &*data_store.mining_drill_info[usize::from(*ty)].name,
+        }
+    }
 }
 
 #[cfg_attr(
@@ -5790,7 +5920,17 @@ impl<ItemIdxType: IdxTrait> PlaceEntityType<ItemIdxType> {
     derive(get_size2::GetSize)
 )]
 #[derive(
-    Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize, PartialEq, Eq, Enum, EnumIter,
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+    Enum,
+    EnumIter,
 )]
 pub enum Dir {
     #[default]

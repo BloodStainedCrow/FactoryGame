@@ -1495,7 +1495,7 @@ impl<ItemIdxType: IdxTrait> InnerBeltStore<ItemIdxType> {
     derive(egui_show_info_derive::ShowInfo),
     derive(get_size2::GetSize)
 )]
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq, Hash)]
 pub enum SplitterTileId {
     Any(u32),
 }
