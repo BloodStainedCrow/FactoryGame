@@ -4050,7 +4050,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         let mut entities = areas
             .into_iter()
             .enumerate()
-            .filter(|(_, (_, size))| size.0 > 0 || size.1 > 0)
             .flat_map(move |(i, (pos, size))| {
                 self.get_entities_colliding_with(pos, size, data_store)
                     .into_iter()
@@ -4072,7 +4071,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         areas
             .into_iter()
             .enumerate()
-            .filter(|(_, (_, size))| size.0 > 0 || size.1 > 0)
             .flat_map(move |(i, (pos, size))| {
                 self.get_entities_colliding_with(pos, size, data_store)
                     .into_iter()
@@ -4104,7 +4102,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         let mut entities = areas
             .into_iter()
             .enumerate()
-            .filter(|(_, (_, size))| size.0 > 0 || size.1 > 0)
             .flat_map(move |(i, (pos, size))| {
                 self.get_entities_colliding_with(pos, size, data_store)
                     .into_iter()
@@ -4125,7 +4122,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         areas
             .into_iter()
             .enumerate()
-            .filter(|(_, (_, size))| size.0 > 0 || size.1 > 0)
             .flat_map(move |(i, (pos, size))| {
                 self.get_entities_colliding_with(pos, size, data_store)
                     .into_iter()

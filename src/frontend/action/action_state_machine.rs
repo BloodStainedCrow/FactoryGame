@@ -378,6 +378,259 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         }
     }
 
+    fn after_mouse_move<'a, 'b, 'c, 'd, 'e>(
+        &'a mut self,
+        world: &'c World<ItemIdxType, RecipeIdxType>,
+        data_store: &'d DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
+    + use<'a, 'b, 'c, 'd, 'e, ItemIdxType, RecipeIdxType> {
+        match &mut self.state {
+            ActionStateMachineState::CtrlCPressed => {},
+            ActionStateMachineState::CopyDragInProgress {
+                start_pos,
+                last_end_pos,
+                current_bp,
+            } => {
+                let mouse_pos = Self::player_mouse_to_tile(
+                    self.zoom_level,
+                    self.map_view_info.unwrap_or(self.local_player_pos),
+                    self.current_mouse_pos,
+                );
+
+                if mouse_pos != *last_end_pos {
+                    let old_top_left = Position {
+                        x: min(start_pos.x, last_end_pos.x),
+                        y: min(start_pos.y, last_end_pos.y),
+                    };
+
+                    let top_left = Position {
+                        x: min(start_pos.x, mouse_pos.x),
+                        y: min(start_pos.y, mouse_pos.y),
+                    };
+
+                    let old_bottom_right = Position {
+                        x: max(start_pos.x, last_end_pos.x) + 1,
+                        y: max(start_pos.y, last_end_pos.y) + 1,
+                    };
+
+                    let bottom_right = Position {
+                        x: max(start_pos.x, mouse_pos.x) + 1,
+                        y: max(start_pos.y, mouse_pos.y) + 1,
+                    };
+
+                    let removed = world.get_entities_no_longer_colliding_with_reduced_area(
+                        top_left,
+                        old_top_left,
+                        (
+                            (old_bottom_right.x - old_top_left.x).try_into().unwrap(),
+                            (old_bottom_right.y - old_top_left.y).try_into().unwrap(),
+                        ),
+                        (
+                            (bottom_right.x - top_left.x).try_into().unwrap(),
+                            (bottom_right.y - top_left.y).try_into().unwrap(),
+                        ),
+                        data_store,
+                    );
+
+                    for removed in removed {
+                        let name = removed.get_prototype_name(data_store);
+
+                        let v = &mut current_bp.iter_mut().find(|v| *v.0 == *name).unwrap().1;
+
+                        assert!(*v > 0);
+
+                        *v -= 1;
+                    }
+
+                    let added = world.get_entities_colliding_with_increased_area(
+                        top_left,
+                        old_top_left,
+                        (
+                            (old_bottom_right.x - old_top_left.x).try_into().unwrap(),
+                            (old_bottom_right.y - old_top_left.y).try_into().unwrap(),
+                        ),
+                        (
+                            (bottom_right.x - top_left.x).try_into().unwrap(),
+                            (bottom_right.y - top_left.y).try_into().unwrap(),
+                        ),
+                        data_store,
+                    );
+
+                    for added in added {
+                        let name = added.get_prototype_name(data_store);
+
+                        match current_bp.iter_mut().find(|v| *v.0 == *name) {
+                            Some((_, v)) => *v += 1,
+                            None => current_bp.push((name.into(), 1)),
+                        }
+                    }
+
+                    *last_end_pos = mouse_pos;
+                }
+            },
+            ActionStateMachineState::DelPressed
+            | ActionStateMachineState::DeleteDragInProgress { start_pos: _ } => {},
+
+            ActionStateMachineState::Idle | ActionStateMachineState::Viewing(_) => {},
+            ActionStateMachineState::Holding(held_object) => match held_object {
+                HeldObject::Blueprint(_) => {},
+
+                HeldObject::Tile(_floor_tile) => {},
+                HeldObject::Entity(place_entity_type) => match place_entity_type {
+                    PlaceEntityType::Assembler {
+                        pos: position,
+                        ty: _,
+                        rotation: _,
+                        ..
+                    } => {
+                        *position = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Inserter {
+                        pos,
+                        dir: _,
+                        filter: _,
+                        ty: _,
+                        ..
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Belt {
+                        pos,
+                        ty: _,
+                        direction: _,
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Underground {
+                        pos,
+                        ty: _,
+                        direction: _,
+                        underground_dir: _,
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::PowerPole { pos, ty: _ } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Splitter {
+                        pos,
+                        direction: _,
+                        ty: _,
+                        in_mode: _,
+                        out_mode: _,
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Chest { pos, .. } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::SolarPanel { pos, ty: _ } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Accumulator { pos, ty: _ } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Lab { pos, ty: _, .. } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::Beacon { ty: _, pos, .. } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::FluidTank {
+                        ty: _,
+                        pos,
+                        rotation: _,
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                    PlaceEntityType::MiningDrill {
+                        ty: _,
+                        pos,
+                        rotation: _,
+                    } => {
+                        *pos = Self::player_mouse_to_tile(
+                            self.zoom_level,
+                            self.map_view_info.unwrap_or(self.local_player_pos),
+                            self.current_mouse_pos,
+                        );
+                    },
+                },
+                HeldObject::OrePlacement { .. } => {},
+            },
+            ActionStateMachineState::Deconstructing(position, _timer) => {
+                if let Some(e) = world.get_entity_at(*position, data_store) {
+                    let e_pos = e.get_pos();
+                    let e_size = e.get_entity_size(data_store);
+                    let mouse_pos = Self::player_mouse_to_tile(
+                        self.zoom_level,
+                        self.map_view_info.unwrap_or(self.local_player_pos),
+                        self.current_mouse_pos,
+                    );
+
+                    if mouse_pos.contained_in(e_pos, e_size) {
+                        // We are still deconstructing. Continue
+                    } else {
+                        // The mouse is no longer over the entity
+                        self.state = ActionStateMachineState::Idle;
+                    }
+                } else {
+                    // The entity is gone
+                    self.state = ActionStateMachineState::Idle;
+                }
+            },
+        }
+
+        vec![].into_iter()
+    }
+
     #[allow(clippy::too_many_lines)]
     pub fn handle_inputs<'a, 'b, 'c, 'd, 'e, I: IntoIterator<Item = Input> + 'b>(
         &'a mut self,
@@ -695,221 +948,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 Input::MouseMove(x, y) => {
                     self.current_mouse_pos = (x, y);
 
-                    match &mut self.state {
-            ActionStateMachineState::CtrlCPressed => {},
-            ActionStateMachineState::CopyDragInProgress { start_pos, last_end_pos, current_bp  } => {
-                let mouse_pos = Self::player_mouse_to_tile(
-                    self.zoom_level,
-                    self.map_view_info.unwrap_or(self.local_player_pos),
-                    self.current_mouse_pos,
-                );
-
-                if mouse_pos != *last_end_pos {
-                    let old_top_left = Position {
-                        x: min(start_pos.x, last_end_pos.x),
-                        y: min(start_pos.y, last_end_pos.y),
-                    };
-
-                    let top_left = Position {
-                        x: min(start_pos.x, mouse_pos.x),
-                        y: min(start_pos.y, mouse_pos.y),
-                    };
-
-                    let old_bottom_right = Position {
-                        x: max(start_pos.x, last_end_pos.x) + 1,
-                        y: max(start_pos.y, last_end_pos.y) + 1,
-                    };
-
-                    let bottom_right = Position {
-                        x: max(start_pos.x, mouse_pos.x) + 1,
-                        y: max(start_pos.y, mouse_pos.y) + 1,
-                    };
-
-                    let removed = world.get_entities_no_longer_colliding_with_reduced_area(top_left, old_top_left, ((old_bottom_right.x - old_top_left.x).try_into().unwrap(), (old_bottom_right.y - old_top_left.y).try_into().unwrap()),  ((bottom_right.x - top_left.x).try_into().unwrap(), (bottom_right.y - top_left.y).try_into().unwrap()), data_store);
-
-                    for removed in removed {
-                        let name = removed.get_prototype_name(data_store);
-
-                        let v = &mut current_bp.iter_mut().find(|v| *v.0 == *name).unwrap().1;
-
-                        assert!(*v > 0);
-
-                        *v -= 1;
-                    }
-
-                    let added = world.get_entities_colliding_with_increased_area(top_left, old_top_left, ((old_bottom_right.x - old_top_left.x).try_into().unwrap(), (old_bottom_right.y - old_top_left.y).try_into().unwrap()),  ((bottom_right.x - top_left.x).try_into().unwrap(), (bottom_right.y - top_left.y).try_into().unwrap()), data_store);
-
-                    for added in added {
-                        let name = added.get_prototype_name(data_store);
-
-                        match current_bp.iter_mut().find(|v| *v.0 == *name) {
-                            Some((_, v)) => *v += 1,
-                            None => current_bp.push((name.into(), 1)),
-                        }
-                    }
-
-                    *last_end_pos = mouse_pos;
-                }
-            },
-            ActionStateMachineState::DelPressed
-            | ActionStateMachineState::DeleteDragInProgress { start_pos: _ } => {},
-
-            ActionStateMachineState::Idle | ActionStateMachineState::Viewing(_) => {},
-            ActionStateMachineState::Holding(held_object) => match held_object {
-                HeldObject::Blueprint(_) => {},
-
-                HeldObject::Tile(_floor_tile) => {},
-                HeldObject::Entity(place_entity_type) => match place_entity_type {
-                    PlaceEntityType::Assembler {
-                        pos: position,
-                        ty: _,
-                        rotation: _,
-                        ..
-                    } => {
-                        *position = Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        );
-                    },
-                    PlaceEntityType::Inserter {
-                        pos,
-                        dir: _,
-                        filter: _,
-                        ty: _,
-                        ..
-                    } => {
-                        *pos = Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        );
-                    },
-                    PlaceEntityType::Belt {
-                        pos,
-                        ty: _,
-                        direction: _,
-                    } => {
-                        *pos = Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        );
-                    },
-                    PlaceEntityType::Underground {
-                        pos,
-                        ty: _,
-                        direction: _,
-                        underground_dir: _,
-                    } => {
-                        *pos = Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        );
-                    },
-                    PlaceEntityType::PowerPole { pos, ty: _ } => {
-                        *pos = Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        );
-                    },
-                    PlaceEntityType::Splitter {
-                        pos,
-                        direction: _,
-                        ty: _,
-                        in_mode: _,
-                        out_mode: _,
-                    } => {
-                        *pos = Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        );
-                    },
-                    PlaceEntityType::Chest { pos, .. } => {
-                        *pos = Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        );
-                    },
-                    PlaceEntityType::SolarPanel { pos, ty: _ } => {
-                        *pos = Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        );
-                    },
-                    PlaceEntityType::Accumulator { pos, ty: _ } => {
-                        *pos = Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        );
-                    },
-                    PlaceEntityType::Lab { pos, ty: _, .. } => {
-                        *pos = Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        );
-                    },
-                    PlaceEntityType::Beacon { ty: _, pos, .. } => {
-                        *pos = Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        );
-                    },
-                    PlaceEntityType::FluidTank {
-                        ty: _,
-                        pos,
-                        rotation: _,
-                    } => {
-                        *pos = Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        );
-                    },
-                    PlaceEntityType::MiningDrill {
-                        ty: _,
-                        pos,
-                        rotation: _,
-                    } => {
-                        *pos = Self::player_mouse_to_tile(
-                            self.zoom_level,
-                            self.map_view_info.unwrap_or(self.local_player_pos),
-                            self.current_mouse_pos,
-                        );
-                    },
-                },
-                HeldObject::OrePlacement { .. } => {},
-            },
-            ActionStateMachineState::Deconstructing(position, _timer) => {
-                if let Some(e) = world.get_entity_at(*position, data_store) {
-                    let e_pos = e.get_pos();
-                    let e_size = e.get_entity_size(data_store);
-                    let mouse_pos = Self::player_mouse_to_tile(self.zoom_level, self.map_view_info.unwrap_or(self.local_player_pos), self.current_mouse_pos);
-
-                    if mouse_pos.contained_in(e_pos, e_size) {
-                        // We are still deconstructing. Continue
-                    } else {
-                        // The mouse is no longer over the entity
-                        self.state = ActionStateMachineState::Idle;
-                    }
-
-                } else {
-                    // The entity is gone
-                    self.state = ActionStateMachineState::Idle;
-                }
-
-            },
-        }
-
-                    vec![]
+                    self.after_mouse_move(world, data_store).collect()
                 },
                 Input::KeyPress(code) => {
                     if self.current_held_keys.insert(code) {
@@ -1669,6 +1708,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     self.local_player_pos,
                 ));
             }
+        }
+        if move_dir.0 != 0 || move_dir.1 != 0 {
+            actions.extend(self.after_mouse_move(world, data_store));
         }
 
         actions.into_iter()
