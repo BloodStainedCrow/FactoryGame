@@ -432,10 +432,16 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                         data_store,
                     );
 
+                    // FIXME: Using str comparison here is silly
                     for removed in removed {
                         let name = removed.get_prototype_name(data_store);
 
-                        let v = &mut current_bp.iter_mut().find(|v| *v.0 == *name).unwrap().1;
+                        let v = &mut current_bp
+                            .iter_mut()
+                            // FIXME: We use ptr equality here to avoid a String comparison. This is still fine, since we only ever return the Arc<str> from the DataStore
+                            .find(|v| std::ptr::addr_eq(Arc::as_ptr(&v.0), Arc::as_ptr(name)))
+                            .unwrap()
+                            .1;
 
                         assert!(*v > 0);
 
@@ -459,9 +465,13 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     for added in added {
                         let name = added.get_prototype_name(data_store);
 
-                        match current_bp.iter_mut().find(|v| *v.0 == *name) {
+                        // FIXME: We use ptr equality here to avoid a String comparison. This is still fine, since we only ever return the Arc<str> from the DataStore
+                        match current_bp
+                            .iter_mut()
+                            .find(|v| std::ptr::addr_eq(Arc::as_ptr(&v.0), Arc::as_ptr(name)))
+                        {
                             Some((_, v)) => *v += 1,
-                            None => current_bp.push((name.into(), 1)),
+                            None => current_bp.push((name.clone(), 1)),
                         }
                     }
 

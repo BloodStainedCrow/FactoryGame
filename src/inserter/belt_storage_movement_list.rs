@@ -65,12 +65,16 @@ impl<'a, const SWING_DIR: Dir, const ITEM_FLOW_DIR: Dir>
         if (u16::from(movetime) as usize) < self.first.len() {
             self.first
                 .get_mut(u16::from(movetime) as usize)
-                .expect(&format!("movetime: {:?}", movetime))
+                .unwrap_or_else(|| {
+                    panic!("Unwrap on None: {}", &format!("movetime: {:?}", movetime))
+                })
                 .push(ins);
         } else {
             self.second
                 .get_mut((u16::from(movetime) as usize) - self.first.len())
-                .expect(&format!("movetime: {:?}", movetime))
+                .unwrap_or_else(|| {
+                    panic!("Unwrap on None: {}", &format!("movetime: {:?}", movetime))
+                })
                 .push(ins);
         }
     }

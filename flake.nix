@@ -32,6 +32,7 @@
     ];
 
     neededPackages = with pkgs; [
+      # TODO: Check if this is the correct way of packaging this
       wayland
       xorg.libX11
       xorg.libXcursor
@@ -42,6 +43,9 @@
       openssl
 
       vulkan-headers vulkan-loader
+
+      # Needed for tracy
+      stdenv.cc.cc.lib
     ];
 
     built_overrides = {

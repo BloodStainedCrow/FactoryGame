@@ -18,6 +18,7 @@ use recycle_vec::VecExt;
 use std::cmp::max;
 use std::fs::create_dir_all;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::{
     cmp::min,
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -3735,7 +3736,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
         data.par_chunks_mut(chunk_size)
             .enumerate()
             .for_each(|(i, data)| {
-                profiling::scope!("par_chunks_mut", format!("Index: {i}"));
+                profiling::scope!("par_chunks_mut", format!("Index: {i}").as_str());
                 let start_index = i * chunk_size;
                 let end_index = start_index + data.len();
 
@@ -4056,7 +4057,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     .zip(iter::repeat(i))
             })
             .filter_map(move |(e, i)| {
-                assert!(new_pos.overlap(new_size, e.get_pos(), e.get_entity_size(data_store)));
+                debug_assert!(new_pos.overlap(
+                    new_size,
+                    e.get_pos(),
+                    e.get_entity_size(data_store)
+                ));
 
                 // Only include entities which do not overlap with the old area, i.e. are already counted
                 (!old_pos.overlap(old_size, e.get_pos(), e.get_entity_size(data_store))
@@ -4077,7 +4082,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     .zip(iter::repeat(i))
             })
             .filter_map(move |(e, i)| {
-                assert!(new_pos.overlap(new_size, e.get_pos(), e.get_entity_size(data_store)));
+                debug_assert!(new_pos.overlap(
+                    new_size,
+                    e.get_pos(),
+                    e.get_entity_size(data_store)
+                ));
 
                 // Only include entities which do not overlap with the old area, i.e. are already counted
                 (!old_pos.overlap(old_size, e.get_pos(), e.get_entity_size(data_store))
@@ -4108,7 +4117,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     .zip(iter::repeat(i))
             })
             .filter_map(move |(e, i)| {
-                assert!(old_pos.overlap(old_size, e.get_pos(), e.get_entity_size(data_store)));
+                debug_assert!(old_pos.overlap(
+                    old_size,
+                    e.get_pos(),
+                    e.get_entity_size(data_store)
+                ));
 
                 (!new_pos.overlap(new_size, e.get_pos(), e.get_entity_size(data_store))
                     && areas[0..i].iter().all(|(other_pos, other_size)| {
@@ -4128,7 +4141,11 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> World<ItemIdxType, RecipeId
                     .zip(iter::repeat(i))
             })
             .filter_map(move |(e, i)| {
-                assert!(old_pos.overlap(old_size, e.get_pos(), e.get_entity_size(data_store)));
+                debug_assert!(old_pos.overlap(
+                    old_size,
+                    e.get_pos(),
+                    e.get_entity_size(data_store)
+                ));
 
                 (!new_pos.overlap(new_size, e.get_pos(), e.get_entity_size(data_store))
                     && areas[0..i].iter().all(|(other_pos, other_size)| {
@@ -5783,22 +5800,24 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Entity<ItemIdxType, RecipeI
     pub fn get_prototype_name<'a>(
         &self,
         data_store: &'a DataStore<ItemIdxType, RecipeIdxType>,
-    ) -> &'a str {
+    ) -> &'a Arc<str> {
         match self {
-            Self::Assembler { ty, .. } => &*data_store.assembler_info[usize::from(*ty)].name,
-            Self::PowerPole { ty, .. } => &*data_store.power_pole_data[usize::from(*ty)].name,
-            Self::Belt { ty, .. } => &*data_store.belt_infos[usize::from(*ty)].name,
-            Self::Inserter { ty, .. } => &*data_store.inserter_infos[usize::from(*ty)].name,
-            Self::Underground { ty, .. } => &*data_store.belt_infos[usize::from(*ty)].name,
-            Self::Splitter { .. } => "FIXME",
-            Self::Chest { ty, .. } => &*data_store.chest_names[usize::from(*ty)],
+            Self::Assembler { ty, .. } => &data_store.assembler_info[usize::from(*ty)].name,
+            Self::PowerPole { ty, .. } => &data_store.power_pole_data[usize::from(*ty)].name,
+            Self::Belt { ty, .. } => &data_store.belt_infos[usize::from(*ty)].name,
+            Self::Inserter { ty, .. } => &data_store.inserter_infos[usize::from(*ty)].name,
+            Self::Underground { ty, .. } => {
+                &data_store.belt_infos[usize::from(*ty)].underground_name
+            },
+            Self::Splitter { .. } => &data_store.belt_infos[usize::from(0u8)].name,
+            Self::Chest { ty, .. } => &data_store.chest_names[usize::from(*ty)],
             Self::Roboport { ty, .. } => todo!(),
-            Self::SolarPanel { ty, .. } => &*data_store.solar_panel_info[usize::from(*ty)].name,
-            Self::Accumulator { ty, .. } => &*data_store.accumulator_info[usize::from(*ty)].name,
-            Self::Lab { ty, .. } => &*data_store.lab_info[usize::from(*ty)].name,
-            Self::Beacon { ty, .. } => &*data_store.beacon_info[usize::from(*ty)].name,
-            Self::FluidTank { ty, .. } => &*data_store.fluid_tank_infos[usize::from(*ty)].name,
-            Self::MiningDrill { ty, .. } => &*data_store.mining_drill_info[usize::from(*ty)].name,
+            Self::SolarPanel { ty, .. } => &data_store.solar_panel_info[usize::from(*ty)].name,
+            Self::Accumulator { ty, .. } => &data_store.accumulator_info[usize::from(*ty)].name,
+            Self::Lab { ty, .. } => &data_store.lab_info[usize::from(*ty)].name,
+            Self::Beacon { ty, .. } => &data_store.beacon_info[usize::from(*ty)].name,
+            Self::FluidTank { ty, .. } => &data_store.fluid_tank_infos[usize::from(*ty)].name,
+            Self::MiningDrill { ty, .. } => &data_store.mining_drill_info[usize::from(*ty)].name,
         }
     }
 }

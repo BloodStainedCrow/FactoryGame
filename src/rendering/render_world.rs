@@ -373,7 +373,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         inserter_item_layer
                     } = &mut layers;
 
-                    profiling::scope!("Rendering Chunk", format!("{:?}", (chunk_x, chunk_y)));
+                    profiling::scope!("Rendering Chunk", format!("{:?}", (chunk_x, chunk_y)).as_str());
 
                     match game_state.world.get_chunk(chunk_x, chunk_y) {
                         Some(chunk) => {
@@ -441,7 +441,7 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             {
                                 profiling::scope!("Render Entities");
                                 for entity in chunk.get_entities() {
-                                    profiling::scope!("Single Entity", format!("{}", entity.get_type_name()));
+                                    profiling::scope!("Single Entity", format!("{}", entity.get_type_name()).as_str());
                                     match entity {
                                         crate::frontend::world::tile::Entity::Assembler {
                                             ty,

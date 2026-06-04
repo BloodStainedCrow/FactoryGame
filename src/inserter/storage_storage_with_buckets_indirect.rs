@@ -592,7 +592,7 @@ impl BucketedStorageStorageInserterStore {
 
             profiling::scope!(
                 "Try taking Items from inventories",
-                format!("count: {}", self.waiting_for_item.len())
+                format!("count: {}", self.waiting_for_item.len()).as_str()
             );
             let now_moving = self.waiting_for_item.extract_if(start..end, |inserter| {
                 Self::handle_waiting_for_item_ins(
@@ -666,7 +666,7 @@ impl BucketedStorageStorageInserterStore {
 
             profiling::scope!(
                 "Try putting Items into inventories",
-                format!("count: {}", self.waiting_for_space_in_destination.len())
+                format!("count: {}", self.waiting_for_space_in_destination.len()).as_str()
             );
             let now_moving_back =
                 self.waiting_for_space_in_destination

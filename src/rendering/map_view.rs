@@ -122,6 +122,7 @@ pub fn create_map_textures_if_needed<ItemIdxType: IdxTrait, RecipeIdxType: IdxTr
                 "Size: {:?}, tile_per_pixel: {}",
                 [map_tile_size; 2], pixel_to_tile
             )
+            .as_str()
         );
 
         let tile_x_end = ((tile_x + 1) * map_tile_size as i32 * pixel_to_tile as i32) - 1_000_000;

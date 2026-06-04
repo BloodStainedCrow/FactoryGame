@@ -206,6 +206,7 @@ impl<ItemIdxType: IdxTrait> FullOreStore<ItemIdxType> {
                         "Item: {}",
                         &data_store.item_display_names[store.item.into_usize()]
                     )
+                    .as_str()
                 );
                 store.update(MAX_POWER_MULT, *mining_productivity_bonus)
             })

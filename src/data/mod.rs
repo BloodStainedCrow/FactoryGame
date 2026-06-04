@@ -691,6 +691,7 @@ impl MiningDrillInfo {
 #[derive(Debug, Clone, serde::Serialize, serde:: Deserialize)]
 pub struct BeltInfo {
     pub name: Arc<str>,
+    pub underground_name: Arc<str>,
     pub display_name: String,
     pub has_underground: Option<BeltUndergroundInfo>,
     pub has_splitter: Option<BeltSplitterInfo>,
@@ -1533,6 +1534,7 @@ impl RawDataStore {
                 // TODO: For now only have one kind of transport belt since connection is still borked
                 BeltInfo {
                     name: "factory_game::fast_transport_belt".to_string().into(),
+                    underground_name: "factory_game::fast_underground_belt".to_string().into(),
                     display_name: "Express Transport Belt".to_string(),
                     has_underground: Some(BeltUndergroundInfo { max_distance: 9 }),
                     has_splitter: None,

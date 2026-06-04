@@ -3169,7 +3169,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                         {
                             profiling::scope!(
                                 "Update Belts",
-                                format!("Count: {}", belt_store.belts.len())
+                                format!("Count: {}", belt_store.belts.len()).as_str()
                             );
                             // Belt update in parallel
                             // TODO: This is significantly better in parallel, for reasons I do not fully understand.

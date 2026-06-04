@@ -48,7 +48,7 @@ pub struct SaveGame<
 }
 
 pub fn save_at<V: serde::Serialize + ?Sized>(value: &V, path: PathBuf) {
-    profiling::scope!("Save at", format!("path: {}", path.display()));
+    profiling::scope!("Save at", format!("path: {}", path.display()).as_str());
     let file = {
         profiling::scope!("Create file");
         File::create(path).expect("could not create file")
@@ -90,7 +90,7 @@ pub(crate) enum LoadError {
 }
 
 pub fn try_load_at<V: for<'a> serde::Deserialize<'a>>(path: PathBuf) -> Result<V, LoadError> {
-    profiling::scope!("Load at", format!("path: {}", path.display()));
+    profiling::scope!("Load at", format!("path: {}", path.display()).as_str());
     let file = {
         profiling::scope!("Open file");
         File::open(&path).map_err(|err| LoadError::CouldNotOpenFile(err))?

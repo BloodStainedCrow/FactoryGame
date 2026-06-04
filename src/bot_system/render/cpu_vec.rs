@@ -77,7 +77,10 @@ impl super::BotRender<tilelib::types::Layer> for CPUBotRenderer {
             .zip(renderer)
             .for_each(|(list, renderer)| {
                 // let mut count = 0;
-                profiling::scope!("draw_many_sprites", format!("list_len: {}", list.len()));
+                profiling::scope!(
+                    "draw_many_sprites",
+                    format!("list_len: {}", list.len()).as_str()
+                );
                 renderer.draw_many_sprites(
                     &BOT_SPRITE,
                     list.iter()
