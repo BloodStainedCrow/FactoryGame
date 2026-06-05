@@ -1191,6 +1191,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
 
             {
                 profiling::scope!("Fold lists");
+                // TODO: Do I want to par_fold or reduce or whatever here?
                 lists.into_iter().flatten().fold(
                     (0, RecipeTickInfo::new(data_store), 0, vec![]),
                     |(acc_progress, infos, times_labs_used_science, mut old_updates),
@@ -1201,11 +1202,14 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                         new_updates,
                         reinsertions,
                     )| {
+                        // Note: old_updates is gonna be empty most of the time. Maybe we want to skip the rayon stuff then?
                         join!(
                             || {
+                                profiling::scope!("Collect Beacon Updates");
                                 old_updates.extend(new_updates);
                             },
                             || {
+                                profiling::scope!("Handle inserter reinsertions");
                                 for inserter in reinsertions {
                                     match inserter.conn {
                                         crate::assembler::simd::Conn::Storage {

@@ -3152,7 +3152,6 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
 
                         let (belt_storage_exit_incoming, mut belt_storage_reinsertion_outgoing, storage_belt_exit_outgoing, mut storage_belt_reinsertion_incoming) = belt_stuff;
 
-
                         {
                             profiling::scope!("storage_belt_exit.update");
                             // TODO: Rust-analyzer does not understand the const generics here, and thinks I am calling a different function
@@ -3172,8 +3171,8 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 format!("Count: {}", belt_store.belts.len()).as_str()
                             );
                             // Belt update in parallel
-                            // TODO: This is significantly better in parallel, for reasons I do not fully understand.
-                            //       The profiler indicates that belt updates are not a huge part of update times
+                            // TODO: This is significantly better in parallel
+                            // But it makes the profiler much less readable
                             #[cfg(feature = "par-belt-update")]
                             let reinsertion =
                                     belt_store

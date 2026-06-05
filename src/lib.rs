@@ -68,7 +68,7 @@ const TICKS_PER_SECOND_LOGIC: u64 = 60;
 
 const TICKS_PER_SECOND_RUNSPEED: u64 = 60;
 
-// NOTE(BSC): This is a f64 in disguise
+/// This is a f64 in disguise
 pub static RUNSPEED_MULTIPLIER: AtomicU64 = AtomicU64::new(1.0f64.to_bits());
 
 pub mod get_size;

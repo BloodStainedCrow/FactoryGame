@@ -1,5 +1,5 @@
 use std::{
-    fs::remove_dir_all,
+    fs::{create_dir_all, remove_dir_all},
     net::ToSocketAddrs,
     sync::{
         Arc,
@@ -18,10 +18,15 @@ use wasm_timer::Instant;
 use parking_lot::Mutex;
 
 use crate::{
-    example_worlds, get_version,
+    example_worlds,
+    frontend::settings::{GLOBAL_SETTINGS, GlobalSettings},
+    get_version,
     progress_info::ProgressInfo,
     run_client,
-    saving::{load, loading::SaveFileList, save_folder},
+    saving::{
+        config_dir, load, load_at, loading::SaveFileList, save_at, save_folder, settings_file,
+        try_load_at, try_save_at,
+    },
 };
 use crate::{rendering::render_world::EscapeMenuOptions, run_integrated_server};
 use eframe::{
@@ -611,6 +616,13 @@ impl eframe::App for App {
 
     fn on_exit(&mut self) {
         if let Some(state) = self.currently_loaded_game.take() {
+            if let Err(e) = create_dir_all(config_dir()) {
+                log::error!("Failed to create config_dir: {e:?}");
+            }
+            if let Err(e) = try_save_at(&*GLOBAL_SETTINGS.lock(), dbg!(settings_file())) {
+                log::error!("Failed to save global settings: {e:?}");
+            }
+
             if let Some((stop, handle)) = state.stop_update_thread {
                 stop.store(true, std::sync::atomic::Ordering::SeqCst);
                 handle.join();

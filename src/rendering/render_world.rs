@@ -16,6 +16,7 @@ use crate::frontend::action::action_state_machine;
 use crate::frontend::action::action_state_machine::ForkSaveInfo;
 use crate::frontend::action::place_entity::EntityPlaceOptions;
 use crate::frontend::action::place_entity::PlaceEntityInfo;
+use crate::frontend::settings::GLOBAL_SETTINGS;
 use crate::frontend::world::tile::BeltState;
 use crate::frontend::world::tile::PlaceEntityType;
 use crate::frontend::world::tile::{InternalInserterInfo, World};
@@ -1983,31 +1984,55 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     let data_store_ref = &*data_store;
     let mut actions = vec![];
 
+    let mut global_settings = GLOBAL_SETTINGS.lock();
+
     let current_tick = aux_data.current_tick;
 
-    let tick = (current_tick % u64::from(state_machine_ref.autosave_interval)) as u32;
+    if let Some(autosave_interval) = global_settings.autosave_interval {
+        let tick = (current_tick % u64::from(u32::from(autosave_interval))) as u32;
 
-    #[cfg(not(target_arch = "wasm32"))]
-    if cfg!(target_os = "linux") {
-        if tick < state_machine_ref.last_tick_seen_for_autosave {
-            if state_machine_ref.current_fork_save_in_progress.is_none() {
-                let recv = save_with_fork(
-                    &aux_data.game_name,
-                    None,
-                    &*world,
-                    &*simulation_state,
-                    &*aux_data,
-                    data_store_ref,
-                );
-                if let Some(recv) = recv {
-                    recv.set_nonblocking(true)
-                        .expect("Could not set pipe to nonblocking!");
-                    state_machine_ref.current_fork_save_in_progress = Some(ForkSaveInfo {
-                        recv,
-                        current_state: 0,
-                    });
+        #[cfg(not(target_arch = "wasm32"))]
+        if cfg!(target_os = "linux") {
+            if tick < state_machine_ref.last_tick_seen_for_autosave {
+                if state_machine_ref.current_fork_save_in_progress.is_none() {
+                    let recv = save_with_fork(
+                        &aux_data.game_name,
+                        None,
+                        &*world,
+                        &*simulation_state,
+                        &*aux_data,
+                        data_store_ref,
+                    );
+                    if let Some(recv) = recv {
+                        recv.set_nonblocking(true)
+                            .expect("Could not set pipe to nonblocking!");
+                        state_machine_ref.current_fork_save_in_progress = Some(ForkSaveInfo {
+                            recv,
+                            current_state: 0,
+                        });
+                    } else {
+                        error!("Nonblocking save failed to start! Saving in blocking mode");
+                        save_components(
+                            &aux_data.game_name,
+                            None,
+                            &*world,
+                            &*simulation_state,
+                            &*aux_data,
+                            data_store_ref,
+                        );
+                    }
                 } else {
-                    error!("Nonblocking save failed to start! Saving in blocking mode");
+                    warn!(
+                        "Save already in progress while trying to start autosave interval. If this was due to autosaves taking too long, consider increasing your autosave interval."
+                    );
+                }
+            }
+        } else {
+            // Ensure that the saving Window is on screen when the window freezes
+            if tick >= u32::from(autosave_interval) - 10 || tick <= 5 {
+                let progress = if tick > 1 && tick <= 5 { 1.0 } else { 0.0 };
+                if tick < state_machine_ref.last_tick_seen_for_autosave {
+                    let _timer = Timer::new("Saving");
                     save_components(
                         &aux_data.game_name,
                         None,
@@ -2017,33 +2042,13 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         data_store_ref,
                     );
                 }
-            } else {
-                warn!(
-                    "Save already in progress while trying to start autosave interval. If this was due to autosaves taking too long, consider increasing your autosave interval."
-                );
+                Window::new("Saving...").default_open(true).show(ctx, |ui| {
+                    ui.add(ProgressBar::new(progress).corner_radius(0.0));
+                });
             }
         }
-    } else {
-        // Ensure that the saving Window is on screen when the window freezes
-        if tick >= state_machine_ref.autosave_interval - 10 || tick <= 5 {
-            let progress = if tick > 1 && tick <= 5 { 1.0 } else { 0.0 };
-            if tick < state_machine_ref.last_tick_seen_for_autosave {
-                let _timer = Timer::new("Saving");
-                save_components(
-                    &aux_data.game_name,
-                    None,
-                    &*world,
-                    &*simulation_state,
-                    &*aux_data,
-                    data_store_ref,
-                );
-            }
-            Window::new("Saving...").default_open(true).show(ctx, |ui| {
-                ui.add(ProgressBar::new(progress).corner_radius(0.0));
-            });
-        }
+        state_machine_ref.last_tick_seen_for_autosave = tick;
     }
-    state_machine_ref.last_tick_seen_for_autosave = tick;
 
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     ui.vertical_centered(|ui|{
@@ -2159,15 +2164,17 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 }
 
                 ui.add(
-                    egui::Slider::new(&mut state_machine_ref.mouse_wheel_sensitivity, 0.01..=100.0)
+                    egui::Slider::new(&mut global_settings.mouse_wheel_sensitivity, 0.01..=100.0)
                         .text("Mouse Wheel sensitivity")
                         .logarithmic(true),
                 );
 
-                let mut autosave_interval_minutes =
-                    state_machine_ref.autosave_interval / 60 / (TICKS_PER_SECOND_LOGIC as u32);
+                let mut autosave_interval_minutes = global_settings
+                    .autosave_interval
+                    .map(|v| u32::from(v) / 60 / (TICKS_PER_SECOND_LOGIC as u32))
+                    .unwrap_or(0);
                 ui.add(
-                    egui::Slider::new(&mut autosave_interval_minutes, 1..=100)
+                    egui::Slider::new(&mut autosave_interval_minutes, 0..=100)
                         .integer()
                         .custom_formatter(|v, _range| {
                             let value: u32 = v as u32;
@@ -2176,8 +2183,10 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         })
                         .text("Autosave interval"),
                 );
-                state_machine_ref.autosave_interval =
-                    autosave_interval_minutes * 60 * (TICKS_PER_SECOND_LOGIC as u32);
+                global_settings.autosave_interval =
+                    (autosave_interval_minutes * 60 * (TICKS_PER_SECOND_LOGIC as u32))
+                        .try_into()
+                        .ok();
 
                 None
             })

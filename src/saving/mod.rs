@@ -34,6 +34,20 @@ pub(crate) fn save_folder() -> PathBuf {
         .join("saves")
 }
 
+pub(crate) fn config_dir() -> PathBuf {
+    ProjectDirs::from("de", "aschhoff", "factory_game")
+        .expect("No Home path found")
+        .config_dir()
+        .to_path_buf()
+}
+
+pub(crate) fn settings_file() -> PathBuf {
+    ProjectDirs::from("de", "aschhoff", "factory_game")
+        .expect("No Home path found")
+        .config_dir()
+        .join("settings")
+}
+
 #[derive(Debug, Encode, serde::Deserialize, serde::Serialize)]
 pub struct SaveGame<
     ItemIdxType: IdxTrait,
@@ -48,19 +62,37 @@ pub struct SaveGame<
 }
 
 pub fn save_at<V: serde::Serialize + ?Sized>(value: &V, path: PathBuf) {
+    try_save_at(value, path).unwrap();
+}
+
+#[derive(Debug)]
+pub(crate) enum SaveError {
+    CouldNotCreateFile(std::io::Error),
+    SerializationFailed(bincode::error::EncodeError),
+    WriteFailed(std::io::Error),
+}
+
+pub fn try_save_at<V: serde::Serialize + ?Sized>(
+    value: &V,
+    path: PathBuf,
+) -> Result<(), SaveError> {
     profiling::scope!("Save at", format!("path: {}", path.display()).as_str());
     let file = {
         profiling::scope!("Create file");
-        File::create(path).expect("could not create file")
+        File::create(path).map_err(|err| SaveError::CouldNotCreateFile(err))?
     };
 
     let mut buf_writer = BufWriter::new(file);
     {
         profiling::scope!("Compressing and Writing to file");
         bincode::serde::encode_into_std_write(value, &mut buf_writer, bincode::config::standard())
-            .unwrap();
+            .map_err(|err| SaveError::SerializationFailed(err))?;
     }
-    buf_writer.flush().unwrap();
+    buf_writer
+        .flush()
+        .map_err(|err| SaveError::WriteFailed(err))?;
+
+    Ok(())
 }
 
 pub fn save_at_fork<V: serde::Serialize + ?Sized>(value: &V, path: PathBuf) {

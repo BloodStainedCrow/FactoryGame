@@ -27,6 +27,7 @@ use crate::{
             set_recipe::SetRecipeInfo,
         },
         input::{Input, Key},
+        settings::GLOBAL_SETTINGS,
         world::{
             Position,
             tile::{AssemblerInfo, Dir, Entity, FloorTile, PlaceEntityType, UndergroundDir, World},
@@ -147,8 +148,6 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     // #[serde(skip)]
     pub get_size_cache: std::collections::HashMap<String, RamUsage>,
 
-    pub mouse_wheel_sensitivity: f32,
-
     // #[serde(skip)]
     #[cfg(not(target_arch = "wasm32"))]
     pub current_fork_save_in_progress: Option<ForkSaveInfo>,
@@ -156,7 +155,6 @@ pub struct ActionStateMachine<ItemIdxType: WeakIdxTrait, RecipeIdxType: WeakIdxT
     pub hotbar: Hotbar<ItemIdxType>,
 
     pub last_tick_seen_for_autosave: u32,
-    pub autosave_interval: u32,
 
     pub open_windows: EnumMap<Window, bool>,
 
@@ -297,15 +295,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
             get_size_cache: HashMap::new(),
 
-            mouse_wheel_sensitivity: 1.0,
-
             #[cfg(not(target_arch = "wasm32"))]
             current_fork_save_in_progress: None,
 
             hotbar: Hotbar::new(data_store),
 
             last_tick_seen_for_autosave: 0,
-            autosave_interval: (60 * TICKS_PER_SECOND_LOGIC) as u32,
 
             open_windows,
             datapedia: Pedia::new(data_store),
@@ -359,15 +354,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
             get_size_cache: HashMap::new(),
 
-            mouse_wheel_sensitivity: 1.0,
-
             #[cfg(not(target_arch = "wasm32"))]
             current_fork_save_in_progress: None,
 
             hotbar: Hotbar::new(data_store),
 
             last_tick_seen_for_autosave: 0,
-            autosave_interval: (60 * TICKS_PER_SECOND_LOGIC) as u32,
 
             open_windows,
             datapedia: Pedia::new(data_store),
@@ -650,7 +642,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
         data_store: &'d DataStore<ItemIdxType, RecipeIdxType>,
     ) -> impl Iterator<Item = ActionType<ItemIdxType, RecipeIdxType>>
     + use<'a, 'b, 'c, 'd, 'e, ItemIdxType, RecipeIdxType, I> {
-        input.into_iter().map(|input| {
+        let global_settings = GLOBAL_SETTINGS.lock();
+
+        input.into_iter().map(move |input| {
             if self.open_windows[Window::Escape] && input != Input::KeyPress(Key::Esc) {
                 match input {
                     Input::KeyPress(key) => {
@@ -985,7 +979,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                     let Position {x: mouse_x, y: mouse_y} = Self::player_mouse_to_tile(self.zoom_level, self.map_view_info.unwrap_or(self.local_player_pos), self.current_mouse_pos);
                     match delta {
                         (_, y) => {
-                            self.zoom_level -=  y as f32 * 4.0 * self.mouse_wheel_sensitivity;
+                            self.zoom_level -=  y as f32 * 4.0 * global_settings.mouse_wheel_sensitivity;
                         },
                     }
                     if let Some(view_center) = &mut self.map_view_info {
