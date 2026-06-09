@@ -1,0 +1,18 @@
+[package]
+name = "frontend"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bitvec = { version = "1.0.1", features = ["serde"] }
+data = { path = "../data" } 
+itertools = "0.14.0"
+middle = { path = "../middle" } 
+rand = { version = "0.10.1", features = ["thread_rng"] }
+
+[dev-dependencies]
+proptest = "1.11.0"
+data = { path = "../data", features = ["test"] }
+
+[lints]
+workspace = true

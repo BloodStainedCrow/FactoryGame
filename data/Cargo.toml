@@ -1,0 +1,14 @@
+[package]
+name = "data"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+proptest = "1.11.0"
+serde = { version = "1.0.228", features = ["derive"] }
+
+[lints]
+workspace = true
+
+[features]
+test = []

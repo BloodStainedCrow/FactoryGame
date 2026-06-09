@@ -8,8 +8,8 @@
         "[ ]",
         "[x]",
         "todo!",
-        "unsafe {",
-        "unsafe fn",
+        // "unsafe {",
+        // "unsafe fn",
         "#[inline(never)]", // #[inline(never)] is bad and normally left over from using cargo show-asm, so I treat is as a TODO
         "type TEST = "
     ],
@@ -18,7 +18,7 @@
     ],
     // "todo-tree.regex.regex": "(//|#|<!--|;|/\\*|^|^[ \\t]*(-|\\d+.)|:)\\s*($TAGS)",
     "todo-tree.regex.regex": "($TAGS)",
-    "rust-analyzer.check.command": "check",
+    "rust-analyzer.check.command": "clippy",
     "rust-analyzer.check.allTargets": true,
     "VsCodeTaskButtons.tasks": [
         {
