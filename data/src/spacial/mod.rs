@@ -133,6 +133,16 @@ impl BoundingBox {
     }
 
     #[must_use]
+    pub const fn top_left(self) -> Position {
+        self.top_left
+    }
+
+    #[must_use]
+    pub const fn bottom_right(self) -> Position {
+        self.bottom_right
+    }
+
+    #[must_use]
     pub fn overlaps(self, other: Self) -> bool {
         todo!()
     }

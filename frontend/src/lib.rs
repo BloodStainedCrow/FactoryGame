@@ -4,6 +4,7 @@
 
 mod chunk;
 pub mod entity;
+mod sparse_grid;
 mod surface;
 
 #[cfg(test)]
