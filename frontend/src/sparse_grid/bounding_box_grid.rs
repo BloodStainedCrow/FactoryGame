@@ -311,7 +311,7 @@ impl<T> BoundingBoxGrid<I, T> {
         y_range[0] = min(y_range[0], y);
         y_range[1] = max(y_range[1], y);
 
-        let values: Vec<_> = self.values.drain(..).filter_map(|v| v).collect();
+        let values: Vec<_> = self.values.drain(..).flatten().collect();
 
         let new_size =
             (extent[0][0]..=extent[0][1]).count() * (extent[1][0]..=extent[1][1]).count();
@@ -320,7 +320,7 @@ impl<T> BoundingBoxGrid<I, T> {
 
         for (idx, old_val) in values.into_iter().enumerate() {
             let pos = Self::calculate_pos(&old_extent, idx);
-            let index = Self::calculate_index(extent, pos.into());
+            let index = Self::calculate_index(extent, pos);
             self.values[index] = Some(old_val);
         }
     }
@@ -330,7 +330,9 @@ impl<T> BoundingBoxGrid<I, T> {
         positions: impl IntoIterator<Item = [I; 2]>,
     ) -> [RangeInclusive<I>; 2] {
         let mut positions = positions.into_iter();
-        let [x, y] = positions.next().unwrap();
+        let [x, y] = positions
+            .next()
+            .expect("positions must include at least one");
         let extent = self.extent.unwrap_or([[x, x], [y, y]]);
         let [mut x_range, mut y_range] = extent;
 

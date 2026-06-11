@@ -3,14 +3,34 @@ use std::{
     ops::Add,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use enum_map::Enum;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct Position {
     pub x: i32,
     pub y: i32,
 }
 
+impl Position {
+    #[must_use]
+    pub const fn axis_aligned_distance_signed(self, other: Self) -> Option<i32> {
+        let x_offs = self.x - other.x;
+        let y_offs = self.y - other.y;
+
+        if x_offs != 0 && y_offs != 0 {
+            None
+        } else if x_offs != 0 {
+            Some(x_offs)
+        } else if y_offs != 0 {
+            Some(y_offs)
+        } else {
+            Some(0)
+        }
+    }
+}
+
 // TODO(BSC): Do I want to be able to support zero sized bounding boxes?
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub struct BoundingBox {
     // Inclusive
     top_left: Position,
@@ -58,7 +78,60 @@ impl Flipped {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
+pub enum Direction {
+    North,
+    East,
+    South,
+    West,
+}
+
+impl Direction {
+    #[must_use]
+    pub const fn rotate_right(self) -> Self {
+        match self {
+            Self::North => Self::East,
+            Self::East => Self::South,
+            Self::South => Self::West,
+            Self::West => Self::North,
+        }
+    }
+
+    #[must_use]
+    pub const fn reverse(self) -> Self {
+        match self {
+            Self::North => Self::South,
+            Self::East => Self::West,
+            Self::South => Self::North,
+            Self::West => Self::East,
+        }
+    }
+}
+
+impl From<Direction> for Offset {
+    fn from(value: Direction) -> Self {
+        match value {
+            Direction::North => Self {
+                x_offs: 0,
+                y_offs: -1,
+            },
+            Direction::East => Self {
+                x_offs: -1,
+                y_offs: 0,
+            },
+            Direction::South => Self {
+                x_offs: 0,
+                y_offs: 1,
+            },
+            Direction::West => Self {
+                x_offs: 1,
+                y_offs: 0,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
 pub enum Rotation {
     North,
     East,
@@ -66,10 +139,22 @@ pub enum Rotation {
     West,
 }
 
+impl Rotation {
+    #[must_use]
+    pub const fn rotate_right(self) -> Self {
+        match self {
+            Self::North => Self::East,
+            Self::East => Self::South,
+            Self::South => Self::West,
+            Self::West => Self::North,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, serde::Deserialize)]
 pub struct Extent {
-    pub width: i32,
-    pub height: i32,
+    pub width: u32,
+    pub height: u32,
 }
 
 impl Extent {
@@ -89,8 +174,8 @@ impl BoundingBox {
     #[must_use]
     pub const fn new(top_left: Position, extent: Extent) -> Self {
         let bottom_right = Position {
-            x: top_left.x + extent.width,
-            y: top_left.y + extent.height,
+            x: top_left.x.strict_add_unsigned(extent.width),
+            y: top_left.y.strict_add_unsigned(extent.height),
         };
 
         Self {

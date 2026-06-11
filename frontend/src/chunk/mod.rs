@@ -1,8 +1,10 @@
 use bitvec::{BitArr, bitarr};
 use data::{
-    get_entity_extent,
+    entity::{GlobalTy, extent},
+    get_kind,
     spacial::{BoundingBox, Extent, Flipped, Position, Rotation},
 };
+use middle::lists::{AssemblerIndex, BeltIndex, InserterIndex, PipeIndex};
 
 use crate::entity::{EntityDescriptor, EntityDescriptorKind};
 
@@ -18,7 +20,7 @@ pub struct Chunk {
 }
 
 struct SameEntityOptimization {
-    ty: u16,
+    ty: GlobalTy,
     rotation: RotationWithFlipped,
     spots: BitArr!(for usize::from(CHUNK_SIZE) * usize::from(CHUNK_SIZE), in usize),
 }
@@ -41,11 +43,11 @@ impl Chunk {
                         "The array is CHUNK_SIZE * CHUNK_SIZE long so this wil always fit",
                     ));
 
-                    let (rotation, _flipped) = same.rotation.into();
+                    let (rotation, flipped) = same.rotation.into();
 
                     BoundingBox::new(
                         pos_in_chunk.into_real(base_pos),
-                        get_entity_extent(same.ty, rotation),
+                        extent(same.ty, rotation, flipped),
                     )
                 })
             })
@@ -69,7 +71,7 @@ impl Chunk {
         let rotation = (rotation, flipped).into();
 
         match kind {
-            crate::entity::EntityDescriptorKind::Assembler { id } => {
+            EntityDescriptorKind::Assembler { id } => {
                 self.entities.push(StoredEntity {
                     pos,
                     rotation,
@@ -77,7 +79,32 @@ impl Chunk {
                     index: id.0,
                 });
             },
-            crate::entity::EntityDescriptorKind::SolarPanel {} => {
+            EntityDescriptorKind::Inserter { id } => {
+                self.entities.push(StoredEntity {
+                    pos,
+                    rotation,
+                    ty,
+                    index: id.0,
+                });
+            },
+
+            EntityDescriptorKind::Belt { id } => {
+                self.entities.push(StoredEntity {
+                    pos,
+                    rotation,
+                    ty,
+                    index: id.0,
+                });
+            },
+            EntityDescriptorKind::Pipe { id } => {
+                self.entities.push(StoredEntity {
+                    pos,
+                    rotation,
+                    ty,
+                    index: id.0,
+                });
+            },
+            EntityDescriptorKind::SolarPanel {} => {
                 if let Some(single) = &mut self.single_kind_optimization {
                     // TODO: Check info
                     if single.rotation == rotation && single.ty == ty {
@@ -216,25 +243,46 @@ impl PosInChunk {
 struct StoredEntity {
     pos: PosInChunk,
     rotation: RotationWithFlipped,
-    ty: u16,
+    ty: GlobalTy,
     index: u32,
 }
 
 impl StoredEntity {
     fn get_extent(self) -> Extent {
-        let (rotation, _flipped) = self.rotation.into();
-        get_entity_extent(self.ty, rotation)
+        let (rotation, flipped) = self.rotation.into();
+        extent(self.ty, rotation, flipped)
     }
 
     fn get_descriptor(self, base_pos: Position) -> EntityDescriptor {
         let (rotation, flipped) = self.rotation.into();
+
+        let kind = match get_kind(self.ty) {
+            data::EntityPrototypeKind::Assembler => EntityDescriptorKind::Assembler {
+                id: AssemblerIndex(self.index),
+            },
+            data::EntityPrototypeKind::Inserter => EntityDescriptorKind::Inserter {
+                id: InserterIndex(self.index),
+            },
+            data::EntityPrototypeKind::Belt => EntityDescriptorKind::Belt {
+                id: BeltIndex(self.index),
+            },
+            data::EntityPrototypeKind::Pipe => EntityDescriptorKind::Pipe {
+                id: PipeIndex(self.index),
+            },
+            data::EntityPrototypeKind::UndergroundBelt => todo!(),
+            data::EntityPrototypeKind::Splitter => todo!(),
+            data::EntityPrototypeKind::Chest => todo!(),
+            data::EntityPrototypeKind::PowerPole => todo!(),
+            data::EntityPrototypeKind::SolarPanel => EntityDescriptorKind::SolarPanel {},
+            data::EntityPrototypeKind::Accumulator => todo!(),
+        };
 
         EntityDescriptor {
             position: self.pos.into_real(base_pos),
             rotation,
             flipped,
             ty: self.ty,
-            kind: todo!(),
+            kind,
         }
     }
 }
@@ -435,7 +483,7 @@ mod test {
                 },
                 rotation,
                 flipped,
-                ty: 2,
+                ty: 0.into(),
                 kind: EntityDescriptorKind::Assembler {
                     id: AssemblerIndex(100),
                 },
@@ -463,7 +511,7 @@ mod test {
                 position: entity_pos,
                 rotation,
                 flipped,
-                ty: 2,
+                ty: 0.into(),
                 kind: EntityDescriptorKind::Assembler {
                     id: AssemblerIndex(100),
                 },

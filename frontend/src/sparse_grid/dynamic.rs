@@ -221,3 +221,31 @@ impl<T: 'static> DynamicGrid<I, T> {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    use data::spacial::Position;
+    use proptest::{prop_assert_eq, proptest};
+
+    proptest! {
+        #[test]
+        fn insert(x in -1_000_000..1_000_000, y in -1_000_000..1_000_000) {
+            let mut store: DynamicGrid<i32, Position> = DynamicGrid::new();
+
+            store.insert(x, y, Position { x, y });
+        }
+
+        #[test]
+        fn insert_and_retrieve(x in -1_000_000..1_000_000, y in -1_000_000..1_000_000) {
+            let mut store: DynamicGrid<i32, Position> = DynamicGrid::new();
+
+            store.insert(x, y, Position { x, y });
+
+            let stored = store.get(x, y);
+
+            prop_assert_eq!(stored, Some(&Position { x, y }));
+        }
+    }
+}

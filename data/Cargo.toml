@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+enum-map = "2.7.3"
 proptest = "1.11.0"
 serde = { version = "1.0.228", features = ["derive"] }
 

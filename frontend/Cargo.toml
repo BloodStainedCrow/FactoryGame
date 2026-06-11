@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 bitvec = { version = "1.0.1", features = ["serde"] }
 data = { path = "../data" } 
+enum-map = { version = "2.7.3", features = ["serde"] }
 itertools = "0.14.0"
 log = "0.4.32"
 middle = { path = "../middle" } 
