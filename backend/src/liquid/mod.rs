@@ -1,6 +1,6 @@
 use std::{cmp::min, iter};
 
-use crate::slot_arenas::fluid_arena::{FluidIndex, NO_TOKEN, SingleFluidSlice};
+use crate::slot_arenas::fluid_arena::{FluidIndex, FluidSlotType, NO_TOKEN, SingleFluidSlice};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FluidSystemID(pub u32);
@@ -39,9 +39,9 @@ impl FluidNetwork {
 
             let space_remaining = self.max_fluid - self.current_fluid;
 
-            let to_move: u8 = min(
+            let to_move: FluidSlotType = min(
                 slice.current[token.0 as usize],
-                space_remaining.try_into().unwrap_or(u8::MAX),
+                space_remaining.try_into().unwrap_or(FluidSlotType::MAX),
             );
 
             let fulfilled = to_move == slice.current[token.0 as usize];
@@ -76,9 +76,9 @@ impl FluidNetwork {
                 "If a fluid token is in the fluid networks update list, that means we can make progress"
             );
 
-            let to_move: u8 = min(
+            let to_move: FluidSlotType = min(
                 space_remaining,
-                self.current_fluid.try_into().unwrap_or(u8::MAX),
+                self.current_fluid.try_into().unwrap_or(FluidSlotType::MAX),
             );
 
             let fulfilled = to_move == space_remaining;
@@ -116,6 +116,7 @@ impl FluidNetwork {
 
         if let Some(position) = position {
             // TODO: Do I want to use swap_remove here?
+            // Doing so would be better for performance, but might break the round robin strategy. But only when the player does actively change the factory, so that might be fine
             Ok(self.input_tokens.remove(position))
         } else {
             Err(())
@@ -131,6 +132,7 @@ impl FluidNetwork {
 
         if let Some(position) = position {
             // TODO: Do I want to use swap_remove here?
+            // Doing so would be better for performance, but might break the round robin strategy. But only when the player does actively change the factory, so that might be fine
             Ok(self.output_tokens.remove(position))
         } else {
             Err(())
