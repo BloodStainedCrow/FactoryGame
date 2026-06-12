@@ -8,7 +8,20 @@ pub struct FluidIndex(pub u32);
 pub type FluidSlotType = u8;
 
 pub struct SingleFluidSlice<'a> {
-    pub current: &'a mut [FluidSlotType],
-    pub max: &'a [FluidSlotType],
-    pub tokens: &'a mut [FluidSystemID],
+    current: &'a mut [FluidSlotType],
+    max: &'a [FluidSlotType],
+    tokens: &'a mut [FluidSystemID],
+}
+
+impl SingleFluidSlice<'_> {
+    pub fn index(
+        &mut self,
+        index: FluidIndex,
+    ) -> (&mut FluidSlotType, &FluidSlotType, &mut FluidSystemID) {
+        (
+            &mut self.current[index.0 as usize],
+            &self.max[index.0 as usize],
+            &mut self.tokens[index.0 as usize],
+        )
+    }
 }

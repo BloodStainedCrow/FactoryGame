@@ -4,7 +4,7 @@ use std::{cmp::max, sync::LazyLock};
 
 use crate::{
     entity::{GlobalTy, PlacementRules},
-    spacial::{Extent, Rotation},
+    spacial::Extent,
 };
 
 pub const TICKS_PER_SECOND_LOGIC: usize = 60;

@@ -3,6 +3,7 @@ resolver = "3"
 members = ["frontend", "middle", "data", "backend", "factory"]
 
 [workspace.lints.rust]
+unused_imports = "deny"
 
 [workspace.lints.clippy]
 enum_glob_use = { level = "deny", priority = -1 }
