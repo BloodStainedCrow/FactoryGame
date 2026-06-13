@@ -1,12 +1,20 @@
 use std::num::NonZero;
 
+pub type ItemCountType = u16;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Item(u16);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ItemStack {
     pub item: Item,
-    pub count: NonZero<u16>,
+    pub count: NonZero<ItemCountType>,
+}
+
+#[must_use]
+pub const fn max_stack_size(item: Item) -> NonZero<ItemCountType> {
+    // TODO
+    NonZero::new(2).expect("Hardcoded")
 }
 
 #[cfg(feature = "test")]
@@ -16,7 +24,7 @@ pub mod strategies {
         prop_compose, prop_oneof,
     };
 
-    use super::{Item, ItemStack};
+    use super::{Item, ItemCountType, ItemStack};
 
     pub fn random_item() -> impl Strategy<Value = Item> {
         // TODO:
@@ -24,7 +32,7 @@ pub mod strategies {
     }
 
     prop_compose! {
-      pub fn random_item_stack(max_count: u16)
+      pub fn random_item_stack(max_count: ItemCountType)
                            (count in 1..max_count, item in random_item())
                            -> ItemStack {
         ItemStack { item, count: count.try_into().expect("Range starts at 1") }

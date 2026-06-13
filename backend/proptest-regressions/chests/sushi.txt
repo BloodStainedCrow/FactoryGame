@@ -6,3 +6,5 @@
 # everyone who runs the test benefits from these saved cases.
 cc 2713d682972eff1df2d4ac2d875677ed37a8e83db39db16dd33986a2f1967767 # shrinks to item = Item(0), add_count = 2, remove_count = 2
 cc 1175387d623196a17804761d6826e54e396c8f08944158d530eb4a224e6fb438 # shrinks to item = Item(0), add_count = 275, remove_count = 2
+cc edec289e3ab3d6ea99712c061514cccf4e9079bc719c74d0c214b3ab1e5db141 # shrinks to slot_count = 0, stack = ItemStack { item: Item(0), count: 1 }
+cc 10a3ba26f96ab453f864a29e8071c81d8fbef24830cb90c12614689f01658cfe # shrinks to slot_count = 0, item = Item(0), add_count = 1, remove_count = 1

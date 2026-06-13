@@ -2,8 +2,10 @@
 
 use std::{cmp::min, num::NonZero};
 
-use data::item::{Item, ItemStack};
+use data::item::{Item, ItemCountType, ItemStack, max_stack_size};
 use static_assertions::const_assert_eq;
+
+pub type ItemStackIndex = u16;
 
 #[derive(Debug, Clone, Copy)]
 pub struct SushiSlot {
@@ -16,10 +18,10 @@ const_assert_eq!(
 );
 
 impl SushiSlot {
-    fn is_full(self) -> bool {
+    fn is_full(self, stack_size_override: Option<NonZero<ItemCountType>>) -> bool {
         self.content.as_ref().is_some_and(|stack| {
-            // TODO
-            let max_stack_size: NonZero<u16> = NonZero::new(2).unwrap();
+            let max_stack_size: NonZero<ItemCountType> =
+                stack_size_override.unwrap_or_else(|| max_stack_size(stack.item));
             stack.count == max_stack_size
         })
     }
@@ -28,17 +30,21 @@ impl SushiSlot {
 #[derive(Debug)]
 pub struct SushiChest {
     slots: Box<[SushiSlot]>,
-    first_non_full_slot: u32,
-    first_slot_with_all_empty_after: u32,
-    // TODO: Stack limit override?
+    first_non_full_slot: ItemStackIndex,
+    first_slot_with_all_empty_after: ItemStackIndex,
+
+    // Alternatively I could store the chest ty and look it up from that (by making floor chests a hardcoded ty)
+    // That is probably better?
+    stack_size_override: Option<NonZero<ItemCountType>>,
 }
 
 impl SushiChest {
-    pub fn new(num_slots: u32) -> Self {
+    pub fn new(num_slots: ItemStackIndex) -> Self {
         Self {
             slots: vec![SushiSlot { content: None }; num_slots as usize].into_boxed_slice(),
             first_non_full_slot: 0,
             first_slot_with_all_empty_after: 0,
+            stack_size_override: None,
         }
     }
 
@@ -46,7 +52,7 @@ impl SushiChest {
         debug_assert!(
             self.slots[0..(self.first_non_full_slot as usize)]
                 .iter()
-                .all(|slot| { slot.is_full() })
+                .all(|slot| { slot.is_full(self.stack_size_override) })
         );
 
         debug_assert!(
@@ -56,12 +62,13 @@ impl SushiChest {
         );
     }
 
-    fn take_slot(&mut self, slot: u32) -> Option<ItemStack> {
+    fn take_slot(&mut self, slot: ItemStackIndex) -> Option<ItemStack> {
         let ret = Self::take_slot_raw(
             &mut self.slots[slot as usize],
             slot,
             &mut self.first_slot_with_all_empty_after,
             &mut self.first_non_full_slot,
+            self.stack_size_override,
         );
 
         self.assert_invariants();
@@ -71,15 +78,16 @@ impl SushiChest {
 
     fn take_slot_raw(
         slot: &mut SushiSlot,
-        slot_index: u32,
-        first_slot_with_all_empty_after: &mut u32,
-        first_non_full_slot: &mut u32,
+        slot_index: ItemStackIndex,
+        first_slot_with_all_empty_after: &mut ItemStackIndex,
+        first_non_full_slot: &mut ItemStackIndex,
+        stack_size_override: Option<NonZero<ItemCountType>>,
     ) -> Option<ItemStack> {
         if slot_index + 1 == *first_slot_with_all_empty_after {
             *first_slot_with_all_empty_after = slot_index;
         }
 
-        if slot.is_full() && slot_index < *first_non_full_slot {
+        if slot.is_full(stack_size_override) && slot_index < *first_non_full_slot {
             *first_non_full_slot = slot_index;
         }
 
@@ -91,8 +99,9 @@ impl SushiChest {
             .iter_mut()
             .enumerate()
         {
-            // TODO
-            let max_stack_size: NonZero<u16> = NonZero::new(2).unwrap();
+            let max_stack_size: NonZero<ItemCountType> = self
+                .stack_size_override
+                .unwrap_or_else(|| max_stack_size(items.item));
             if let Some(stack) = &mut slot.content {
                 if stack.item == items.item {
                     let taken: u16 = min(
@@ -101,7 +110,9 @@ impl SushiChest {
                     );
 
                     stack.count = stack.count.saturating_add(taken);
-                    if index as u32 == self.first_non_full_slot && stack.count == max_stack_size {
+                    if index as ItemStackIndex == self.first_non_full_slot
+                        && stack.count == max_stack_size
+                    {
                         // This slot is now full
                         self.first_non_full_slot += 1;
                     }
@@ -120,12 +131,14 @@ impl SushiChest {
                     count: taken,
                 });
 
-                if index as u32 == self.first_slot_with_all_empty_after {
+                if index as ItemStackIndex == self.first_slot_with_all_empty_after {
                     // This slot is now no longer empty
                     self.first_slot_with_all_empty_after += 1;
                 }
 
-                if index as u32 == self.first_non_full_slot && items.count == max_stack_size {
+                if index as ItemStackIndex == self.first_non_full_slot
+                    && items.count == max_stack_size
+                {
                     // This slot is now full
                     self.first_non_full_slot += 1;
                 }
@@ -168,9 +181,10 @@ impl SushiChest {
                         if u16::from(stack.count) <= needed {
                             let Some(ItemStack { item: _, count }) = Self::take_slot_raw(
                                 slot,
-                                index as u32,
+                                index as ItemStackIndex,
                                 &mut self.first_slot_with_all_empty_after,
                                 &mut self.first_non_full_slot,
+                                self.stack_size_override,
                             ) else {
                                 unreachable!()
                             };
@@ -182,12 +196,13 @@ impl SushiChest {
                             }
                         } else {
                             // Take the needed amount from the stack
-                            // TODO:
-                            let max_stack_size: NonZero<u16> = NonZero::new(2).unwrap();
+                            let max_stack_size: NonZero<ItemCountType> = self
+                                .stack_size_override
+                                .unwrap_or_else(|| max_stack_size(stack.item));
                             if stack.count == max_stack_size
-                                && (index as u32) < self.first_non_full_slot
+                                && (index as ItemStackIndex) < self.first_non_full_slot
                             {
-                                self.first_non_full_slot = index as u32;
+                                self.first_non_full_slot = index as ItemStackIndex;
                             }
 
                             stack.count = (u16::from(stack.count) - needed).try_into().expect("For this to be zero, stack.count must be equal to needed which is checked before");
@@ -199,22 +214,24 @@ impl SushiChest {
                 } else if stack.count < max_count {
                     ret = Self::take_slot_raw(
                         slot,
-                        index as u32,
+                        index as ItemStackIndex,
                         &mut self.first_slot_with_all_empty_after,
                         &mut self.first_non_full_slot,
+                        self.stack_size_override,
                     );
                 } else if stack.count == max_count {
                     return Self::take_slot_raw(
                         slot,
-                        index as u32,
+                        index as ItemStackIndex,
                         &mut self.first_slot_with_all_empty_after,
                         &mut self.first_non_full_slot,
+                        self.stack_size_override,
                     );
                 } else {
                     // The stack in the slot is bigger than the count we want
-                    if (index as u32) < self.first_non_full_slot {
+                    if (index as ItemStackIndex) < self.first_non_full_slot {
                         // This slot is no longer full
-                        self.first_non_full_slot = index as u32;
+                        self.first_non_full_slot = index as ItemStackIndex;
                     }
 
                     stack.count =
@@ -253,7 +270,7 @@ mod test {
 
     proptest! {
         #[test]
-        fn create_chest(slot_count in 0u32..65_535) {
+        fn create_chest(slot_count in (0 as ItemStackIndex)..65_535) {
             let _chest = SushiChest::new(slot_count);
         }
 
@@ -267,7 +284,7 @@ mod test {
         }
 
         #[test]
-        fn add_remove_item(item in random_item(), add_count in 1u16..6_000, remove_count in 1u16..6_000) {
+        fn add_remove_item(item in random_item(), add_count in (1 as ItemCountType)..6_000, remove_count in (1 as ItemCountType)..6_000) {
             let mut chest = SushiChest::new(65_535);
 
             let res = chest.try_add_item_stack(ItemStack { item, count: add_count.try_into().expect("range starts at 1") });
