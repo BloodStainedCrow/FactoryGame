@@ -17,6 +17,12 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 [[package]]
 name = "backend"
 version = "0.1.0"
+dependencies = [
+ "const-assert",
+ "data",
+ "proptest",
+ "static_assertions",
+]
 
 [[package]]
 name = "bit-set"
@@ -68,6 +74,12 @@ dependencies = [
  "cpufeatures",
  "rand_core 0.10.1",
 ]
+
+[[package]]
+name = "const-assert"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8298db53081b3a951cadb6e0f4ebbe36def7bcb591a34676708d0d7ac87dd86"
 
 [[package]]
 name = "cpufeatures"
@@ -563,6 +575,12 @@ dependencies = [
  "serde_core",
  "zmij",
 ]
+
+[[package]]
+name = "static_assertions"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "syn"

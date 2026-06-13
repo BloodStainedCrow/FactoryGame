@@ -14,6 +14,7 @@ pub const TICKS_PER_SECOND_LOGIC_F32: f32 = TICKS_PER_SECOND_LOGIC as f32;
 pub mod api;
 pub mod energy;
 pub mod entity;
+pub mod item;
 pub mod spacial;
 
 #[derive(Debug, serde::Deserialize)]
