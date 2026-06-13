@@ -1,3 +1,5 @@
+#[cfg(feature = "debug-stat-gathering")]
+use std::sync::atomic::AtomicUsize;
 use std::{
     iter::repeat,
     num::NonZero,
@@ -38,6 +40,8 @@ use crate::inserter::FakeUnionStorage;
 
 #[cfg(feature = "debug-stat-gathering")]
 pub static NUM_BELT_UPDATES: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "debug-stat-gathering")]
+pub static NUM_BELT_UPDATES_SKIPPABLE_WITH_IDLE: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "debug-stat-gathering")]
 pub static NUM_BELT_FREE_CACHE_HITS: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "debug-stat-gathering")]
@@ -1376,6 +1380,56 @@ impl<ItemIdxType: IdxTrait> SmartBelt<ItemIdxType> {
 
         // Some(new_belt)
     }
+
+    // This is conceptual to think about how I can make belts stop updating when idle
+    #[expect(unused)]
+    fn is_idle(&self) -> bool {
+        let mut old_first_free = match self.first_free_index {
+            FreeIndex::FreeIndex(idx) => idx,
+            FreeIndex::OldFreeIndex(idx) => idx,
+        };
+
+        if old_first_free == self.get_len() - 1 && *self.get(self.get_len() - 1) {
+            old_first_free += 1;
+        }
+
+        // let items_stuck_raw: bool = self
+        //     .items_in_range(old_first_free..=(self.get_len() - 1))
+        //     .all(|loc| loc.is_none());
+
+        // This can just be stored and updated (and maybe even used for circuits)
+        let num_items_on_belt: BeltLenType = self.locs.count_ones() as u16;
+
+        let items_stuck: bool = old_first_free == num_items_on_belt;
+
+        // assert_eq!(
+        //     items_stuck_raw,
+        //     items_stuck,
+        //     "{:?}",
+        //     self.items().collect_vec()
+        // );
+
+        if !items_stuck {
+            return false;
+        }
+
+        // We know the items are stuck!
+
+        let mut all_incoming = self.inserters.inserters.iter().filter(|ins| !ins.outgoing);
+
+        let all_incoming_stuck = all_incoming.all(|ins| ins.belt_pos < old_first_free);
+
+        let mut all_outgoing = self.inserters.inserters.iter().filter(|ins| ins.outgoing);
+
+        let all_outgoing_stuck = all_outgoing.all(|ins| ins.belt_pos >= old_first_free);
+
+        // This also triggers if we just do not have any inserters
+        if all_incoming_stuck && all_outgoing_stuck {
+            return true;
+        }
+
+        false
+    }
 }
 
 impl EmptyBelt {
@@ -1750,6 +1804,16 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
             return;
         }
 
+        #[cfg(feature = "debug-stat-gathering")]
+        {
+            NUM_BELT_UPDATES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let is_idle = self.is_idle();
+            if is_idle {
+                NUM_BELT_UPDATES_SKIPPABLE_WITH_IDLE
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+
         if let Some((input_id, side)) = &self
             .input_splitter
             .map(|side| (self.input_splitter_id, side))
@@ -1813,7 +1877,6 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
 
         #[cfg(feature = "debug-stat-gathering")]
         {
-            NUM_BELT_UPDATES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             match self.first_free_index {
                 FreeIndex::FreeIndex(_) => {
                     NUM_BELT_FREE_CACHE_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1834,23 +1897,23 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
 
         let Some(first_free_index_real) = first_free_index_real else {
             // All slots are full
-            #[cfg(feature = "debug-stat-gathering")]
-            {
-                NUM_BELT_LOCS_SEARCHED.fetch_add(
-                    (len - old_free) as usize,
-                    std::sync::atomic::Ordering::Relaxed,
-                );
-            }
+            // #[cfg(feature = "debug-stat-gathering")]
+            // {
+            //     NUM_BELT_LOCS_SEARCHED.fetch_add(
+            //         (len - old_free) as usize,
+            //         std::sync::atomic::Ordering::Relaxed,
+            //     );
+            // }
             return;
         };
 
-        #[cfg(feature = "debug-stat-gathering")]
-        {
-            NUM_BELT_LOCS_SEARCHED.fetch_add(
-                (first_free_index_real - old_free) as usize,
-                std::sync::atomic::Ordering::Relaxed,
-            );
-        }
+        // #[cfg(feature = "debug-stat-gathering")]
+        // {
+        //     NUM_BELT_LOCS_SEARCHED.fetch_add(
+        //         (first_free_index_real - old_free) as usize,
+        //         std::sync::atomic::Ordering::Relaxed,
+        //     );
+        // }
 
         if first_free_index_real == 0 {
             let new_val = self.zero_index.checked_add(1).unwrap();

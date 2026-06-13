@@ -3,9 +3,9 @@ use crate::belt::belt::Belt;
 #[cfg(feature = "debug-stat-gathering")]
 use crate::belt::smart::{
     NUM_BELT_FREE_CACHE_HITS, NUM_BELT_INSERTER_UPDATES, NUM_BELT_LOCS_SEARCHED, NUM_BELT_UPDATES,
-    NUM_INSERTER_LOADS_WAITING_FOR_ITEMS, NUM_INSERTER_LOADS_WAITING_FOR_SPACE,
-    NUM_INSERTER_LOADS_WAITING_FOR_SPACE_IN_GUARANTEED_FULL, TIMES_ALL_INCOMING_EARLY_RETURN,
-    TIMES_INSERTERS_EXTRACTED,
+    NUM_BELT_UPDATES_SKIPPABLE_WITH_IDLE, NUM_INSERTER_LOADS_WAITING_FOR_ITEMS,
+    NUM_INSERTER_LOADS_WAITING_FOR_SPACE, NUM_INSERTER_LOADS_WAITING_FOR_SPACE_IN_GUARANTEED_FULL,
+    TIMES_ALL_INCOMING_EARLY_RETURN, TIMES_INSERTERS_EXTRACTED,
 };
 
 use crate::belt::smart::SmartBelt;
@@ -3041,7 +3041,9 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 let num_locs_searched = NUM_BELT_LOCS_SEARCHED.load(std::sync::atomic::Ordering::Relaxed);
                 let num_cache_hits = NUM_BELT_FREE_CACHE_HITS.load(std::sync::atomic::Ordering::Relaxed);
                 let num_updates = NUM_BELT_UPDATES.load(std::sync::atomic::Ordering::Relaxed);
+                let num_updates_skippable = NUM_BELT_UPDATES_SKIPPABLE_WITH_IDLE.load(std::sync::atomic::Ordering::Relaxed);
                 ui.label(&format!("BeltUpdates: {}, BeltCacheHits: {}, Cache ratio: {:.2}%", num_updates, num_cache_hits,num_cache_hits as f64 / num_updates as f64 * 100.0 ));
+                ui.label(&format!("BeltUpdatesSkippableWithIdle: {}, Ratio: {:.2}%", num_updates_skippable, num_updates_skippable as f64 / num_updates as f64 * 100.0 ));
                 ui.label(&format!("BeltLocsSearched: {}, LocsPerUpdate: {:.2}", num_locs_searched, num_locs_searched as f64 / num_updates as f64 ));
 
 
@@ -3051,7 +3053,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 let inserter_loads_waiting_for_space = NUM_INSERTER_LOADS_WAITING_FOR_SPACE.load(std::sync::atomic::Ordering::Relaxed);
                 let inserter_loads_waiting_for_space_waster = NUM_INSERTER_LOADS_WAITING_FOR_SPACE_IN_GUARANTEED_FULL.load(std::sync::atomic::Ordering::Relaxed);
                 let inserter_extractions = TIMES_INSERTERS_EXTRACTED.load(std::sync::atomic::Ordering::Relaxed);
-                ui.label(&format!("Belts updated: {}, percentage skipped: {:.2}", inserter_update_calls, (inserter_update_skips) as f64 / inserter_update_calls as f64));
+                ui.label(&format!("Inserters updated: {}, percentage skipped: {:.2}", inserter_update_calls, (inserter_update_skips) as f64 / inserter_update_calls as f64));
                 ui.label(&format!("Total inserter loads: {}, Avg per belt: {:.2}", inserter_loads_waiting_for_item + inserter_loads_waiting_for_space, (inserter_loads_waiting_for_item + inserter_loads_waiting_for_space) as f64 / inserter_update_calls as f64));
                 ui.label(&format!("Loads waiting for item: {}, {:.2}", inserter_loads_waiting_for_item, inserter_loads_waiting_for_item as f64 / (inserter_loads_waiting_for_item + inserter_loads_waiting_for_space) as f64 ));
                 ui.label(&format!("Loads waiting for space: {}, {:.2}", inserter_loads_waiting_for_space, inserter_loads_waiting_for_space as f64 / (inserter_loads_waiting_for_item + inserter_loads_waiting_for_space) as f64 ));
