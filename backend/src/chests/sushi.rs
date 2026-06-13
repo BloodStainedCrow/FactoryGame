@@ -32,6 +32,7 @@ pub struct SushiChest {
     slots: Box<[SushiSlot]>,
     first_non_full_slot: ItemStackIndex,
     first_slot_with_all_empty_after: ItemStackIndex,
+    automatic_insertion_slot_limit: ItemStackIndex,
 
     // Alternatively I could store the chest ty and look it up from that (by making floor chests a hardcoded ty)
     // That is probably better?
@@ -44,6 +45,7 @@ impl SushiChest {
             slots: vec![SushiSlot { content: None }; num_slots as usize].into_boxed_slice(),
             first_non_full_slot: 0,
             first_slot_with_all_empty_after: 0,
+            automatic_insertion_slot_limit: num_slots,
             stack_size_override: None,
         }
     }
@@ -95,7 +97,8 @@ impl SushiChest {
     }
 
     pub fn try_add_item_stack(&mut self, mut items: ItemStack) -> Result<(), ItemStack> {
-        for (index, slot) in self.slots[(self.first_non_full_slot as usize)..]
+        for (index, slot) in self.slots
+            [(self.first_non_full_slot as usize)..(self.automatic_insertion_slot_limit as usize)]
             .iter_mut()
             .enumerate()
         {
