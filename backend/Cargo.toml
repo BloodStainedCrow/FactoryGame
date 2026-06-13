@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bitvec = { version = "1.0.1", features = ["serde"], no-default-features = true }
 const-assert = "1.0.1"
 data = { path = "../data" }
 static_assertions = "1.1.0"
