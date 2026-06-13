@@ -2,7 +2,7 @@
 
 use std::{cmp::min, num::NonZero};
 
-use data::item::ItemStack;
+use data::item::{Item, ItemStack};
 use static_assertions::const_assert_eq;
 
 #[derive(Debug, Clone, Copy)]
@@ -143,7 +143,11 @@ impl SushiChest {
         Err(items)
     }
 
-    pub fn try_remove_any_item(&mut self, max_count: NonZero<u16>) -> Option<ItemStack> {
+    pub fn try_remove_item(
+        &mut self,
+        max_count: NonZero<u16>,
+        filter: impl Fn(Item) -> bool,
+    ) -> Option<ItemStack> {
         let mut ret: Option<ItemStack> = None;
 
         for (index, slot) in self.slots[..(self.first_slot_with_all_empty_after as usize)]
@@ -153,6 +157,10 @@ impl SushiChest {
             .rev()
         {
             if let Some(stack) = &mut slot.content {
+                if !(filter)(stack.item) {
+                    continue;
+                }
+
                 if let Some(ret_stack) = &mut ret {
                     if ret_stack.item == stack.item {
                         let needed = u16::from(max_count) - u16::from(ret_stack.count);
@@ -238,7 +246,7 @@ mod test {
     fn remove_item_on_empty_chest() {
         let mut chest = SushiChest::new(65_535);
 
-        let res = chest.try_remove_any_item(NonZero::new(100).expect("hardcoded"));
+        let res = chest.try_remove_item(NonZero::new(100).expect("hardcoded"), |_| true);
 
         assert!(res.is_none());
     }
@@ -266,7 +274,7 @@ mod test {
 
             prop_assert!(res.is_ok());
 
-            let res = chest.try_remove_any_item(remove_count.try_into().expect("range starts at 1"));
+            let res = chest.try_remove_item(remove_count.try_into().expect("range starts at 1"), |found| found == item);
 
             prop_assert_eq!(res, Some(ItemStack { item, count: min(add_count, remove_count).try_into().expect("ranges start at 1") }));
         }
