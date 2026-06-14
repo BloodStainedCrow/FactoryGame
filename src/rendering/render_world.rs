@@ -12,6 +12,7 @@ use crate::belt::smart::SmartBelt;
 use crate::blueprint::blueprint_string::BlueprintString;
 use crate::chest::ChestSize;
 use crate::frontend::action::action_state_machine;
+use crate::frontend::action::action_state_machine::Anchor;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::frontend::action::action_state_machine::ForkSaveInfo;
 use crate::frontend::action::place_entity::EntityPlaceOptions;
@@ -208,13 +209,29 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     if num_tiles_across_screen_horizontal > SWITCH_TO_MAPVIEW_TILES {
         let mut updates = Some(vec![]);
         mem::swap(&mut updates, &mut game_state.world.map_updates);
-        if let ActionStateMachineState::Holding(HeldObject::Blueprint(bp)) = &state_machine.state {
-            let Position { x, y } =
-                ActionStateMachine::<ItemIdxType, RecipeIdxType>::player_mouse_to_tile(
-                    state_machine.zoom_level,
-                    camera_pos,
-                    state_machine.current_mouse_pos,
-                );
+        if let ActionStateMachineState::Holding(HeldObject::Blueprint {
+            blueprint: bp,
+            anchor,
+        }) = &state_machine.state
+        {
+            let mouse_pos = ActionStateMachine::<ItemIdxType, RecipeIdxType>::player_mouse_to_tile(
+                state_machine.zoom_level,
+                camera_pos,
+                state_machine.current_mouse_pos,
+            );
+
+            let Position { x, y } = match anchor {
+                Anchor::TopLeft => mouse_pos,
+                Anchor::Centered => {
+                    // FIXME: Doing this each frame will lag like crazy I assume
+                    let (width, height) = bp.get_size(data_store);
+
+                    Position {
+                        x: mouse_pos.x - width / 2,
+                        y: mouse_pos.y - height / 2,
+                    }
+                },
+            };
 
             bp.draw(
                 (
@@ -1600,13 +1617,29 @@ pub fn render_world<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         crate::frontend::action::action_state_machine::ActionStateMachineState::Idle => {},
         crate::frontend::action::action_state_machine::ActionStateMachineState::Holding(e) => {
             match e {
-                crate::frontend::action::action_state_machine::HeldObject::Blueprint(bp) => {
-                    let Position { x, y } =
+                crate::frontend::action::action_state_machine::HeldObject::Blueprint {
+                    blueprint: bp,
+                    anchor,
+                } => {
+                    let mouse_pos =
                         ActionStateMachine::<ItemIdxType, RecipeIdxType>::player_mouse_to_tile(
                             state_machine.zoom_level,
                             camera_pos,
                             state_machine.current_mouse_pos,
                         );
+
+                    let Position { x, y } = match anchor {
+                        Anchor::TopLeft => mouse_pos,
+                        Anchor::Centered => {
+                            // FIXME: Doing this each frame will lag like crazy I assume
+                            let (width, height) = bp.get_size(data_store);
+
+                            Position {
+                                x: mouse_pos.x - width / 2,
+                                y: mouse_pos.y - height / 2,
+                            }
+                        },
+                    };
 
                     bp.draw(
                         (
@@ -3520,7 +3553,10 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
 
                         if let Ok(bp) = bp_string.try_into() {
                             state_machine_ref.state =
-                                ActionStateMachineState::Holding(HeldObject::Blueprint(bp));
+                                ActionStateMachineState::Holding(HeldObject::Blueprint {
+                                    blueprint: bp,
+                                    anchor: Anchor::TopLeft,
+                                });
                         }
                     }
                 }
@@ -3536,10 +3572,12 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 state_machine_ref.blueprint_import_string = Some(String::new());
             }
 
-            let bp = if let ActionStateMachineState::Holding(HeldObject::Blueprint(bp)) =
-                &state_machine_ref.state
+            let bp = if let ActionStateMachineState::Holding(HeldObject::Blueprint {
+                blueprint,
+                anchor: _,
+            }) = &state_machine_ref.state
             {
-                Some(bp)
+                Some(blueprint)
             } else {
                 None
             };
@@ -3585,7 +3623,10 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                 if ui.button("Import").clicked() {
                     if let Ok(bp) = BlueprintString(std::mem::take(bp_string)).try_into() {
                         state_machine_ref.state =
-                            ActionStateMachineState::Holding(HeldObject::Blueprint(bp));
+                            ActionStateMachineState::Holding(HeldObject::Blueprint {
+                                blueprint: bp,
+                                anchor: Anchor::TopLeft,
+                            });
                         imported = true;
                     } else {
                         error!("Blueprint String invalid!");

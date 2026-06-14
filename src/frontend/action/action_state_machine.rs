@@ -246,9 +246,30 @@ pub enum HeldObject<ItemIdxType: WeakIdxTrait> {
     // TODO: PlaceEntityType is not quite right for this case
     Entity(PlaceEntityType<ItemIdxType>),
 
-    OrePlacement { ore: Item<ItemIdxType>, amount: u32 },
+    OrePlacement {
+        ore: Item<ItemIdxType>,
+        amount: u32,
+    },
 
-    Blueprint(Blueprint),
+    Blueprint {
+        blueprint: Blueprint,
+        anchor: Anchor,
+    },
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Anchor {
+    TopLeft,
+    Centered,
+}
+
+impl Anchor {
+    fn next(self) -> Self {
+        match self {
+            Self::TopLeft => Self::Centered,
+            Self::Centered => Self::TopLeft,
+        }
+    }
 }
 
 impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
@@ -475,7 +496,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
             ActionStateMachineState::Idle | ActionStateMachineState::Viewing(_) => {},
             ActionStateMachineState::Holding(held_object) => match held_object {
-                HeldObject::Blueprint(_) => {},
+                HeldObject::Blueprint { .. } => {},
 
                 HeldObject::Tile(_floor_tile) => {},
                 HeldObject::Entity(place_entity_type) => match place_entity_type {
@@ -754,12 +775,26 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                                 let force = ctrl;
 
                                 match held_object {
-                                    HeldObject::Blueprint(bp) => {
-                                        bp.get_reusable(force, data_store).optimize().actions_with_base_pos(Self::player_mouse_to_tile(
+                                    HeldObject::Blueprint {
+                                        blueprint: bp,
+                                        anchor
+                                    } => {
+                                        let mouse_pos = Self::player_mouse_to_tile(
                                             self.zoom_level,
                                             self.map_view_info.unwrap_or(self.local_player_pos),
                                             self.current_mouse_pos,
-                                        )).collect()
+                                        );
+
+                                        let base_pos = match anchor {
+                                            Anchor::TopLeft => mouse_pos,
+                                            Anchor::Centered => {
+                                                let (width, height) = bp.get_size(data_store);
+
+                                                Position { x: mouse_pos.x - width / 2, y: mouse_pos.y - height / 2 }
+                                            },
+                                        };
+
+                                        bp.get_reusable(force, data_store).optimize().actions_with_base_pos(base_pos).collect()
                                     },
 
                                     HeldObject::Tile(floor_tile) => {
@@ -923,7 +958,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
                             bp.optimize();
 
-                            self.state = ActionStateMachineState::Holding(HeldObject::Blueprint(bp));
+                            self.state = ActionStateMachineState::Holding(HeldObject::Blueprint {
+                                blueprint: bp,
+                                anchor: Anchor::TopLeft
+                            });
                             vec![]
                         },
                         ActionStateMachineState::DeleteDragInProgress { start_pos } => {
@@ -1429,21 +1467,36 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
                 vec![]
             },
 
-            (ActionStateMachineState::Holding(HeldObject::Blueprint(bp)), Key::V) => {
-                bp.flip_vertical(data_store);
+            (
+                ActionStateMachineState::Holding(HeldObject::Blueprint { blueprint, anchor }),
+                Key::V,
+            ) => {
+                blueprint.flip_vertical(data_store);
                 vec![]
             },
-            (ActionStateMachineState::Holding(HeldObject::Blueprint(bp)), Key::H) => {
-                bp.flip_horizontal(data_store);
+            (
+                ActionStateMachineState::Holding(HeldObject::Blueprint { blueprint, anchor }),
+                Key::H,
+            ) => {
+                blueprint.flip_horizontal(data_store);
                 vec![]
             },
-            (ActionStateMachineState::Holding(HeldObject::Blueprint(bp)), Key::R) => {
-                bp.turn_right(data_store);
+            (
+                ActionStateMachineState::Holding(HeldObject::Blueprint { blueprint, anchor }),
+                Key::R,
+            ) => {
+                blueprint.turn_right(data_store);
                 vec![]
             },
 
             (_, Key::Esc) => {
                 self.open_windows[Window::Escape] = !self.open_windows[Window::Escape];
+                vec![]
+            },
+
+            // TODO: I would love to use tab for this, but that required manually ensuring tab for focus works/doesnt when required
+            (ActionStateMachineState::Holding(HeldObject::Blueprint { anchor, .. }), Key::G) => {
+                *anchor = anchor.next();
                 vec![]
             },
 
@@ -1501,7 +1554,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>
 
             ActionStateMachineState::Idle | ActionStateMachineState::Viewing(_) => {},
             ActionStateMachineState::Holding(held_object) => match held_object {
-                HeldObject::Blueprint(_) => {},
+                HeldObject::Blueprint { .. } => {},
 
                 HeldObject::Tile(_floor_tile) => {},
                 HeldObject::Entity(place_entity_type) => match place_entity_type {

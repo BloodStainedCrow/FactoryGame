@@ -8,6 +8,7 @@ use crate::{frontend::world::tile::UndergroundDir, item::WeakIdxTrait};
 use itertools::Itertools;
 use log::{error, info};
 use rayon::slice::ParallelSliceMut;
+use std::cmp::max;
 use std::collections::HashMap;
 use std::num::NonZero;
 use std::sync::Arc;
@@ -935,6 +936,23 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> ReusableBlueprint<ItemIdxTy
 impl Blueprint {
     pub fn action_count(&self) -> usize {
         self.actions.len()
+    }
+
+    pub fn get_size<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
+        &self,
+        data_store: &DataStore<ItemIdxType, RecipeIdxType>,
+    ) -> (i32, i32) {
+        let (x, y) = self.actions.iter().fold((0, 0), |(x, y), action| {
+            let pos = action
+                .try_into_real_action(false, data_store)
+                .unwrap()
+                .get_pos()
+                .unwrap();
+
+            (max(x, pos.x), max(y, pos.y))
+        });
+
+        (x, y)
     }
 
     // FIXME: This is a really bad interface

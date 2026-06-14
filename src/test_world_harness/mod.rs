@@ -137,7 +137,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Test<ItemIdxType, RecipeIdx
                 crate::frontend::action::action_state_machine::HeldObject::OrePlacement {
                     ..
                 } => unreachable!("Ore cannot be rotated"),
-                crate::frontend::action::action_state_machine::HeldObject::Blueprint(_) => {
+                crate::frontend::action::action_state_machine::HeldObject::Blueprint { .. } => {
                     todo!("Blueprints cannot be rotated")
                 },
             },
