@@ -243,9 +243,11 @@ impl<'a> FinishedMovingLists<'a, { Dir::StorageToBelt }, { Dir::StorageToBelt }>
         self,
         reinsertion_list: &mut ReinsertionLists<'_, { Dir::BeltToStorage }, { Dir::StorageToBelt }>,
         belts: &mut [SmartBelt<ItemIdxType>],
+        idle: &mut [bool],
     ) {
         self.list.retain(|inserter| {
             let belt = &mut belts[inserter.belt as usize];
+            idle[inserter.belt as usize] = false;
 
             let mut current_hand = inserter.max_hand_size;
 
@@ -282,9 +284,11 @@ impl<'a> FinishedMovingLists<'a, { Dir::StorageToBelt }, { Dir::BeltToStorage }>
         self,
         reinsertion_list: &mut ReinsertionLists<'_, { Dir::BeltToStorage }, { Dir::BeltToStorage }>,
         belts: &mut [SmartBelt<ItemIdxType>],
+        idle: &mut [bool],
     ) {
         self.list.retain(|inserter| {
             let belt = &mut belts[inserter.belt as usize];
+            idle[inserter.belt as usize] = false;
 
             let mut current_hand = 0;
 

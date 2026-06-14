@@ -1548,6 +1548,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                     MultiBeltStore {
                         belt_ty: vec![],
                         belts: vec![],
+                        belts_idle: vec![],
                         holes: vec![]
                     };
                     data_store.item_display_names.len()
@@ -2351,7 +2352,7 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
                 .par_iter_mut()
                 .for_each(|sushi_belt| {
                     if self.inner.belt_update_timers[usize::from(sushi_belt.ty)] >= 120 {
-                        sushi_belt.update(&self.inner.sushi_splitters);
+                        sushi_belt.update(&self.inner.sushi_splitters, &mut false);
                     }
                 });
         }
@@ -3963,6 +3964,8 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
 pub struct MultiBeltStore<ItemIdxType: WeakIdxTrait> {
     pub belt_ty: Vec<u8>,
     pub belts: Vec<SmartBelt<ItemIdxType>>,
+    // TODO: Benchmark this vs Bitvec
+    pub belts_idle: Vec<bool>,
 
     pub holes: Vec<usize>,
 }
@@ -3972,6 +3975,7 @@ impl<ItemIdxType: IdxTrait> Default for MultiBeltStore<ItemIdxType> {
         Self {
             belt_ty: vec![],
             belts: vec![],
+            belts_idle: vec![],
             holes: vec![],
         }
     }
@@ -3989,10 +3993,12 @@ impl<ItemIdxType: IdxTrait> MultiBeltStore<ItemIdxType> {
         if let Some(hole) = self.holes.pop() {
             self.belt_ty[hole] = belt.ty;
             self.belts[hole] = belt;
+            self.belts_idle[hole] = false;
             hole
         } else {
             self.belt_ty.push(belt.ty);
             self.belts.push(belt);
+            self.belts_idle.push(false);
             self.belts.len() - 1
         }
     }
@@ -4003,6 +4009,7 @@ impl<ItemIdxType: IdxTrait> MultiBeltStore<ItemIdxType> {
         let mut temp = SmartBelt::new(0, 1, self.belts[belt].item);
         temp.make_circular();
         mem::swap(&mut temp, &mut self.belts[belt]);
+        self.belts_idle[belt] = true;
         temp
     }
 }

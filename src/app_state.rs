@@ -3159,10 +3159,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                             belt_storage_exit_incoming.update(
                                 &mut belt_storage_reinsertion_outgoing,
                                 belt_store.belts.as_mut_slice(),
+                                &mut belt_store.belts_idle,
                             );
                             storage_belt_exit_outgoing.update(
                                 &mut storage_belt_reinsertion_incoming,
                                 belt_store.belts.as_mut_slice(),
+                                &mut belt_store.belts_idle,
                             );
                         }
                         {
@@ -3178,14 +3180,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     belt_store
                                     .belts
                                     .par_iter_mut()
+                                    .zip(belt_store.belts_idle.par_iter_mut())
                                     .zip(belt_store.belt_ty.par_iter())
-                                    .enumerate().filter_map(|(self_index, (belt, ty))| {
+                                    .enumerate().filter_map(|(self_index, ((belt, idle), ty))| {
                                         // Only update belts, which have moved according to their timer
                                         // This is what makes some types of belts different speed from others
-                                        (update_timers[usize::from(*ty)] >= 120).then_some((self_index, belt))
-                                    }).map(|(self_index, belt)| {
+                                        (!*idle && update_timers[usize::from(*ty)] >= 120).then_some((idle, self_index, belt))
+                                    }).map(|(idle, self_index, belt)| {
                                         // Update a belt
-                                        belt.update(sushi_splitters);
+                                        belt.update(sushi_splitters, idle);
                                         belt.update_inserters_lazy().into_iter().flatten().zip(iter::repeat(self_index))
                                         // iter::empty::<(InserterExtractedWhenMoving, u32)>()
                                     })
@@ -3202,14 +3205,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     belt_store
                                     .belts
                                     .iter_mut()
+                                    .zip(belt_store.belts_idle.iter_mut())
                                     .zip(belt_store.belt_ty.iter())
-                                    .enumerate().filter_map(|(self_index, (belt, ty))| {
+                                    .enumerate().filter_map(|(self_index, ((belt, idle), ty))| {
                                         // Only update belts, which have moved according to their timer
                                         // This is what makes some types of belts different speed from others
-                                        (update_timers[usize::from(*ty)] >= 120).then_some((self_index, belt))
-                                    }).map(|(self_index, belt)| {
+                                        (!*idle && update_timers[usize::from(*ty)] >= 120).then_some((idle, self_index, belt))
+                                    }).map(|(idle, self_index, belt)| {
                                         // Update a belt
-                                        belt.update(sushi_splitters);
+                                        belt.update(sushi_splitters, idle);
                                         belt.update_inserters_lazy().into_iter().flatten().zip(iter::repeat(self_index))
                                         // iter::empty::<(InserterExtractedWhenMoving, u32)>()
                                     })

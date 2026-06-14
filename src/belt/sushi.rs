@@ -720,7 +720,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SushiBelt<ItemIdxType> {
         BeltLenType::try_from(self.locs.len()).expect("Belt too long!")
     }
 
-    fn update(&mut self, splitter_list: &[SushiSplitter<ItemIdxType>]) {
+    fn update(&mut self, splitter_list: &[SushiSplitter<ItemIdxType>], _idle: &mut bool) {
         if self.locs.len() == 0 {
             return;
         }

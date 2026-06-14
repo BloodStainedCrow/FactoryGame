@@ -42,7 +42,7 @@ pub trait Belt<ItemIdxType: IdxTrait> {
         side: Side,
     ) -> (Vec<(Item<ItemIdxType>, u32)>, BeltLenType);
 
-    fn update(&mut self, splitter_list: &[SushiSplitter<ItemIdxType>]);
+    fn update(&mut self, splitter_list: &[SushiSplitter<ItemIdxType>], idle: &mut bool);
 
     fn item_hint(&self) -> Option<Vec<Item<ItemIdxType>>>;
 }

@@ -1636,7 +1636,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for EmptyBelt {
         (vec![], self.len)
     }
 
-    fn update(&mut self, _splitter_list: &[SushiSplitter<ItemIdxType>]) {
+    fn update(&mut self, _splitter_list: &[SushiSplitter<ItemIdxType>], _idle: &mut bool) {
         // TODO: Do i want to stop this from being called or just do nothing
         unimplemented!()
     }
@@ -1790,7 +1790,7 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
 
     #[allow(clippy::bool_assert_comparison)]
     #[inline(always)]
-    fn update(&mut self, splitter_list: &[SushiSplitter<ItemIdxType>]) {
+    fn update(&mut self, splitter_list: &[SushiSplitter<ItemIdxType>], idle: &mut bool) {
         if self.locs.len() == 0 {
             return;
         }
@@ -1897,6 +1897,9 @@ impl<ItemIdxType: IdxTrait> Belt<ItemIdxType> for SmartBelt<ItemIdxType> {
 
         let Some(first_free_index_real) = first_free_index_real else {
             // All slots are full
+            if self.inserters.inserters.iter().all(|ins| !ins.outgoing) {
+                *idle = true;
+            }
             // #[cfg(feature = "debug-stat-gathering")]
             // {
             //     NUM_BELT_LOCS_SEARCHED.fetch_add(
