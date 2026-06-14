@@ -1992,7 +1992,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         let tick = (current_tick % u64::from(u32::from(autosave_interval))) as u32;
 
         #[cfg(not(target_arch = "wasm32"))]
-        if cfg!(target_os = "linux") {
+        if cfg!(target_os = "linux") && global_settings.use_non_blocking_save {
             if tick < state_machine_ref.last_tick_seen_for_autosave {
                 if state_machine_ref.current_fork_save_in_progress.is_none() {
                     let recv = save_with_fork(
@@ -2187,6 +2187,11 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     (autosave_interval_minutes * 60 * (TICKS_PER_SECOND_LOGIC as u32))
                         .try_into()
                         .ok();
+
+                ui.checkbox(
+                    &mut global_settings.use_non_blocking_save,
+                    "Use Non-Blocking Save",
+                );
 
                 None
             })
