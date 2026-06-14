@@ -81,7 +81,12 @@ impl<ItemIdxType: IdxTrait> FullChestStore<ItemIdxType> {
                 let item = store.item;
                 profiling::scope!(
                     "Chest Update",
-                    format!("Item: {}", data_store.item_display_names[item_id]).as_str()
+                    format!(
+                        "Item: {}, Count: {}",
+                        data_store.item_display_names[item_id],
+                        store.inout.len(),
+                    )
+                    .as_str()
                 );
                 store.update_simd().map(
                     move |InternalInserterReinsertionInfo {
@@ -398,8 +403,6 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
 
             if to_move == 0 {
                 continue;
-            } else {
-                std::hint::cold_path();
             }
 
             let switch = ChestSize::from(*inout >= CHEST_GOAL_AMOUNT);
