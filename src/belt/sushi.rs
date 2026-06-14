@@ -311,7 +311,14 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
             ty,
 
             is_circular,
-            first_free_index,
+            first_free_is_certain: match first_free_index {
+                FreeIndex::FreeIndex(_) => true,
+                FreeIndex::OldFreeIndex(_) => false,
+            },
+            first_free_index: match first_free_index {
+                FreeIndex::FreeIndex(index) => index,
+                FreeIndex::OldFreeIndex(index) => index,
+            },
             zero_index,
             locs: locs
                 .iter()
@@ -346,6 +353,9 @@ impl<ItemIdxType: IdxTrait> SushiBelt<ItemIdxType> {
                 }).collect::<Vec<_>>().try_into().unwrap(),
             },
             item,
+
+            num_items: locs.iter().flatten().count() as BeltLenType,
+
 
             last_moving_spot,
 

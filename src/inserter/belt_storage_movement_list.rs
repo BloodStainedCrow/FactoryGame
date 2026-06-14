@@ -247,12 +247,12 @@ impl<'a> FinishedMovingLists<'a, { Dir::StorageToBelt }, { Dir::StorageToBelt }>
     ) {
         self.list.retain(|inserter| {
             let belt = &mut belts[inserter.belt as usize];
-            idle[inserter.belt as usize] = false;
 
             let mut current_hand = inserter.max_hand_size;
 
             if belt.try_insert_correct_item(inserter.belt_pos).is_ok() {
                 current_hand -= 1;
+                idle[inserter.belt as usize] = false;
             }
 
             if current_hand == 0 {
@@ -269,6 +269,11 @@ impl<'a> FinishedMovingLists<'a, { Dir::StorageToBelt }, { Dir::StorageToBelt }>
                         current_hand,
                     });
                 });
+
+                if inserter.belt_pos >= belt.first_free_index {
+                    idle[inserter.belt as usize] = false;
+                }
+
                 // This is an incoming inserter
                 if let Some(latest) = &mut belt.latest_inserter_pos_if_all_incoming {
                     *latest = std::cmp::max(*latest, NonZero::new(inserter.belt_pos).expect("Currently inserters at belt_pos 0 are unsupported, and should never be generated"))
@@ -288,12 +293,12 @@ impl<'a> FinishedMovingLists<'a, { Dir::StorageToBelt }, { Dir::BeltToStorage }>
     ) {
         self.list.retain(|inserter| {
             let belt = &mut belts[inserter.belt as usize];
-            idle[inserter.belt as usize] = false;
 
             let mut current_hand = 0;
 
             if belt.remove_item(inserter.belt_pos).is_some() {
                 current_hand += 1;
+                idle[inserter.belt as usize] = false;
             }
 
             if current_hand == inserter.max_hand_size {
@@ -310,6 +315,11 @@ impl<'a> FinishedMovingLists<'a, { Dir::StorageToBelt }, { Dir::BeltToStorage }>
                         current_hand,
                     });
                 });
+
+                if inserter.belt_pos < belt.first_free_index {
+                    idle[inserter.belt as usize] = false;
+                }
+
                 // This is an outgoing inserter
                 belt.latest_inserter_pos_if_all_incoming = None;
                 false

@@ -3189,7 +3189,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     }).map(|(idle, self_index, belt)| {
                                         // Update a belt
                                         belt.update(sushi_splitters, idle);
-                                        belt.update_inserters_lazy().into_iter().flatten().zip(iter::repeat(self_index))
+                                        belt.update_inserters_lazy(idle).into_iter().flatten().zip(iter::repeat(self_index))
                                         // iter::empty::<(InserterExtractedWhenMoving, u32)>()
                                     })
                                     .fold(|| vec![], |mut v, reinsertions| {
@@ -3214,7 +3214,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                     }).map(|(idle, self_index, belt)| {
                                         // Update a belt
                                         belt.update(sushi_splitters, idle);
-                                        belt.update_inserters_lazy().into_iter().flatten().zip(iter::repeat(self_index))
+                                        belt.update_inserters_lazy(idle).into_iter().flatten().zip(iter::repeat(self_index))
                                         // iter::empty::<(InserterExtractedWhenMoving, u32)>()
                                     })
                                     .fold(vec![], |mut v, reinsertions| {
