@@ -3177,6 +3177,19 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
             },
         }
     }
+
+    pub fn is_idle(&self, id: BeltTileId<ItemIdxType>) -> Option<bool> {
+        match id {
+            BeltTileId::AnyBelt(index, _) => match &self.any_belts[index as usize] {
+                AnyBelt::Smart(smart_belt) => Some(
+                    self.inner.smart_belts[smart_belt.item.into_usize()].belts_idle
+                        [smart_belt.index],
+                ),
+                AnyBelt::Sushi(_) => None,
+                AnyBelt::Empty(_) => None,
+            },
+        }
+    }
     pub fn get_current_kind(&self, id: BeltTileId<ItemIdxType>) -> BeltKind<ItemIdxType> {
         match id {
             BeltTileId::AnyBelt(index, _) => match &self.any_belts[index as usize] {

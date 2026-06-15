@@ -3987,6 +3987,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         ui.label(format!("Inner: {:?}", game_state_ref.simulation_state.factory.belts.inner.belt_belt_inserters).as_str());
 
                         ui.label(format!("Belt Pos: {:?}", *belt_pos));
+                        ui.label(format!("Idle: {:?}", game_state_ref.simulation_state.factory.belts.is_idle(*id).unwrap_or(false)));
                     },
                     crate::frontend::world::tile::Entity::Underground {
                         id,
@@ -4012,7 +4013,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                         ui.label(format!("UndergroundDir: {:?}", *underground_dir));
 
                         ui.label(format!("Belt Pos: {:?}", *belt_pos));
-
+                        ui.label(format!("Idle: {:?}", game_state_ref.simulation_state.factory.belts.is_idle(*id).unwrap_or(false)));
                     },
                     crate::frontend::world::tile::Entity::Inserter {
                         ty,
