@@ -3667,6 +3667,7 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
             .show(|ui| {
                 let row_height = ui.spacing().interact_size.y;
                 TableBuilder::new(ui)
+                    .vscroll(false)
                     .id_salt("Blueprint cost list")
                     .column(Column::auto())
                     .column(Column::auto())
