@@ -47,16 +47,23 @@ impl SurfaceWorld {
         }
     }
 
-    pub fn can_fit(&self, goal_bounding_box: BoundingBox) -> bool {
+    pub fn can_fit(&self, goal_bounding_box: BoundingBox) -> Result<(), CanFitError> {
         if !self.all_chunks_generated(goal_bounding_box) {
-            return false;
+            return Err(CanFitError::CollisionWithUngeneratedChunks);
         }
 
-        self.get_chunks_that_could_contain_entities_colliding_with(
-            goal_bounding_box.extend_evenly(max_entity_size()),
-        )
-        .flat_map(|(chunk, base_pos)| chunk.occupied_bounding_boxes(base_pos))
-        .all(|entity_bounding_box| !entity_bounding_box.overlaps(goal_bounding_box))
+        let collision = self
+            .get_chunks_that_could_contain_entities_colliding_with(
+                goal_bounding_box.extend_evenly(max_entity_size()),
+            )
+            .flat_map(|(chunk, base_pos)| chunk.occupied_bounding_boxes(base_pos))
+            .find(|entity_bounding_box| entity_bounding_box.overlaps(goal_bounding_box));
+
+        collision.map_or(Ok(()), |entity_bb| {
+            Err(CanFitError::CollisionWithEntity {
+                position: entity_bb.top_left(),
+            })
+        })
     }
 
     fn all_chunks_generated(&self, goal_bounding_box: BoundingBox) -> bool {
@@ -117,12 +124,18 @@ impl SurfaceWorld {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum CanFitError {
+    CollisionWithUngeneratedChunks,
+    CollisionWithEntity { position: Position },
+}
+
 struct CollisionWithUngeneratedChunks;
 
 #[cfg(test)]
 mod test {
     use data::spacial::{Extent, strategies::random_bounding_box};
-    use proptest::{prop_assert, proptest};
+    use proptest::{prop_assert_eq, proptest};
 
     use super::*;
 
@@ -156,7 +169,7 @@ mod test {
 
             let can_fit = world.can_fit(goal);
 
-            prop_assert!(!can_fit);
+            prop_assert_eq!(can_fit, Err(CanFitError::CollisionWithUngeneratedChunks));
         }
 
         #[test]
@@ -165,7 +178,7 @@ mod test {
 
             let can_fit = world.can_fit(goal);
 
-            prop_assert!(can_fit);
+            prop_assert_eq!(can_fit, Ok(()));
         }
     }
 }

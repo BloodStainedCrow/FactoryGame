@@ -3,7 +3,7 @@ use data::{
     spacial::{Flipped, Position, Rotation},
 };
 
-use crate::surface::world::SurfaceWorld;
+use crate::surface::world::{CanFitError, SurfaceWorld};
 
 mod belt_logic;
 mod pipe_logic;
@@ -16,6 +16,12 @@ struct Surface {
     backend: !,
 }
 
+enum PlaceEntityError {
+    CanFit(CanFitError),
+    FloorRule(!),
+    PipeFluidMixing(!),
+}
+
 impl Surface {
     #[expect(unreachable_code)]
     #[expect(clippy::diverging_sub_expression)]
@@ -25,19 +31,19 @@ impl Surface {
         top_left: Position,
         rotation: Rotation,
         flipped: Flipped,
-    ) -> Result<(), ()> {
+    ) -> Result<(), PlaceEntityError> {
         let bounding_box = bounding_box(ty.into(), top_left, rotation, flipped);
 
-        if !self.world.can_fit(bounding_box) {
+        if let Err(err) = self.world.can_fit(bounding_box) {
             // Cannot fit
-            return Err(());
+            return Err(PlaceEntityError::CanFit(err));
         }
 
         let placement_legal: bool =
             placement_allowed(ty.into(), todo!("Get the floor from the world"));
 
         if !placement_legal {
-            return Err(());
+            return Err(PlaceEntityError::FloorRule(todo!()));
         }
 
         let default_recipe: ! = todo!("Get default recipe from entity ty");
@@ -47,7 +53,7 @@ impl Surface {
         // Ensure there are no illegal pipe connections
         for (assembler_conn, pipe_network) in &connected_pipes {
             if assembler_conn != pipe_network {
-                return Err(());
+                return Err(todo!());
             }
         }
 
