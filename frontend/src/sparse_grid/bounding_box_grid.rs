@@ -255,6 +255,13 @@ impl<T> BoundingBoxGrid<I, T> {
             .map(|v| Some(generation_fn(v.into())))
             .collect_into_vec(&mut values);
 
+        assert!(extent.is_none_or(|extent| {
+            let width = extent[0][1] - extent[0][0] + 1;
+            let height = extent[1][1] - extent[1][0] + 1;
+
+            width > 0 && height > 0
+        }));
+
         Self { extent, values }
     }
 
@@ -271,6 +278,13 @@ impl<T> BoundingBoxGrid<I, T> {
             self.reorder_for_new_extent([x, y]);
             self.extent = Some([[x, x], [y, y]]);
         }
+
+        assert!(self.extent.is_some_and(|extent| {
+            let width = extent[0][1] - extent[0][0] + 1;
+            let height = extent[1][1] - extent[1][0] + 1;
+
+            width > 0 && height > 0
+        }));
     }
 
     fn calculate_index(extent: &[[I; 2]; 2], point: [I; 2]) -> usize {
@@ -287,7 +301,10 @@ impl<T> BoundingBoxGrid<I, T> {
     }
 
     const fn calculate_pos(extent: &[[I; 2]; 2], idx: usize) -> [I; 2] {
-        let width = extent[0][1] - extent[0][0];
+        let width = extent[0][1] - extent[0][0] + 1;
+
+        assert!(width > 0);
+
         let x_offs = idx as i32 % width;
         let y_offs = idx as i32 / width;
 

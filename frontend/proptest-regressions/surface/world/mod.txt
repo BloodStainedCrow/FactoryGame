@@ -5,3 +5,6 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc bd6058555bc785f62a0376e031d99014fd24b6d60a17f19abf43889a15730d5a # shrinks to area = BoundingBox { top_left: Position { x: 0, y: 0 }, bottom_right: Position { x: 0, y: 0 } }
+cc 0e2317a3d8792d2b3a10152432f2d143b5d978c4f877624517726f3f94fc0a96 # shrinks to area = BoundingBox { top_left: Position { x: 3856, y: 0 }, bottom_right: Position { x: 4624, y: 0 } }, goal = BoundingBox { top_left: Position { x: 0, y: 0 }, bottom_right: Position { x: 0, y: 0 } }
+cc fa9099e7b11ce4602cad03bbc8026a55e2e1629370693c40179c77fc4011771f # shrinks to area = BoundingBox { top_left: Position { x: 880, y: 0 }, bottom_right: Position { x: 5872, y: 0 } }
+cc 5fc43d7261bc5a66692b73a23b010939c8e148434bf4a03b26bc813e06be9f56 # shrinks to area = BoundingBox { top_left: Position { x: -81, y: 0 }, bottom_right: Position { x: -81, y: 0 } }, goal = BoundingBox { top_left: Position { x: 0, y: 0 }, bottom_right: Position { x: 0, y: 0 } }

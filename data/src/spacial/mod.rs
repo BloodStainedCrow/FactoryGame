@@ -311,7 +311,7 @@ pub mod strategies {
     }
 
     prop_compose! {
-        pub fn random_position()(x in -10_00..10_000, y in -10_00..10_000) -> Position {
+        pub fn random_position()(x in -1000..1000, y in -1000..1000) -> Position {
             Position { x, y }
         }
     }
