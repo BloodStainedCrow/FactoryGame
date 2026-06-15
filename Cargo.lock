@@ -21,6 +21,7 @@ dependencies = [
  "bitvec",
  "const-assert",
  "data",
+ "itertools",
  "proptest",
  "static_assertions",
 ]
