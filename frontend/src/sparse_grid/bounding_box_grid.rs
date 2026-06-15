@@ -53,25 +53,31 @@ impl<T: 'static> SparseGrid<I, T> for BoundingBoxGrid<I, T> {
     }
 
     fn get(&self, x: I, y: I) -> Option<&T> {
-        if let Some(extent) = &self.extent
-            && (x < extent[0][0] || x > extent[0][1] || y < extent[1][0] || y > extent[1][1])
-        {
+        let Some(extent) = self.extent else {
+            // If the extent is None, we do not have any values
+            return None;
+        };
+
+        if x < extent[0][0] || x > extent[0][1] || y < extent[1][0] || y > extent[1][1] {
             return None;
         }
 
-        let index = Self::calculate_index(self.extent.as_ref().unwrap(), [x, y]);
+        let index = Self::calculate_index(&extent, [x, y]);
 
         self.values[index].as_ref()
     }
 
     fn get_mut(&mut self, x: I, y: I) -> Option<&mut T> {
-        if let Some(extent) = &self.extent
-            && (x < extent[0][0] || x > extent[0][1] || y < extent[1][0] || y > extent[1][1])
-        {
+        let Some(extent) = self.extent else {
+            // If the extent is None, we do not have any values
+            return None;
+        };
+
+        if x < extent[0][0] || x > extent[0][1] || y < extent[1][0] || y > extent[1][1] {
             return None;
         }
 
-        let index = Self::calculate_index(self.extent.as_ref().unwrap(), [x, y]);
+        let index = Self::calculate_index(&extent, [x, y]);
 
         self.values[index].as_mut()
     }
@@ -297,16 +303,18 @@ impl<T> BoundingBoxGrid<I, T> {
         let height_offs = point[1] - extent[1][0];
         assert!(height_offs >= 0);
 
-        height_offs as usize * width as usize + width_offs as usize
+        usize::try_from(height_offs).expect("Checked before")
+            * usize::try_from(width).expect("Checked before")
+            + usize::try_from(width_offs).expect("Checked before")
     }
 
-    const fn calculate_pos(extent: &[[I; 2]; 2], idx: usize) -> [I; 2] {
+    fn calculate_pos(extent: &[[I; 2]; 2], idx: usize) -> [I; 2] {
         let width = extent[0][1] - extent[0][0] + 1;
 
         assert!(width > 0);
 
-        let x_offs = idx as i32 % width;
-        let y_offs = idx as i32 / width;
+        let x_offs = i32::try_from(idx).expect("More than i32::MAX entries") % width;
+        let y_offs = i32::try_from(idx).expect("More than i32::MAX entries") / width;
 
         let x = extent[0][0] + x_offs;
         let y = extent[1][0] + y_offs;
