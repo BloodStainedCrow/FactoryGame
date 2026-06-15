@@ -30,7 +30,7 @@ mod test {
     proptest! {
         #[test]
         fn create_bitslice(index in 0u32..100, bit_len in 0u32..1_000) {
-            let mut data = vec![0; 1_000];
+            let mut data = vec![0; 2_000];
             let _bitslice = create_bitslice_from_mut(&mut data, index, bit_len);
         }
     }
