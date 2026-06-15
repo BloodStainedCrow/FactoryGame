@@ -287,10 +287,10 @@ impl Add<Offset> for Position {
 pub mod strategies {
     use proptest::{
         prelude::{Just, Strategy},
-        prop_oneof,
+        prop_compose, prop_oneof,
     };
 
-    use crate::spacial::{Flipped, Rotation};
+    use crate::spacial::{BoundingBox, Flipped, Position, Rotation};
 
     pub fn random_rotation() -> impl Strategy<Value = Rotation> {
         prop_oneof![
@@ -308,6 +308,18 @@ pub mod strategies {
             Just(Flipped::vertical()),
             Just(Flipped::both()),
         ]
+    }
+
+    prop_compose! {
+        pub fn random_position()(x in -10_00..10_000, y in -10_00..10_000) -> Position {
+            Position { x, y }
+        }
+    }
+
+    prop_compose! {
+        pub fn random_bounding_box()(corners in [random_position(), random_position()]) -> BoundingBox {
+            BoundingBox::new_unordered(corners)
+        }
     }
 }
 

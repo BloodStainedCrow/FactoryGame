@@ -66,3 +66,43 @@ impl SurfaceWorld {
         })
     }
 }
+
+#[cfg(test)]
+mod test {
+    use data::spacial::{Extent, strategies::random_bounding_box};
+    use proptest::{prop_assert, proptest};
+
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn create_world(area in random_bounding_box()) {
+            let _world = SurfaceWorld::new_with_empty_area(area);
+        }
+
+        #[test]
+        fn can_fit(area in random_bounding_box(), goal in random_bounding_box()) {
+            let world = SurfaceWorld::new_with_empty_area(area);
+
+            let _res = world.can_fit(goal);
+        }
+
+        #[test]
+        fn can_fit_outside_generated(goal in random_bounding_box()) {
+            let world = SurfaceWorld::new_with_empty_area(BoundingBox::new(Position { x: 0, y: 0 }, Extent { width: 0, height: 0 }));
+
+            let can_fit = world.can_fit(goal);
+
+            prop_assert!(!can_fit);
+        }
+
+        #[test]
+        fn can_fit_inside_generated(goal in random_bounding_box()) {
+            let world = SurfaceWorld::new_with_empty_area(BoundingBox::new(Position { x: -20_000, y: -20_000 }, Extent { width: 40_000, height: 40_000 }));
+
+            let can_fit = world.can_fit(goal);
+
+            prop_assert!(can_fit);
+        }
+    }
+}
