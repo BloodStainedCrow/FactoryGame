@@ -1,5 +1,3 @@
-#![expect(clippy::cast_possible_truncation)]
-
 use std::{cmp::min, num::NonZero};
 
 use data::item::{Item, ItemCountType, ItemStack, max_stack_size};
