@@ -26,7 +26,7 @@ impl Middle {
         info: PowerPoleAdditionInfo,
         backend: &mut !,
     ) -> PowerPoleIndex {
-        let PowerPoleAdditionInfo { connections } = info;
+        let PowerPoleAdditionInfo { mut connections } = info;
 
         let index = self.power_pole_list.next_push_index();
 
@@ -51,9 +51,24 @@ impl Middle {
                 // TODO: Create New Grid
                 let new_grid = ();
 
-                ()
+                new_grid
             },
-            Err(Some(_)) => todo!("Merge grids"),
+            Err(Some(_)) => {
+                connections.sort_by_key(|grid| todo!("Get Grid size"));
+
+                let kept_pole = connections
+                    .pop()
+                    .expect("If we have a merge, we will also have at least one connection");
+
+                // We keep the largest grid untouched (since this means that we minimize work)
+                let kept = self.power_pole_list[kept_pole.0 as usize].grid_id;
+
+                for connected_pole in connections {
+                    self.set_power_pole_grid_id(connected_pole, kept);
+                }
+
+                todo!("Merge grids");
+            },
         };
 
         let real_index = self.power_pole_list.push(MiddlePowerPoleInfo {
@@ -64,6 +79,24 @@ impl Middle {
         assert_eq!(index, real_index);
 
         PowerPoleIndex(index.try_into().expect("More than u32::MAX assemblers"))
+    }
+
+    #[expect(clippy::unit_cmp)]
+    /// This does a DFS and sets the `grid_id` of all connected poles.
+    fn set_power_pole_grid_id(&mut self, id: PowerPoleIndex, grid_id: ()) {
+        let pole = &mut self.power_pole_list[id.0 as usize];
+
+        if pole.grid_id == grid_id {
+            return;
+        }
+
+        pole.grid_id = grid_id;
+
+        let conns = pole.connections.iter().copied().collect_vec();
+
+        for connection in conns {
+            self.set_power_pole_grid_id(connection, grid_id);
+        }
     }
 
     #[must_use]
