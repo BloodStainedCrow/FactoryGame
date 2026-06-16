@@ -5,3 +5,10 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc af9c7589eaa8742a51969c4f9e4eb0f9bae0678e27894ef160cdfb4516629290 # shrinks to acc = 1, brake = 1000, weight = 2
+cc 648d48f63762e93e6a9ff02ced30a2e18a18d0ac44e79e5d45a4fda3a0c88dff # shrinks to brake = 10, weight = 2000, speed = 1
+cc 3d1fa1e32a884db72013c9f4c1a270def93364c206a4b6e88769927c561c57f7 # shrinks to brake = 79, weight = 2000, speed = 41
+cc fed80d218bc259dc1958a1d3e6dbd14227fa706a737f85d69ddd7e400013a817 # shrinks to brake = 77, weight = 10987, speed = 1421
+cc a03ff5e27db024c5db5f352d19a63fbe1c48641960d0afabee671dfc75d1924c # shrinks to brake = 28, weight = 2607, speed = 1596
+cc 22fc3d72af3dcfed621b39528ddc1b723a2f35b7eb9465a5e508178d9e9041d0 # shrinks to brake = 10, weight = 5121, speed = 1548
+cc bd7bd26f88da657446c20f80b95cfb78a98ae46890d7efd84f636cb6a12d74c2 # shrinks to brake = 39, weight = 15975, speed = 1888
+cc cfe70fce0a9f0bfadad1380b49a1908b9f87ae47b0c13bf5869d088641c14809 # shrinks to brake = 73, weight = 12459, speed = 1771
