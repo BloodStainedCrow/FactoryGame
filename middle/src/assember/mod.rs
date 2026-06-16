@@ -24,6 +24,7 @@ impl Middle {
     }
 
     // TODO: All additional info
+    #[must_use]
     pub fn add_assembler(
         &mut self,
         info: &AssemblerAdditionInfo,
@@ -46,6 +47,7 @@ impl Middle {
         self.assembler_list[id.0 as usize].current_recipe = new_recipe;
     }
 
+    #[must_use]
     pub fn remove_assembler(
         &mut self,
         id: AssemblerIndex,

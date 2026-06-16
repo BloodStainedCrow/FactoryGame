@@ -205,6 +205,7 @@ dependencies = [
  "rand 0.10.1",
  "rayon",
  "serde",
+ "smallvec",
  "take_mut",
 ]
 
@@ -329,6 +330,7 @@ name = "middle"
 version = "0.1.0"
 dependencies = [
  "data",
+ "itertools",
  "smallvec",
  "stable-vec",
 ]

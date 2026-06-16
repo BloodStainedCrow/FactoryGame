@@ -13,6 +13,7 @@ use middle::{
     assember::AssemblerAdditionInfo,
     power_pole::{AUTOMATIC_POLE_CONNECTION_LIMIT, PowerPoleAdditionInfo},
 };
+use smallvec::SmallVec;
 
 use crate::{
     entity::{EntityDescriptor, EntityDescriptorKind},
@@ -115,7 +116,8 @@ impl Surface {
     ) -> Result<(), PlaceEntityError> {
         let bounding_box = self.follows_rules(ty.into(), top_left, rotation, flipped)?;
 
-        let connected_poles = self
+        let mut connected_poles: SmallVec<_> = SmallVec::default();
+        for conn in self
             .world
             .get_power_poles_overlapping(power_pole_connection_area(
                 ty, top_left, rotation, flipped,
@@ -140,15 +142,26 @@ impl Surface {
                     unreachable!()
                 };
                 id
-            });
+            })
+        {
+            if connected_poles.len() > AUTOMATIC_POLE_CONNECTION_LIMIT {
+                break;
+            }
+
+            if connected_poles
+                .iter()
+                .all(|already| !self.middle.are_poles_connected([*already, conn]))
+            {
+                // This will not form a triangle
+                connected_poles.push(conn);
+            }
+        }
 
         // TODO: Find attached entities
 
         let index = self.middle.add_power_pole(
             PowerPoleAdditionInfo {
-                connections: connected_poles
-                    .take(AUTOMATIC_POLE_CONNECTION_LIMIT)
-                    .collect(),
+                connections: connected_poles,
             },
             &mut self.backend,
         );

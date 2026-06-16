@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 data = { path = "../data" } 
+itertools = "0.14.0"
 smallvec = { version = "1.15.2", features = ["serde", "union"] }
 stable-vec = "0.4.2"
 
