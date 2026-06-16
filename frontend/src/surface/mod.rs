@@ -1,11 +1,18 @@
 use data::{
     entity::{
+        GlobalTy,
         assember::{AssemblerTy, default_recipe},
         bounding_box,
+        power_pole::{PowerPoleTy, power_pole_connection_area},
     },
-    spacial::{Flipped, Position, Rotation},
+    spacial::{BoundingBox, Flipped, Position, Rotation},
 };
-use middle::{Middle, assember::AssemblerAdditionInfo};
+use itertools::Itertools;
+use middle::{
+    Middle,
+    assember::AssemblerAdditionInfo,
+    power_pole::{AUTOMATIC_POLE_CONNECTION_LIMIT, PowerPoleAdditionInfo},
+};
 
 use crate::{
     entity::{EntityDescriptor, EntityDescriptorKind},
@@ -30,14 +37,14 @@ enum PlaceEntityError {
 }
 
 impl Surface {
-    fn add_assembler(
-        &mut self,
-        ty: AssemblerTy,
+    fn follows_rules(
+        &self,
+        ty: GlobalTy,
         top_left: Position,
         rotation: Rotation,
         flipped: Flipped,
-    ) -> Result<(), PlaceEntityError> {
-        let bounding_box = bounding_box(ty.into(), top_left, rotation, flipped);
+    ) -> Result<BoundingBox, PlaceEntityError> {
+        let bounding_box = bounding_box(ty, top_left, rotation, flipped);
 
         if let Err(err) = self.world.can_fit(bounding_box) {
             // Cannot fit
@@ -45,11 +52,23 @@ impl Surface {
         }
 
         // let placement_legal: bool =
-        //     placement_allowed(ty.into(), todo!("Get the floor from the world"));
+        //     placement_allowed(ty, todo!("Get the floor from the world"));
 
         // if !placement_legal {
         //     return Err(PlaceEntityError::FloorRule(todo!()));
         // }
+
+        Ok(bounding_box)
+    }
+
+    fn add_assembler(
+        &mut self,
+        ty: AssemblerTy,
+        top_left: Position,
+        rotation: Rotation,
+        flipped: Flipped,
+    ) -> Result<(), PlaceEntityError> {
+        let _bounding_box = self.follows_rules(ty.into(), top_left, rotation, flipped)?;
 
         let default_recipe = default_recipe(ty);
 
@@ -82,6 +101,64 @@ impl Surface {
             kind: EntityDescriptorKind::Assembler {
                 id: middle_assembler_id,
             },
+        });
+
+        Ok(())
+    }
+
+    fn add_power_pole(
+        &mut self,
+        ty: PowerPoleTy,
+        top_left: Position,
+        rotation: Rotation,
+        flipped: Flipped,
+    ) -> Result<(), PlaceEntityError> {
+        let bounding_box = self.follows_rules(ty.into(), top_left, rotation, flipped)?;
+
+        let connected_poles = self
+            .world
+            .get_power_poles_overlapping(power_pole_connection_area(
+                ty, top_left, rotation, flipped,
+            ))
+            .filter(|other| {
+                let other_connection_area = power_pole_connection_area(
+                    other
+                        .ty
+                        .try_into()
+                        .expect("get_power_poles_in_area returned non PowerPole"),
+                    other.position,
+                    other.rotation,
+                    other.flipped,
+                );
+
+                other_connection_area.overlaps(bounding_box)
+            })
+            // FIXME: Manhatten is prob wrong, and using top_left is for sure wrong
+            .sorted_by_key(|e| top_left.manhattan_distance(e.position))
+            .map(|e| {
+                let EntityDescriptorKind::PowerPole { id } = e.kind else {
+                    unreachable!()
+                };
+                id
+            });
+
+        // TODO: Find attached entities
+
+        let index = self.middle.add_power_pole(
+            PowerPoleAdditionInfo {
+                connections: connected_poles
+                    .take(AUTOMATIC_POLE_CONNECTION_LIMIT)
+                    .collect(),
+            },
+            &mut self.backend,
+        );
+
+        self.world.add_entity(EntityDescriptor {
+            position: top_left,
+            rotation,
+            flipped,
+            ty: ty.into(),
+            kind: EntityDescriptorKind::PowerPole { id: index },
         });
 
         Ok(())

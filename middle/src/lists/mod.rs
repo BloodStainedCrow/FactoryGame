@@ -12,3 +12,6 @@ pub struct ChestIndex(pub u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PipeIndex(pub u32);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PowerPoleIndex(pub u32);

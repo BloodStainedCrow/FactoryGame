@@ -140,6 +140,18 @@ impl SurfaceWorld {
 
         chunk.add_entity(get_chunk_base_pos_from_indices([x, y]), entity);
     }
+
+    pub fn get_power_poles_overlapping(
+        &self,
+        bounding_box: BoundingBox,
+    ) -> impl Iterator<Item = EntityDescriptor> {
+        self.get_chunks_that_could_contain_entities_colliding_with(
+            // TODO: This would actually be max_power_pole_size instead
+            bounding_box.extend_evenly(max_entity_size()),
+        )
+        .flat_map(|(chunk, base_pos)| chunk.get_power_pole_entities(base_pos))
+        .filter(move |e| e.overlaps(bounding_box))
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]

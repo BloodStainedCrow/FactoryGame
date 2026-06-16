@@ -1,4 +1,4 @@
-use data::entity::assember::Recipe;
+use data::{entity::assember::Recipe, item::ItemStack};
 
 use crate::{Middle, lists::AssemblerIndex};
 
@@ -11,6 +11,10 @@ pub(crate) struct MiddleAssemblerInfo {
 
 pub struct AssemblerAdditionInfo {
     pub recipe: Recipe,
+}
+
+pub struct AssemblerRemovalInfo {
+    pub returned_items: Vec<ItemStack>,
 }
 
 impl Middle {
@@ -32,8 +36,21 @@ impl Middle {
         AssemblerIndex(index.try_into().expect("More than u32::MAX assemblers"))
     }
 
-    pub fn change_assembler_recipe(&mut self, id: AssemblerIndex, new_recipe: Recipe) {
+    pub fn change_assembler_recipe(
+        &mut self,
+        id: AssemblerIndex,
+        new_recipe: Recipe,
+        backend: &mut !,
+    ) {
         // TODO: This will impact the graph
         self.assembler_list[id.0 as usize].current_recipe = new_recipe;
+    }
+
+    pub fn remove_assembler(
+        &mut self,
+        id: AssemblerIndex,
+        backend: &mut !,
+    ) -> AssemblerRemovalInfo {
+        todo!()
     }
 }

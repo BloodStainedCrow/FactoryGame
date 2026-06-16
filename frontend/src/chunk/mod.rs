@@ -4,7 +4,7 @@ use data::{
     get_kind,
     spacial::{BoundingBox, Extent, Flipped, Position, Rotation},
 };
-use middle::lists::{AssemblerIndex, BeltIndex, InserterIndex, PipeIndex};
+use middle::lists::{AssemblerIndex, BeltIndex, InserterIndex, PipeIndex, PowerPoleIndex};
 
 use crate::entity::{EntityDescriptor, EntityDescriptorKind};
 
@@ -97,6 +97,14 @@ impl Chunk {
                 });
             },
             EntityDescriptorKind::Pipe { id } => {
+                self.entities.push(StoredEntity {
+                    pos,
+                    rotation,
+                    ty,
+                    index: id.0,
+                });
+            },
+            EntityDescriptorKind::PowerPole { id } => {
                 self.entities.push(StoredEntity {
                     pos,
                     rotation,
@@ -204,6 +212,17 @@ impl Chunk {
             iter
         }
     }
+
+    pub fn get_power_pole_entities(
+        &self,
+        base_pos: Position,
+    ) -> impl Iterator<Item = EntityDescriptor> {
+        self.entities
+            .iter()
+            .filter(|e| matches!(get_kind(e.ty), data::EntityPrototypeKind::PowerPole))
+            .copied()
+            .map(move |e| e.get_descriptor(base_pos))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -272,7 +291,9 @@ impl StoredEntity {
             data::EntityPrototypeKind::UndergroundBelt => todo!(),
             data::EntityPrototypeKind::Splitter => todo!(),
             data::EntityPrototypeKind::Chest => todo!(),
-            data::EntityPrototypeKind::PowerPole => todo!(),
+            data::EntityPrototypeKind::PowerPole => EntityDescriptorKind::PowerPole {
+                id: PowerPoleIndex(self.index),
+            },
             data::EntityPrototypeKind::SolarPanel => EntityDescriptorKind::SolarPanel {},
             data::EntityPrototypeKind::Accumulator => todo!(),
         };

@@ -27,6 +27,11 @@ impl Position {
             Some(0)
         }
     }
+
+    #[must_use]
+    pub const fn manhattan_distance(self, other: Self) -> u32 {
+        self.x.abs_diff(other.x) + self.y.abs_diff(other.y)
+    }
 }
 
 // TODO(BSC): Do I want to be able to support zero sized bounding boxes?

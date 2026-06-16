@@ -4,6 +4,7 @@ use crate::{
 };
 
 pub mod assember;
+pub mod power_pole;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GlobalTy(u16);
