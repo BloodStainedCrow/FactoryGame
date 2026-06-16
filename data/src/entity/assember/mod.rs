@@ -17,4 +17,11 @@ impl TryFrom<GlobalTy> for AssemblerTy {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct Recipe(u16);
+
+// This might need more info like the tiles its placed on
+#[must_use]
+pub fn default_recipe(ty: AssemblerTy) -> Recipe {
+    todo!()
+}

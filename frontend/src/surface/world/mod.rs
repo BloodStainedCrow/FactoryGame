@@ -8,6 +8,7 @@ use itertools::Itertools;
 
 use crate::{
     chunk::{CHUNK_SIZE, Chunk},
+    entity::EntityDescriptor,
     sparse_grid::{SparseGrid, dynamic::DynamicGrid},
 };
 
@@ -22,18 +23,25 @@ pub struct SurfaceWorld {
     chunks: ChunkStore,
 }
 
-const fn get_chunk_pos_for_tile(pos: Position) -> [i32; 2] {
+const fn get_chunk_indices_for_tile(pos: Position) -> [i32; 2] {
     [
         pos.x.div_floor(i32::from(CHUNK_SIZE)),
         pos.y.div_floor(i32::from(CHUNK_SIZE)),
     ]
 }
 
+const fn get_chunk_base_pos_from_indices([x, y]: [i32; 2]) -> Position {
+    Position {
+        x: x * i32::from(CHUNK_SIZE),
+        y: y * i32::from(CHUNK_SIZE),
+    }
+}
+
 impl SurfaceWorld {
     pub fn new_with_empty_area(area: BoundingBox) -> Self {
         // TODO: This should prob be factored out
-        let top_left = get_chunk_pos_for_tile(area.top_left());
-        let bottom_right = get_chunk_pos_for_tile(area.bottom_right());
+        let top_left = get_chunk_indices_for_tile(area.top_left());
+        let bottom_right = get_chunk_indices_for_tile(area.bottom_right());
 
         let x_range: RangeInclusive<i32> = top_left[0]..=bottom_right[0];
         let y_range: RangeInclusive<i32> = top_left[1]..=bottom_right[1];
@@ -68,8 +76,8 @@ impl SurfaceWorld {
 
     fn all_chunks_generated(&self, goal_bounding_box: BoundingBox) -> bool {
         // TODO: This should prob be factored out
-        let top_left = get_chunk_pos_for_tile(goal_bounding_box.top_left());
-        let bottom_right = get_chunk_pos_for_tile(goal_bounding_box.bottom_right());
+        let top_left = get_chunk_indices_for_tile(goal_bounding_box.top_left());
+        let bottom_right = get_chunk_indices_for_tile(goal_bounding_box.bottom_right());
 
         let x_range: RangeInclusive<i32> = top_left[0]..=bottom_right[0];
         let y_range: RangeInclusive<i32> = top_left[1]..=bottom_right[1];
@@ -102,8 +110,8 @@ impl SurfaceWorld {
         bounding_box: BoundingBox,
     ) -> impl Iterator<Item = (&Chunk, Position)> {
         // TODO: This should prob be factored out
-        let top_left = get_chunk_pos_for_tile(bounding_box.top_left());
-        let bottom_right = get_chunk_pos_for_tile(bounding_box.bottom_right());
+        let top_left = get_chunk_indices_for_tile(bounding_box.top_left());
+        let bottom_right = get_chunk_indices_for_tile(bounding_box.bottom_right());
 
         let x_range: RangeInclusive<i32> = top_left[0]..=bottom_right[0];
         let y_range: RangeInclusive<i32> = top_left[0]..=bottom_right[1];
@@ -121,6 +129,16 @@ impl SurfaceWorld {
                 )
             })
         })
+    }
+
+    /// # Panics
+    /// If the chunk is ungenerated
+    pub fn add_entity(&mut self, entity: EntityDescriptor) {
+        let [x, y] = get_chunk_indices_for_tile(entity.position);
+
+        let chunk = self.chunks.get_mut(x, y).expect("Chunk not generated");
+
+        chunk.add_entity(get_chunk_base_pos_from_indices([x, y]), entity);
     }
 }
 
