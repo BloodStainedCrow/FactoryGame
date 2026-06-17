@@ -301,8 +301,8 @@ impl BoundingBox {
                 y: self.top_left.y.strict_sub_unsigned(amount),
             },
             bottom_right: Position {
-                x: self.top_left.x.strict_add_unsigned(amount),
-                y: self.top_left.y.strict_add_unsigned(amount),
+                x: self.bottom_right.x.strict_add_unsigned(amount),
+                y: self.bottom_right.y.strict_add_unsigned(amount),
             },
         }
     }
