@@ -4,3 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+eframe = {version = "0.34.3", features = [ "wgpu" ]}
+data = { path = "../data" }
+frontend = { path = "../frontend" }
+tilelib = { path = "../tilelib" }
+log = "0.4.32"
+puffin = "0.20.0"
+simple_logger = "5.2.0"
+# TODO: make this part of this repo
+
+[lints]
+workspace = true

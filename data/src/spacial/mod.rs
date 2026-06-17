@@ -1,6 +1,6 @@
 use std::{
     cmp::{max, min},
-    ops::Add,
+    ops::{Add, Sub},
 };
 
 use enum_map::Enum;
@@ -9,6 +9,17 @@ use enum_map::Enum;
 pub struct Position {
     pub x: i32,
     pub y: i32,
+}
+
+impl Sub for Position {
+    type Output = Offset;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Offset {
+            x_offs: self.x - rhs.x,
+            y_offs: self.y - rhs.y,
+        }
+    }
 }
 
 impl Position {
@@ -31,6 +42,18 @@ impl Position {
     #[must_use]
     pub const fn manhattan_distance(self, other: Self) -> u32 {
         self.x.abs_diff(other.x) + self.y.abs_diff(other.y)
+    }
+
+    #[must_use]
+    pub fn pos_in_bounding_box_f64(self, bounding_box: BoundingBox) -> [f64; 2] {
+        assert!(bounding_box.contains(self));
+
+        [
+            (f64::from(self.x) - f64::from(bounding_box.top_left().x))
+                / f64::from(bounding_box.width()),
+            (f64::from(self.y) - f64::from(bounding_box.top_left().y))
+                / f64::from(bounding_box.height()),
+        ]
     }
 }
 
@@ -230,6 +253,20 @@ impl BoundingBox {
     #[must_use]
     pub const fn bottom_right(self) -> Position {
         self.bottom_right
+    }
+
+    #[must_use]
+    pub fn width(self) -> u32 {
+        (self.bottom_right().x - self.top_left().x)
+            .try_into()
+            .expect("Bounding box borked")
+    }
+
+    #[must_use]
+    pub fn height(self) -> u32 {
+        (self.bottom_right().y - self.top_left().y)
+            .try_into()
+            .expect("Bounding box borked")
     }
 
     #[must_use]

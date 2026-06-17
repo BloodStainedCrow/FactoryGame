@@ -1,3 +1,3 @@
 fn main() {
-    println!("Hello, world!");
+    factory::run_window();
 }
