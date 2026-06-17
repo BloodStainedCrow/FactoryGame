@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["frontend", "world", "middle", "data", "backend", "factory"]
+members = ["frontend", "world", "middle", "data", "backend", "factory", "tilelib"]
 
 [workspace.lints.rust]
 unused_imports = "deny"

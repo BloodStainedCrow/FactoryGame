@@ -1,0 +1,17 @@
+[package]
+name = "tilelib"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+bytemuck = { version = "1.21", features = ["derive"] }
+image = { version = "0.25", features = ["png"] }
+itertools = "0.14"
+log = "0.4"
+pollster = "0.4"
+spin_sleep_util = "0.1"
+wgpu = "29"
+winit = "0.30"
+
+[lints]
+workspace = true
