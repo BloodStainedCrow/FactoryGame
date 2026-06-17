@@ -1,24 +1,27 @@
-use crate::{EntityInfo, TICKS_PER_SECOND_LOGIC_F32, energy::EnergySource, spacial::Offset};
+use crate::{
+    TICKS_PER_SECOND_LOGIC_F32, api::entity::EntityInfo, energy::EnergySource, spacial::Offset,
+};
 
 pub type InserterMovetime = u16;
 
-struct InserterInfo {
-    entity_info: EntityInfo,
+#[derive(Debug, serde::Deserialize)]
+pub struct InserterInfo {
+    pub entity_info: EntityInfo,
 
-    source_offset: Offset,
-    dest_offset: Offset,
-    movetime: InserterMovementTime,
+    pub source_offset: Offset,
+    pub dest_offset: Offset,
+    pub movetime: InserterMovementTime,
 
     // TODO: near far things
-    energy_source: EnergySource,
+    pub energy_source: EnergySource,
 
-    filter_count: u8,
+    pub filter_count: u8,
 
     // Inherent hand size bonus
-    hand_size_bonus: u8,
+    pub hand_size_bonus: u8,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 enum InserterMovementTime {
     TicksPerTrip(InserterMovetime),
     RotationPerSecond { degrees: f32 },

@@ -3,7 +3,7 @@ use data::{
         GlobalTy,
         assember::{AssemblerTy, default_recipe},
         bounding_box,
-        power_pole::{PowerPoleTy, power_pole_connection_area},
+        power_pole::{PowerPoleTy, power_pole_wire_connection_area},
     },
     spacial::{BoundingBox, Flipped, Position, Rotation},
 };
@@ -161,11 +161,11 @@ impl Surface {
         let mut connected_poles: SmallVec<_> = SmallVec::default();
         for conn in self
             .world
-            .get_power_poles_overlapping(power_pole_connection_area(
+            .get_power_poles_overlapping(power_pole_wire_connection_area(
                 ty, top_left, rotation, flipped,
             ))
             .filter(|other| {
-                let other_connection_area = power_pole_connection_area(
+                let other_connection_area = power_pole_wire_connection_area(
                     other
                         .ty
                         .try_into()

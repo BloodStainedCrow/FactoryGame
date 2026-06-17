@@ -22,7 +22,7 @@ impl From<u16> for GlobalTy {
     }
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct PlacementRules {
     cnf: Vec<Vec<PlacementRule>>,
 }
@@ -41,7 +41,7 @@ impl PlacementRules {
     }
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 enum PlacementRule {
     FloorTileRequired { area: BoundingBox, tile: () },
     Not(Box<Self>),

@@ -187,6 +187,14 @@ pub struct Extent {
 
 impl Extent {
     #[must_use]
+    pub const fn single_tile() -> Self {
+        Self {
+            width: 1,
+            height: 1,
+        }
+    }
+
+    #[must_use]
     pub const fn rotate(self, rotation: Rotation) -> Self {
         match rotation {
             Rotation::North | Rotation::South => self,
@@ -200,7 +208,7 @@ impl Extent {
 
 impl BoundingBox {
     #[must_use]
-    pub const fn new(top_left: Position, extent: Extent) -> Self {
+    pub fn new(top_left: Position, extent: Extent) -> Self {
         let bottom_right = Position {
             x: top_left.x.strict_add_unsigned(extent.width),
             y: top_left.y.strict_add_unsigned(extent.height),
@@ -294,6 +302,14 @@ impl BoundingBox {
     }
 
     #[must_use]
+    pub fn move_by(self, offset: Offset) -> Self {
+        Self {
+            top_left: self.top_left + offset,
+            bottom_right: self.bottom_right + offset,
+        }
+    }
+
+    #[must_use]
     pub const fn extend_evenly(self, amount: u32) -> Self {
         Self {
             top_left: Position {
@@ -308,10 +324,10 @@ impl BoundingBox {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Offset {
-    x_offs: i32,
-    y_offs: i32,
+    pub x_offs: i32,
+    pub y_offs: i32,
 }
 
 impl Add<Offset> for Position {

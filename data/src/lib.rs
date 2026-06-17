@@ -1,9 +1,13 @@
 #![feature(never_type)]
 
-use std::{cmp::max, sync::LazyLock};
+use std::{
+    cmp::max,
+    sync::{Arc, LazyLock},
+};
 
 use crate::{
-    entity::{GlobalTy, PlacementRules},
+    api::{ModData, entity::power_pole::PowerPoleInfo},
+    entity::{GlobalTy, PlacementRules, power_pole::PowerPoleData},
     spacial::Extent,
 };
 
@@ -18,18 +22,31 @@ pub mod item;
 pub mod spacial;
 
 #[derive(Debug, serde::Deserialize)]
+struct ModIdentifier(String);
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct EntityIdentifier(Arc<str>);
+
+#[derive(Debug, serde::Deserialize)]
+struct EntityName(String);
+
+impl EntityIdentifier {
+    fn new(mod_: &ModIdentifier, name: &EntityName) -> Self {
+        Self(format!("{}::{}", mod_.0, name.0).into())
+    }
+}
+
+#[derive(Debug)]
 struct EntityInfo {
     // TODO: Add bounding box types
     size: Extent,
 
-    #[serde(default)]
     can_be_rotated: bool,
-    #[serde(default)]
     can_be_flipped: bool,
 
     kind: EntityPrototypeKind,
 
-    name: String,
+    name: EntityIdentifier,
     // FIXME(BSC): localisation support!
     display_name: String,
     // TODO: Icon, Collision, Sound, Placement (i.e. which item places it), mapcolor
@@ -37,24 +54,29 @@ struct EntityInfo {
 }
 
 #[derive(Debug)]
-pub struct DataStore {
+struct DataStore {
     entities: Vec<EntityInfo>,
+    power_poles: Vec<PowerPoleData>,
 }
 
 /// The parsed data of the currently loaded mod set
-static DATA_STORE: LazyLock<DataStore> = LazyLock::new(|| DataStore {
-    entities: vec![EntityInfo {
-        size: Extent {
-            width: 3,
-            height: 3,
-        },
-        can_be_rotated: true,
-        can_be_flipped: true,
-        kind: EntityPrototypeKind::Assembler,
-        name: "factory_game::assembling_machine_1".to_string(),
-        display_name: "Assembling Machine 1".to_string(),
-        placement_rules: PlacementRules::no_restriction(),
-    }],
+static DATA_STORE: LazyLock<DataStore> = LazyLock::new(|| {
+    DataStore::from_mods(&[ModData {
+        mod_name: ModIdentifier("test".to_string()),
+        inserters: vec![],
+        power_poles: vec![PowerPoleInfo {
+            entity_info: api::entity::EntityInfo {
+                size: Extent::single_tile(),
+                can_be_rotated: false,
+                can_be_flipped: false,
+                name: EntityName("small_power_pole".to_string()),
+                display_name: "Small Power Pole".to_string(),
+                placement_rules: PlacementRules::no_restriction(),
+            },
+            range: 5,
+            wire_reach: 15,
+        }],
+    }])
 });
 
 /// # Safety
@@ -83,7 +105,7 @@ pub fn get_kind(entity_ty: GlobalTy) -> EntityPrototypeKind {
     DATA_STORE.entities[usize::from(entity_ty)].kind
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 pub enum EntityPrototypeKind {
     Assembler,
     Inserter,
@@ -95,6 +117,31 @@ pub enum EntityPrototypeKind {
     Pipe, // Pipe, Underground pipes and fluid tanks are the same thing
     SolarPanel,
     Accumulator,
+}
+
+impl EntityPrototypeKind {
+    fn global_index_for_kind_index(self, kind_index: usize) -> Option<usize> {
+        DATA_STORE
+            .entities
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.kind == self)
+            .nth(kind_index)
+            .map(|v| v.0)
+    }
+
+    fn kind_index_from_global_index(self, global_index: usize) -> Option<usize> {
+        if DATA_STORE.entities[global_index].kind == self {
+            Some(
+                DATA_STORE.entities[0..global_index]
+                    .iter()
+                    .filter(|e| e.kind == self)
+                    .count(),
+            )
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg(test)]
