@@ -19,6 +19,7 @@ struct SurfaceConfiguration {
     has_global_power: bool,
 }
 
+#[derive(Debug, Clone)]
 pub struct SurfaceWorld {
     chunks: ChunkStore,
 }
@@ -150,6 +151,17 @@ impl SurfaceWorld {
             bounding_box.extend_evenly(max_entity_size()),
         )
         .flat_map(|(chunk, base_pos)| chunk.get_power_pole_entities(base_pos))
+        .filter(move |e| e.overlaps(bounding_box))
+    }
+
+    pub fn get_entities_in_area(
+        &self,
+        bounding_box: BoundingBox,
+    ) -> impl Iterator<Item = EntityDescriptor> {
+        self.get_chunks_that_could_contain_entities_colliding_with(
+            bounding_box.extend_evenly(max_entity_size()),
+        )
+        .flat_map(|(chunk, base_pos)| chunk.get_entities(base_pos))
         .filter(move |e| e.overlaps(bounding_box))
     }
 }

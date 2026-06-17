@@ -1,18 +1,22 @@
+use std::sync::Arc;
+
 use eframe::{
     egui::{CentralPanel, CursorIcon, Shape, Ui, Window},
     egui_wgpu,
 };
+use frontend::GameState;
+use tilelib::types::RawRenderer;
 
 use crate::eframe_app::Callback;
 
 pub enum AppState {
-    Ingame {},
+    Ingame { game_state: Arc<GameState> },
     MainMenu {},
     Loading {},
 }
 
 impl AppState {
-    pub fn draw(&mut self, ui: &mut Ui) {
+    pub fn draw(&self, ui: &mut Ui, raw_renderer: Option<&RawRenderer>) {
         match self {
             Self::MainMenu {} => {
                 let ctx = ui.ctx();
@@ -21,7 +25,7 @@ impl AppState {
                     ui.label("Hello World");
                 });
             },
-            Self::Ingame {} => {
+            Self::Ingame { game_state } => {
                 let size = ui.ctx().content_rect();
 
                 CentralPanel::default().show_inside(ui, |ui| {
@@ -31,11 +35,10 @@ impl AppState {
                     let painter = ui.painter();
 
                     let cb = Callback {
-                        // raw_renderer: self
-                        //     .raw_renderer
-                        //     .clone()
-                        //     .expect("Tried to Load a game without a renderer ready"),
-                        raw_renderer: todo!(),
+                        state: game_state.clone(),
+                        raw_renderer: raw_renderer
+                            .expect("Cannot draw game without a renderer")
+                            .clone(),
                     };
                     painter.add(Shape::Callback(egui_wgpu::Callback::new_paint_callback(
                         size, cb,

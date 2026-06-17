@@ -1,7 +1,7 @@
 use std::iter;
 
 use data::{
-    entity::{GlobalTy, bounding_box},
+    entity::{GlobalTy, bounding_box, power_pole::PowerPoleTy},
     spacial::{BoundingBox, Flipped, Position, Rotation},
 };
 use middle::lists::{AssemblerIndex, BeltIndex, InserterIndex, PipeIndex, PowerPoleIndex};
@@ -39,4 +39,33 @@ pub(crate) enum EntityDescriptorKind {
     PowerPole { id: PowerPoleIndex },
     SolarPanel {},
     // ...
+}
+
+#[derive(Debug)]
+pub struct EntityInfo {
+    pub position: Position,
+    pub rotation: Rotation,
+    pub flipped: Flipped,
+
+    pub kind: EntityInfoKind,
+}
+
+impl EntityInfo {
+    // TODO: This is a clippy bug
+    #[expect(clippy::missing_const_for_fn)]
+    #[must_use]
+    pub fn global_ty(&self) -> GlobalTy {
+        match self.kind {
+            EntityInfoKind::PowerPole { ty, .. } => ty.into(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum EntityInfoKind {
+    PowerPole {
+        ty: PowerPoleTy,
+        connected_pole_positions: Vec<Position>,
+        // ...
+    },
 }

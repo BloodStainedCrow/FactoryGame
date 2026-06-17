@@ -10,6 +10,7 @@ use crate::entity::{EntityDescriptor, EntityDescriptorKind};
 
 pub const CHUNK_SIZE: u8 = 16;
 
+#[derive(Debug, Clone)]
 pub struct Chunk {
     // NOTE(BSC): This has a maximumum length of CHUNK_SIZE * CHUNK_SIZE, which could be used to reduce the memory footprint
     entities: Vec<StoredEntity>,
@@ -19,6 +20,7 @@ pub struct Chunk {
     single_kind_optimization: Option<Box<SameEntityOptimization>>,
 }
 
+#[derive(Debug, Clone)]
 struct SameEntityOptimization {
     ty: GlobalTy,
     rotation: RotationWithFlipped,

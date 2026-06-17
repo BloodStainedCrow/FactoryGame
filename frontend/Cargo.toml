@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 data = { path = "../data" } 
+world = { path = "../world" } 
 
 [lints]
 workspace = true

@@ -16,7 +16,7 @@ use middle::{
 use smallvec::SmallVec;
 
 use crate::{
-    entity::{EntityDescriptor, EntityDescriptorKind},
+    entity::{EntityDescriptor, EntityDescriptorKind, EntityInfo, EntityInfoKind},
     surface::world::{CanFitError, SurfaceWorld},
 };
 
@@ -25,19 +25,57 @@ mod pipe_logic;
 mod world;
 
 // TODO: This should probably not live in the frontend IMO
-struct Surface {
+#[derive(Debug, Clone)]
+pub struct Surface {
     world: SurfaceWorld,
     middle: Middle,
-    backend: !,
+    backend: (),
 }
 
-enum PlaceEntityError {
+pub enum PlaceEntityError {
     CanFit(CanFitError),
     FloorRule(!),
     PipeFluidMixing(!),
 }
 
+pub struct SurfaceCreationOptions {
+    pub generated_area: BoundingBox,
+}
+
 impl Surface {
+    #[must_use]
+    pub fn new(options: &SurfaceCreationOptions) -> Self {
+        Self {
+            world: SurfaceWorld::new_with_empty_area(options.generated_area),
+            middle: Middle::new(),
+            backend: (),
+        }
+    }
+
+    pub fn get_entity_states_in_area(&self, area: BoundingBox) -> impl Iterator<Item = EntityInfo> {
+        self.world
+            .get_entities_in_area(area)
+            .map(|desc| EntityInfo {
+                position: desc.position,
+                rotation: desc.rotation,
+                flipped: desc.flipped,
+                kind: match desc.kind {
+                    EntityDescriptorKind::Assembler { id } => todo!(),
+                    EntityDescriptorKind::Inserter { id } => todo!(),
+                    EntityDescriptorKind::Belt { id } => todo!(),
+                    EntityDescriptorKind::Pipe { id } => todo!(),
+                    EntityDescriptorKind::PowerPole { id } => EntityInfoKind::PowerPole {
+                        ty: desc.ty.try_into().expect("PowerPole with non PowerPoleTy"),
+                        connected_pole_positions: self
+                            .middle
+                            .get_pole_connected_positions(id)
+                            .collect(),
+                    },
+                    EntityDescriptorKind::SolarPanel {} => todo!(),
+                },
+            })
+    }
+
     fn follows_rules(
         &self,
         ty: GlobalTy,
@@ -62,7 +100,9 @@ impl Surface {
         Ok(bounding_box)
     }
 
-    fn add_assembler(
+    /// # Errors
+    /// If placing this entity is not legal
+    pub fn add_assembler(
         &mut self,
         ty: AssemblerTy,
         top_left: Position,
@@ -107,7 +147,9 @@ impl Surface {
         Ok(())
     }
 
-    fn add_power_pole(
+    /// # Errors
+    /// If placing this entity is not legal
+    pub fn add_power_pole(
         &mut self,
         ty: PowerPoleTy,
         top_left: Position,
@@ -161,6 +203,7 @@ impl Surface {
 
         let index = self.middle.add_power_pole(
             PowerPoleAdditionInfo {
+                position: top_left,
                 connections: connected_poles,
             },
             &mut self.backend,

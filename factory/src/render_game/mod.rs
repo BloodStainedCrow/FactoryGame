@@ -1,14 +1,15 @@
 use data::spacial::{BoundingBox, Extent, Position};
-use frontend::query::WorldQueryEngine;
+use frontend::{SurfaceId, query::WorldQueryEngine};
 use tilelib::types::{DrawInstance, Layer, RendererTrait, Sprite, Texture};
 
-pub const WIDTH_PER_LEVEL: usize = 16;
+pub const WIDTH_PER_LEVEL: u16 = 16;
 
 #[derive(Debug, Clone, Copy)]
 pub struct RenderInfo {
-    map_view: bool,
-    zoom_level: f32,
-    center: [f32; 2],
+    pub surface: SurfaceId,
+    pub map_view: bool,
+    pub zoom_level: f32,
+    pub center: [f32; 2],
 }
 
 pub fn render_game(
@@ -19,7 +20,7 @@ pub fn render_game(
     let aspect_ratio = renderer.get_aspect_ratio();
 
     let num_tiles_across_screen_horizontal =
-        WIDTH_PER_LEVEL as f32 * 1.5f32.powf(render_info.zoom_level);
+        f32::from(WIDTH_PER_LEVEL) * 1.5f32.powf(render_info.zoom_level);
     let num_tiles_across_screen_vertical = num_tiles_across_screen_horizontal / aspect_ratio;
     let tile_size: f32 = 1.0 / num_tiles_across_screen_horizontal;
 
@@ -32,6 +33,7 @@ pub fn render_game(
     ];
 
     for entity in query_engine.get_entity_render_infos_for_area(
+        render_info.surface,
         BoundingBox::new(
             Position {
                 x: top_left[0] as i32,
@@ -44,6 +46,7 @@ pub fn render_game(
         )
         .extend_evenly(1),
     ) {
+        dbg!(&entity);
         entity_layer.draw_sprite(
             &Sprite::new(Texture::default()),
             DrawInstance {

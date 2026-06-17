@@ -1,3 +1,4 @@
+use data::spacial::Position;
 use itertools::Itertools;
 use smallvec::SmallVec;
 
@@ -5,7 +6,9 @@ use crate::{Middle, lists::PowerPoleIndex};
 
 pub const AUTOMATIC_POLE_CONNECTION_LIMIT: usize = 4;
 
+#[derive(Debug, Clone)]
 pub(crate) struct MiddlePowerPoleInfo {
+    position: Position,
     connections: SmallVec<[PowerPoleIndex; AUTOMATIC_POLE_CONNECTION_LIMIT]>,
     grid_id: (),
     // TODO: Do I want this in here?
@@ -13,6 +16,7 @@ pub(crate) struct MiddlePowerPoleInfo {
 }
 
 pub struct PowerPoleAdditionInfo {
+    pub position: Position,
     pub connections: SmallVec<[PowerPoleIndex; AUTOMATIC_POLE_CONNECTION_LIMIT]>,
     // connected_entities: Vec<!>
 }
@@ -24,9 +28,12 @@ impl Middle {
     pub fn add_power_pole(
         &mut self,
         info: PowerPoleAdditionInfo,
-        backend: &mut !,
+        backend: &mut (),
     ) -> PowerPoleIndex {
-        let PowerPoleAdditionInfo { mut connections } = info;
+        let PowerPoleAdditionInfo {
+            position,
+            mut connections,
+        } = info;
 
         let index = self.power_pole_list.next_push_index();
 
@@ -72,6 +79,7 @@ impl Middle {
         };
 
         let real_index = self.power_pole_list.push(MiddlePowerPoleInfo {
+            position,
             connections,
             grid_id,
         });
@@ -104,6 +112,20 @@ impl Middle {
         self.power_pole_list[ids[0].0 as usize]
             .connections
             .contains(&ids[1])
+    }
+
+    fn get_pole_pos(&self, id: PowerPoleIndex) -> Position {
+        self.power_pole_list[id.0 as usize].position
+    }
+
+    pub fn get_pole_connected_positions(
+        &self,
+        id: PowerPoleIndex,
+    ) -> impl Iterator<Item = Position> {
+        self.power_pole_list[id.0 as usize]
+            .connections
+            .iter()
+            .map(|conn| self.get_pole_pos(*conn))
     }
 
     pub fn remove_power_pole(&mut self, id: PowerPoleIndex, backend: &mut !) {

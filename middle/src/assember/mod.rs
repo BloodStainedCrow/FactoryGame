@@ -2,6 +2,7 @@ use data::{entity::assember::Recipe, item::ItemStack};
 
 use crate::{Middle, lists::AssemblerIndex};
 
+#[derive(Debug, Clone)]
 pub(crate) struct MiddleAssemblerInfo {
     // TODO: Do I want to internally have each assembler have a recipe?
     current_recipe: Recipe,
@@ -28,7 +29,7 @@ impl Middle {
     pub fn add_assembler(
         &mut self,
         info: &AssemblerAdditionInfo,
-        backend: &mut !,
+        backend: &mut (),
     ) -> AssemblerIndex {
         let index = self.assembler_list.push(MiddleAssemblerInfo {
             current_recipe: info.recipe,
