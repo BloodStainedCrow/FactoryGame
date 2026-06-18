@@ -280,7 +280,7 @@ impl BoundingBox {
     #[must_use]
     pub const fn overlaps(self, other: Self) -> bool {
         let self_right_of_other = self.top_left.x > other.bottom_right.x;
-        let self_left_of_other = self.bottom_right.x < other.top_left.y;
+        let self_left_of_other = self.bottom_right.x < other.top_left.x;
         let self_above_other = self.bottom_right.y < other.top_left.y;
         let self_below_other = self.top_left.y > other.bottom_right.y;
         !(self_right_of_other || self_left_of_other || self_above_other || self_below_other)
