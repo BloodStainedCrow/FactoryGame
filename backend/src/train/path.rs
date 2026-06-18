@@ -16,6 +16,7 @@ struct Path {
 struct PathSegment {
     segment_id: SegmentId,
     length: DistanceUnit,
+    is_chain: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -203,14 +204,18 @@ impl Path {
         &self,
         mut distance: DistanceUnit,
     ) -> impl Iterator<Item = SegmentId> + Clone {
+        let mut found_stop = false;
         self.segments
             .iter()
             .take_while(move |segment| {
                 let take = distance.0 > 0;
 
                 distance.0 = distance.0.saturating_sub(segment.length.0);
+                if distance.0 == 0 && !segment.is_chain {
+                    found_stop = true;
+                }
 
-                take
+                take || !found_stop
             })
             .map(|segment| segment.segment_id)
     }
@@ -296,7 +301,10 @@ impl Path {
 
         #[cfg(debug_assertions)]
         for segment in self.current_reservations(*current_state) {
-            assert!(reservation_state.is_reserved_by_us(segment, current_state.train_id));
+            assert!(
+                reservation_state.is_reserved_by_us(segment, current_state.train_id),
+                "{segment:?} not reserved by us"
+            );
         }
 
         let mut distance_to_advance = DistanceUnit(current_state.speed);
@@ -342,7 +350,7 @@ impl Path {
                         !reservation_state.is_reserved_by_us(segment, current_state.train_id)
                     );
 
-                    reservation_state.can_be_reserved(dbg!(segment))
+                    reservation_state.can_be_reserved(segment)
                 })
         {
             // We may accelerate
@@ -407,11 +415,57 @@ mod test {
                 .map(|id| PathSegment {
                     segment_id: SegmentId(id),
                     length: DistanceUnit(UNITS_PER_TILE * 40),
+                    is_chain: false,
                 })
                 .collect(),
         };
 
         let mut segment_reservations = vec![None; NUM_PATHS as usize];
+        segment_reservations[0] = Some(TrainID(0));
+
+        for _ in 0..10_000 {
+            path.advance(
+                &mut state,
+                SegmentReservationList {
+                    list: &mut segment_reservations,
+                },
+            );
+        }
+
+        assert_eq!(state.speed, 0);
+        assert_eq!(path.segments.len(), 1);
+        // TODO: Some imprecision in the system
+        assert!(path.segments[0].length < DistanceUnit(TRAIN_SIZE.0 + 10));
+    }
+
+    #[test]
+    fn traverse_path_free_all_chain() {
+        const NUM_PATHS: u32 = 100;
+
+        const TRAIN_SIZE: DistanceUnit = DistanceUnit(UNITS_PER_TILE * 4);
+
+        let mut state = TrainState::new_standing(
+            TrainID(0),
+            10 * UNITS_PER_TILE,
+            10 * UNITS_PER_TILE,
+            2_000,
+            TRAIN_SIZE,
+        );
+
+        let mut path = Path {
+            segments: (0..NUM_PATHS)
+                .map(|id| PathSegment {
+                    segment_id: SegmentId(id),
+                    length: DistanceUnit(UNITS_PER_TILE * 40),
+                    is_chain: true,
+                })
+                .collect(),
+        };
+
+        let mut segment_reservations = vec![None; NUM_PATHS as usize];
+
+        // Let the train start in a non-chain segment. Since the first reservation (done when the train departs, would otherwise need to reserve everything)
+        path.segments[0].is_chain = false;
         segment_reservations[0] = Some(TrainID(0));
 
         for _ in 0..10_000 {
@@ -446,6 +500,7 @@ mod test {
                 .map(|id| PathSegment {
                     segment_id: SegmentId(id),
                     length: DistanceUnit(UNITS_PER_TILE * 40),
+                    is_chain: false,
                 })
                 .collect(),
         };
@@ -465,6 +520,53 @@ mod test {
 
         assert_eq!(state.speed, 0);
         assert!(path.segments.len() > 1);
+    }
+
+    #[test]
+    fn traverse_path_blocked_all_chain() {
+        const NUM_PATHS: u32 = 100;
+
+        let mut state = TrainState::new_standing(
+            TrainID(0),
+            10 * UNITS_PER_TILE,
+            10 * UNITS_PER_TILE,
+            2_000,
+            DistanceUnit(UNITS_PER_TILE * 4),
+        );
+
+        let mut path = Path {
+            segments: (0..NUM_PATHS)
+                .map(|id| PathSegment {
+                    segment_id: SegmentId(id),
+                    length: DistanceUnit(UNITS_PER_TILE * 40),
+                    is_chain: true,
+                })
+                .collect(),
+        };
+
+        let mut segment_reservations = vec![None; NUM_PATHS as usize];
+
+        // Let the train start in a non-chain segment. Since the first reservation (done when the train departs, would otherwise need to reserve everything)
+        path.segments[0].is_chain = false;
+
+        segment_reservations[0] = Some(TrainID(0));
+        segment_reservations[(NUM_PATHS / 2) as usize] = Some(TrainID(u32::MAX));
+
+        for _ in 0..10_000 {
+            path.advance(
+                &mut state,
+                SegmentReservationList {
+                    list: &mut segment_reservations,
+                },
+            );
+        }
+
+        assert_eq!(state.speed, 0);
+        assert_eq!(
+            path.segments.len(),
+            NUM_PATHS as usize,
+            "Train went into chain signal segment even though path was not fully claimable"
+        );
     }
 
     proptest! {
@@ -521,6 +623,7 @@ mod test {
                     .map(|id| PathSegment {
                         segment_id: SegmentId(id),
                         length: DistanceUnit(UNITS_PER_TILE * 40),
+                        is_chain: false,
                     })
                     .collect(),
             };
@@ -540,6 +643,7 @@ mod test {
                     .map(|id| PathSegment {
                         segment_id: SegmentId(id),
                         length: DistanceUnit(4),
+                        is_chain: false,
                     })
                     .collect(),
             };
@@ -594,6 +698,7 @@ mod test {
                     .map(|id| PathSegment {
                         segment_id: SegmentId(id),
                         length: DistanceUnit(UNITS_PER_TILE * 40),
+                        is_chain: false,
                     })
                     .collect(),
             };

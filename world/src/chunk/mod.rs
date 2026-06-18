@@ -535,8 +535,8 @@ mod test {
                 rotation,
                 flipped,
                 ty: 0.into(),
-                kind: EntityDescriptorKind::Assembler {
-                    id: AssemblerIndex(100),
+                kind: EntityDescriptorKind::PowerPole {
+                    id: PowerPoleIndex(100),
                 },
             };
 
