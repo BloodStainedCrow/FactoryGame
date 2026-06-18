@@ -208,7 +208,7 @@ impl Extent {
 
 impl BoundingBox {
     #[must_use]
-    pub fn new(top_left: Position, extent: Extent) -> Self {
+    pub const fn new(top_left: Position, extent: Extent) -> Self {
         let bottom_right = Position {
             x: top_left.x.strict_add_unsigned(extent.width),
             y: top_left.y.strict_add_unsigned(extent.height),
@@ -278,8 +278,12 @@ impl BoundingBox {
     }
 
     #[must_use]
-    pub fn overlaps(self, other: Self) -> bool {
-        todo!()
+    pub const fn overlaps(self, other: Self) -> bool {
+        let self_right_of_other = self.top_left.x > other.bottom_right.x;
+        let self_left_of_other = self.bottom_right.x < other.top_left.y;
+        let self_above_other = self.bottom_right.y < other.top_left.y;
+        let self_below_other = self.top_left.y > other.bottom_right.y;
+        !(self_right_of_other || self_left_of_other || self_above_other || self_below_other)
     }
 
     #[must_use]
