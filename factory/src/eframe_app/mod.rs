@@ -88,14 +88,14 @@ impl CallbackTrait for Callback {
             ],
         );
 
-        log::info!("Paint");
+        log::trace!("Paint");
         crate::render_game::render_game(
             &mut renderer,
             self.state.as_ref(),
             RenderInfo {
                 surface: SurfaceId::default(),
                 map_view: false,
-                zoom_level: 1.0,
+                zoom_level: 5.0,
                 center: [0.0, 0.0],
             },
         );

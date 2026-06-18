@@ -517,7 +517,7 @@ dependencies = [
  "bitvec",
  "const-assert",
  "data",
- "itertools",
+ "itertools 0.14.0",
  "proptest",
  "static_assertions",
 ]
@@ -1322,6 +1322,7 @@ dependencies = [
  "data",
  "eframe",
  "frontend",
+ "itertools 0.15.0",
  "log",
  "puffin",
  "simple_logger",
@@ -1442,6 +1443,7 @@ name = "frontend"
 version = "0.1.0"
 dependencies = [
  "data",
+ "rand 0.10.1",
  "world",
 ]
 
@@ -1919,6 +1921,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2181,7 +2192,7 @@ name = "middle"
 version = "0.1.0"
 dependencies = [
  "data",
- "itertools",
+ "itertools 0.14.0",
  "smallvec",
  "stable-vec",
 ]
@@ -3053,7 +3064,7 @@ dependencies = [
  "anyhow",
  "byteorder",
  "cfg-if",
- "itertools",
+ "itertools 0.14.0",
  "parking_lot",
 ]
 
@@ -3198,7 +3209,7 @@ dependencies = [
  "built",
  "cfg-if",
  "interpolate_name",
- "itertools",
+ "itertools 0.14.0",
  "libc",
  "libfuzzer-sys",
  "log",
@@ -3828,7 +3839,7 @@ version = "0.2.0"
 dependencies = [
  "bytemuck",
  "image",
- "itertools",
+ "itertools 0.14.0",
  "log",
  "pollster",
  "spin_sleep_util",
@@ -5020,7 +5031,7 @@ dependencies = [
  "bitvec",
  "data",
  "enum-map",
- "itertools",
+ "itertools 0.14.0",
  "log",
  "middle",
  "proptest",

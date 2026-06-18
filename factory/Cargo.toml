@@ -11,6 +11,7 @@ tilelib = { path = "../tilelib" }
 log = "0.4.32"
 puffin = "0.20.0"
 simple_logger = "5.2.0"
+itertools = "0.15.0"
 # TODO: make this part of this repo
 
 [lints]

@@ -1,6 +1,6 @@
 use data::{
     entity::{
-        GlobalTy,
+        GlobalTy, allows_flipping, allows_rotation,
         assember::{AssemblerTy, default_recipe},
         bounding_box,
         power_pole::{PowerPoleTy, power_pole_wire_connection_area},
@@ -33,6 +33,8 @@ pub struct Surface {
 }
 
 pub enum PlaceEntityError {
+    RotationForbidden,
+    FlippingForbidden,
     CanFit(CanFitError),
     FloorRule(!),
     PipeFluidMixing(!),
@@ -83,6 +85,14 @@ impl Surface {
         rotation: Rotation,
         flipped: Flipped,
     ) -> Result<BoundingBox, PlaceEntityError> {
+        if rotation != Rotation::North && !allows_rotation(ty) {
+            return Err(PlaceEntityError::RotationForbidden);
+        }
+
+        if flipped != Flipped::unflipped() && !allows_flipping(ty) {
+            return Err(PlaceEntityError::FlippingForbidden);
+        }
+
         let bounding_box = bounding_box(ty, top_left, rotation, flipped);
 
         if let Err(err) = self.world.can_fit(bounding_box) {

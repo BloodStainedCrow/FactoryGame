@@ -115,7 +115,7 @@ impl SurfaceWorld {
         let bottom_right = get_chunk_indices_for_tile(bounding_box.bottom_right());
 
         let x_range: RangeInclusive<i32> = top_left[0]..=bottom_right[0];
-        let y_range: RangeInclusive<i32> = top_left[0]..=bottom_right[1];
+        let y_range: RangeInclusive<i32> = top_left[1]..=bottom_right[1];
 
         // TODO: Ensure the access order is aligned with the storage order for bounding_box_grid
         x_range.cartesian_product(y_range).filter_map(|(x, y)| {

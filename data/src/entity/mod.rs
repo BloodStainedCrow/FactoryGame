@@ -60,6 +60,16 @@ impl PlacementRule {
 }
 
 #[must_use]
+pub fn allows_rotation(entity_id: GlobalTy) -> bool {
+    DATA_STORE.entities[usize::from(entity_id)].can_be_rotated
+}
+
+#[must_use]
+pub fn allows_flipping(entity_id: GlobalTy) -> bool {
+    DATA_STORE.entities[usize::from(entity_id)].can_be_flipped
+}
+
+#[must_use]
 pub fn placement_allowed(entity_id: GlobalTy, floor: !) -> bool {
     DATA_STORE.entities[usize::from(entity_id)]
         .placement_rules

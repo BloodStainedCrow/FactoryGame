@@ -11,7 +11,8 @@
         // "unsafe {",
         // "unsafe fn",
         "#[inline(never)]", // #[inline(never)] is bad and normally left over from using cargo show-asm, so I treat is as a TODO
-        "type TEST = "
+        "type TEST = ",
+        "// use"
     ],
     "todo-tree.filtering.excludeGlobs": [
         "**/.vscode/settings.json"

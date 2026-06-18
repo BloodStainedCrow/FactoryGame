@@ -32,6 +32,8 @@ pub fn render_game(
         render_info.center[1] - num_tiles_across_screen_vertical / 2.0,
     ];
 
+    let sprite = Sprite::new(Texture::default());
+
     for entity in query_engine.get_entity_render_infos_for_area(
         render_info.surface,
         BoundingBox::new(
@@ -40,19 +42,19 @@ pub fn render_game(
                 y: top_left[1] as i32,
             },
             Extent {
-                width: num_tiles_across_screen_horizontal as u32,
-                height: num_tiles_across_screen_vertical as u32,
+                width: num_tiles_across_screen_horizontal as u32 + 1,
+                height: num_tiles_across_screen_vertical as u32 + 1,
             },
         )
         .extend_evenly(1),
     ) {
-        dbg!(&entity);
         entity_layer.draw_sprite(
-            &Sprite::new(Texture::default()),
+            // TODO:
+            &sprite,
             DrawInstance {
                 position: [
-                    (entity.position.x as f32 - top_left[0]) / num_tiles_across_screen_horizontal,
-                    (entity.position.y as f32 - top_left[1]) / num_tiles_across_screen_vertical,
+                    entity.position.x as f32 - top_left[0],
+                    entity.position.y as f32 - top_left[1],
                 ],
                 size: [entity.size.width as f32, entity.size.height as f32],
                 // TODO:

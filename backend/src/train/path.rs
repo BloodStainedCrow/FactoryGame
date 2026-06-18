@@ -227,6 +227,7 @@ impl Path {
     ) -> impl Iterator<Item = SegmentId> + Clone + use<'a> {
         let current_reservations = self.current_reservations(current_state);
 
+        #[cfg(debug_assertions)]
         for reservation in current_reservations.clone() {
             assert!(reservation_state.is_reserved_by_us(reservation, current_state.train_id));
         }
@@ -346,9 +347,8 @@ impl Path {
             && self
                 .new_reservations_for_acceleration(*current_state, &mut reservation_state)
                 .all(|segment| {
-                    debug_assert!(
-                        !reservation_state.is_reserved_by_us(segment, current_state.train_id)
-                    );
+                    #[cfg(debug_assertions)]
+                    assert!(!reservation_state.is_reserved_by_us(segment, current_state.train_id));
 
                     reservation_state.can_be_reserved(segment)
                 })

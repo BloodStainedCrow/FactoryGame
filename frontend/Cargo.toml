@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 data = { path = "../data" } 
+rand = "0.10.1"
 world = { path = "../world" } 
 
 [lints]

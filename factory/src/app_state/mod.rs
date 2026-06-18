@@ -28,6 +28,7 @@ impl AppState {
             Self::Ingame { game_state } => {
                 let size = ui.ctx().content_rect();
 
+                // This will later be controlled by mods
                 CentralPanel::default().show_inside(ui, |ui| {
                     if ui.ui_contains_pointer() {
                         ui.ctx().set_cursor_icon(CursorIcon::Default);
@@ -45,7 +46,13 @@ impl AppState {
                     )));
                 });
             },
-            Self::Loading {} => todo!(),
+            Self::Loading {} => {
+                let ctx = ui.ctx();
+
+                Window::new("Loading").show(ctx, |ui| {
+                    ui.label("There will be a progress bar here at some point");
+                });
+            },
         }
     }
 }

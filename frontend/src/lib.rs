@@ -27,10 +27,13 @@ impl Default for GameState {
         let mut ret = Self {
             surfaces: vec![Surface::new(&SurfaceCreationOptions {
                 generated_area: BoundingBox::new(
-                    Position { x: 0, y: 0 },
+                    Position {
+                        x: -100_000,
+                        y: -100_000,
+                    },
                     Extent {
-                        width: 10_000,
-                        height: 10_000,
+                        width: 200_000,
+                        height: 200_000,
                     },
                 ),
             })],
@@ -44,6 +47,18 @@ impl Default for GameState {
             Rotation::North,
             Flipped::unflipped(),
         );
+
+        for i in 0..1_000_000 {
+            ret.surfaces[0].add_power_pole(
+                PowerPoleTy::try_from(GlobalTy::from(0)).unwrap(),
+                Position {
+                    x: rand::random_range(-5_000..5_000),
+                    y: rand::random_range(-5_000..5_000),
+                },
+                Rotation::North,
+                Flipped::unflipped(),
+            );
+        }
 
         ret
     }

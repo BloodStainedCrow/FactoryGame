@@ -367,9 +367,9 @@ impl Display {
 }
 
 pub struct Renderer {
+    output: Option<wgpu::SurfaceTexture>,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    output: Option<wgpu::SurfaceTexture>,
     depth: Option<wgpu::Texture>,
     encoder: wgpu::CommandEncoder,
     pipeline: wgpu::RenderPipeline,

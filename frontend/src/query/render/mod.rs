@@ -7,7 +7,7 @@ use crate::{GameState, SurfaceId};
 
 #[derive(Debug)]
 pub struct EntityRenderInfo {
-    pub sprite: !,
+    pub sprite: (),
     pub size: Extent,
     pub position: Position,
 }
@@ -31,7 +31,7 @@ impl WorldRenderQueryEngine for GameState {
         surface.get_entity_states_in_area(area).map(|info| {
             // TODO: Rendering
             EntityRenderInfo {
-                sprite: todo!(),
+                sprite: (),
                 size: extent(info.global_ty(), info.rotation, info.flipped),
                 position: info.position,
             }
