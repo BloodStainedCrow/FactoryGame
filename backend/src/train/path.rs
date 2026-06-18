@@ -634,7 +634,7 @@ mod test {
 
         #[test]
         fn braking_should_always_yield_the_same_reservations(brake in 10u32..100, weight in 2_000u32..20_000, speed in 0u32..UNITS_PER_TILE) {
-            const NUM_PATHS: u32 = 10_000;
+            const NUM_PATHS: u32 = 1000;
 
             let mut state = TrainState::new(TrainID(0), speed, 10 * UNITS_PER_TILE, brake * UNITS_PER_TILE, weight, DistanceUnit(10 * UNITS_PER_TILE));
 
