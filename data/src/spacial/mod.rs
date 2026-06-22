@@ -373,13 +373,26 @@ pub mod strategies {
     }
 
     prop_compose! {
-        pub fn random_position()(x in -1000..1000, y in -1000..1000) -> Position {
+        pub fn random_position()(x in -1_000_000..1_000_000, y in -1_000_000..1_000_000) -> Position {
             Position { x, y }
         }
     }
 
+    pub fn random_position_in(bounding_box: BoundingBox) -> impl Strategy<Value = Position> {
+        (bounding_box.top_left().x..=bounding_box.bottom_right().x).prop_flat_map(move |x| {
+            (bounding_box.top_left().y..=bounding_box.bottom_right().y)
+                .prop_map(move |y| Position { x, y })
+        })
+    }
+
     prop_compose! {
         pub fn random_bounding_box()(corners in [random_position(), random_position()]) -> BoundingBox {
+            BoundingBox::new_unordered(corners)
+        }
+    }
+
+    prop_compose! {
+        pub fn random_bounding_box_contained_in(outer: BoundingBox)(corners in [random_position_in(outer), random_position_in(outer)]) -> BoundingBox {
             BoundingBox::new_unordered(corners)
         }
     }

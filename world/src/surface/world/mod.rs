@@ -176,7 +176,7 @@ struct CollisionWithUngeneratedChunks;
 
 #[cfg(test)]
 mod test {
-    use data::spacial::{Extent, strategies::random_bounding_box};
+    use data::spacial::{Extent, strategies::random_bounding_box_contained_in};
     use proptest::{prop_assert_eq, proptest};
 
     use super::*;
@@ -192,21 +192,32 @@ mod test {
         ));
     }
 
+    const MAX_BB_FOR_PERF: BoundingBox = BoundingBox::new(
+        Position {
+            x: -1_000,
+            y: -1_000,
+        },
+        Extent {
+            width: 2_000,
+            height: 2_000,
+        },
+    );
+
     proptest! {
         #[test]
-        fn create_world(area in random_bounding_box()) {
+        fn create_world(area in random_bounding_box_contained_in(MAX_BB_FOR_PERF)) {
             let _world = SurfaceWorld::new_with_empty_area(area);
         }
 
         #[test]
-        fn can_fit(area in random_bounding_box(), goal in random_bounding_box()) {
+        fn can_fit(area in random_bounding_box_contained_in(MAX_BB_FOR_PERF), goal in random_bounding_box_contained_in(MAX_BB_FOR_PERF)) {
             let world = SurfaceWorld::new_with_empty_area(area);
 
             let _res = world.can_fit(goal);
         }
 
         #[test]
-        fn can_fit_outside_generated(goal in random_bounding_box()) {
+        fn can_fit_outside_generated(goal in random_bounding_box_contained_in(MAX_BB_FOR_PERF)) {
             let world = SurfaceWorld::new_with_empty_area(BoundingBox::new(Position { x: -100_000, y: -100_000 }, Extent { width: 0, height: 0 }));
 
             let can_fit = world.can_fit(goal);
@@ -215,7 +226,7 @@ mod test {
         }
 
         #[test]
-        fn can_fit_inside_generated(goal in random_bounding_box()) {
+        fn can_fit_inside_generated(goal in random_bounding_box_contained_in(MAX_BB_FOR_PERF)) {
             let world = SurfaceWorld::new_with_empty_area(BoundingBox::new(Position { x: -2_000, y: -2_000 }, Extent { width: 4_000, height: 4_000 }));
 
             let can_fit = world.can_fit(goal);

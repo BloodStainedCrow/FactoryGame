@@ -2193,6 +2193,7 @@ version = "0.1.0"
 dependencies = [
  "data",
  "itertools 0.14.0",
+ "proptest",
  "smallvec",
  "stable-vec",
 ]

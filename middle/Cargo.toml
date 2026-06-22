@@ -9,5 +9,9 @@ itertools = "0.14.0"
 smallvec = { version = "1.15.2", features = ["serde", "union"] }
 stable-vec = "0.4.2"
 
+[dev-dependencies]
+proptest = "1.11.0"
+data = { path = "../data", features = ["test"] }
+
 [lints]
 workspace = true
