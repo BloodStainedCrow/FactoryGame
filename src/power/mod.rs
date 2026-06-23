@@ -5,6 +5,7 @@ use crate::inserter::belt_storage_movement_list::{
 };
 use crate::inserter::storage_storage_with_buckets_indirect::InserterBucketData;
 use crate::item::Indexable;
+use crate::liquid::FluidSystemStore;
 use crate::power::power_grid::MAX_POWER_MULT;
 use crate::{
     app_state::StorageStorageInserterStore, frontend::world::tile::ModuleSlots, join_many::join,
@@ -1148,6 +1149,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
         tech_state: &TechState,
         current_tick: u32,
         inserter_store: &mut StorageStorageInserterStore,
+        fluid_store: &mut FluidSystemStore<ItemIdxType>,
 
         belt_storage_reinsertion_list: &mut [(
             FinishedMovingLists<'_, { Dir::BeltToStorage }, { Dir::BeltToStorage }>,
@@ -1201,6 +1203,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                         new_times_labs_used_science,
                         new_updates,
                         reinsertions,
+                        fluid_reinsertions,
                     )| {
                         // Note: old_updates is gonna be empty most of the time. Maybe we want to skip the rayon stuff then?
                         join!(
@@ -1281,6 +1284,17 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                                             }
                                         },
                                     }
+                                }
+                            },
+                            || {
+                                profiling::scope!("Handle fluid token reinsertions");
+                                for token_info in fluid_reinsertions {
+                                    let network = fluid_store.fluid_systems_with_fluid
+                                        [token_info.item.into_usize()]
+                                        [token_info.fluid_network as usize]
+                                        .as_mut()
+                                        .expect("Tried to reinsert into nonexistent fluid network");
+                                    todo!()
                                 }
                             }
                         );

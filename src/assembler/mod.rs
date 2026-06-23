@@ -1,6 +1,8 @@
 use std::{array, marker::PhantomData, simd::Simd, u8};
 
-use crate::assembler::simd::{InserterReinsertionInfo, InserterWaitList};
+use crate::assembler::simd::{
+    FluidTokenReinsertionInfo, InserterReinsertionInfo, InserterWaitList, PerIng, PerOutput,
+};
 use crate::frontend::world::tile::ModuleTy;
 use crate::storage_list::MaxInsertionLimit;
 use crate::{
@@ -845,6 +847,7 @@ pub trait MultiAssemblerStore<
         u32,
         u32,
         impl Iterator<Item = InserterReinsertionInfo<ItemIdxType>>,
+        impl Iterator<Item = FluidTokenReinsertionInfo<ItemIdxType>>,
     )
     where
         RecipeIdxType: IdxTrait;
@@ -855,11 +858,11 @@ pub trait MultiAssemblerStore<
         (
             [MaxInsertionLimit<'_>; NUM_INGS],
             [&mut [ITEMCOUNTTYPE]; NUM_INGS],
-            [(&mut [InserterWaitList], &mut [ITEMCOUNTTYPE]); NUM_INGS],
+            [&mut PerIng; NUM_INGS],
         ),
         (
             [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS],
-            [(&mut [InserterWaitList], &mut [ITEMCOUNTTYPE]); NUM_OUTPUTS],
+            [&mut PerOutput; NUM_OUTPUTS],
         ),
     );
 

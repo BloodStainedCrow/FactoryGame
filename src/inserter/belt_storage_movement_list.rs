@@ -8,7 +8,7 @@ use crate::{
     },
     inserter::{FakeUnionStorage, belt_storage_inserter::Dir},
     item::{ITEMCOUNTTYPE, IdxTrait},
-    storage_list::{SingleItemStorages, index_fake_union},
+    storage_list::{Meta, SingleItemStorages, index_fake_union},
     temp_vec::VecHolder,
 };
 
@@ -141,8 +141,12 @@ impl<'a> FinishedMovingLists<'a, { Dir::BeltToStorage }, { Dir::BeltToStorage }>
         storages: SingleItemStorages,
     ) {
         self.list.retain_mut(|inserter| {
-            let (max_insert, data, wait_list) =
+            let (max_insert, data, meta) =
                 index_fake_union(Some(item_id), storages, inserter.storage, grid_size);
+
+            let Meta::Solid { wait_list } = meta else {
+                unreachable!();
+            };
 
             let items_moved = min(inserter.current_hand, *max_insert - *data);
 
@@ -194,8 +198,12 @@ impl<'a> FinishedMovingLists<'a, { Dir::BeltToStorage }, { Dir::StorageToBelt }>
         storages: SingleItemStorages,
     ) {
         self.list.retain_mut(|inserter| {
-            let (_max_insert, data, wait_list) =
+            let (_max_insert, data, meta) =
                 index_fake_union(Some(item_id), storages, inserter.storage, grid_size);
+
+            let Meta::Solid { wait_list } = meta else {
+                unreachable!();
+            };
 
             let items_moved = min(inserter.max_hand_size - inserter.current_hand, *data);
 

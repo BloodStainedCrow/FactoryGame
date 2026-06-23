@@ -89,10 +89,16 @@ impl<'a> InserterWaitLists<'a> {
     }
 }
 
+#[derive(Debug)]
+pub enum ItemMetaInfo<'a> {
+    Solid { wait_lists: InserterWaitLists<'a> },
+    Fluid { token_list: Option<&'a mut [u32]> },
+}
+
 type SingleGridStorage<'a, 'b> = (
     MaxInsertionLimit<'a>,
     &'b mut [ITEMCOUNTTYPE],
-    InserterWaitLists<'a>,
+    ItemMetaInfo<'a>,
 );
 pub type SingleItemStorages<'a, 'b> = &'a mut [SingleGridStorage<'b, 'b>]; //[SingleGridStorage; NUM_RECIPES * NUM_GRIDS];
 pub type FullStorages<'a, 'b> = Box<[SingleGridStorage<'a, 'b>]>; //[SingleGridStorage; NUM_ITEMS * NUM_RECIPES * NUM_GRIDS];
@@ -153,57 +159,66 @@ fn size_of_single_item_slice<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
     (first_grid_offs + num_grids_total) * grid_size
 }
 
-pub fn index<'a, 'b, RecipeIdxType: IdxTrait>(
-    slice: SingleItemStorages<'a, 'b>,
-    storage_id: Storage<RecipeIdxType>,
-    num_recipes: usize,
-    grid_size: usize,
-    static_size: usize,
-) -> (
-    &'a ITEMCOUNTTYPE,
-    &'a mut ITEMCOUNTTYPE,
-    Option<(&'a mut InserterWaitList, &'a mut ITEMCOUNTTYPE)>,
-) {
-    let first_grid_offs_in_grids = static_size.div_ceil(grid_size);
+// pub fn index<'a, 'b, RecipeIdxType: IdxTrait>(
+//     slice: SingleItemStorages<'a, 'b>,
+//     storage_id: Storage<RecipeIdxType>,
+//     num_recipes: usize,
+//     grid_size: usize,
+//     static_size: usize,
+// ) -> (
+//     &'a ITEMCOUNTTYPE,
+//     &'a mut ITEMCOUNTTYPE,
+//     Option<(&'a mut InserterWaitList, &'a mut ITEMCOUNTTYPE)>,
+// ) {
+//     let first_grid_offs_in_grids = static_size.div_ceil(grid_size);
 
-    match storage_id {
-        Storage::Assembler {
-            grid,
-            recipe_idx_with_this_item,
-            index,
-        } => {
-            debug_assert!(
-                usize_from(recipe_idx_with_this_item) < num_recipes,
-                "The recipe stored in an inserter needs to be translated!"
-            );
-            let outer = &mut slice[(first_grid_offs_in_grids + Into::<usize>::into(grid))
-                * grid_size
-                + Into::<usize>::into(recipe_idx_with_this_item)];
-            (
-                &outer.0[usize::try_from(index).unwrap()],
-                &mut outer.1[usize::try_from(index).unwrap()],
-                outer.2.get_mut(usize::try_from(index).unwrap()),
-            )
-        },
-        Storage::Lab { grid, index } => {
-            let outer = &mut slice
-                [(first_grid_offs_in_grids + Into::<usize>::into(grid)) * grid_size + num_recipes];
-            (
-                &outer.0[usize::try_from(index).unwrap()],
-                &mut outer.1[usize::try_from(index).unwrap()],
-                outer.2.get_mut(usize::try_from(index).unwrap()),
-            )
-        },
-        Storage::Static { static_id, index } => {
-            // debug_assert!(usize::from(static_id) < data_store.num_different_static_containers);
-            let outer = &mut slice[Into::<usize>::into(static_id)];
-            (
-                &outer.0[usize::try_from(index).unwrap()],
-                &mut outer.1[usize::try_from(index).unwrap()],
-                outer.2.get_mut(usize::try_from(index).unwrap()),
-            )
-        },
-    }
+//     match storage_id {
+//         Storage::Assembler {
+//             grid,
+//             recipe_idx_with_this_item,
+//             index,
+//         } => {
+//             debug_assert!(
+//                 usize_from(recipe_idx_with_this_item) < num_recipes,
+//                 "The recipe stored in an inserter needs to be translated!"
+//             );
+//             let outer = &mut slice[(first_grid_offs_in_grids + Into::<usize>::into(grid))
+//                 * grid_size
+//                 + Into::<usize>::into(recipe_idx_with_this_item)];
+//             (
+//                 &outer.0[usize::try_from(index).unwrap()],
+//                 &mut outer.1[usize::try_from(index).unwrap()],
+//                 outer.2.get_mut(usize::try_from(index).unwrap()),
+//             )
+//         },
+//         Storage::Lab { grid, index } => {
+//             let outer = &mut slice
+//                 [(first_grid_offs_in_grids + Into::<usize>::into(grid)) * grid_size + num_recipes];
+//             (
+//                 &outer.0[usize::try_from(index).unwrap()],
+//                 &mut outer.1[usize::try_from(index).unwrap()],
+//                 outer.2.get_mut(usize::try_from(index).unwrap()),
+//             )
+//         },
+//         Storage::Static { static_id, index } => {
+//             // debug_assert!(usize::from(static_id) < data_store.num_different_static_containers);
+//             let outer = &mut slice[Into::<usize>::into(static_id)];
+//             (
+//                 &outer.0[usize::try_from(index).unwrap()],
+//                 &mut outer.1[usize::try_from(index).unwrap()],
+//                 outer.2.get_mut(usize::try_from(index).unwrap()),
+//             )
+//         },
+//     }
+// }
+
+pub enum Meta<'a> {
+    Solid {
+        wait_list: Option<(&'a mut InserterWaitList, &'a mut ITEMCOUNTTYPE)>,
+    },
+    Fluid {
+        token: Option<&'a mut u32>,
+    },
 }
 
 #[inline(always)]
@@ -212,11 +227,7 @@ pub fn index_fake_union<'a, 'b>(
     slice: SingleItemStorages<'a, 'b>,
     storage_id: FakeUnionStorage,
     grid_size: usize,
-) -> (
-    &'a ITEMCOUNTTYPE,
-    &'a mut ITEMCOUNTTYPE,
-    Option<(&'a mut InserterWaitList, &'a mut ITEMCOUNTTYPE)>,
-) {
+) -> (&'a ITEMCOUNTTYPE, &'a mut ITEMCOUNTTYPE, Meta<'a>) {
     let (outer, inner) = storage_id.into_inner_and_outer_indices_with_statics_at_zero(grid_size);
 
     let len = slice.len();
@@ -336,7 +347,14 @@ pub fn index_fake_union<'a, 'b>(
             );
         }
     };
-    let wait_list = subslice.2.get_mut(inner);
+    let wait_list = match &mut subslice.2 {
+        ItemMetaInfo::Solid { wait_lists } => Meta::Solid {
+            wait_list: wait_lists.get_mut(inner),
+        },
+        ItemMetaInfo::Fluid { token_list } => Meta::Fluid {
+            token: token_list.as_mut().map(|token_list| &mut token_list[inner]),
+        },
+    };
     (max_insert, items, wait_list)
 }
 
@@ -663,14 +681,14 @@ pub fn storages_by_item<'a, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             (
                                 mining_drill_lists.0,
                                 mining_drill_lists.1,
-                                InserterWaitLists::None,
+                                ItemMetaInfo::Solid {
+                                    wait_lists: InserterWaitLists::None,
+                                },
                             ),
                             data_store,
                         )
                         .chain(grid.into_iter().map(
-                            |(_item, _storage, max_insert, data, wait_list)| {
-                                (max_insert, data, wait_list)
-                            },
+                            |(_item, _storage, max_insert, data, meta)| (max_insert, data, meta),
                         ))
                     },
                 )
@@ -694,7 +712,7 @@ fn all_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         Storage<RecipeIdxType>,
         MaxInsertionLimit<'a>,
         &'a mut [ITEMCOUNTTYPE],
-        InserterWaitLists<'a>,
+        ItemMetaInfo<'a>,
     ),
 > + use<'a, 'b, ItemIdxType, RecipeIdxType> {
     let all_storages = grids
@@ -717,14 +735,14 @@ pub fn static_storages_pre_sorted<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: 
     drill_lists: (
         MaxInsertionLimit<'a>,
         &'a mut [ITEMCOUNTTYPE],
-        InserterWaitLists<'a>,
+        ItemMetaInfo<'a>,
     ),
     data_store: &'b DataStore<ItemIdxType, RecipeIdxType>,
 ) -> impl Iterator<
     Item = (
         MaxInsertionLimit<'a>,
         &'a mut [ITEMCOUNTTYPE],
-        InserterWaitLists<'a>,
+        ItemMetaInfo<'a>,
     ),
 > + use<'a, 'b, ItemIdxType, RecipeIdxType> {
     let grid_size = grid_size(item, data_store);
@@ -736,10 +754,16 @@ pub fn static_storages_pre_sorted<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: 
 
     let (chest_max, chest_data, wait_lists) = chest_store.storage_list_slices();
 
-    iter::once((chest_max, chest_data, wait_lists))
+    iter::once((chest_max, chest_data, ItemMetaInfo::Solid { wait_lists }))
         .chain(iter::once(drill_lists))
         .chain(iter::repeat_with(|| {
-            (ALWAYS_FULL, [].as_mut_slice(), InserterWaitLists::None)
+            (
+                ALWAYS_FULL,
+                [].as_mut_slice(),
+                ItemMetaInfo::Solid {
+                    wait_lists: InserterWaitLists::None,
+                },
+            )
         }))
         .take(first_grid_offs)
 }
@@ -754,7 +778,7 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
         Storage<RecipeIdxType>,
         MaxInsertionLimit<'a>,
         &'a mut [ITEMCOUNTTYPE],
-        InserterWaitLists<'a>,
+        ItemMetaInfo<'a>,
     ),
 > + use<'a, 'b, ItemIdxType, RecipeIdxType> {
     let i = assembler_store
@@ -1666,7 +1690,35 @@ fn all_assembler_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait
                     ]
                 }),
         )
-        .map(|(a, b, c, d, e)| (a, b, c, d, InserterWaitLists::PerMachine(e.0, e.1)));
+        .map(|(item, b, c, d, e)| {
+            (
+                item,
+                b,
+                c,
+                d,
+                match e {
+                    crate::assembler::simd::PerIng::Solid {
+                        wait_list: wait_list_ing,
+                        wait_list_needed: wait_list_ing_needed,
+                    } => ItemMetaInfo::Solid {
+                        wait_lists: InserterWaitLists::PerMachine(
+                            wait_list_ing,
+                            wait_list_ing_needed,
+                        ),
+                    },
+                    crate::assembler::simd::PerIng::Fluid { tokens } => {
+                        assert!(
+                            data_store.item_is_fluid[item.into_usize()],
+                            "Assembler returned fluid for item: {}, for storage {b:?}",
+                            data_store.item_names[item.into_usize()]
+                        );
+                        ItemMetaInfo::Fluid {
+                            token_list: Some(tokens),
+                        }
+                    },
+                },
+            )
+        });
     i
 }
 
@@ -1680,7 +1732,7 @@ fn all_lab_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         Storage<RecipeIdxType>,
         MaxInsertionLimit<'a>,
         &'a mut [ITEMCOUNTTYPE],
-        InserterWaitLists<'a>,
+        ItemMetaInfo<'a>,
     ),
 > + use<'a, 'b, ItemIdxType, RecipeIdxType> {
     lab_store
@@ -1698,7 +1750,13 @@ fn all_lab_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     None => PANIC_ON_INSERT,
                 },
                 science.as_mut_slice(),
-                InserterWaitLists::None,
+                if data_store.item_is_fluid[item.into_usize()] {
+                    ItemMetaInfo::Fluid { token_list: None }
+                } else {
+                    ItemMetaInfo::Solid {
+                        wait_lists: InserterWaitLists::None,
+                    }
+                },
             )
         })
 }
@@ -1714,7 +1772,7 @@ fn all_static_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
         Storage<RecipeIdxType>,
         MaxInsertionLimit<'a>,
         &'a mut [ITEMCOUNTTYPE],
-        InserterWaitLists<'a>,
+        ItemMetaInfo<'a>,
     ),
 > + use<'a, 'b, ItemIdxType, RecipeIdxType> {
     (0..data_store.item_display_names.len())
@@ -1774,7 +1832,7 @@ fn all_static_storages<'a, 'b, ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                     )
                     .take(first_grid_offs),
                 )
-                .map(|(a, (b, c, d, e))| (a, b, c, d, e))
+                .map(|(a, (b, c, d, e))| (a, b, c, d, ItemMetaInfo::Solid { wait_lists: e }))
         })
 }
 

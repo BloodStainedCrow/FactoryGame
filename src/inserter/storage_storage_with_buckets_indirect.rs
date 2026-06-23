@@ -9,7 +9,7 @@ use crate::{
     inserter::WaitlistSearchSide,
     item::ITEMCOUNTTYPE,
     join_many::join,
-    storage_list::{SingleItemStorages, index_fake_union},
+    storage_list::{Meta, SingleItemStorages, index_fake_union},
 };
 use std::cmp::min;
 
@@ -338,8 +338,12 @@ impl BucketedStorageStorageInserterStore {
     ) -> UpdateResult {
         let storage_id = bucket_data.storage_id_in;
 
-        let (_max_insert, old, wait_list) =
+        let (_max_insert, old, meta) =
             index_fake_union(Some(item_id), storages, storage_id, grid_size);
+
+        let Meta::Solid { wait_list } = meta else {
+            unreachable!("Found Fluid for inserter with item_id {item_id}");
+        };
 
         let old_val = *old;
         let max_hand_size = bucket_data.max_hand_size;
@@ -417,8 +421,12 @@ impl BucketedStorageStorageInserterStore {
     ) -> UpdateResult {
         let storage_id = bucket_data.storage_id_out;
 
-        let (max_insert, old, wait_list) =
+        let (max_insert, old, meta) =
             index_fake_union(Some(item_id), storages, storage_id, grid_size);
+
+        let Meta::Solid { wait_list } = meta else {
+            unreachable!();
+        };
 
         let old_val = *old;
         let max_insert = *max_insert;

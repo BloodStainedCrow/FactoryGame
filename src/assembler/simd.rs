@@ -116,6 +116,14 @@ pub struct InserterReinsertionInfo<ItemIdxType: WeakIdxTrait> {
 }
 
 #[derive(Debug)]
+pub struct FluidTokenReinsertionInfo<ItemIdxType: WeakIdxTrait> {
+    pub item: Item<ItemIdxType>,
+    pub is_input: bool,
+    pub self_token: FakeUnionStorage,
+    pub fluid_network: u32,
+}
+
+#[derive(Debug)]
 pub enum Conn {
     Storage {
         index: InserterId,
@@ -151,6 +159,18 @@ struct InternalInserterReinsertionInfo {
     derive(get_size2::GetSize)
 )]
 #[derive(Debug, Clone)]
+struct InternalFluidTokenReinsertionInfo {
+    pub item: u8,
+    pub self_index: u32,
+    pub fluid_network: u32,
+}
+
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
+#[derive(Debug, Clone)]
 enum Rest {
     Storage {
         index: InserterId,
@@ -162,6 +182,64 @@ enum Rest {
         self_is_source: bool,
     },
 }
+
+#[cfg_attr(
+    feature = "show-info",
+    derive(egui_show_info_derive::ShowInfo),
+    derive(get_size2::GetSize)
+)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum PerIng {
+    Solid {
+        wait_list: Box<[InserterWaitList]>,
+        wait_list_needed: Box<[ITEMCOUNTTYPE]>,
+    },
+    Fluid {
+        // FluidNetworkID
+        tokens: Vec<u32>,
+    },
+}
+
+pub const NO_FLUID_NETWORK: u32 = u32::MAX;
+
+impl PerIng {
+    fn extend(&mut self, other: Self) {
+        match (self, other) {
+            (
+                PerIng::Solid {
+                    wait_list,
+                    wait_list_needed,
+                },
+                PerIng::Solid {
+                    wait_list: other_wait_list,
+                    wait_list_needed: other_wait_list_needed,
+                },
+            ) => {
+                take_mut::take(wait_list, |wait_list| {
+                    let mut v = wait_list.into_vec();
+                    v.extend(other_wait_list);
+                    v.into_boxed_slice()
+                });
+                take_mut::take(wait_list_needed, |wait_list_needed| {
+                    let mut v = wait_list_needed.into_vec();
+                    v.extend(other_wait_list_needed);
+                    v.into_boxed_slice()
+                });
+            },
+            (
+                PerIng::Fluid { tokens },
+                PerIng::Fluid {
+                    tokens: other_tokens,
+                },
+            ) => {
+                tokens.extend(other_tokens);
+            },
+            _ => unreachable!(),
+        }
+    }
+}
+
+pub type PerOutput = PerIng;
 
 // FIXME: We store the same slice length n times!
 // TODO: Don´t clump update data and data for adding/removing assemblers together!
@@ -217,13 +295,9 @@ pub struct MultiAssemblerStore<
     //        We would need a list of waitlists per ING and OUTPUT item
     //        This is a pretty big commitment in terms of memory
     #[serde(with = "arrays")]
-    waitlists_ings: [Box<[InserterWaitList]>; NUM_INGS],
+    ings_data: [PerIng; NUM_INGS],
     #[serde(with = "arrays")]
-    waitlists_ings_needed: [Box<[ITEMCOUNTTYPE]>; NUM_INGS],
-    #[serde(with = "arrays")]
-    waitlists_outputs: [Box<[InserterWaitList]>; NUM_OUTPUTS],
-    #[serde(with = "arrays")]
-    waitlists_outputs_needed: [Box<[ITEMCOUNTTYPE]>; NUM_OUTPUTS],
+    outputs_data: [PerOutput; NUM_OUTPUTS],
     holes: Vec<usize>,
 
     #[cfg(feature = "assembler-craft-tracking")]
@@ -235,6 +309,8 @@ pub struct MultiAssemblerStore<
 
     #[serde(skip)]
     inserter_waitlist_output_vec: Vec<InternalInserterReinsertionInfo>,
+    #[serde(skip)]
+    token_output_vec: Vec<InternalFluidTokenReinsertionInfo>,
     #[serde(with = "arrays")]
     self_fake_union_ing: [FakeUnionStorage; NUM_INGS],
     #[serde(with = "arrays")]
@@ -595,100 +671,118 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
 
                         let mut items = our_outputs.clone();
 
-                        for (item, (out, items_to_distribute)) in self
-                            .waitlists_outputs
-                            .iter_mut()
-                            .zip(&mut items)
-                            .enumerate()
+                        for (item, (out, items_to_distribute)) in
+                            self.outputs_data.iter_mut().zip(&mut items).enumerate()
                         {
-                            assert!(self.waitlists_outputs_needed[item][final_idx] > 0);
-                            if *items_to_distribute + self.outputs[item][final_idx]
-                                >= min(
-                                    self.waitlists_outputs_needed[item][final_idx],
-                                    our_maximums[item],
-                                )
-                                && self.waitlists_outputs_needed[item][final_idx]
-                                    < ITEMCOUNTTYPE::MAX
-                            {
-                                let mut has_popped = false;
-                                *items_to_distribute += self.outputs[item][final_idx];
-                                self.outputs[item][final_idx] = 0;
-                                for idx in 0..WAITLIST_LEN {
-                                    let ins = &mut out[final_idx].inserters[idx];
-                                    if let Some(v) = ins {
-                                        let amount_taken_by_this_inserter = min(
-                                            *items_to_distribute,
-                                            ITEMCOUNTTYPE::from(v.max_hand) - v.current_hand,
-                                        );
-                                        if v.current_hand + amount_taken_by_this_inserter
-                                            == ITEMCOUNTTYPE::from(v.max_hand)
-                                        {
-                                            has_popped = true;
-                                            let ins = ins.take().unwrap();
-                                            for move_left_idx in idx..WAITLIST_LEN {
-                                                out[final_idx].inserters[move_left_idx] = out
-                                                    [final_idx]
-                                                    .inserters
-                                                    .get_mut(move_left_idx + 1)
-                                                    .map(|v| v.take())
-                                                    .unwrap_or(None);
-                                            }
-                                            let () =
-                                                self.inserter_waitlist_output_vec
-                                                    .push(InternalInserterReinsertionInfo {
-                                                    movetime: ins.movetime.into(),
-                                                    item: (NUM_INGS + item) as u8,
-                                                    max_hand: ins.max_hand.into(),
-                                                    self_index: final_idx as u32,
-                                                    rest: match ins.rest {
-                                                        InserterWithBeltsEnum::StorageStorage {
-                                                            self_is_source: _,
-                                                            index,
-                                                            other,
-                                                        } => Rest::Storage { index, other },
-                                                        InserterWithBeltsEnum::BeltStorage {
-                                                            belt_id,
-                                                            belt_pos,
-                                                            self_is_source,
-                                                        } => Rest::Belt {
-                                                            belt_id,
-                                                            belt_pos,
-                                                            self_is_source,
-                                                        },
-                                                    },
-                                                })
-                                            else {
-                                                panic!(
-                                                    "Not enough space in inserter readdition vec. Capacity is {}",
-                                                    self.inserter_waitlist_output_vec.capacity()
+                            match out {
+                                PerOutput::Solid {
+                                    wait_list,
+                                    wait_list_needed,
+                                } => {
+                                    assert!(wait_list_needed[final_idx] > 0);
+                                    if *items_to_distribute + self.outputs[item][final_idx]
+                                        >= min(wait_list_needed[final_idx], our_maximums[item])
+                                        && wait_list_needed[final_idx] < ITEMCOUNTTYPE::MAX
+                                    {
+                                        let mut has_popped = false;
+                                        *items_to_distribute += self.outputs[item][final_idx];
+                                        self.outputs[item][final_idx] = 0;
+                                        for idx in 0..WAITLIST_LEN {
+                                            let ins = &mut wait_list[final_idx].inserters[idx];
+                                            if let Some(v) = ins {
+                                                let amount_taken_by_this_inserter = min(
+                                                    *items_to_distribute,
+                                                    ITEMCOUNTTYPE::from(v.max_hand)
+                                                        - v.current_hand,
                                                 );
-                                            };
-                                            self.waitlists_outputs_needed[item][final_idx] =
-                                                out[final_idx].inserters[0]
-                                                    .as_ref()
-                                                    .map(|ins| ins.max_hand - ins.current_hand)
-                                                    .unwrap_or(ITEMCOUNTTYPE::MAX);
-                                        } else {
-                                            v.current_hand += amount_taken_by_this_inserter;
-                                        }
-                                        *items_to_distribute -= amount_taken_by_this_inserter;
+                                                if v.current_hand + amount_taken_by_this_inserter
+                                                    == ITEMCOUNTTYPE::from(v.max_hand)
+                                                {
+                                                    has_popped = true;
+                                                    let ins = ins.take().unwrap();
+                                                    for move_left_idx in idx..WAITLIST_LEN {
+                                                        wait_list[final_idx].inserters
+                                                            [move_left_idx] = wait_list[final_idx]
+                                                            .inserters
+                                                            .get_mut(move_left_idx + 1)
+                                                            .map(|v| v.take())
+                                                            .unwrap_or(None);
+                                                    }
+                                                    let () =
+                                                        self.inserter_waitlist_output_vec
+                                                            .push(InternalInserterReinsertionInfo {
+                                                            movetime: ins.movetime.into(),
+                                                            item: (NUM_INGS + item) as u8,
+                                                            max_hand: ins.max_hand.into(),
+                                                            self_index: final_idx as u32,
+                                                            rest: match ins.rest {
+                                                                InserterWithBeltsEnum::StorageStorage {
+                                                                    self_is_source: _,
+                                                                    index,
+                                                                    other,
+                                                                } => Rest::Storage { index, other },
+                                                                InserterWithBeltsEnum::BeltStorage {
+                                                                    belt_id,
+                                                                    belt_pos,
+                                                                    self_is_source,
+                                                                } => Rest::Belt {
+                                                                    belt_id,
+                                                                    belt_pos,
+                                                                    self_is_source,
+                                                                },
+                                                            },
+                                                        })
+                                                    else {
+                                                        panic!(
+                                                            "Not enough space in inserter readdition vec. Capacity is {}",
+                                                            self.inserter_waitlist_output_vec.capacity()
+                                                        );
+                                                    };
+                                                    wait_list_needed[final_idx] = wait_list
+                                                        [final_idx]
+                                                        .inserters[0]
+                                                        .as_ref()
+                                                        .map(|ins| ins.max_hand - ins.current_hand)
+                                                        .unwrap_or(ITEMCOUNTTYPE::MAX);
+                                                } else {
+                                                    v.current_hand += amount_taken_by_this_inserter;
+                                                }
+                                                *items_to_distribute -=
+                                                    amount_taken_by_this_inserter;
 
-                                        // TODO: Check if this is good or bad
-                                        if *items_to_distribute == 0 {
-                                            break;
+                                                // TODO: Check if this is good or bad
+                                                if *items_to_distribute == 0 {
+                                                    break;
+                                                }
+                                            }
                                         }
+
+                                        // if !has_popped {
+                                        //     dbg!(self.waitlists_outputs_needed[item][final_idx]);
+                                        //     dbg!(*items_to_distribute);
+                                        //     assert!(has_popped, "Assembler scanned waitlist ");
+                                        // }
                                     }
-                                }
 
-                                // if !has_popped {
-                                //     dbg!(self.waitlists_outputs_needed[item][final_idx]);
-                                //     dbg!(*items_to_distribute);
-                                //     assert!(has_popped, "Assembler scanned waitlist ");
-                                // }
-                            }
-
-                            if *items_to_distribute > 0 {
-                                self.outputs[item][final_idx] += *items_to_distribute;
+                                    if *items_to_distribute > 0 {
+                                        self.outputs[item][final_idx] += *items_to_distribute;
+                                    }
+                                },
+                                PerOutput::Fluid { tokens } => {
+                                    if self.outputs[item][final_idx] == 0
+                                        && tokens[final_idx] != NO_FLUID_NETWORK
+                                    {
+                                        self.token_output_vec.push(
+                                            InternalFluidTokenReinsertionInfo {
+                                                item: (NUM_INGS + item) as u8,
+                                                self_index: final_idx as u32,
+                                                fluid_network: tokens[final_idx],
+                                            },
+                                        );
+                                        tokens[final_idx] = NO_FLUID_NETWORK;
+                                    }
+                                    self.outputs[item][final_idx] += *items_to_distribute;
+                                },
                             }
                         }
                     }
@@ -711,85 +805,112 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                         let mut items = our_ings.clone();
 
                         for (item, (ing, items_to_drain)) in
-                            self.waitlists_ings.iter_mut().zip(&mut items).enumerate()
+                            self.ings_data.iter_mut().zip(&mut items).enumerate()
                         {
-                            if *items_to_drain
-                                + (self.ings_max_insert[item][final_idx]
-                                    - self.ings[item][final_idx])
-                                >= self.waitlists_ings_needed[item][final_idx]
-                            {
-                                let mut has_popped = false;
-                                *items_to_drain += self.ings_max_insert[item][final_idx]
-                                    - self.ings[item][final_idx];
-                                self.ings[item][final_idx] = self.ings_max_insert[item][final_idx];
+                            match ing {
+                                PerIng::Solid {
+                                    wait_list: wait_list_ing,
+                                    wait_list_needed: wait_list_ing_needed,
+                                } => {
+                                    if *items_to_drain
+                                        + (self.ings_max_insert[item][final_idx]
+                                            - self.ings[item][final_idx])
+                                        >= wait_list_ing_needed[final_idx]
+                                    {
+                                        let mut has_popped = false;
+                                        *items_to_drain += self.ings_max_insert[item][final_idx]
+                                            - self.ings[item][final_idx];
+                                        self.ings[item][final_idx] =
+                                            self.ings_max_insert[item][final_idx];
 
-                                for idx in 0..WAITLIST_LEN {
-                                    let ins = &mut ing[final_idx].inserters[idx];
-                                    if let Some(v) = ins {
-                                        let amount_taken_by_this_inserter =
-                                            min(*items_to_drain, v.current_hand);
-                                        if v.current_hand - amount_taken_by_this_inserter == 0 {
-                                            has_popped = true;
-                                            let ins = ins.take().unwrap();
-                                            for move_left_idx in idx..WAITLIST_LEN {
-                                                ing[final_idx].inserters[move_left_idx] = ing
-                                                    [final_idx]
-                                                    .inserters
-                                                    .get_mut(move_left_idx + 1)
-                                                    .map(|v| v.take())
-                                                    .unwrap_or(None);
+                                        for idx in 0..WAITLIST_LEN {
+                                            let ins = &mut wait_list_ing[final_idx].inserters[idx];
+                                            if let Some(v) = ins {
+                                                let amount_taken_by_this_inserter =
+                                                    min(*items_to_drain, v.current_hand);
+                                                if v.current_hand - amount_taken_by_this_inserter
+                                                    == 0
+                                                {
+                                                    has_popped = true;
+                                                    let ins = ins.take().unwrap();
+                                                    for move_left_idx in idx..WAITLIST_LEN {
+                                                        wait_list_ing[final_idx].inserters
+                                                            [move_left_idx] = wait_list_ing
+                                                            [final_idx]
+                                                            .inserters
+                                                            .get_mut(move_left_idx + 1)
+                                                            .map(|v| v.take())
+                                                            .unwrap_or(None);
+                                                    }
+                                                    let () =
+                                                        self.inserter_waitlist_output_vec
+                                                            .push(InternalInserterReinsertionInfo {
+                                                            movetime: ins.movetime.into(),
+                                                            item: item as u8,
+                                                            max_hand: ins.max_hand.into(),
+                                                            self_index: final_idx as u32,
+                                                            rest: match ins.rest {
+                                                                InserterWithBeltsEnum::StorageStorage {
+                                                                    self_is_source: _,
+                                                                    index,
+                                                                    other,
+                                                                } => Rest::Storage { index, other },
+                                                                InserterWithBeltsEnum::BeltStorage {
+                                                                    belt_id,
+                                                                    belt_pos,
+                                                                    self_is_source,
+                                                                } => Rest::Belt {
+                                                                    belt_id,
+                                                                    belt_pos,
+                                                                    self_is_source,
+                                                                },
+                                                            },
+                                                        })
+                                                    else {
+                                                        panic!(
+                                                            "Not enough space in inserter readdition vec. Capacity is {}.",
+                                                            self.inserter_waitlist_output_vec.capacity()
+                                                        );
+                                                    };
+                                                    wait_list_ing_needed[final_idx] =
+                                                        wait_list_ing[final_idx].inserters[0]
+                                                            .as_ref()
+                                                            .map(|ins| ins.current_hand)
+                                                            .unwrap_or(ITEMCOUNTTYPE::MAX);
+                                                } else {
+                                                    v.current_hand -= amount_taken_by_this_inserter;
+                                                }
+                                                *items_to_drain -= amount_taken_by_this_inserter;
+
+                                                // TODO: Check if this is good or bad
+                                                if *items_to_drain == 0 {
+                                                    break;
+                                                }
                                             }
-                                            let () =
-                                                self.inserter_waitlist_output_vec
-                                                    .push(InternalInserterReinsertionInfo {
-                                                    movetime: ins.movetime.into(),
-                                                    item: item as u8,
-                                                    max_hand: ins.max_hand.into(),
-                                                    self_index: final_idx as u32,
-                                                    rest: match ins.rest {
-                                                        InserterWithBeltsEnum::StorageStorage {
-                                                            self_is_source: _,
-                                                            index,
-                                                            other,
-                                                        } => Rest::Storage { index, other },
-                                                        InserterWithBeltsEnum::BeltStorage {
-                                                            belt_id,
-                                                            belt_pos,
-                                                            self_is_source,
-                                                        } => Rest::Belt {
-                                                            belt_id,
-                                                            belt_pos,
-                                                            self_is_source,
-                                                        },
-                                                    },
-                                                })
-                                            else {
-                                                panic!(
-                                                    "Not enough space in inserter readdition vec. Capacity is {}.",
-                                                    self.inserter_waitlist_output_vec.capacity()
-                                                );
-                                            };
-                                            self.waitlists_ings_needed[item][final_idx] =
-                                                ing[final_idx].inserters[0]
-                                                    .as_ref()
-                                                    .map(|ins| ins.current_hand)
-                                                    .unwrap_or(ITEMCOUNTTYPE::MAX);
-                                        } else {
-                                            v.current_hand -= amount_taken_by_this_inserter;
                                         }
-                                        *items_to_drain -= amount_taken_by_this_inserter;
-
-                                        // TODO: Check if this is good or bad
-                                        if *items_to_drain == 0 {
-                                            break;
-                                        }
+                                        // assert!(has_popped);
                                     }
-                                }
-                                // assert!(has_popped);
-                            }
 
-                            if *items_to_drain > 0 {
-                                self.ings[item][final_idx] -= *items_to_drain;
+                                    if *items_to_drain > 0 {
+                                        self.ings[item][final_idx] -= *items_to_drain;
+                                    }
+                                },
+                                PerIng::Fluid { tokens } => {
+                                    if self.ings[item][final_idx]
+                                        == self.ings_max_insert[item][final_idx]
+                                        && tokens[final_idx] != NO_FLUID_NETWORK
+                                    {
+                                        self.token_output_vec.push(
+                                            InternalFluidTokenReinsertionInfo {
+                                                item: item as u8,
+                                                self_index: final_idx as u32,
+                                                fluid_network: tokens[final_idx],
+                                            },
+                                        );
+                                        tokens[final_idx] = NO_FLUID_NETWORK;
+                                    }
+                                    self.ings[item][final_idx] -= *items_to_drain;
+                                },
                             }
                         }
                     }
@@ -881,16 +1002,45 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
 
             base_power_consumption: vec![].into_boxed_slice(),
 
-            waitlists_ings: array::from_fn(|_| vec![].into_boxed_slice()),
-            waitlists_ings_needed: array::from_fn(|_| vec![].into_boxed_slice()),
-            waitlists_outputs: array::from_fn(|_| vec![].into_boxed_slice()),
-            waitlists_outputs_needed: array::from_fn(|_| vec![].into_boxed_slice()),
+            ings_data: array::from_fn(|idx| {
+                let item = data_store.recipe_to_items[recipe.into_usize()]
+                    .iter()
+                    .filter(|r| r.0 == ItemRecipeDir::Ing)
+                    .nth(idx)
+                    .unwrap()
+                    .1;
+                if data_store.item_is_fluid[item.into_usize()] {
+                    PerIng::Fluid { tokens: vec![] }
+                } else {
+                    PerIng::Solid {
+                        wait_list: vec![].into_boxed_slice(),
+                        wait_list_needed: vec![].into_boxed_slice(),
+                    }
+                }
+            }),
+            outputs_data: array::from_fn(|idx| {
+                let item = data_store.recipe_to_items[recipe.into_usize()]
+                    .iter()
+                    .filter(|r| r.0 == ItemRecipeDir::Out)
+                    .nth(idx)
+                    .unwrap()
+                    .1;
+                if data_store.item_is_fluid[item.into_usize()] {
+                    PerIng::Fluid { tokens: vec![] }
+                } else {
+                    PerIng::Solid {
+                        wait_list: vec![].into_boxed_slice(),
+                        wait_list_needed: vec![].into_boxed_slice(),
+                    }
+                }
+            }),
             holes: vec![],
             positions: vec![].into_boxed_slice(),
             types: vec![].into_boxed_slice(),
             len: 0,
 
             inserter_waitlist_output_vec: vec![],
+            token_output_vec: vec![],
 
             self_fake_union_ing: {
                 array::from_fn(|index| {
@@ -1317,34 +1467,13 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         let mut new_types = self.types.into_vec();
         new_types.extend(other.types.iter().copied().enumerate().map(|(_, v)| v));
 
-        let mut new_waitlists_ings = self.waitlists_ings.map(|v| v.into_vec());
-        for (new, other) in new_waitlists_ings.iter_mut().zip(other.waitlists_ings) {
+        let mut new_ings_data = self.ings_data.map(|v| v);
+        for (new, other) in new_ings_data.iter_mut().zip(other.ings_data) {
             new.extend(other);
         }
 
-        let mut new_waitlists_ings_needed = self.waitlists_ings_needed.map(|v| v.into_vec());
-        for (new, other) in new_waitlists_ings_needed
-            .iter_mut()
-            .zip(other.waitlists_ings_needed)
-        {
-            new.extend(other);
-        }
-
-        let mut new_waitlists_outputs = self.waitlists_outputs.map(|v| v.into_vec());
-        for (new, other) in new_waitlists_outputs
-            .iter_mut()
-            .zip(other.waitlists_outputs)
-        {
-            new.extend(other);
-        }
-
-        let mut new_waitlists_outputs_needed = self
-            .waitlists_outputs_needed
-            .map(|v: Box<[u8]>| v.into_vec());
-        for (new, other) in new_waitlists_outputs_needed
-            .iter_mut()
-            .zip(other.waitlists_outputs_needed)
-        {
+        let mut new_outputs_data = self.outputs_data.map(|v| v);
+        for (new, other) in new_outputs_data.iter_mut().zip(other.outputs_data) {
             new.extend(other);
         }
 
@@ -1436,10 +1565,8 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
 
             base_power_consumption: new_base_power_consumption.into_boxed_slice(),
 
-            waitlists_ings: new_waitlists_ings.map(|v| v.into_boxed_slice()),
-            waitlists_ings_needed: new_waitlists_ings_needed.map(|v| v.into_boxed_slice()),
-            waitlists_outputs: new_waitlists_outputs.map(|v| v.into_boxed_slice()),
-            waitlists_outputs_needed: new_waitlists_outputs_needed.map(|v| v.into_boxed_slice()),
+            ings_data: new_ings_data,
+            outputs_data: new_outputs_data,
             positions: new_positions.into_boxed_slice(),
             types: new_types.into_boxed_slice(),
 
@@ -1449,6 +1576,14 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 self.inserter_waitlist_output_vec
             } else {
                 other.inserter_waitlist_output_vec
+            },
+
+            token_output_vec: if self.token_output_vec.capacity()
+                > other.token_output_vec.capacity()
+            {
+                self.token_output_vec
+            } else {
+                other.token_output_vec
             },
 
             self_fake_union_ing: {
@@ -1521,6 +1656,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         u32,
         u32,
         impl Iterator<Item = InserterReinsertionInfo<ItemIdxType>>,
+        impl Iterator<Item = FluidTokenReinsertionInfo<ItemIdxType>>,
     )
     where
         RecipeIdxType: IdxTrait,
@@ -1618,6 +1754,34 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                         },
                     },
                 }),
+            self.token_output_vec
+                .drain(..)
+                .map(|internal| FluidTokenReinsertionInfo {
+                    item: data_store.recipe_item_index_to_item[self.recipe.into_usize()]
+                        [internal.item as usize],
+                    is_input: (internal.item as usize) < NUM_INGS,
+                    self_token: if (internal.item as usize) < NUM_INGS {
+                        FakeUnionStorage {
+                            index: internal.self_index,
+                            grid_or_static_flag: self.self_fake_union_ing[internal.item as usize]
+                                .grid_or_static_flag,
+                            recipe_idx_with_this_item: self.self_fake_union_ing
+                                [internal.item as usize]
+                                .recipe_idx_with_this_item,
+                        }
+                    } else {
+                        FakeUnionStorage {
+                            index: internal.self_index,
+                            grid_or_static_flag: self.self_fake_union_out
+                                [internal.item as usize - NUM_INGS]
+                                .grid_or_static_flag,
+                            recipe_idx_with_this_item: self.self_fake_union_out
+                                [internal.item as usize - NUM_INGS]
+                                .recipe_idx_with_this_item,
+                        }
+                    },
+                    fluid_network: internal.fluid_network,
+                }),
         )
     }
 
@@ -1627,11 +1791,11 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         (
             [MaxInsertionLimit<'_>; NUM_INGS],
             [&mut [ITEMCOUNTTYPE]; NUM_INGS],
-            [(&mut [InserterWaitList], &mut [ITEMCOUNTTYPE]); NUM_INGS],
+            [&mut PerIng; NUM_INGS],
         ),
         (
             [&mut [ITEMCOUNTTYPE]; NUM_OUTPUTS],
-            [(&mut [InserterWaitList], &mut [ITEMCOUNTTYPE]); NUM_OUTPUTS],
+            [&mut PerOutput; NUM_OUTPUTS],
         ),
     ) {
         (
@@ -1642,23 +1806,11 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 }),
                 // self.ings_max_insert.each_mut().map(|b| &**b),
                 self.ings.each_mut().map(|b| &mut **b),
-                self.waitlists_ings
-                    .each_mut()
-                    .into_iter()
-                    .zip(self.waitlists_ings_needed.each_mut())
-                    .map(|(wait, needed)| (&mut **wait, &mut **needed))
-                    .collect_array()
-                    .unwrap(),
+                self.ings_data.each_mut(),
             ),
             (
                 self.outputs.each_mut().map(|b| &mut **b),
-                self.waitlists_outputs
-                    .each_mut()
-                    .into_iter()
-                    .zip(self.waitlists_outputs_needed.each_mut())
-                    .map(|(wait, needed)| (&mut **wait, &mut **needed))
-                    .collect_array()
-                    .unwrap(),
+                self.outputs_data.each_mut(),
             ),
         )
     }
@@ -1745,17 +1897,33 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 .try_into()
                 .expect("Value clamped already");
 
-            for ings in &mut self.waitlists_ings {
-                ings[hole_index] = InserterWaitList::default();
+            for ings in &mut self.ings_data {
+                match ings {
+                    PerIng::Solid {
+                        wait_list: wait_list_ing,
+                        wait_list_needed: wait_list_ing_needed,
+                    } => {
+                        wait_list_ing[hole_index] = InserterWaitList::default();
+                        wait_list_ing_needed[hole_index] = ITEMCOUNTTYPE::MAX;
+                    },
+                    PerIng::Fluid { tokens } => {
+                        tokens[hole_index] = NO_FLUID_NETWORK;
+                    },
+                }
             }
-            for out in &mut self.waitlists_outputs {
-                out[hole_index] = InserterWaitList::default();
-            }
-            for ings in &mut self.waitlists_ings_needed {
-                ings[hole_index] = ITEMCOUNTTYPE::MAX;
-            }
-            for out in &mut self.waitlists_outputs_needed {
-                out[hole_index] = ITEMCOUNTTYPE::MAX;
+            for out in &mut self.outputs_data {
+                match out {
+                    PerOutput::Solid {
+                        wait_list,
+                        wait_list_needed,
+                    } => {
+                        wait_list[hole_index] = InserterWaitList::default();
+                        wait_list_needed[hole_index] = ITEMCOUNTTYPE::MAX;
+                    },
+                    PerIng::Fluid { tokens } => {
+                        tokens[hole_index] = NO_FLUID_NETWORK;
+                    },
+                }
             }
 
             self.types[hole_index] = ty;
@@ -1896,33 +2064,49 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
                 );
                 pos.into_boxed_slice()
             });
-            for ing in &mut self.waitlists_ings {
-                take_mut::take(ing, |list| {
-                    let mut list = list.into_vec();
-                    list.resize(new_len, InserterWaitList::default());
-                    list.into_boxed_slice()
-                });
+            for ing in &mut self.ings_data {
+                match ing {
+                    PerIng::Solid {
+                        wait_list,
+                        wait_list_needed,
+                    } => {
+                        take_mut::take(wait_list, |list| {
+                            let mut list = list.into_vec();
+                            list.resize(new_len, InserterWaitList::default());
+                            list.into_boxed_slice()
+                        });
+                        take_mut::take(wait_list_needed, |list| {
+                            let mut list = list.into_vec();
+                            list.resize(new_len, ITEMCOUNTTYPE::MAX);
+                            list.into_boxed_slice()
+                        });
+                    },
+                    PerIng::Fluid { tokens } => {
+                        tokens.resize(new_len, NO_FLUID_NETWORK);
+                    },
+                }
             }
-            for out in &mut self.waitlists_outputs {
-                take_mut::take(out, |list| {
-                    let mut list = list.into_vec();
-                    list.resize(new_len, InserterWaitList::default());
-                    list.into_boxed_slice()
-                });
-            }
-            for ing in &mut self.waitlists_ings_needed {
-                take_mut::take(ing, |list| {
-                    let mut list = list.into_vec();
-                    list.resize(new_len, ITEMCOUNTTYPE::MAX);
-                    list.into_boxed_slice()
-                });
-            }
-            for out in &mut self.waitlists_outputs_needed {
-                take_mut::take(out, |list| {
-                    let mut list = list.into_vec();
-                    list.resize(new_len, ITEMCOUNTTYPE::MAX);
-                    list.into_boxed_slice()
-                });
+            for out in &mut self.outputs_data {
+                match out {
+                    PerIng::Solid {
+                        wait_list,
+                        wait_list_needed,
+                    } => {
+                        take_mut::take(wait_list, |list| {
+                            let mut list = list.into_vec();
+                            list.resize(new_len, InserterWaitList::default());
+                            list.into_boxed_slice()
+                        });
+                        take_mut::take(wait_list_needed, |list| {
+                            let mut list = list.into_vec();
+                            list.resize(new_len, ITEMCOUNTTYPE::MAX);
+                            list.into_boxed_slice()
+                        });
+                    },
+                    PerIng::Fluid { tokens } => {
+                        tokens.resize(new_len, NO_FLUID_NETWORK);
+                    },
+                }
             }
 
             take_mut::take(&mut self.types, |ty| {
@@ -1969,17 +2153,33 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             .clamp(0, u8::MAX.into())
             .try_into()
             .expect("Values already clamped");
-        for ing in &mut self.waitlists_ings {
-            ing[self.len] = InserterWaitList::default();
+        for ing in &mut self.ings_data {
+            match ing {
+                PerIng::Solid {
+                    wait_list,
+                    wait_list_needed,
+                } => {
+                    wait_list[self.len] = InserterWaitList::default();
+                    wait_list_needed[self.len] = ITEMCOUNTTYPE::MAX;
+                },
+                PerIng::Fluid { tokens } => {
+                    tokens[self.len] = NO_FLUID_NETWORK;
+                },
+            }
         }
-        for out in &mut self.waitlists_outputs {
-            out[self.len] = InserterWaitList::default();
-        }
-        for ing in &mut self.waitlists_ings_needed {
-            ing[self.len] = ITEMCOUNTTYPE::MAX;
-        }
-        for out in &mut self.waitlists_outputs_needed {
-            out[self.len] = ITEMCOUNTTYPE::MAX;
+        for out in &mut self.outputs_data {
+            match out {
+                PerIng::Solid {
+                    wait_list,
+                    wait_list_needed,
+                } => {
+                    wait_list[self.len] = InserterWaitList::default();
+                    wait_list_needed[self.len] = ITEMCOUNTTYPE::MAX;
+                },
+                PerIng::Fluid { tokens } => {
+                    tokens[self.len] = NO_FLUID_NETWORK;
+                },
+            }
         }
 
         self.positions[self.len] = position;
@@ -2059,17 +2259,33 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             x: i32::MAX,
             y: i32::MAX,
         };
-        for ing in &mut self.waitlists_ings {
-            ing[index] = InserterWaitList::default();
+        for ing in &mut self.ings_data {
+            match ing {
+                PerIng::Solid {
+                    wait_list,
+                    wait_list_needed,
+                } => {
+                    wait_list[index] = InserterWaitList::default();
+                    wait_list_needed[index] = ITEMCOUNTTYPE::MAX;
+                },
+                PerIng::Fluid { tokens } => {
+                    tokens[index] = NO_FLUID_NETWORK;
+                },
+            }
         }
-        for out in &mut self.waitlists_outputs {
-            out[index] = InserterWaitList::default();
-        }
-        for ing in &mut self.waitlists_ings_needed {
-            ing[index] = ITEMCOUNTTYPE::MAX;
-        }
-        for out in &mut self.waitlists_outputs_needed {
-            out[index] = ITEMCOUNTTYPE::MAX;
+        for out in &mut self.outputs_data {
+            match out {
+                PerIng::Solid {
+                    wait_list,
+                    wait_list_needed,
+                } => {
+                    wait_list[index] = InserterWaitList::default();
+                    wait_list_needed[index] = ITEMCOUNTTYPE::MAX;
+                },
+                PerIng::Fluid { tokens } => {
+                    tokens[index] = NO_FLUID_NETWORK;
+                },
+            }
         }
 
         (
@@ -2105,7 +2321,14 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             .unwrap();
 
         if item_index < NUM_INGS {
-            let our_waitlist = &mut self.waitlists_ings[item_index][self_index as usize];
+            let PerIng::Solid {
+                wait_list,
+                wait_list_needed,
+            } = &mut self.ings_data[item_index]
+            else {
+                unreachable!()
+            };
+            let our_waitlist = &mut wait_list[self_index as usize];
             let v = our_waitlist
                 .inserters
                 .iter_mut()
@@ -2171,7 +2394,14 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         } else {
             // This is an output inserter
             let item_index = item_index - NUM_INGS;
-            let our_waitlist = &mut self.waitlists_outputs[item_index][self_index as usize];
+            let PerIng::Solid {
+                wait_list,
+                wait_list_needed,
+            } = &mut self.outputs_data[item_index]
+            else {
+                unreachable!()
+            };
+            let our_waitlist = &mut wait_list[self_index as usize];
             let v = our_waitlist
                 .inserters
                 .iter_mut()

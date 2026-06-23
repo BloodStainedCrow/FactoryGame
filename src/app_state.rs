@@ -3315,6 +3315,7 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                 &simulation_state.tech_state,
                                 aux_data.current_tick as u32,
                                 &mut simulation_state.factory.storage_storage_inserters,
+                                &mut simulation_state.factory.fluid_store,
                                 assembler_stuff.as_mut_slice(),
                                 data_store,
                             )

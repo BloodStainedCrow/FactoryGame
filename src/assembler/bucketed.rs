@@ -5,7 +5,9 @@ use itertools::Itertools;
 use log::warn;
 
 use crate::assembler::arrays;
-use crate::assembler::simd::{InserterReinsertionInfo, InserterWaitList};
+use crate::assembler::simd::{
+    FluidTokenReinsertionInfo, InserterReinsertionInfo, InserterWaitList, PerIng, PerOutput,
+};
 use crate::assembler::{PowerUsageInfo, TIMERTYPE};
 use crate::data::{DataStore, ItemRecipeDir};
 use crate::frontend::world::Position;
@@ -621,6 +623,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         u32,
         u32,
         impl Iterator<Item = InserterReinsertionInfo<ItemIdxType>>,
+        impl Iterator<Item = FluidTokenReinsertionInfo<ItemIdxType>>,
     )
     where
         RecipeIdxType: IdxTrait,
@@ -752,6 +755,7 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
             times_ing_used,
             times_main_timer_done + times_prod_timer_done,
             iter::empty(),
+            iter::empty(),
         )
     }
 
@@ -761,12 +765,9 @@ impl<RecipeIdxType: WeakIdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usiz
         (
             [MaxInsertionLimit<'_>; NUM_INGS],
             [&mut [u8]; NUM_INGS],
-            [(&mut [InserterWaitList], &mut [u8]); NUM_INGS],
+            [&mut PerIng; NUM_INGS],
         ),
-        (
-            [&mut [u8]; NUM_OUTPUTS],
-            [(&mut [InserterWaitList], &mut [u8]); NUM_OUTPUTS],
-        ),
+        ([&mut [u8]; NUM_OUTPUTS], [&mut PerOutput; NUM_OUTPUTS]),
     ) {
         // (
         //     (
