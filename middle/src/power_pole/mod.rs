@@ -48,7 +48,7 @@ impl Middle {
                     self.power_pole_list[conn.0 as usize]
                         .connections
                         .push(PowerPoleIndex(
-                            index.try_into().expect("More than u32::MAX assemblers"),
+                            index.try_into().expect("More than u32::MAX power poles"),
                         ));
                 }
 
@@ -76,6 +76,8 @@ impl Middle {
                 }
 
                 todo!("Merge grids");
+
+                kept
             },
         };
 
@@ -87,7 +89,7 @@ impl Middle {
 
         assert_eq!(index, real_index);
 
-        PowerPoleIndex(index.try_into().expect("More than u32::MAX assemblers"))
+        PowerPoleIndex(index.try_into().expect("More than u32::MAX power poles"))
     }
 
     #[expect(clippy::unit_cmp)]
