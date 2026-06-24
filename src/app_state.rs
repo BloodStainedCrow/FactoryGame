@@ -1171,15 +1171,19 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                                 profiling::scope!(
                                                     "FluidSystem Update",
                                                     format!(
-                                                        "Item: {}",
-                                                        data_store.item_display_names[item_id]
+                                                        "Item: {}, Count: {}",
+                                                        data_store.item_display_names[item_id],
+                                                        fluid_store.len(),
                                                     )
                                                     .as_str()
                                                 );
-                                                for fluid_system in fluid_store {
+                                                for (idx, fluid_system) in
+                                                    fluid_store.iter_mut().enumerate()
+                                                {
                                                     // FIXME: Switch to holes
                                                     if let Some(fluid_system) = fluid_system {
                                                         update_fluid_system(
+                                                            idx as u32,
                                                             item_id,
                                                             &mut fluid_system.hot_data,
                                                             item_storages,

@@ -6,9 +6,10 @@ use std::u8;
 use itertools::Itertools;
 use log::warn;
 
+use crate::assembler::simd::NO_FLUID_NETWORK;
 use crate::inserter::FakeUnionStorage;
 use crate::item::Indexable;
-use crate::storage_list::{SingleItemStorages, index_fake_union};
+use crate::storage_list::{Meta, SingleItemStorages, index_fake_union};
 use crate::{
     data::DataStore,
     frontend::world::Position,
@@ -682,7 +683,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                     .as_mut()
                     .unwrap()
                     .hot_data
-                    .incoming_connections
+                    .incoming_connection_tokens
                     .iter_mut()
                 {
                     if *inc == old_storage {
@@ -694,7 +695,7 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                     .as_mut()
                     .unwrap()
                     .hot_data
-                    .outgoing_connections
+                    .outgoing_connection_tokens
                     .iter_mut()
                 {
                     if *outgoing == old_storage {
@@ -956,7 +957,7 @@ pub enum FluidSystemState<ItemIdxType: WeakIdxTrait> {
     derive(get_size2::GetSize)
 )]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct FluidSystem<ItemIdxType: WeakIdxTrait> {
+pub struct FluidSystem<ItemIdxType: WeakIdxTrait = u8> {
     pub graph: Network<Position, FluidBox, FluidSystemEntity>,
     pub state: FluidSystemState<ItemIdxType>,
     // TODO: Maybe move the hot_data out of here for better cache efficiency
@@ -972,12 +973,8 @@ pub struct FluidSystem<ItemIdxType: WeakIdxTrait> {
 pub struct FluidSystemHotData {
     pub storage_capacity: u32,
     current_fluid_level: u32,
-    incoming_connections: Box<[FakeUnionStorage]>,
-    /// These start_indices are used to keep a round robin distribution on the fluid
-    incoming_start_index: u32,
-    outgoing_connections: Box<[FakeUnionStorage]>,
-    /// These start_indices are used to keep a round robin distribution on the fluid
-    outgoing_start_index: u32,
+    pub incoming_connection_tokens: Vec<FakeUnionStorage>,
+    pub outgoing_connection_tokens: Vec<FakeUnionStorage>,
 }
 
 impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
@@ -988,10 +985,8 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
             hot_data: FluidSystemHotData {
                 storage_capacity: 0,
                 current_fluid_level: 0,
-                incoming_connections: vec![].into_boxed_slice(),
-                incoming_start_index: 0,
-                outgoing_connections: vec![].into_boxed_slice(),
-                outgoing_start_index: 0,
+                incoming_connection_tokens: vec![].into(),
+                outgoing_connection_tokens: vec![].into(),
             },
         };
 
@@ -1019,10 +1014,8 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
             hot_data: FluidSystemHotData {
                 storage_capacity: fluid_box_capacity,
                 current_fluid_level: 0,
-                incoming_connections: vec![].into_boxed_slice(),
-                incoming_start_index: 0,
-                outgoing_connections: vec![].into_boxed_slice(),
-                outgoing_start_index: 0,
+                incoming_connection_tokens: vec![].into(),
+                outgoing_connection_tokens: vec![].into(),
             },
         };
         if let Some(fluid) = fluid {
@@ -1072,10 +1065,8 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
             hot_data: FluidSystemHotData {
                 storage_capacity: new_capacity,
                 current_fluid_level: fluid_left_for_us,
-                incoming_connections: vec![].into_boxed_slice(),
-                incoming_start_index: 0,
-                outgoing_connections: vec![].into_boxed_slice(),
-                outgoing_start_index: 0,
+                incoming_connection_tokens: vec![].into(),
+                outgoing_connection_tokens: vec![].into(),
             },
         }
     }
@@ -1103,6 +1094,10 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         self.hot_data.storage_capacity
     }
 
+    pub fn get_content(&self) -> u32 {
+        self.hot_data.current_fluid_level
+    }
+
     fn add_output(
         &mut self,
         _fluid: Item<ItemIdxType>,
@@ -1111,11 +1106,8 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         _dest_pos: Position,
     ) -> WeakIndex {
         let id = {
-            // This is take_mut but instead of aborting we have emptied the vec
-            let mut outgoing = std::mem::take(&mut self.hot_data.outgoing_connections).into_vec();
-            outgoing.push(dest);
-            self.hot_data.outgoing_connections = outgoing.into_boxed_slice();
-            self.hot_data.outgoing_connections.len() - 1
+            self.hot_data.outgoing_connection_tokens.push(dest);
+            self.hot_data.outgoing_connection_tokens.len() - 1
         };
 
         let weak_index = self.graph.add_weak_element(
@@ -1136,11 +1128,8 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         _source_pos: Position,
     ) -> WeakIndex {
         let id = {
-            // This is take_mut but instead of aborting we have emptied the vec
-            let mut incoming = std::mem::take(&mut self.hot_data.incoming_connections).into_vec();
-            incoming.push(source);
-            self.hot_data.incoming_connections = incoming.into_boxed_slice();
-            self.hot_data.incoming_connections.len() - 1
+            self.hot_data.incoming_connection_tokens.push(source);
+            self.hot_data.incoming_connection_tokens.len() - 1
         };
 
         let weak_index = self.graph.add_weak_element(
@@ -1151,6 +1140,14 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         );
 
         weak_index
+    }
+
+    pub fn add_output_token(&mut self, dest: FakeUnionStorage) {
+        self.hot_data.outgoing_connection_tokens.push(dest);
+    }
+
+    pub fn add_input_token(&mut self, source: FakeUnionStorage) {
+        self.hot_data.incoming_connection_tokens.push(source);
     }
 
     fn add_pump<RecipeIdxType: IdxTrait>(
@@ -1176,13 +1173,9 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
 
         let removed_inserter_id = inserter_id;
 
-        let mut v = std::mem::take(&mut self.hot_data.incoming_connections).into_vec();
-        // TODO: Maybe swap_remove?
-        v.remove(removed_inserter_id as usize);
-        self.hot_data.incoming_connections = v.into_boxed_slice();
-        if self.hot_data.incoming_start_index > removed_inserter_id {
-            self.hot_data.incoming_start_index -= 1;
-        }
+        self.hot_data
+            .incoming_connection_tokens
+            .remove(removed_inserter_id as usize);
 
         for weak in self.graph.weak_components_mut() {
             match weak {
@@ -1209,13 +1202,9 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
 
         let removed_inserter_id = inserter_id;
 
-        let mut v = std::mem::take(&mut self.hot_data.outgoing_connections).into_vec();
-        // TODO: Maybe swap_remove?
-        v.remove(removed_inserter_id as usize);
-        self.hot_data.outgoing_connections = v.into_boxed_slice();
-        if self.hot_data.outgoing_start_index > removed_inserter_id {
-            self.hot_data.outgoing_start_index -= 1;
-        }
+        self.hot_data
+            .outgoing_connection_tokens
+            .remove(removed_inserter_id as usize);
 
         for weak in self.graph.weak_components_mut() {
             match weak {
@@ -1354,29 +1343,21 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
                         },
                         FluidSystemEntity::Input { inserter_id, .. } => {
                             // TODO: This code is terrible and O(n^2) beacuse of reallocations!
-                            let fake = other.hot_data.incoming_connections[*inserter_id as usize];
+                            let fake =
+                                other.hot_data.incoming_connection_tokens[*inserter_id as usize];
                             let id = {
-                                // This is take_mut but instead of aborting we have emptied the vec
-                                let mut incoming =
-                                    std::mem::take(&mut self.hot_data.incoming_connections)
-                                        .into_vec();
-                                incoming.push(fake);
-                                self.hot_data.incoming_connections = incoming.into_boxed_slice();
-                                self.hot_data.incoming_connections.len() - 1
+                                self.hot_data.incoming_connection_tokens.push(fake);
+                                self.hot_data.incoming_connection_tokens.len() - 1
                             };
                             *inserter_id = id.try_into().unwrap();
                         },
                         FluidSystemEntity::Output { inserter_id, .. } => {
                             // TODO: This code is terrible and O(n^2) beacuse of reallocations!
-                            let fake = other.hot_data.outgoing_connections[*inserter_id as usize];
+                            let fake =
+                                other.hot_data.outgoing_connection_tokens[*inserter_id as usize];
                             let id = {
-                                // This is take_mut but instead of aborting we have emptied the vec
-                                let mut outgoing =
-                                    std::mem::take(&mut self.hot_data.outgoing_connections)
-                                        .into_vec();
-                                outgoing.push(fake);
-                                self.hot_data.outgoing_connections = outgoing.into_boxed_slice();
-                                self.hot_data.outgoing_connections.len() - 1
+                                self.hot_data.outgoing_connection_tokens.push(fake);
+                                self.hot_data.outgoing_connection_tokens.len() - 1
                             };
                             *inserter_id = id.try_into().unwrap();
                         },
@@ -1589,21 +1570,27 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
 
 // TODO: This needs to be redesigned to stop polling every tick but instead use a waitlist style thing.
 pub fn update_fluid_system(
+    own_fluid_network_index: u32,
     item_id: usize,
     hot_data: &mut FluidSystemHotData,
     storages: SingleItemStorages,
     grid_size: usize,
 ) {
+    // TODO: This assertion currently does not hold, since we insert the same machine twice if it is connected twice
+    debug_assert!(hot_data.incoming_connection_tokens.iter().all_unique());
+    debug_assert!(hot_data.outgoing_connection_tokens.iter().all_unique());
+
+    let mut i = 0;
     // Do outgoing first
-    let mut i = hot_data.outgoing_start_index;
-    for &outgoing_conn in hot_data.outgoing_connections[(hot_data.outgoing_start_index as usize)..]
-        .iter()
-        .chain(hot_data.outgoing_connections[..(hot_data.outgoing_start_index as usize)].iter())
-    {
+    for &outgoing_conn in &hot_data.outgoing_connection_tokens {
         if hot_data.current_fluid_level == 0 {
             break;
         }
-        let (max, data, _) = index_fake_union(Some(item_id), storages, outgoing_conn, grid_size);
+        let (max, data, Meta::Fluid { token }) =
+            index_fake_union(Some(item_id), storages, outgoing_conn, grid_size)
+        else {
+            unreachable!()
+        };
         let amount_wanted = *max - *data;
 
         let amount_extracted = min(
@@ -1613,23 +1600,36 @@ pub fn update_fluid_system(
 
         *data += amount_extracted;
         hot_data.current_fluid_level -= u32::from(amount_extracted);
-        i += 1;
-    }
-    hot_data.outgoing_start_index = if i > hot_data.outgoing_connections.len() as u32 {
-        i - hot_data.outgoing_connections.len() as u32
-    } else {
-        i
-    };
 
-    let mut i = hot_data.incoming_start_index;
-    for &incoming_conn in hot_data.incoming_connections[(hot_data.incoming_start_index as usize)..]
-        .iter()
-        .chain(hot_data.incoming_connections[..(hot_data.incoming_start_index as usize)].iter())
-    {
+        if *data == *max
+            && let Some(token) = token
+        {
+            // TODO: This will lose tokens!!!!
+            if *token == NO_FLUID_NETWORK {
+                *token = own_fluid_network_index;
+                assert_eq!(*data, *max);
+            } else {
+                if own_fluid_network_index != *token {
+                    log::error!("LOST A TOKEN!");
+                }
+            }
+            i += 1;
+        }
+    }
+
+    hot_data.outgoing_connection_tokens.drain(..i);
+
+    i = 0;
+
+    for &incoming_conn in &hot_data.incoming_connection_tokens {
         if hot_data.current_fluid_level == hot_data.storage_capacity {
             break;
         }
-        let (_max, data, _) = index_fake_union(Some(item_id), storages, incoming_conn, grid_size);
+        let (_max, data, Meta::Fluid { token }) =
+            index_fake_union(Some(item_id), storages, incoming_conn, grid_size)
+        else {
+            unreachable!()
+        };
         let amount_wanted = *data;
 
         let amount_extracted = min(
@@ -1640,11 +1640,22 @@ pub fn update_fluid_system(
 
         *data -= amount_extracted;
         hot_data.current_fluid_level += u32::from(amount_extracted);
-        i += 1;
+
+        if *data == 0
+            && let Some(token) = token
+        {
+            // TODO: This will lose tokens!!!!
+            if *token == NO_FLUID_NETWORK {
+                *token = own_fluid_network_index;
+                assert_eq!(*data, 0);
+            } else {
+                if own_fluid_network_index != *token {
+                    log::error!("LOST A TOKEN!");
+                }
+            }
+            i += 1;
+        }
     }
-    hot_data.incoming_start_index = if i > hot_data.incoming_connections.len() as u32 {
-        i - hot_data.incoming_connections.len() as u32
-    } else {
-        i
-    };
+
+    hot_data.incoming_connection_tokens.drain(..i);
 }

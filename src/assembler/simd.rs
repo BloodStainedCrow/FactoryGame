@@ -769,9 +769,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                                     }
                                 },
                                 PerOutput::Fluid { tokens } => {
-                                    if self.outputs[item][final_idx] == 0
-                                        && tokens[final_idx] != NO_FLUID_NETWORK
-                                    {
+                                    if tokens[final_idx] != NO_FLUID_NETWORK {
                                         self.token_output_vec.push(
                                             InternalFluidTokenReinsertionInfo {
                                                 item: (NUM_INGS + item) as u8,
@@ -896,10 +894,7 @@ impl<RecipeIdxType: IdxTrait, const NUM_INGS: usize, const NUM_OUTPUTS: usize>
                                     }
                                 },
                                 PerIng::Fluid { tokens } => {
-                                    if self.ings[item][final_idx]
-                                        == self.ings_max_insert[item][final_idx]
-                                        && tokens[final_idx] != NO_FLUID_NETWORK
-                                    {
+                                    if tokens[final_idx] != NO_FLUID_NETWORK {
                                         self.token_output_vec.push(
                                             InternalFluidTokenReinsertionInfo {
                                                 item: item as u8,
