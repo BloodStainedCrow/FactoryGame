@@ -3215,10 +3215,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         // This is what makes some types of belts different speed from others
                                         (!*idle && update_timers[usize::from(*ty)] >= 120).then_some((idle, self_index, belt))
                                     }).map(|(idle, self_index, belt)| {
+                                        // TODO: Make sure these two actually do their accesses back to back, for cache reuse!
                                         // Update a belt
                                         belt.update(sushi_splitters, idle);
                                         belt.update_inserters_lazy(idle).into_iter().flatten().zip(iter::repeat(self_index))
-                                        // iter::empty::<(InserterExtractedWhenMoving, u32)>()
                                     })
                                     .fold(|| vec![], |mut v, reinsertions| {
                                         v.extend(reinsertions);
@@ -3240,10 +3240,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> GameState<ItemIdxType, Reci
                                         // This is what makes some types of belts different speed from others
                                         (!*idle && update_timers[usize::from(*ty)] >= 120).then_some((idle, self_index, belt))
                                     }).map(|(idle, self_index, belt)| {
+                                        // TODO: Make sure these two actually do their accesses back to back, for cache reuse!
                                         // Update a belt
                                         belt.update(sushi_splitters, idle);
                                         belt.update_inserters_lazy(idle).into_iter().flatten().zip(iter::repeat(self_index))
-                                        // iter::empty::<(InserterExtractedWhenMoving, u32)>()
                                     })
                                     .fold(vec![], |mut v, reinsertions| {
                                         v.extend(reinsertions);
