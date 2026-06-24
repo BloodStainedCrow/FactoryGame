@@ -1157,12 +1157,18 @@ impl<ItemIdxType: IdxTrait> FluidSystem<ItemIdxType> {
         weak_index
     }
 
-    pub fn add_output_token(&mut self, dest: FakeUnionStorage) {
+    pub fn add_output_token(&mut self, dest: FakeUnionStorage, wake_up: impl FnOnce()) {
         self.hot_data.outgoing_connection_tokens.push(dest);
+        if self.hot_data.current_fluid_level > 0 {
+            wake_up();
+        }
     }
 
-    pub fn add_input_token(&mut self, source: FakeUnionStorage) {
+    pub fn add_input_token(&mut self, source: FakeUnionStorage, wake_up: impl FnOnce()) {
         self.hot_data.incoming_connection_tokens.push(source);
+        if self.hot_data.current_fluid_level < self.hot_data.storage_capacity {
+            wake_up();
+        }
     }
 
     fn add_pump<RecipeIdxType: IdxTrait>(
