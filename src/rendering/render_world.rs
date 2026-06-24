@@ -4258,11 +4258,13 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                                 unreachable!();
                             };
 
+                            let is_idle = game_state_ref.simulation_state.factory.fluid_store.fluid_systems_with_fluid_is_idle[fluid.into_usize()][id.index];
                             let units = game_state_ref.simulation_state.factory.fluid_store.fluid_systems_with_fluid[fluid.into_usize()][id.index].as_ref().unwrap().get_content();
                             let input_tokens = &game_state_ref.simulation_state.factory.fluid_store.fluid_systems_with_fluid[fluid.into_usize()][id.index].as_ref().unwrap().hot_data.incoming_connection_tokens;
                             let output_tokens = &game_state_ref.simulation_state.factory.fluid_store.fluid_systems_with_fluid[fluid.into_usize()][id.index].as_ref().unwrap().hot_data.outgoing_connection_tokens;
 
                             ui.label(format!("{} units", units));
+                            ui.label(format!("id_idle: {}", is_idle));
                             ui.label(format!("input_tokens: {:?}", input_tokens));
                             ui.label(format!("output_tokens: {:?}", output_tokens));
                         } else {

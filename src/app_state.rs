@@ -1082,10 +1082,12 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                     )
                     .zip(
                         self.storage_storage_inserters.inserters.iter_mut().zip(
-                            self.fluid_store
+                            (self
+                                .fluid_store
                                 .fluid_systems_with_fluid
                                 .iter_mut()
-                                .zip(self.belt_storage_inserters.iter_mut()),
+                                .zip(self.fluid_store.fluid_systems_with_fluid_is_idle.iter_mut()))
+                            .zip(self.belt_storage_inserters.iter_mut()),
                         ),
                     )
                     .zip(self.item_times.iter_mut())
@@ -1101,7 +1103,10 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                     ((_belt_store, item_storages), _pure_to_pure_inserters),
                                     (
                                         storage_storage_inserter_stores,
-                                        (fluid_store, belt_storage_inserter_lists),
+                                        (
+                                            (fluid_store, fluid_store_idle),
+                                            belt_storage_inserter_lists,
+                                        ),
                                     ),
                                 ),
                                 avg_time,
@@ -1171,15 +1176,22 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                                 profiling::scope!(
                                                     "FluidSystem Update",
                                                     format!(
-                                                        "Item: {}, Count: {}",
+                                                        "Item: {}, Count: {}, {} idle",
                                                         data_store.item_display_names[item_id],
                                                         fluid_store.len(),
+                                                        fluid_store_idle.count_ones(),
                                                     )
                                                     .as_str()
                                                 );
-                                                for (idx, fluid_system) in
-                                                    fluid_store.iter_mut().enumerate()
+                                                for (idx, (fluid_system, mut idle)) in fluid_store
+                                                    .iter_mut()
+                                                    .zip(fluid_store_idle.iter_mut())
+                                                    .enumerate()
                                                 {
+                                                    if *idle {
+                                                        continue;
+                                                    }
+
                                                     // FIXME: Switch to holes
                                                     if let Some(fluid_system) = fluid_system {
                                                         update_fluid_system(
@@ -1188,6 +1200,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
                                                             &mut fluid_system.hot_data,
                                                             item_storages,
                                                             grid_size,
+                                                            || {
+                                                                idle.set(true);
+                                                            },
                                                         );
                                                     }
                                                 }

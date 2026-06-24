@@ -1294,6 +1294,9 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> PowerGridStorage<ItemIdxTyp
                                         [token_info.fluid_network as usize]
                                         .as_mut()
                                         .expect("Tried to reinsert into nonexistent fluid network");
+                                    fluid_store.fluid_systems_with_fluid_is_idle
+                                        [token_info.item.into_usize()]
+                                    .set(token_info.fluid_network as usize, false);
                                     // NOTE(BSC): token_info.is_input is from the POV of the assembler, while network.add_* is from the POV of the fluid network
                                     if token_info.is_input {
                                         network.add_output_token(token_info.self_token);

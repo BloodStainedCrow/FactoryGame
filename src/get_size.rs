@@ -478,6 +478,47 @@ impl DerefMut for BitBox {
     }
 }
 
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+#[repr(transparent)]
+pub struct BitVec {
+    bitvec: bitvec::prelude::BitVec,
+}
+
+#[cfg(feature = "show-info")]
+impl GetSize for BitVec {
+    fn get_heap_size(&self) -> usize {
+        self.bitvec.len().div_ceil(std::mem::size_of::<usize>())
+    }
+}
+
+#[cfg(feature = "show-info")]
+impl<Info: EguiDisplayable, Extractor: InfoExtractor<Self, Info>> ShowInfo<Extractor, Info>
+    for BitVec
+{
+    fn show_fields<C: Cache<String, Info>>(
+        &self,
+        _extractor: &mut Extractor,
+        _ui: &mut egui::Ui,
+        _path: String,
+        _cache: &mut C,
+    ) {
+    }
+}
+
+impl Deref for BitVec {
+    type Target = bitvec::prelude::BitVec;
+
+    fn deref(&self) -> &Self::Target {
+        &self.bitvec
+    }
+}
+
+impl DerefMut for BitVec {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.bitvec
+    }
+}
+
 #[derive(Clone)]
 #[repr(transparent)]
 pub struct Bfs<A, B> {

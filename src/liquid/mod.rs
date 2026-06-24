@@ -1,12 +1,16 @@
 use std::cmp::min;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::ops::DerefMut;
 use std::u8;
 
+use bitvec::boxed::BitBox;
+use bitvec::vec::BitVec;
 use itertools::Itertools;
 use log::warn;
 
 use crate::assembler::simd::NO_FLUID_NETWORK;
+use crate::get_size;
 use crate::inserter::FakeUnionStorage;
 use crate::item::Indexable;
 use crate::storage_list::{Meta, SingleItemStorages, index_fake_union};
@@ -38,6 +42,7 @@ pub struct FluidSystemId<ItemIdxType: WeakIdxTrait> {
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct FluidSystemStore<ItemIdxType: WeakIdxTrait> {
     pub fluid_systems_with_fluid: Box<[Vec<Option<FluidSystem<ItemIdxType>>>]>,
+    pub fluid_systems_with_fluid_is_idle: Box<[get_size::BitVec]>,
     fluid_systems_with_fluid_holes: Box<[Vec<usize>]>,
 
     pub empty_fluid_systems: Vec<Option<FluidSystem<ItemIdxType>>>,
@@ -71,6 +76,11 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
         Self {
             fluid_systems_with_fluid: vec![vec![]; data_store.item_display_names.len()]
                 .into_boxed_slice(),
+            fluid_systems_with_fluid_is_idle: vec![
+                get_size::BitVec::default();
+                data_store.item_display_names.len()
+            ]
+            .into_boxed_slice(),
             fluid_systems_with_fluid_holes: vec![vec![]; data_store.item_display_names.len()]
                 .into_boxed_slice(),
             empty_fluid_systems: vec![],
@@ -93,9 +103,12 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
         id: FluidSystemId<ItemIdxType>,
     ) -> &mut FluidSystem<ItemIdxType> {
         match id.fluid {
-            Some(fluid) => self.fluid_systems_with_fluid[fluid.into_usize()][id.index]
-                .as_mut()
-                .unwrap(),
+            Some(fluid) => {
+                self.fluid_systems_with_fluid_is_idle[fluid.into_usize()].set(id.index, false);
+                self.fluid_systems_with_fluid[fluid.into_usize()][id.index]
+                    .as_mut()
+                    .unwrap()
+            },
             None => self.empty_fluid_systems[id.index].as_mut().unwrap(),
         }
     }
@@ -113,9 +126,11 @@ impl<ItemIdxType: IdxTrait> FluidSystemStore<ItemIdxType> {
                 if let Some(hole_idx) = index {
                     assert!(self.fluid_systems_with_fluid[fluid.into_usize()][hole_idx].is_none());
                     self.fluid_systems_with_fluid[fluid.into_usize()][hole_idx] = Some(new_network);
+                    self.fluid_systems_with_fluid_is_idle[fluid.into_usize()].set(hole_idx, false);
                     hole_idx
                 } else {
                     self.fluid_systems_with_fluid[fluid.into_usize()].push(Some(new_network));
+                    self.fluid_systems_with_fluid_is_idle[fluid.into_usize()].push(false);
                     self.fluid_systems_with_fluid[fluid.into_usize()].len() - 1
                 }
             },
@@ -1575,6 +1590,7 @@ pub fn update_fluid_system(
     hot_data: &mut FluidSystemHotData,
     storages: SingleItemStorages,
     grid_size: usize,
+    go_idle: impl FnOnce(),
 ) {
     // TODO: This assertion currently does not hold, since we insert the same machine twice if it is connected twice
     debug_assert!(hot_data.incoming_connection_tokens.iter().all_unique());
@@ -1658,4 +1674,12 @@ pub fn update_fluid_system(
     }
 
     hot_data.incoming_connection_tokens.drain(..i);
+
+    if hot_data.current_fluid_level == 0 && hot_data.incoming_connection_tokens.is_empty() {
+        go_idle()
+    } else if hot_data.current_fluid_level == hot_data.storage_capacity
+        && hot_data.outgoing_connection_tokens.is_empty()
+    {
+        go_idle()
+    }
 }
