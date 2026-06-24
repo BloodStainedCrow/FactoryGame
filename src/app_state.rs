@@ -1067,6 +1067,15 @@ impl<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait> Factory<ItemIdxType, Recipe
 
         rayon::scope(|scope| {
             {
+                scope.spawn(|_| {
+                    profiling::scope!("Update Splitters");
+                    self.belts
+                        .inner
+                        .sushi_splitters
+                        .par_iter_mut()
+                        .for_each(|splitter| splitter.update());
+                });
+
                 // Update all the "Pure Belts"
                 self.belts
                     .inner

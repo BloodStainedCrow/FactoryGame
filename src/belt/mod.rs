@@ -2310,14 +2310,6 @@ impl<ItemIdxType: IdxTrait> BeltStore<ItemIdxType> {
 
             *cumulative += u32::from(increase);
         }
-
-        {
-            profiling::scope!("Update Splitters");
-            self.inner
-                .sushi_splitters
-                .par_iter_mut()
-                .for_each(|splitter| splitter.update());
-        }
     }
 
     #[profiling::function]
