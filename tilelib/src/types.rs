@@ -346,9 +346,9 @@ impl Display {
         };
 
         self.renderer = Some(Renderer {
+            output,
             device,
             queue,
-            output,
             depth,
             encoder,
             pipeline,
