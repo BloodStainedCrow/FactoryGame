@@ -340,6 +340,15 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
         )
     }
 
+    pub fn get_chest_would_skip_update(&self, index: u32) -> bool {
+        let is_full = self.inout[index as usize] == self.max_insert[index as usize];
+        let is_empty = self.inout[index as usize] == 0;
+        let was_full = self.last_inout[index as usize] == self.max_insert[index as usize];
+        let was_empty = self.last_inout[index as usize] == 0;
+
+        !((was_full && !is_full) || (was_empty && !is_empty))
+    }
+
     pub fn update_naive(&mut self) {
         for (inout, (storage, max_items)) in self
             .inout
@@ -392,22 +401,12 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
             .zip(self.max_insert.iter())
             .enumerate()
         {
-            // FIXME: This loop is not vectorized
+            // FIXME: This loop is not vectorized. Is that a problem?
             let is_full = *inout == *max_insert;
             let is_empty = *inout == 0;
             let was_full = *last_inout == *max_insert;
             let was_empty = *last_inout == 0;
             *last_inout = *inout;
-
-            let to_move = inout.abs_diff(CHEST_GOAL_AMOUNT);
-
-            if to_move == 0 {
-                continue;
-            }
-
-            let switch = ChestSize::from(*inout >= CHEST_GOAL_AMOUNT);
-
-            let _inserter_amount = min(*inout, *max_insert - *inout);
 
             if (was_full && !is_full) || (was_empty && !is_empty) {
                 std::hint::cold_path();
@@ -458,6 +457,14 @@ impl<ItemIdxType: IdxTrait> MultiChestStore<ItemIdxType> {
                     }
                 }
             }
+
+            let to_move = inout.abs_diff(CHEST_GOAL_AMOUNT);
+
+            if to_move == 0 || u32::from(*inout) == max_items {
+                continue;
+            }
+
+            let switch = ChestSize::from(*inout >= CHEST_GOAL_AMOUNT);
 
             let moved: SignedChestSize = (switch as SignedChestSize
                 + (1 - switch as SignedChestSize) * -1)

@@ -4108,6 +4108,9 @@ pub fn render_ui<ItemIdxType: IdxTrait, RecipeIdxType: IdxTrait>(
                             let stack_size: u16 = data_store_ref.item_stack_sizes[usize_from(item.id)] as u16;
 
                             let (current_items, _max_items) = game_state_ref.simulation_state.factory.chests.stores[usize_from(item.id)].get_chest(*index);
+                            let would_be_skipped = game_state_ref.simulation_state.factory.chests.stores[usize_from(item.id)].get_chest_would_skip_update(*index);
+
+                            ui.label(format!("Skipped: {}", would_be_skipped));
 
                             (current_items, stack_size)
                         } else {

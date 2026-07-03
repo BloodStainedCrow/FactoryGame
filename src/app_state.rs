@@ -767,12 +767,17 @@ impl StorageStorageInserterStore {
 
                 let grid_size = grid_size(item, data_store);
 
-                for (ins_store,) in map.values_mut() {
+                // TODO: Add config switch
+                let mut handle = move |ins_store: &mut BucketedStorageStorageInserterStore| {
                     profiling::scope!(
                         "StorageStorage Inserter Update",
                         format!("Movetime: {}", ins_store.movetime).as_str()
                     );
                     ins_store.update(item_id, storages, grid_size, current_tick);
+                };
+
+                for (ins_store,) in map.values_mut() {
+                    handle(ins_store);
                 }
             });
     }
