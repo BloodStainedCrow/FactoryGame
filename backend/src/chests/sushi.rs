@@ -63,6 +63,8 @@ impl SushiChest {
     }
 
     fn take_slot(&mut self, slot: ItemStackIndex) -> Option<ItemStack> {
+        self.assert_invariants();
+
         let ret = Self::take_slot_raw(
             &mut self.slots[slot as usize],
             slot,
@@ -95,6 +97,8 @@ impl SushiChest {
     }
 
     pub fn try_add_item_stack(&mut self, mut items: ItemStack) -> Result<(), ItemStack> {
+        self.assert_invariants();
+
         for (index, slot) in self.slots
             [(self.first_non_full_slot as usize)..(self.automatic_insertion_slot_limit as usize)]
             .iter_mut()
@@ -162,6 +166,8 @@ impl SushiChest {
         max_count: NonZero<u16>,
         filter: impl Fn(Item) -> bool,
     ) -> Option<ItemStack> {
+        self.assert_invariants();
+
         let mut ret: Option<ItemStack> = None;
 
         for (index, slot) in self.slots[..(self.first_slot_with_all_empty_after as usize)]
