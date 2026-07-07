@@ -6,6 +6,7 @@ use data::{
 };
 use world::surface::{Surface, SurfaceCreationOptions};
 
+pub mod blueprint;
 pub mod query;
 
 // TODO: This should prob not be default
