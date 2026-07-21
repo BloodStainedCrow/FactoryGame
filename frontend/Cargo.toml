@@ -5,7 +5,10 @@ edition = "2024"
 
 [dependencies]
 base64 = "0.22.1"
+bincode = { version = "2.0.1", features = ["serde"] }
 data = { path = "../data" } 
+flate2 = "1.1.9"
+log = "0.4.33"
 postcard = "1.1.3"
 rand = "0.10.1"
 serde = { version = "1.0.228", features = ["derive"] }

@@ -9,7 +9,7 @@ use crate::blueprint::string::{BlueprintString, BlueprintStringCorrupt, RawBluep
 
 type CurrentBlueprint = Blueprint;
 
-pub trait VersionedBlueprint: Into<CurrentBlueprint> {
+pub trait VersionedBlueprint: Into<CurrentBlueprint> + for<'a> TryFrom<&'a [u8]> {
     fn get_version() -> u32;
 }
 
@@ -23,14 +23,14 @@ impl TryFrom<BlueprintString> for CurrentBlueprint {
 
         let current = match versioned.version {
             0 => {
-                let v0: v0::Blueprint = postcard::from_bytes(versioned.data)
+                let v0: v0::Blueprint = v0::Blueprint::try_from(versioned.data)
                     .map_err(|_e| BlueprintStringCorrupt::CannotDeserialize)?;
 
                 v0.into()
             },
 
             u32::MAX => {
-                let old: old::Blueprint = todo!();
+                let old: old::Blueprint = old::Blueprint::try_from(versioned.data)?;
 
                 old.into()
             },

@@ -33,6 +33,12 @@ pub enum BlueprintStringCorrupt {
     MissingThing(String),
 }
 
+impl From<!> for BlueprintStringCorrupt {
+    fn from(value: !) -> Self {
+        value
+    }
+}
+
 impl TryFrom<BlueprintString> for RawBlueprintStringData {
     type Error = BlueprintStringCorrupt;
 
