@@ -6,6 +6,35 @@ use std::{
 use enum_map::Enum;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub struct NonSnappingPosition {
+    /// Position in 2048 subtile steps
+    x: i32,
+    /// Position in 2048 subtile steps
+    y: i32,
+}
+
+impl From<Position> for NonSnappingPosition {
+    fn from(value: Position) -> Self {
+        Self {
+            x: value.x * 2048,
+            y: value.y * 2048,
+        }
+    }
+}
+
+impl NonSnappingPosition {
+    const fn snap_to_top_left_tile(self) -> Position {
+        Position {
+            // TODO: Is this correct?
+            x: self.x.div_ceil(2048),
+            y: self.y.div_ceil(2048),
+        }
+    }
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
+)]
 pub struct Position {
     pub x: i32,
     pub y: i32,
@@ -66,7 +95,7 @@ pub struct BoundingBox {
     bottom_right: Position,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Flipped {
     pub horizontally: bool,
     pub vertically: bool,
@@ -159,7 +188,7 @@ impl From<Direction> for Offset {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Enum, serde::Serialize, serde::Deserialize)]
 pub enum Rotation {
     North,
     East,
@@ -179,7 +208,7 @@ impl Rotation {
     }
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy, serde::Deserialize)]
 pub struct Extent {
     pub width: u32,
     pub height: u32,

@@ -14,5 +14,12 @@ rand = "0.10.1"
 serde = { version = "1.0.228", features = ["derive"] }
 world = { path = "../world" } 
 
+[dev-dependencies]
+criterion = { version = "0.8", features = ["html_reports"] }
+
+[[bench]]
+name = "benches"
+harness = false
+
 [lints]
 workspace = true

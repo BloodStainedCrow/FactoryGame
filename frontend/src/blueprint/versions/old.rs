@@ -1,11 +1,20 @@
 /// This is the blueprint format of the pre-refactor codebase. This is here only so I can reuse (and reexport) my test blueprints.
-use std::{io::BufReader, num::NonZero, u32};
+use std::{collections::BTreeMap, io::BufReader, num::NonZero, u32};
 
 use base64::engine::general_purpose::STANDARD;
-use data::spacial::{Direction, Position};
+use data::{
+    EntityIdentifier,
+    entity::{
+        GlobalTy, assember::AssemblerTy, belt::BeltTy, chest::ChestTy, power_pole::PowerPoleTy,
+    },
+    spacial::{Direction, Flipped, Position, Rotation},
+};
 use log::error;
 
-use crate::blueprint::versions::VersionedBlueprint;
+use crate::{
+    action::{ActionKind, BuildingInfo, BuildingKind, ForceKind},
+    blueprint::versions::VersionedBlueprint,
+};
 
 #[derive(Debug)]
 pub struct Blueprint {
@@ -201,7 +210,240 @@ impl<'a> TryFrom<&'a [u8]> for Blueprint {
 
 impl Into<super::Blueprint> for Blueprint {
     fn into(self) -> super::Blueprint {
-        super::Blueprint {}
+        let Self { actions } = self;
+
+        let mut state = BTreeMap::new();
+
+        for action in actions {
+            match action {
+                BlueprintAction::PlaceEntity(blueprint_place_entity) => {
+                    match blueprint_place_entity {
+                        BlueprintPlaceEntity::Assembler { pos, ty, rotation } => state.insert(
+                            pos,
+                            ActionKind::PlaceBuilding {
+                                ghost: true,
+                                force: ForceKind::None,
+                                building_info: BuildingInfo {
+                                    position: pos,
+                                    rotation: match rotation {
+                                        Dir::North => Rotation::North,
+                                        Dir::East => Rotation::East,
+                                        Dir::South => Rotation::South,
+                                        Dir::West => Rotation::West,
+                                    },
+                                    flipped: Flipped::unflipped(),
+                                    kind: BuildingKind::Assembler {
+                                        ty: AssemblerTy::try_from(
+                                            GlobalTy::try_from(EntityIdentifier::new_raw(ty))
+                                                .expect("Entity does not exist"),
+                                        )
+                                        .expect("Entity name is not an assembler"),
+                                        recipe: None,
+                                        modules: vec![],
+                                    },
+                                },
+                            },
+                        ),
+                        BlueprintPlaceEntity::Inserter {
+                            pos,
+                            dir,
+                            filter,
+                            movetime,
+                            ty,
+                        } => {
+                            // TODO:
+                            None
+                        },
+                        BlueprintPlaceEntity::Belt {
+                            pos,
+                            direction,
+                            ty,
+                            copied_belt_info,
+                        } => state.insert(
+                            pos,
+                            ActionKind::PlaceBuilding {
+                                ghost: true,
+                                force: ForceKind::None,
+                                building_info: BuildingInfo {
+                                    position: pos,
+                                    rotation: match direction {
+                                        Dir::North => Rotation::North,
+                                        Dir::East => Rotation::East,
+                                        Dir::South => Rotation::South,
+                                        Dir::West => Rotation::West,
+                                    },
+                                    flipped: Flipped::unflipped(),
+                                    kind: BuildingKind::Belt {
+                                        ty: BeltTy::try_from(
+                                            GlobalTy::try_from(EntityIdentifier::new_raw(ty))
+                                                .expect("Entity does not exist"),
+                                        )
+                                        .expect("Entity name is not an belt"),
+                                    },
+                                },
+                            },
+                        ),
+                        BlueprintPlaceEntity::Underground {
+                            pos,
+                            direction,
+                            ty,
+                            underground_dir,
+                            copied_belt_info,
+                        } => state.insert(
+                            pos,
+                            ActionKind::PlaceBuilding {
+                                ghost: true,
+                                force: ForceKind::None,
+                                building_info: BuildingInfo {
+                                    position: pos,
+                                    rotation: match direction {
+                                        Dir::North => Rotation::North,
+                                        Dir::East => Rotation::East,
+                                        Dir::South => Rotation::South,
+                                        Dir::West => Rotation::West,
+                                    },
+                                    flipped: Flipped::unflipped(),
+                                    kind: BuildingKind::Belt {
+                                        ty: BeltTy::try_from(
+                                            GlobalTy::try_from(EntityIdentifier::new_raw(ty))
+                                                .expect("Entity does not exist"),
+                                        )
+                                        .expect("Entity name is not an belt"),
+                                    },
+                                },
+                            },
+                        ),
+                        BlueprintPlaceEntity::PowerPole { pos, ty } => state.insert(
+                            pos,
+                            ActionKind::PlaceBuilding {
+                                ghost: true,
+                                force: ForceKind::None,
+                                building_info: BuildingInfo {
+                                    position: pos,
+                                    rotation: Rotation::North,
+                                    flipped: Flipped::unflipped(),
+                                    kind: BuildingKind::PowerPole {
+                                        ty: PowerPoleTy::try_from(
+                                            GlobalTy::try_from(EntityIdentifier::new_raw(ty))
+                                                .expect("Entity does not exist"),
+                                        )
+                                        .expect("Entity name is not an pole"),
+                                    },
+                                },
+                            },
+                        ),
+                        BlueprintPlaceEntity::Splitter {
+                            pos,
+                            direction,
+                            ty,
+                            in_mode,
+                            out_mode,
+                        } => {
+                            // TODO:
+                            None
+                        },
+                        BlueprintPlaceEntity::Chest { pos, ty } => state.insert(
+                            pos,
+                            ActionKind::PlaceBuilding {
+                                ghost: true,
+                                force: ForceKind::None,
+                                building_info: BuildingInfo {
+                                    position: pos,
+                                    rotation: Rotation::North,
+                                    flipped: Flipped::unflipped(),
+                                    kind: BuildingKind::Chest {
+                                        ty: ChestTy::try_from(
+                                            GlobalTy::try_from(EntityIdentifier::new_raw(ty))
+                                                .expect("Entity does not exist"),
+                                        )
+                                        .expect("Entity name is not an chest"),
+                                    },
+                                },
+                            },
+                        ),
+                        BlueprintPlaceEntity::SolarPanel { pos, ty } => {
+                            // TODO:
+                            None
+                        },
+                        BlueprintPlaceEntity::Accumulator { pos, ty } => {
+                            // TODO:
+                            None
+                        },
+                        BlueprintPlaceEntity::Lab { pos, ty } => {
+                            // TODO:
+                            None
+                        },
+                        BlueprintPlaceEntity::Beacon { ty, pos } => {
+                            // TODO:
+                            None
+                        },
+                        BlueprintPlaceEntity::FluidTank { ty, pos, rotation } => {
+                            // TODO:
+                            None
+                        },
+                        BlueprintPlaceEntity::MiningDrill { ty, pos, rotation } => {
+                            // TODO:
+                            None
+                        },
+                    };
+                },
+                BlueprintAction::SetRecipe { pos, recipe } => {
+                    let ActionKind::PlaceBuilding {
+                        ghost,
+                        force,
+                        building_info:
+                            BuildingInfo {
+                                position,
+                                rotation,
+                                flipped,
+                                kind:
+                                    BuildingKind::Assembler {
+                                        ty,
+                                        recipe: _old_recipe,
+                                        modules,
+                                    },
+                            },
+                    } = state[&pos].clone()
+                    else {
+                        unreachable!()
+                    };
+
+                    state.insert(
+                        pos,
+                        ActionKind::PlaceBuilding {
+                            ghost,
+                            force,
+                            building_info: BuildingInfo {
+                                position,
+                                rotation,
+                                flipped,
+                                kind: BuildingKind::Assembler {
+                                    ty,
+                                    recipe: Some(recipe.try_into().expect("Failed to load recipe")),
+                                    modules,
+                                },
+                            },
+                        },
+                    );
+                },
+                BlueprintAction::OverrideInserterMovetime { pos, new_movetime } => {
+                    // TODO:
+                },
+                BlueprintAction::AddModules { pos, modules } => {
+                    // TODO:
+                },
+                BlueprintAction::SetChestSlotLimit { pos, num_slots } => {
+                    // TODO:
+                },
+                BlueprintAction::PlaceOre { ore, pos, amount } => {
+                    // TODO:
+                },
+            }
+        }
+
+        super::Blueprint {
+            actions: state.into_values().collect(),
+        }
     }
 }
 

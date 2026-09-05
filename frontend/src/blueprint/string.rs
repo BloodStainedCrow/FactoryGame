@@ -1,9 +1,12 @@
-use base64::{Engine, prelude::BASE64_URL_SAFE};
+use base64::{
+    Engine,
+    prelude::{BASE64_STANDARD, BASE64_URL_SAFE},
+};
 
 use crate::blueprint::versions::VersionedBlueprint;
 
-#[derive(Debug)]
-pub struct BlueprintString(String);
+#[derive(Debug, Clone)]
+pub struct BlueprintString(pub String);
 
 impl From<super::Blueprint> for BlueprintString {
     fn from(value: super::Blueprint) -> Self {
@@ -13,7 +16,7 @@ impl From<super::Blueprint> for BlueprintString {
     }
 }
 
-pub(super) struct RawBlueprintStringData(Vec<u8>);
+pub(super) struct RawBlueprintStringData(pub(super) Vec<u8>);
 
 impl From<VersionedBlueprintStringData> for RawBlueprintStringData {
     fn from(mut value: VersionedBlueprintStringData) -> Self {
@@ -25,7 +28,7 @@ impl From<VersionedBlueprintStringData> for RawBlueprintStringData {
 
 #[derive(Debug)]
 pub enum BlueprintStringCorrupt {
-    NotBase64,
+    NotBase64(base64::DecodeError),
     MissingVersion,
     UnknownVersion(u32),
     CannotDeserialize,
@@ -43,10 +46,10 @@ impl TryFrom<BlueprintString> for RawBlueprintStringData {
     type Error = BlueprintStringCorrupt;
 
     fn try_from(value: BlueprintString) -> Result<Self, Self::Error> {
-        BASE64_URL_SAFE
+        BASE64_STANDARD
             .decode(value.0)
             .map(|v| Self(v))
-            .map_err(|_e| BlueprintStringCorrupt::NotBase64)
+            .map_err(|e| BlueprintStringCorrupt::NotBase64(e))
     }
 }
 
@@ -77,7 +80,8 @@ impl From<super::Blueprint> for VersionedBlueprintStringData {
     fn from(value: super::Blueprint) -> Self {
         let version = super::Blueprint::get_version();
 
-        let data: Vec<u8> = todo!();
+        let data: Vec<u8> = bincode::serde::encode_to_vec(&value, bincode::config::standard())
+            .expect("This should not fail");
 
         Self { version, data }
     }

@@ -3,9 +3,13 @@ mod v0;
 
 use std::u32;
 
+use log::error;
 pub use v0::Blueprint;
 
-use crate::blueprint::string::{BlueprintString, BlueprintStringCorrupt, RawBlueprintStringData};
+use crate::{
+    action::ActionKind,
+    blueprint::string::{BlueprintString, BlueprintStringCorrupt, RawBlueprintStringData},
+};
 
 type CurrentBlueprint = Blueprint;
 
@@ -13,11 +17,11 @@ pub trait VersionedBlueprint: Into<CurrentBlueprint> + for<'a> TryFrom<&'a [u8]>
     fn get_version() -> u32;
 }
 
-impl TryFrom<BlueprintString> for CurrentBlueprint {
+impl TryFrom<&BlueprintString> for CurrentBlueprint {
     type Error = BlueprintStringCorrupt;
 
-    fn try_from(value: BlueprintString) -> Result<Self, Self::Error> {
-        let raw: RawBlueprintStringData = value.try_into()?;
+    fn try_from(value: &BlueprintString) -> Result<Self, Self::Error> {
+        let raw: RawBlueprintStringData = value.clone().try_into()?;
 
         let versioned = raw.get_versioned()?;
 
@@ -35,6 +39,14 @@ impl TryFrom<BlueprintString> for CurrentBlueprint {
                 old.into()
             },
 
+            x => {
+                error!("FIXME: Unknown blueprint version {x}. Using OLD as a stopgap!");
+
+                let old: old::Blueprint = old::Blueprint::try_from(value.0.as_bytes())?;
+
+                old.into()
+            },
+
             _ => return Err(BlueprintStringCorrupt::UnknownVersion(versioned.version)),
         };
 
@@ -43,7 +55,7 @@ impl TryFrom<BlueprintString> for CurrentBlueprint {
 }
 
 impl CurrentBlueprint {
-    pub fn get_actions(&self) -> impl Iterator<Item = !> {
-        vec![todo!()].into_iter()
+    pub fn get_actions(&self) -> impl Iterator<Item = &ActionKind> {
+        self.actions.iter()
     }
 }

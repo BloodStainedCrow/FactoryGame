@@ -1,6 +1,6 @@
 use crate::{EntityPrototypeKind, entity::GlobalTy};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AssemblerTy(u16);
 
 impl From<AssemblerTy> for GlobalTy {
@@ -8,7 +8,7 @@ impl From<AssemblerTy> for GlobalTy {
         Self(
             EntityPrototypeKind::Assembler
                 .global_index_for_kind_index(value.0 as usize)
-                .expect("Illegal PowerPoleTy")
+                .expect("Illegal AssemblerTy")
                 .try_into()
                 .expect("More than u16::MAX entities"),
         )
@@ -26,8 +26,17 @@ impl TryFrom<GlobalTy> for AssemblerTy {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Recipe(u16);
+
+impl TryFrom<String> for Recipe {
+    type Error = ();
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        // FIXME:
+        Ok(Self(0))
+    }
+}
 
 // This might need more info like the tiles its placed on
 #[must_use]

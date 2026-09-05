@@ -298,6 +298,7 @@ impl StoredEntity {
             },
             data::EntityPrototypeKind::SolarPanel => EntityDescriptorKind::SolarPanel {},
             data::EntityPrototypeKind::Accumulator => todo!(),
+            data::EntityPrototypeKind::Beacon => todo!(),
         };
 
         EntityDescriptor {

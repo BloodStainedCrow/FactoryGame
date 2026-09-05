@@ -1,4 +1,5 @@
 #![feature(never_type)]
+#![feature(int_roundings)]
 
 use std::{
     cmp::max,
@@ -6,7 +7,12 @@ use std::{
 };
 
 use crate::{
-    api::{ModData, entity::power_pole::PowerPoleInfo},
+    api::{
+        ModData,
+        entity::{
+            assembler::AssemblerInfo, belt::BeltInfo, chest::ChestInfo, power_pole::PowerPoleInfo,
+        },
+    },
     entity::{GlobalTy, PlacementRules, power_pole::PowerPoleData},
     spacial::Extent,
 };
@@ -25,20 +31,25 @@ pub mod spacial;
 struct ModIdentifier(String);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct EntityIdentifier(Arc<str>);
+pub struct EntityIdentifier(Arc<str>);
 
 #[derive(Debug, serde::Deserialize)]
 struct EntityName(String);
 
 impl EntityIdentifier {
     fn new(mod_: &ModIdentifier, name: &EntityName) -> Self {
-        Self(format!("{}::{}", mod_.0, name.0).into())
+        Self(dbg!(format!("{}::{}", mod_.0, name.0)).into())
+    }
+
+    // TODO
+    #[must_use]
+    pub fn new_raw(full_name: String) -> Self {
+        Self(full_name.into())
     }
 }
 
 #[derive(Debug)]
 struct EntityInfo {
-    // TODO: Add bounding box types
     size: Extent,
 
     can_be_rotated: bool,
@@ -62,19 +73,176 @@ struct DataStore {
 /// The parsed data of the currently loaded mod set
 static DATA_STORE: LazyLock<DataStore> = LazyLock::new(|| {
     DataStore::from_mods(&[ModData {
-        mod_name: ModIdentifier("test".to_string()),
+        mod_name: ModIdentifier("factory_game".to_string()),
         inserters: vec![],
-        power_poles: vec![PowerPoleInfo {
+        power_poles: vec![
+            PowerPoleInfo {
+                entity_info: api::entity::EntityInfo {
+                    size: Extent::single_tile(),
+                    can_be_rotated: false,
+                    can_be_flipped: false,
+                    name: EntityName("small_power_pole".to_string()),
+                    display_name: "Small Power Pole".to_string(),
+                    placement_rules: PlacementRules::no_restriction(),
+                },
+                range: 5,
+                wire_reach: 15,
+            },
+            PowerPoleInfo {
+                entity_info: api::entity::EntityInfo {
+                    size: Extent::single_tile(),
+                    can_be_rotated: false,
+                    can_be_flipped: false,
+                    name: EntityName("medium_power_pole".to_string()),
+                    display_name: "Medium Power Pole".to_string(),
+                    placement_rules: PlacementRules::no_restriction(),
+                },
+                range: 7,
+                wire_reach: 18,
+            },
+            PowerPoleInfo {
+                entity_info: api::entity::EntityInfo {
+                    size: Extent {
+                        width: 2,
+                        height: 2,
+                    },
+                    can_be_rotated: false,
+                    can_be_flipped: false,
+                    name: EntityName("large_power_pole".to_string()),
+                    display_name: "Large Power Pole".to_string(),
+                    placement_rules: PlacementRules::no_restriction(),
+                },
+                range: 4,
+                wire_reach: 64,
+            },
+            PowerPoleInfo {
+                entity_info: api::entity::EntityInfo {
+                    size: Extent {
+                        width: 2,
+                        height: 2,
+                    },
+                    can_be_rotated: false,
+                    can_be_flipped: false,
+                    name: EntityName("substation".to_string()),
+                    display_name: "Substation".to_string(),
+                    placement_rules: PlacementRules::no_restriction(),
+                },
+                range: 18,
+                wire_reach: 38,
+            },
+        ],
+        assemblers: vec![
+            AssemblerInfo {
+                entity_info: api::entity::EntityInfo {
+                    size: Extent {
+                        width: 3,
+                        height: 3,
+                    },
+                    can_be_rotated: true,
+                    can_be_flipped: true,
+                    name: EntityName("assembler1".to_string()),
+                    display_name: "Assembler 1".to_string(),
+                    placement_rules: PlacementRules::no_restriction(),
+                },
+            },
+            AssemblerInfo {
+                entity_info: api::entity::EntityInfo {
+                    size: Extent {
+                        width: 3,
+                        height: 3,
+                    },
+                    can_be_rotated: true,
+                    can_be_flipped: true,
+                    name: EntityName("assembler2".to_string()),
+                    display_name: "Assembler 2".to_string(),
+                    placement_rules: PlacementRules::no_restriction(),
+                },
+            },
+            AssemblerInfo {
+                entity_info: api::entity::EntityInfo {
+                    size: Extent {
+                        width: 3,
+                        height: 3,
+                    },
+                    can_be_rotated: true,
+                    can_be_flipped: true,
+                    name: EntityName("assembler3".to_string()),
+                    display_name: "Assembler 3".to_string(),
+                    placement_rules: PlacementRules::no_restriction(),
+                },
+            },
+            AssemblerInfo {
+                entity_info: api::entity::EntityInfo {
+                    size: Extent {
+                        width: 3,
+                        height: 3,
+                    },
+                    can_be_rotated: true,
+                    can_be_flipped: true,
+                    name: EntityName("chemical_plant".to_string()),
+                    display_name: "Chemical Plant".to_string(),
+                    placement_rules: PlacementRules::no_restriction(),
+                },
+            },
+            AssemblerInfo {
+                entity_info: api::entity::EntityInfo {
+                    size: Extent {
+                        width: 5,
+                        height: 5,
+                    },
+                    can_be_rotated: true,
+                    can_be_flipped: true,
+                    name: EntityName("refinery".to_string()),
+                    display_name: "Refinery".to_string(),
+                    placement_rules: PlacementRules::no_restriction(),
+                },
+            },
+            AssemblerInfo {
+                entity_info: api::entity::EntityInfo {
+                    size: Extent {
+                        width: 3,
+                        height: 3,
+                    },
+                    can_be_rotated: true,
+                    can_be_flipped: true,
+                    name: EntityName("electric_furnace".to_string()),
+                    display_name: "Electric Furnace".to_string(),
+                    placement_rules: PlacementRules::no_restriction(),
+                },
+            },
+            AssemblerInfo {
+                entity_info: api::entity::EntityInfo {
+                    size: Extent {
+                        width: 7,
+                        height: 7,
+                    },
+                    can_be_rotated: true,
+                    can_be_flipped: true,
+                    name: EntityName("rocket_silo".to_string()),
+                    display_name: "Rocket Silo".to_string(),
+                    placement_rules: PlacementRules::no_restriction(),
+                },
+            },
+        ],
+        chests: vec![ChestInfo {
             entity_info: api::entity::EntityInfo {
                 size: Extent::single_tile(),
                 can_be_rotated: false,
                 can_be_flipped: false,
-                name: EntityName("small_power_pole".to_string()),
-                display_name: "Small Power Pole".to_string(),
+                name: EntityName("wooden_chest".to_string()),
+                display_name: "Wooden Chest".to_string(),
                 placement_rules: PlacementRules::no_restriction(),
             },
-            range: 5,
-            wire_reach: 15,
+        }],
+        belts: vec![BeltInfo {
+            entity_info: api::entity::EntityInfo {
+                size: Extent::single_tile(),
+                can_be_rotated: true,
+                can_be_flipped: false,
+                name: EntityName("fast_transport_belt".to_string()),
+                display_name: "Fast Transport Belt".to_string(),
+                placement_rules: PlacementRules::no_restriction(),
+            },
         }],
     }])
 });
@@ -117,6 +285,7 @@ pub enum EntityPrototypeKind {
     Pipe, // Pipe, Underground pipes and fluid tanks are the same thing
     SolarPanel,
     Accumulator,
+    Beacon,
 }
 
 impl EntityPrototypeKind {

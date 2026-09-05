@@ -1,5 +1,8 @@
 use crate::{EntityName, entity::PlacementRules, spacial::Extent};
 
+pub mod assembler;
+pub mod belt;
+pub mod chest;
 pub mod inserter;
 pub mod power_pole;
 

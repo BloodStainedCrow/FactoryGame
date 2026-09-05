@@ -1,7 +1,9 @@
-use crate::blueprint::versions::VersionedBlueprint;
+use crate::{action::ActionKind, blueprint::versions::VersionedBlueprint};
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct Blueprint {}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Blueprint {
+    pub(super) actions: Vec<ActionKind>,
+}
 
 impl VersionedBlueprint for Blueprint {
     fn get_version() -> u32 {
@@ -10,9 +12,11 @@ impl VersionedBlueprint for Blueprint {
 }
 
 impl<'a> TryFrom<&'a [u8]> for Blueprint {
-    type Error = postcard::Error;
+    type Error = bincode::error::DecodeError;
 
     fn try_from(data: &'a [u8]) -> Result<Self, Self::Error> {
-        postcard::from_bytes(data)
+        let (slf, len) = bincode::serde::decode_from_slice(data, bincode::config::standard())?;
+
+        Ok(slf)
     }
 }

@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use crate::{
     DataStore, EntityIdentifier, EntityPrototypeKind, ModIdentifier,
-    api::entity::{inserter::InserterInfo, power_pole::PowerPoleInfo},
+    api::entity::{
+        assembler::AssemblerInfo, belt::BeltInfo, chest::ChestInfo, inserter::InserterInfo,
+        power_pole::PowerPoleInfo,
+    },
     entity::{GlobalTy, power_pole::PowerPoleData},
     spacial::{Extent, Offset},
 };
@@ -13,33 +16,62 @@ pub(crate) struct ModData {
     pub mod_name: ModIdentifier,
 
     pub inserters: Vec<InserterInfo>,
+    pub assemblers: Vec<AssemblerInfo>,
     pub power_poles: Vec<PowerPoleInfo>,
+    pub chests: Vec<ChestInfo>,
+    pub belts: Vec<BeltInfo>,
 }
 
 impl DataStore {
     pub fn from_mods(mods: &[ModData]) -> Self {
-        let entities: Vec<_> = mods
-            .iter()
-            .flat_map(|mod_| {
-                mod_.power_poles
-                    .iter()
-                    .map(|pole| (&pole.entity_info, EntityPrototypeKind::PowerPole))
-                    .chain(
-                        mod_.inserters
-                            .iter()
-                            .map(|inserter| (&inserter.entity_info, EntityPrototypeKind::Inserter)),
-                    )
-                    .map(|(entity_info, kind)| crate::EntityInfo {
-                        size: entity_info.size,
-                        can_be_rotated: entity_info.can_be_rotated,
-                        can_be_flipped: entity_info.can_be_flipped,
-                        kind,
-                        name: EntityIdentifier::new(&mod_.mod_name, &entity_info.name),
-                        display_name: entity_info.display_name.clone(),
-                        placement_rules: entity_info.placement_rules.clone(),
-                    })
-            })
-            .collect();
+        let entities: Vec<_> =
+            mods.iter()
+                .flat_map(|mod_| {
+                    let ModData {
+                        mod_name,
+                        inserters,
+                        assemblers,
+                        power_poles,
+                        chests,
+                        belts,
+                    } = mod_;
+
+                    power_poles
+                        .iter()
+                        .map(|pole| (&pole.entity_info, EntityPrototypeKind::PowerPole))
+                        .chain(
+                            inserters.iter().map(|inserter| {
+                                (&inserter.entity_info, EntityPrototypeKind::Inserter)
+                            }),
+                        )
+                        .chain(assemblers.iter().map(|assembler_info| {
+                            (&assembler_info.entity_info, EntityPrototypeKind::Assembler)
+                        }))
+                        .chain(chests.iter().map(|chest_info| {
+                            (&chest_info.entity_info, EntityPrototypeKind::Chest)
+                        }))
+                        .chain(belts.iter().map(|belt_info| {
+                            assert_eq!(
+                                belt_info.entity_info.size,
+                                Extent {
+                                    width: 1,
+                                    height: 1
+                                }
+                            );
+
+                            (&belt_info.entity_info, EntityPrototypeKind::Belt)
+                        }))
+                        .map(move |(entity_info, kind)| crate::EntityInfo {
+                            size: entity_info.size,
+                            can_be_rotated: entity_info.can_be_rotated,
+                            can_be_flipped: entity_info.can_be_flipped,
+                            kind,
+                            name: EntityIdentifier::new(mod_name, &entity_info.name),
+                            display_name: entity_info.display_name.clone(),
+                            placement_rules: entity_info.placement_rules.clone(),
+                        })
+                })
+                .collect();
 
         assert!(u16::try_from(entities.len()).is_ok());
 

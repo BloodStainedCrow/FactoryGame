@@ -10,7 +10,7 @@ pub struct PowerPoleData {
     pub wire_connection_area: Extent,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PowerPoleTy(u16);
 
 impl From<PowerPoleTy> for GlobalTy {

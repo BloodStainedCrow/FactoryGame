@@ -1,9 +1,13 @@
 use crate::{
-    DATA_STORE,
+    DATA_STORE, EntityIdentifier,
     spacial::{BoundingBox, Extent, Flipped, Position, Rotation},
 };
 
 pub mod assember;
+pub mod beacon;
+pub mod belt;
+pub mod chest;
+pub mod inserter;
 pub mod power_pole;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,4 +96,34 @@ pub fn extent(entity_id: GlobalTy, rotation: Rotation, flipped: Flipped) -> Exte
     DATA_STORE.entities[usize::from(entity_id)]
         .size
         .rotate(rotation)
+}
+
+impl From<GlobalTy> for EntityIdentifier {
+    fn from(value: GlobalTy) -> Self {
+        DATA_STORE.entities[usize::from(value)].name.clone()
+    }
+}
+
+impl TryFrom<EntityIdentifier> for GlobalTy {
+    type Error = String;
+
+    fn try_from(value: EntityIdentifier) -> Result<Self, Self::Error> {
+        DATA_STORE
+            .entities
+            .iter()
+            .enumerate()
+            .find_map(|(idx, e)| {
+                (e.name == value).then_some(
+                    u16::try_from(idx)
+                        .expect("More that u16::MAX entities")
+                        .into(),
+                )
+            })
+            .ok_or_else(|| {
+                format!(
+                    "Cannot find entity: {value:?} in {:?}",
+                    &DATA_STORE.entities
+                )
+            })
+    }
 }
