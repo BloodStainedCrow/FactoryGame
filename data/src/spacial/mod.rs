@@ -40,6 +40,12 @@ pub struct Position {
     pub y: i32,
 }
 
+impl From<[i32; 2]> for Position {
+    fn from([x, y]: [i32; 2]) -> Self {
+        Self { x, y }
+    }
+}
+
 impl Sub for Position {
     type Output = Offset;
 
@@ -87,7 +93,7 @@ impl Position {
 }
 
 // TODO(BSC): Do I want to be able to support zero sized bounding boxes?
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct BoundingBox {
     // Inclusive
     top_left: Position,
@@ -238,9 +244,12 @@ impl Extent {
 impl BoundingBox {
     #[must_use]
     pub const fn new(top_left: Position, extent: Extent) -> Self {
+        assert!(extent.width > 0);
+        assert!(extent.height > 0);
+
         let bottom_right = Position {
-            x: top_left.x.strict_add_unsigned(extent.width),
-            y: top_left.y.strict_add_unsigned(extent.height),
+            x: top_left.x.strict_add_unsigned(extent.width).strict_sub(1),
+            y: top_left.y.strict_add_unsigned(extent.height).strict_sub(1),
         };
 
         Self {
@@ -294,16 +303,24 @@ impl BoundingBox {
 
     #[must_use]
     pub fn width(self) -> u32 {
-        (self.bottom_right().x - self.top_left().x)
+        (self.bottom_right().x - self.top_left().x + 1)
             .try_into()
             .expect("Bounding box borked")
     }
 
     #[must_use]
     pub fn height(self) -> u32 {
-        (self.bottom_right().y - self.top_left().y)
+        (self.bottom_right().y - self.top_left().y + 1)
             .try_into()
             .expect("Bounding box borked")
+    }
+
+    #[must_use]
+    pub fn get_extent(self) -> Extent {
+        Extent {
+            width: self.width(),
+            height: self.height(),
+        }
     }
 
     #[must_use]
@@ -381,7 +398,13 @@ pub mod strategies {
         prop_compose, prop_oneof,
     };
 
-    use crate::spacial::{BoundingBox, Flipped, Position, Rotation};
+    use crate::spacial::{BoundingBox, Extent, Flipped, Position, Rotation};
+
+    prop_compose! {
+        pub fn random_extent()(sizes in [1u32..100, 1u32..100]) -> Extent {
+            Extent { width: sizes[0], height: sizes[1] }
+        }
+    }
 
     pub fn random_rotation() -> impl Strategy<Value = Rotation> {
         prop_oneof![
@@ -428,4 +451,27 @@ pub mod strategies {
 }
 
 #[cfg(test)]
-pub mod test {}
+pub mod test {
+    use proptest::{prop_assert, prop_assert_eq, proptest};
+
+    use crate::spacial::strategies::{random_extent, random_position, random_position_in};
+
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn extent_preserved(base_pos in random_position(), extent in random_extent()) {
+            let bb = BoundingBox::new(base_pos, extent);
+
+            prop_assert_eq!(bb.get_extent(), extent);
+        }
+
+        #[test]
+        fn no_overlap_single_size(a in random_position_in(BoundingBox { top_left: [0, 0].into(), bottom_right: [5, 5].into() }), b in random_position_in(BoundingBox { top_left: [0, 0].into(), bottom_right: [5, 5].into() })) {
+            let a_bb = BoundingBox::new(a, Extent::single_tile());
+            let b_bb = BoundingBox::new(b, Extent::single_tile());
+
+            prop_assert!((a == b && a_bb.overlaps(b_bb)) || (a != b && !a_bb.overlaps(b_bb)));
+        }
+    }
+}
