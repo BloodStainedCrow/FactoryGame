@@ -13,7 +13,6 @@ unwrap_used = { level = "deny", priority = -1 }
 wildcard_enum_match_arm = { level = "deny", priority = -1 }
 match_same_arms = { level = "deny", priority = -1 }
 missing_panics_doc = { level = "allow", priority = 1 }
-wildcard-enum-match-arm = { level = "allow", priority = 1 }
 legacy_numeric_constants = "deny"
 
 

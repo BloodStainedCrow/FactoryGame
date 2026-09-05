@@ -1,4 +1,3 @@
-#![feature(never_type)]
 #![feature(int_roundings)]
 
 use std::{

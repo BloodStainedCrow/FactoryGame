@@ -16,7 +16,7 @@
     pkgs-codium = nixpkgs-codium.legacyPackages."x86_64-linux";
     fenixLib = fenix.packages."x86_64-linux";
 
-    toolchain_sha = "sha256-dXoddWaPL6UtPscTpxMUMBDL83jFtqeDtmH/+bXBs3E=";
+    toolchain_sha = "sha256-+mYLB0MzO/o81rv/xrryAyXJ8SC0Rouw4ud66qQ95Yc=";
 
     rustToolchain = fenixLib.fromToolchainFile {
       file = ./rust-toolchain.toml;
@@ -46,6 +46,10 @@
 
       # Needed for tracy
       stdenv.cc.cc.lib
+      gnuplot
+
+      clang
+      wild
     ];
 
     built_overrides = {
@@ -99,7 +103,7 @@
 
         (vscode-with-extensions.override {
           vscode = pkgs-codium.vscodium;
-          vscodeExtensions = with pkgs-codium.vscode-extensions; [
+          vscodeExtensions = with pkgs.vscode-extensions; [
             rust-lang.rust-analyzer
             vadimcn.vscode-lldb
             gruntfuggly.todo-tree

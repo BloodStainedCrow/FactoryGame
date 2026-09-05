@@ -1,5 +1,3 @@
-#![feature(never_type)]
-
 use stable_vec::StableVec;
 
 use crate::{assember::MiddleAssemblerInfo, pipe::MiddlePipeInfo, power_pole::MiddlePowerPoleInfo};

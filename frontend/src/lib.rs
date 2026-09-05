@@ -1,5 +1,3 @@
-#![feature(never_type)]
-
 use data::{
     entity::{GlobalTy, power_pole::PowerPoleTy},
     spacial::{BoundingBox, Extent, Flipped, Position, Rotation},
