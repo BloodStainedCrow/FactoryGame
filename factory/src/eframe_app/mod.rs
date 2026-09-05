@@ -95,7 +95,7 @@ impl CallbackTrait for Callback {
             RenderInfo {
                 surface: SurfaceId::default(),
                 map_view: false,
-                zoom_level: 5.0,
+                zoom_level: 19.5,
                 center: [0.0, 0.0],
             },
         );

@@ -41,5 +41,6 @@ impl TryFrom<String> for Recipe {
 // This might need more info like the tiles its placed on
 #[must_use]
 pub fn default_recipe(ty: AssemblerTy) -> Recipe {
-    todo!()
+    // FIXME:
+    Recipe(0)
 }

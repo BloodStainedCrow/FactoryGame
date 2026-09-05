@@ -1,7 +1,7 @@
 use std::iter;
 
 use data::{
-    entity::{GlobalTy, bounding_box, power_pole::PowerPoleTy},
+    entity::{GlobalTy, assember::AssemblerTy, bounding_box, power_pole::PowerPoleTy},
     spacial::{BoundingBox, Flipped, Position, Rotation},
 };
 use middle::lists::{AssemblerIndex, BeltIndex, InserterIndex, PipeIndex, PowerPoleIndex};
@@ -56,6 +56,7 @@ impl EntityInfo {
     #[must_use]
     pub fn global_ty(&self) -> GlobalTy {
         match self.kind {
+            EntityInfoKind::Assembler { ty, .. } => ty.into(),
             EntityInfoKind::PowerPole { ty, .. } => ty.into(),
         }
     }
@@ -63,6 +64,10 @@ impl EntityInfo {
 
 #[derive(Debug)]
 pub enum EntityInfoKind {
+    Assembler {
+        ty: AssemblerTy,
+        // ...
+    },
     PowerPole {
         ty: PowerPoleTy,
         connected_pole_positions: Vec<Position>,

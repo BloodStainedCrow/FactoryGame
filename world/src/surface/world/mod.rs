@@ -5,6 +5,7 @@ use data::{
     spacial::{BoundingBox, Position},
 };
 use itertools::Itertools;
+use thiserror::Error;
 
 use crate::{
     chunk::{CHUNK_SIZE, Chunk},
@@ -166,9 +167,11 @@ impl SurfaceWorld {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Error)]
 pub enum CanFitError {
+    #[error("Cannot place entity in ungenerated chunks")]
     CollisionWithUngeneratedChunks,
+    #[error("Collides with entity")]
     CollisionWithEntity { position: Position },
 }
 

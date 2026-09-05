@@ -1,7 +1,4 @@
-use data::{
-    entity::{GlobalTy, power_pole::PowerPoleTy},
-    spacial::{BoundingBox, Extent, Flipped, Position, Rotation},
-};
+use data::spacial::{BoundingBox, Extent, Position};
 use world::surface::{Surface, SurfaceCreationOptions};
 
 use crate::blueprint::{Blueprint, string::BlueprintString};
@@ -49,31 +46,17 @@ impl Default for GameState {
         ))
         .expect("Failed to import Blueprint");
 
-        let str: BlueprintString = bp.clone().into();
+        // let str: BlueprintString = bp.clone().into();
 
-        dbg!(&str);
+        // dbg!(&str);
 
-        let round_trip: Blueprint = (&str).try_into().unwrap();
+        // let round_trip: Blueprint = (&str).try_into().unwrap();
 
-        assert_eq!(bp, round_trip);
+        // assert_eq!(bp, round_trip);
 
-        ret.surfaces[0].add_power_pole(
-            PowerPoleTy::try_from(GlobalTy::from(0)).unwrap(),
-            Position { x: 0, y: 0 },
-            Rotation::North,
-            Flipped::unflipped(),
-        );
-
-        for i in 0..1_000_000 {
-            ret.surfaces[0].add_power_pole(
-                PowerPoleTy::try_from(GlobalTy::from(0)).unwrap(),
-                Position {
-                    x: rand::random_range(-5_000..5_000),
-                    y: rand::random_range(-5_000..5_000),
-                },
-                Rotation::North,
-                Flipped::unflipped(),
-            );
+        for action in bp.get_actions() {
+            ret.apply_action(action)
+                .expect(&format!("Failed to apply action {:?}", action));
         }
 
         ret

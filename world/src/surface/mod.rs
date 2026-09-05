@@ -14,6 +14,7 @@ use middle::{
     power_pole::{AUTOMATIC_POLE_CONNECTION_LIMIT, PowerPoleAdditionInfo},
 };
 use smallvec::SmallVec;
+use thiserror::Error;
 
 use crate::{
     entity::{EntityDescriptor, EntityDescriptorKind, EntityInfo, EntityInfoKind},
@@ -32,11 +33,17 @@ pub struct Surface {
     backend: (),
 }
 
+#[derive(Debug, Error)]
 pub enum PlaceEntityError {
+    #[error("Entity may not be rotated")]
     RotationForbidden,
+    #[error("Entity may not be flipped")]
     FlippingForbidden,
+    #[error("Entity does not fit")]
     CanFit(CanFitError),
+    #[error("Entity may on be placed on")]
     FloorRule(!),
+    #[error("Cannot mix fluids")]
     PipeFluidMixing(!),
 }
 
@@ -62,7 +69,9 @@ impl Surface {
                 rotation: desc.rotation,
                 flipped: desc.flipped,
                 kind: match desc.kind {
-                    EntityDescriptorKind::Assembler { id } => todo!(),
+                    EntityDescriptorKind::Assembler { id } => EntityInfoKind::Assembler {
+                        ty: desc.ty.try_into().expect("Assembler with non AssemblerTy"),
+                    },
                     EntityDescriptorKind::Inserter { id } => todo!(),
                     EntityDescriptorKind::Belt { id } => todo!(),
                     EntityDescriptorKind::Pipe { id } => todo!(),
@@ -96,6 +105,7 @@ impl Surface {
         let bounding_box = bounding_box(ty, top_left, rotation, flipped);
 
         if let Err(err) = self.world.can_fit(bounding_box) {
+            dbg!(bounding_box);
             // Cannot fit
             return Err(PlaceEntityError::CanFit(err));
         }
@@ -119,6 +129,7 @@ impl Surface {
         rotation: Rotation,
         flipped: Flipped,
     ) -> Result<(), PlaceEntityError> {
+        log::trace!("Add assembler with ty {ty:?} at {top_left:?}");
         let _bounding_box = self.follows_rules(ty.into(), top_left, rotation, flipped)?;
 
         let default_recipe = default_recipe(ty);
@@ -166,6 +177,7 @@ impl Surface {
         rotation: Rotation,
         flipped: Flipped,
     ) -> Result<(), PlaceEntityError> {
+        log::trace!("Add power_pole with ty {ty:?} at {top_left:?}");
         let bounding_box = self.follows_rules(ty.into(), top_left, rotation, flipped)?;
 
         let mut connected_poles: SmallVec<_> = SmallVec::default();
