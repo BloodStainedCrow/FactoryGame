@@ -1,3 +1,4 @@
+use backend::Backend;
 use data::{entity::assember::Recipe, item::ItemStack};
 
 use crate::{Middle, lists::AssemblerIndex};
@@ -29,7 +30,7 @@ impl Middle {
     pub fn add_assembler(
         &mut self,
         info: &AssemblerAdditionInfo,
-        backend: &mut (),
+        backend: &mut Backend,
     ) -> AssemblerIndex {
         let index = self.assembler_list.push(MiddleAssemblerInfo {
             current_recipe: info.recipe,
@@ -42,7 +43,7 @@ impl Middle {
         &mut self,
         id: AssemblerIndex,
         new_recipe: Recipe,
-        backend: &mut !,
+        backend: &mut Backend,
     ) {
         // TODO: This will impact the graph
         self.assembler_list[id.0 as usize].current_recipe = new_recipe;
@@ -52,7 +53,7 @@ impl Middle {
     pub fn remove_assembler(
         &mut self,
         id: AssemblerIndex,
-        backend: &mut !,
+        backend: &mut Backend,
     ) -> AssemblerRemovalInfo {
         todo!()
     }

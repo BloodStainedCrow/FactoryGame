@@ -95,8 +95,8 @@ impl DataStore {
                         y_offs: -i32::from(pole.wire_reach),
                     },
                     wire_connection_area: Extent {
-                        width: u32::from(pole.wire_reach),
-                        height: u32::from(pole.wire_reach),
+                        width: u32::from(pole.wire_reach * 2),
+                        height: u32::from(pole.wire_reach * 2),
                     },
                 })
             })

@@ -26,13 +26,10 @@ impl Default for GameState {
         let mut ret = Self {
             surfaces: vec![Surface::new(&SurfaceCreationOptions {
                 generated_area: BoundingBox::new(
-                    Position {
-                        x: -100_000,
-                        y: -100_000,
-                    },
+                    Position { x: 0, y: 0 },
                     Extent {
-                        width: 200_000,
-                        height: 200_000,
+                        width: 5_000,
+                        height: 10_000,
                     },
                 ),
             })],

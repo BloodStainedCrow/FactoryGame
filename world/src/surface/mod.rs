@@ -1,3 +1,4 @@
+use backend::Backend;
 use data::{
     entity::{
         GlobalTy, allows_flipping, allows_rotation,
@@ -30,7 +31,7 @@ mod world;
 pub struct Surface {
     world: SurfaceWorld,
     middle: Middle,
-    backend: (),
+    backend: Backend,
 }
 
 #[derive(Debug, Error)]
@@ -57,7 +58,7 @@ impl Surface {
         Self {
             world: SurfaceWorld::new_with_empty_area(options.generated_area),
             middle: Middle::new(),
-            backend: (),
+            backend: Backend::new(),
         }
     }
 
@@ -105,7 +106,6 @@ impl Surface {
         let bounding_box = bounding_box(ty, top_left, rotation, flipped);
 
         if let Err(err) = self.world.can_fit(bounding_box) {
-            dbg!(bounding_box);
             // Cannot fit
             return Err(PlaceEntityError::CanFit(err));
         }

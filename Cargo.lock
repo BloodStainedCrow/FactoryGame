@@ -558,6 +558,7 @@ dependencies = [
  "data",
  "itertools 0.14.0",
  "proptest",
+ "stable-vec",
  "static_assertions",
 ]
 
@@ -2353,9 +2354,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.33"
+version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
+checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "loop9"
@@ -2404,8 +2405,10 @@ dependencies = [
 name = "middle"
 version = "0.1.0"
 dependencies = [
+ "backend",
  "data",
  "itertools 0.14.0",
+ "log",
  "proptest",
  "smallvec",
  "stable-vec",
@@ -4002,9 +4005,9 @@ dependencies = [
 
 [[package]]
 name = "stable-vec"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6dac7bc0f7d0d44329b200020effbc25a534d89fa142af95e3ddf76113412a5e"
+checksum = "047720fbc1c4cc7daa75c925adba9ce3fa8e1f7b039337c281b142d4ecc6d86b"
 
 [[package]]
 name = "stable_deref_trait"
@@ -5384,6 +5387,7 @@ dependencies = [
 name = "world"
 version = "0.1.0"
 dependencies = [
+ "backend",
  "bitvec",
  "data",
  "enum-map",

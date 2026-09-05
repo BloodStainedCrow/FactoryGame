@@ -8,6 +8,7 @@ bitvec = { version = "1.0.1", features = ["serde"], default-features = false }
 const-assert = "1.0.1"
 data = { path = "../data" }
 itertools = "0.14.0"
+stable-vec = "0.4.3"
 static_assertions = "1.1.0"
 
 [dev-dependencies]

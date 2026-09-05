@@ -10,6 +10,7 @@ enum-map = { version = "2.7.3", features = ["serde"] }
 itertools = "0.14.0"
 log = "0.4.32"
 middle = { path = "../middle" } 
+backend = { path = "../backend" } 
 rand = { version = "0.10.1", features = ["thread_rng"] }
 rayon = "1.12.0"
 serde = { version = "1.0.228", features = ["derive"] }
