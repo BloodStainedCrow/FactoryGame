@@ -7,6 +7,7 @@ use stable_vec::StableVec;
 
 pub mod addition;
 pub mod assembler;
+pub mod inserter;
 pub mod merge;
 mod update;
 

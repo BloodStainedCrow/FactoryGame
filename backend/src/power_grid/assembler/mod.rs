@@ -58,7 +58,9 @@ impl Backend {
     }
 
     /// NOTE: This assembler needs to already not have any inserter connections
-    pub fn remove_assembler(&mut self, assembler: FullAssemblerIdentifier) {}
+    pub fn remove_assembler(&mut self, assembler: FullAssemblerIdentifier) {
+        todo!()
+    }
 
     fn remove_assembler_internal(
         &mut self,
