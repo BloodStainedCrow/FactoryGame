@@ -9,6 +9,7 @@ pub mod addition;
 pub mod assembler;
 pub mod inserter;
 pub mod merge;
+pub mod power_mult;
 mod update;
 
 pub const NO_POWER_BACKEND_ID: PowerGridBackendID = PowerGridBackendID(0);

@@ -14,6 +14,8 @@ pub(crate) struct MiddleAssemblerInfo {
     // TODO: I might want to make this into an enum, that encodes, that some assemblers might be shared by multiple power grids
     // Likely this would mean either Solo(ID) or Shared (i.e. Option)
     pub(crate) power_grid_id: PowerGridMiddleID,
+
+    connected_inserters: Vec<!>,
     // modules: !,
 }
 
@@ -75,6 +77,7 @@ impl Middle {
             current_recipe: info.recipe,
             power_grid_id: info.power_grid,
             backend_id,
+            connected_inserters: Default::default(),
         });
 
         assert_eq!(next_index, index);

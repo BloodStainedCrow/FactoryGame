@@ -56,7 +56,7 @@ impl TryFrom<BlueprintString> for RawBlueprintStringData {
 impl RawBlueprintStringData {
     pub(super) fn get_versioned(
         &self,
-    ) -> Result<VersionedBlueprintStringDataBorrowed, BlueprintStringCorrupt> {
+    ) -> Result<VersionedBlueprintStringDataBorrowed<'_>, BlueprintStringCorrupt> {
         let (version_slice, data_slice) = self.0.split_at(4);
 
         let Ok(version_arr) = version_slice.try_into() else {

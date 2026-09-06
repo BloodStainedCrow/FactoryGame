@@ -1,7 +1,10 @@
 use data::spacial::{BoundingBox, Extent, Position};
 use world::surface::{Surface, SurfaceCreationOptions};
 
-use crate::blueprint::{Blueprint, string::BlueprintString};
+use crate::{
+    action::{BuildingInfo, BuildingKind},
+    blueprint::{Blueprint, string::BlueprintString},
+};
 
 mod action;
 pub mod blueprint;
@@ -50,6 +53,21 @@ impl Default for GameState {
         // let round_trip: Blueprint = (&str).try_into().unwrap();
 
         // assert_eq!(bp, round_trip);
+
+        dbg!(
+            bp.get_actions()
+                .filter(|a| matches!(
+                    a,
+                    action::ActionKind::PlaceBuilding {
+                        building_info: BuildingInfo {
+                            kind: BuildingKind::Assembler { .. },
+                            ..
+                        },
+                        ..
+                    }
+                ))
+                .count()
+        );
 
         for action in bp.get_actions() {
             ret.apply_action(action)

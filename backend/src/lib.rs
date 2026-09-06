@@ -3,6 +3,7 @@ use stable_vec::StableVec;
 use crate::power_grid::PowerGrid;
 
 pub mod chests;
+mod inserter;
 pub mod liquid;
 pub mod power_grid;
 pub mod slot_arenas;

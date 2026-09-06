@@ -3,7 +3,7 @@ use middle_indices::InserterMiddleID;
 use crate::{AdditionResult, Backend, power_grid::PowerGridBackendID};
 
 #[derive(Debug, Clone, Copy)]
-pub struct InserterBackendID(pub(super) usize);
+pub struct InserterBackendID(pub(crate) u32);
 
 #[derive(Debug)]
 pub struct InserterAdditionInfo {

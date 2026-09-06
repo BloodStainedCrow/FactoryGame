@@ -3,7 +3,7 @@ use std::cmp::min;
 use crate::slot_arenas::fluid_arena::{FluidIndex, FluidSlotType, NO_TOKEN, SingleFluidSlice};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FluidSystemID(pub u32);
+pub struct FluidSystemID(pub(crate) u32);
 
 pub type FluidNetworkStorageType = u32;
 
