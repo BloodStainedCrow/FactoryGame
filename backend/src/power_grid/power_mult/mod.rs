@@ -1,5 +1,5 @@
 #[derive(Debug, Clone, Copy)]
-pub struct PowerMultTimer(u8);
+pub struct PowerMultTimer(pub(crate) u64);
 #[derive(Debug, Clone, Copy)]
 pub struct PowerMult(u8);
 
@@ -12,11 +12,12 @@ pub enum AdvanceResult {
 
 impl PowerMultTimer {
     pub fn advance(&mut self, mult: PowerMult) -> AdvanceResult {
-        let new = self.0 + mult.0;
+        let old = self.0;
+        let new = old + u64::from(mult.0);
 
-        self.0 = new % FULL_POWER.0;
+        self.0 = new;
 
-        if new >= FULL_POWER.0 {
+        if new.div_floor(u64::from(FULL_POWER.0)) > old.div_floor(u64::from(FULL_POWER.0)) {
             AdvanceResult::Tick
         } else {
             AdvanceResult::NoTick

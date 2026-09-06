@@ -1,3 +1,5 @@
+#![feature(int_roundings)]
+
 use stable_vec::StableVec;
 
 use crate::power_grid::PowerGrid;
