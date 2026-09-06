@@ -39,6 +39,8 @@ impl Middle {
             mut connections,
         } = info;
 
+        assert!(connections.iter().all_unique());
+
         let index = self.power_pole_list.next_push_index();
 
         #[expect(clippy::semicolon_if_nothing_returned)]
@@ -307,7 +309,7 @@ mod test {
             let mut ids = vec![];
 
             for (pos, conns) in pole_positions.into_iter().zip(pole_connections) {
-                let connections: SmallVec<[PowerPoleIndex; 4]> = conns.into_iter().filter_map(|index| ids.get(index).copied()).collect();
+                let connections: SmallVec<[PowerPoleIndex; 4]> = conns.into_iter().filter_map(|index| ids.get(index).copied()).unique().collect();
 
                 let id = middle.add_power_pole(PowerPoleAdditionInfo { position: pos, connections: connections.clone() }, &mut backend);
                 ids.push(id);

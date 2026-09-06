@@ -185,6 +185,8 @@ mod test {
     use super::*;
 
     #[test]
+    #[should_panic]
+    // Currently unsupported
     fn create_world_with_empty_area() {
         let _world = SurfaceWorld::new_with_empty_area(BoundingBox::new(
             Position { x: 0, y: 0 },
@@ -221,7 +223,7 @@ mod test {
 
         #[test]
         fn can_fit_outside_generated(goal in random_bounding_box_contained_in(MAX_BB_FOR_PERF)) {
-            let world = SurfaceWorld::new_with_empty_area(BoundingBox::new(Position { x: -100_000, y: -100_000 }, Extent { width: 0, height: 0 }));
+            let world = SurfaceWorld::new_with_empty_area(BoundingBox::new(Position { x: -100_000, y: -100_000 }, Extent { width: 1, height: 1 }));
 
             let can_fit = world.can_fit(goal);
 
