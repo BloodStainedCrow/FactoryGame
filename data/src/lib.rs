@@ -37,7 +37,7 @@ struct EntityName(String);
 
 impl EntityIdentifier {
     fn new(mod_: &ModIdentifier, name: &EntityName) -> Self {
-        Self(dbg!(format!("{}::{}", mod_.0, name.0)).into())
+        Self(format!("{}::{}", mod_.0, name.0).into())
     }
 
     // TODO
