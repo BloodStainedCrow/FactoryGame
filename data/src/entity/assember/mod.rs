@@ -26,7 +26,7 @@ impl TryFrom<GlobalTy> for AssemblerTy {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct Recipe(u16);
 
 impl TryFrom<String> for Recipe {

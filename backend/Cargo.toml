@@ -10,6 +10,7 @@ data = { path = "../data" }
 itertools = "0.14.0"
 stable-vec = "0.4.3"
 static_assertions = "1.1.0"
+middle_indices = { path = "../middle_indices" }
 
 [dev-dependencies]
 proptest = "1.11.0"

@@ -1,5 +1,8 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use frontend::blueprint::{Blueprint, string::BlueprintString};
+use frontend::{
+    GameState,
+    blueprint::{Blueprint, string::BlueprintString},
+};
 use std::{hint::black_box, sync::LazyLock};
 
 const MEGABASE_STR: LazyLock<BlueprintString> = LazyLock::new(|| {
@@ -15,6 +18,12 @@ fn criterion_benchmark(c: &mut Criterion) {
 
             black_box(bp);
         })
+    });
+
+    c.bench_function("create gamestate", |b| {
+        b.iter(|| {
+            black_box(GameState::default());
+        });
     });
 }
 

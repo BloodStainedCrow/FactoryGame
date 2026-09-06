@@ -10,6 +10,8 @@ smallvec = { version = "1.15.2", features = ["serde", "union"] }
 stable-vec = "0.4.2"
 backend = { path = "../backend" }
 log = "0.4.34"
+middle_indices = { path = "../middle_indices" }
+entity_info = { path = "../entity_info" }
 
 [dev-dependencies]
 proptest = "1.11.0"

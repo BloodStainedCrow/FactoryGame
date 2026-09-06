@@ -1,7 +1,7 @@
 use std::{cmp::min, iter};
 
 use data::spacial::{Direction, Position};
-use middle::lists::PipeIndex;
+use middle_indices::PipeMiddleID;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PipeConnectionInfo {
@@ -76,15 +76,15 @@ impl PipeConnectionInfo {
 }
 
 pub struct NewPipeChange {
-    new_connection: Option<[(PipeConnectionInfo, PipeIndex); 2]>,
-    break_connection: Option<[(PipeConnectionInfo, PipeIndex); 2]>,
+    new_connection: Option<[(PipeConnectionInfo, PipeMiddleID); 2]>,
+    break_connection: Option<[(PipeConnectionInfo, PipeMiddleID); 2]>,
 }
 
 // TODO: Lots of tests
 pub fn get_changes_after_adding<I: Iterator<Item = PipeConnectionInfo> + Clone>(
     info: PipeConnectionInfo,
-    new_index: PipeIndex,
-    get_positions: impl Fn(Position) -> (PipeIndex, I),
+    new_index: PipeMiddleID,
+    get_positions: impl Fn(Position) -> (PipeMiddleID, I),
 ) -> NewPipeChange {
     let mut ret = NewPipeChange {
         new_connection: None,

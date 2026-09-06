@@ -1,28 +1,28 @@
 use backend::{
     Backend,
-    power_grid::{PowerGridBackendID, addition::PowerGridAdditionInfo},
+    power_grid::{addition::PowerGridAdditionInfo, assembler::FullAssemblerIdentifier},
 };
 use data::spacial::Position;
+use entity_info::{EntityInfo, EntityInfoKind};
 use itertools::Itertools;
+use middle_indices::{PowerGridMiddleID, PowerPoleMiddleID};
 use smallvec::SmallVec;
 
-use crate::{Middle, lists::PowerPoleIndex};
+use crate::Middle;
 
 pub const AUTOMATIC_POLE_CONNECTION_LIMIT: usize = 4;
 
 #[derive(Debug, Clone)]
 pub(crate) struct MiddlePowerPoleInfo {
     position: Position,
-    connections: SmallVec<[PowerPoleIndex; AUTOMATIC_POLE_CONNECTION_LIMIT]>,
-    grid_id: PowerGridBackendID,
-    // TODO: Do I want this in here?
-    // connected_entities: Vec<!>
+    connections: SmallVec<[PowerPoleMiddleID; AUTOMATIC_POLE_CONNECTION_LIMIT]>,
+    grid_id: PowerGridMiddleID,
 }
 
-pub struct PowerPoleAdditionInfo {
+pub struct PowerPoleAdditionInfo<I: IntoIterator<Item = EntityInfo>> {
     pub position: Position,
-    pub connections: SmallVec<[PowerPoleIndex; AUTOMATIC_POLE_CONNECTION_LIMIT]>,
-    // connected_entities: Vec<!>
+    pub connections: SmallVec<[PowerPoleMiddleID; AUTOMATIC_POLE_CONNECTION_LIMIT]>,
+    pub connected_entities: I,
 }
 
 impl Middle {
@@ -31,20 +31,20 @@ impl Middle {
     #[must_use]
     pub fn add_power_pole(
         &mut self,
-        info: PowerPoleAdditionInfo,
+        info: PowerPoleAdditionInfo<impl IntoIterator<Item = EntityInfo>>,
         backend: &mut Backend,
-    ) -> PowerPoleIndex {
+    ) -> PowerPoleMiddleID {
         let PowerPoleAdditionInfo {
             position,
             mut connections,
+            connected_entities,
         } = info;
 
         assert!(connections.iter().all_unique());
 
         let index = self.power_pole_list.next_push_index();
 
-        #[expect(clippy::semicolon_if_nothing_returned)]
-        let backend_grid_id: PowerGridBackendID = match connections
+        let middle_grid_id: PowerGridMiddleID = match connections
             .iter()
             .map(|index| self.power_pole_list[index.0 as usize].grid_id)
             .all_equal_value()
@@ -54,7 +54,7 @@ impl Middle {
                 for &connected_pole in &connections {
                     self.power_pole_list[connected_pole.0 as usize]
                         .connections
-                        .push(PowerPoleIndex(
+                        .push(PowerPoleMiddleID(
                             index.try_into().expect("More than u32::MAX power poles"),
                         ));
                 }
@@ -63,14 +63,27 @@ impl Middle {
             },
             Err(None) => {
                 log::trace!("Add new grid");
-                let new_grid = match backend.add_power_grid(PowerGridAdditionInfo {}) {
+                let next_middle = self.get_next_power_grid_id();
+                let new_grid = match backend.add_power_grid(PowerGridAdditionInfo {
+                    middle_id: next_middle,
+                }) {
                     backend::AdditionResult::Added {
                         new_id,
                         relocations,
                     } => {
-                        // FIXME: Apply relocations
                         log::trace!("Added new grid with id {:?}", new_id);
-                        new_id
+
+                        let actual_middle = self.add_power_grid(new_id);
+
+                        assert_eq!(actual_middle, next_middle);
+
+                        // Apply relocations
+                        for relocation in relocations {
+                            self.power_grid_list[relocation.middle.0 as usize]
+                                .set_backend_id(relocation.new_backend);
+                        }
+
+                        actual_middle
                     },
                     backend::AdditionResult::Failed { info } => {
                         todo!("Do I want to handle this failure?")
@@ -82,7 +95,7 @@ impl Middle {
             Err(Some(_)) => {
                 // Merge everyting into the largest grid, to minimize swaps
                 connections.sort_by_key(|grid| {
-                    backend.get_power_grid_size(self.power_pole_list[grid.0 as usize].grid_id)
+                    self.get_power_grid_size(self.power_pole_list[grid.0 as usize].grid_id, backend)
                 });
 
                 let kept_pole = connections
@@ -101,10 +114,26 @@ impl Middle {
                         continue;
                     }
 
-                    let result = backend.merge_power_grids(kept, removed);
+                    let result = self.merge_power_grids(kept, removed, backend);
 
-                    assert_eq!(result.kept_id, kept);
-                    assert!(result.changed_assembler_ids.is_empty());
+                    for relocation in result.assemblers_which_are_now_in_this_grid {
+                        let assembler = &mut self.assembler_list[relocation.middle.0 as usize];
+
+                        assembler.backend_id = relocation.new_backend;
+                        assembler.power_grid_id = kept;
+                    }
+
+                    {
+                        assert!(
+                            self.assembler_list
+                                .iter()
+                                .all(|(_, info)| info.power_grid_id != removed),
+                            "{:?}",
+                            self.assembler_list
+                                .iter()
+                                .find(|(_, info)| info.power_grid_id == removed)
+                        );
+                    }
 
                     self.set_power_pole_grid_id(connected_pole, kept);
 
@@ -119,7 +148,7 @@ impl Middle {
                     // Add other connection direction
                     self.power_pole_list[connected_pole.0 as usize]
                         .connections
-                        .push(PowerPoleIndex(index.try_into().unwrap()));
+                        .push(PowerPoleMiddleID(index.try_into().unwrap()));
                 }
 
                 kept
@@ -129,10 +158,14 @@ impl Middle {
         let real_index = self.power_pole_list.push(MiddlePowerPoleInfo {
             position,
             connections,
-            grid_id: backend_grid_id,
+            grid_id: middle_grid_id,
         });
 
         assert_eq!(index, real_index);
+
+        for connected_entity in connected_entities {
+            self.make_entity_powered_by_grid(connected_entity, middle_grid_id, backend);
+        }
 
         #[cfg(debug_assertions)]
         {
@@ -151,7 +184,7 @@ impl Middle {
                     pole.connections.iter().all(|connected_pole| {
                         self.power_pole_list[connected_pole.0.try_into().unwrap()]
                             .connections
-                            .contains(&PowerPoleIndex(idx.try_into().unwrap()))
+                            .contains(&PowerPoleMiddleID(idx.try_into().unwrap()))
                     })
                 }),
                 "Missing bi-directional connection"
@@ -165,12 +198,12 @@ impl Middle {
             );
         }
 
-        PowerPoleIndex(index.try_into().expect("More than u32::MAX power poles"))
+        PowerPoleMiddleID(index.try_into().expect("More than u32::MAX power poles"))
     }
 
     // FIXME: This is recursive and may cause a stack overflow for large grids!
     /// This does a DFS and sets the `grid_id` of all connected poles.
-    fn set_power_pole_grid_id(&mut self, id: PowerPoleIndex, grid_id: PowerGridBackendID) {
+    fn set_power_pole_grid_id(&mut self, id: PowerPoleMiddleID, grid_id: PowerGridMiddleID) {
         let pole = &mut self.power_pole_list[id.0 as usize];
 
         if pole.grid_id == grid_id {
@@ -187,19 +220,23 @@ impl Middle {
     }
 
     #[must_use]
-    pub fn are_poles_connected(&self, ids: [PowerPoleIndex; 2]) -> bool {
+    pub fn are_poles_connected(&self, ids: [PowerPoleMiddleID; 2]) -> bool {
         self.power_pole_list[ids[0].0 as usize]
             .connections
             .contains(&ids[1])
     }
 
-    fn get_pole_pos(&self, id: PowerPoleIndex) -> Position {
+    fn get_pole_pos(&self, id: PowerPoleMiddleID) -> Position {
         self.power_pole_list[id.0 as usize].position
+    }
+
+    pub fn get_pole_power_grid(&self, id: PowerPoleMiddleID) -> PowerGridMiddleID {
+        self.power_pole_list[id.0 as usize].grid_id
     }
 
     pub fn get_pole_connected_positions(
         &self,
-        id: PowerPoleIndex,
+        id: PowerPoleMiddleID,
     ) -> impl Iterator<Item = Position> {
         self.power_pole_list[id.0 as usize]
             .connections
@@ -207,7 +244,7 @@ impl Middle {
             .map(|conn| self.get_pole_pos(*conn))
     }
 
-    pub fn remove_power_pole(&mut self, id: PowerPoleIndex, backend: &mut !) {
+    pub fn remove_power_pole(&mut self, id: PowerPoleMiddleID, backend: &mut Backend) {
         // Remove the removed pole from the connected poles' connection lists
         for i in 0..self.power_pole_list[id.0 as usize].connections.len() {
             let connected = self.power_pole_list[id.0 as usize].connections[i];
@@ -240,6 +277,42 @@ impl Middle {
             .remove(id.0 as usize)
             .expect("Must exist");
     }
+
+    fn make_entity_powered_by_grid(
+        &mut self,
+        entity: EntityInfo,
+        grid: PowerGridMiddleID,
+        backend: &mut Backend,
+    ) {
+        match entity.kind {
+            EntityInfoKind::Assembler { middle_id, .. } => {
+                let info = &mut self.assembler_list[middle_id.0 as usize];
+
+                let current_grid_backend =
+                    self.power_grid_list[info.power_grid_id.0 as usize].backend_id;
+
+                match backend.move_assembler(
+                    FullAssemblerIdentifier {
+                        recipe: info.current_recipe,
+                        grid: current_grid_backend,
+                        assembler_id: info.backend_id,
+                    },
+                    self.power_grid_list[grid.0 as usize].backend_id,
+                ) {
+                    backend::AdditionResult::Added {
+                        new_id,
+                        relocations,
+                    } => {
+                        info.backend_id = new_id;
+                        info.power_grid_id = grid;
+                        self.handle_assembler_relocations(relocations);
+                    },
+                    backend::AdditionResult::Failed { info } => todo!(),
+                }
+            },
+            EntityInfoKind::PowerPole { middle_id, .. } => unreachable!(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -257,14 +330,15 @@ mod test {
     fn do_not_repeat_ids() {
         let mut used_ids = HashSet::new();
 
-        let mut middle = Middle::new();
         let mut backend = Backend::new();
+        let mut middle = Middle::new(&mut backend);
 
         for _ in 0..10000 {
             let id = middle.add_power_pole(
                 PowerPoleAdditionInfo {
                     position: Position { x: 0, y: 0 },
                     connections: vec![].into(),
+                    connected_entities: vec![],
                 },
                 &mut backend,
             );
@@ -276,16 +350,16 @@ mod test {
     proptest! {
         #[test]
         fn connected_poles_report_connected(connected in ANY) {
-            let mut middle = Middle::new();
             let mut backend = Backend::new();
+            let mut middle = Middle::new(&mut backend);
 
-            let first = middle.add_power_pole(PowerPoleAdditionInfo { position: Position { x: 0, y: 0 }, connections: vec![].into() }, &mut backend);
+            let first = middle.add_power_pole(PowerPoleAdditionInfo { position: Position { x: 0, y: 0 }, connections: vec![].into(), connected_entities: vec![], }, &mut backend);
             let connections = if connected {
                 vec![first].into()
             } else {
                 vec![].into()
             };
-            let second = middle.add_power_pole(PowerPoleAdditionInfo { position: Position { x: 0, y: 0 }, connections }, &mut backend);
+            let second = middle.add_power_pole(PowerPoleAdditionInfo { position: Position { x: 0, y: 0 }, connections, connected_entities: vec![], }, &mut backend);
 
             prop_assert_eq!(middle.are_poles_connected([first, second]), middle.are_poles_connected([second, first]));
             prop_assert_eq!(middle.are_poles_connected([first, second]), connected);
@@ -293,25 +367,25 @@ mod test {
 
         #[test]
         fn get_pole_pos_works(position in random_position()) {
-            let mut middle = Middle::new();
             let mut backend = Backend::new();
+            let mut middle = Middle::new(&mut backend);
 
-            let id = middle.add_power_pole(PowerPoleAdditionInfo { position, connections: vec![].into() }, &mut backend);
+            let id = middle.add_power_pole(PowerPoleAdditionInfo { position, connections: vec![].into(), connected_entities: vec![], }, &mut backend);
 
             prop_assert_eq!(middle.get_pole_pos(id), position);
         }
 
         #[test]
         fn add_poles(pole_positions in collection::vec(random_position(), 0..10), pole_connections in collection::vec(collection::vec(0..10usize, 0..3), 0..10)) {
-            let mut middle = Middle::new();
             let mut backend = Backend::new();
+        let mut middle = Middle::new(&mut backend);
 
             let mut ids = vec![];
 
             for (pos, conns) in pole_positions.into_iter().zip(pole_connections) {
-                let connections: SmallVec<[PowerPoleIndex; 4]> = conns.into_iter().filter_map(|index| ids.get(index).copied()).unique().collect();
+                let connections: SmallVec<[PowerPoleMiddleID; 4]> = conns.into_iter().filter_map(|index| ids.get(index).copied()).unique().collect();
 
-                let id = middle.add_power_pole(PowerPoleAdditionInfo { position: pos, connections: connections.clone() }, &mut backend);
+                let id = middle.add_power_pole(PowerPoleAdditionInfo { position: pos, connections: connections.clone(), connected_entities: vec![], }, &mut backend);
                 ids.push(id);
 
                 for other in &ids {

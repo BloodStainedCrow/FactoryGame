@@ -98,6 +98,8 @@ impl DataStore {
                         width: u32::from(pole.wire_reach * 2),
                         height: u32::from(pole.wire_reach * 2),
                     },
+
+                    supply_range: pole.range.into(),
                 })
             })
             .collect();

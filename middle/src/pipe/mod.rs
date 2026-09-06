@@ -1,18 +1,20 @@
+use backend::Backend;
 use data::item::Item;
 use itertools::Itertools;
+use middle_indices::PipeMiddleID;
 use smallvec::SmallVec;
 
-use crate::{Middle, lists::PipeIndex};
+use crate::Middle;
 
 #[derive(Debug, Clone)]
 pub(crate) struct MiddlePipeInfo {
-    connections: SmallVec<[PipeIndex; 4]>,
+    connections: SmallVec<[PipeMiddleID; 4]>,
     fluid_system_id: (),
 }
 
 #[derive(Debug)]
 pub struct PipeAdditionInfo {
-    pub connections: SmallVec<[PipeIndex; 4]>,
+    pub connections: SmallVec<[PipeMiddleID; 4]>,
     // connected_entities: Vec<!>
 }
 
@@ -34,7 +36,7 @@ impl Middle {
         &mut self,
         info: PipeAdditionInfo,
         backend: &mut (),
-    ) -> Result<PipeIndex, PipeAdditionError> {
+    ) -> Result<PipeMiddleID, PipeAdditionError> {
         let PipeAdditionInfo { mut connections } = info;
 
         let index = self.pipe_list.next_push_index();
@@ -47,9 +49,11 @@ impl Middle {
         {
             Ok(fluid_system_id) => {
                 for &conn in &connections {
-                    self.pipe_list[conn.0 as usize].connections.push(PipeIndex(
-                        index.try_into().expect("More than u32::MAX pipes"),
-                    ));
+                    self.pipe_list[conn.0 as usize]
+                        .connections
+                        .push(PipeMiddleID(
+                            index.try_into().expect("More than u32::MAX pipes"),
+                        ));
                 }
 
                 fluid_system_id
@@ -104,14 +108,14 @@ impl Middle {
 
         assert_eq!(index, real_index);
 
-        Ok(PipeIndex(
+        Ok(PipeMiddleID(
             index.try_into().expect("More than u32::MAX pipes"),
         ))
     }
 
     #[expect(clippy::unit_cmp)]
     /// This does a DFS and sets the `network_id` of all connected pipes.
-    fn set_pipe_network_id(&mut self, id: PipeIndex, network_id: ()) {
+    fn set_pipe_network_id(&mut self, id: PipeMiddleID, network_id: ()) {
         let pipe = &mut self.pipe_list[id.0 as usize];
 
         if pipe.fluid_system_id == network_id {
@@ -127,7 +131,7 @@ impl Middle {
         }
     }
 
-    pub fn remove_pipe(&mut self, id: PipeIndex, backend: &mut !) {
+    pub fn remove_pipe(&mut self, id: PipeMiddleID, backend: &mut Backend) {
         // Remove the removed pipe from the connected pipes' connection lists
         for i in 0..self.pipe_list[id.0 as usize].connections.len() {
             let connected = self.pipe_list[id.0 as usize].connections[i];
@@ -164,6 +168,8 @@ impl Middle {
 mod test {
     use std::collections::HashSet;
 
+    use backend::Backend;
+
     use crate::Middle;
 
     use super::*;
@@ -172,7 +178,8 @@ mod test {
     fn do_not_repeat_ids() {
         let mut used_ids = HashSet::new();
 
-        let mut middle = Middle::new();
+        let mut backend = Backend::new();
+        let mut middle = Middle::new(&mut backend);
 
         for _ in 0..10000 {
             let id = middle

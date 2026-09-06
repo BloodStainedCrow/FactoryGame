@@ -557,6 +557,7 @@ dependencies = [
  "const-assert",
  "data",
  "itertools 0.14.0",
+ "middle_indices",
  "proptest",
  "stable-vec",
  "static_assertions",
@@ -1331,6 +1332,14 @@ name = "endi"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
+
+[[package]]
+name = "entity_info"
+version = "0.1.0"
+dependencies = [
+ "data",
+ "middle_indices",
+]
 
 [[package]]
 name = "enum-map"
@@ -2407,12 +2416,18 @@ version = "0.1.0"
 dependencies = [
  "backend",
  "data",
+ "entity_info",
  "itertools 0.14.0",
  "log",
+ "middle_indices",
  "proptest",
  "smallvec",
  "stable-vec",
 ]
+
+[[package]]
+name = "middle_indices"
+version = "0.1.0"
 
 [[package]]
 name = "miniz_oxide"
@@ -5390,10 +5405,12 @@ dependencies = [
  "backend",
  "bitvec",
  "data",
+ "entity_info",
  "enum-map",
  "itertools 0.14.0",
  "log",
  "middle",
+ "middle_indices",
  "proptest",
  "rand 0.10.1",
  "rayon",

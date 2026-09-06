@@ -1,0 +1,11 @@
+[package]
+name = "entity_info"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+data = { path = "../data" }
+middle_indices = { path = "../middle_indices" }
+
+[lints]
+workspace = true

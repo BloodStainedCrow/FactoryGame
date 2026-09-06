@@ -4,26 +4,28 @@ use data::{
         GlobalTy, allows_flipping, allows_rotation,
         assember::{AssemblerTy, default_recipe},
         bounding_box,
-        power_pole::{PowerPoleTy, power_pole_wire_connection_area},
+        power_pole::{PowerPoleTy, power_pole_supply_area, power_pole_wire_connection_area},
     },
     spacial::{BoundingBox, Flipped, Position, Rotation},
 };
+use entity_info::{EntityInfo, EntityInfoKind};
 use itertools::Itertools;
 use middle::{
-    Middle,
-    assember::AssemblerAdditionInfo,
+    Middle, UNATTACHED_POWER_GRID_ID,
+    assembler::AssemblerAdditionInfo,
     power_pole::{AUTOMATIC_POLE_CONNECTION_LIMIT, PowerPoleAdditionInfo},
 };
 use smallvec::SmallVec;
 use thiserror::Error;
 
 use crate::{
-    entity::{EntityDescriptor, EntityDescriptorKind, EntityInfo, EntityInfoKind},
+    entity::{EntityDescriptor, EntityDescriptorKind},
     surface::world::{CanFitError, SurfaceWorld},
 };
 
 mod belt_logic;
 mod pipe_logic;
+mod power_pole_logic;
 mod world;
 
 // TODO: This should probably not live in the frontend IMO
@@ -55,10 +57,12 @@ pub struct SurfaceCreationOptions {
 impl Surface {
     #[must_use]
     pub fn new(options: &SurfaceCreationOptions) -> Self {
+        let mut backend = Backend::new();
+
         Self {
             world: SurfaceWorld::new_with_empty_area(options.generated_area),
-            middle: Middle::new(),
-            backend: Backend::new(),
+            middle: Middle::new(&mut backend),
+            backend,
         }
     }
 
@@ -72,6 +76,7 @@ impl Surface {
                 kind: match desc.kind {
                     EntityDescriptorKind::Assembler { id } => EntityInfoKind::Assembler {
                         ty: desc.ty.try_into().expect("Assembler with non AssemblerTy"),
+                        middle_id: id,
                     },
                     EntityDescriptorKind::Inserter { id } => todo!(),
                     EntityDescriptorKind::Belt { id } => todo!(),
@@ -82,6 +87,7 @@ impl Surface {
                             .middle
                             .get_pole_connected_positions(id)
                             .collect(),
+                        middle_id: id,
                     },
                     EntityDescriptorKind::SolarPanel {} => todo!(),
                 },
@@ -151,6 +157,7 @@ impl Surface {
         let middle_assembler_id = self.middle.add_assembler(
             &AssemblerAdditionInfo {
                 recipe: default_recipe,
+                power_grid: UNATTACHED_POWER_GRID_ID,
             },
             &mut self.backend,
         );
@@ -221,12 +228,15 @@ impl Surface {
             }
         }
 
-        // TODO: Find attached entities
+        let connected_entities: Vec<_> = self
+            .get_powered_entites_for_pole(power_pole_supply_area(ty, top_left, rotation, flipped))
+            .collect();
 
         let index = self.middle.add_power_pole(
             PowerPoleAdditionInfo {
                 position: top_left,
                 connections: connected_poles,
+                connected_entities,
             },
             &mut self.backend,
         );

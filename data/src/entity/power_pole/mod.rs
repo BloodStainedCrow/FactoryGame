@@ -1,6 +1,6 @@
 use crate::{
     DATA_STORE, EntityPrototypeKind,
-    entity::GlobalTy,
+    entity::{GlobalTy, bounding_box},
     spacial::{BoundingBox, Extent, Flipped, Offset, Position, Rotation},
 };
 
@@ -8,6 +8,8 @@ use crate::{
 pub struct PowerPoleData {
     pub wire_connection_offset: Offset,
     pub wire_connection_area: Extent,
+
+    pub supply_range: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -45,8 +47,21 @@ pub fn power_pole_wire_connection_area(
     _flipped: Flipped,
 ) -> BoundingBox {
     let data = &DATA_STORE.power_poles[usize::from(ty.0)];
+    // FIXME: 90% sure this is incorrect with rotations
     BoundingBox::new(
         top_left + data.wire_connection_offset,
         data.wire_connection_area.rotate(rotation),
     )
+}
+
+/// The are in which entities are powered
+#[must_use]
+pub fn power_pole_supply_area(
+    ty: PowerPoleTy,
+    top_left: Position,
+    rotation: Rotation,
+    flipped: Flipped,
+) -> BoundingBox {
+    let data = &DATA_STORE.power_poles[usize::from(ty.0)];
+    bounding_box(ty.into(), top_left, rotation, flipped).extend_evenly(data.supply_range)
 }

@@ -14,15 +14,16 @@ pub struct Backend {
     power_grids: StableVec<PowerGrid>,
 }
 
-pub struct RelocationInfo<ID> {
-    pub old: ID,
-    pub new: ID,
+#[derive(Debug)]
+pub struct RelocationInfo<MiddleID, BackendID> {
+    pub middle: MiddleID,
+    pub new_backend: BackendID,
 }
 
-pub enum AdditionResult<ID> {
+pub enum AdditionResult<MiddleID, BackendID> {
     Added {
-        new_id: ID,
-        relocations: Vec<RelocationInfo<ID>>,
+        new_id: BackendID,
+        relocations: Vec<RelocationInfo<MiddleID, BackendID>>,
     },
     Failed {
         info: !,

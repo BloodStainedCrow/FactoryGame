@@ -1,10 +1,12 @@
 use std::iter;
 
 use data::{
-    entity::{GlobalTy, assember::AssemblerTy, bounding_box, power_pole::PowerPoleTy},
+    entity::{GlobalTy, bounding_box},
     spacial::{BoundingBox, Flipped, Position, Rotation},
 };
-use middle::lists::{AssemblerIndex, BeltIndex, InserterIndex, PipeIndex, PowerPoleIndex};
+use middle_indices::{
+    AssemblerMiddleID, BeltMiddleID, InserterMiddleID, PipeMiddleID, PowerPoleMiddleID,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct EntityDescriptor {
@@ -25,6 +27,18 @@ impl EntityDescriptor {
         }
     }
 
+    pub fn can_be_powered_by_a_pole(&self) -> bool {
+        // TODO: Some kinds might not want to be powered
+        match self.kind {
+            EntityDescriptorKind::Assembler { .. } => true,
+            EntityDescriptorKind::Pipe { .. } => false,
+            EntityDescriptorKind::Inserter { .. } => true,
+            EntityDescriptorKind::Belt { .. } => false,
+            EntityDescriptorKind::PowerPole { .. } => false,
+            EntityDescriptorKind::SolarPanel { .. } => true,
+        }
+    }
+
     pub fn overlaps(&self, other: BoundingBox) -> bool {
         bounding_box(self.ty, self.position, self.rotation, self.flipped).overlaps(other)
     }
@@ -32,45 +46,11 @@ impl EntityDescriptor {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EntityDescriptorKind {
-    Assembler { id: AssemblerIndex },
-    Inserter { id: InserterIndex },
-    Belt { id: BeltIndex },
-    Pipe { id: PipeIndex },
-    PowerPole { id: PowerPoleIndex },
+    Assembler { id: AssemblerMiddleID },
+    Inserter { id: InserterMiddleID },
+    Belt { id: BeltMiddleID },
+    Pipe { id: PipeMiddleID },
+    PowerPole { id: PowerPoleMiddleID },
     SolarPanel {},
     // ...
-}
-
-#[derive(Debug)]
-pub struct EntityInfo {
-    pub position: Position,
-    pub rotation: Rotation,
-    pub flipped: Flipped,
-
-    pub kind: EntityInfoKind,
-}
-
-impl EntityInfo {
-    // TODO: This is a clippy bug
-    #[expect(clippy::missing_const_for_fn)]
-    #[must_use]
-    pub fn global_ty(&self) -> GlobalTy {
-        match self.kind {
-            EntityInfoKind::Assembler { ty, .. } => ty.into(),
-            EntityInfoKind::PowerPole { ty, .. } => ty.into(),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum EntityInfoKind {
-    Assembler {
-        ty: AssemblerTy,
-        // ...
-    },
-    PowerPole {
-        ty: PowerPoleTy,
-        connected_pole_positions: Vec<Position>,
-        // ...
-    },
 }

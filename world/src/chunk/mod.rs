@@ -4,7 +4,9 @@ use data::{
     get_kind,
     spacial::{BoundingBox, Extent, Flipped, Position, Rotation},
 };
-use middle::lists::{AssemblerIndex, BeltIndex, InserterIndex, PipeIndex, PowerPoleIndex};
+use middle_indices::{
+    AssemblerMiddleID, BeltMiddleID, InserterMiddleID, PipeMiddleID, PowerPoleMiddleID,
+};
 
 use crate::entity::{EntityDescriptor, EntityDescriptorKind};
 
@@ -279,22 +281,22 @@ impl StoredEntity {
 
         let kind = match get_kind(self.ty) {
             data::EntityPrototypeKind::Assembler => EntityDescriptorKind::Assembler {
-                id: AssemblerIndex(self.index),
+                id: AssemblerMiddleID(self.index),
             },
             data::EntityPrototypeKind::Inserter => EntityDescriptorKind::Inserter {
-                id: InserterIndex(self.index),
+                id: InserterMiddleID(self.index),
             },
             data::EntityPrototypeKind::Belt => EntityDescriptorKind::Belt {
-                id: BeltIndex(self.index),
+                id: BeltMiddleID(self.index),
             },
             data::EntityPrototypeKind::Pipe => EntityDescriptorKind::Pipe {
-                id: PipeIndex(self.index),
+                id: PipeMiddleID(self.index),
             },
             data::EntityPrototypeKind::UndergroundBelt => todo!(),
             data::EntityPrototypeKind::Splitter => todo!(),
             data::EntityPrototypeKind::Chest => todo!(),
             data::EntityPrototypeKind::PowerPole => EntityDescriptorKind::PowerPole {
-                id: PowerPoleIndex(self.index),
+                id: PowerPoleMiddleID(self.index),
             },
             data::EntityPrototypeKind::SolarPanel => EntityDescriptorKind::SolarPanel {},
             data::EntityPrototypeKind::Accumulator => todo!(),
@@ -482,7 +484,6 @@ mod test {
     use super::*;
 
     use data::spacial::strategies::{random_flipping, random_rotation};
-    use middle::lists::AssemblerIndex;
     use proptest::{prop_assert_eq, proptest};
 
     proptest! {
@@ -509,7 +510,7 @@ mod test {
                 flipped,
                 ty: 0.into(),
                 kind: EntityDescriptorKind::Assembler {
-                    id: AssemblerIndex(100),
+                    id: AssemblerMiddleID(100),
                 },
             };
 
@@ -537,7 +538,7 @@ mod test {
                 flipped,
                 ty: 0.into(),
                 kind: EntityDescriptorKind::PowerPole {
-                    id: PowerPoleIndex(100),
+                    id: PowerPoleMiddleID(100),
                 },
             };
 
