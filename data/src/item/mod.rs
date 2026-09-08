@@ -2,6 +2,8 @@ use std::num::NonZero;
 
 pub type ItemCountType = u16;
 
+pub mod item_set;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Item(u16);
 

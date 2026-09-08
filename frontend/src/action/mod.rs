@@ -123,7 +123,7 @@ impl GameState {
                         surface.add_power_pole(ty, top_left, rotation, flipped)?
                     },
                     &BuildingKind::Chest { ty } => {
-                        // TODO:
+                        surface.add_chest(ty, top_left, rotation, flipped)?
                     },
                     &BuildingKind::Inserter { ty } => {
                         // TODO:

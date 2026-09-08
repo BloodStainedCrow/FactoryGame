@@ -24,6 +24,7 @@ pub mod api;
 pub mod energy;
 pub mod entity;
 pub mod item;
+pub mod recipe;
 pub mod spacial;
 
 #[derive(Debug, serde::Deserialize)]

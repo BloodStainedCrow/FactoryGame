@@ -310,7 +310,8 @@ impl Middle {
                     backend::AdditionResult::Failed { info } => todo!(),
                 }
             },
-            EntityInfoKind::PowerPole { middle_id, .. } => unreachable!(),
+            EntityInfoKind::PowerPole { .. } => unreachable!(),
+            EntityInfoKind::Chest { .. } => unreachable!(),
         }
     }
 }
@@ -378,7 +379,7 @@ mod test {
         #[test]
         fn add_poles(pole_positions in collection::vec(random_position(), 0..10), pole_connections in collection::vec(collection::vec(0..10usize, 0..3), 0..10)) {
             let mut backend = Backend::new();
-        let mut middle = Middle::new(&mut backend);
+            let mut middle = Middle::new(&mut backend);
 
             let mut ids = vec![];
 

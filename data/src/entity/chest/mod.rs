@@ -25,3 +25,9 @@ impl TryFrom<GlobalTy> for ChestTy {
             .ok_or(())
     }
 }
+
+// TODO: Use ItemStackIndex type
+pub fn num_slots(chest_ty: ChestTy) -> u16 {
+    // TODO
+    10
+}

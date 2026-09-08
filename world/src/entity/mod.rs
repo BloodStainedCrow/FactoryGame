@@ -5,7 +5,8 @@ use data::{
     spacial::{BoundingBox, Flipped, Position, Rotation},
 };
 use middle_indices::{
-    AssemblerMiddleID, BeltMiddleID, InserterMiddleID, PipeMiddleID, PowerPoleMiddleID,
+    AssemblerMiddleID, BeltMiddleID, ChestMiddleID, InserterMiddleID, PipeMiddleID,
+    PowerPoleMiddleID,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,6 +37,7 @@ impl EntityDescriptor {
             EntityDescriptorKind::Belt { .. } => false,
             EntityDescriptorKind::PowerPole { .. } => false,
             EntityDescriptorKind::SolarPanel { .. } => true,
+            EntityDescriptorKind::Chest { .. } => false,
         }
     }
 
@@ -51,6 +53,7 @@ pub(crate) enum EntityDescriptorKind {
     Belt { id: BeltMiddleID },
     Pipe { id: PipeMiddleID },
     PowerPole { id: PowerPoleMiddleID },
+    Chest { id: ChestMiddleID },
     SolarPanel {},
     // ...
 }

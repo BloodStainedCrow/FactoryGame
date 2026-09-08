@@ -6,7 +6,7 @@ use static_assertions::const_assert_eq;
 pub type ItemStackIndex = u16;
 
 #[derive(Debug, Clone, Copy)]
-pub struct SushiSlot {
+struct SushiSlot {
     content: Option<ItemStack>,
 }
 
@@ -25,7 +25,7 @@ impl SushiSlot {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SushiChest {
     slots: Box<[SushiSlot]>,
     first_non_full_slot: ItemStackIndex,

@@ -12,6 +12,7 @@ backend = { path = "../backend" }
 log = "0.4.34"
 middle_indices = { path = "../middle_indices" }
 entity_info = { path = "../entity_info" }
+static_assertions = "1.1.0"
 
 [dev-dependencies]
 proptest = "1.11.0"

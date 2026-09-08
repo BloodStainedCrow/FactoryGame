@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 #[derive(Debug, Clone)]
 pub struct Bucket<T> {
-    sizes: VecDeque<usize>,
+    sizes: VecDeque<u32>,
     values: VecDeque<T>,
 }
 
@@ -21,7 +21,7 @@ impl<T> Bucket<T> {
     }
 
     pub fn advance(&mut self) -> impl Iterator<Item = T> {
-        let count = self.sizes[0];
+        let count = self.sizes[0] as usize;
 
         let values = self.values.drain(0..count);
 

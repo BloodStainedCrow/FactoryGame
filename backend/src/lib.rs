@@ -2,7 +2,7 @@
 
 use stable_vec::StableVec;
 
-use crate::power_grid::PowerGrid;
+use crate::{chests::sushi::SushiChest, power_grid::PowerGrid};
 
 pub mod chests;
 mod inserter;
@@ -15,6 +15,7 @@ pub mod transport_lines;
 #[derive(Debug, Clone)]
 pub struct Backend {
     power_grids: StableVec<PowerGrid>,
+    sushi_chests: StableVec<SushiChest>,
 }
 
 #[derive(Debug)]
@@ -37,6 +38,7 @@ impl Backend {
     pub fn new() -> Self {
         Self {
             power_grids: StableVec::new(),
+            sushi_chests: StableVec::new(),
         }
     }
 }

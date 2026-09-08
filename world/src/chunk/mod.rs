@@ -5,7 +5,8 @@ use data::{
     spacial::{BoundingBox, Extent, Flipped, Position, Rotation},
 };
 use middle_indices::{
-    AssemblerMiddleID, BeltMiddleID, InserterMiddleID, PipeMiddleID, PowerPoleMiddleID,
+    AssemblerMiddleID, BeltMiddleID, ChestMiddleID, InserterMiddleID, PipeMiddleID,
+    PowerPoleMiddleID,
 };
 
 use crate::entity::{EntityDescriptor, EntityDescriptorKind};
@@ -109,6 +110,14 @@ impl Chunk {
                 });
             },
             EntityDescriptorKind::PowerPole { id } => {
+                self.entities.push(StoredEntity {
+                    pos,
+                    rotation,
+                    ty,
+                    index: id.0,
+                });
+            },
+            EntityDescriptorKind::Chest { id } => {
                 self.entities.push(StoredEntity {
                     pos,
                     rotation,
@@ -294,7 +303,9 @@ impl StoredEntity {
             },
             data::EntityPrototypeKind::UndergroundBelt => todo!(),
             data::EntityPrototypeKind::Splitter => todo!(),
-            data::EntityPrototypeKind::Chest => todo!(),
+            data::EntityPrototypeKind::Chest => EntityDescriptorKind::Chest {
+                id: ChestMiddleID(self.index),
+            },
             data::EntityPrototypeKind::PowerPole => EntityDescriptorKind::PowerPole {
                 id: PowerPoleMiddleID(self.index),
             },

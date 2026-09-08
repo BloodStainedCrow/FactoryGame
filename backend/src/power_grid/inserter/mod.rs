@@ -1,3 +1,4 @@
+use data::item::item_set::ItemSet;
 use middle_indices::InserterMiddleID;
 
 use crate::{AdditionResult, Backend, power_grid::PowerGridBackendID};
@@ -12,7 +13,7 @@ pub struct InserterAdditionInfo {
 
     pub source: !,
     pub dest: !,
-    pub items: !,
+    pub items: ItemSet,
     // TODO: Stats
 }
 

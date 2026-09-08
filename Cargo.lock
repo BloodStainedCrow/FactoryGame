@@ -2423,6 +2423,7 @@ dependencies = [
  "proptest",
  "smallvec",
  "stable-vec",
+ "static_assertions",
 ]
 
 [[package]]

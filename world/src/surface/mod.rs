@@ -4,6 +4,7 @@ use data::{
         GlobalTy, allows_flipping, allows_rotation,
         assember::{AssemblerTy, default_recipe},
         bounding_box,
+        chest::{ChestTy, num_slots},
         power_pole::{PowerPoleTy, power_pole_supply_area, power_pole_wire_connection_area},
     },
     spacial::{BoundingBox, Flipped, Position, Rotation},
@@ -13,6 +14,7 @@ use itertools::Itertools;
 use middle::{
     Middle, UNATTACHED_POWER_GRID_ID,
     assembler::AssemblerAdditionInfo,
+    chest::ChestAdditionInfo,
     power_pole::{AUTOMATIC_POLE_CONNECTION_LIMIT, PowerPoleAdditionInfo},
 };
 use smallvec::SmallVec;
@@ -81,6 +83,10 @@ impl Surface {
                     EntityDescriptorKind::Inserter { id } => todo!(),
                     EntityDescriptorKind::Belt { id } => todo!(),
                     EntityDescriptorKind::Pipe { id } => todo!(),
+                    EntityDescriptorKind::Chest { id } => EntityInfoKind::Chest {
+                        ty: desc.ty.try_into().expect("Chest with non ChestTy"),
+                        middle_id: id,
+                    },
                     EntityDescriptorKind::PowerPole { id } => EntityInfoKind::PowerPole {
                         ty: desc.ty.try_into().expect("PowerPole with non PowerPoleTy"),
                         connected_pole_positions: self
@@ -169,6 +175,42 @@ impl Surface {
             ty: ty.into(),
             kind: EntityDescriptorKind::Assembler {
                 id: middle_assembler_id,
+            },
+        });
+
+        Ok(())
+    }
+
+    /// # Errors
+    /// If placing this entity is not legal
+    pub fn add_chest(
+        &mut self,
+        ty: ChestTy,
+        top_left: Position,
+        rotation: Rotation,
+        flipped: Flipped,
+    ) -> Result<(), PlaceEntityError> {
+        log::trace!("Add chest with ty {ty:?} at {top_left:?}");
+        let _bounding_box = self.follows_rules(ty.into(), top_left, rotation, flipped)?;
+
+        // Placement is allowed. Do the placing
+
+        // let connected_inserters: Vec<!> = todo!();
+
+        let middle_chest_id = self.middle.add_chest(
+            ChestAdditionInfo {
+                num_slots: num_slots(ty),
+            },
+            &mut self.backend,
+        );
+
+        self.world.add_entity(EntityDescriptor {
+            position: top_left,
+            rotation,
+            flipped,
+            ty: ty.into(),
+            kind: EntityDescriptorKind::Chest {
+                id: middle_chest_id,
             },
         });
 

@@ -1,8 +1,8 @@
 use data::{
-    entity::{GlobalTy, assember::AssemblerTy, power_pole::PowerPoleTy},
+    entity::{GlobalTy, assember::AssemblerTy, chest::ChestTy, power_pole::PowerPoleTy},
     spacial::{Flipped, Position, Rotation},
 };
-use middle_indices::{AssemblerMiddleID, PowerPoleMiddleID};
+use middle_indices::{AssemblerMiddleID, ChestMiddleID, PowerPoleMiddleID};
 
 #[derive(Debug)]
 pub struct EntityInfo {
@@ -19,6 +19,7 @@ impl EntityInfo {
         match self.kind {
             EntityInfoKind::Assembler { ty, .. } => ty.into(),
             EntityInfoKind::PowerPole { ty, .. } => ty.into(),
+            EntityInfoKind::Chest { ty, .. } => ty.into(),
         }
     }
 
@@ -27,6 +28,7 @@ impl EntityInfo {
         match self.kind {
             EntityInfoKind::Assembler { ty, .. } => true,
             EntityInfoKind::PowerPole { .. } => false,
+            EntityInfoKind::Chest { .. } => false,
         }
     }
 }
@@ -43,5 +45,9 @@ pub enum EntityInfoKind {
         connected_pole_positions: Vec<Position>,
         middle_id: PowerPoleMiddleID,
         // ...
+    },
+    Chest {
+        ty: ChestTy,
+        middle_id: ChestMiddleID,
     },
 }
